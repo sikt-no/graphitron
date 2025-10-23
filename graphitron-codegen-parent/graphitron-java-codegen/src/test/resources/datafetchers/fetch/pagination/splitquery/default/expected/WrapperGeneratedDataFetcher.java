@@ -14,15 +14,15 @@ import no.sikt.graphql.relay.ConnectionImpl;
 
 public class WrapperGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<ConnectionImpl<DummyType>>> query() {
-        return env -> {
-            Wrapper wrapper = env.getSource();
-            Integer first = env.getArgument("first");
-            String after = env.getArgument("after");
-            int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-            return new DataFetcherHelper(env).loadPaginated(
-                    wrapper.getQueryKey(), pageSize,
-                    (ctx, resolverKeys, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, resolverKeys, pageSize, after, selectionSet),
-                    (ctx, resolverKeys) -> WrapperDBQueries.countQueryForWrapper(ctx, resolverKeys)
+        return _iv_env -> {
+            Wrapper wrapper = _iv_env.getSource();
+            Integer first = _iv_env.getArgument("first");
+            String after = _iv_env.getArgument("after");
+            int _iv_pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
+            return new DataFetcherHelper(_iv_env).loadPaginated(
+                    wrapper.getQueryKey(), _iv_pageSize,
+                    (_iv_ctx, _iv_keys, _iv_selectionSet) -> WrapperDBQueries.queryForWrapper(_iv_ctx, _iv_keys, _iv_pageSize, after, _iv_selectionSet),
+                    (_iv_ctx, _iv_keys) -> WrapperDBQueries.countQueryForWrapper(_iv_ctx, _iv_keys)
             );
         };
     }

@@ -8,13 +8,13 @@ import java.lang.String;
 
 public class UTypeResolver {
     public static TypeResolver uTypeResolver() {
-        return env -> env.getSchema().getObjectType(getName(env.getObject()));
+        return _iv_env -> _iv_env.getSchema().getObjectType(getName(_iv_env.getObject()));
     }
 
-    public static String getName(Object _obj) {
-        if (_obj instanceof A) {
+    public static String getName(Object _iv_obj) {
+        if (_iv_obj instanceof A) {
             return "A";
         }
-        throw new IllegalArgumentException("Type of " + _obj + " can not be resolved.");
+        throw new IllegalArgumentException("Type of " + _iv_obj + " can not be resolved.");
     }
 }

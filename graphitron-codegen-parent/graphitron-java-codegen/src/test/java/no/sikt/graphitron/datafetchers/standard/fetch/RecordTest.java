@@ -62,10 +62,10 @@ public class RecordTest extends GeneratorTest {
     void inputJavaRecord() {
         assertGeneratedContentContains(
                 "operation/inputJavaRecord", Set.of(DUMMY_INPUT_RECORD),
-                "in = ResolverHelpers.transformDTO(env.getArgument(\"in\"), DummyInputRecord.class)",
-                "transform = new RecordTransformer(env)",
-                "inRecord = transform.dummyInputRecordToJavaRecord(in, \"in\")",
-                "queryForQuery(ctx, inRecord,"
+                "in = ResolverHelpers.transformDTO(_iv_env.getArgument(\"in\"), DummyInputRecord.class)",
+                "transform = new RecordTransformer(_iv_env)",
+                "inRecord = _iv_transform.dummyInputRecordToJavaRecord(in, \"in\")",
+                "queryForQuery(_iv_ctx, inRecord,"
         );
     }
 
@@ -74,9 +74,9 @@ public class RecordTest extends GeneratorTest {
     void listedInputJavaRecord() {
         assertGeneratedContentContains(
                 "operation/listedInputJavaRecord", Set.of(DUMMY_INPUT_RECORD),
-                "in = ResolverHelpers.transformDTOList(env.getArgument(\"in\"), DummyInputRecord.class)",
-                "inRecordList = transform.dummyInputRecordToJavaRecord(in, \"in\")",
-                "queryForQuery(ctx, inRecordList,"
+                "in = ResolverHelpers.transformDTOList(_iv_env.getArgument(\"in\"), DummyInputRecord.class)",
+                "inRecordList = _iv_transform.dummyInputRecordToJavaRecord(in, \"in\")",
+                "queryForQuery(_iv_ctx, inRecordList,"
         );
     }
 
@@ -85,10 +85,10 @@ public class RecordTest extends GeneratorTest {
     void inputJOOQRecord() {
         assertGeneratedContentContains(
                 "operation/inputJOOQRecord", Set.of(CUSTOMER_INPUT_TABLE),
-                "in = ResolverHelpers.transformDTO(env.getArgument(\"in\"), CustomerInputTable.class)",
-                "transform = new RecordTransformer(env)",
-                "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
-                "queryForQuery(ctx, inRecord,"
+                "in = ResolverHelpers.transformDTO(_iv_env.getArgument(\"in\"), CustomerInputTable.class)",
+                "transform = new RecordTransformer(_iv_env)",
+                "inRecord = _iv_transform.customerInputTableToJOOQRecord(in, \"in\")",
+                "queryForQuery(_iv_ctx, inRecord,"
         );
     }
 
@@ -97,9 +97,9 @@ public class RecordTest extends GeneratorTest {
     void listedInputJOOQRecord() {
         assertGeneratedContentContains(
                 "operation/listedInputJOOQRecord", Set.of(CUSTOMER_INPUT_TABLE),
-                "in = ResolverHelpers.transformDTOList(env.getArgument(\"in\"), CustomerInputTable.class)",
-                "inRecordList = transform.customerInputTableToJOOQRecord(in, \"in\")",
-                "queryForQuery(ctx, inRecordList,"
+                "in = ResolverHelpers.transformDTOList(_iv_env.getArgument(\"in\"), CustomerInputTable.class)",
+                "inRecordList = _iv_transform.customerInputTableToJOOQRecord(in, \"in\")",
+                "queryForQuery(_iv_ctx, inRecordList,"
         );
     }
 
@@ -108,7 +108,7 @@ public class RecordTest extends GeneratorTest {
     void splitQueryInputJavaRecord() {
         assertGeneratedContentContains(
                 "splitquery/inputJavaRecord", Set.of(SPLIT_QUERY_WRAPPER, DUMMY_INPUT_RECORD),
-                "queryForWrapper(ctx, resolverKeys, inRecord,"
+                "queryForWrapper(_iv_ctx, _iv_keys, inRecord,"
         );
     }
 
@@ -117,7 +117,7 @@ public class RecordTest extends GeneratorTest {
     void splitQueryInputJOOQRecord() {
         assertGeneratedContentContains(
                 "splitquery/inputJOOQRecord", Set.of(SPLIT_QUERY_WRAPPER, CUSTOMER_INPUT_TABLE),
-                "queryForWrapper(ctx, resolverKeys, inRecord,"
+                "queryForWrapper(_iv_ctx, _iv_keys, inRecord,"
         );
     }
 
@@ -126,10 +126,10 @@ public class RecordTest extends GeneratorTest {
     void nestedInputRecord() {
         assertGeneratedContentContains(
                 "operation/nestedInputRecord", Set.of(CUSTOMER_INPUT_TABLE),
-                "in0Record = transform.",
-                "in1Record = new CustomerRecord();in1Record.attach(transform.getCtx().configuration()",
-                "if (in0 != null) {var in1 = in0.getIn1();in1Record = transform.customerInputTableToJOOQRecord(in1, \"in0/in1\")",
-                ".queryForQuery(ctx, in0Record, in1Record,"
+                "in0Record = _iv_transform.",
+                "in1Record = new CustomerRecord();in1Record.attach(_iv_transform.getCtx().configuration()",
+                "if (in0 != null) {var in1 = in0.getIn1();in1Record = _iv_transform.customerInputTableToJOOQRecord(in1, \"in0/in1\")",
+                ".queryForQuery(_iv_ctx, in0Record, in1Record,"
         );
     }
 }

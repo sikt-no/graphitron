@@ -10,10 +10,10 @@ import no.sikt.graphql.helpers.resolvers.DataFetcherHelper;
 
 public class QueryGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<DummyType>> query() {
-        return env -> {
-            List<String> id = env.getArgument("id");
+        return _iv_env -> {
+            List<String> id = _iv_env.getArgument("id");
             var keys = List.of(id);
-            return new DataFetcherHelper(env).loadLookup(keys, (ctx, resolverKeys, selectionSet) -> QueryDBQueries.queryForQuery(ctx, id, selectionSet));
+            return new DataFetcherHelper(_iv_env).loadLookup(keys, (_iv_ctx, _iv_keys, _iv_selectionSet) -> QueryDBQueries.queryForQuery(_iv_ctx, id, _iv_selectionSet));
         };
     }
 }

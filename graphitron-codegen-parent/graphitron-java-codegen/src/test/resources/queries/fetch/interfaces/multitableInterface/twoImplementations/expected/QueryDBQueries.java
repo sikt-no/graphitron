@@ -24,23 +24,23 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
 
-    public static SomeInterface someInterfaceForQuery(DSLContext ctx, SelectionSet select) {
+    public static SomeInterface someInterfaceForQuery(DSLContext _iv_ctx, SelectionSet _iv_select) {
         var unionKeysQuery = customerSortFieldsForSomeInterface().unionAll(addressSortFieldsForSomeInterface());
 
         var mappedAddress = addressForSomeInterface();
         var mappedCustomer = customerForSomeInterface();
 
-        return ctx
+        return _iv_ctx
                 .select(
                         DSL.row(
                                 unionKeysQuery.field("$type", String.class),
                                 mappedAddress.field("$data"),
                                 mappedCustomer.field("$data")
-                        ).mapping((a0, a1 , a2) -> switch (a0) {
-                                    case "Address" -> (SomeInterface) a1;
-                                    case "Customer" -> (SomeInterface) a2;
+                        ).mapping((_iv_e0, _iv_e1, _iv_e2) -> switch (_iv_e0) {
+                                    case "Address" -> (SomeInterface) _iv_e1;
+                                    case "Customer" -> (SomeInterface) _iv_e2;
                                     default ->
-                                            throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "SomeInterface", a0));
+                                            throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "SomeInterface", _iv_e0));
                                 }
                         ))
                 .from(unionKeysQuery)
@@ -54,13 +54,13 @@ public class QueryDBQueries {
 
     private static SelectSeekStepN<Record3<String, Integer, JSONB>> addressSortFieldsForSomeInterface() {
         var _a_address = ADDRESS.as("address_223244161");
-        var orderFields = _a_address.fields(_a_address.getPrimaryKey().getFieldsArray());
+        var _iv_orderFields = _a_address.fields(_a_address.getPrimaryKey().getFieldsArray());
         return DSL.select(
                         DSL.inline("Address").as("$type"),
-                        DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
+                        DSL.rowNumber().over(DSL.orderBy(_iv_orderFields)).as("$innerRowNum"),
                         DSL.jsonbArray(DSL.inline("Address"), _a_address.ADDRESS_ID).as("$pkFields"))
                 .from(_a_address)
-                .orderBy(orderFields);
+                .orderBy(_iv_orderFields);
     }
 
     private static SelectJoinStep<Record2<JSONB, Address>> addressForSomeInterface() {
@@ -75,13 +75,13 @@ public class QueryDBQueries {
 
     private static SelectSeekStepN<Record3<String, Integer, JSONB>> customerSortFieldsForSomeInterface() {
         var _a_customer = CUSTOMER.as("customer_2168032777");
-        var orderFields = _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray());
+        var _iv_orderFields = _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray());
         return DSL.select(
                         DSL.inline("Customer").as("$type"),
-                        DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
+                        DSL.rowNumber().over(DSL.orderBy(_iv_orderFields)).as("$innerRowNum"),
                         DSL.jsonbArray(DSL.inline("Customer"), _a_customer.CUSTOMER_ID).as("$pkFields"))
                 .from(_a_customer)
-                .orderBy(orderFields);
+                .orderBy(_iv_orderFields);
     }
 
     private static SelectJoinStep<Record2<JSONB, Customer>> customerForSomeInterface() {

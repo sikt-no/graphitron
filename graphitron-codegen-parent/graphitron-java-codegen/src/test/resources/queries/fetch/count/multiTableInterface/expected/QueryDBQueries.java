@@ -9,7 +9,7 @@ import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static Integer countPaymentsForQuery(DSLContext ctx) {
+    public static Integer countPaymentsForQuery(DSLContext _iv_ctx) {
         var _a_paymentp2007_01 = PAYMENT_P2007_01.as("paymentp200701_3585501569");
         var _a_paymentp2007_02 = PAYMENT_P2007_02.as("paymentp200702_1287600187");
         var countPaymentTypeOne = DSL.select(DSL.count().as("$count")).from(_a_paymentp2007_01);
@@ -19,7 +19,7 @@ public class QueryDBQueries {
                 .unionAll(countPaymentTypeOne)
                 .asTable();
 
-        return ctx.select(DSL.sum(unionCountQuery.field("$count", Integer.class)))
+        return _iv_ctx.select(DSL.sum(unionCountQuery.field("$count", Integer.class)))
                 .from(unionCountQuery)
                 .fetchOne(0, Integer.class);
     }

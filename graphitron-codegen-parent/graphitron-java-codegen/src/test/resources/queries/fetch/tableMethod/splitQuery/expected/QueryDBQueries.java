@@ -9,13 +9,13 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static Customer customerForQuery(DSLContext ctx, SelectionSet select) {
+    public static Customer customerForQuery(DSLContext _iv_ctx, SelectionSet _iv_select) {
         var customerTableMethod = new CustomerTableMethod();
         var _a_customer = CUSTOMER.as("customer_2168032777");
         _a_customer = customerTableMethod.customerTable(_a_customer);
-        return ctx
+        return _iv_ctx
                 .select(DSL.row(DSL.row(_a_customer.CUSTOMER_ID)).mapping(Functions.nullOnAllNull(Customer::new)))
                 .from(_a_customer)
-                .fetchOne(it -> it.into(Customer.class));
+                .fetchOne(_iv_it -> _iv_it.into(Customer.class));
     }
 }

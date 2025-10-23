@@ -87,8 +87,8 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "twoInterfaces",
                 "customerForNode",
-                ",Set<String> ids,",
-                ".where(nodeIdStrategy.hasIds(\"Customer\", ids, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))"
+                ",Set<String> id,",
+                ".where(_iv_nodeIdStrategy.hasIds(\"Customer\", id, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))"
         );
     }
 
@@ -99,7 +99,7 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
         assertGeneratedContentContains("splitQuery",
                 "nodeIdStrategy.createId(\"Customer\", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))," +
                         "DSL.field(",
-                ".where(nodeIdStrategy.hasIds(\"Customer\", customerIds, _a_customer.fields"
+                ".where(_iv_nodeIdStrategy.hasIds(\"Customer\", customerIds, _a_customer.fields"
         );
     }
 
@@ -120,7 +120,7 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
     void connection() {
         assertGeneratedContentContains(
                 "connection", Set.of(CUSTOMER_CONNECTION),
-                "countQueryForQuery(DSLContext ctx, NodeIdStrategy nodeIdStrategy)"
+                "countQueryForQuery(DSLContext _iv_ctx, NodeIdStrategy _iv_nodeIdStrategy)"
         );
     }
 
@@ -129,8 +129,8 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
     void multitable() {
         assertGeneratedContentContains(
                 "multitable", Set.of(CUSTOMER_TABLE),
-                "customertableForQuery(nodeIdStrategy)",
-                "customertableForQuery(NodeIdStrategy nodeIdStrategy)",
+                "customertableForQuery(_iv_nodeIdStrategy)",
+                "customertableForQuery(NodeIdStrategy _iv_nodeIdStrategy)",
                 "customertableSortFieldsForQuery()"
         );
     }

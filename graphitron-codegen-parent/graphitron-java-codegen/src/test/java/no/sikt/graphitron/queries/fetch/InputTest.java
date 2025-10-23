@@ -140,7 +140,7 @@ public class InputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "nestedListedInputTwoFields",
                 "customer.FIRST_NAME, _a_customer.LAST_NAME",
-                "DSL.val(in.getIn().get(internal_it_).getFirst()), DSL.val(in.getIn().get(internal_it_).getLast())"
+                "DSL.val(in.getIn().get(_iv_it).getFirst()), DSL.val(in.getIn().get(_iv_it).getLast())"
         );
     }
 
@@ -170,7 +170,7 @@ public class InputTest extends GeneratorTest {
     void onSplitQueryField() {
         assertGeneratedContentContains("onSplitQueryField",
                 ".from(_a_address_223244161_customer).where(_a_address_223244161_customer.EMAIL.eq(email))",
-                ".from(_a_address).where(DSL.row(_a_address.ADDRESS_ID).in(addressResolverKeys)).fetch" // Make sure conditon is not applied on outer query
+                ".from(_a_address).where(DSL.row(_a_address.ADDRESS_ID).in(_rk_address)).fetch" // Make sure conditon is not applied on outer query
         );
     }
 }

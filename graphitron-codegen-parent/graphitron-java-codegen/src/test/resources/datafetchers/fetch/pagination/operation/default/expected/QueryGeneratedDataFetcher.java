@@ -13,14 +13,14 @@ import no.sikt.graphql.relay.ConnectionImpl;
 
 public class QueryGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<ConnectionImpl<DummyType>>> query() {
-        return env -> {
-            Integer first = env.getArgument("first");
-            String after = env.getArgument("after");
-            int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-            return new DataFetcherHelper(env).loadPaginated(
-                    pageSize,
-                    (ctx, selectionSet) -> QueryDBQueries.queryForQuery(ctx, pageSize,after, selectionSet),
-                    (ctx, resolverKeys) -> QueryDBQueries.countQueryForQuery(ctx)
+        return _iv_env -> {
+            Integer first = _iv_env.getArgument("first");
+            String after = _iv_env.getArgument("after");
+            int _iv_pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
+            return new DataFetcherHelper(_iv_env).loadPaginated(
+                    _iv_pageSize,
+                    (_iv_ctx, _iv_selectionSet) -> QueryDBQueries.queryForQuery(_iv_ctx, _iv_pageSize, after, _iv_selectionSet),
+                    (_iv_ctx, _iv_keys) -> QueryDBQueries.countQueryForQuery(_iv_ctx)
             );
         };
     }

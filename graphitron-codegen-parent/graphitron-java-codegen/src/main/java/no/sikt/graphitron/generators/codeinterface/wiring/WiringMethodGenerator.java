@@ -8,8 +8,8 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_HANDLER_NAME;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_HANDLER;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_STRATEGY;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RUNTIME_WIRING;
 
 /**
@@ -28,7 +28,7 @@ public class WiringMethodGenerator extends WiringBuilderMethodGenerator {
                 .builder()
                 .add("$N", WiringBuilderMethodGenerator.METHOD_NAME)
                 .add(includeNode ? CodeBlock.of("($N)",
-                        GeneratorConfig.shouldMakeNodeStrategy() ? NODE_ID_STRATEGY_NAME : NODE_ID_HANDLER_NAME)
+                        GeneratorConfig.shouldMakeNodeStrategy() ? VAR_NODE_STRATEGY : VAR_NODE_HANDLER)
                         : CodeBlock.of("()")
                 )
                 .add(".build()");

@@ -15,15 +15,15 @@ import org.jooq.impl.DSL;
 import no.sikt.graphql.NodeIdStrategy;
 
 public class CustomerDBQueries {
-    public static Map<String, Customer> customerForNode(DSLContext ctx, NodeIdStrategy nodeIdStrategy, Set<String> ids, SelectionSet select) {
+    public static Map<String, Customer> customerForNode(DSLContext _iv_ctx, NodeIdStrategy _iv_nodeIdStrategy, Set<String> id, SelectionSet _iv_select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
-        return ctx
+        return _iv_ctx
                 .select(
-                        nodeIdStrategy.createId("Customer", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())),
-                        DSL.row(nodeIdStrategy.createId("Customer", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer::new))
+                        _iv_nodeIdStrategy.createId("Customer", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())),
+                        DSL.row(_iv_nodeIdStrategy.createId("Customer", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(_a_customer)
-                .where(nodeIdStrategy.hasIds("Customer", ids, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())))
+                .where(_iv_nodeIdStrategy.hasIds("Customer", id, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())))
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

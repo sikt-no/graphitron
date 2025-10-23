@@ -52,8 +52,8 @@ public class NodeInterfaceTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "twoInterfaces",
                 "customerForNode",
-                ",Set<String> ids,",
-                ".where(_a_customer.hasIds(ids))"
+                ",Set<String> id,",
+                ".where(_a_customer.hasIds(id))"
         );
     }
 

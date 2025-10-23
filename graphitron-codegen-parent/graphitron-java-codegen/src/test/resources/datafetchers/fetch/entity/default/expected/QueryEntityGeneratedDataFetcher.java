@@ -14,10 +14,10 @@ import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 
 public class QueryEntityGeneratedDataFetcher {
     public static DataFetcher<List<_Entity>> entityFetcher() {
-        return env -> ((List<Map<String, Object>>) env.getArgument("representations")).stream().map(internal_it_ -> {
-            var ctx = new EnvironmentHandler(env).getCtx();
-            switch ((String) internal_it_.get("__typename")) {
-                case "Customer": return (_Entity) ResolverHelpers.transformDTO(CustomerDBQueries.customerAsEntity(ctx, internal_it_), Customer.class);
+        return _iv_env -> ((List<Map<String, Object>>) _iv_env.getArgument("representations")).stream().map(_iv_it -> {
+            var _iv_ctx = new EnvironmentHandler(_iv_env).getCtx();
+            switch ((String) _iv_it.get("__typename")) {
+                case "Customer": return (_Entity) ResolverHelpers.transformDTO(CustomerDBQueries.customerAsEntity(_iv_ctx, _iv_it), Customer.class);
                 default: return null;
             }
         } ).toList();

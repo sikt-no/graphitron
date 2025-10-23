@@ -16,20 +16,20 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static List<Pair<String, CustomerTable>> queryForQuery(DSLContext ctx, Integer pageSize,
-                                                                  String after, SelectionSet select) {
+    public static List<Pair<String, CustomerTable>> queryForQuery(DSLContext _iv_ctx, Integer _iv_pageSize,
+                                                                  String after, SelectionSet _iv_select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
-        var orderFields = _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray());
-        return ctx
+        var _iv_orderFields = _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray());
+        return _iv_ctx
                 .select(
-                        QueryHelper.getOrderByToken(_a_customer, orderFields),
+                        QueryHelper.getOrderByToken(_a_customer, _iv_orderFields),
                         DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
                 )
                 .from(_a_customer)
-                .orderBy(orderFields)
-                .seek(QueryHelper.getOrderByValues(ctx, orderFields, after))
-                .limit(pageSize + 1)
+                .orderBy(_iv_orderFields)
+                .seek(QueryHelper.getOrderByValues(_iv_ctx, _iv_orderFields, after))
+                .limit(_iv_pageSize + 1)
                 .fetch()
-                .map(it -> new ImmutablePair<>(it.value1(), it.value2()));
+                .map(_iv_it -> new ImmutablePair<>(_iv_it.value1(), _iv_it.value2()));
     }
 }

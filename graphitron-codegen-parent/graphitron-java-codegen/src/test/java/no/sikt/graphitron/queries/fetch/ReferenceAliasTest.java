@@ -76,7 +76,7 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "customer.address().as(",
                 "DSL.row(_a_customer_2168032777_address.getId()",
                 ".from(_a_customer)",
-                ".where(DSL.row(_a_customer.CUSTOMER_ID).in(customerResolverKeys))"
+                ".where(DSL.row(_a_customer.CUSTOMER_ID).in(_rk_customer))"
         );
     }
 
@@ -125,7 +125,7 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "alias/over22Fields",
                 "film_2185543202_filmlanguageidfkey.NAME",
-                "film_2185543202_filmlanguageidfkey.NAME.getDataType().convert(r[22])"
+                "film_2185543202_filmlanguageidfkey.NAME.getDataType().convert(_iv_r[22])"
         );
     }
 

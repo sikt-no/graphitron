@@ -9,18 +9,18 @@ import no.sikt.graphql.NodeIdHandler;
 import no.sikt.graphql.helpers.resolvers.DataFetcherHelper;
 
 public class QueryGeneratedDataFetcher {
-    public static DataFetcher<CompletableFuture<Node>> node(NodeIdHandler nodeIdHandler) {
-        return env -> {
-            String id = env.getArgument("id");
-            var _targetType = null;
-            if (_targetType == null) {
-                throw new IllegalArgumentException("Could not resolve input id with value " + id + " within type " + _targetType);
+    public static DataFetcher<CompletableFuture<Node>> node(NodeIdHandler _iv_nodeIdHandler) {
+        return _iv_env -> {
+            String id = _iv_env.getArgument("id");
+            var _iv_targetType = null;
+            if (_iv_targetType == null) {
+                throw new IllegalArgumentException("Could not resolve input id with value " + id + " within type " + _iv_targetType);
             }
-            var _loaderName = _targetType + "_node";
-            var _fetcher = new DataFetcherHelper(env);
+            var _iv_loaderName = _iv_targetType + "_node";
+            var _iv_fetcher = new DataFetcherHelper(_iv_env);
 
-            switch (_targetType) {
-                default: throw new IllegalArgumentException("Could not resolve input id with value " + id + " within type " + _targetType);
+            switch (_iv_targetType) {
+                default: throw new IllegalArgumentException("Could not resolve input id with value " + id + " within type " + _iv_targetType);
             }
         };
     }

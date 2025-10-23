@@ -43,22 +43,23 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Single input")
     void oneInput() {
-        assertGeneratedContentContains("oneInput", "String in = env.getArgument(\"in\")", ".mutation(in)");
+        assertGeneratedContentContains("oneInput", "String in = _iv_env.getArgument(\"in\")", ".mutation(in)");
     }
 
     @Test
     @DisplayName("Single context input")
     void contextInput() {
         assertGeneratedContentContains("contextInput",
-                "_graphCtx = env.getGraphQlContext()",
-                "String _c_ctxField = _graphitronContext.getContextArgument(env, \"ctxField\")",
-                "mutation(_c_ctxField)");
+                "_iv_graphCtx = _iv_env.getGraphQlContext()",
+                "String _cf_ctxField = _iv_graphitronContext.getContextArgument(_iv_env, \"ctxField\")",
+                "mutation(_cf_ctxField)"
+        );
     }
 
     @Test
     @DisplayName("Listed input")
     void listedInput() {
-        assertGeneratedContentContains("listedInput", "List<String> in = env.getArgument(\"in\")", ".mutation(in)");
+        assertGeneratedContentContains("listedInput", "List<String> in = _iv_env.getArgument(\"in\")", ".mutation(in)");
     }
 
     @Test
@@ -109,7 +110,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "nestedListedInputRecord", Set.of(CUSTOMER_INPUT_TABLE),
                 "in1RecordList = new ArrayList<",
-                "in1RecordList = transform.",
+                "in1RecordList = _iv_transform.",
                 ".mutation(in0Record, in1RecordList)"
         );
     }
@@ -123,7 +124,7 @@ public class ResolverTest extends GeneratorTest {
                 "for (int itIn0Index = 0; itIn0Index < in0.size(); itIn0Index++) {" +
                         "var itIn0 = in0.get(itIn0Index);if (itIn0 == null) continue;" +
                         "var in1 = itIn0.getIn1();" +
-                        "in1RecordList.addAll(transform.customerInputTableToJOOQRecord(in1, \"in0/in1\"",
+                        "in1RecordList.addAll(_iv_transform.customerInputTableToJOOQRecord(in1, \"in0/in1\"",
                 ".mutation(in0RecordList, in1RecordList)"
         );
     }
@@ -133,9 +134,9 @@ public class ResolverTest extends GeneratorTest {
     void doubleNestedInputRecord() {
         assertGeneratedContentContains(
                 "doubleNestedInputRecord", Set.of(CUSTOMER_INPUT_TABLE),
-                "in0Record = transform.",
-                "var in1 = in0.getIn1();if (in1 != null) {in1Record = transform.wrapper1ToJOOQRecord(in1, \"in0/in1\");" +
-                        "var in2 = in1.getIn2();in2Record = transform.customerInputTableToJOOQRecord(in2, \"in0/in1/in2\"",  // Inconsistent logic, but should work anyway.
+                "in0Record = _iv_transform.",
+                "var in1 = in0.getIn1();if (in1 != null) {in1Record = _iv_transform.wrapper1ToJOOQRecord(in1, \"in0/in1\");" +
+                        "var in2 = in1.getIn2();in2Record = _iv_transform.customerInputTableToJOOQRecord(in2, \"in0/in1/in2\"",  // Inconsistent logic, but should work anyway.
                 ".mutation(in0Record, in1Record, in2Record)"
         );
     }
@@ -162,6 +163,6 @@ public class ResolverTest extends GeneratorTest {
     @DisplayName("Validation enabled")
     void validation() {
         GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
-        assertGeneratedContentContains("recordInput", Set.of(CUSTOMER_INPUT_TABLE), "transform.validate();");
+        assertGeneratedContentContains("recordInput", Set.of(CUSTOMER_INPUT_TABLE), "_iv_transform.validate();");
     }
 }

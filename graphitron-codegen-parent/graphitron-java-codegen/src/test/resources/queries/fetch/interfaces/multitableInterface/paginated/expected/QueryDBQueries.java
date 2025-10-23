@@ -32,30 +32,30 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
 
-    public static List<Pair<String, SomeInterface>> someInterfaceForQuery(DSLContext ctx, Integer pageSize, String after, SelectionSet select) {
-        var _token = QueryHelper.getOrderByValuesForMultitableInterface(ctx,
+    public static List<Pair<String, SomeInterface>> someInterfaceForQuery(DSLContext _iv_ctx, Integer _iv_pageSize, String after, SelectionSet _iv_select) {
+        var _iv_token = QueryHelper.getOrderByValuesForMultitableInterface(_iv_ctx,
                 Map.of("Address", ADDRESS.fields(ADDRESS.getPrimaryKey().getFieldsArray()),
                         "Customer", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())),
                 after);
 
-        var unionKeysQuery = customerSortFieldsForSomeInterface(pageSize, _token).unionAll(addressSortFieldsForSomeInterface(pageSize, _token));
+        var unionKeysQuery = customerSortFieldsForSomeInterface(_iv_pageSize, _iv_token).unionAll(addressSortFieldsForSomeInterface(_iv_pageSize, _iv_token));
 
         var mappedAddress = addressForSomeInterface();
         var mappedCustomer = customerForSomeInterface();
 
-        return ctx.select(
+        return _iv_ctx.select(
                         DSL.row(
                                 unionKeysQuery.field("$type", String.class),
                                 mappedAddress.field("$data"),
                                 mappedCustomer.field("$data")
-                        ).mapping((a0, a1, a2) -> {
-                                    Record2 _result = switch (a0) {
-                                        case "Address" -> (Record2) a1;
-                                        case "Customer" -> (Record2) a2;
+                        ).mapping((_iv_e0, _iv_e1, _iv_e2) -> {
+                                    Record2 _iv_result = switch (_iv_e0) {
+                                        case "Address" -> (Record2) _iv_e1;
+                                        case "Customer" -> (Record2) _iv_e2;
                                         default ->
-                                                throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "SomeInterface", a0));
+                                                throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "SomeInterface", _iv_e0));
                                     };
-                                    return Pair.of(_result.get(0, String.class), _result.get(1, SomeInterface.class));
+                                    return Pair.of(_iv_result.get(0, String.class), _iv_result.get(1, SomeInterface.class));
                                 }
                         )
                 )
@@ -65,22 +65,22 @@ public class QueryDBQueries {
                 .leftJoin(mappedCustomer)
                 .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedCustomer.field("$pkFields", JSONB.class)))
                 .orderBy(unionKeysQuery.field("$type"), unionKeysQuery.field("$innerRowNum"))
-                .limit(pageSize + 1)
+                .limit(_iv_pageSize + 1)
                 .fetch(Record1::value1);
     }
 
-    private static SelectLimitPercentStep<Record3<String, Integer, JSONB>> addressSortFieldsForSomeInterface(Integer pageSize, AfterTokenWithTypeName _token) {
+    private static SelectLimitPercentStep<Record3<String, Integer, JSONB>> addressSortFieldsForSomeInterface(Integer _iv_pageSize, AfterTokenWithTypeName _iv_token) {
         var _a_address = ADDRESS.as("address_223244161");
-        var orderFields = _a_address.fields(_a_address.getPrimaryKey().getFieldsArray());
+        var _iv_orderFields = _a_address.fields(_a_address.getPrimaryKey().getFieldsArray());
         return DSL.select(
                         DSL.inline("Address").as("$type"),
-                        DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
+                        DSL.rowNumber().over(DSL.orderBy(_iv_orderFields)).as("$innerRowNum"),
                         DSL.jsonbArray(DSL.inline("Address"), _a_address.ADDRESS_ID).as("$pkFields"))
                 .from(_a_address)
-                .where(_token == null ? DSL.noCondition() : DSL.inline("Address").greaterOrEqual(_token.typeName()))
-                .and(_token != null && _token.matches("Address") ? DSL.row(_a_address.fields(_a_address.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.fields())) : DSL.noCondition())
-                .orderBy(orderFields)
-                .limit(pageSize + 1);
+                .where(_iv_token == null ? DSL.noCondition() : DSL.inline("Address").greaterOrEqual(_iv_token.typeName()))
+                .and(_iv_token != null && _iv_token.matches("Address") ? DSL.row(_a_address.fields(_a_address.getPrimaryKey().getFieldsArray())).gt(DSL.row(_iv_token.fields())) : DSL.noCondition())
+                .orderBy(_iv_orderFields)
+                .limit(_iv_pageSize + 1);
     }
 
     private static SelectJoinStep<Record2<JSONB, Record2<SelectField<String>, SelectSelectStep<Record1<Address>>>>> addressForSomeInterface(
@@ -99,18 +99,18 @@ public class QueryDBQueries {
                 .from(_a_address);
     }
 
-    private static SelectLimitPercentStep<Record3<String, Integer, JSONB>> customerSortFieldsForSomeInterface(Integer pageSize, AfterTokenWithTypeName _token) {
+    private static SelectLimitPercentStep<Record3<String, Integer, JSONB>> customerSortFieldsForSomeInterface(Integer _iv_pageSize, AfterTokenWithTypeName _iv_token) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
-        var orderFields = _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray());
+        var _iv_orderFields = _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray());
         return DSL.select(
                         DSL.inline("Customer").as("$type"),
-                        DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
+                        DSL.rowNumber().over(DSL.orderBy(_iv_orderFields)).as("$innerRowNum"),
                         DSL.jsonbArray(DSL.inline("Customer"), _a_customer.CUSTOMER_ID).as("$pkFields"))
                 .from(_a_customer)
-                .where(_token == null ? DSL.noCondition() : DSL.inline("Customer").greaterOrEqual(_token.typeName()))
-                .and(_token != null && _token.matches("Customer") ? DSL.row(_a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.fields())) : DSL.noCondition())
-                .orderBy(orderFields)
-                .limit(pageSize + 1);
+                .where(_iv_token == null ? DSL.noCondition() : DSL.inline("Customer").greaterOrEqual(_iv_token.typeName()))
+                .and(_iv_token != null && _iv_token.matches("Customer") ? DSL.row(_a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())).gt(DSL.row(_iv_token.fields())) : DSL.noCondition())
+                .orderBy(_iv_orderFields)
+                .limit(_iv_pageSize + 1);
     }
 
     private static SelectJoinStep<Record2<JSONB, Record2<SelectField<String>, SelectSelectStep<Record1<Customer>>>>> customerForSomeInterface() {

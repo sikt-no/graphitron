@@ -11,7 +11,6 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.apache.commons.lang3.StringUtils;
 
 import java.util.Comparator;
 import java.util.List;
@@ -22,7 +21,7 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asNodeQueryName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_SELECT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RECORD2;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
 import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAndThrow;
@@ -57,17 +56,17 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
         var selectCode = generateSelectRow(context);
 
         var argument = target.getArguments().get(0);
-        var argumentName = argument.getName() + "s";
+        var argumentName = argument.getName();
         var querySource = context.renderQuerySource(implementationTableObject);
 
         CodeBlock id;
         CodeBlock whereCondition;
         if (GeneratorConfig.shouldMakeNodeStrategy()) {
             id = CodeBlock.of("$L,\n$L", createNodeIdBlock(localObject, context.getTargetAlias()), selectCode);
-            whereCondition = hasIdsBlock(localObject, context.getTargetAlias());
+            whereCondition = hasIdOrIdsBlock(CodeBlock.of(argumentName), localObject, context.getTargetAlias(), CodeBlock.empty(), true);
         } else {
             var hasOrIn = argument.isID()
-                    ? CodeBlock.of("has$N", StringUtils.capitalize(argumentName))
+                    ? CodeBlock.of("hasIds")
                     : CodeBlock.of("$L.in", implementation.getFieldByName(argument.getName()).getUpperCaseName());
 
             id = CodeBlock.of("$L.getId(),\n$L", querySource, selectCode);
@@ -76,9 +75,9 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
 
         return getDefaultSpecBuilder(asNodeQueryName(implementation.getName()), wrapStringMap(implementation.getGraphClassName()))
                 .addParameter(getStringSetTypeName(), argumentName)
-                .addParameter(SELECTION_SET.className, VARIABLE_SELECT)
+                .addParameter(SELECTION_SET.className, VAR_SELECT)
                 .addCode(createAliasDeclarations(context.getAliasSet()))
-                .addCode("return $N\n", VariableNames.CONTEXT_NAME)
+                .addCode("return $N\n", VariableNames.VAR_CONTEXT)
                 .indent()
                 .indent()
                 .addCode(".select($L)\n", indentIfMultiline(id))

@@ -198,7 +198,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "customer_2168032777_address = _a_customer.address().as(", // Note, implicit join is present when we use a key, but not table.
                 ".from(_a_customer_2168032777_address).where(",
                 ".addressCustomer(_a_customer, _a_customer_2168032777_address)", // Note, no condition override unlike table case.
-                ".where(DSL.row(_a_customer.CUSTOMER_ID).in(customerResolverKeys"
+                ".where(DSL.row(_a_customer.CUSTOMER_ID).in(_rk_customer"
         );
     }
 
@@ -249,7 +249,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "list", Set.of(CUSTOMER_NOT_GENERATED),
                 ".from(_a_customer_2168032777_address)",
                 "DSL.multiset(DSL.select(",
-                ".fetchMap(r -> r.value1().valuesRow(), r -> r.value2().map(Record1::value1))"
+                ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), _iv_r -> _iv_r.value2().map(Record1::value1))"
         );
     }
 
@@ -303,7 +303,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "fromMultitableInterface", Set.of(CUSTOMER_TABLE),
                 "DSL.row(_a_payment.PAYMENT_ID), DSL.field(",
                 "CustomerTable::new))).from(_a_payment_1831371789_customer)",
-                ".from(_a_payment).where(DSL.row(_a_payment.PAYMENT_ID).in(paymentResolverKeys"
+                ".from(_a_payment).where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment"
         );
     }
 
@@ -322,11 +322,11 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void afterJavaService() {
         assertGeneratedContentContains(
                 "afterJavaService", Set.of(CUSTOMER_TABLE),
-                "Set<Row1<Long>> customerResolverKeys", // TODO: improve resolver keys variable name
+                "Set<Row1<Long>> _rk_customer",
                 ".select(DSL.row(_a_address.ADDRESS_ID), DSL.row(_a_address",
                 ".from(_a_address)" +
-                        ".where(DSL.row(_a_address.ADDRESS_ID).in(customerResolverKeys))" +
-                        ".fetchMap(r -> r.value1().valuesRow(), Record2::value2)"
+                        ".where(DSL.row(_a_address.ADDRESS_ID).in(_rk_customer))" +
+                        ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), Record2::value2)"
         );
     }
 
@@ -335,7 +335,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void afterJavaServiceListed() {
         assertGeneratedContentContains(
                 "afterJavaServiceListed", Set.of(CUSTOMER_TABLE),
-                "Map<Row1<Long>, Address> addressForCustomer(DSLContext ctx, Set<Row1<Long>> customerResolverKeys",
+                "Map<Row1<Long>, Address> addressForCustomer(DSLContext _iv_ctx, Set<Row1<Long>> _rk_customer",
                 ".select(DSL.row(_a_address.ADDRESS_ID), DSL.row(_a_address"
         );
     }

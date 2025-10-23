@@ -54,7 +54,7 @@ public class SortingTest extends GeneratorTest {
     void splitQuery() {
         assertGeneratedContentContains("splitQuery",
                 "orderFields = _a_address_223244161_customer",
-                "customer).orderBy(orderFields"
+                "customer).orderBy(_iv_orderFields"
         );
     }
 
@@ -86,7 +86,7 @@ public class SortingTest extends GeneratorTest {
     void nestedLists() {
         assertGeneratedContentContains("nestedLists",
                 "orderFields = _a_city.",
-                "(_a_city).orderBy(orderFields)",
+                "(_a_city).orderBy(_iv_orderFields)",
                 ".from(_a_city_760939060_address).orderBy(",
                 ".from(_a_address_609487378_customer).orderBy("
         );

@@ -52,7 +52,7 @@ public class MapperGeneratorToRecordValidationTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "torecord/mappedField",
                 "pathHere + \"first\"",
-                ".put(\"firstName\", pathHere + itCustomerRecordListIndex + \"/first\""
+                ".put(\"firstName\", _iv_pathHere + itCustomerRecordListIndex + \"/first\""
         );
     }
 
@@ -62,9 +62,9 @@ public class MapperGeneratorToRecordValidationTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "torecord/twoFields",
                 "pathHere + \"id\"",
-                ".put(\"id\", pathHere + itCustomerRecordListIndex + \"/id\"",
+                ".put(\"id\", _iv_pathHere + itCustomerRecordListIndex + \"/id\"",
                 "pathHere + \"first\"",
-                ".put(\"firstName\", pathHere + itCustomerRecordListIndex + \"/first\""
+                ".put(\"firstName\", _iv_pathHere + itCustomerRecordListIndex + \"/first\""
         );
     }
 
@@ -73,7 +73,7 @@ public class MapperGeneratorToRecordValidationTest extends GeneratorTest {
     void containingNonRecordWrapper() {
         assertGeneratedContentContains(
                 "torecord/containingNonRecordWrapper",
-                ".put(\"postalCode\", pathHere + itAddressRecordListIndex + \"/inner/postalCode\""
+                ".put(\"postalCode\", _iv_pathHere + itAddressRecordListIndex + \"/inner/postalCode\""
         );
     }
 
@@ -82,7 +82,7 @@ public class MapperGeneratorToRecordValidationTest extends GeneratorTest {
     void containingDoubleNonRecordWrapper() {
         assertGeneratedContentContains(
                 "torecord/containingDoubleNonRecordWrapper",
-                ".put(\"postalCode\", pathHere + itAddressRecordListIndex + \"/inner0/inner1/postalCode\""
+                ".put(\"postalCode\", _iv_pathHere + itAddressRecordListIndex + \"/inner0/inner1/postalCode\""
         );
     }
 
@@ -91,7 +91,7 @@ public class MapperGeneratorToRecordValidationTest extends GeneratorTest {
     void nestingWithDuplicateFieldName() {
         assertGeneratedContentContains(
                 "torecord/nestingWithDuplicateFieldName",
-                ".put(\"postalCode\", pathHere + itAddressRecordListIndex + \"/inner/inner/postalCode\""
+                ".put(\"postalCode\", _iv_pathHere + itAddressRecordListIndex + \"/inner/inner/postalCode\""
         );
     }
 
@@ -102,9 +102,9 @@ public class MapperGeneratorToRecordValidationTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "torecord/containingNonRecordWrapperWithFieldOverride",
                 "pathHere + \"inner1/code\"",
-                ".put(\"postalCode\", pathHere + itAddressRecordListIndex + \"/inner1/code\"",
+                ".put(\"postalCode\", _iv_pathHere + itAddressRecordListIndex + \"/inner1/code\"",
                 "pathHere + \"inner2/code\"",
-                ".put(\"code\", pathHere + itAddressRecordListIndex + \"/inner2/code\""
+                ".put(\"code\", _iv_pathHere + itAddressRecordListIndex + \"/inner2/code\""
         );
     }
 
@@ -113,8 +113,8 @@ public class MapperGeneratorToRecordValidationTest extends GeneratorTest {
     void unconfiguredField() {
         assertGeneratedContentContains(
                 "torecord/unconfiguredField",
-                ".put(\"id1\", pathHere + itCustomerRecordListIndex + \"/id1\")",
-                ".put(\"wrongName\", pathHere + itCustomerRecordListIndex + \"/id2\""
+                ".put(\"id1\", _iv_pathHere + itCustomerRecordListIndex + \"/id1\")",
+                ".put(\"wrongName\", _iv_pathHere + itCustomerRecordListIndex + \"/id2\""
         );
     }
 
@@ -123,7 +123,7 @@ public class MapperGeneratorToRecordValidationTest extends GeneratorTest {
     void containingRecords() {
         assertGeneratedContentContains(
                 "torecord/containingRecords",
-                "validationErrors = new HashSet<GraphQLError>();return validationErrors"
+                "validationErrors = new HashSet<GraphQLError>();return _iv_validationErrors"
         );
     }
 }

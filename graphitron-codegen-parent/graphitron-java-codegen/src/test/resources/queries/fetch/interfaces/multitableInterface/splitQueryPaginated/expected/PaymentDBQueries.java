@@ -35,8 +35,8 @@ import org.jooq.impl.DSL;
 
 public class PaymentDBQueries {
 
-    public static Map<Row1<Long>, List<Pair<String, PersonWithEmail>>>  staffAndCustomersForPayment(DSLContext ctx, Set<Row1<Long>> paymentResolverKeys, Integer pageSize, String after, SelectionSet select) {
-        var _token = QueryHelper.getOrderByValuesForMultitableInterface(ctx,
+    public static Map<Row1<Long>, List<Pair<String, PersonWithEmail>>>  staffAndCustomersForPayment(DSLContext _iv_ctx, Set<Row1<Long>> _rk_payment, Integer _iv_pageSize, String after, SelectionSet _iv_select) {
+        var _iv_token = QueryHelper.getOrderByValuesForMultitableInterface(_iv_ctx,
                 Map.of(
                         "Customer", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray()),
                         "Staff", STAFF.fields(STAFF.getPrimaryKey().getFieldsArray())),
@@ -44,12 +44,12 @@ public class PaymentDBQueries {
 
         var _a_payment = PAYMENT.as("payment_1831371789");
 
-        var unionKeysQuery = staffSortFieldsForStaffAndCustomers(_a_payment, pageSize, _token).unionAll(customerSortFieldsForStaffAndCustomers(_a_payment, pageSize, _token));
+        var unionKeysQuery = staffSortFieldsForStaffAndCustomers(_a_payment, _iv_pageSize, _iv_token).unionAll(customerSortFieldsForStaffAndCustomers(_a_payment, _iv_pageSize, _iv_token));
 
         var mappedCustomer = customerForStaffAndCustomers();
         var mappedStaff = staffForStaffAndCustomers();
 
-        return ctx.select(
+        return _iv_ctx.select(
                         DSL.row(_a_payment.PAYMENT_ID),
                         DSL.multiset(
                                 DSL.select(
@@ -57,15 +57,15 @@ public class PaymentDBQueries {
                                                         unionKeysQuery.field("$type", String.class),
                                                         mappedCustomer.field("$data"),
                                                         mappedStaff.field("$data")
-                                                ).mapping((a0, a1 , a2) -> {
-                                                    Record2 _result = switch (a0) {
-                                                        case "Customer" -> (Record2) a1;
-                                                        case "Staff" -> (Record2) a2;
+                                                ).mapping((_iv_e0, _iv_e1 , _iv_e2) -> {
+                                                    Record2 _iv_result = switch (_iv_e0) {
+                                                        case "Customer" -> (Record2) _iv_e1;
+                                                        case "Staff" -> (Record2) _iv_e2;
                                                         default ->
-                                                                throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "PersonWithEmail", a0));
+                                                                throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "PersonWithEmail", _iv_e0));
                                                     }
                                                             ;
-                                                    return Pair.of(_result.get(0, String.class), _result.get(1, PersonWithEmail.class));
+                                                    return Pair.of(_iv_result.get(0, String.class), _iv_result.get(1, PersonWithEmail.class));
                                                 }))
                                         .from(unionKeysQuery)
                                         .leftJoin(mappedCustomer)
@@ -73,29 +73,29 @@ public class PaymentDBQueries {
                                         .leftJoin(mappedStaff)
                                         .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedStaff.field("$pkFields", JSONB.class)))
                                         .orderBy(unionKeysQuery.field("$type"), unionKeysQuery.field("$innerRowNum"))
-                                        .limit(pageSize + 1)
+                                        .limit(_iv_pageSize + 1)
                         )
                 )
                 .from(_a_payment)
-                .where(DSL.row(_a_payment.PAYMENT_ID).in(paymentResolverKeys))
+                .where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment))
                 .fetchMap(
-                        r -> r.value1().valuesRow(),
-                        r -> r.value2().map(Record1::value1)
+                        _iv_r -> _iv_r.value1().valuesRow(),
+                        _iv_r -> _iv_r.value2().map(Record1::value1)
                 );
     }
 
-    private static SelectLimitPercentStep<Record3<String, Integer, JSONB>> customerSortFieldsForStaffAndCustomers(Payment _a_payment, Integer pageSize, AfterTokenWithTypeName _token) {
+    private static SelectLimitPercentStep<Record3<String, Integer, JSONB>> customerSortFieldsForStaffAndCustomers(Payment _a_payment, Integer _iv_pageSize, AfterTokenWithTypeName _iv_token) {
         var _a_payment_1831371789_customer = _a_payment.customer().as("customer_1463568749");
-        var orderFields = _a_payment_1831371789_customer.fields(_a_payment_1831371789_customer.getPrimaryKey().getFieldsArray());
+        var _iv_orderFields = _a_payment_1831371789_customer.fields(_a_payment_1831371789_customer.getPrimaryKey().getFieldsArray());
         return DSL.select(
                         DSL.inline("Customer").as("$type"),
-                        DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
+                        DSL.rowNumber().over(DSL.orderBy(_iv_orderFields)).as("$innerRowNum"),
                         DSL.jsonbArray(DSL.inline("Customer"), _a_payment_1831371789_customer.CUSTOMER_ID).as("$pkFields"))
                 .from(_a_payment_1831371789_customer)
-                .where(_token == null ? DSL.noCondition() : DSL.inline("Customer").greaterOrEqual(_token.typeName()))
-                .and(_token != null && _token.matches("Customer") ? DSL.row(_a_payment_1831371789_customer.fields(_a_payment_1831371789_customer.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.fields())) : DSL.noCondition())
-                .orderBy(orderFields)
-                .limit(pageSize + 1);
+                .where(_iv_token == null ? DSL.noCondition() : DSL.inline("Customer").greaterOrEqual(_iv_token.typeName()))
+                .and(_iv_token != null && _iv_token.matches("Customer") ? DSL.row(_a_payment_1831371789_customer.fields(_a_payment_1831371789_customer.getPrimaryKey().getFieldsArray())).gt(DSL.row(_iv_token.fields())) : DSL.noCondition())
+                .orderBy(_iv_orderFields)
+                .limit(_iv_pageSize + 1);
     }
 
     private static SelectJoinStep<Record2<JSONB, Record2<SelectField<String>, SelectSelectStep<Record1<Customer>>>>> customerForStaffAndCustomers() {
@@ -113,18 +113,18 @@ public class PaymentDBQueries {
                 .from(_a_customer);
     }
 
-    private static SelectLimitPercentStep<Record3<String, Integer, JSONB>> staffSortFieldsForStaffAndCustomers(Payment _a_payment, Integer pageSize, AfterTokenWithTypeName _token) {
+    private static SelectLimitPercentStep<Record3<String, Integer, JSONB>> staffSortFieldsForStaffAndCustomers(Payment _a_payment, Integer _iv_pageSize, AfterTokenWithTypeName _iv_token) {
         var _a_payment_1831371789_staff = _a_payment.staff().as("staff_2269035563");
-        var orderFields = _a_payment_1831371789_staff.fields(_a_payment_1831371789_staff.getPrimaryKey().getFieldsArray());
+        var _iv_orderFields = _a_payment_1831371789_staff.fields(_a_payment_1831371789_staff.getPrimaryKey().getFieldsArray());
         return DSL.select(
                         DSL.inline("Staff").as("$type"),
-                        DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
+                        DSL.rowNumber().over(DSL.orderBy(_iv_orderFields)).as("$innerRowNum"),
                         DSL.jsonbArray(DSL.inline("Staff"), _a_payment_1831371789_staff.STAFF_ID).as("$pkFields"))
                 .from(_a_payment_1831371789_staff)
-                .where(_token == null ? DSL.noCondition() : DSL.inline("Staff").greaterOrEqual(_token.typeName()))
-                .and(_token != null && _token.matches("Staff") ? DSL.row(_a_payment_1831371789_staff.fields(_a_payment_1831371789_staff.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.fields())) : DSL.noCondition())
-                .orderBy(orderFields)
-                .limit(pageSize + 1);
+                .where(_iv_token == null ? DSL.noCondition() : DSL.inline("Staff").greaterOrEqual(_iv_token.typeName()))
+                .and(_iv_token != null && _iv_token.matches("Staff") ? DSL.row(_a_payment_1831371789_staff.fields(_a_payment_1831371789_staff.getPrimaryKey().getFieldsArray())).gt(DSL.row(_iv_token.fields())) : DSL.noCondition())
+                .orderBy(_iv_orderFields)
+                .limit(_iv_pageSize + 1);
     }
 
     private static SelectJoinStep<Record2<JSONB, Record2<SelectField<String>, SelectSelectStep<Record1<Staff>>>>> staffForStaffAndCustomers() {

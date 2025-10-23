@@ -9,9 +9,9 @@ import no.sikt.graphitron.codereferences.records.MapperNestedJavaRecord;
 
 public class AddressTypeMapper {
     public static List<Address> toGraphType(List<MapperNestedJavaRecord> mapperNestedJavaRecord,
-                                            String path, RecordTransformer transform) {
-        var pathHere = path.isEmpty() ? path : path + "/";
-        var select = transform.getSelect();
+                                            String _iv_path, RecordTransformer _iv_transform) {
+        var _iv_pathHere = _iv_path.isEmpty() ? _iv_path : _iv_path + "/";
+        var _iv_select = _iv_transform.getSelect();
         var addressList = new ArrayList<Address>();
 
         if (mapperNestedJavaRecord != null) {
@@ -19,8 +19,8 @@ public class AddressTypeMapper {
                 if (itMapperNestedJavaRecord == null) continue;
                 var address = new Address();
                 var customer = itMapperNestedJavaRecord.getCustomer();
-                if (customer != null && select.contains(pathHere + "customer")) {
-                    address.setCustomer(transform.customerTableRecordToGraphType(customer, pathHere + "customer"));
+                if (customer != null && _iv_select.contains(_iv_pathHere + "customer")) {
+                    address.setCustomer(_iv_transform.customerTableRecordToGraphType(customer, _iv_pathHere + "customer"));
                 }
 
                 addressList.add(address);

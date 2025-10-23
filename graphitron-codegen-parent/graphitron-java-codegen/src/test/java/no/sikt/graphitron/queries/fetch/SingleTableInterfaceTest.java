@@ -79,7 +79,7 @@ public class SingleTableInterfaceTest extends InterfaceTest {
         assertGeneratedContentContains("implementingTypesWithSameField",
                 Set.of(CUSTOMER_TABLE),
                 // Check all selected fields to make sure the duplicate field is only selected once
-                "(_a_address.DISTRICT.as(\"_discriminator\"),_a_address.POSTAL_CODE.as(\"postalCode\")" +
+                "(_a_address.DISTRICT.as(\"_iv_discriminator\"),_a_address.POSTAL_CODE.as(\"postalCode\")" +
                         ",_a_address.PHONE.as(\"phoneNumber\"))"
         );
     }
@@ -101,9 +101,9 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     @DisplayName("Overridden field")
     void overriddenField() {
         assertGeneratedContentContains("overriddenField",
-                "_discriminator\"), _a_address.POSTAL_CODE.as(\"postalCode\"), _a_address.ADDRESS_.as(\"ONE_postalCode\"))",
-                "_data.setPostalCode(internal_it_.get(\"ONE_postalCode\", _a_address.ADDRESS_.getConverter()));",
-                "{return internal_it_.into(AddressInDistrictTwo.class);}"
+                "discriminator\"), _a_address.POSTAL_CODE.as(\"postalCode\"), _a_address.ADDRESS_.as(\"ONE_postalCode\"))",
+                "data.setPostalCode(_iv_it.get(\"ONE_postalCode\", _a_address.ADDRESS_.getConverter()));",
+                "{return _iv_it.into(AddressInDistrictTwo.class);}"
 
         );
     }
@@ -112,7 +112,7 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     @DisplayName("Default field should not be selected when overridden by all types")
     void interfaceFieldOverriddenByAll() {
         assertGeneratedContentContains("interfaceFieldOverriddenByAll",
-                "_discriminator\"), _a_address.ADDRESS_.as(\"ONE_postalCode\"), _a_address.ADDRESS2.as(\"TWO_postalCode\"))"
+                "discriminator\"), _a_address.ADDRESS_.as(\"ONE_postalCode\"), _a_address.ADDRESS2.as(\"TWO_postalCode\"))"
 
         );
     }
@@ -122,8 +122,8 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     void overriddenNonInterfaceField() {
         assertGeneratedContentContains("overriddenNonInterfaceField",
                 "address.ADDRESS_.as(\"ONE_extraField\"), _a_address.POSTAL_CODE.as(\"TWO_extraField\")",
-                ".into(AddressInDistrictOne.class); _data.setExtraField(internal_it_.get(\"ONE_extraField\", _a_address.ADDRESS_.getConverter",
-                ".into(AddressInDistrictTwo.class); _data.setExtraField(internal_it_.get(\"TWO_extraField\", _a_address.POSTAL_CODE.getConverter"
+                ".into(AddressInDistrictOne.class); _iv_data.setExtraField(_iv_it.get(\"ONE_extraField\", _a_address.ADDRESS_.getConverter",
+                ".into(AddressInDistrictTwo.class); _iv_data.setExtraField(_iv_it.get(\"TWO_extraField\", _a_address.POSTAL_CODE.getConverter"
 
         );
     }
@@ -135,12 +135,12 @@ public class SingleTableInterfaceTest extends InterfaceTest {
                 // Make sure only correct fields are selected
                 """
                         select(
-                            DSL.row(_a_address.ADDRESS_ID).as(\"address_pkey\"),
-                            _a_address.DISTRICT.as(\"_discriminator\"),
-                            _a_address.POSTAL_CODE.as(\"postalCode\")
+                            DSL.row(_a_address.ADDRESS_ID).as("address_pkey"),
+                            _a_address.DISTRICT.as("_iv_discriminator"),
+                            _a_address.POSTAL_CODE.as("postalCode")
                             )
                         """,
-                " _data.setCustomerKey(internal_it_.get(\"address_pkey\", Record1.class).valuesRow())"
+                "data.setCustomerKey(_iv_it.get(\"address_pkey\", Record1.class).valuesRow())"
         );
     }
 
@@ -149,8 +149,8 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     void splitQueryReferenceInType() {
         assertGeneratedContentContains("splitQueryReferenceInType",
                 "DSL.row(_a_address.ADDRESS_ID).as(\"address_pkey\")",
-                "AddressInDistrictOne.class); _data.setCustomerKey(internal_it_.get(\"address_pkey\"",
-                "return internal_it_.into(AddressInDistrictTwo.class);"
+                "AddressInDistrictOne.class); _iv_data.setCustomerKey(_iv_it.get(\"address_pkey\"",
+                "return _iv_it.into(AddressInDistrictTwo.class);"
         );
     }
 }

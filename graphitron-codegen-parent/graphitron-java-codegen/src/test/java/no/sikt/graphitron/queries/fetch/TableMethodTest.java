@@ -81,8 +81,8 @@ public class TableMethodTest extends GeneratorTest {
     @DisplayName("With ContextArgument")
     void withContextArgument() {
         assertGeneratedContentContains("withContextArgument",
-                "customer = customerTableMethod.customerTable(_a_customer, _c_ctxField)",
-                "Customer customerForQuery(DSLContext ctx, String _c_ctxField"
+                "customer = customerTableMethod.customerTable(_a_customer, _cf_ctxField)",
+                "Customer customerForQuery(DSLContext _iv_ctx, String _cf_ctxField"
         );
 
     }

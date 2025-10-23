@@ -37,12 +37,12 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
 
         var input = processedSchema.getInputType(target);
         return getDefaultSpecBuilder(methodName, asListedName(input.getRecordReferenceName()), wrapList(input.getRecordClassName()), wrapSet(GRAPHQL_ERROR.className))
-                .declare(VARIABLE_ARGS, asMethodCall(TRANSFORMER_NAME, METHOD_ARGS_NAME))
-                .declare(VARIABLE_ENV, asMethodCall(TRANSFORMER_NAME, METHOD_ENV_NAME))
-                .declareNew(VARIABLE_VALIDATION_ERRORS, ParameterizedTypeName.get(HASH_SET.className, GRAPHQL_ERROR.className))
+                .declare(VAR_ARGS, asMethodCall(VAR_TRANSFORMER, METHOD_ARGS_NAME))
+                .declare(VAR_ENV, asMethodCall(VAR_TRANSFORMER, METHOD_ENV_NAME))
+                .declareNew(VAR_VALIDATION_ERRORS, ParameterizedTypeName.get(HASH_SET.className, GRAPHQL_ERROR.className))
                 .addCode("\n")
                 .addCode("$L\n", iterateRecords(MapperContext.createValidationContext(target, processedSchema)))
-                .addCode(returnWrap(VARIABLE_VALIDATION_ERRORS))
+                .addCode(returnWrap(VAR_VALIDATION_ERRORS))
                 .build();
     }
 
@@ -70,7 +70,7 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
             } else {
                 fieldCode
                         .beginControlFlow("if ($L)", selectionSetLookup(innerContext.getIndexPath().replaceAll("(.*?)\"/", ""), false, true))
-                        .addStatement("$N.put($S, $N + $L\")", VARIABLE_PATHS_FOR_PROPERTIES, uncapitalize(innerField.getFieldRecordMappingName()), PATH_HERE_NAME, innerContext.getIndexPath())
+                        .addStatement("$N.put($S, $N + $L\")", VAR_PATHS_FOR_PROPERTIES, uncapitalize(innerField.getFieldRecordMappingName()), VAR_PATH_HERE, innerContext.getIndexPath())
                         .endControlFlow();
             }
         }
