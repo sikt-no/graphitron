@@ -10,5 +10,5 @@ public record TransformConfig(
         Map<String, String> descriptionSuffixForFeatures,
         boolean addFeatureFlags,
         boolean removeGeneratorDirectives,
-        boolean expandConnections
-) {}
+        boolean expandConnections,
+        boolean addKeyDirectiveToNodes) {}
