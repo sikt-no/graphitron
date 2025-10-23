@@ -24,8 +24,8 @@ import java.util.stream.Stream;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_HANDLER_NAME;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_HANDLER;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_STRATEGY;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 /**
@@ -76,9 +76,9 @@ public class WiringBuilderMethodGenerator extends SimpleMethodGenerator {
                 .returns(returnType);
         if (includeNode) {
             if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                spec.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
+                spec.addParameter(NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY);
             } else {
-                spec.addParameter(NODE_ID_HANDLER.className, NODE_ID_HANDLER_NAME);
+                spec.addParameter(NODE_ID_HANDLER.className, VAR_NODE_HANDLER);
             }
         }
         return spec;

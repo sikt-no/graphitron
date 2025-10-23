@@ -45,8 +45,8 @@ public class ResolverTest extends GeneratorTest {
     void withNonRecordInput() {
         assertGeneratedContentContains(
                 "withNonRecordInput",
-                "String email = env.getArgument(\"email\")",
-                ".mutationForMutation(transform.getCtx(), inRecord, email)"
+                "String email = _iv_env.getArgument(\"email\")",
+                ".mutationForMutation(_iv_transform.getCtx(), inRecord, email)"
         );
     }
 
@@ -56,7 +56,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "listedInput",
                 ".getCtx(), inRecordList",
-                "ctx, inRecordList, selectionSet)"
+                "ctx, inRecordList, _iv_selectionSet)"
         );
     }
 
@@ -67,7 +67,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "multipleInputs",
                 ".getCtx(), in0Record, in1Record",
-                "ctx, in0Record, in1Record, selectionSet"
+                "ctx, in0Record, in1Record, _iv_selectionSet"
         );
     }
 
@@ -78,7 +78,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "multipleListedInputs",
                 ".getCtx(), in0RecordList, in1RecordList",
-                "ctx, in0RecordList, in1RecordList, selectionSet"
+                "ctx, in0RecordList, in1RecordList, _iv_selectionSet"
         );
     }
 
@@ -89,7 +89,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "multipleMixedInputs",
                 ".getCtx(), in0RecordList, in1Record",
-                "ctx, in0RecordList, in1Record, selectionSet"
+                "ctx, in0RecordList, in1Record, _iv_selectionSet"
         );
     }
 
@@ -97,7 +97,7 @@ public class ResolverTest extends GeneratorTest {
     @DisplayName("Validation enabled")
     void validation() {
         GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
-        assertGeneratedContentContains("default", "transform.validate();");
+        assertGeneratedContentContains("default", "_iv_transform.validate();");
     }
 
     @Test // Note that the query still returns IDs, but we can compare which were NOT found in the database to get the ones deleted.
@@ -105,8 +105,8 @@ public class ResolverTest extends GeneratorTest {
     void delete() {
         assertGeneratedContentContains(
                 "delete",
-                "DataFetcherHelper(env).loadDelete(",
-                "(_result) -> _result == null ? in.getId() : null"
+                "DataFetcherHelper(_iv_env).loadDelete(",
+                "(_iv_result) -> _iv_result == null ? in.getId() : null"
         );
     }
 
@@ -115,7 +115,7 @@ public class ResolverTest extends GeneratorTest {
     void deleteListed() {
         assertGeneratedContentContains(
                 "deleteListed",
-                "in.stream().map(internal_it_ -> internal_it_.getId()).filter(internal_it_ -> !_result.contains(internal_it_)).toList()"
+                "in.stream().map(_iv_it -> _iv_it.getId()).filter(_iv_it -> !_iv_result.contains(_iv_it)).toList()"
         );
     }
 
@@ -124,7 +124,7 @@ public class ResolverTest extends GeneratorTest {
     void deleteWrapped() {
         assertGeneratedContentContains(
                 "deleteWrapped", Set.of(CUSTOMER_TABLE),
-                "new CustomerTable(_result.getId() == null ? in.getId() : null)"
+                "new CustomerTable(_iv_result.getId() == null ? in.getId() : null)"
         );
     }
 
@@ -133,7 +133,7 @@ public class ResolverTest extends GeneratorTest {
     void deleteWrappedListed() {
         assertGeneratedContentContains(
                 "deleteWrappedListed",
-                "new CustomerOutput(in.stream().map(internal_it_ -> internal_it_.getId()).filter(internal_it_ -> !_result.getId().contains(internal_it_)).toList()"
+                "new CustomerOutput(in.stream().map(_iv_it -> _iv_it.getId()).filter(_iv_it -> !_iv_result.getId().contains(_iv_it)).toList()"
         );
     }
 }

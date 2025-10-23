@@ -14,10 +14,10 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static CustomerTable customerForQuery(DSLContext ctx, List<CustomerRecord> inRecordList,
-                                                 SelectionSet select) {
+    public static CustomerTable customerForQuery(DSLContext _iv_ctx, List<CustomerRecord> inRecordList,
+                                                 SelectionSet _iv_select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
-        return ctx
+        return _iv_ctx
                 .select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
                 .from(_a_customer)
                 .where(
@@ -27,26 +27,26 @@ public class QueryDBQueries {
                                         DSL.trueCondition(),
                                         DSL.trueCondition()
                                 ).in(
-                                        IntStream.range(0, inRecordList.size()).mapToObj(internal_it_ ->
+                                        IntStream.range(0, inRecordList.size()).mapToObj(_iv_it ->
                                                 DSL.row(
-                                                        _a_customer.hasId(inRecordList.get(internal_it_).getId()),
-                                                        no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_a_customer, inRecordList.get(internal_it_).getId()),
-                                                        no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_a_customer, inRecordList.get(internal_it_).getFirstName())
+                                                        _a_customer.hasId(inRecordList.get(_iv_it).getId()),
+                                                        no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_a_customer, inRecordList.get(_iv_it).getId()),
+                                                        no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_a_customer, inRecordList.get(_iv_it).getFirstName())
                                                 )
                                         ).toList()
                                 ) : DSL.noCondition()
                 )
                 .and(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJOOQRecordList(_a_customer, inRecordList))
-                .fetchOne(it -> it.into(CustomerTable.class));
+                .fetchOne(_iv_it -> _iv_it.into(CustomerTable.class));
     }
 
-    public static CustomerTable customerOverrideForQuery(DSLContext ctx,
-                                                         List<CustomerRecord> inRecordList, SelectionSet select) {
+    public static CustomerTable customerOverrideForQuery(DSLContext _iv_ctx,
+                                                         List<CustomerRecord> inRecordList, SelectionSet _iv_select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
-        return ctx
+        return _iv_ctx
                 .select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
                 .from(_a_customer)
                 .where(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJOOQRecordList(_a_customer, inRecordList))
-                .fetchOne(it -> it.into(CustomerTable.class));
+                .fetchOne(_iv_it -> _iv_it.into(CustomerTable.class));
     }
 }

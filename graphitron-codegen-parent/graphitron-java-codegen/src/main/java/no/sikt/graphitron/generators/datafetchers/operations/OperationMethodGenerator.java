@@ -52,7 +52,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         var mutationMethodCall = localObject.getName().equals(SCHEMA_MUTATION.getName()) ? getMethodCall(target, parser, true) : CodeBlock.empty();
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
         return getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(getReturnTypeName(target))))
-                .beginControlFlow("return $N ->", VARIABLE_ENV)
+                .beginControlFlow("return $N ->", VAR_ENV)
                 .addCode(extractParams(target))
                 .addCode(declareContextArgs(target))
                 .addCode(transformInputs(target, parser))
@@ -103,8 +103,8 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 "$T.$L($L$L, $L)",
                 getQueryClassName(objectToCall),
                 methodName,
-                asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME),
-                CodeBlock.ofIf(shouldMakeNodeStrategy(), ", $L", NODE_ID_STRATEGY_NAME),
+                asMethodCall(VAR_TRANSFORMER, METHOD_CONTEXT_NAME),
+                CodeBlock.ofIf(shouldMakeNodeStrategy(), ", $L", VAR_NODE_STRATEGY),
                 parser.getInputParamString()
         );
     }
@@ -148,11 +148,11 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .stream()
                 .filter(it -> target.getOrderField().map(orderByField -> !orderByField.getName().equals(it)).orElse(true))
                 .collect(Collectors.joining(", "));
-        var inputsWithKeys = localObject.isOperationRoot() ? filteredInputs : (filteredInputs.isEmpty() ? RESOLVER_KEYS_NAME : RESOLVER_KEYS_NAME + ", " + filteredInputs);
+        var inputsWithKeys = localObject.isOperationRoot() ? filteredInputs : (filteredInputs.isEmpty() ? VAR_RESOLVER_KEYS : VAR_RESOLVER_KEYS + ", " + filteredInputs);
         var contextParams = String.join(", ", processedSchema.getAllContextFields(target).keySet().stream().map(VariablePrefix::contextFieldPrefix).toList());
         var allParams = inputsWithKeys.isEmpty() ? contextParams : (contextParams.isEmpty() ? inputsWithKeys : inputsWithKeys + ", " + contextParams);
         var countFunction = countFunction(objectToCall, method, allParams, target.hasServiceReference());
-        return CodeBlock.of(" $N,\n$L,\n$L$L", PAGE_SIZE_NAME, queryFunction, countFunction, transformWrap);
+        return CodeBlock.of(" $N,\n$L,\n$L$L", VAR_PAGE_SIZE, queryFunction, countFunction, transformWrap);
     }
 
     /**
@@ -164,7 +164,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 TRANSFORMER_LAMBDA_NAME,
                 RESPONSE_NAME,
                 recordTransformPart(TRANSFORMER_LAMBDA_NAME, RESPONSE_NAME, typeName, isJava, false),
-                CodeBlock.ofIf(shouldMakeNodeStrategy(), "$N, ", NODE_ID_STRATEGY_NAME),
+                CodeBlock.ofIf(shouldMakeNodeStrategy(), "$N, ", VAR_NODE_STRATEGY),
                 ""
         );
     }
@@ -203,7 +203,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
         var extraction = CodeBlock
                 .builder()
-                .add(VARIABLE_RESULT)
+                .add(VAR_RESULT)
                 .addIf(isRecord, outputIDField.getMappingFromSchemaName().asGetCall());
 
         var filter = CodeBlock.builder();
@@ -211,7 +211,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
             filter.add(
                     "$1L.stream().map($2L -> $2N$3L).filter($2L -> !$4L.contains($2N))$5L",
                     idContainerField == null ? idField.getName() : idContainerField.getName(),
-                    VARIABLE_INTERNAL_ITERATION,
+                    VAR_ITERATOR,
                     idField.getMappingFromSchemaName().asGetCall(),
                     extraction.build(),
                     collectToList()
@@ -225,7 +225,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                             : CodeBlock.of("$N$L", idContainerField.getName(), idField.getMappingFromSchemaName().asGetCall()));
         }
 
-        var reWrapping = CodeBlock.builder().add("($L) -> ", VARIABLE_RESULT);
+        var reWrapping = CodeBlock.builder().add("($L) -> ", VAR_RESULT);
         if (isRecord) {
             return reWrapping.add("new $T($L)", recordType.getGraphClassName(), filter.build()).build();
         }
@@ -296,7 +296,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .add("\n")
                 .add(recordCode.build())
                 .addIf(recordValidationEnabled(), "\n")
-                .addStatementIf(recordValidationEnabled(), asMethodCall(TRANSFORMER_NAME, METHOD_VALIDATE_NAME))
+                .addStatementIf(recordValidationEnabled(), asMethodCall(VAR_TRANSFORMER, METHOD_VALIDATE_NAME))
                 .build();
     }
 
@@ -387,10 +387,10 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
         var code = CodeBlock
                 .builder()
-                .declare(GRAPH_CONTEXT_NAME, asMethodCall(VARIABLE_ENV, METHOD_GRAPH_CONTEXT))
-                .declare(VARIABLE_GRAPHITRON_CONTEXT, CodeBlock.of("$N.get($S)", GRAPH_CONTEXT_NAME, GRAPHITRON_CONTEXT_NAME));
+                .declare(VAR_GRAPH_CONTEXT, asMethodCall(VAR_ENV, METHOD_GRAPH_CONTEXT))
+                .declare(VAR_GRAPHITRON_CONTEXT, CodeBlock.of("$N.get($S)", VAR_GRAPH_CONTEXT, GRAPHITRON_CONTEXT_NAME));
 
-        contextFields.forEach((name, type) -> code.declare(type, VariablePrefix.contextFieldPrefix(name), CodeBlock.of("$N.getContextArgument($L, $S)", VARIABLE_GRAPHITRON_CONTEXT, VARIABLE_ENV, name)));
+        contextFields.forEach((name, type) -> code.declare(type, VariablePrefix.contextFieldPrefix(name), CodeBlock.of("$N.getContextArgument($L, $S)", VAR_GRAPHITRON_CONTEXT, VAR_ENV, name)));
         return code.build();
     }
 

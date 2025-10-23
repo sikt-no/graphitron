@@ -38,19 +38,19 @@ public class TypeResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Union with two components")
     void unionTypeDouble() {
-        assertGeneratedContentContains("unionDouble", "_obj instanceof A", "_obj instanceof B");
+        assertGeneratedContentContains("unionDouble", "obj instanceof A", "obj instanceof B");
     }
 
     @Test
     @DisplayName("Interface with two implementations")
     void interfaceTypeDouble() {
-        assertGeneratedContentContains("interfaceDouble", "_obj instanceof A", "_obj instanceof B");
+        assertGeneratedContentContains("interfaceDouble", "obj instanceof A", "obj instanceof B");
     }
 
     @Test
     @DisplayName("Interface with no implementations")
     void interfaceNoImplementations() {
-        assertGeneratedContentContains("interfaceNoImplementations", "Object _obj) {throw new");
+        assertGeneratedContentContains("interfaceNoImplementations", "Object _iv_obj) {throw new");
     }
 
     @Test

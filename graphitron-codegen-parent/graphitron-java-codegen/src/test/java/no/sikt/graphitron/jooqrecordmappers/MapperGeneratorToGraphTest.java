@@ -67,7 +67,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "outerNonRecordWrapper",
                 "pathHere + \"customer\"",
-                        "wrapper.setCustomer(transform.customerRecordToGraphType(wrapperRecord, pathHere + \"customer\")"
+                        "wrapper.setCustomer(_iv_transform.customerRecordToGraphType(wrapperRecord, _iv_pathHere + \"customer\")"
         );
     }
 
@@ -86,9 +86,8 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "containingNonRecordWrapper", Set.of(ADDRESS_SERVICE),
                 "address_inner = new Wrapper();" +
-                        "if (select.contains(pathHere + \"inner/postalCode\")) {" +
-                        "    address_inner.setPostalCode(itAddressRecord.getPostalCode());" +
-                        "}" +
+                        "if (_iv_select.contains(_iv_pathHere + \"inner/postalCode\")) {" +
+                        "address_inner.setPostalCode(itAddressRecord.getPostalCode());}" +
                         "address.setInner(address_inner)"
         );
     }
@@ -99,13 +98,11 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "containingDoubleNonRecordWrapper", Set.of(ADDRESS_SERVICE),
                 "address_inner0 = new Wrapper();" +
-                        "if (select.contains(pathHere + \"inner0/inner1\")) {" +
-                        "    var wrapper_inner1 = new InnerWrapper();" +
-                        "    if (select.contains(pathHere + \"inner0/inner1/postalCode\")) {" +
-                        "        wrapper_inner1.setPostalCode(itAddressRecord.getPostalCode());" +
-                        "    }" +
-                        "    address_inner0.setInner1(wrapper_inner1);" +
-                        "}" +
+                        "if (_iv_select.contains(_iv_pathHere + \"inner0/inner1\")) {" +
+                        "var wrapper_inner1 = new InnerWrapper();" +
+                        "if (_iv_select.contains(_iv_pathHere + \"inner0/inner1/postalCode\")) {" +
+                        "wrapper_inner1.setPostalCode(itAddressRecord.getPostalCode());}" +
+                        "address_inner0.setInner1(wrapper_inner1);}" +
                         "address.setInner0(address_inner0)"
         );
     }
@@ -116,13 +113,11 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "nestingWithDuplicateFieldName", Set.of(ADDRESS_SERVICE),
                 "address_inner = new Wrapper();" +
-                        "if (select.contains(pathHere + \"inner/inner\")) {" +
-                        "    var wrapper_inner = new InnerWrapper();" +
-                        "    if (select.contains(pathHere + \"inner/inner/postalCode\")) {" +
-                        "        wrapper_inner.setPostalCode(itAddressRecord.getPostalCode());" +
-                        "    }" +
-                        "    address_inner.setInner(wrapper_inner);" +
-                        "}" +
+                        "if (_iv_select.contains(_iv_pathHere + \"inner/inner\")) {" +
+                        "var wrapper_inner = new InnerWrapper();" +
+                        "if (_iv_select.contains(_iv_pathHere + \"inner/inner/postalCode\")) {" +
+                        "wrapper_inner.setPostalCode(itAddressRecord.getPostalCode());}" +
+                        "address_inner.setInner(wrapper_inner);}" +
                         "address.setInner(address_inner)"
         );
     }
@@ -165,7 +160,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("SplitQuery field")
     void withSplitQueryReference() {
         assertGeneratedContentContains("withSplitQueryReference",
-                " if (select.contains(pathHere + \"address\")) {customer.setAddressKey(DSL.row(itCustomerRecord.getCustomerId()));}"
+                "if (_iv_select.contains(_iv_pathHere + \"address\")) {customer.setAddressKey(DSL.row(itCustomerRecord.getCustomerId()));}"
         );
     }
 
@@ -173,7 +168,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("SplitQuery list")
     void withSplitQueryList() {
         assertGeneratedContentContains("withSplitQueryList",
-                " if (select.contains(pathHere + \"customers\")) {customerPayload.setCustomersKey(customerPayloadRecord.stream().map(internal_it_ -> DSL.row(internal_it_.getCustomerId())).toList());}"
+                "if (_iv_select.contains(_iv_pathHere + \"customers\")) {customerPayload.setCustomersKey(customerPayloadRecord.stream().map(_iv_it -> DSL.row(_iv_it.getCustomerId())).toList());}"
         );
     }
 

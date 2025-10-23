@@ -42,10 +42,10 @@ abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethod
         return getDefaultSpecBuilder(methodName, returnType)
                 .addModifiers(Modifier.STATIC)
                 .addParameter(inputType, uncapitalize(inputName))
-                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy() && !methodName.equals(METHOD_VALIDATE_NAME), NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME)
-                .addParameter(STRING.className, PATH_NAME)
-                .addParameter(RECORD_TRANSFORMER.className, TRANSFORMER_NAME)
-                .declare(PATH_HERE_NAME, addStringIfNotEmpty(PATH_NAME, "/"));
+                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy() && !methodName.equals(METHOD_VALIDATE_NAME), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY)
+                .addParameter(STRING.className, VAR_PATH_NAME)
+                .addParameter(RECORD_TRANSFORMER.className, VAR_TRANSFORMER)
+                .declare(VAR_PATH_HERE, addStringIfNotEmpty(VAR_PATH_NAME, "/"));
     }
 
     public MethodSpec.Builder getMapperSpecBuilder(GenerationField target) {
@@ -59,8 +59,8 @@ abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethod
         var noRecordIterability = !context.hasSourceName() && target.isIterableWrapped();
         var hasIterable = context.hasSourceName() || noRecordIterability;
         return getDefaultSpecBuilder(methodName, context.getInputVariableName(), source, wrapListIf(context.getReturnType(), noRecordIterability || context.hasRecordReference()))
-                .declare(toRecord ? VARIABLE_ARGS : VARIABLE_SELECT, asMethodCall(TRANSFORMER_NAME, toRecord ? METHOD_ARGS_NAME : METHOD_SELECT_NAME))
-                .declareIf(toRecord && context.hasTable() && !context.hasJavaRecordReference(), CONTEXT_NAME, asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME))
+                .declare(toRecord ? VAR_ARGS : VAR_SELECT, asMethodCall(VAR_TRANSFORMER, toRecord ? METHOD_ARGS_NAME : METHOD_SELECT_NAME))
+                .declareIf(toRecord && context.hasTable() && !context.hasJavaRecordReference(), VAR_CONTEXT, asMethodCall(VAR_TRANSFORMER, METHOD_CONTEXT_NAME))
                 .declareNewIf(hasIterable, asListedName(context.getOutputName()), wrapArrayList(context.getReturnType()))
                 .declareNewIf(!hasIterable, context.getOutputName(), context.getReturnType())
                 .addCode("\n")

@@ -314,7 +314,7 @@ public class MapperContext {
                     code.add(select(declareRecord(targetName, targetType, false, false), CodeBlock.declareNew(targetName, targetType.getGraphClassName())));
                 }
             } else if (previousContext.isInitContext) {
-                code.declareNew(VARIABLE_PATHS_FOR_PROPERTIES, ParameterizedTypeName.get(HASH_MAP.className, STRING.className, STRING.className));
+                code.declareNew(VAR_PATHS_FOR_PROPERTIES, ParameterizedTypeName.get(HASH_MAP.className, STRING.className, STRING.className));
             }
         }
 
@@ -330,7 +330,7 @@ public class MapperContext {
             if (!isValidation && isIterable && (!mapsJavaRecord || hasRecordReference)) {
                 code.add(addToList(targetName));
             } else if (isValidation && previousContext.isInitContext) {
-                code.addStatement("$N.addAll($T.validatePropertiesAndGenerateGraphQLErrors($N, $N, $N))", VARIABLE_VALIDATION_ERRORS, RECORD_VALIDATOR.className, asIterableIf(sourceName, isIterable), VARIABLE_PATHS_FOR_PROPERTIES, VARIABLE_ENV);
+                code.addStatement("$N.addAll($T.validatePropertiesAndGenerateGraphQLErrors($N, $N, $N))", VAR_VALIDATION_ERRORS, RECORD_VALIDATOR.className, asIterableIf(sourceName, isIterable), VAR_PATHS_FOR_PROPERTIES, VAR_ENV);
             }
         }
 
@@ -356,7 +356,7 @@ public class MapperContext {
             var foreignKey = getForeignKeyForNodeIdReference(target, schema);
 
             return CodeBlock.statementOf("$N.$L($N, $L, $S, $L)",
-                    NODE_ID_STRATEGY_NAME,
+                    VAR_NODE_STRATEGY,
                     foreignKey.isPresent() ? METHOD_SET_RECORD_REFERENCE_ID : METHOD_SET_RECORD_ID,
                     previousContext.targetName,
                     valueToSet,
@@ -386,11 +386,11 @@ public class MapperContext {
     private CodeBlock getResolverKeySetMappingBlock(String varName, boolean isKeyList) {
         return getSetMappingBlock(
                 CodeBlock.builder()
-                        .addIf(isKeyList, "$N.stream().map($N -> ", varName, VARIABLE_INTERNAL_ITERATION)
+                        .addIf(isKeyList, "$N.stream().map($N -> ", varName, VAR_ITERATOR)
                         .add(wrapRow(findKeyForResolverField(target, schema).key().getFields().stream()
                                 .map(Field::getName)
                                 .map(it -> new MethodMapping(toCamelCase(it)))
-                                .map(it -> getValue(isKeyList ? VARIABLE_INTERNAL_ITERATION : varName, it))
+                                .map(it -> getValue(isKeyList ? VAR_ITERATOR : varName, it))
                                 .collect(CodeBlock.joining(", "))))
                         .addIf(isKeyList, ")$L", collectToList())
                         .build()
@@ -416,7 +416,7 @@ public class MapperContext {
         return CodeBlock.of(
                 "$L$L$S$L)",
                 recordTransformPart(sourceName, targetType.getName()),
-                CodeBlock.ofIf(shouldMakeNodeStrategy(), "$N, ", NODE_ID_STRATEGY_NAME),
+                CodeBlock.ofIf(shouldMakeNodeStrategy(), "$N, ", VAR_NODE_STRATEGY),
                 path,
                 CodeBlock.ofIf(recordValidationEnabled() && !hasJavaRecordReference, ", \"$L\"", indexPath)
         );
@@ -432,15 +432,15 @@ public class MapperContext {
                         previousContext.hasSourceName() ? getHelperVariableName() : asRecordName(previousContext.getTargetName()),
                         uncapitalize(targetType.getName())
                 ),
-                CodeBlock.ofIf(shouldMakeNodeStrategy(), "$N, ", NODE_ID_STRATEGY_NAME),
-                PATH_HERE_NAME,
+                CodeBlock.ofIf(shouldMakeNodeStrategy(), "$N, ", VAR_NODE_STRATEGY),
+                VAR_PATH_HERE,
                 path,
-                CodeBlock.ofIf(recordValidationEnabled() && !hasJavaRecordReference && toRecord, ", $N + $S", PATH_HERE_NAME, path) // This one may need more work. Does not actually include indices here, but not sure if needed.
+                CodeBlock.ofIf(recordValidationEnabled() && !hasJavaRecordReference && toRecord, ", $N + $S", VAR_PATH_HERE, path) // This one may need more work. Does not actually include indices here, but not sure if needed.
         );
     }
 
     private CodeBlock recordTransformPart(String varName, String typeName) {
-        return FormatCodeBlocks.recordTransformPart(TRANSFORMER_NAME, varName, typeName, hasJavaRecordReference, toRecord);
+        return FormatCodeBlocks.recordTransformPart(VAR_TRANSFORMER, varName, typeName, hasJavaRecordReference, toRecord);
     }
 
     private boolean isMappingPossible() {

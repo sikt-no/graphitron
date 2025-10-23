@@ -15,7 +15,7 @@ import org.jooq.Row1;
 import org.jooq.impl.DSL;
 
 public class PaymentDBQueries {
-    public static Map<Row1<Long>, Integer> countStaffAndCustomersForPayment(DSLContext ctx, Set<Row1<Long>> paymentResolverKeys) {
+    public static Map<Row1<Long>, Integer> countStaffAndCustomersForPayment(DSLContext _iv_ctx, Set<Row1<Long>> _rk_payment) {
         var _a_payment = PAYMENT.as("payment_1831371789");
         var _a_payment_1831371789_customer = _a_payment.customer().as("customer_1463568749");
         var _a_payment_1831371789_staff = _a_payment.staff().as("staff_2269035563");
@@ -23,20 +23,20 @@ public class PaymentDBQueries {
         var countCustomer = DSL.select(DSL.row(_a_payment.PAYMENT_ID))
                 .from(_a_payment)
                 .join(_a_payment_1831371789_customer)
-                .where(DSL.row(_a_payment.PAYMENT_ID).in(paymentResolverKeys));
+                .where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment));
 
         var countStaff = DSL.select(DSL.row(_a_payment.PAYMENT_ID))
                 .from(_a_payment)
                 .join(_a_payment_1831371789_staff)
-                .where(DSL.row(_a_payment.PAYMENT_ID).in(paymentResolverKeys));
+                .where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment));
 
         var unionCountQuery = countStaff
                 .unionAll(countCustomer)
                 .asTable();
 
-        return ctx.select(unionCountQuery.field(0), DSL.count())
+        return _iv_ctx.select(unionCountQuery.field(0), DSL.count())
                 .from(unionCountQuery)
                 .groupBy(unionCountQuery.field(0))
-                .fetchMap(r -> ((Record1<Long>) r.value1()).valuesRow(), Record2::value2);
+                .fetchMap(_iv_r -> ((Record1<Long>) _iv_r.value1()).valuesRow(), Record2::value2);
     }
 }

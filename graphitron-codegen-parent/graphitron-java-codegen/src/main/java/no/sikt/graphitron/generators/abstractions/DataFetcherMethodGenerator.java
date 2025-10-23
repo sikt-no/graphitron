@@ -33,7 +33,7 @@ abstract public class DataFetcherMethodGenerator extends AbstractSchemaMethodGen
         return super
                 .getDefaultSpecBuilder(methodName, returnType)
                 .addModifiers(Modifier.STATIC)
-                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
+                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY);
     }
 
     protected CodeBlock extractParams(ObjectField target) {
@@ -44,7 +44,7 @@ abstract public class DataFetcherMethodGenerator extends AbstractSchemaMethodGen
                         !localObject.isOperationRoot(),
                         localObject.getGraphClassName(),
                         localObject.getName(),
-                        () -> asMethodCall(VARIABLE_ENV, METHOD_SOURCE_NAME)
+                        () -> asMethodCall(VAR_ENV, METHOD_SOURCE_NAME)
                 )
                 .addAll(target.getArguments().stream().map(this::declareArgument).toList())
                 .addIf(target.hasForwardPagination(), declarePageSize(target.getFirstDefault()))
@@ -52,7 +52,7 @@ abstract public class DataFetcherMethodGenerator extends AbstractSchemaMethodGen
     }
 
     private CodeBlock declareArgument(ArgumentField field) {
-        var getBlock = CodeBlock.of("$N.getArgument($S)", VARIABLE_ENV, field.getName());
+        var getBlock = CodeBlock.of("$N.getArgument($S)", VAR_ENV, field.getName());
         var transformBlock = processedSchema.isRecordType(field) ? transformDTOBlock(field, getBlock) : getBlock;
         return CodeBlock.declare(iterableWrapType(field), field.getName(), transformBlock);
     }

@@ -37,7 +37,7 @@ public class OutputTest extends GeneratorTest {
                 "listed", Set.of(CUSTOMER_TABLE),
                 "List<CustomerTable> queryForQuery",
                 ".select(DSL.row(",
-                ".fetch(it -> it.into(CustomerTable.class"
+                ".fetch(_iv_it -> _iv_it.into(CustomerTable.class"
         );
     }
 
@@ -47,10 +47,10 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "splitQuery", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
                 "Map<Row1<Long>, CustomerTable> queryForWrapper",
-                "Set<Row1<Long>> wrapperResolverKeys",
+                "Set<Row1<Long>> _rk_wrapper",
                 ".select(DSL.row(_a_address.ADDRESS_ID),DSL.field(",
-                ".where(DSL.row(_a_address.ADDRESS_ID).in(wrapperResolverKeys))",
-                ".fetchMap(r -> r.value1().valuesRow(), Record2::value2"
+                ".where(DSL.row(_a_address.ADDRESS_ID).in(_rk_wrapper))",
+                ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), Record2::value2"
         );
     }
 
@@ -61,7 +61,7 @@ public class OutputTest extends GeneratorTest {
                 "splitQueryListed", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
                 "Map<Row1<Long>, List<CustomerTable>> queryForWrapper",
                 ".select(DSL.row(_a_address.ADDRESS_ID),DSL.multiset(DSL.select",
-                ".fetchMap(r -> r.value1().valuesRow(), r -> r.value2().map(Record1::value1))"
+                ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), _iv_r -> _iv_r.value2().map(Record1::value1))"
         );
     }
 
@@ -111,7 +111,7 @@ public class OutputTest extends GeneratorTest {
     void externalFieldOver22() {
         assertGeneratedContentContains("externalFieldOver22",
                 ".select(DSL.row(no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod.name(_a_customer),",
-                "no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod.name(_a_customer).getDataType().convert(r[0]),"
+                "no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod.name(_a_customer).getDataType().convert(_iv_r[0]),"
         );
     }
 
@@ -122,7 +122,7 @@ public class OutputTest extends GeneratorTest {
                 "noWrapping", Set.of(CUSTOMER_INPUT_TABLE),
                 "String queryForQuery",
                 ".select(_a_customer.FIRST_NAME)",
-                ".fetchOne(it -> it.into(String.class));"
+                ".fetchOne(_iv_it -> _iv_it.into(String.class));"
         );
     }
 
@@ -132,7 +132,7 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "noWrappingListed", Set.of(CUSTOMER_INPUT_TABLE),
                 "List<String> queryForQuery",
-                ".fetch(it -> it.into(String.class));"
+                ".fetch(_iv_it -> _iv_it.into(String.class));"
         );
     }
 
@@ -157,7 +157,7 @@ public class OutputTest extends GeneratorTest {
                         ".mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
                         ".from(_a_customer)))" +
                         ".mapping(Functions.nullOnAllNull(Wrapper::new)))" +
-                        ".fetchOne(it -> it.into(Wrapper.class))"
+                        ".fetchOne(_iv_it -> _iv_it.into(Wrapper.class))"
         );
     }
 
@@ -169,9 +169,9 @@ public class OutputTest extends GeneratorTest {
                 ".row(DSL.row(DSL.multiset(DSL.select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
                         ".from(_a_customer)" +
                         ".orderBy(_a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))))" +
-                        ".mapping(a0 -> a0.map(Record1::value1)))" +
-                        ".mapping(Functions.nullOnAllNull((internal_it_) -> new Wrapper(internal_it_))))" +
-                        ".fetchOne(it -> it.into(Wrapper.class))"
+                        ".mapping(_iv_e -> _iv_e.map(Record1::value1)))" +
+                        ".mapping(Functions.nullOnAllNull((_iv_it) -> new Wrapper(_iv_it))))" +
+                        ".fetchOne(_iv_it -> _iv_it.into(Wrapper.class))"
         );
     }
 
@@ -193,7 +193,7 @@ public class OutputTest extends GeneratorTest {
                         ".from(_a_customer)))" +
                         ".mapping(Functions.nullOnAllNull(Wrapper2::new)))" +
                         ".mapping(Functions.nullOnAllNull(Wrapper1::new)))" +
-                        ".fetchOne(it -> it.into(Wrapper1.class));"
+                        ".fetchOne(_iv_it -> _iv_it.into(Wrapper1.class));"
         );
     }
 
@@ -218,7 +218,7 @@ public class OutputTest extends GeneratorTest {
                 "CustomerTable::new))).from(_a_customer)" +
                         ".where(firstName.size() > 0 ? _a_customer.FIRST_NAME.in(firstName) : DSL.noCondition())" +
                         ".orderBy(_a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))",
-                "new Outer(internal_it_)))).fetchOne"
+                "new Outer(_iv_it)))).fetchOne"
         );
     }
 
@@ -239,7 +239,7 @@ public class OutputTest extends GeneratorTest {
     void outerNestedWithListedError() {
         assertGeneratedContentContains(
                 "outerNestedWithListedError", Set.of(CUSTOMER_TABLE, VALIDATION_ERROR),
-                ".mapping(Functions.nullOnAllNull((internal_it_) -> new Wrapper(internal_it_)"
+                ".mapping(Functions.nullOnAllNull((_iv_it) -> new Wrapper(_iv_it)"
         );
     }
 
@@ -286,29 +286,29 @@ public class OutputTest extends GeneratorTest {
                 "over22FieldsWithVariousTypes", Set.of(DUMMY_ENUM),
                 "film.LENGTH",
                 "film.RATING.convert",
-                "film.LENGTH.getDataType().convert(r[21",
-                "(DummyEnum) r[22"
+                "film.LENGTH.getDataType().convert(_iv_r[21",
+                "(DummyEnum) _iv_r[22"
         );
     }
 
     @Test
     @DisplayName("Row with more than 22 fields including an inner row")
     void over22FieldsWithInnerRow() {
-        assertGeneratedContentContains("over22FieldsWithInnerRow", "Wrapper::new", "(Wrapper) r[22");
+        assertGeneratedContentContains("over22FieldsWithInnerRow", "Wrapper::new", "(Wrapper) _iv_r[22");
     }
 
     @Test
     @DisplayName("Row with more than 22 fields including multiset")
     void over22FieldsWithMultiset() {
-        assertGeneratedContentContains("over22FieldsWithMultiset", "Wrapper::new", "(List<Wrapper>) r[22]");
+        assertGeneratedContentContains("over22FieldsWithMultiset", "Wrapper::new", "(List<Wrapper>) _iv_r[22]");
     }
 
     @Test
     @DisplayName("Row with more than 22 fields including key for splitQuery field")
     void over22FieldsWithSplitQuery() {
         assertGeneratedContentContains("over22FieldsWithSplitQuery",
-                "new Film( (Record1<Long>) r[0], _a_film.TITLE.getDataType().convert(r[1])",
-                "r[22]))"
+                "new Film( (Record1<Long>) _iv_r[0], _a_film.TITLE.getDataType().convert(_iv_r[1])",
+                "_iv_r[22]))"
         );
     }
 
@@ -318,7 +318,7 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "requiredRowWithOptionalFields",
                 ".row(DSL.row(_a_customer.EMAIL).mapping(Wrapper::new))" +
-                        ".mapping((a0) -> (a0 == null || new Wrapper().equals(a0)) ? null : new Customer(a0)"
+                        ".mapping((_iv_e0) -> (_iv_e0 == null || new Wrapper().equals(_iv_e0)) ? null : new Customer(_iv_e0)"
         );
     }
 
@@ -327,7 +327,7 @@ public class OutputTest extends GeneratorTest {
     void requiredRowWithOptionalFieldsAndNeighbourField() {
         assertGeneratedContentContains(
                 "requiredRowWithOptionalFieldsAndNeighbourField",
-                ".mapping((a0, a1) -> a0 == null && (a1 == null || new Wrapper().equals(a1)) ? null : new Customer(a0, a1"
+                ".mapping((_iv_e0, _iv_e1) -> _iv_e0 == null && (_iv_e1 == null || new Wrapper().equals(_iv_e1)) ? null : new Customer(_iv_e0, _iv_e1"
         );
     }
 
@@ -338,7 +338,7 @@ public class OutputTest extends GeneratorTest {
                 "requiredRowWithOptionalFieldsAndNeighbourRow",
                 ".mapping(Wrapper::new",
                 ".mapping(Functions.nullOnAllNull(Wrapper::new",
-                ".mapping((a0, a1) -> (a0 == null || new Wrapper().equals(a0)) && (a1 == null || new Wrapper().equals(a1)) ? null : new Customer(a0, a1"
+                ".mapping((_iv_e0, _iv_e1) -> (_iv_e0 == null || new Wrapper().equals(_iv_e0)) && (_iv_e1 == null || new Wrapper().equals(_iv_e1)) ? null : new Customer(_iv_e0, _iv_e1"
         );
     }
 
@@ -348,12 +348,12 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "requiredRowWithOptionalFieldsAndOver22Fields",
                 ".mapping(Wrapper::new",
-                ".mapping(Customer.class, r -> (r[0] == null || new Wrapper().equals(r[0]))" +
-                        "&& r[1] == null && r[2] == null && r[3] == null && r[4] == null && r[5] == null && r[6] == null" +
-                        "&& r[7] == null && r[8] == null && r[9] == null && r[10] == null && r[11] == null" +
-                        "&& r[12] == null && r[13] == null && r[14] == null && r[15] == null && r[16] == null" +
-                        "&& r[17] == null && r[18] == null && r[19] == null && r[20] == null && r[21] == null" +
-                        "&& r[22] == null && r[23] == null ? null : new Customer("
+                ".mapping(Customer.class, _iv_r -> (_iv_r[0] == null || new Wrapper().equals(_iv_r[0]))" +
+                        "&& _iv_r[1] == null && _iv_r[2] == null && _iv_r[3] == null && _iv_r[4] == null && _iv_r[5] == null && _iv_r[6] == null" +
+                        "&& _iv_r[7] == null && _iv_r[8] == null && _iv_r[9] == null && _iv_r[10] == null && _iv_r[11] == null" +
+                        "&& _iv_r[12] == null && _iv_r[13] == null && _iv_r[14] == null && _iv_r[15] == null && _iv_r[16] == null" +
+                        "&& _iv_r[17] == null && _iv_r[18] == null && _iv_r[19] == null && _iv_r[20] == null && _iv_r[21] == null" +
+                        "&& _iv_r[22] == null && _iv_r[23] == null ? null : new Customer("
         );
     }
 

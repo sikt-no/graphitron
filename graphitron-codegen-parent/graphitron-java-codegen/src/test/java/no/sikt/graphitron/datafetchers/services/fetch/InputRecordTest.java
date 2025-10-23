@@ -42,7 +42,7 @@ public class InputRecordTest extends GeneratorTest {
     void withInputJavaRecord() {
         assertGeneratedContentContains(
                 "operation/withInputJavaRecord", Set.of(DUMMY_INPUT_RECORD),
-                "inRecord = transform.dummyInputRecordToJavaRecord(in, \"in\")",
+                "inRecord = _iv_transform.dummyInputRecordToJavaRecord(in, \"in\")",
                 "resolverFetchService.query(inRecord)"
         );
     }
@@ -52,7 +52,7 @@ public class InputRecordTest extends GeneratorTest {
     void withInputJOOQRecord() {
         assertGeneratedContentContains(
                 "operation/withInputJOOQRecord", Set.of(CUSTOMER_INPUT_TABLE),
-                "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
+                "inRecord = _iv_transform.customerInputTableToJOOQRecord(in, \"in\")",
                 "resolverFetchService.query(inRecord)"
         );
     }
@@ -62,8 +62,8 @@ public class InputRecordTest extends GeneratorTest {
     void withInputJavaRecordOnSplitQuery() {
         assertGeneratedContentContains(
                 "splitquery/withInputJavaRecord", Set.of(SPLIT_QUERY_WRAPPER, DUMMY_INPUT_RECORD),
-                "inRecord = transform.dummyInputRecordToJavaRecord(in, \"in\")",
-                "resolverFetchService.query(resolverKeys, inRecord)"
+                "inRecord = _iv_transform.dummyInputRecordToJavaRecord(in, \"in\")",
+                "resolverFetchService.query(_iv_keys, inRecord)"
         );
     }
 
@@ -72,8 +72,8 @@ public class InputRecordTest extends GeneratorTest {
     void withInputJOOQRecordOnSplitQuery() {
         assertGeneratedContentContains(
                 "splitquery/withInputJOOQRecord", Set.of(SPLIT_QUERY_WRAPPER, CUSTOMER_INPUT_TABLE),
-                "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
-                "resolverFetchService.query(resolverKeys, inRecord)"
+                "inRecord = _iv_transform.customerInputTableToJOOQRecord(in, \"in\")",
+                "resolverFetchService.query(_iv_keys, inRecord)"
         );
     }
 }

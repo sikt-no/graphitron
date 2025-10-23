@@ -67,7 +67,7 @@ public class OptionalInputTest extends GeneratorTest {
     void listedNestedInput() {
         assertGeneratedContentContains(
                 "listedNestedInput", Set.of(DUMMY_INPUT),
-                "customer.hasId(in0.get(internal_it_).getIn1().getId())"
+                "customer.hasId(in0.get(_iv_it).getIn1().getId())"
                 );
     }
 
@@ -76,7 +76,7 @@ public class OptionalInputTest extends GeneratorTest {
     void nestedListedInput() {
         assertGeneratedContentContains(
                 "nestedListedInput", Set.of(DUMMY_INPUT),
-                "customer.hasId(in.getIn().get(internal_it_).getId())"
+                "customer.hasId(in.getIn().get(_iv_it).getId())"
         );
     }
 }

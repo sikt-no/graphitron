@@ -40,7 +40,7 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
                 wrapListIf(type.asTargetClassName(toRecord), currentSource == null && target.isIterableWrapped()),
                 currentSource != null || !target.hasServiceReference() ? currentSource : target.getExternalMethod().getGenericReturnType()
         )
-                .addParameterIf(toRecord && useValidation(type), STRING.className, PATH_INDEX_NAME)
+                .addParameterIf(toRecord && useValidation(type), STRING.className, VAR_INDEX_PATH)
                 .addCode(getMethodContent(target))
                 .build();
     }
@@ -73,9 +73,9 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
                 recordTransformMethod(type.getName(), type.hasJavaRecordReference(), toRecord),
                 LIST.className,
                 VARIABLE_INPUT,
-                CodeBlock.ofIf(shouldMakeNodeStrategy(), ", $N", NODE_ID_STRATEGY_NAME),
-                PATH_NAME,
-                CodeBlock.ofIf(useValidation, ", $N", PATH_INDEX_NAME),
+                CodeBlock.ofIf(shouldMakeNodeStrategy(), ", $N", VAR_NODE_STRATEGY),
+                VAR_PATH_NAME,
+                CodeBlock.ofIf(useValidation, ", $N", VAR_INDEX_PATH),
                 toRecord ? CodeBlock.of("new $T()", type.getRecordClassName()) : CodeBlock.of("null")
         );
     }
@@ -87,20 +87,20 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
                 mapperClass,
                 recordTransformMethod(hasReference, toRecord),
                 VARIABLE_INPUT,
-                CodeBlock.ofIf(shouldMakeNodeStrategy(), " $N,", NODE_ID_STRATEGY_NAME),
-                PATH_NAME
+                CodeBlock.ofIf(shouldMakeNodeStrategy(), " $N,", VAR_NODE_STRATEGY),
+                VAR_PATH_NAME
         );
     }
 
     protected static CodeBlock validateCode(ClassName mapperClass) {
-        return CodeBlock.of("$N.addAll($T.$L($N, $N, this))", VALIDATION_ERRORS_NAME, mapperClass, recordValidateMethod(), VARIABLE_RECORDS, PATH_INDEX_NAME);
+        return CodeBlock.of("$N.addAll($T.$L($N, $N, this))", VAR_VALIDATION_ERRORS, mapperClass, recordValidateMethod(), VARIABLE_RECORDS, VAR_INDEX_PATH);
     }
 
     protected MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType, TypeName source) {
         return getDefaultSpecBuilder(methodName, returnType)
                 .addParameter(source, VARIABLE_INPUT)
-                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME)
-                .addParameter(STRING.className, PATH_NAME);
+                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY)
+                .addParameter(STRING.className, VAR_PATH_NAME);
     }
 
     protected static boolean useValidation(RecordObjectSpecification<?> type) {

@@ -43,15 +43,15 @@ public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator {
                             "$T.$L($N, $N, $N)",
                             getQueryClassName(asQueryClass(entity.getName())),
                             asEntityQueryMethodName(entity.getName()),
-                            CONTEXT_NAME,
-                            NODE_ID_STRATEGY_NAME,
-                            VARIABLE_INTERNAL_ITERATION)
+                            VAR_CONTEXT,
+                            VAR_NODE_STRATEGY,
+                            VAR_ITERATOR)
                     : CodeBlock.of(
                     "$T.$L($N, $N)",
                     getQueryClassName(asQueryClass(entity.getName())),
                     asEntityQueryMethodName(entity.getName()),
-                    CONTEXT_NAME,
-                    VARIABLE_INTERNAL_ITERATION);
+                    VAR_CONTEXT,
+                    VAR_ITERATOR);
             cases
                     .add("case $S: ", entity.getName())
                     .add(returnWrap(CodeBlock.of("($T) $L",
@@ -64,14 +64,14 @@ public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator {
         return getDefaultSpecBuilder(METHOD_NAME, wrapFetcher(wrapList(processedSchema.getUnion(target.getTypeName()).getGraphClassName())))
                 .beginControlFlow(
                         "return $N -> (($T) $N.getArgument($S)).stream().map($L ->",
-                        VARIABLE_ENV,
+                        VAR_ENV,
                         wrapList(getObjectMapTypeName()),
-                        VARIABLE_ENV,
+                        VAR_ENV,
                         FEDERATION_REPRESENTATIONS_ARGUMENT.getName(),
-                        VARIABLE_INTERNAL_ITERATION
+                        VAR_ITERATOR
                 )
-                .declare(CONTEXT_NAME, "new $T($N)$L", ENVIRONMENT_HANDLER.className, VARIABLE_ENV, asMethodCall(METHOD_CONTEXT_NAME))
-                .beginControlFlow("switch (($T) $N.get($S))", STRING.className, VARIABLE_INTERNAL_ITERATION, TYPE_NAME.getName())
+                .declare(VAR_CONTEXT, "new $T($N)$L", ENVIRONMENT_HANDLER.className, VAR_ENV, asMethodCall(METHOD_CONTEXT_NAME))
+                .beginControlFlow("switch (($T) $N.get($S))", STRING.className, VAR_ITERATOR, TYPE_NAME.getName())
                 .addCode(cases.build())
                 .addCode("default: $L", returnWrap("null"))
                 .endControlFlow()

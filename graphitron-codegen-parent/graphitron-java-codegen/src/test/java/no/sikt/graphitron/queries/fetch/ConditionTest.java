@@ -328,7 +328,7 @@ public class ConditionTest extends GeneratorTest {
     @Disabled("Does not unwrap listed fields.")
     @DisplayName("Condition on a field with a listed input type parameter")
     void withListedInput() {
-        assertGeneratedContentContains("withListedInput", ".query(_a_customer, input.stream().map(it -> it.getId()).toList())");
+        assertGeneratedContentContains("withListedInput", ".query(_a_customer, input.stream().map(_iv_it -> _iv_it.getId()).toList())");
     }
 
     @Test
@@ -428,8 +428,8 @@ public class ConditionTest extends GeneratorTest {
     void onParamWithContextField() {
         assertGeneratedContentContains(
                 "onParamWithContextField",
-                "String email, String _c_ctxField, SelectionSet",
-                "ContextCondition.email(_a_customer, email, _c_ctxField)"
+                "String email, String _cf_ctxField, SelectionSet",
+                "ContextCondition.email(_a_customer, email, _cf_ctxField)"
         );
     }
 
@@ -438,8 +438,8 @@ public class ConditionTest extends GeneratorTest {
     void onFieldWithContextField() {
         assertGeneratedContentContains(
                 "onFieldWithContextField",
-                "String email, String _c_ctxField, SelectionSet",
-                "ContextCondition.query(_a_customer, email, _c_ctxField)"
+                "String email, String _cf_ctxField, SelectionSet",
+                "ContextCondition.query(_a_customer, email, _cf_ctxField)"
         );
     }
 
@@ -448,8 +448,8 @@ public class ConditionTest extends GeneratorTest {
     void onInputParamWithContextField() {
         assertGeneratedContentContains(
                 "onInputParamWithContextField",
-                "In in, String _c_ctxField, SelectionSet",
-                "ContextCondition.email(_a_customer, in != null ? in.getEmail() : null, _c_ctxField)"
+                "In in, String _cf_ctxField, SelectionSet",
+                "ContextCondition.email(_a_customer, in != null ? in.getEmail() : null, _cf_ctxField)"
         );
     }
 
@@ -458,8 +458,8 @@ public class ConditionTest extends GeneratorTest {
     void onParamWithMultipleContextFields() {
         assertGeneratedContentContains(
                 "onParamWithMultipleContextFields",
-                "String email, String _c_ctxField1, String _c_ctxField2, SelectionSet",
-                "ContextCondition.email(_a_customer, email, _c_ctxField1, _c_ctxField2)"
+                "String email, String _cf_ctxField1, String _cf_ctxField2, SelectionSet",
+                "ContextCondition.email(_a_customer, email, _cf_ctxField1, _cf_ctxField2)"
         );
     }
 
@@ -468,9 +468,9 @@ public class ConditionTest extends GeneratorTest {
     void onMultipleParamsWithContextFields() {
         assertGeneratedContentContains(
                 "onMultipleParamsWithContextFields",
-                "String email2, String _c_ctxField1, String _c_ctxField2, SelectionSet",
-                "ContextCondition.email(_a_customer, email1, _c_ctxField1)",
-                "ContextCondition.email(_a_customer, email2, _c_ctxField2)"
+                "String email2, String _cf_ctxField1, String _cf_ctxField2, SelectionSet",
+                "ContextCondition.email(_a_customer, email1, _cf_ctxField1)",
+                "ContextCondition.email(_a_customer, email2, _cf_ctxField2)"
         );
     }
 
@@ -479,9 +479,9 @@ public class ConditionTest extends GeneratorTest {
     void onMultipleParamsWithSameContextField() {
         assertGeneratedContentContains(
                 "onMultipleParamsWithSameContextField",
-                "String email2, String _c_ctxField, SelectionSet",
-                "ContextCondition.email(_a_customer, email1, _c_ctxField)",
-                "ContextCondition.email(_a_customer, email2, _c_ctxField)"
+                "String email2, String _cf_ctxField, SelectionSet",
+                "ContextCondition.email(_a_customer, email1, _cf_ctxField)",
+                "ContextCondition.email(_a_customer, email2, _cf_ctxField)"
         );
     }
 }

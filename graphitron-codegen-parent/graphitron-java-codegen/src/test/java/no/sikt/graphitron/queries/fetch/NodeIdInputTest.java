@@ -26,7 +26,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("Default case")
     void defaultCase() {
         assertGeneratedContentContains("default",
-                ".where(nodeIdStrategy.hasId(\"Customer\", customerId, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())))"
+                ".where(_iv_nodeIdStrategy.hasId(\"Customer\", customerId, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())))"
         );
     }
 
@@ -35,7 +35,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     void lookupKey() {
         assertGeneratedContentContains("lookupKey",
                 "nodeIdStrategy.createId(\"C\", _a_customer.CUSTOMER_ID), DSL.row(",
-                ".where(customerId.size() > 0 ? nodeIdStrategy.hasIds"
+                ".where(customerId.size() > 0 ? _iv_nodeIdStrategy.hasIds"
         );
     }
 
@@ -43,7 +43,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("With reference")
     void reference() {
         assertGeneratedContentContains("reference",
-                "where(nodeIdStrategy.hasId(\"Address\", addressId, _a_customer_2168032777_address_left"
+                "where(_iv_nodeIdStrategy.hasId(\"Address\", addressId, _a_customer_2168032777_address_left"
         );
     }
 
@@ -51,7 +51,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("With reference via table")
     void referenceViaTable() {
         assertGeneratedContentContains("referenceViaTable",
-                ".where(nodeIdStrategy.hasId(\"City\", cityId, _a_address_2138977089_city_left"
+                ".where(_iv_nodeIdStrategy.hasId(\"City\", cityId, _a_address_2138977089_city_left"
         );
     }
 
@@ -59,7 +59,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("With implicit reference from typeName in @nodeId")
     void implicitReference() {
         assertGeneratedContentContains("implicitReference",
-                "where(nodeIdStrategy.hasId(\"Address\", addressId, _a_customer_2168032777_address_left",
+                "where(_iv_nodeIdStrategy.hasId(\"Address\", addressId, _a_customer_2168032777_address_left",
                 ".leftJoin(_a_customer_2168032777_address_left)"
         );
     }
@@ -68,7 +68,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("With self-reference")
     void selfReference() {
         assertGeneratedContentContains("selfReference",
-                ".where(nodeIdStrategy.hasId(\"Film\", sequelId, _a_film_2185543202_film_left.fields"
+                ".where(_iv_nodeIdStrategy.hasId(\"Film\", sequelId, _a_film_2185543202_film_left.fields"
         );
     }
 
@@ -77,7 +77,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("In input type")
     void inputType() {
         assertGeneratedContentContains("inputType",
-                ".where(nodeIdStrategy.hasId(\"Customer\", filter.getCustomerId(), _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())))"
+                ".where(_iv_nodeIdStrategy.hasId(\"Customer\", filter.getCustomerId(), _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())))"
         );
     }
 
@@ -85,7 +85,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("In jOOQ record input type without nodeId directive")
     void implicitInputType() {
         assertGeneratedContentContains("implicitInputType", Set.of(CUSTOMER_NODE),
-                "nodeIdStrategy.hasId(\"CustomerNode\", filterRecordList.get(internal_it_), _a_customer.fields("
+                "nodeIdStrategy.hasId(\"CustomerNode\", filterRecordList.get(_iv_it), _a_customer.fields("
         );
     }
 
@@ -93,7 +93,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("In jOOQ record input")
     void jooqRecord() {
         assertGeneratedContentContains("jooqRecord", Set.of(CUSTOMER_NODE),
-                ".where(nodeIdStrategy.hasId(\"CustomerNode\", filterRecord, _a_customer.fields("
+                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", filterRecord, _a_customer.fields("
         );
     }
 
@@ -101,7 +101,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("Key reference in jOOQ record input")
     void jooqRecordReferenceKey() {
         assertGeneratedContentContains("jooqRecordReferenceKey", Set.of(CUSTOMER_NODE),
-                ".where(nodeIdStrategy.hasId(\"Language\", filterRecord, _a_film.ORIGINAL_LANGUAGE_ID)",
+                ".where(_iv_nodeIdStrategy.hasId(\"Language\", filterRecord, _a_film.ORIGINAL_LANGUAGE_ID)",
                 ".from(_a_film).where" // make sure there's no join
         );
     }
@@ -110,7 +110,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("Reference in jOOQ record input with custom node ID")
     void jooqRecordReferenceWithCustomId() {
         assertGeneratedContentContains("jooqRecordReferenceWithCustomId", Set.of(CUSTOMER_NODE),
-                ".where(nodeIdStrategy.hasId(\"A\", filterRecord, _a_customer.ADDRESS_ID)"
+                ".where(_iv_nodeIdStrategy.hasId(\"A\", filterRecord, _a_customer.ADDRESS_ID)"
         );
     }
 
@@ -118,7 +118,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("Reference with FK fields having different order from target node ID")
     void jooqRecordReferenceWithCustomFieldOrder() {
         assertGeneratedContentContains("jooqRecordReferenceWithCustomFieldOrder", Set.of(CUSTOMER_NODE),
-                ".where(nodeIdStrategy.hasId(\"A\", filterRecord, _a_filmactor.ACTOR_LAST_NAME, _a_filmactor.ACTOR_ID)",
+                ".where(_iv_nodeIdStrategy.hasId(\"A\", filterRecord, _a_filmactor.ACTOR_LAST_NAME, _a_filmactor.ACTOR_ID)",
                 ".from(_a_filmactor).where"
         );
     }
@@ -127,7 +127,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("Table reference in jOOQ record input")
     void jooqRecordReferenceTable() {
         assertGeneratedContentContains("jooqRecordReferenceTable", Set.of(CUSTOMER_NODE),
-                ".where(nodeIdStrategy.hasId(\"Address\", filterRecord, _a_customer.ADDRESS_ID"
+                ".where(_iv_nodeIdStrategy.hasId(\"Address\", filterRecord, _a_customer.ADDRESS_ID"
         );
     }
 
@@ -135,7 +135,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("Optional reference in jOOQ record should have no null checks")
     void jooqRecordReferenceOptional() {
         assertGeneratedContentContains("jooqRecordReferenceOptional", Set.of(CUSTOMER_NODE),
-                "where(nodeIdStrategy",
+                "where(_iv_nodeIdStrategy",
                 "customer.ADDRESS_ID)).fetch"
         );
     }
@@ -144,7 +144,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("In java record input")
     void javaRecord() {
         assertGeneratedContentContains("javaRecord", Set.of(CUSTOMER_NODE),
-                ".where(nodeIdStrategy.hasId(\"CustomerNode\", inRecord.getId(), _a_customer.fields("
+                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", inRecord.getId(), _a_customer.fields("
         );
     }
 
@@ -152,7 +152,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("Optional in java record input should not skip null checks")
     void javaRecordOptional() {
         assertGeneratedContentContains("javaRecordOptional", Set.of(CUSTOMER_NODE),
-                "where(inRecord.getId() != null ? nodeIdStrategy"
+                "where(inRecord.getId() != null ? _iv_nodeIdStrategy"
         );
     }
 
@@ -161,7 +161,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     void javaRecordReference() {
         assertGeneratedContentContains("javaRecordReference", Set.of(CUSTOMER_NODE),
                 ".leftJoin(_a_customer_2168032777_address_left)",
-                ".where(nodeIdStrategy.hasId(\"Address\", inRecord.getAddressId(), _a_customer_2168032777_address_left.fields("
+                ".where(_iv_nodeIdStrategy.hasId(\"Address\", inRecord.getAddressId(), _a_customer_2168032777_address_left.fields("
         );
     }
 
@@ -172,7 +172,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
                 "typeWithoutTable", Set.of(CUSTOMER_NODE, CUSTOMER_NODE_INPUT_TABLE),
                 "customer.getPrimaryKey().getFieldsArray())))" +
                         ".from(_a_customer)" +
-                        ".where(nodeIdStrategy.hasId(\"CustomerNode\"",
+                        ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\"",
                 "CustomerNoTable::new))).fetchOne("
         );
     }
@@ -182,7 +182,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     void listedInputJOOQRecord() {
         assertGeneratedContentContains(
                 "listedInputJOOQRecord", Set.of(CUSTOMER_NODE, CUSTOMER_NODE_INPUT_TABLE),
-                        "nodeIdStrategy.hasId(\"CustomerNode\", inRecordList.get(internal_it_), _a_customer.fields("
+                        "nodeIdStrategy.hasId(\"CustomerNode\", inRecordList.get(_iv_it), _a_customer.fields("
         );
     }
 }

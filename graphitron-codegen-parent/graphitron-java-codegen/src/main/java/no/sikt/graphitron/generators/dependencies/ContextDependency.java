@@ -4,7 +4,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import org.jetbrains.annotations.NotNull;
 
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.CONTEXT_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_CONTEXT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.INJECT;
 
@@ -13,7 +13,7 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.INJECT;
  */
 public class ContextDependency implements Dependency, Comparable<Dependency> {
     private static final ContextDependency instance = new ContextDependency();
-    private final static CodeBlock declaration = CodeBlock.declareNew(CONTEXT_NAME, DSL_CONTEXT.className);
+    private final static CodeBlock declaration = CodeBlock.declareNew(VAR_CONTEXT, DSL_CONTEXT.className);
 
     private ContextDependency() {}
 
@@ -26,7 +26,7 @@ public class ContextDependency implements Dependency, Comparable<Dependency> {
 
     @Override
     public FieldSpec getSpec() {
-        return FieldSpec.builder(DSL_CONTEXT.className, CONTEXT_NAME).addAnnotation(INJECT.className).build();
+        return FieldSpec.builder(DSL_CONTEXT.className, VAR_CONTEXT).addAnnotation(INJECT.className).build();
     }
 
     @Override

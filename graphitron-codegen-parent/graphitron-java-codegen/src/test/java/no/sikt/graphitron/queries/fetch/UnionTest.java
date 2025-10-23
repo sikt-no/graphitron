@@ -65,7 +65,7 @@ public class UnionTest extends GeneratorTest {
     @Test
     @DisplayName("Union next to an unrelated field")
     void withOtherField() {
-        assertGeneratedContentContains("withOtherField", Set.of(CUSTOMER_QUERY), "(a0, a1_0) -> new Customer(a0, a1_0)");
+        assertGeneratedContentContains("withOtherField", Set.of(CUSTOMER_QUERY), "(_iv_e0, _iv_e1_0) -> new Customer(_iv_e0, _iv_e1_0)");
     }
 
     @Test
@@ -75,7 +75,7 @@ public class UnionTest extends GeneratorTest {
                 "twoComponents", Set.of(CUSTOMER_UNION),
                 "CustomerUnion0::new",
                 "CustomerUnion1::new",
-                "(a0_0, a0_1) -> new Customer(a0_0 != null ? a0_0 : a0_1)"
+                "(_iv_e0_0, _iv_e0_1) -> new Customer(_iv_e0_0 != null ? _iv_e0_0 : _iv_e0_1)"
         );
     }
 
@@ -84,7 +84,7 @@ public class UnionTest extends GeneratorTest {
     void twoComponentsWithOtherField() {
         assertGeneratedContentContains(
                 "twoComponentsWithOtherField", Set.of(CUSTOMER_QUERY),
-                "(a0, a1_0, a1_1) -> new Customer(a0, a1_0 != null ? a1_0 : a1_1)"
+                "(_iv_e0, _iv_e1_0, _iv_e1_1) -> new Customer(_iv_e0, _iv_e1_0 != null ? _iv_e1_0 : _iv_e1_1)"
         );
     }
 
@@ -93,7 +93,7 @@ public class UnionTest extends GeneratorTest {
     void threeComponents() {
         assertGeneratedContentContains(
                 "threeComponents", Set.of(CUSTOMER_UNION),
-                "(a0_0, a0_1, a0_2) -> new Customer(a0_0 != null ? a0_0 : a0_1 != null ? a0_1 : a0_2)"
+                "(_iv_e0_0, _iv_e0_1, _iv_e0_2) -> new Customer(_iv_e0_0 != null ? _iv_e0_0 : _iv_e0_1 != null ? _iv_e0_1 : _iv_e0_2)"
         );
     }
 
@@ -109,7 +109,7 @@ public class UnionTest extends GeneratorTest {
     @Test
     @DisplayName("Union on a non-root level")
     void splitQuery() {
-        assertGeneratedContentContains("splitQuery", Set.of(SPLIT_QUERY_WRAPPER), "CustomerUnion::new", "(a0_0) -> new Customer(a0_0)");
+        assertGeneratedContentContains("splitQuery", Set.of(SPLIT_QUERY_WRAPPER), "CustomerUnion::new", "(_iv_e0_0) -> new Customer(_iv_e0_0)");
     }
 
     @Test

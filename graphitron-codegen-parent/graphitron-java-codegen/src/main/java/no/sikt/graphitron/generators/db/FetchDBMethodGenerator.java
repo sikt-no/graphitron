@@ -44,24 +44,26 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedReco
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.internalPrefix;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.resolverKeyPrefix;
 import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getSourceFieldsForForeignKey;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 import static org.apache.commons.lang3.StringUtils.capitalize;
-import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * Abstract generator for various database fetching methods.
  */
 public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
-    protected final String resolverKeyParamName = uncapitalize(getLocalObject().getName()) + capitalize(RESOLVER_KEYS_NAME);
+    protected static final String ELEMENT_NAME = internalPrefix("e");
+    protected final String resolverKeyParamName;
     protected final boolean isRoot = getLocalObject().isOperationRoot();
-    protected final boolean isQueryAfterMutation = getLocalObject().getName().equalsIgnoreCase(SCHEMA_MUTATION.getName());
     private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPE_SAFETY = 22;
 
     public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
+        resolverKeyParamName = resolverKeyPrefix(localObject.getName());
     }
 
     protected CodeBlock getInitialKey(FetchContext context) {
@@ -156,7 +158,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var isConnection = ((ObjectField) field).hasForwardPagination();
         var isMultiset = field.isIterableWrapped() || isConnection;
         var orderByFieldsBlock = field.isResolver() && tableHasPrimaryKey(context.getTargetTableName())
-                ? CodeBlock.of(ORDER_FIELDS_NAME)
+                ? CodeBlock.of(VAR_ORDER_FIELDS)
                 : createOrderFieldsBlock((ObjectField) field, context.getTargetAlias(), context.getTargetTableName());
         var shouldBeOrdered = isMultiset && !orderByFieldsBlock.isEmpty();
         var shouldHaveOrderByToken = isConnection && !orderByFieldsBlock.isEmpty();
@@ -194,8 +196,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     private CodeBlock wrapInMultisetWithMapping(CodeBlock contents, boolean hasOrderByToken) {
         return CodeBlock.of(
-                "$L.mapping(a0 -> a0.map($T::value$L))",
+                "$L.mapping($L -> $N.map($T::value$L))",
                 wrapRow(wrapInMultiset(contents)),
+                ELEMENT_NAME,
+                ELEMENT_NAME,
                 hasOrderByToken ? RECORD2.className : RECORD1.className,
                 hasOrderByToken ? "2" : "1"
         );
@@ -322,7 +326,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         if (maxTypeSafeFieldSizeIsExceeded) {
-            return listedNullCheck("r", CodeBlock.of("new $T(\n", className));
+            return listedNullCheck(VAR_RECORD_ITERATOR, CodeBlock.of("new $T(\n", className));
         }
 
         // Made this obscure case because compilation failed on the type safety for some of these. No clue as to why.
@@ -334,7 +338,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .anyMatch(FieldSpecification::isIterableWrapped);
 
         if (!context.hasPreviousContext() && !context.hasApplicableTable() && listedFieldWithoutTableIsPresent) {
-            return CodeBlock.of("$T.nullOnAllNull(($L) -> new $T($N))", FUNCTIONS.className, VARIABLE_INTERNAL_ITERATION, className, VARIABLE_INTERNAL_ITERATION);
+            return CodeBlock.of("$T.nullOnAllNull(($L) -> new $T($N))", FUNCTIONS.className, VAR_ITERATOR, className, VAR_ITERATOR);
         }
 
         return CodeBlock.of("$T.nullOnAllNull($T::new)", FUNCTIONS.className, className);
@@ -343,15 +347,15 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     private CodeBlock createMappingWithUnion(FetchContext context, List<? extends GenerationField> fieldsWithoutTable) {
         var codeBlockArguments = CodeBlock.builder();
         var codeBlockConstructor = CodeBlock.builder();
-        for(var mappingIndex = 0; mappingIndex < fieldsWithoutTable.size(); mappingIndex++) {
+        for (var mappingIndex = 0; mappingIndex < fieldsWithoutTable.size(); mappingIndex++) {
             var field = fieldsWithoutTable.get(mappingIndex);
             var typeName = field.getTypeName();
             var isLastField = (mappingIndex == fieldsWithoutTable.size()-1);
-            if(processedSchema.isUnion(typeName)) {
+            if (processedSchema.isUnion(typeName)) {
                 codeBlockArguments.add(unionFieldArguments(typeName, mappingIndex, isLastField));
                 codeBlockConstructor.add(unionFieldConstructor(typeName, mappingIndex, isLastField));
             } else {
-                var currentAlias = String.format("a%s%s", mappingIndex, (isLastField ? "" : ", "));
+                var currentAlias = CodeBlock.of("$L$L$L", ELEMENT_NAME, mappingIndex, (isLastField ? "" : ", "));
                 codeBlockArguments.add(currentAlias);
                 codeBlockConstructor.add(currentAlias);
             }
@@ -363,49 +367,38 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     private CodeBlock unionFieldArguments(String typeName, int fieldIndex, boolean isLastField) {
         var codeBlockArguments = CodeBlock.builder();
         var unionFieldTypeNames = processedSchema.getUnion(typeName).getFieldTypeNames();
-        for(var i = 0; i < unionFieldTypeNames.size(); i++) {
-            var currentAlias = String.format("a%d_%s", fieldIndex, i);
-            codeBlockArguments.add(currentAlias);
-            if(i + 1 < unionFieldTypeNames.size()) {
-                codeBlockArguments.add(", ");
-            }
+        for (var i = 0; i < unionFieldTypeNames.size(); i++) {
+            codeBlockArguments.add("$L$L_$L", ELEMENT_NAME, fieldIndex, i);
+            codeBlockArguments.addIf(i + 1 < unionFieldTypeNames.size(), ", ");
         }
-        if(!isLastField) {
-            codeBlockArguments.add(", ");
-        }
+
+        codeBlockArguments.addIf(!isLastField, ", ");
         return codeBlockArguments.build();
     }
 
     private CodeBlock unionFieldConstructor(String typeName, int fieldIndex, boolean isLastField) {
         var codeBlockConstructor = CodeBlock.builder();
         var unionFieldTypeNames = processedSchema.getUnion(typeName).getFieldTypeNames();
-        for(var i = 0; i < unionFieldTypeNames.size(); i++) {
-            var currentAlias = String.format("a%d_%s", fieldIndex, i);
-            if(i + 1 < unionFieldTypeNames.size()) {
+        for (var i = 0; i < unionFieldTypeNames.size(); i++) {
+            var currentAlias = CodeBlock.of("$L$L_$L", ELEMENT_NAME, fieldIndex, i);
+            if (i + 1 < unionFieldTypeNames.size()) {
                 codeBlockConstructor.add("$L != null ? $L : ", currentAlias, currentAlias);
             } else {
-                codeBlockConstructor.add("$L", currentAlias);
+                codeBlockConstructor.add(currentAlias);
             }
         }
-        if(!isLastField) {
-            codeBlockConstructor.add(", ");
-        }
+        codeBlockConstructor.addIf(!isLastField, ", ");
         return codeBlockConstructor.build();
     }
 
     private CodeBlock unionFieldCondition(String typeName, int fieldIndex, boolean isLastField) {
         var codeBlockConditions = CodeBlock.builder();
         var unionFieldTypeNames = processedSchema.getUnion(typeName).getFieldTypeNames();
-        for(var i = 0; i < unionFieldTypeNames.size(); i++) {
-            var currentAlias = String.format("a%d_%s", fieldIndex, i);
-            codeBlockConditions.add("$L != null", currentAlias);
-            if(i + 1 < unionFieldTypeNames.size()) {
-                codeBlockConditions.add(" && ");
-            }
+        for (var i = 0; i < unionFieldTypeNames.size(); i++) {
+            codeBlockConditions.add("$L$L_$L != null", ELEMENT_NAME, fieldIndex, i);
+            codeBlockConditions.addIf(i + 1 < unionFieldTypeNames.size(), " && ");
         }
-        if(!isLastField) {
-            codeBlockConditions.add(" && ");
-        }
+        codeBlockConditions.addIf(!isLastField, " && ");
         return codeBlockConditions.build();
     }
 
@@ -420,8 +413,6 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         codeBlockConstructor.add("(");
 
         for (int i = 0; i < fieldsWithoutTable.size() + keyCount; i++) {
-            String argumentName;
-
             var field = i < keyCount ? null : fieldsWithoutTable.get(i - keyCount);
             var isLastField = (i == fieldsWithoutTable.size() + keyCount - 1);
 
@@ -433,10 +424,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 continue;
             }
 
+            CodeBlock argumentName;
             if (maxTypeSafeFieldSizeIsExceeded) {
-                argumentName = "r[" + i + "]";
+                argumentName = CodeBlock.of("$N[$L]", VAR_RECORD_ITERATOR, i);
             } else {
-                argumentName = "a" + i;
+                argumentName = CodeBlock.of("$L$L", ELEMENT_NAME, i);
                 codeBlockArguments.add(argumentName);
                 codeBlockArguments.add(isLastField ? ")" : ", ");
             }
@@ -475,7 +467,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         int i = 0;
         for (var key : keySet) {
-            innerMappingCode.add(CodeBlock.of("($T) r[$L]", key.getRecordTypeName(), i));
+            innerMappingCode.add(CodeBlock.of("($T) $N[$L]", key.getRecordTypeName(), VAR_RECORD_ITERATOR, i));
             i++;
         }
 
@@ -483,11 +475,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var field = fieldsWithoutTable.get(i - keySet.size());
 
             if (processedSchema.isObject(field)) {
-                if (field.isIterableWrapped()) {
-                    innerMappingCode.add(CodeBlock.of("($T) r[$L]", ParameterizedTypeName.get(LIST.className, processedSchema.getObject(field).getGraphClassName()), i));
-                } else {
-                    innerMappingCode.add(CodeBlock.of("($T) r[$L]", processedSchema.getObject(field).getGraphClassName(), i));
-                }
+                var typeName = field.isIterableWrapped()
+                        ? ParameterizedTypeName.get(LIST.className, processedSchema.getObject(field).getGraphClassName())
+                        : processedSchema.getObject(field).getGraphClassName();
+                innerMappingCode.add(CodeBlock.of("($T) $N[$L]", typeName, VAR_RECORD_ITERATOR, i));
             } else if (field.isExternalField()) {
                 JOOQMapping table = processedSchema.getObject(field.getContainerTypeName()).getTable();
 
@@ -495,26 +486,36 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     throw new IllegalArgumentException("No table found for field " + field.getName());
                 }
 
-                innerMappingCode.add(CodeBlock.of("$L.$L($L).getDataType().convert(r[$L])",
-                        getImportReferenceOfValidExtensionMethod(field, table.getName()),
-                        field.getName(),
-                        context.getTargetAlias(), i));
+                innerMappingCode.add(
+                        CodeBlock.of(
+                                "$L.$L($L).getDataType().convert($N[$L])",
+                                getImportReferenceOfValidExtensionMethod(field, table.getName()),
+                                field.getName(),
+                                context.getTargetAlias(),
+                                VAR_RECORD_ITERATOR,
+                                i
+                        )
+                );
             } else if (field.isID()) {
-                innerMappingCode.add(CodeBlock.of("($T) r[$L]", STRING.className, i));
+                innerMappingCode.add(CodeBlock.of("($T) $N[$L]", STRING.className, VAR_RECORD_ITERATOR, i));
             } else if (processedSchema.isEnum(field)) {
                 var enumDefinition = processedSchema.getEnum(field);
-                innerMappingCode.add(CodeBlock.of("($T) r[$L]", enumDefinition.getGraphClassName(), i));
+                innerMappingCode.add(CodeBlock.of("($T) $N[$L]", enumDefinition.getGraphClassName(), VAR_RECORD_ITERATOR, i));
             } else {
                 innerMappingCode.add(
-                        CodeBlock.of("$L.$N.getDataType().convert(r[$L])",
+                        CodeBlock.of(
+                                "$L.$N.getDataType().convert($N[$L])",
                                 field.hasFieldReferences() ? sourceForReferenceFields.get(field.getName()) : context.renderQuerySource(getLocalTable()),
-                                field.getUpperCaseName(), i)
+                                field.getUpperCaseName(),
+                                VAR_RECORD_ITERATOR,
+                                i
+                        )
                 );
             }
         }
 
         return CodeBlock.builder()
-                .add("$T.class, r ->\n", context.getReferenceObject().getGraphClassName())
+                .add("$T.class, $L ->\n", context.getReferenceObject().getGraphClassName(), VAR_RECORD_ITERATOR)
                 .indent()
                 .indent()
                 .add(mappingFunction)
@@ -564,7 +565,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         );
 
 
-        return context.getShouldUseOptional() && useOptionalSelects() ? (CodeBlock.of("$N.optional($S, $L)", VARIABLE_SELECT, context.getGraphPath() + field.getName(), content)) : content;
+        return context.getShouldUseOptional() && useOptionalSelects() ? (CodeBlock.of("$N.optional($S, $L)", VAR_SELECT, context.getGraphPath() + field.getName(), content)) : content;
     }
 
     private CodeBlock generateGetForID(MethodMapping mapping, JOOQMapping table) {
@@ -804,7 +805,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
             if (!field.hasOverridingCondition()) {
                 var argumentSelect = CodeBlock.ofIf(field.isNullable(), "$N.getArgumentSet().contains($S + $N + $S)",
-                        VARIABLE_SELECT, condition.getSourceInput().getName() + "[" , VARIABLE_INTERNAL_ITERATION, "]/" + field.getName());
+                        VAR_SELECT, condition.getSourceInput().getName() + "[" , VAR_ITERATOR, "]/" + field.getName());
                 if (processedSchema.isNodeIdField(field)) {
                     if(field.isNullable() && !(field instanceof VirtualInputField)) {
                         tupleVariableBlocks.add(ofTernary(argumentSelect, unpacked, trueCondition()));
@@ -856,7 +857,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add(".in(\n")
                 .indent()
                 .indent()
-                .add("$T.range(0, $N.size()).mapToObj($N ->\n", INT_STREAM.className, argumentInputFieldName, VARIABLE_INTERNAL_ITERATION)
+                .add("$T.range(0, $N.size()).mapToObj($N ->\n", INT_STREAM.className, argumentInputFieldName, VAR_ITERATOR)
                 .indent()
                 .indent()
                 .add(wrapRow(CodeBlock.join(tupleVariableBlocks, ",\n")))
@@ -884,7 +885,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     private CodeBlock unpackElement(FetchContext context, String argumentInputFieldName, InputCondition condition, JOOQMapping table) {
         var field = condition.getInput();
-        var getElement = CodeBlock.of("$N.get($N)", argumentInputFieldName, VARIABLE_INTERNAL_ITERATION);
+        var getElement = CodeBlock.of("$N.get($N)", argumentInputFieldName, VAR_ITERATOR);
         if (processedSchema.isNodeIdField(field)) {
             var referenceObject = processedSchema.hasJOOQRecord(field.getContainerTypeName())
                     ? processedSchema.getNodeType(field)
@@ -893,13 +894,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         if (!condition.hasRecord()) {
-            return CodeBlock.of("$L$L",getElement, condition.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""));
+            return CodeBlock.of("$L$L", getElement, condition.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""));
         }
 
         var mapping = field.isID() && !Optional.ofNullable(processedSchema.getRecordType(condition.getSourceInput())).map(RecordObjectSpecification::hasJavaRecordReference).orElse(false)
                 ? generateGetForID(field.getMappingFromFieldOverride(), table)
                 : field.getMappingForRecordFieldOverride().asGetCall();
-        return CodeBlock.of("$L$L",getElement, mapping);
+        return CodeBlock.of("$L$L", getElement, mapping);
     }
 
     @NotNull
@@ -942,7 +943,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     pathNameForIterableFields.add(inputCondition.getNameWithPathString());
                 }
 
-                var innerFields = isQueryAfterMutation && processedSchema.hasJOOQRecord(inputField) ?
+                var innerFields = getLocalObject().getName().equalsIgnoreCase(SCHEMA_MUTATION.getName()) && processedSchema.hasJOOQRecord(inputField) ?
                         getPrimaryKeyForTable(processedSchema.getRecordType(inputField).getTable().getName())
                                 .map(it -> it.getFields().stream().map(col -> new VirtualInputField(col.getName(), inputField.getContainerTypeName())).toList())
                                 .orElse(List.of())
@@ -1036,14 +1037,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected CodeBlock createSeekAndLimitBlock() {
         return CodeBlock
                 .builder()
-                .add(".seek($T.getOrderByValues($N, $L, $N))\n", QUERY_HELPER.className, CONTEXT_NAME, ORDER_FIELDS_NAME, GraphQLReservedName.PAGINATION_AFTER.getName())
-                .add(".limit($N + 1)\n", PAGE_SIZE_NAME)
+                .add(".seek($T.getOrderByValues($N, $L, $N))\n", QUERY_HELPER.className, VAR_CONTEXT, VAR_ORDER_FIELDS, GraphQLReservedName.PAGINATION_AFTER.getName())
+                .add(".limit($N + 1)\n", VAR_PAGE_SIZE)
                 .build();
     }
 
     protected CodeBlock createOrderFieldsDeclarationBlock(ObjectField referenceField, String actualRefTable, String tableName) {
         var fieldsBlock = createOrderFieldsBlock(referenceField, actualRefTable, tableName);
-        return !fieldsBlock.isEmpty() ? CodeBlock.declare(ORDER_FIELDS_NAME, fieldsBlock) : CodeBlock.empty();
+        return !fieldsBlock.isEmpty() ? CodeBlock.declare(VAR_ORDER_FIELDS, fieldsBlock) : CodeBlock.empty();
     }
 
     protected CodeBlock createOrderFieldsBlock(ObjectField referenceField, String actualRefTable, String tableName) {
@@ -1114,10 +1115,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         )
                 .addParameterIf(!isRoot, () -> wrapSet(getKeyRowTypeName(referenceField, processedSchema)), resolverKeyParamName)
                 .addParameters(getMethodParametersWithOrderField(parser))
-                .addParameterIf(referenceField.hasForwardPagination(), INTEGER.className, PAGE_SIZE_NAME)
+                .addParameterIf(referenceField.hasForwardPagination(), INTEGER.className, VAR_PAGE_SIZE)
                 .addParameterIf(referenceField.hasForwardPagination(), STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName())
                 .addParameters(getContextParameters(referenceField))
-                .addParameter(SELECTION_SET.className, VARIABLE_SELECT);
+                .addParameter(SELECTION_SET.className, VAR_SELECT);
     }
 
     @NotNull

@@ -58,7 +58,7 @@ public class LookupTest extends GeneratorTest {
     @Test
     @DisplayName("One key and one other field")
     void otherNonKeyField() {
-        assertGeneratedContentContains("otherNonKeyField", "keys = List.of(id0)", "queryForQuery(ctx, id0, id1,");
+        assertGeneratedContentContains("otherNonKeyField", "keys = List.of(id0)", "queryForQuery(_iv_ctx, id0, id1,");
     }
 
     @Test
@@ -67,7 +67,7 @@ public class LookupTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "mixedKeys", Set.of(DUMMY_INPUT),
                 "keys = List.of(id, ResolverHelpers.formatString(i), in.stream().map(itIn -> itIn != null ? itIn.getId() : null).toList())",
-                "queryForQuery(ctx, id, in, i,"
+                "queryForQuery(_iv_ctx, id, in, i,"
         );
     }
 
@@ -86,7 +86,7 @@ public class LookupTest extends GeneratorTest {
     void nestedInputKey() {
         assertGeneratedContentContains(
                 "nestedInputKey", Set.of(DUMMY_INPUT),
-                "keys = List.of(in.stream().map(it -> it != null ? it.getIn().getId() : null).toList())"
+                "keys = List.of(in.stream().map(_iv_it -> _iv_it != null ? _iv_it.getIn().getId() : null).toList())"
         );
     }
 
@@ -96,7 +96,7 @@ public class LookupTest extends GeneratorTest {
     void nestedInputIntegerKey() {
         assertGeneratedContentContains(
                 "nestedInputIntegerKey",
-                "List.of(ResolverHelpers.formatString(in.stream().map(it -> it != null ? it.getIn().getId() : null).toList()))"
+                "List.of(ResolverHelpers.formatString(in.stream().map(_iv_it -> _iv_it != null ? _iv_it.getIn().getId() : null).toList()))"
         );
     }
 
@@ -106,7 +106,7 @@ public class LookupTest extends GeneratorTest {
     void nestedInputKeyMiddle() {
         assertGeneratedContentContains(
                 "nestedInputKeyMiddle", Set.of(DUMMY_INPUT),
-                "keys = List.of(in.stream().map(it -> it != null ? it.getIn().getId() : null).toList())"
+                "keys = List.of(in.stream().map(_iv_it -> _iv_it != null ? _iv_it.getIn().getId() : null).toList())"
         );
     }
 

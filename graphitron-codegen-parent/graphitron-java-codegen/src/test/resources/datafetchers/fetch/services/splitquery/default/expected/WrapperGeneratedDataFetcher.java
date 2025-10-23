@@ -10,13 +10,13 @@ import no.sikt.graphql.helpers.resolvers.ServiceDataFetcherHelper;
 
 public class WrapperGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<Customer>> query() {
-        return env -> {
-            Wrapper wrapper = env.getSource();
-            var transform = new RecordTransformer(env);
-            var resolverFetchService = new ResolverFetchService(transform.getCtx());
-            return new ServiceDataFetcherHelper<>(transform).load(
+        return _iv_env -> {
+            Wrapper wrapper = _iv_env.getSource();
+            var _iv_transform = new RecordTransformer(_iv_env);
+            var resolverFetchService = new ResolverFetchService(_iv_transform.getCtx());
+            return new ServiceDataFetcherHelper<>(_iv_transform).load(
                     wrapper.getQueryKey(),
-                    (resolverKeys) -> resolverFetchService.query(resolverKeys),
+                    (_iv_keys) -> resolverFetchService.query(_iv_keys),
                     (recordTransform, response) -> recordTransform.customerRecordToGraphType(response, ""));
         };
     }

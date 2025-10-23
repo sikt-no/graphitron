@@ -2,7 +2,7 @@ package no.sikt.graphitron.definitions.mapping;
 
 import no.sikt.graphitron.javapoet.CodeBlock;
 
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.RESOLVER_KEY_DTO_SUFFIX;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.SUFFIX_RESOLVER_KEY_DTO;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.toCamelCase;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.COLLECTORS;
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -22,7 +22,7 @@ public class MethodMapping {
 
         set = "set" + capitalize(name);
         setCallPart = "." + set + "(";
-        setKeyCallPart = "." + set + RESOLVER_KEY_DTO_SUFFIX + "(";
+        setKeyCallPart = "." + set + SUFFIX_RESOLVER_KEY_DTO + "(";
 
         has = "has" + capitalize(name);
         var hasIterable = has + "s";
