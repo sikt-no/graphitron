@@ -10,13 +10,13 @@ import no.sikt.graphql.helpers.query.QueryHelper;
 import org.jooq.DSLContext;
 
 public class CustomerDBQueries {
-    public static Map<String, Object> customerAsEntity(DSLContext ctx, Map<String, Object> _inputMap) {
+    public static Map<String, Object> customerAsEntity(DSLContext _iv_ctx, Map<String, Object> _iv_inputMap) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
-        var _result = ctx
+        var _iv_result = _iv_ctx
                 .select(QueryHelper.objectRow("id", _a_customer.getId()))
                 .from(_a_customer)
-                .where(_a_customer.hasId((String) _inputMap.get("id")))
+                .where(_a_customer.hasId((String) _iv_inputMap.get("id")))
                 .fetchOneMap();
-        return _result != null ? (Map<String, Object>) _result.get("nested") : Map.of();
+        return _iv_result != null ? (Map<String, Object>) _iv_result.get("nested") : Map.of();
     }
 }

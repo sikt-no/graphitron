@@ -24,7 +24,8 @@ import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyRowTyp
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapMap;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.CONTEXT_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_CONTEXT;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_RECORD_ITERATOR;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 /**
@@ -60,7 +61,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         return getSpecBuilder(target, parser)
                 .addCode(declareAllServiceClassesInAliasSet(nextContext.getAliasSet()))
                 .addCode(createAliasDeclarations(nextContext.getAliasSet()))
-                .addCode("return $N\n", CONTEXT_NAME)
+                .addCode("return $N\n", VAR_CONTEXT)
                 .indent()
                 .indent()
                 .addCode(".select(")
@@ -72,7 +73,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .addCode(createSelectConditions(nextContext.getConditionList(), !where.isEmpty()))
                 .addCodeIf(!isRoot,() -> CodeBlock.of(".groupBy($L)\n", getSelectKeyColumn(context)))
                 .addStatementIf(isRoot, ".fetchOne(0, $T.class)", INTEGER.className)
-                .addStatementIf(!isRoot, ".fetchMap(r -> r.value1().valuesRow(), $T::value2)", RECORD2.className)
+                .addStatementIf(!isRoot, ".fetchMap($1L -> $1N.value1().valuesRow(), $2T::value2)", VAR_RECORD_ITERATOR, RECORD2.className)
                 .unindent()
                 .unindent()
                 .build();
@@ -118,13 +119,21 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
         return code
                 .declare(UNION_COUNT_QUERY, "$L\n.asTable()", unionQuery)
-                .add("\nreturn $N.select(", CONTEXT_NAME)
+                .add("\nreturn $N.select(", VAR_CONTEXT)
                 .addIf(!isRoot,() -> CodeBlock.of("$N.field(0), $T.count())", UNION_COUNT_QUERY, DSL.className))
                 .addIf(isRoot, "$T.sum($N.field($S, $T.class)))", DSL.className, UNION_COUNT_QUERY, COUNT_FIELD_NAME, INTEGER.className)
                 .add("\n.from($N)", UNION_COUNT_QUERY)
                 .addStatementIf(isRoot, "\n.fetchOne(0, $T.class)", INTEGER.className)
                 .addIf(!isRoot, "\n.groupBy($N.field(0))", UNION_COUNT_QUERY)
-                .addStatementIf(!isRoot && resolverKey.isPresent(), () -> CodeBlock.of("\n.fetchMap(r -> (($T) r.value1()).valuesRow(), $T::value2)", resolverKey.get().getRecordTypeName(), RECORD2.className))
+                .addStatementIf(
+                        !isRoot && resolverKey.isPresent(),
+                        () -> CodeBlock.of(
+                                "\n.fetchMap($1L -> (($2T) $1N.value1()).valuesRow(), $3T::value2)",
+                                VAR_RECORD_ITERATOR,
+                                resolverKey.get().getRecordTypeName(),
+                                RECORD2.className
+                        )
+                )
                 .build();
     }
 

@@ -19,8 +19,8 @@ import java.util.List;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asEntityQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getObjectMapTypeName;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_INPUT_MAP;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_RESULT;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_INPUT_MAP;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_RESULT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.getFieldType;
 
@@ -49,23 +49,23 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
 
         var code = CodeBlock
                 .builder()
-                .add("$N\n.select($L)\n.from($L)\n", VariableNames.CONTEXT_NAME, indentIfMultiline(selectCode), querySource)
+                .add("$N\n.select($L)\n.from($L)\n", VariableNames.VAR_CONTEXT, indentIfMultiline(selectCode), querySource)
                 .add(createSelectJoins(context.getJoinSet()))
                 .add(whereBlock)
                 .add(createSelectConditions(context.getConditionList(), true))
                 .add(fetchMapping(target.isIterableWrapped()));
 
         return getDefaultSpecBuilder(asEntityQueryMethodName(targetType.getName()), mapType)
-                .addParameter(mapType, VARIABLE_INPUT_MAP)
+                .addParameter(mapType, VAR_INPUT_MAP)
                 .addCode(createAliasDeclarations(context.getAliasSet()))
-                .declare(VARIABLE_RESULT, code.build())
+                .declare(VAR_RESULT, code.build())
                 .addCode(
                         returnWrap(
                                 CodeBlock.of(
                                         "$N != null ? ($T) $N.get($S) : $T.of()",
-                                        VARIABLE_RESULT,
+                                        VAR_RESULT,
                                         mapType,
-                                        VARIABLE_RESULT,
+                                        VAR_RESULT,
                                         NESTED_NAME,
                                         MAP.className
                                 )
@@ -110,7 +110,7 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
         conditionCode.add("$N.", context.getTargetAlias());
         if (field.isID()) {
             if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                return hasIdBlock(CodeBlock.of("($T) $N.get($S)", STRING.className, VARIABLE_INPUT_MAP, key), getLocalObject(), context.getTargetAlias());
+                return hasIdBlock(CodeBlock.of("($T) $N.get($S)", STRING.className, VAR_INPUT_MAP, key), getLocalObject(), context.getTargetAlias());
             } else {
                 conditionCode.add("hasId(($T) ", STRING.className);
             }
@@ -122,7 +122,7 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
                     getFieldType(context.getTargetTable().getName(), field.getUpperCaseName()).map(ClassName::get).orElse(STRING.className)
             );
         }
-        conditionCode.add("$N.get($S))", VARIABLE_INPUT_MAP, key);
+        conditionCode.add("$N.get($S))", VAR_INPUT_MAP, key);
         return conditionCode.build();
     }
 

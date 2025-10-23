@@ -10,7 +10,7 @@ import org.jetbrains.annotations.NotNull;
 import javax.lang.model.element.Modifier;
 import java.util.List;
 
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ENV;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.ABSTRACT_TRANSFORMER;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
 
@@ -38,8 +38,8 @@ public class TransformerClassGenerator extends AbstractClassGenerator {
         return MethodSpec
                 .constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
-                .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
-                .addStatement("super($N)", VARIABLE_ENV)
+                .addParameter(DATA_FETCHING_ENVIRONMENT.className, VAR_ENV)
+                .addStatement("super($N)", VAR_ENV)
                 .build();
     }
 

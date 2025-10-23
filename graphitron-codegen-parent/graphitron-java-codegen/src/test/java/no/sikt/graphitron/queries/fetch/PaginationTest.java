@@ -41,7 +41,7 @@ public class PaginationTest extends GeneratorTest {
     void withOtherField() {
         assertGeneratedContentContains(
                 "withOtherField",
-                ", String name, Integer pageSize, String after,"
+                ", String name, Integer _iv_pageSize, String after,"
         );
     }
 

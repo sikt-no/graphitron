@@ -38,8 +38,8 @@ public class WiringBuilderTest extends GeneratorTest {
     void node() {
         assertGeneratedContentContains(
                 "node", Set.of(NODE),
-                "getRuntimeWiringBuilder(NodeIdHandler nodeIdHandler)",
-                ".dataFetcher(\"node\", QueryGeneratedDataFetcher.node(nodeIdHandler)"
+                "getRuntimeWiringBuilder(NodeIdHandler _iv_nodeIdHandler)",
+                ".dataFetcher(\"node\", QueryGeneratedDataFetcher.node(_iv_nodeIdHandler)"
         );
     }
 
@@ -49,8 +49,8 @@ public class WiringBuilderTest extends GeneratorTest {
         GeneratorConfig.setNodeStrategy(true);
         assertGeneratedContentContains(
                 "node", Set.of(NODE),
-                "getRuntimeWiringBuilder(NodeIdStrategy nodeIdStrategy)",
-                ".dataFetcher(\"node\", QueryGeneratedDataFetcher.node(nodeIdStrategy)"
+                "getRuntimeWiringBuilder(NodeIdStrategy _iv_nodeIdStrategy)",
+                ".dataFetcher(\"node\", QueryGeneratedDataFetcher.node(_iv_nodeIdStrategy)"
         );
         GeneratorConfig.setNodeStrategy(false);
     }

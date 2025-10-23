@@ -18,22 +18,25 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.getSelectKeyColumnRow;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.findKeyForResolverField;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_INTERNAL_ITERATION;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ORDER_FIELDS;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ITERATOR;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.internalPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
 public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGenerator {
-    public static final String DISCRIMINATOR = "_discriminator";
-    public static final String DISCRIMINATOR_VALUE = "_discriminatorValue";
-    public static final String TOKEN = "_token", DATA = "_data", INNER_DATA = "_innerData";
+    public static final String
+            DISCRIMINATOR = internalPrefix("discriminator"),
+            DISCRIMINATOR_VALUE = internalPrefix("discriminatorValue"),
+            TOKEN = internalPrefix("token"),
+            DATA = internalPrefix("data"),
+            INNER_DATA = internalPrefix("innerData");
 
     public FetchSingleTableInterfaceDBMethodGenerator(
             ObjectDefinition localObject,
@@ -66,12 +69,12 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         return CodeBlock.builder()
                 .add(createAliasDeclarations(context.getAliasSet()))
                 .add(orderFields)
-                .add("return $N.select($L)", VariableNames.CONTEXT_NAME, indentIfMultiline(selectCode))
+                .add("return $N.select($L)", VariableNames.VAR_CONTEXT, indentIfMultiline(selectCode))
                 .add("\n.from($L)\n", querySource)
                 .add(createSelectJoins(context.getJoinSet()))
                 .add("\n")
                 .add(whereBlock)
-                .addIf(!orderFields.isEmpty(), ".orderBy($L)", ORDER_FIELDS_NAME)
+                .addIf(!orderFields.isEmpty(), ".orderBy($L)", VAR_ORDER_FIELDS)
                 .addIf(target.hasForwardPagination(), this::createSeekAndLimitBlock)
                 .add(fetchAndMap)
                 .build();
@@ -157,7 +160,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
 
         if (target.hasForwardPagination()) {
             rowElements.add(CodeBlock.of("$T.getOrderByToken($L, $L).as($S)",
-                    QUERY_HELPER.className, context.getTargetAlias(), ORDER_FIELDS_NAME, TOKEN));
+                    QUERY_HELPER.className, context.getTargetAlias(), VAR_ORDER_FIELDS, TOKEN));
         }
 
         allFields.stream().filter(it -> !it.isResolver())
@@ -181,13 +184,13 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         var returnInsideIfBlock = !target.hasForwardPagination();
         var mapping = CodeBlock.builder()
                 .indent()
-                .beginControlFlow("$N -> ", VARIABLE_INTERNAL_ITERATION)
+                .beginControlFlow("$N -> ", VAR_ITERATOR)
                 .declare(
                         DISCRIMINATOR_VALUE,
                         "$N.get($S, $L.$L.getConverter())",
-                        VARIABLE_INTERNAL_ITERATION, DISCRIMINATOR, querySource, interfaceDefinition.getDiscriminatorFieldName()
+                        VAR_ITERATOR, DISCRIMINATOR, querySource, interfaceDefinition.getDiscriminatorFieldName()
                 )
-                .declareIf(!returnInsideIfBlock, TOKEN, CodeBlock.of("$N.get($S, $T.class)", VARIABLE_INTERNAL_ITERATION, TOKEN, STRING.className))
+                .declareIf(!returnInsideIfBlock, TOKEN, CodeBlock.of("$N.get($S, $T.class)", VAR_ITERATOR, TOKEN, STRING.className))
                 .addStatementIf(!returnInsideIfBlock, "$T $N", interfaceDefinition.getGraphClassName(), DATA);
 
         boolean isFirst = true;
@@ -199,7 +202,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
             var needToManuallySetFields = !overriddenFieldsForImpl.isEmpty() || !resolverFieldsForImpl.isEmpty();
             var needInnerDataVariable = !returnInsideIfBlock && needToManuallySetFields;
 
-            var intoBlock = CodeBlock.of("$N.into($T.class)", VARIABLE_INTERNAL_ITERATION, implementation.getGraphClassName());
+            var intoBlock = CodeBlock.of("$N.into($T.class)", VAR_ITERATOR, implementation.getGraphClassName());
 
             mapping.addIf(!isFirst, "else ")
                     .beginControlFlow("if ($N.equals($S))", DISCRIMINATOR_VALUE, implementation.getDiscriminator())
@@ -214,7 +217,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                                 ? CodeBlock.of("$T.class", STRING.className)
                                 : CodeBlock.of("$N.$L.getConverter()", context.getTargetAlias(), field.getUpperCaseName());
 
-                        mapping.addStatement("$N.set$L($N.get($S, $L))", innerVariableName, capitalize(it), VARIABLE_INTERNAL_ITERATION, getOverriddenFieldAlias(implementation, it), converterBlock);
+                        mapping.addStatement("$N.set$L($N.get($S, $L))", innerVariableName, capitalize(it), VAR_ITERATOR, getOverriddenFieldAlias(implementation, it), converterBlock);
                     }
             );
 
@@ -225,7 +228,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                                 innerVariableName,
                                 (new MethodMapping(it.getName())).asSetKeyCall(
                                         CodeBlock.of("$N.get($S, $T.class).valuesRow()",
-                                                VARIABLE_INTERNAL_ITERATION,
+                                                VAR_ITERATOR,
                                                 key.key().getName(),
                                                 key.getRecordTypeName(false)))
                         );

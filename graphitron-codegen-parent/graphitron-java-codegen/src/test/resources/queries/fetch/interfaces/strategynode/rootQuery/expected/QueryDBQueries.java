@@ -12,14 +12,14 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static List<Customer> customersForQuery(DSLContext ctx, NodeIdStrategy nodeIdStrategy,
-                                                   SelectionSet select) {
+    public static List<Customer> customersForQuery(DSLContext _iv_ctx, NodeIdStrategy _iv_nodeIdStrategy,
+                                                   SelectionSet _iv_select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
-        var orderFields = _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray());
-        return ctx
-                .select(DSL.row(nodeIdStrategy.createId("Customer", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer::new)))
+        var _iv_orderFields = _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray());
+        return _iv_ctx
+                .select(DSL.row(_iv_nodeIdStrategy.createId("Customer", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer::new)))
                 .from(_a_customer)
-                .orderBy(orderFields)
-                .fetch(it -> it.into(Customer.class));
+                .orderBy(_iv_orderFields)
+                .fetch(_iv_it -> _iv_it.into(Customer.class));
     }
 }

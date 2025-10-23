@@ -91,7 +91,7 @@ public class QueryTest extends GeneratorTest {
     @DisplayName("Upsert with node id being an iterable")
     void upsertNodeIdIterable() {
         assertGeneratedContentContains("upsertNodeIdIterable",
-                "inRecordList.forEach(it -> {",
+                "inRecordList.forEach(_iv_it -> {",
                 "it.changed(VACATION_DESTINATION.DESTINATION_ID, true);",
                 "it.changed(VACATION_DESTINATION.COUNTRY_NAME, true);",
                 ".batchMerge(inRecordList)"

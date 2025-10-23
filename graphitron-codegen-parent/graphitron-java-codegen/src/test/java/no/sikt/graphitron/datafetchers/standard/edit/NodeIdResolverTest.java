@@ -42,8 +42,8 @@ public class NodeIdResolverTest extends GeneratorTest {
     void nodeId() {
         assertGeneratedContentContains(
                 "nodeId", Set.of(CUSTOMER_INPUT_TABLE),
-                ".mutationForMutation(transform.getCtx(), nodeIdStrategy, inRecord)",
-                ".mutationForMutation(ctx, nodeIdStrategy, inRecord, selectionSet)"
+                ".mutationForMutation(_iv_transform.getCtx(), _iv_nodeIdStrategy, inRecord)",
+                ".mutationForMutation(_iv_ctx, _iv_nodeIdStrategy, inRecord, _iv_selectionSet)"
         );
     }
 }

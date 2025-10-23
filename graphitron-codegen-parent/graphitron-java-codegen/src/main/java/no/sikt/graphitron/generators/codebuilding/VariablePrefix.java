@@ -4,16 +4,21 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * This class handles the naming conventions for internal variables. When generating code, we need to name parameters and variables.
- * When two variables hail from different namespaces (or contexts), they inevitably risk colliding in the generated code without proper countermeasures.
+ * The different names may come from different namespaces. A namespace in this context is a set of strings, meaning a collection that has no duplicates.
+ * A namespace can for example be the set of fields that a GraphQL type has, as there can not be two fields with the same name.
+ * Therefore, using the names of the fields as variables is safe, as they will never collide with each other.
+ * Another example is the set of internal helper variables in Graphitron-generated code, as these must also be unique and are predetermined by a single source, the developers.
+ * When variables hail from different namespaces, however, they inevitably risk colliding in the generated code without proper countermeasures.
  * <p>
- * An example of this may be an input field (which will become a method parameter) which has the same name as a jOOQ table.
+ * An example of a collision may be an input field (it will become a method parameter) which has the same name as a jOOQ table.
  * In the query Graphitron may create an alias for this table, while also having a method parameter that inherits the name of the input field.
  * Such code may result in uncompilable code at best or produce incorrect query results at worst.
  * <p>
- * To prevent such issues, we use variable prefixes for all variables in the generated code.
+ * The risk of collisions would be even higher for instance if the DB/GraphQL-domain was code-related.
+ * To prevent such issues we use variable prefixes for all variables in the generated code.
  * These make it impossible to accidentally or intentionally produce naming collisions, given that the prefixes are not substrings of each other.
  * <p>
- * Here is a more rigorous explanation and proof:<br>
+ * Here is a more rigorous explanation and proof for why this is needed:<br>
  * Assume two variable names N and M (which are based on user-defined configuration beyond our control or other factors such as DB-schema).
  * These two variables exist in their corresponding namespaces with their own prefixes P and Q where P ≠ Q and where there exists no string S such that P = S + Q or Q = S + P.
  * <p>
@@ -38,9 +43,11 @@ public class VariablePrefix {
     // Note that all names are fine, so long as none of these prefixes are the same for multiple name spaces.
     // There should also not exist any pair of prefixes that are substrings of each other.
     public static final String
-            INTERNAL = "i",
+            INTERNAL_VARIABLE = "iv",
+            OPERATION_INPUT = "oi",
+            RESOLVER_KEYS = "rk",
             ALIAS = "a",
-            CONTEXT_FIELD = "c",
+            CONTEXT_FIELD = "cf",
             MAPPER_INPUT = "mi",
             MAPPER_OUTPUT = "mo",
             SEPARATOR = "_";
@@ -49,7 +56,21 @@ public class VariablePrefix {
      * @return This name formatted as an internal variable to avoid namespace collisions.
      */
     public static String internalPrefix(String name) {
-        return prefixName(INTERNAL, name);
+        return prefixName(INTERNAL_VARIABLE, name);
+    }
+
+    /**
+     * @return This name formatted as an input variable to avoid namespace collisions.
+     */
+    public static String inputPrefix(String name) {
+        return prefixName(OPERATION_INPUT, name);
+    }
+
+    /**
+     * @return This name formatted as a resolver key variable to avoid namespace collisions.
+     */
+    public static String resolverKeyPrefix(String name) {
+        return prefixName(RESOLVER_KEYS, name);
     }
 
     /**

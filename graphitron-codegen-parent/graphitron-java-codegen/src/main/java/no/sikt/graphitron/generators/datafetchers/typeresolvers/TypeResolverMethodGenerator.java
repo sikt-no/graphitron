@@ -13,7 +13,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asTypeResolverMethodName;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ENV;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.TYPE_RESOLVER;
 
 /**
@@ -31,7 +31,7 @@ public class TypeResolverMethodGenerator extends AbstractSchemaMethodGenerator<T
         typeResolverWiring.add(new WiringContainer(asTypeResolverMethodName(target.getName()), target.getName(), null, false));
         return getDefaultSpecBuilder(asTypeResolverMethodName(target.getName()), TYPE_RESOLVER.className)
                 .addModifiers(Modifier.STATIC)
-                .addCode(returnWrap(CodeBlock.of("$1L -> $1N.getSchema().getObjectType($2N($1N.getObject()))", VARIABLE_ENV, TypeNameMethodGenerator.METHOD_NAME)))
+                .addCode(returnWrap(CodeBlock.of("$1L -> $1N.getSchema().getObjectType($2N($1N.getObject()))", VAR_ENV, TypeNameMethodGenerator.METHOD_NAME)))
                 .build();
     }
 

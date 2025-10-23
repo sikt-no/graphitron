@@ -37,12 +37,12 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 public class FormatCodeBlocks {
     private final static CodeBlock
             COLLECT_TO_LIST = CodeBlock.of(".toList()"),
-            NEW_TRANSFORM = CodeBlock.of("new $T($N)", RECORD_TRANSFORMER.className, VARIABLE_ENV),
-            DECLARE_TRANSFORM = CodeBlock.declare(TRANSFORMER_NAME, NEW_TRANSFORM),
-            NEW_DATA_FETCHER = CodeBlock.of("new $T($N)", DATA_FETCHER_HELPER.className, VARIABLE_ENV),
-            NEW_SERVICE_DATA_FETCHER_TRANSFORM = CodeBlock.of("new $T<>($N)", DATA_SERVICE_FETCHER.className, TRANSFORMER_NAME),
-            ATTACH = CodeBlock.of(".attach($N.configuration())", CONTEXT_NAME),
-            ATTACH_RESOLVER = CodeBlock.of(".attach($L.configuration())", asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)),
+            NEW_TRANSFORM = CodeBlock.of("new $T($N)", RECORD_TRANSFORMER.className, VAR_ENV),
+            DECLARE_TRANSFORM = CodeBlock.declare(VAR_TRANSFORMER, NEW_TRANSFORM),
+            NEW_DATA_FETCHER = CodeBlock.of("new $T($N)", DATA_FETCHER_HELPER.className, VAR_ENV),
+            NEW_SERVICE_DATA_FETCHER_TRANSFORM = CodeBlock.of("new $T<>($N)", DATA_SERVICE_FETCHER.className, VAR_TRANSFORMER),
+            ATTACH = CodeBlock.of(".attach($N.configuration())", VAR_CONTEXT),
+            ATTACH_RESOLVER = CodeBlock.of(".attach($L.configuration())", asMethodCall(VAR_TRANSFORMER, METHOD_CONTEXT_NAME)),
             TRUE_CONDITION = CodeBlock.of("$T.trueCondition()", DSL.className),
             FALSE_CONDITION = CodeBlock.of("$T.falseCondition()", DSL.className),
             NO_CONDITION = CodeBlock.of("$T.noCondition()", DSL.className),
@@ -268,9 +268,9 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock selectionSetLookup(String path, boolean atResolver, boolean useArguments) {
         if (!atResolver) {
-            return CodeBlock.of("$N.contains($N + $S)", useArguments ? VARIABLE_ARGS : VARIABLE_SELECT, PATH_HERE_NAME, path);
+            return CodeBlock.of("$N.contains($N + $S)", useArguments ? VAR_ARGS : VAR_SELECT, VAR_PATH_HERE, path);
         }
-        return CodeBlock.of("$L.contains($S)", asMethodCall(TRANSFORMER_NAME, useArguments ? METHOD_ARGS_NAME : METHOD_SELECT_NAME), path);
+        return CodeBlock.of("$L.contains($S)", asMethodCall(VAR_TRANSFORMER, useArguments ? METHOD_ARGS_NAME : METHOD_SELECT_NAME), path);
     }
 
     /**
@@ -337,11 +337,11 @@ public class FormatCodeBlocks {
 
         var includeContext = !isService;
         if (includeContext) {
-            params.add(CONTEXT_NAME);
+            params.add(VAR_CONTEXT);
         }
 
         if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            params.add(NODE_ID_STRATEGY_NAME);
+            params.add(VAR_NODE_STRATEGY);
         }
 
         if (!inputList.isEmpty()) {
@@ -350,8 +350,8 @@ public class FormatCodeBlocks {
 
         return CodeBlock.of(
                 isService ? "($L$L) -> $L.count$L($L)" : "($L$L) -> $T.count$L($L)",
-                CodeBlock.ofIf(includeContext, "$L, ", CONTEXT_NAME),
-                RESOLVER_KEYS_NAME,
+                CodeBlock.ofIf(includeContext, "$L, ", VAR_CONTEXT),
+                VAR_RESOLVER_KEYS,
                 isService ? uncapitalize(queryLocation) : getQueryClassName(queryLocation),
                 capitalize(queryMethodName),
                 String.join(", ", params)
@@ -370,24 +370,24 @@ public class FormatCodeBlocks {
         var inputs = new ArrayList<String>();
         var params = new ArrayList<String>();
         if (!isService) {
-            inputs.add(CONTEXT_NAME);
-            params.add(CONTEXT_NAME);
+            inputs.add(VAR_CONTEXT);
+            params.add(VAR_CONTEXT);
             if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                params.add(NODE_ID_STRATEGY_NAME);
+                params.add(VAR_NODE_STRATEGY);
             }
         }
         if (hasKeyValues) {
-            inputs.add(RESOLVER_KEYS_NAME);
+            inputs.add(VAR_RESOLVER_KEYS);
         }
         if (usesKeyValues) {
-            params.add(RESOLVER_KEYS_NAME);
+            params.add(VAR_RESOLVER_KEYS);
         }
         if (!inputList.isEmpty()) {
             params.add(inputList);
         }
         if (!isService) {
-            inputs.add(SELECTION_SET_NAME);
-            params.add(SELECTION_SET_NAME);
+            inputs.add(VAR_SELECTION_SET);
+            params.add(VAR_SELECTION_SET);
         }
         var source = isService ? CodeBlock.of("$N", uncapitalize(queryLocation)) : CodeBlock.of("$T", getQueryClassName(queryLocation));
         return CodeBlock.of("($L) -> $L",
@@ -406,7 +406,7 @@ public class FormatCodeBlocks {
     public static CodeBlock declarePageSize(int defaultFirst) {
         return CodeBlock.statementOf(
                 "int $L = $T.getPageSize($N, $L, $L)",
-                PAGE_SIZE_NAME,
+                VAR_PAGE_SIZE,
                 RESOLVER_HELPERS.className,
                 GraphQLReservedName.PAGINATION_FIRST.getName(),
                 GeneratorConfig.getMaxAllowedPageSize(),
@@ -645,14 +645,14 @@ public class FormatCodeBlocks {
                 wrapArrayList(recordTypeName),
                 ClassName.get(transform.getDeclaringClass()),
                 transform.getName(),
-                CONTEXT_NAME,
+                VAR_CONTEXT,
                 asListedName(recordName)
         );
     }
 
     public static CodeBlock fetchMapping(boolean iterable) {
         return iterable
-                ? CodeBlock.of("$1L -> $1N.value1().intoMap(), $1L -> $1N.value2().intoMap()", VARIABLE_INTERNAL_ITERATION)
+                ? CodeBlock.of("$1L -> $1N.value1().intoMap(), $1L -> $1N.value2().intoMap()", VAR_ITERATOR)
                 : CodeBlock.of(".fetchOneMap()");
     }
 
@@ -727,7 +727,7 @@ public class FormatCodeBlocks {
 
     public static CodeBlock createNodeIdBlock(RecordObjectSpecification<?> obj, String targetAlias) {
         return CodeBlock.of("$N.createId($S, $L)",
-                NODE_ID_STRATEGY_NAME,
+                VAR_NODE_STRATEGY,
                 obj.getTypeId(),
                 nodeIdColumnsWithAliasBlock(targetAlias, obj)
         );
@@ -735,7 +735,7 @@ public class FormatCodeBlocks {
 
     public static CodeBlock createNodeIdBlockForRecord(RecordObjectSpecification<?> obj, String recordVariableName) {
         return CodeBlock.of("$N.createId($N, $S, $L)",
-                NODE_ID_STRATEGY_NAME,
+                VAR_NODE_STRATEGY,
                 recordVariableName,
                 obj.getTypeId(),
                 nodeIdColumnsBlock(obj)
@@ -757,13 +757,9 @@ public class FormatCodeBlocks {
         );
     }
 
-    public static CodeBlock hasIdsBlock(RecordObjectSpecification<?> obj, String targetAlias) {
-        return hasIdOrIdsBlock(CodeBlock.of(IDS_NAME), obj, targetAlias, CodeBlock.empty(), true);
-    }
-
     public static CodeBlock hasIdOrIdsBlock(CodeBlock idOrRecordParamName, RecordObjectSpecification<?> obj, String targetAlias, CodeBlock mappedFkFields, boolean isMultiple) {
         return CodeBlock.of("$N.$L($S, $L, $L)",
-                NODE_ID_STRATEGY_NAME,
+                VAR_NODE_STRATEGY,
                 isMultiple ? "hasIds" : "hasId",
                 obj.getTypeId(),
                 idOrRecordParamName,

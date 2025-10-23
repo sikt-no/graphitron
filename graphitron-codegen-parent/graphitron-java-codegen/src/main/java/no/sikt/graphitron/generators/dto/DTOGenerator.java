@@ -17,7 +17,7 @@ import java.util.Objects;
 import static no.sikt.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyMapForResolverFields;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.RESOLVER_KEY_DTO_SUFFIX;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.SUFFIX_RESOLVER_KEY_DTO;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.LIST;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
@@ -96,7 +96,7 @@ public abstract class DTOGenerator<T extends GenerationTarget> extends AbstractS
     }
 
     protected static String getDTOVariableNameForField(GenerationSourceField<? extends NamedNode<?>> field) {
-        return field.isResolver() ? field.getName() + RESOLVER_KEY_DTO_SUFFIX : field.getName();
+        return field.isResolver() ? field.getName() + SUFFIX_RESOLVER_KEY_DTO : field.getName();
     }
 
     public static String getDTOGetterMethodNameForField(GenerationSourceField<?> field) {

@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
@@ -66,7 +66,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .addCode(declareAllServiceClassesInAliasSet(context.getAliasSet()))
                 .addCode(selectAliasesBlock)
                 .addCode(orderFields)
-                .addCode("return $N\n", VariableNames.CONTEXT_NAME)
+                .addCode("return $N\n", VariableNames.VAR_CONTEXT)
                 .indent()
                 .indent()
                 .addCode(".select($L)\n", createSelectBlock(target, context, actualRefTable, selectRowBlock))
@@ -74,7 +74,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .addCode(createSelectJoins(context.getJoinSet()))
                 .addCode(whereBlock)
                 .addCode(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
-                .addCodeIf(!target.isResolver() && !orderFields.isEmpty(), ".orderBy($L)\n", ORDER_FIELDS_NAME)
+                .addCodeIf(!target.isResolver() && !orderFields.isEmpty(), ".orderBy($L)\n", VAR_ORDER_FIELDS)
                 .addCodeIf(target.hasForwardPagination() && !target.isResolver(), this::createSeekAndLimitBlock)
                 .addCode(setFetch(target))
                 .unindent()
@@ -95,7 +95,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         return indentIfMultiline(
                 Stream.of(
                         getInitialKey(context),
-                        CodeBlock.ofIf(target.hasForwardPagination() && !target.isResolver(), "$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, ORDER_FIELDS_NAME),
+                        CodeBlock.ofIf(target.hasForwardPagination() && !target.isResolver(), "$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, VAR_ORDER_FIELDS),
                         selectRowBlock
                 ).collect(CodeBlock.joining())
         );
@@ -104,7 +104,13 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     private CodeBlock setFetch(ObjectField referenceField) {
         var refObject = processedSchema.getObjectOrConnectionNode(referenceField);
         if (refObject == null) {
-            return CodeBlock.statementOf(".fetch$L(it -> it.into($T.class))", referenceField.isIterableWrapped() ? "" : "One", referenceField.getTypeClass());
+            return CodeBlock.statementOf(
+                    ".fetch$L($L -> $N.into($T.class))",
+                    referenceField.isIterableWrapped() ? "" : "One",
+                    VAR_ITERATOR,
+                    VAR_ITERATOR,
+                    referenceField.getTypeClass()
+            );
         }
 
         if (referenceField.hasForwardPagination()) {
@@ -113,20 +119,26 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
         var lookupExists = LookupHelpers.lookupExists(referenceField, processedSchema);
         if (isRoot && !lookupExists) {
-            return CodeBlock.statementOf(".fetch$L(it -> it.into($T.class))", referenceField.isIterableWrapped() ? "" : "One", refObject.getGraphClassName());
+            return CodeBlock.statementOf(
+                    ".fetch$L($L -> $N.into($T.class))",
+                    referenceField.isIterableWrapped() ? "" : "One",
+                    VAR_ITERATOR,
+                    VAR_ITERATOR,
+                    refObject.getGraphClassName()
+            );
         }
 
         var code = CodeBlock.builder()
                 .add(".fetchMap(")
                 .addIf(lookupExists, "$T::value1, ", RECORD2.className)
-                .addIf(!lookupExists, "r -> r.value1().valuesRow(), ");
+                .addIf(!lookupExists, "$1L -> $1N.value1().valuesRow(), ", VAR_RECORD_ITERATOR);
 
         if (processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(referenceField.getContainerTypeName()) && referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()) {
             if (referenceField.hasForwardPagination() && (referenceField.getOrderField().isPresent() || tableHasPrimaryKey(refObject.getTable().getName()))) {
-                return code.addStatement("r -> r.value2().map($T::value2))", RECORD2.className).build();
+                return code.addStatement("$1L -> $1N.value2().map($2T::value2))", VAR_RECORD_ITERATOR, RECORD2.className).build();
             }
 
-            return code.addStatement("r -> r.value2().map($T::value1))", RECORD1.className).build();
+            return code.addStatement("$1L -> $1N.value2().map($2T::value1))", VAR_RECORD_ITERATOR, RECORD1.className).build();
         }
 
         return code.addStatement("$T::value2)", RECORD2.className).build();
@@ -136,14 +148,20 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var code = CodeBlock.builder();
 
         if (isRoot) {
-            code.add(".fetch()\n");
-            code.addStatement(".map(it -> new $T<>(it.value1(), it.value2()))", IMMUTABLE_PAIR.className);
+            code
+                    .add(".fetch()\n")
+                    .addStatement(".map($1L -> new $2T<>($1N.value1(), $1N.value2()))", VAR_ITERATOR, IMMUTABLE_PAIR.className);
         } else {
             code
                     .add(".fetchMap(\n")
                     .indent()
-                    .add("r -> r.value1().valuesRow(),\n")
-                    .add("it ->  it.value2().map(r -> r.value2() == null ? null : new $T<>(r.value1(), r.value2()))", IMMUTABLE_PAIR.className)
+                    .add("$1L -> $1N.value1().valuesRow(),\n", VAR_RECORD_ITERATOR)
+                    .add(
+                            "$1L -> $1N.value2().map($2L -> $2N.value2() == null ? null : new $3T<>($2N.value1(), $2N.value2()))",
+                            VAR_ITERATOR,
+                            VAR_RECORD_ITERATOR,
+                            IMMUTABLE_PAIR.className
+                    )
                     .unindent()
                     .addStatement(")");
         }

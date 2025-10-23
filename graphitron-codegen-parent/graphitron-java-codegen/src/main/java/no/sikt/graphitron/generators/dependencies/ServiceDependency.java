@@ -5,7 +5,7 @@ import no.sikt.graphitron.javapoet.FieldSpec;
 
 import javax.lang.model.element.Modifier;
 
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.CONTEXT_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_CONTEXT;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -20,7 +20,7 @@ public class ServiceDependency extends NamedDependency {
     public FieldSpec getSpec() {
         return FieldSpec
                 .builder(getTypeName(), uncapitalize(getName()), Modifier.PRIVATE)
-                .initializer("new $T($N)", getTypeName(), CONTEXT_NAME)
+                .initializer("new $T($N)", getTypeName(), VAR_CONTEXT)
                 .build();
     }
 }

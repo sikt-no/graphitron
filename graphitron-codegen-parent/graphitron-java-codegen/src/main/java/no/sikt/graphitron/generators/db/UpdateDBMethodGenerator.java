@@ -19,8 +19,9 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.VARIABLE_ITERATE_PREFIX;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ITERATOR;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.internalPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 /**
@@ -34,7 +35,7 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
             MutationType.UPSERT, "batchMerge"
     );
 
-    private static final String VARIABLE_RECORD_LIST = "recordList";
+    private static final String VARIABLE_RECORD_LIST = "recordList", CONFIG = internalPrefix("config");
 
     public UpdateDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -92,8 +93,8 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
                             var columnNames = getNodeIdKeyColumnNames(nodeType.getKeyColumns(), tableName);
                             if (!columnNames.isEmpty()) {
                                 var isIterable = recordInputs.get(it.getKey()).isIterableWrapped();
-                                code.addIf(isIterable, "$N.forEach($N -> {\n", recordInputName, VARIABLE_ITERATE_PREFIX);
-                                var variableName = isIterable ? VARIABLE_ITERATE_PREFIX : recordInputName;
+                                code.addIf(isIterable, "$N.forEach($N -> {\n", recordInputName, VAR_ITERATOR);
+                                var variableName = isIterable ? VAR_ITERATOR : recordInputName;
                                 columnNames.forEach(columnName -> code.addStatement("$N.changed($N.$N, true)", variableName, tableName, columnName));
                                 code.addIf(isIterable, "});\n");
                             }
@@ -102,10 +103,12 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
         }
 
         code.addStatement(
-                "return $N.transactionResult(config -> $T.stream($T.using(config).$L($N).execute()).sum())",
-                VariableNames.CONTEXT_NAME,
+                "return $N.transactionResult($L -> $T.stream($T.using($N).$L($N).execute()).sum())",
+                VariableNames.VAR_CONTEXT,
+                CONFIG,
                 ARRAYS.className,
                 DSL.className,
+                CONFIG,
                 recordMethod,
                 batchInputVariable
         );

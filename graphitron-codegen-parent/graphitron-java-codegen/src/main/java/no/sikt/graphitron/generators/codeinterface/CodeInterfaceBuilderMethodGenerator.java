@@ -11,8 +11,8 @@ import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_HANDLER_NAME;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_HANDLER;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_STRATEGY;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RUNTIME_WIRING_BUILDER;
 
 /**
@@ -26,7 +26,7 @@ public class CodeInterfaceBuilderMethodGenerator extends WiringBuilderMethodGene
     @Override
     public MethodSpec generate() {
         var code = includeNode ? CodeBlock.of("($N)",
-                GeneratorConfig.shouldMakeNodeStrategy() ? NODE_ID_STRATEGY_NAME : NODE_ID_HANDLER_NAME)
+                GeneratorConfig.shouldMakeNodeStrategy() ? VAR_NODE_STRATEGY : VAR_NODE_HANDLER)
                 : CodeBlock.of("()");
         var className = getGeneratedClassName(WiringClassGenerator.SAVE_DIRECTORY_NAME, WiringClassGenerator.CLASS_NAME);
         return getSpec(METHOD_NAME, RUNTIME_WIRING_BUILDER.className)

@@ -11,10 +11,10 @@ import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 
 public class MutationDBQueries {
-    public static int mutationForMutation(DSLContext ctx, NodeIdStrategy nodeIdStrategy, CustomerRecord in1Record, CustomerRecord in2Record) {
+    public static int mutationForMutation(DSLContext _iv_ctx, NodeIdStrategy _iv_nodeIdStrategy, CustomerRecord in1Record, CustomerRecord in2Record) {
         var recordList = new ArrayList();
         recordList.add(in1Record);
         recordList.add(in2Record);
-        return ctx.transactionResult(config -> Arrays.stream(DSL.using(config).batchUpdate(recordList).execute()).sum());
+        return _iv_ctx.transactionResult(_iv_config -> Arrays.stream(DSL.using(_iv_config).batchUpdate(recordList).execute()).sum());
     }
 }

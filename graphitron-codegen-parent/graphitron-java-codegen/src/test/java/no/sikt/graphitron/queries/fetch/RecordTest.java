@@ -44,7 +44,7 @@ public class RecordTest extends GeneratorTest {
     void inputJavaRecord() {
         assertGeneratedContentContains(
                 "inputJavaRecord",
-                "customerForQuery(DSLContext ctx, DummyRecord inRecord,",
+                "customerForQuery(DSLContext _iv_ctx, DummyRecord inRecord,",
                 "inRecord != null ? _a_customer.hasId(inRecord.getId()) : DSL.noCondition()",
                 "inRecord != null ? _a_customer.hasId(inRecord.getOtherID()) : DSL.noCondition()"
         );
@@ -55,10 +55,10 @@ public class RecordTest extends GeneratorTest {
     void listedInputJavaRecord() {
         assertGeneratedContentContains(
                 "listedInputJavaRecord",
-                "customerForQuery(DSLContext ctx, List<DummyRecord> inRecordList,",
+                "customerForQuery(DSLContext _iv_ctx, List<DummyRecord> inRecordList,",
                 "DSL.row(DSL.trueCondition(), DSL.trueCondition()).in(",
-                "IntStream.range(0, inRecordList.size()).mapToObj(internal_it_ -> DSL.row(_a_customer.hasId(inRecordList.get(internal_it_).getId()),",
-                "customer.hasId(inRecordList.get(internal_it_).getOtherID())",
+                "IntStream.range(0, inRecordList.size()).mapToObj(_iv_it -> DSL.row(_a_customer.hasId(inRecordList.get(_iv_it).getId()),",
+                "customer.hasId(inRecordList.get(_iv_it).getOtherID())",
                 ") : DSL.noCondition()"
         );
     }
@@ -68,7 +68,7 @@ public class RecordTest extends GeneratorTest {
     void inputJOOQRecord() {
         assertGeneratedContentContains(
                 "inputJOOQRecord",
-                "customerForQuery(DSLContext ctx, CustomerRecord inRecord,",
+                "customerForQuery(DSLContext _iv_ctx, CustomerRecord inRecord,",
                 "inRecord != null ? _a_customer.hasId(inRecord.getId()) : DSL.noCondition()",
                 "inRecord != null ? _a_customer.FIRST_NAME.eq(inRecord.getFirstName()) : DSL.noCondition()"
         );
@@ -79,17 +79,17 @@ public class RecordTest extends GeneratorTest {
     void listedInputJOOQRecord() {
         assertGeneratedContentContains(
                 "listedInputJOOQRecord",
-                "customerForQuery(DSLContext ctx, List<CustomerRecord> inRecordList,",
+                "customerForQuery(DSLContext _iv_ctx, List<CustomerRecord> inRecordList,",
                 "DSL.row(DSL.trueCondition(), _a_customer.FIRST_NAME).in(",
-                "customer.hasId(inRecordList.get(internal_it_).getId()),",
-                "select.getArgumentSet().contains(\"in[\" + internal_it_ + \"]/first\") ? DSL.val(inRecordList.get(internal_it_).getFirstName()) : _a_customer.FIRST_NAME"
+                "customer.hasId(inRecordList.get(_iv_it).getId()),",
+                "_iv_select.getArgumentSet().contains(\"in[\" + _iv_it + \"]/first\") ? DSL.val(inRecordList.get(_iv_it).getFirstName()) : _a_customer.FIRST_NAME"
         );
     }
 
     @Test // Special case where nesting path should not be used since the records are flat structures.
     @DisplayName("Listed input jOOQ records with an extra input type inside")
     void listedNestedInputJOOQRecord() {
-        assertGeneratedContentContains("listedNestedInputJOOQRecord", ".val(inRecordList.get(internal_it_).getFirstName())");
+        assertGeneratedContentContains("listedNestedInputJOOQRecord", ".val(inRecordList.get(_iv_it).getFirstName())");
     }
 
     @Test
@@ -102,8 +102,8 @@ public class RecordTest extends GeneratorTest {
     @DisplayName("Input type with an ID field annotated with @field without @nodeId")
     void fieldOverrideID() {
         assertGeneratedContentContains("fieldOverrideID",
-                "payment.hasCustomerId(inRecordList.get(internal_it_).getCustomerId()) : DSL.trueCondition()",
-                "payment.hasPaymentId(inRecordList.get(internal_it_).getPaymentId()) : DSL.trueCondition()");
+                "payment.hasCustomerId(inRecordList.get(_iv_it).getCustomerId()) : DSL.trueCondition()",
+                "payment.hasPaymentId(inRecordList.get(_iv_it).getPaymentId()) : DSL.trueCondition()");
     }
 
     @Test // In these cases the table must be selected based on the input record, otherwise this is not resolvable.
@@ -137,7 +137,7 @@ public class RecordTest extends GeneratorTest {
                 ".row(DSL.row(DSL.multiset(" +
                         "DSL.select(_a_customer.getId())" +
                         ".from(_a_customer).where(inRecordList",
-                ".mapping(Functions.nullOnAllNull((internal_it_) -> new CustomerNoTable(internal_it_)))).fetchOne(it -> it.into(CustomerNoTable"
+                ".mapping(Functions.nullOnAllNull((_iv_it) -> new CustomerNoTable(_iv_it)))).fetchOne(_iv_it -> _iv_it.into(CustomerNoTable"
         );
     }
 
@@ -149,7 +149,7 @@ public class RecordTest extends GeneratorTest {
                 ".row(DSL.row(DSL.multiset(" +
                         "DSL.select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
                         ".from(_a_customer).where(inRecordList",
-                "new CustomerNoTable(internal_it_)))).fetchOne(it -> it.into(CustomerNoTable"
+                "new CustomerNoTable(_iv_it)))).fetchOne(_iv_it -> _iv_it.into(CustomerNoTable"
         );
     }
 

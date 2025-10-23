@@ -10,24 +10,24 @@ import no.sikt.graphql.helpers.transform.AbstractTransformer;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
 
 public class RecordTransformer extends AbstractTransformer {
-    public RecordTransformer(DataFetchingEnvironment env) {
-        super(env);
+    public RecordTransformer(DataFetchingEnvironment _iv_env) {
+        super(_iv_env);
     }
 
-    public List<Address> addressToGraphType(List<MapperNestedJavaRecord> input, String path) {
+    public List<Address> addressToGraphType(List<MapperNestedJavaRecord> input, String _iv_path) {
         return List.of();
     }
 
     public List<CustomerTable> customerTableRecordToGraphType(List<CustomerRecord> input,
-                                                              String path) {
+                                                              String _iv_path) {
         return List.of();
     }
 
-    public Address addressToGraphType(MapperNestedJavaRecord input, String path) {
+    public Address addressToGraphType(MapperNestedJavaRecord input, String _iv_path) {
         return null;
     }
 
-    public CustomerTable customerTableRecordToGraphType(CustomerRecord input, String path) {
+    public CustomerTable customerTableRecordToGraphType(CustomerRecord input, String _iv_path) {
         return null;
     }
 }

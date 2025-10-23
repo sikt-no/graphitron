@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.stream.IntStream;
 
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_CONTEXT;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DisplayName("Code generation threshold evaluator - Checks generated code up against code generation thresholds")
@@ -143,23 +144,22 @@ public class CodeGenerationThresholdEvaluatorTest {
 
     private static MethodSpec createLinesOfCodeMethod(String methodName, int linesOfCode) {
         var method = MethodSpec.methodBuilder(methodName);
-        IntStream.range(0, linesOfCode).forEach(i -> {
-            method.addCode("someLine\n");
-        });
+        IntStream.range(0, linesOfCode).forEach(i -> method.addCode("someLine\n"));
         return method.build();
     }
 
     private static MethodSpec createNestedDepthMethod(String methodName, int nestedDepth) {
-        var method = MethodSpec.methodBuilder(methodName);
-        method.addCode("return\nctx\n");
-        IntStream.range(0, nestedDepth).forEach(i -> {
-            method.addCode(".select(\n");
-            method.addCode(String.format("column%d\n", i));
-            method.addCode(")\n");
-            method.addCode(String.format(".from(table%d)\n", i));
-        });
-        method.addStatement("from(table)");
-        return method.build();
+        var method = MethodSpec
+                .methodBuilder(methodName)
+                .addCode("return\n$N\n", VAR_CONTEXT);
+        IntStream.range(0, nestedDepth).forEach(i ->
+                method
+                .addCode(".select(column$L)\n", i)
+                .addCode(".from(table$L)\n", i)
+        );
+        return method
+                .addStatement("from(table)")
+                .build();
     }
 
     private static TypeSpec createTypeSpecWithMethods(List<MethodSpec> methods) {
