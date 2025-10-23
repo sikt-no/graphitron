@@ -79,7 +79,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 
     @Test
     @DisplayName("Primary key columns should be selected in previous query in nested type")
-    void previousQueryNestedOnlySplitQuery() {
+    void previousQueryNestedOnlySplitQuery() { //TODO alias
         assertGeneratedContentContains(
                 "previousQueryNested", Set.of(CUSTOMER_QUERY),
                 "row(_a_customer_2168032777_address.ADDRESS_ID), _a_customer_2168032777_address.getId())" +
@@ -324,7 +324,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "afterJavaService", Set.of(CUSTOMER_TABLE),
                 "Set<Row1<Long>> customerResolverKeys", // TODO: improve resolver keys variable name
-                ".select(DSL.row(_a_address.ADDRESS_ID), DSL.row(_a_address",
+                ".select(DSL.row(_a_address.ADDRESS_ID), addressForCustomer_address(_a_address",
                 ".from(_a_address)" +
                         ".where(DSL.row(_a_address.ADDRESS_ID).in(customerResolverKeys))" +
                         ".fetchMap(r -> r.value1().valuesRow(), Record2::value2)"
