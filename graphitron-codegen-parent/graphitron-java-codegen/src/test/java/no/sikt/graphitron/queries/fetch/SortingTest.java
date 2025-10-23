@@ -88,7 +88,7 @@ public class SortingTest extends GeneratorTest {
                 "orderFields = _a_city.",
                 "(_a_city).orderBy(orderFields)",
                 ".from(_a_city_760939060_address).orderBy(",
-                ".from(_a_address_609487378_customer).orderBy("
+                ".from(_a_address_609487378_customer).orderBy(" //TODO wrong aliasname
         );
     }
 

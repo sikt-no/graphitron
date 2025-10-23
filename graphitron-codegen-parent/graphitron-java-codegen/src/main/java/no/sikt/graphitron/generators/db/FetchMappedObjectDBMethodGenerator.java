@@ -446,7 +446,8 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             if (field instanceof ObjectField objectField &&
                 !objectField.isExplicitlyNotGenerated() &&  // Skip fields with @notGenerated directive
                 processedSchema.isRecordType(objectField) && 
-                processedSchema.getRecordType(objectField) != null) {
+                processedSchema.getRecordType(objectField) != null &&
+                !processedSchema.isUnion(objectField)) {  // Skip union types
                 
                 // Generate helper method for this nested field, passing the parent helper method name
                 var nestedHelperMethod = generateNestedHelperMethodWithParentName(parentHelperMethodName, objectField);

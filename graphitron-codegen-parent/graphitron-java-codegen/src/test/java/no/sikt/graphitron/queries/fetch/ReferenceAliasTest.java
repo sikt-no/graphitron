@@ -86,7 +86,7 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "alias/innerTable",
                 "customer_2168032777_address = _a_customer.address().as(",
-                "customer_2168032777_address.getId()"
+                "address.getId()"
         );
     }
 
@@ -106,7 +106,7 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "alias/innerTableReverse", Set.of(CUSTOMER_TABLE),
                 "address_223244161_customer = _a_address.customer().as(",
-                "address_223244161_customer.getId()"
+                "customer.getId()"
         );
     }
 
