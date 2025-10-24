@@ -1,0 +1,8 @@
+type Mutation {
+  mutation(in: CustomerNodeInputTable): Wrapper @mutation(typeName: DELETE)
+}
+
+type Wrapper {
+    data1: CustomerNode
+    data2: CustomerNode
+}

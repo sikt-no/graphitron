@@ -20,7 +20,7 @@ public class NodeIdOutputTest extends ValidationTest {
     void typeDoesNotExist() {
         assertErrorsContain(
                 () -> getProcessedSchema("typeDoesNotExist"),
-                "Type with name 'Address' referenced in the nodeId directive for field Customer.addressId does not exist."
+                "Type with name 'Address' referenced in the nodeId directive for field 'Customer.addressId' does not exist."
         );
     }
 
@@ -29,7 +29,7 @@ public class NodeIdOutputTest extends ValidationTest {
     void typeDoesNotHaveNodeDirective() {
         assertErrorsContain(
                 () -> getProcessedSchema("typeDoesNotHaveNodeDirective"),
-                "Referenced type 'Address' referenced in the nodeId directive for field Customer.addressId is missing the necessary node directive."
+                "Referenced type 'Address' referenced in the nodeId directive for field 'Customer.addressId' is missing the necessary node directive."
         );
     }
 
@@ -38,7 +38,7 @@ public class NodeIdOutputTest extends ValidationTest {
     void nonIdOrStringField() {
         assertErrorsContain(
                 () -> getProcessedSchema("nonIdOrStringField"),
-                "Field Customer.id has nodeId directive, but is not an ID or String field"
+                "Field 'Customer.id' has nodeId directive, but is not an ID or String field"
         );
     }
 
@@ -53,7 +53,7 @@ public class NodeIdOutputTest extends ValidationTest {
     void withField() {
         assertErrorsContain(
                 () -> getProcessedSchema("withField"),
-                "Customer.id has both the 'nodeId' and 'field' directives, which is not supported."
+                "'Customer.id' has both the 'nodeId' and 'field' directives, which is not supported."
         );
     }
 
@@ -62,7 +62,7 @@ public class NodeIdOutputTest extends ValidationTest {
     void withExternalField() {
         assertErrorsContain(
                 () -> getProcessedSchema("withExternalField"),
-                "Customer.id has both the 'nodeId' and 'externalField' directives, which is not supported."
+                "'Customer.id' has both the 'nodeId' and 'externalField' directives, which is not supported."
         );
     }
 

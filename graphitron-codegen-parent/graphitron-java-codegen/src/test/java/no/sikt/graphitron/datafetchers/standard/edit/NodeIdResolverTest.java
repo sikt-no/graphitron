@@ -39,11 +39,20 @@ public class NodeIdResolverTest extends GeneratorTest {
 
     @Test
     @DisplayName("A mutation that uses nodeIdStrategy")
-    void nodeId() {
+    void nodeIdStrategyWithJdbcBatching() {
         assertGeneratedContentContains(
-                "nodeId", Set.of(CUSTOMER_INPUT_TABLE),
+                "withJdbcBatching/nodeId", Set.of(CUSTOMER_INPUT_TABLE),
                 ".mutationForMutation(transform.getCtx(), nodeIdStrategy, inRecord)",
                 ".mutationForMutation(ctx, nodeIdStrategy, inRecord, selectionSet)"
+        );
+    }
+
+    @Test
+    @DisplayName("A delete mutation that uses nodeIdStrategy")
+    void nodeIdStrategyInDeleteMutation() {
+        assertGeneratedContentContains(
+                "delete/withNodeIdStrategy", Set.of(CUSTOMER_INPUT_TABLE),
+                ".mutationForMutation(ctx, nodeIdStrategy, in, selectionSet)"
         );
     }
 }

@@ -47,7 +47,6 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getSourceFieldsForForeignKey;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
-import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -57,11 +56,16 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
     protected final String resolverKeyParamName = uncapitalize(getLocalObject().getName()) + capitalize(RESOLVER_KEYS_NAME);
     protected final boolean isRoot = getLocalObject().isOperationRoot();
-    protected final boolean isQueryAfterMutation = getLocalObject().getName().equalsIgnoreCase(SCHEMA_MUTATION.getName());
+    protected final boolean isDeleteMutationQuery; // This will eventually apply to all generated mutations
     private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPE_SAFETY = 22;
 
-    public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
+    public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema, boolean isDeleteMutationQuery) {
         super(localObject, processedSchema);
+        this.isDeleteMutationQuery = isDeleteMutationQuery;
+    }
+
+    public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
+        this(localObject, processedSchema, false);
     }
 
     protected CodeBlock getInitialKey(FetchContext context) {
@@ -646,7 +650,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 }
             }
         }
+        return formatJooqConditions(conditionList);
+    }
 
+    protected static CodeBlock formatJooqConditions(ArrayList<CodeBlock> conditionList) {
         var code = CodeBlock.builder();
         var hasWhere = false;
         for (var condition : conditionList) {
@@ -658,14 +665,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return code.build();
     }
 
-    private List<CodeBlock> getInputConditions(FetchContext context, ObjectField sourceField) {
+    protected List<CodeBlock> getInputConditions(FetchContext context, ObjectField sourceField) {
         var allConditionCodeBlocks = new ArrayList<CodeBlock>();
         var inputConditions = getInputConditions(sourceField);
         var flatInputs = inputConditions.independentConditions();
         var declaredInputConditions = inputConditions.declaredConditionsByField();
         var splitInputs = flatInputs
                 .stream()
-                .collect(Collectors.partitioningBy(it -> processedSchema.hasRecord(it.getInput())));
+                .collect(Collectors.partitioningBy(it -> processedSchema.hasRecord(it.getInput()) && !isDeleteMutationQuery));
         var inputsWithRecord = splitInputs.get(true);
         var inputsWithoutRecord = splitInputs.get(false);
 
@@ -673,9 +680,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var conditionBuilder = CodeBlock.builder();
             var field = inputCondition.getInput();
             var checks = inputCondition.getChecksAsSequence();
-            var isInRecordInput = processedSchema.isInputType(field.getContainerTypeName()) && processedSchema.hasJOOQRecord(field.getContainerTypeName());
+            var isInRecordInput = !isDeleteMutationQuery && processedSchema.isInputType(field.getContainerTypeName()) && processedSchema.hasJOOQRecord(field.getContainerTypeName());
             var checksNotEmpty = !checks.isEmpty()
-                    && !(isInRecordInput && processedSchema.isNodeIdField(field)); // Skip null checks for nodeId in jOOQ record inputs
+                    && !(!isDeleteMutationQuery && isInRecordInput && processedSchema.isNodeIdField(field)); // Skip null checks for nodeId in jOOQ record inputs in queries
             var renderedSequence = isInRecordInput ?
                     CodeBlock.of(context.getTargetAlias())
                     :  context.iterateJoinSequenceFor(field).render();
@@ -691,10 +698,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 conditionBuilder.add(formatCondition(inputCondition, renderedSequence, context));
 
                 if (checksNotEmpty) {
+                    var fallbackOnFalse = (isDeleteMutationQuery && (inputCondition.isWrappedInList() || inputCondition.previousWasNullable())) || field instanceof VirtualInputField;
                     conditionBuilder
                             .add(" : ")
-                            .addIf(field instanceof VirtualInputField, falseCondition())
-                            .addIf(!(field instanceof VirtualInputField), noCondition());
+                            .addIf(fallbackOnFalse, falseCondition())
+                            .addIf(!fallbackOnFalse, noCondition());
                 }
                 allConditionCodeBlocks.add(conditionBuilder.build());
             }
@@ -740,10 +748,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     private CodeBlock formatCondition(InputCondition inputCondition, CodeBlock renderedSequence, FetchContext context) {
         var field = inputCondition.getInput();
-        var name = inputCondition.getNameWithPath();
+        var name = !isDeleteMutationQuery && processedSchema.isNodeIdField(field) && processedSchema.hasJOOQRecord(field.getContainerTypeName())
+                ? CodeBlock.of(inputCondition.getNamePath())
+                : inputCondition.getNameWithPath();
         if (processedSchema.isNodeIdField(field)) {
             return hasIdOrIdsBlock(
-                    processedSchema.hasJOOQRecord(field.getContainerTypeName()) ? CodeBlock.of(inputCondition.getNamePath()) : name,
+                    name,
                     processedSchema.getNodeType(field),
                     renderedSequence.toString(),
                     getSourceFieldsForForeignKey(field, processedSchema, renderedSequence),
@@ -865,7 +875,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add("\n)")
                 .unindent()
                 .unindent()
-                .add("$L\n) : $L", collectToList(), noCondition())
+                .add("$L\n) : $L", collectToList(), isDeleteMutationQuery ? falseCondition() : noCondition())
                 .unindent()
                 .unindent()
                 .build();
@@ -886,6 +896,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var field = condition.getInput();
         var getElement = CodeBlock.of("$N.get($N)", argumentInputFieldName, VARIABLE_INTERNAL_ITERATION);
         if (processedSchema.isNodeIdField(field)) {
+            getElement = isDeleteMutationQuery && processedSchema.hasJOOQRecord(field.getContainerTypeName())
+                    ? CodeBlock.of("$L$L", getElement, field.getMappingForRecordFieldOverride().asGetCall())
+                    : getElement;
             var referenceObject = processedSchema.hasJOOQRecord(field.getContainerTypeName())
                     ? processedSchema.getNodeType(field)
                     : context.getReferenceObject();
@@ -920,7 +933,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .map(it -> new InputCondition(
                         it,
                         inferFieldNamingConvention(it),
-                        processedSchema.hasRecord(it),
+                        processedSchema.hasRecord(it) && !isDeleteMutationQuery,
                         referenceField.hasOverridingCondition()))
                 .collect(Collectors.toCollection(LinkedList::new));
 
@@ -942,7 +955,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     pathNameForIterableFields.add(inputCondition.getNameWithPathString());
                 }
 
-                var innerFields = isQueryAfterMutation && processedSchema.hasJOOQRecord(inputField) ?
+                var innerFields = !isDeleteMutationQuery && referenceField.hasMutationType() && processedSchema.hasJOOQRecord(inputField) ?
                         getPrimaryKeyForTable(processedSchema.getRecordType(inputField).getTable().getName())
                                 .map(it -> it.getFields().stream().map(col -> new VirtualInputField(col.getName(), inputField.getContainerTypeName())).toList())
                                 .orElse(List.of())
@@ -956,7 +969,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 );
             }
 
-            if (!processedSchema.isInputType(inputField) || processedSchema.hasRecord(inputField)) {
+            if (!processedSchema.isInputType(inputField) || (processedSchema.hasRecord(inputField) && !isDeleteMutationQuery)) {
                 var flatInput = inputCondition.applyTo(inputField);
 
                 flatInputs.add(flatInput);
@@ -1027,7 +1040,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     protected String inferFieldNamingConvention(GenerationField field) {
-        if (processedSchema.hasRecord(field)) {
+        if (processedSchema.hasRecord(field) && !isDeleteMutationQuery) {
             return asListedRecordNameIf(field.getName(), field.isIterableWrapped());
         }
         return field.getName();

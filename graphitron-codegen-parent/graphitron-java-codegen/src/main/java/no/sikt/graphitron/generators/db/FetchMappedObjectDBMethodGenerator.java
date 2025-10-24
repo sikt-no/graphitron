@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.db;
 
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
@@ -160,6 +161,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .filter(it -> !processedSchema.isFederationService(it))
                 .filter(GenerationSourceField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())
+                .filter(it -> !it.isDeleteMutation())
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .toList();
