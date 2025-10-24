@@ -1,5 +1,3 @@
-mutation {
-    deleteCategories(
-        in: [{categoryId: "Q2F0ZWdvcnk6OTk5"}]
-    )
+mutation DeleteCategories($in: [CategoryInput!]!) {
+    deleteCategories(in: $in)
 }

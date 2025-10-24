@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
+import java.util.Map;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.Matchers.nullValue;
@@ -27,23 +29,32 @@ public class MutationMatchTest extends MatchTestBase {
         var deleteFile = "mutation_delete_categories.graphql";
         var categoryId = "Q2F0ZWdvcnk6OTk5";
 
+        Map<String, Object> upsertVariables = Map.of("in",
+                List.of(Map.of(
+                        "categoryId", categoryId,
+                        "name", "INSERTED"
+                ))
+        );
+        Map<String, Object> queryVariables = Map.of("in", Map.of("categoryId", categoryId));
+        Map<String, Object> deleteVariables = Map.of("in", List.of(Map.of("categoryId", categoryId)));
+
         // Given: A category is inserted by upsert and verified
-        getValidatableResponse(mutationFile)
+        getValidatableResponse(mutationFile, upsertVariables)
                 .rootPath("data.upsertCategories[0]")
                 .body("id", is(categoryId))
                 .body("name", is("INSERTED"));
-        getValidatableResponse(queryFile)
+        getValidatableResponse(queryFile, queryVariables)
                 .rootPath("data.category")
                 .body("id", is(categoryId))
                 .body("name", is("INSERTED"));
 
         // When: The category is deleted
-        getValidatableResponse(deleteFile)
+        getValidatableResponse(deleteFile, deleteVariables)
                 .rootPath("data")
                 .body("deleteCategories[0]", is(categoryId));
 
         // Then: The category should no longer exist
-        getValidatableResponse(queryFile)
+        getValidatableResponse(queryFile, queryVariables)
                 .rootPath("data")
                 .body("category", is(nullValue()));
     }
