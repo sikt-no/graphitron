@@ -1,7 +1,5 @@
-mutation {
-    upsertCategories(
-        in: [{categoryId: "Q2F0ZWdvcnk6OTk5", name: "INSERTED"}]
-    ) {
+mutation UpsertCategories($in: [CategoryNameInput]) {
+    upsertCategories(in: $in) {
         id
         name
     }

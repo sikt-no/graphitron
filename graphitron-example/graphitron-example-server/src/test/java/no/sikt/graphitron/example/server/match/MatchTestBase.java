@@ -19,16 +19,25 @@ public abstract class MatchTestBase {
     protected abstract Path getFileDirectory();
 
     protected ValidatableResponse getValidatableResponse(String fileName) {
-        String query;
+        return doPost(Map.of("query", readQueryFile(fileName)));
+    }
+
+    protected ValidatableResponse getValidatableResponse(String fileName, Map<String, Object> variables) {
+        return doPost(Map.of("query", readQueryFile(fileName), "variables", variables));
+    }
+
+    private String readQueryFile(String fileName) {
         try {
-            query = Files.readString(getFileDirectory().resolve(fileName));
+            return Files.readString(getFileDirectory().resolve(fileName));
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
 
+    private ValidatableResponse doPost(Map<String, Object> body) {
         return given()
                 .contentType(ContentType.JSON)
-                .body(Map.of("query", query))
+                .body(body)
                 .when()
                 .post("/graphql")
                 .then()

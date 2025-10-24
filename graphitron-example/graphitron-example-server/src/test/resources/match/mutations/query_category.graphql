@@ -1,5 +1,5 @@
-query {
-    category(in: {categoryId: "Q2F0ZWdvcnk6OTk5"}) {
+query Category($in: CategoryInput!) {
+    category(in: $in) {
         id
         name
     }
