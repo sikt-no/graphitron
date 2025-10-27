@@ -267,7 +267,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     getImportReferenceOfValidExtensionMethod(field, table.getName()),
                     field.getName(),
                     context.getTargetAlias());
-        } else if (field.invokesSubquery()) {
+        } else if (field.invokesSubquery() && !processedSchema.isNodeIdForNodeTypeWithSameTable(field)) {
             var fieldContext = context.nextContext(field);
             fieldSource = fieldContext.renderQuerySource(getLocalTable()).toString();
             innerRowCode = generateCorrelatedSubquery(field, fieldContext);
@@ -546,7 +546,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         if (processedSchema.isNodeIdField(field)) {
-            return createNodeIdBlock(context.getReferenceObject(), context.getTargetAlias());
+            return createNodeIdBlock(
+                    field.hasNodeID() ? processedSchema.getNodeType(field) : context.getReferenceObject(),
+                    context.getTargetAlias()
+            );
         }
 
         var renderedSource = field.isInput() ? context.iterateJoinSequenceFor(field).render() : context.renderQuerySource(getLocalTable());

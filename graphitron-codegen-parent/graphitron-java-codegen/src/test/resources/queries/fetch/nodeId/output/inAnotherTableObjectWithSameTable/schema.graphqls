@@ -1,0 +1,12 @@
+type Query {
+    query: Customer
+}
+
+type Customer @table {
+  id: ID! @nodeId(typeName: "CustomerNode")
+}
+
+type CustomerNode implements Node @node(typeId: "C") @table(name: "CUSTOMER") {
+    id: ID!
+}
+

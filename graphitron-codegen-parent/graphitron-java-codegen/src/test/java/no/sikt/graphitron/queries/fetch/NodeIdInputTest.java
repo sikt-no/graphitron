@@ -185,4 +185,12 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
                         "nodeIdStrategy.hasId(\"CustomerNode\", inRecordList.get(_iv_it), _a_customer.fields("
         );
     }
+
+    @Test
+    @DisplayName("Node ID input on another table object with same table as node type")
+    void asInputOnAnotherTableObjectWithSameTable() {
+        assertGeneratedContentContains("asInputOnAnotherTableObjectWithSameTable",
+                ".from(_a_customer).where(_iv_nodeIdStrategy.hasId(\"C\", in, _a_customer.fields"
+        );
+    }
 }

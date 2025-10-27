@@ -854,6 +854,30 @@ public class ProcessedSchema {
     }
 
     /**
+     * Is this a node ID field in a non-node type that shares the same table with another node type?
+     * @return Whether this is a field creating a node ID for another node type from the current table
+     */
+    public boolean isNodeIdForNodeTypeWithSameTable(GenerationField field) {
+        if (!field.hasNodeID() || field.hasFieldReferences()) {
+            return false;
+        }
+
+        var containerType = getRecordType(field.getContainerTypeName());
+        if (containerType == null || containerType.hasNodeDirective()) {
+            return false;
+        }
+
+        var localTable = containerType.hasTable()
+                ? Optional.of(containerType.getTable())
+                : Optional.ofNullable(getPreviousTableObjectForObject(containerType)).map(RecordObjectSpecification::getTable);
+
+
+        var nodeObject = Optional.ofNullable(getObject(field.getNodeIdTypeName()));
+        return nodeObject.isPresent() && localTable.filter(t -> nodeObject.get().getTable().equals(t)).isPresent();
+
+    }
+
+    /**
      * @return Is this field the federation _service field?
      */
     public boolean isFederationService(GenerationField target) {
