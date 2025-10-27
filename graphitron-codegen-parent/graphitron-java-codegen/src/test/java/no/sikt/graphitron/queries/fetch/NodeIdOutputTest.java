@@ -104,4 +104,12 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
                 "into(AddressInDistrictTwo.class); _iv_data.setId(_iv_it.get(\"TWO_id\", String.class));"
         );
     }
+
+    @Test
+    @DisplayName("Node ID in another table object with same table as node type")
+    void inAnotherTableObjectWithSameTable() {
+        assertGeneratedContentContains("inAnotherTableObjectWithSameTable",
+                "ctx.select(DSL.row(_iv_nodeIdStrategy.createId(\"C\", _a_customer" // Don't select as a reference
+        );
+    }
 }
