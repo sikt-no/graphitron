@@ -8,10 +8,10 @@ import java.util.List;
 import no.sikt.graphitron.codereferences.records.MapperNestedJavaRecord;
 
 public class AddressJavaMapper {
-    public static List<MapperNestedJavaRecord> toJavaRecord(List<Address> address, String path,
-                                                            RecordTransformer transform) {
-        var pathHere = path.isEmpty() ? path : path + "/";
-        var _args = transform.getArguments();
+    public static List<MapperNestedJavaRecord> toJavaRecord(List<Address> address, String _iv_path,
+                                                            RecordTransformer _iv_transform) {
+        var _iv_pathHere = _iv_path.isEmpty() ? _iv_path : _iv_path + "/";
+        var _iv_args = _iv_transform.getArguments();
         var mapperNestedJavaRecordList = new ArrayList<MapperNestedJavaRecord>();
 
         if (address != null) {
@@ -19,8 +19,8 @@ public class AddressJavaMapper {
                 if (itAddress == null) continue;
                 var mapperNestedJavaRecord = new MapperNestedJavaRecord();
                 var customer = itAddress.getCustomer();
-                if (customer != null && _args.contains(pathHere + "customer")) {
-                    mapperNestedJavaRecord.setCustomer(transform.customerInputTableToJOOQRecord(customer, pathHere + "customer"));
+                if (customer != null && _iv_args.contains(_iv_pathHere + "customer")) {
+                    mapperNestedJavaRecord.setCustomer(_iv_transform.customerInputTableToJOOQRecord(customer, _iv_pathHere + "customer"));
                 }
 
                 mapperNestedJavaRecordList.add(mapperNestedJavaRecord);

@@ -16,23 +16,23 @@ import org.jooq.impl.DSL;
 
 
 public class CustomerDBQueries {
-    public static Map<Row1<Long>, Address> addressForCustomer(DSLContext ctx,
-            NodeIdStrategy nodeIdStrategy, Set<Row1<Long>> customerResolverKeys,
-            SelectionSet select) {
+    public static Map<Row1<Long>, Address> addressForCustomer(DSLContext _iv_ctx,
+            NodeIdStrategy _iv_nodeIdStrategy, Set<Row1<Long>> _rk_customer,
+            SelectionSet _iv_select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         var _a_customer_2168032777_address = _a_customer.address().as("address_2138977089");
-        var orderFields = _a_customer_2168032777_address.fields(_a_customer_2168032777_address.getPrimaryKey().getFieldsArray());
-        return ctx
+        var _iv_orderFields = _a_customer_2168032777_address.fields(_a_customer_2168032777_address.getPrimaryKey().getFieldsArray());
+        return _iv_ctx
                 .select(
                         DSL.row(_a_customer.CUSTOMER_ID),
                         DSL.field(
-                                DSL.select(DSL.row(nodeIdStrategy.createId("Address", _a_customer_2168032777_address.fields(_a_customer_2168032777_address.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Address::new)))
+                                DSL.select(DSL.row(_iv_nodeIdStrategy.createId("Address", _a_customer_2168032777_address.fields(_a_customer_2168032777_address.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Address::new)))
                                 .from(_a_customer_2168032777_address)
 
                         )
                 )
                 .from(_a_customer)
-                .where(DSL.row(_a_customer.CUSTOMER_ID).in(customerResolverKeys))
-                .fetchMap(r -> r.value1().valuesRow(), Record2::value2);
+                .where(DSL.row(_a_customer.CUSTOMER_ID).in(_rk_customer))
+                .fetchMap(_iv_r -> _iv_r.value1().valuesRow(), Record2::value2);
     }
 }

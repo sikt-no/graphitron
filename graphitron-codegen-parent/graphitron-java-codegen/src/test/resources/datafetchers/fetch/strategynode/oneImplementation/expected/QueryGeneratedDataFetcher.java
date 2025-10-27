@@ -12,19 +12,19 @@ import no.sikt.graphql.helpers.resolvers.DataFetcherHelper;
 
 public class QueryGeneratedDataFetcher {
 
-    public static DataFetcher<CompletableFuture<Node>> node(NodeIdStrategy nodeIdStrategy) {
-        return env -> {
-            String id = env.getArgument("id");
-            var _typeId = nodeIdStrategy.getTypeId(id);
-            if (_typeId == null) {
-                throw new IllegalArgumentException("Could not resolve input id with value " + id + " within type " + _typeId);
+    public static DataFetcher<CompletableFuture<Node>> node(NodeIdStrategy _iv_nodeIdStrategy) {
+        return _iv_env -> {
+            String id = _iv_env.getArgument("id");
+            var _iv_typeId = _iv_nodeIdStrategy.getTypeId(id);
+            if (_iv_typeId == null) {
+                throw new IllegalArgumentException("Could not resolve input id with value " + id + " within type " + _iv_typeId);
             }
-            var _loaderName = _typeId + "_node";
-            var _fetcher = new DataFetcherHelper(env);
+            var _iv_loaderName = _iv_typeId + "_node";
+            var _iv_fetcher = new DataFetcherHelper(_iv_env);
 
-            switch (_typeId) {
-                case "Customer": return _fetcher.loadInterface(_loaderName, id, (ctx, ids, selectionSet) -> CustomerDBQueries.customerForNode(ctx, nodeIdStrategy, ids, selectionSet));
-                default: throw new IllegalArgumentException("Could not resolve input id with value " + id + " within type " + _typeId);
+            switch (_iv_typeId) {
+                case "Customer": return _iv_fetcher.loadInterface(_iv_loaderName, id, (_iv_ctx, _iv_ids, _iv_selectionSet) -> CustomerDBQueries.customerForNode(_iv_ctx, _iv_nodeIdStrategy, _iv_ids, _iv_selectionSet));
+                default: throw new IllegalArgumentException("Could not resolve input id with value " + id + " within type " + _iv_typeId);
             }
         };
     }

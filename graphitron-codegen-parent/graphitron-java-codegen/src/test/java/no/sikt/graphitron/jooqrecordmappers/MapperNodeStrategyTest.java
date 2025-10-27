@@ -55,14 +55,14 @@ public class MapperNodeStrategyTest extends GeneratorTest {
     void toGraph() {
         assertGeneratedContentContains("toGraph/default", Set.of(CUSTOMER_NODE),
                 // In mapper
-                " recordToGraphType(List<CustomerRecord> customerRecord, NodeIdStrategy nodeIdStrategy, String path, RecordTransformer transform)",
-                "customerNode.setId(nodeIdStrategy.createId(itCustomerRecord, \"CustomerNode\", Customer.CUSTOMER.getPrimaryKey().getFieldsArray()))",
+                " recordToGraphType(List<CustomerRecord> customerRecord, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path, RecordTransformer _iv_transform)",
+                "customerNode.setId(_iv_nodeIdStrategy.createId(itCustomerRecord, \"CustomerNode\", Customer.CUSTOMER.getPrimaryKey().getFieldsArray()))",
 
                 // In record transformer
-                "customerNodeRecordToGraphType(List<CustomerRecord> input, NodeIdStrategy nodeIdStrategy, String path)",
-                "customerNodeRecordToGraphType(CustomerRecord input, NodeIdStrategy nodeIdStrategy, String path)",
-                "customerNodeRecordToGraphType(List.of(input), nodeIdStrategy, path)",
-                ".recordToGraphType(input, nodeIdStrategy, path, this)"
+                "customerNodeRecordToGraphType(List<CustomerRecord> input, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path)",
+                "customerNodeRecordToGraphType(CustomerRecord input, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path)",
+                "customerNodeRecordToGraphType(List.of(input), _iv_nodeIdStrategy, _iv_path)",
+                ".recordToGraphType(input, _iv_nodeIdStrategy, _iv_path, this)"
         );
     }
 
@@ -70,7 +70,7 @@ public class MapperNodeStrategyTest extends GeneratorTest {
     @DisplayName("Custom node ID field to graph with node strategy (temporary test)")
     void toGraphCustomNodeId() {
         assertGeneratedContentContains("toGraph/toGraphCustomNodeId",
-                "customerNode.setId(nodeIdStrategy.createId(itCustomerRecord, \"C\", Customer.CUSTOMER.CUSTOMER_ID))"
+                "customerNode.setId(_iv_nodeIdStrategy.createId(itCustomerRecord, \"C\", Customer.CUSTOMER.CUSTOMER_ID))"
         );
     }
 
@@ -87,14 +87,14 @@ public class MapperNodeStrategyTest extends GeneratorTest {
     void toRecord() {
         assertGeneratedContentContains("toRecord/default", Set.of(CUSTOMER_NODE),
                 // In mapper
-                "toJOOQRecord(List<CustomerInputTable> customerInputTable, NodeIdStrategy nodeIdStrategy, String path, RecordTransformer transform)",
+                "toJOOQRecord(List<CustomerInputTable> customerInputTable, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path, RecordTransformer _iv_transform)",
                 "nodeIdStrategy.setId(customerRecord, itCustomerInputTable.getId(), \"CustomerNode\", Customer.CUSTOMER.getPrimaryKey().getFieldsArray())",
 
                 // In recordtransformer
-                "customerInputTableToJOOQRecord(List<CustomerInputTable> input, NodeIdStrategy nodeIdStrategy, String path)",
-                "customerInputTableToJOOQRecord(CustomerInputTable input, NodeIdStrategy nodeIdStrategy, String path)",
-                "customerInputTableToJOOQRecord(List.of(input), nodeIdStrategy, path)",
-                ".toJOOQRecord(input, nodeIdStrategy, path, this)"
+                "customerInputTableToJOOQRecord(List<CustomerInputTable> input, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path)",
+                "customerInputTableToJOOQRecord(CustomerInputTable input, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path)",
+                "customerInputTableToJOOQRecord(List.of(input), _iv_nodeIdStrategy, _iv_path)",
+                ".toJOOQRecord(input, _iv_nodeIdStrategy, _iv_path, this)"
         );
     }
 
@@ -119,7 +119,7 @@ public class MapperNodeStrategyTest extends GeneratorTest {
     void listedFieldWithJavaRecord() {
         assertGeneratedContentContains(
                 "toGraph/splitQueryInNestedJavaRecord",
-                "customerJavaRecordToGraphType(payloadRecord, nodeIdStrategy, pathHere + \"customerJavaRecords\")"
+                "customerJavaRecordToGraphType(payloadRecord, _iv_nodeIdStrategy, _iv_pathHere + \"customerJavaRecords\")"
         );
     }
 }

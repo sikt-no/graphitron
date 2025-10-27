@@ -104,8 +104,8 @@ public class StrategyNodeResolverTest extends GeneratorTest {
     void entity() {
         assertGeneratedContentContains(
                 "entity", Set.of(NODE, FEDERATION_QUERY),
-                "entityFetcher(NodeIdStrategy nodeIdStrategy)",
-                "customerAsEntity(ctx, nodeIdStrategy, internal_it_)"
+                "entityFetcher(NodeIdStrategy _iv_nodeIdStrategy)",
+                "customerAsEntity(_iv_ctx, _iv_nodeIdStrategy, _iv_it)"
         );
     }
 
@@ -114,8 +114,8 @@ public class StrategyNodeResolverTest extends GeneratorTest {
     void connection() {
         assertGeneratedContentContains(
                 "connection", Set.of(CUSTOMER_CONNECTION),
-                ".queryForQuery(ctx, nodeIdStrategy,",
-                ".countQueryForQuery(ctx, nodeIdStrategy)"
+                ".queryForQuery(_iv_ctx, _iv_nodeIdStrategy,",
+                ".countQueryForQuery(_iv_ctx, _iv_nodeIdStrategy)"
         );
     }
 }

@@ -10,7 +10,7 @@ import java.util.Objects;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.METHOD_CONTEXT_NAME;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.TRANSFORMER_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_TRANSFORMER;
 
 /**
  * An abstract dependency on a class somewhere in the codebase.
@@ -56,7 +56,7 @@ abstract public class NamedDependency implements Dependency, Comparable<Dependen
 
     public CodeBlock getDeclarationCode(boolean excludeCtx) {
         return CodeBlock.declareNew(getName(), getTypeName(), excludeCtx ? CodeBlock.empty()
-                : asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME));
+                : asMethodCall(VAR_TRANSFORMER, METHOD_CONTEXT_NAME));
     }
 
     @Override

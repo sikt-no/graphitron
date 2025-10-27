@@ -10,8 +10,8 @@ import no.sikt.graphitron.generators.codeinterface.wiring.WiringBuilderMethodGen
 import javax.lang.model.element.Modifier;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_HANDLER_NAME;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_HANDLER;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_STRATEGY;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 /**
@@ -29,14 +29,14 @@ public class CodeInterfaceSchemaMethodGenerator extends SimpleMethodGenerator {
     @Override
     public MethodSpec generate() {
         var code = includeNode ? CodeBlock.of("($N)",
-                GeneratorConfig.shouldMakeNodeStrategy() ? NODE_ID_STRATEGY_NAME : NODE_ID_HANDLER_NAME)
+                GeneratorConfig.shouldMakeNodeStrategy() ? VAR_NODE_STRATEGY : VAR_NODE_HANDLER)
                 : CodeBlock.of("()");
         var spec = MethodSpec.methodBuilder(METHOD_NAME);
         if (includeNode) {
             if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                spec.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
+                spec.addParameter(NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY);
             } else {
-                spec.addParameter(NODE_ID_HANDLER.className, NODE_ID_HANDLER_NAME);
+                spec.addParameter(NODE_ID_HANDLER.className, VAR_NODE_HANDLER);
             }
         }
         return spec

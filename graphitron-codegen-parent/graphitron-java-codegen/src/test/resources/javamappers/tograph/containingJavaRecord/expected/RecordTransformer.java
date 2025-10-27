@@ -10,23 +10,23 @@ import no.sikt.graphitron.codereferences.records.MapperNestedJavaRecord;
 import no.sikt.graphql.helpers.transform.AbstractTransformer;
 
 public class RecordTransformer extends AbstractTransformer {
-    public RecordTransformer(DataFetchingEnvironment env) {
-        super(env);
+    public RecordTransformer(DataFetchingEnvironment _iv_env) {
+        super(_iv_env);
     }
 
-    public List<DummyTypeRecord> dummyTypeRecordToGraphType(List<IDJavaRecord> input, String path) {
+    public List<DummyTypeRecord> dummyTypeRecordToGraphType(List<IDJavaRecord> input, String _iv_path) {
         return List.of();
     }
 
-    public List<Address> addressToGraphType(List<MapperNestedJavaRecord> input, String path) {
+    public List<Address> addressToGraphType(List<MapperNestedJavaRecord> input, String _iv_path) {
         return List.of();
     }
 
-    public DummyTypeRecord dummyTypeRecordToGraphType(IDJavaRecord input, String path) {
+    public DummyTypeRecord dummyTypeRecordToGraphType(IDJavaRecord input, String _iv_path) {
         return null;
     }
 
-    public Address addressToGraphType(MapperNestedJavaRecord input, String path) {
+    public Address addressToGraphType(MapperNestedJavaRecord input, String _iv_path) {
         return null;
     }
 }

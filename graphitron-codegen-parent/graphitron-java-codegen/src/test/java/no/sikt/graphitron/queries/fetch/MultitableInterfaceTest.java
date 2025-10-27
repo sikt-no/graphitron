@@ -31,7 +31,7 @@ public class MultitableInterfaceTest extends InterfaceTest {
     @Test
     @DisplayName("No implementations")
     void noImplementations() {
-        assertGeneratedContentContains("noImplementations", ", SelectionSet select) {return null;}");
+        assertGeneratedContentContains("noImplementations", ", SelectionSet _iv_select) {return null;}");
     }
 
     @Test
@@ -55,9 +55,9 @@ public class MultitableInterfaceTest extends InterfaceTest {
                 "mappedAddress.field(\"$data\")," +
                         "mappedCustomer.field(\"$data\")," +
                         "mappedCity.field(\"$data\")",
-                "case \"Address\" -> (SomeInterface) a1",
-                "case \"Customer\" -> (SomeInterface) a2",
-                "case \"City\" -> (SomeInterface) a3"
+                "case \"Address\" -> (SomeInterface) _iv_e1",
+                "case \"Customer\" -> (SomeInterface) _iv_e2",
+                "case \"City\" -> (SomeInterface) _iv_e3"
         );
     }
 
@@ -116,8 +116,8 @@ public class MultitableInterfaceTest extends InterfaceTest {
     @DisplayName("Paginated with input")
     void paginatedWithInput() {
         assertGeneratedContentContains("paginatedWithInput",
-                "SortFieldsForPayments(pageSize, _token, customerId).union",
-                ".where(customerId != null ? _a_paymentp2007_02.CUSTOMER_ID.eq(customerId) : DSL.noCondition()).and(_token"
+                "SortFieldsForPayments(_iv_pageSize, _iv_token, customerId).union",
+                ".where(customerId != null ? _a_paymentp2007_02.CUSTOMER_ID.eq(customerId) : DSL.noCondition()).and(_iv_token"
         );
     }
 
@@ -163,7 +163,7 @@ public class MultitableInterfaceTest extends InterfaceTest {
     void listedInSplitQuery() {
         assertGeneratedContentContains("splitQueryListed", Set.of(PERSON_WITH_EMAIL),
                 "DSL.multiset(DSL.select(DSL.row(unionKeysQuery.",
-                ".fetchMap(r -> r.value1().valuesRow(), r -> r.value2().map(Record1::value1)",
+                ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), _iv_r -> _iv_r.value2().map(Record1::value1)",
                 "unionKeysQuery.field(\"$innerRowNum\")))).from" // Make sure there's no limit
         );
     }
@@ -179,7 +179,7 @@ public class MultitableInterfaceTest extends InterfaceTest {
     void splitQueryWithInput() {
         assertGeneratedContentContains("splitQueryWithInput", Set.of(PERSON_WITH_EMAIL_CONNECTION),
                 ".from(_a_payment_1831371789_customer).where(_a_payment_1831371789_customer.EMAIL.eq(email))",
-                ".from(_a_payment).where(DSL.row(_a_payment.PAYMENT_ID).in(paymentResolverKeys)).fetch"
+                ".from(_a_payment).where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment)).fetch"
         );
     }
 }

@@ -57,18 +57,18 @@ public class MapperWithValidationNodeStrategyTest extends GeneratorTest {
     void toRecord() {
         assertGeneratedContentContains("toRecord/default", Set.of(CUSTOMER_NODE),
                 // In mapper
-                "toJOOQRecord(List<CustomerInputTable> customerInputTable, NodeIdStrategy nodeIdStrategy, String path, RecordTransformer transform)",
+                "toJOOQRecord(List<CustomerInputTable> customerInputTable, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path, RecordTransformer _iv_transform)",
                 "nodeIdStrategy.setId(customerRecord, itCustomerInputTable.getId(), \"CustomerNode\", Customer.CUSTOMER.getPrimaryKey().getFieldsArray())",
 
                 // In recordtransformer
-                "customerInputTableToJOOQRecord(List<CustomerInputTable> input, NodeIdStrategy nodeIdStrategy, String path, String indexPath)",
-                "customerInputTableToJOOQRecord(CustomerInputTable input, NodeIdStrategy nodeIdStrategy, String path, String indexPath)",
-                "customerInputTableToJOOQRecord(List.of(input), nodeIdStrategy, path, indexPath)",
-                ".toJOOQRecord(input, nodeIdStrategy, path, this)",
+                "customerInputTableToJOOQRecord(List<CustomerInputTable> input, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path, String _iv_indexPath)",
+                "customerInputTableToJOOQRecord(CustomerInputTable input, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path, String _iv_indexPath)",
+                "customerInputTableToJOOQRecord(List.of(input), _iv_nodeIdStrategy, _iv_path, _iv_indexPath)",
+                ".toJOOQRecord(input, _iv_nodeIdStrategy, _iv_path, this)",
 
                 // validation
-                "validate(List<CustomerRecord> customerRecordList, String path, RecordTransformer transform)",
-                ".validate(records, indexPath, this)"
+                "validate(List<CustomerRecord> customerRecordList, String _iv_path, RecordTransformer _iv_transform)",
+                ".validate(records, _iv_indexPath, this)"
         );
     }
 }

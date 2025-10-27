@@ -10,7 +10,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.asRecordMapp
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.PATH_INDEX_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_INDEX_PATH;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 
 public class TransformerListMethodGenerator extends TransformerMethodGenerator {
@@ -28,7 +28,7 @@ public class TransformerListMethodGenerator extends TransformerMethodGenerator {
         }
 
         return getDefaultSpecBuilder(methodName, wrapList(type.asTargetClassName(toRecord)), wrapList(type.asSourceClassName(toRecord)))
-                .addParameterIf(toRecord && useValidation(type), STRING.className, PATH_INDEX_NAME)
+                .addParameterIf(toRecord && useValidation(type), STRING.className, VAR_INDEX_PATH)
                 .addCode(getMethodContent(target))
                 .build();
     }

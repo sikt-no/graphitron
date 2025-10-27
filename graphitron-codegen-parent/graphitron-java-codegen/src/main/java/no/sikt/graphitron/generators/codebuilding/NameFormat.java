@@ -18,21 +18,21 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  */
 public class NameFormat {
     public static final String
-            VARIABLE_COUNT_PREFIX = "count",
-            VARIABLE_GET_PREFIX = "get",
-            VARIABLE_RESULT_SUFFIX = "",
-            VARIABLE_LIST_SUFFIX = "List",
-            VARIABLE_ITERATE_PREFIX = "it",
-            RECORD_NAME_SUFFIX = "Record",
-            INDEX_NAME_SUFFIX = "Index",
-            RECORD_TRANSFORM_SUFFIX = "ToJOOQ" + RECORD_NAME_SUFFIX,
-            RECORD_TRANSFORM_JAVA_SUFFIX = "ToJava" + RECORD_NAME_SUFFIX,
-            RESPONSE_TRANSFORM_SUFFIX = "ToGraphType",
-            RESPONSE_TRANSFORM_JOOQ_SUFFIX = RECORD_NAME_SUFFIX + RESPONSE_TRANSFORM_SUFFIX,
-            RESPONSE_TRANSFORM_JAVA_SUFFIX = RESPONSE_TRANSFORM_SUFFIX,
-            VALIDATE_PREFIX = "validate",
-            TYPE_RESOLVER_SUFFIX = "TypeResolver",
-            RESOLVER_KEY_DTO_SUFFIX = "Key";
+            PREFIX_COUNT = "count",
+            PREFIX_GET = "get",
+            SUFFIX_RESULT = "",
+            SUFFIX_LIST = "List",
+            PREFIX_ITERATE = "it",
+            PREFIX_VALIDATE = "validate",
+            SUFFIX_RECORD = "Record",
+            SUFFIX_INDEX = "Index",
+            SUFFIX_RECORD_TRANSFORM = "ToJOOQ" + SUFFIX_RECORD,
+            SUFFIX_RECORD_TRANSFORM_JAVA = "ToJava" + SUFFIX_RECORD,
+            SUFFIX_RESPONSE_TRANSFORM = "ToGraphType",
+            SUFFIX_RESPONSE_TRANSFORM_JOOQ = SUFFIX_RECORD + SUFFIX_RESPONSE_TRANSFORM,
+            SUFFIX_RESPONSE_TRANSFORM_JAVA = SUFFIX_RESPONSE_TRANSFORM,
+            SUFFIX_TYPE_RESOLVER = "TypeResolver",
+            SUFFIX_RESOLVER_KEY_DTO = "Key";
 
     /**
      * @return Inputs formatted as a get call, but without the get element of the string.
@@ -47,7 +47,7 @@ public class NameFormat {
      */
     @NotNull
     public static String asCountMethodName(String field, String container) {
-        return VARIABLE_COUNT_PREFIX + capitalize(asQueryMethodName(field, container));
+        return PREFIX_COUNT + capitalize(asQueryMethodName(field, container));
     }
 
     /**
@@ -71,7 +71,7 @@ public class NameFormat {
      */
     @NotNull
     public static String asTypeResolverMethodName(String target) {
-        return uncapitalize(target.replace("_", "")) + TYPE_RESOLVER_SUFFIX;
+        return uncapitalize(target.replace("_", "")) + SUFFIX_TYPE_RESOLVER;
     }
 
     /**
@@ -79,7 +79,7 @@ public class NameFormat {
      */
     @NotNull
     public static String asGetMethodName(String field, String type) {
-        return VARIABLE_GET_PREFIX + capitalize(field) + capitalize(type);
+        return PREFIX_GET + capitalize(field) + capitalize(type);
     }
 
     /**
@@ -87,7 +87,7 @@ public class NameFormat {
      */
     @NotNull
     public static String asGetMethodName(String field) {
-        return VARIABLE_GET_PREFIX + capitalize(field);
+        return PREFIX_GET + capitalize(field);
     }
 
     /**
@@ -129,7 +129,7 @@ public class NameFormat {
      */
     @NotNull
     public static String asListedName(String s) {
-        return uncapitalize(s) + VARIABLE_LIST_SUFFIX;
+        return uncapitalize(s) + SUFFIX_LIST;
     }
 
     /**
@@ -137,7 +137,7 @@ public class NameFormat {
      */
     @NotNull
     public static String asListedNameIf(String s, boolean condition) {
-        return condition ? uncapitalize(s) + VARIABLE_LIST_SUFFIX : uncapitalize(s);
+        return condition ? uncapitalize(s) + SUFFIX_LIST : uncapitalize(s);
     }
 
     /**
@@ -145,7 +145,7 @@ public class NameFormat {
      */
     @NotNull
     public static String asResultName(String s) {
-        return uncapitalize(s) + VARIABLE_RESULT_SUFFIX;
+        return uncapitalize(s) + SUFFIX_RESULT;
     }
 
     /**
@@ -153,7 +153,7 @@ public class NameFormat {
      */
     @NotNull
     public static String asRecordName(String s) {
-        return uncapitalize(s) + RECORD_NAME_SUFFIX;
+        return uncapitalize(s) + SUFFIX_RECORD;
     }
 
     /**
@@ -161,7 +161,7 @@ public class NameFormat {
      */
     @NotNull
     public static String asRecordClassName(String s) {
-        return capitalize(s) + RECORD_NAME_SUFFIX;
+        return capitalize(s) + SUFFIX_RECORD;
     }
 
     /**
@@ -169,7 +169,7 @@ public class NameFormat {
      */
     @NotNull
     public static String asIndexName(String s) {
-        return uncapitalize(s) + INDEX_NAME_SUFFIX;
+        return uncapitalize(s) + SUFFIX_INDEX;
     }
 
     /**
@@ -178,9 +178,9 @@ public class NameFormat {
     @NotNull
     public static String recordTransformMethod(String s, boolean isJavaRecord, boolean isInput) {
         if (isInput) {
-            return uncapitalize(s) + (isJavaRecord ? RECORD_TRANSFORM_JAVA_SUFFIX : RECORD_TRANSFORM_SUFFIX);
+            return uncapitalize(s) + (isJavaRecord ? SUFFIX_RECORD_TRANSFORM_JAVA : SUFFIX_RECORD_TRANSFORM);
         }
-        return uncapitalize(s) + (isJavaRecord ? RESPONSE_TRANSFORM_JAVA_SUFFIX : RESPONSE_TRANSFORM_JOOQ_SUFFIX);
+        return uncapitalize(s) + (isJavaRecord ? SUFFIX_RESPONSE_TRANSFORM_JAVA : SUFFIX_RESPONSE_TRANSFORM_JOOQ);
     }
 
     /**
@@ -189,9 +189,9 @@ public class NameFormat {
     @NotNull
     public static String recordTransformMethod(boolean isJavaRecord, boolean isInput) {
         if (isInput) {
-            return uncapitalize(isJavaRecord ? RECORD_TRANSFORM_JAVA_SUFFIX : RECORD_TRANSFORM_SUFFIX);
+            return uncapitalize(isJavaRecord ? SUFFIX_RECORD_TRANSFORM_JAVA : SUFFIX_RECORD_TRANSFORM);
         }
-        return uncapitalize(isJavaRecord ? RESPONSE_TRANSFORM_JAVA_SUFFIX : RESPONSE_TRANSFORM_JOOQ_SUFFIX);
+        return uncapitalize(isJavaRecord ? SUFFIX_RESPONSE_TRANSFORM_JAVA : SUFFIX_RESPONSE_TRANSFORM_JOOQ);
     }
 
     /**
@@ -199,7 +199,7 @@ public class NameFormat {
      */
     @NotNull
     public static String recordValidateMethod() {
-        return VALIDATE_PREFIX;
+        return PREFIX_VALIDATE;
     }
 
     /**
@@ -207,7 +207,7 @@ public class NameFormat {
      */
     @NotNull
     public static String asIterable(String s) {
-        return VARIABLE_ITERATE_PREFIX + capitalize(s);
+        return PREFIX_ITERATE + capitalize(s);
     }
 
     /**
@@ -215,7 +215,7 @@ public class NameFormat {
      */
     @NotNull
     public static String asIterableIf(String s, boolean condition) {
-        return condition ? VARIABLE_ITERATE_PREFIX + capitalize(s) : uncapitalize(s);
+        return condition ? PREFIX_ITERATE + capitalize(s) : uncapitalize(s);
     }
 
     /**

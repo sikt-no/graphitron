@@ -14,7 +14,7 @@ import static no.sikt.graphitron.configuration.GeneratorConfig.getRecordValidati
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.PAGE_SIZE_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_PAGE_SIZE;
 import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_TYPE;
 import static no.sikt.graphql.naming.GraphQLReservedName.PAGINATION_AFTER;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -45,7 +45,7 @@ public class InputParser {
         var contextParams = String.join(", ", schema.getAllContextFields(target).keySet().stream().map(VariablePrefix::contextFieldPrefix).toList());
         if (target.hasForwardPagination()) {
             var contextParamsOrEmpty = contextParams.isEmpty() ? "" : ", " + contextParams;
-            serviceInputString = (!inputsJoined.isEmpty() ? inputsJoined + ", " : inputsJoined) + PAGE_SIZE_NAME + ", " + PAGINATION_AFTER.getName() + contextParamsOrEmpty;
+            serviceInputString = (!inputsJoined.isEmpty() ? inputsJoined + ", " : inputsJoined) + VAR_PAGE_SIZE + ", " + PAGINATION_AFTER.getName() + contextParamsOrEmpty;
         } else {
             serviceInputString = inputsJoined.isEmpty() ? contextParams : (contextParams.isEmpty() ? inputsJoined : inputsJoined + ", " + contextParams);
         }

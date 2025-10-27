@@ -35,12 +35,12 @@ public class GraphitronTest extends GeneratorTest {
     void node() {
         assertGeneratedContentContains(
                 "node", Set.of(NODE),
-                "getRuntimeWiringBuilder(NodeIdHandler nodeIdHandler",
-                ".getRuntimeWiringBuilder(nodeIdHandler",
-                "getRuntimeWiring(NodeIdHandler nodeIdHandler",
-                "return getRuntimeWiringBuilder(nodeIdHandler",
-                "getSchema(NodeIdHandler nodeIdHandler)",
-                "= getRuntimeWiringBuilder(nodeIdHandler)"
+                "getRuntimeWiringBuilder(NodeIdHandler _iv_nodeIdHandler",
+                ".getRuntimeWiringBuilder(_iv_nodeIdHandler",
+                "getRuntimeWiring(NodeIdHandler _iv_nodeIdHandler",
+                "return getRuntimeWiringBuilder(_iv_nodeIdHandler",
+                "getSchema(NodeIdHandler _iv_nodeIdHandler)",
+                "= getRuntimeWiringBuilder(_iv_nodeIdHandler)"
         );
     }
 }

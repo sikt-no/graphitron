@@ -51,8 +51,8 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     void splitQueryInNestedJavaRecord() {
         assertGeneratedContentContains(
                 "splitQueryInNestedJavaRecord",
-                " if (select.contains(pathHere + \"customerJavaRecords\")) {" +
-                        "payload.setCustomerJavaRecords(transform.customerJavaRecordToGraphType(payloadRecord, pathHere + \"customerJavaRecords\"));}"
+                " if (_iv_select.contains(_iv_pathHere + \"customerJavaRecords\")) {" +
+                        "payload.setCustomerJavaRecords(_iv_transform.customerJavaRecordToGraphType(payloadRecord, _iv_pathHere + \"customerJavaRecords\"));}"
         );
     }
 
@@ -69,7 +69,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("Wrapped field containing listed splitQuery with listed splitQuery field")
     void nestedListWithSplitQuery() {
         var generatedFiles = generateFiles("nestedListWithSplitQuery");
-        contains(generatedFiles, "payload.setCitiesKey(payloadRecord.stream().map(internal_it_ -> DSL.row(internal_it_.getCityId())).toList());");
+        contains(generatedFiles, "payload.setCitiesKey(payloadRecord.stream().map(_iv_it -> DSL.row(_iv_it.getCityId())).toList());");
 //         TODO: fix this below in Jira: https://sikt.atlassian.net/browse/GG-277
 //        doesNotContain(generatedFiles, "class CityTypeMapper");
     }

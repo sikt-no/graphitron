@@ -28,7 +28,6 @@ import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
  */
 public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
     private final ObjectDefinition localObject;
-    private final static String VARIABLE_LOADER = "_loaderName";
 
     public FetchNodeMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -52,9 +51,9 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
         var targetBlock = CodeBlock.builder();
         if (anyImplementation.isPresent() && interfaceDefinition.getName().equals(NODE_TYPE.getName())) {  // Node special case.
             if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                targetBlock.add("$N.getTypeId($N)", NODE_ID_STRATEGY_NAME, inputFieldName);
+                targetBlock.add("$N.getTypeId($N)", VAR_NODE_STRATEGY, inputFieldName);
             } else {
-                targetBlock.add("$N.get($N.getTable($N).getName())", NODE_MAP_NAME, NODE_ID_HANDLER_NAME, inputFieldName);
+                targetBlock.add("$N.get($N.getTable($N).getName())", VAR_NODE_MAP, VAR_NODE_HANDLER, inputFieldName);
             }
         } else {
             targetBlock.add("null");
@@ -65,26 +64,26 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
                 ILLEGAL_ARGUMENT_EXCEPTION.className,
                 inputFieldName,
                 inputFieldName,
-                GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME
+                GeneratorConfig.shouldMakeNodeStrategy() ? VAR_TYPE_ID : VAR_TYPE_NAME
         );
 
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
 
         return getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(interfaceDefinition.getGraphClassName())))
-                .beginControlFlow("return $N ->", VARIABLE_ENV)
+                .beginControlFlow("return $N ->", VAR_ENV)
                 .addCode(extractParams(target))
-                .declare(GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME, targetBlock.build())
-                .beginControlFlow("if ($N == null)", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME)
+                .declare(GeneratorConfig.shouldMakeNodeStrategy() ? VAR_TYPE_ID : VAR_TYPE_NAME, targetBlock.build())
+                .beginControlFlow("if ($N == null)", GeneratorConfig.shouldMakeNodeStrategy() ? VAR_TYPE_ID : VAR_TYPE_NAME)
                 .addCode(illegalBlock)
                 .endControlFlow()
-                .declare(VARIABLE_LOADER, CodeBlock.of("$N + $S", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME, "_" + target.getName()))
-                .declare(VARIABLE_FETCHER_NAME, newDataFetcher())
+                .declare(VAR_LOADER, CodeBlock.of("$N + $S", GeneratorConfig.shouldMakeNodeStrategy() ? VAR_TYPE_ID : VAR_TYPE_NAME, "_" + target.getName()))
+                .declare(VAR_FETCHER_NAME, newDataFetcher())
                 .addCode("\n")
-                .beginControlFlow("switch ($N)", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME)
+                .beginControlFlow("switch ($N)", GeneratorConfig.shouldMakeNodeStrategy() ? VAR_TYPE_ID : VAR_TYPE_NAME)
                 .addParameterIf(
                         !GeneratorConfig.shouldMakeNodeStrategy() && interfaceDefinition.getName().equals(NODE_TYPE.getName()),
                         NODE_ID_HANDLER.className,
-                        NODE_ID_HANDLER_NAME
+                        VAR_NODE_HANDLER
                 )
                 .addCode(
                         implementations
@@ -102,14 +101,14 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
         var implementationTypeName = implementation.getName();
         CodeBlock dbFunction = CodeBlock.of(
                 "($L, $L, $L) -> $T.$L($L)",
-                CONTEXT_NAME,
-                IDS_NAME,
-                SELECTION_SET_NAME,
+                VAR_CONTEXT,
+                VAR_IDS,
+                VAR_SELECTION_SET,
                 getQueryClassName(asQueryClass(implementationTypeName)),
                 asNodeQueryName(implementationTypeName),
                 GeneratorConfig.shouldMakeNodeStrategy() ?
-                        CodeBlock.of("$N, $N, $N, $N", CONTEXT_NAME, NODE_ID_STRATEGY_NAME, IDS_NAME, SELECTION_SET_NAME)
-                        : CodeBlock.of("$N, $N, $N", CONTEXT_NAME, IDS_NAME, SELECTION_SET_NAME)
+                        CodeBlock.of("$N, $N, $N, $N", VAR_CONTEXT, VAR_NODE_STRATEGY, VAR_IDS, VAR_SELECTION_SET)
+                        : CodeBlock.of("$N, $N, $N", VAR_CONTEXT, VAR_IDS, VAR_SELECTION_SET)
             );
 
         String name;
@@ -119,7 +118,7 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
             name = implementationTypeName;
         }
 
-        return CodeBlock.statementOf("case $S: return $N.$L($N, $N, $L)", name, VARIABLE_FETCHER_NAME, "loadInterface", VARIABLE_LOADER, inputFieldName, dbFunction);
+        return CodeBlock.statementOf("case $S: return $N.$L($N, $N, $L)", name, VAR_FETCHER_NAME, "loadInterface", VAR_LOADER, inputFieldName, dbFunction);
     }
 
     @Override

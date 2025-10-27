@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_OBJECT;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_OBJECT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 /**
@@ -30,9 +30,9 @@ public class TypeNameMethodGenerator extends AbstractSchemaMethodGenerator<TypeR
         var components = getComponents(target).stream().map(TypeNameMethodGenerator::ifStatement).collect(CodeBlock.joining("\n"));
         return getDefaultSpecBuilder(METHOD_NAME, STRING.className)
                 .addModifiers(Modifier.STATIC)
-                .addParameter(OBJECT.className, VARIABLE_OBJECT)
+                .addParameter(OBJECT.className, VAR_OBJECT)
                 .addCode(components)
-                .addStatement("throw new $T(\"Type of \" + $N + \" can not be resolved.\")", ILLEGAL_ARGUMENT_EXCEPTION.className, VARIABLE_OBJECT)
+                .addStatement("throw new $T(\"Type of \" + $N + \" can not be resolved.\")", ILLEGAL_ARGUMENT_EXCEPTION.className, VAR_OBJECT)
                 .build();
     }
 
@@ -46,7 +46,7 @@ public class TypeNameMethodGenerator extends AbstractSchemaMethodGenerator<TypeR
     private static CodeBlock ifStatement(ObjectDefinition obj) {
         return CodeBlock
                 .builder()
-                .beginControlFlow("if ($N instanceof $T)", VARIABLE_OBJECT, obj.getGraphClassName())
+                .beginControlFlow("if ($N instanceof $T)", VAR_OBJECT, obj.getGraphClassName())
                 .add(returnWrap(CodeBlock.of("$S", obj.getName())))
                 .endControlFlow()
                 .build();

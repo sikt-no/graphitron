@@ -15,35 +15,35 @@ import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 
 public class QueryGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<DummyType>> query() {
-        return env -> {
-            String id = env.getArgument("id");
-            String str = env.getArgument("str");
-            Boolean bool = env.getArgument("bool");
-            Integer i = env.getArgument("i");
-            DummyEnum e = env.getArgument("e");
-            DummyInput in = ResolverHelpers.transformDTO(env.getArgument("in"), DummyInput.class);
-            List<String> idList = env.getArgument("idList");
-            List<DummyInput> inList = ResolverHelpers.transformDTOList(env.getArgument("inList"), DummyInput.class);
+        return _iv_env -> {
+            String id = _iv_env.getArgument("id");
+            String str = _iv_env.getArgument("str");
+            Boolean bool = _iv_env.getArgument("bool");
+            Integer i = _iv_env.getArgument("i");
+            DummyEnum e = _iv_env.getArgument("e");
+            DummyInput in = ResolverHelpers.transformDTO(_iv_env.getArgument("in"), DummyInput.class);
+            List<String> idList = _iv_env.getArgument("idList");
+            List<DummyInput> inList = ResolverHelpers.transformDTOList(_iv_env.getArgument("inList"), DummyInput.class);
 
-            return new DataFetcherHelper(env).load(
-                    (ctx, selectionSet) -> QueryDBQueries.queryForQuery(ctx, id, str, bool, i, e, in, idList, inList, selectionSet)
+            return new DataFetcherHelper(_iv_env).load(
+                    (_iv_ctx, _iv_selectionSet) -> QueryDBQueries.queryForQuery(_iv_ctx, id, str, bool, i, e, in, idList, inList, _iv_selectionSet)
             );
         };
     }
 
     public static DataFetcher<CompletableFuture<DummyType>> queryNonNullable() {
-        return env -> {
-            String id = env.getArgument("id");
-            String str = env.getArgument("str");
-            Boolean bool = env.getArgument("bool");
-            Integer i = env.getArgument("i");
-            DummyEnum e = env.getArgument("e");
-            DummyInput in = ResolverHelpers.transformDTO(env.getArgument("in"), DummyInput.class);
-            List<String> idList = env.getArgument("idList");
-            List<DummyInput> inList = ResolverHelpers.transformDTOList(env.getArgument("inList"), DummyInput.class);
+        return _iv_env -> {
+            String id = _iv_env.getArgument("id");
+            String str = _iv_env.getArgument("str");
+            Boolean bool = _iv_env.getArgument("bool");
+            Integer i = _iv_env.getArgument("i");
+            DummyEnum e = _iv_env.getArgument("e");
+            DummyInput in = ResolverHelpers.transformDTO(_iv_env.getArgument("in"), DummyInput.class);
+            List<String> idList = _iv_env.getArgument("idList");
+            List<DummyInput> inList = ResolverHelpers.transformDTOList(_iv_env.getArgument("inList"), DummyInput.class);
 
-            return new DataFetcherHelper(env).load(
-                    (ctx, selectionSet) -> QueryDBQueries.queryNonNullableForQuery(ctx, id, str, bool, i, e, in, idList, inList, selectionSet)
+            return new DataFetcherHelper(_iv_env).load(
+                    (_iv_ctx, _iv_selectionSet) -> QueryDBQueries.queryNonNullableForQuery(_iv_ctx, id, str, bool, i, e, in, idList, inList, _iv_selectionSet)
             );
         };
     }

@@ -70,7 +70,7 @@ public class EnumTest extends GeneratorTest {
     void listedJOOQRecord() {
         assertGeneratedContentContains(
                 "input/listedJOOQRecord", Set.of(DUMMY_ENUM_CONVERTED),
-                "inRecordList.get(internal_it_).getRating()) : _a_film.RATING)"
+                "inRecordList.get(_iv_it).getRating()) : _a_film.RATING)"
         );
     }
 
@@ -79,7 +79,7 @@ public class EnumTest extends GeneratorTest {
     void listedJOOQRecordNested() {
         assertGeneratedContentContains(
                 "input/listedJOOQRecordNested", Set.of(DUMMY_ENUM_CONVERTED),
-                "DSL.val(inRecordList.get(internal_it_).getRating()) : _a_film.RATING)"
+                "DSL.val(inRecordList.get(_iv_it).getRating()) : _a_film.RATING)"
         );
     }
 

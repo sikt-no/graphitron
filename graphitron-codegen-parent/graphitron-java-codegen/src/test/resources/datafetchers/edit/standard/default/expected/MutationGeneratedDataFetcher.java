@@ -11,14 +11,14 @@ import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 
 public class MutationGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<String>> mutation() {
-        return env -> {
-            CustomerInputTable in = ResolverHelpers.transformDTO(env.getArgument("in"), CustomerInputTable.class);
-            var transform = new RecordTransformer(env);
+        return _iv_env -> {
+            CustomerInputTable in = ResolverHelpers.transformDTO(_iv_env.getArgument("in"), CustomerInputTable.class);
+            var _iv_transform = new RecordTransformer(_iv_env);
 
-            var inRecord = transform.customerInputTableToJOOQRecord(in, "in");
+            var inRecord = _iv_transform.customerInputTableToJOOQRecord(in, "in");
 
-            MutationDBQueries.mutationForMutation(transform.getCtx(), inRecord);
-            return new DataFetcherHelper(env).load((ctx, selectionSet) -> MutationDBQueries.mutationForMutation(ctx, inRecord, selectionSet));
+            MutationDBQueries.mutationForMutation(_iv_transform.getCtx(), inRecord);
+            return new DataFetcherHelper(_iv_env).load((_iv_ctx, _iv_selectionSet) -> MutationDBQueries.mutationForMutation(_iv_ctx, inRecord, _iv_selectionSet));
         };
     }
 }

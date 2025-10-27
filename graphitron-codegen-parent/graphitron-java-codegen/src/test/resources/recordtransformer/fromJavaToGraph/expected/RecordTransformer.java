@@ -9,15 +9,15 @@ import no.sikt.graphitron.codereferences.dummyreferences.DummyRecord;
 import no.sikt.graphql.helpers.transform.AbstractTransformer;
 
 public class RecordTransformer extends AbstractTransformer {
-    public RecordTransformer(DataFetchingEnvironment env) {
-        super(env);
+    public RecordTransformer(DataFetchingEnvironment _iv_env) {
+        super(_iv_env);
     }
 
-    public List<Customer> customerToGraphType(List<DummyRecord> input, String path) {
-        return CustomerTypeMapper.toGraphType(input, path, this);
+    public List<Customer> customerToGraphType(List<DummyRecord> input, String _iv_path) {
+        return CustomerTypeMapper.toGraphType(input, _iv_path, this);
     }
 
-    public Customer customerToGraphType(DummyRecord input, String path) {
-        return customerToGraphType(List.of(input), path).stream().findFirst().orElse(null);
+    public Customer customerToGraphType(DummyRecord input, String _iv_path) {
+        return customerToGraphType(List.of(input), _iv_path).stream().findFirst().orElse(null);
     }
 }

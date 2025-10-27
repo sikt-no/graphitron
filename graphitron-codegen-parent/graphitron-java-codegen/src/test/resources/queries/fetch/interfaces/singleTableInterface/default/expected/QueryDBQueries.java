@@ -12,27 +12,27 @@ import org.jooq.DSLContext;
 
 public class QueryDBQueries {
 
-    public static Address addressForQuery(DSLContext ctx, SelectionSet select) {
+    public static Address addressForQuery(DSLContext _iv_ctx, SelectionSet _iv_select) {
         var _a_address = ADDRESS.as("address_223244161");
-        var orderFields = _a_address.fields(_a_address.getPrimaryKey().getFieldsArray());
-        return ctx.select(
-                        _a_address.DISTRICT.as("_discriminator"),
+        var _iv_orderFields = _a_address.fields(_a_address.getPrimaryKey().getFieldsArray());
+        return _iv_ctx.select(
+                        _a_address.DISTRICT.as("_iv_discriminator"),
                         _a_address.POSTAL_CODE.as("postalCode"),
                         _a_address.getId().as("id"),
                         _a_address.POSTAL_CODE.as("postalCodeDuplicate")
                 )
                 .from(_a_address)
                 .where(_a_address.DISTRICT.in("ONE", "TWO"))
-                .orderBy(orderFields)
+                .orderBy(_iv_orderFields)
                 .fetchOne(
-                        internal_it_ -> {
-                            var _discriminatorValue = internal_it_.get("_discriminator", _a_address.DISTRICT.getConverter());
-                            if (_discriminatorValue.equals("ONE")) {
-                                return internal_it_.into(AddressInDistrictOne.class);
-                            } else if (_discriminatorValue.equals("TWO")) {
-                                return internal_it_.into(AddressInDistrictTwo.class);
+                        _iv_it -> {
+                            var _iv_discriminatorValue = _iv_it.get("_iv_discriminator", _a_address.DISTRICT.getConverter());
+                            if (_iv_discriminatorValue.equals("ONE")) {
+                                return _iv_it.into(AddressInDistrictOne.class);
+                            } else if (_iv_discriminatorValue.equals("TWO")) {
+                                return _iv_it.into(AddressInDistrictTwo.class);
                             } else {
-                                throw new RuntimeException(String.format("Querying interface '%s' returned row with unexpected discriminator value '%s'", "Address", _discriminatorValue));
+                                throw new RuntimeException(String.format("Querying interface '%s' returned row with unexpected discriminator value '%s'", "Address", _iv_discriminatorValue));
                             }
                         }
                 );

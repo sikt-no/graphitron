@@ -6,7 +6,7 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.lang.model.element.Modifier;
 
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_HANDLER_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_HANDLER;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.INJECT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_HANDLER;
 
@@ -15,7 +15,7 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_HANDLER;
  */
 public class IdHandlerDependency implements Dependency, Comparable<Dependency> {
     private static final IdHandlerDependency instance = new IdHandlerDependency();
-    private final static CodeBlock declaration = CodeBlock.declareNew(NODE_ID_HANDLER_NAME, NODE_ID_HANDLER.className);
+    private final static CodeBlock declaration = CodeBlock.declareNew(VAR_NODE_HANDLER, NODE_ID_HANDLER.className);
 
     private IdHandlerDependency() {}
 
@@ -28,7 +28,7 @@ public class IdHandlerDependency implements Dependency, Comparable<Dependency> {
 
     @Override
     public FieldSpec getSpec() {
-        return FieldSpec.builder(NODE_ID_HANDLER.className, NODE_ID_HANDLER_NAME, Modifier.PRIVATE).addAnnotation(INJECT.className).build();
+        return FieldSpec.builder(NODE_ID_HANDLER.className, VAR_NODE_HANDLER, Modifier.PRIVATE).addAnnotation(INJECT.className).build();
     }
 
     @Override

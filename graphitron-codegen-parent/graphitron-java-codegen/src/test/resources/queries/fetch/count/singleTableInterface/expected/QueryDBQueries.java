@@ -8,9 +8,9 @@ import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static Integer countAddressForQuery(DSLContext ctx) {
+    public static Integer countAddressForQuery(DSLContext _iv_ctx) {
         var _a_address = ADDRESS.as("address_223244161");
-        return ctx
+        return _iv_ctx
                 .select(DSL.count())
                 .from(_a_address)
                 .where(_a_address.DISTRICT.in("ONE", "TWO"))

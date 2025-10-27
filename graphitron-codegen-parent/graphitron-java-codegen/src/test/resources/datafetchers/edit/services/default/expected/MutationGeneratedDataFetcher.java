@@ -9,10 +9,10 @@ import no.sikt.graphql.helpers.resolvers.ServiceDataFetcherHelper;
 
 public class MutationGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<String>> mutation() {
-        return env -> {
-            var transform = new RecordTransformer(env);
-            var resolverMutationService = new ResolverMutationService(transform.getCtx());
-            return new ServiceDataFetcherHelper<>(transform).load(() -> resolverMutationService.mutation());
+        return _iv_env -> {
+            var _iv_transform = new RecordTransformer(_iv_env);
+            var resolverMutationService = new ResolverMutationService(_iv_transform.getCtx());
+            return new ServiceDataFetcherHelper<>(_iv_transform).load(() -> resolverMutationService.mutation());
         };
     }
 }

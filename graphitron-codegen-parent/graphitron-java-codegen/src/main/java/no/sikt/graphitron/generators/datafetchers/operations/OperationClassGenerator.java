@@ -19,7 +19,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_MAP_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_MAP;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.MAP;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
@@ -100,7 +100,7 @@ public class OperationClassGenerator extends DataFetcherClassGenerator<ObjectDef
 
         return Optional.of(
                 FieldSpec
-                        .builder(ParameterizedTypeName.get(MAP.className, STRING.className, STRING.className), NODE_MAP_NAME)
+                        .builder(ParameterizedTypeName.get(MAP.className, STRING.className, STRING.className), VAR_NODE_MAP)
                         .addModifiers(Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
                         .initializer(CodeBlock.of("$T.ofEntries($L)", MAP.className, indentIfMultiline(nodes)))
                         .build()

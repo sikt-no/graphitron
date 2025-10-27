@@ -16,7 +16,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.contextFieldPrefix;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_STRATEGY;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_STRATEGY;
 
@@ -35,8 +35,8 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractS
         return super
                 .getDefaultSpecBuilder(methodName, returnType)
                 .addModifiers(Modifier.STATIC)
-                .addParameter(DSL_CONTEXT.className, VariableNames.CONTEXT_NAME)
-                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
+                .addParameter(DSL_CONTEXT.className, VariableNames.VAR_CONTEXT)
+                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY);
     }
 
     /**

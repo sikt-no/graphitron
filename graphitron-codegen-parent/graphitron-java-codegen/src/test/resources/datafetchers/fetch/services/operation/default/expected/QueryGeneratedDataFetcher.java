@@ -9,10 +9,10 @@ import no.sikt.graphql.helpers.resolvers.ServiceDataFetcherHelper;
 
 public class QueryGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<Customer>> query() {
-        return env -> {
-            var transform = new RecordTransformer(env);
-            var resolverFetchService = new ResolverFetchService(transform.getCtx());
-            return new ServiceDataFetcherHelper<>(transform).load(
+        return _iv_env -> {
+            var _iv_transform = new RecordTransformer(_iv_env);
+            var resolverFetchService = new ResolverFetchService(_iv_transform.getCtx());
+            return new ServiceDataFetcherHelper<>(_iv_transform).load(
                     () -> resolverFetchService.query(),
                     (recordTransform, response) -> recordTransform.customerRecordToGraphType(response, ""));
         };

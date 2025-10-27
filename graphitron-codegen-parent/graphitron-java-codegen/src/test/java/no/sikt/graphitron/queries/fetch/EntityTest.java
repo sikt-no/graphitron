@@ -54,7 +54,7 @@ public class EntityTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "twoKeys",
                 "objectRow(List.of(\"id\",\"first\"), List.of(_a_customer.getId(),_a_customer.FIRST_NAME))",
-                "where(_a_customer.hasId((String) _inputMap.get(\"id\"))).or(_a_customer.FIRST_NAME.eq((String) _inputMap.get(\"first\"))"
+                "where(_a_customer.hasId((String) _iv_inputMap.get(\"id\"))).or(_a_customer.FIRST_NAME.eq((String) _iv_inputMap.get(\"first\"))"
         );
     }
 
@@ -64,7 +64,7 @@ public class EntityTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "compoundKey",
                 "objectRow(List.of(\"id\",\"first\"), List.of(_a_customer.getId(),_a_customer.FIRST_NAME))",
-                "where(DSL.and(List.of(_a_customer.hasId((String) _inputMap.get(\"id\")),_a_customer.FIRST_NAME.eq((String) _inputMap.get(\"first\"))))"
+                "where(DSL.and(List.of(_a_customer.hasId((String) _iv_inputMap.get(\"id\")),_a_customer.FIRST_NAME.eq((String) _iv_inputMap.get(\"first\"))))"
         );
     }
 
@@ -82,6 +82,6 @@ public class EntityTest extends GeneratorTest {
     @Test
     @DisplayName("Entity query with integer key")
     void nonStringKey() {
-        assertGeneratedContentContains("nonStringKey", ".P_FILM_COUNT.eq((Integer) _inputMap.get(\"p_film_count\")");
+        assertGeneratedContentContains("nonStringKey", ".P_FILM_COUNT.eq((Integer) _iv_inputMap.get(\"p_film_count\")");
     }
 }
