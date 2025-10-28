@@ -45,7 +45,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "mappedField",
                 "pathHere + \"id\"",
-                "customer.setId(itCustomerJavaRecord.getSomeID()"
+                "customer.setId(_nit_customerJavaRecord.getSomeID()"
         );
     }
 
@@ -55,9 +55,9 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "twoFields",
                 "pathHere + \"someID\"",
-                "customer.setSomeID(itCustomerJavaRecord.getSomeID()",
+                "customer.setSomeID(_nit_customerJavaRecord.getSomeID()",
                 "pathHere + \"otherID\"",
-                "customer.setOtherID(itCustomerJavaRecord.getOtherID()"
+                "customer.setOtherID(_nit_customerJavaRecord.getOtherID()"
         );
     }
 
@@ -68,8 +68,8 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
                 "containingNonRecordWrapper", Set.of(ADDRESS_SERVICE),
                 "inner = new Wrapper();" +
                         "if (_iv_select.contains(_iv_pathHere + \"inner/postalCode\")) {" +
-                        "inner.setPostalCode(itMapperAddressJavaRecord.getPostalCode());}" +
-                        "address.setInner(inner)"
+                        "_mo_inner.setPostalCode(_nit_mapperAddressJavaRecord.getPostalCode());}" +
+                        "_mo_address.setInner(_mo_inner)"
         );
     }
 
@@ -79,10 +79,10 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "containingDoubleNonRecordWrapper", Set.of(ADDRESS_SERVICE),
                         "if (_iv_select.contains(_iv_pathHere + \"inner0/inner1\")) {" +
-                        "var inner1 = new InnerWrapper();" +
+                        "var _mo_inner1 = new InnerWrapper();" +
                         "if (_iv_select.contains(_iv_pathHere + \"inner0/inner1/postalCode\")) {" +
-                        "inner1.setPostalCode(itMapperAddressJavaRecord.getPostalCode());}" +
-                        "inner0.setInner1(inner1)"
+                        "_mo_inner1.setPostalCode(_nit_mapperAddressJavaRecord.getPostalCode());}" +
+                        "_mo_inner0.setInner1(_mo_inner1)"
         );
     }
 
@@ -94,10 +94,10 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
                 "containingNonRecordWrapper",
                 "inner = new Wrapper();" +
                         "if (_iv_select.contains(_iv_pathHere + \"inner/inner\")) {" +
-                        "var inner = new InnerWrapper();" +
+                        "var _mo_inner = new InnerWrapper();" +
                         "if (_iv_select.contains(_iv_pathHere + \"inner/inner/postalCode\")) {" +
-                        "inner.setPostalCode(itMapperAddressJavaRecord.getPostalCode());}" +
-                        "inner.setInner(inner)"
+                        "_mo_inner.setPostalCode(_nit_mapperAddressJavaRecord.getPostalCode());}" +
+                        "_mo_inner.setInner(_mo_inner)"
         );
     }
 
@@ -107,9 +107,9 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "containingNonRecordWrapperWithFieldOverride", Set.of(ADDRESS_SERVICE),
                 "inner1 = new Wrapper1()",
-                "inner1.setCode(itMapperAddressJavaRecord.getPostalCode()",
+                "inner1.setCode(_nit_mapperAddressJavaRecord.getPostalCode()",
                 "inner2 = new Wrapper2()",
-                "inner2.setCode(itMapperAddressJavaRecord.getPostalCode()"
+                "inner2.setCode(_nit_mapperAddressJavaRecord.getPostalCode()"
         );
     }
 
@@ -118,9 +118,9 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     void splitQuery() {
         assertGeneratedContentContains(
                 "splitQuery",
-                "var address = itCustomerJavaRecord.getAddress();" +
-                        "if (address != null && _iv_select.contains(_iv_pathHere + \"address\")) {" +
-                        "customer.setAddressKey(DSL.row(address.getAddressId()));"
+                "var _mi_address = _nit_customerJavaRecord.getAddress();" +
+                        "if (_mi_address != null && _iv_select.contains(_iv_pathHere + \"address\")) {" +
+                        "_mo_customer.setAddressKey(DSL.row(_mi_address.getAddressId()));"
         );
     }
 
@@ -129,9 +129,9 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     void splitQueryNested() {
         assertGeneratedContentContains(
                 "splitQueryNested",
-                "var address = itCustomerJavaRecord.getAddress();" +
-                        "if (address != null && _iv_select.contains(_iv_pathHere + \"wrapper/address\")) {" +
-                        "wrapper.setAddressKey(DSL.row(address.getAddressId()));"
+                "var _mi_address = _nit_customerJavaRecord.getAddress();" +
+                        "if (_mi_address != null && _iv_select.contains(_iv_pathHere + \"wrapper/address\")) {" +
+                        "_mo_wrapper.setAddressKey(DSL.row(_mi_address.getAddressId()));"
         );
     }
 
@@ -140,7 +140,8 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     void splitQueryListed() {
         assertGeneratedContentContains(
                 "splitQueryListed",
-                "customer.setAddressKey(address.stream().map(_iv_it -> DSL.row(_iv_it.getAddressId())).toList());"
+                "var _mi_address = _nit_customerJavaRecord.getAddress()",
+                "customer.setAddressKey(_mi_address.stream().map(_iv_it -> DSL.row(_iv_it.getAddressId())).toList());"
         );
     }
 
@@ -149,7 +150,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     void unconfiguredField() {
         assertGeneratedContentContains(
                 "unconfiguredField",
-                "customerList = new ArrayList<Customer>();return customerList"
+                "customer = new ArrayList<Customer>();return _mlo_customer"
         );
     }
 
@@ -159,20 +160,20 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "idOtherThanPK",
                 "pathHere + \"addressId\"",
-                ".setAddressId(itCustomerJavaRecord.getAddressId()"
+                ".setAddressId(_nit_customerJavaRecord.getAddressId()"
         );
     }
 
     @Test
     @DisplayName("Enum field")
     void withEnum() {
-        assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM),".setE(QueryHelper.makeEnumMap(itMapperEnumRecord.getEnum1(),");
+        assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM),".setE(QueryHelper.makeEnumMap(_nit_mapperEnumRecord.getEnum1(),");
     }
 
     @Test
     @DisplayName("List field")
     void listField() {
-        assertGeneratedContentContains("listField", ".setIdList(itCustomerJavaRecord.getIdList()");
+        assertGeneratedContentContains("listField", ".setIdList(_nit_customerJavaRecord.getIdList()");
     }
 
     @Test
@@ -182,22 +183,22 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
-    @Disabled("This is wrong! Should be itMapperNestedJavaRecord.getDummyRecord()). Seems to wrongly use toRecord case here.")
+    @Disabled("This is wrong! Should be _nit_mapperNestedJavaRecord.getDummyRecord()). Seems to wrongly use toRecord case here.")
     @DisplayName("Responses containing a Java record with a non-record type in between")
     void containingNonRecordWrapperWithJavaRecord() {
         assertGeneratedContentContains(
                 "containingNonRecordWrapperWithJavaRecord", Set.of(DUMMY_TYPE_RECORD),
-                "inner.setDummyRecord(_iv_transform.dummyTypeRecordToGraphType(itMapperNestedJavaRecord.getDummyRecord(), _iv_pathHere + \"inner/dummyRecord\")"
+                "inner.setDummyRecord(_iv_transform.dummyTypeRecordToGraphType(_nit_mapperNestedJavaRecord.getDummyRecord(), _iv_pathHere + \"inner/dummyRecord\")"
         );
     }
 
     @Test
-    @Disabled("This is wrong! Should be itMapperNestedJavaRecord.getCustomer(). Seems to wrongly use toRecord case here.")
+    @Disabled("This is wrong! Should be _nit_mapperNestedJavaRecord.getCustomer(). Seems to wrongly use toRecord case here.")
     @DisplayName("Responses containing a jOOQ record with a non-record type in between")
     void containingNonRecordWrapperWithJOOQRecord() {
         assertGeneratedContentContains(
                 "containingNonRecordWrapperWithJOOQRecord", Set.of(CUSTOMER_TABLE),
-                "inner.setCustomer(_iv_transform.customerTableRecordToGraphType(itMapperNestedJavaRecord.getCustomer(), _iv_pathHere + \"inner/customer\")"
+                "inner.setCustomer(_iv_transform.customerTableRecordToGraphType(_nit_mapperNestedJavaRecord.getCustomer(), _iv_pathHere + \"inner/customer\")"
         );
     }
 
@@ -206,7 +207,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     void withUnconfiguredJavaRecord() {
         assertGeneratedContentContains(
                 "unconfiguredJavaRecord",
-                "customerList = new ArrayList<Customer>();return customerList"
+                "customer = new ArrayList<Customer>();return _mlo_customer"
         );
     }
 
@@ -215,7 +216,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     void withUnconfiguredJOOQRecord() {
         assertGeneratedContentContains(
                 "unconfiguredJOOQRecord", Set.of(CUSTOMER_TABLE),
-                "customerList = new ArrayList<Customer>();return customerList"
+                "customer = new ArrayList<Customer>();return _mlo_customer"
         );
     }
 }

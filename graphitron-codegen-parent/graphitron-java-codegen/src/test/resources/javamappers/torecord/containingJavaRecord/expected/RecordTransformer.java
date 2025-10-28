@@ -14,20 +14,20 @@ public class RecordTransformer extends AbstractTransformer {
         super(_iv_env);
     }
 
-    public List<MapperNestedJavaRecord> addressToJavaRecord(List<Address> input, String _iv_path) {
+    public List<MapperNestedJavaRecord> addressToJavaRecord(List<Address> _mi_input, String _iv_path) {
         return List.of();
     }
 
-    public List<IDJavaRecord> dummyInputRecordToJavaRecord(List<DummyInputRecord> input,
+    public List<IDJavaRecord> dummyInputRecordToJavaRecord(List<DummyInputRecord> _mi_input,
                                                            String _iv_path) {
         return List.of();
     }
 
-    public MapperNestedJavaRecord addressToJavaRecord(Address input, String _iv_path) {
+    public MapperNestedJavaRecord addressToJavaRecord(Address _mi_input, String _iv_path) {
         return new MapperNestedJavaRecord();
     }
 
-    public IDJavaRecord dummyInputRecordToJavaRecord(DummyInputRecord input, String _iv_path) {
+    public IDJavaRecord dummyInputRecordToJavaRecord(DummyInputRecord _mi_input, String _iv_path) {
         return new IDJavaRecord();
     }
 }

@@ -15,7 +15,7 @@ import org.jooq.Record2;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static Map<String, CustomerTable> queryForQuery(DSLContext _iv_ctx, List<String> id, SelectionSet _iv_select) {
+    public static Map<String, CustomerTable> queryForQuery(DSLContext _iv_ctx, List<String> _mi_id, SelectionSet _iv_select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         return _iv_ctx
                 .select(
@@ -23,7 +23,7 @@ public class QueryDBQueries {
                         DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
                 )
                 .from(_a_customer)
-                .where(id.size() > 0 ? _a_customer.hasIds(id.stream().collect(Collectors.toSet())): DSL.noCondition())
+                .where(_mi_id.size() > 0 ? _a_customer.hasIds(_mi_id.stream().collect(Collectors.toSet())): DSL.noCondition())
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

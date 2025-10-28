@@ -13,11 +13,11 @@ public class RecordTransformer extends AbstractTransformer {
         super(_iv_env);
     }
 
-    public List<Customer> customerToGraphType(List<DummyRecord> input, String _iv_path) {
-        return CustomerTypeMapper.toGraphType(input, _iv_path, this);
+    public List<Customer> customerToGraphType(List<DummyRecord> _mi_input, String _iv_path) {
+        return CustomerTypeMapper.toGraphType(_mi_input, _iv_path, this);
     }
 
-    public Customer customerToGraphType(DummyRecord input, String _iv_path) {
-        return customerToGraphType(List.of(input), _iv_path).stream().findFirst().orElse(null);
+    public Customer customerToGraphType(DummyRecord _mi_input, String _iv_path) {
+        return customerToGraphType(List.of(_mi_input), _iv_path).stream().findFirst().orElse(null);
     }
 }

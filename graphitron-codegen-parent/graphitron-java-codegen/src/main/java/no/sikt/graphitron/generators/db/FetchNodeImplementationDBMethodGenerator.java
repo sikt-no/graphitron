@@ -22,6 +22,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.asNodeQueryN
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_SELECT;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RECORD2;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
 import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAndThrow;
@@ -56,7 +57,7 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
         var selectCode = generateSelectRow(context);
 
         var argument = target.getArguments().get(0);
-        var argumentName = argument.getName();
+        var argumentName = inputPrefix(argument.getName());
         var querySource = context.renderQuerySource(implementationTableObject);
 
         CodeBlock id;

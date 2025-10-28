@@ -15,11 +15,12 @@ import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.addStringIfNotEmpty;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArrayList;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.listedOutputPrefix;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.outputPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -61,8 +62,8 @@ abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethod
         return getDefaultSpecBuilder(methodName, context.getInputVariableName(), source, wrapListIf(context.getReturnType(), noRecordIterability || context.hasRecordReference()))
                 .declare(toRecord ? VAR_ARGS : VAR_SELECT, asMethodCall(VAR_TRANSFORMER, toRecord ? METHOD_ARGS_NAME : METHOD_SELECT_NAME))
                 .declareIf(toRecord && context.hasTable() && !context.hasJavaRecordReference(), VAR_CONTEXT, asMethodCall(VAR_TRANSFORMER, METHOD_CONTEXT_NAME))
-                .declareNewIf(hasIterable, asListedName(context.getOutputName()), wrapArrayList(context.getReturnType()))
-                .declareNewIf(!hasIterable, context.getOutputName(), context.getReturnType())
+                .declareNewIf(hasIterable, listedOutputPrefix(context.getOutputName()), wrapArrayList(context.getReturnType()))
+                .declareNewIf(!hasIterable, outputPrefix(context.getOutputName()), context.getReturnType())
                 .addCode("\n")
                 .addCode(declareDependencyClasses(methodName))
                 .addCode(fillCode)

@@ -11,7 +11,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static CustomerTable queryForQuery(DSLContext _iv_ctx, Order orderBy, SelectionSet _iv_select) {
+    public static CustomerTable queryForQuery(DSLContext _iv_ctx, Order _mi_orderBy, SelectionSet _iv_select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         return _iv_ctx
                 .select(DSL.row(_a_customer.LAST_NAME).mapping(Functions.nullOnAllNull(CustomerTable::new)))

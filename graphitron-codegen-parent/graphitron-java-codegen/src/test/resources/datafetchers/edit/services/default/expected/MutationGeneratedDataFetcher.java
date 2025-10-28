@@ -11,8 +11,8 @@ public class MutationGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<String>> mutation() {
         return _iv_env -> {
             var _iv_transform = new RecordTransformer(_iv_env);
-            var resolverMutationService = new ResolverMutationService(_iv_transform.getCtx());
-            return new ServiceDataFetcherHelper<>(_iv_transform).load(() -> resolverMutationService.mutation());
+            var _rs_resolverMutationService = new ResolverMutationService(_iv_transform.getCtx());
+            return new ServiceDataFetcherHelper<>(_iv_transform).load(() -> _rs_resolverMutationService.mutation());
         };
     }
 }

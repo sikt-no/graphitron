@@ -13,11 +13,11 @@ public class RecordTransformer extends AbstractTransformer {
         super(_iv_env);
     }
 
-    public List<CustomerRecord> customerInputTableToJOOQRecord(List<CustomerInputTable> input, String _iv_path) {
-        return CustomerInputTableJOOQMapper.toJOOQRecord(input, _iv_path, this);
+    public List<CustomerRecord> customerInputTableToJOOQRecord(List<CustomerInputTable> _mi_input, String _iv_path) {
+        return CustomerInputTableJOOQMapper.toJOOQRecord(_mi_input, _iv_path, this);
     }
 
-    public CustomerRecord customerInputTableToJOOQRecord(CustomerInputTable input, String _iv_path) {
-        return customerInputTableToJOOQRecord(List.of(input), _iv_path).stream().findFirst().orElse(new CustomerRecord());
+    public CustomerRecord customerInputTableToJOOQRecord(CustomerInputTable _mi_input, String _iv_path) {
+        return customerInputTableToJOOQRecord(List.of(_mi_input), _iv_path).stream().findFirst().orElse(new CustomerRecord());
     }
 }

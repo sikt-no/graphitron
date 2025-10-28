@@ -21,11 +21,13 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArrayList;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -81,35 +83,6 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock ifNotNull(String name) {
         return CodeBlock.of("if ($N != null)", name);
-    }
-
-    /**
-     * @param addTarget Name of updatable collection to add something to.
-     * @param addition The name of the content that should be added.
-     * @return CodeBlock that adds something to an updatable collection.
-     */
-    @NotNull
-    public static CodeBlock addToList(String addTarget, String addition) {
-        return CodeBlock.statementOf("$N.add($N)", addTarget, addition);
-    }
-
-    /**
-     * @param addTarget Name of updatable collection to add something to, as well as what is added. For the collection a "List" suffix is assumed.
-     * @return CodeBlock that adds something to an updatable collection.
-     */
-    @NotNull
-    public static CodeBlock addToList(String addTarget) {
-        return addToList(asListedName(addTarget), uncapitalize(addTarget));
-    }
-
-    /**
-     * @param addTarget Name of updatable collection to add something to.
-     * @param codeAddition The CodeBlock that provides something that should be added.
-     * @return CodeBlock that adds something to an updatable collection.
-     */
-    @NotNull
-    public static CodeBlock addToList(String addTarget, CodeBlock codeAddition) {
-        return CodeBlock.statementOf("$N.add($L)", addTarget, codeAddition);
     }
 
     /**
@@ -332,29 +305,14 @@ public class FormatCodeBlocks {
      * @return CodeBlock consisting of a function for a count DB call.
      */
     @NotNull
-    public static CodeBlock countFunction(String queryLocation, String queryMethodName, String inputList, boolean isService) {
-        var params = new ArrayList<String>();
-
-        var includeContext = !isService;
-        if (includeContext) {
-            params.add(VAR_CONTEXT);
-        }
-
-        if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            params.add(VAR_NODE_STRATEGY);
-        }
-
-        if (!inputList.isEmpty()) {
-            params.add(inputList);
-        }
-
+    public static CodeBlock countFunction(String queryLocation, String queryMethodName, List<String> inputList, boolean isService) {
         return CodeBlock.of(
                 isService ? "($L$L) -> $L.count$L($L)" : "($L$L) -> $T.count$L($L)",
-                CodeBlock.ofIf(includeContext, "$L, ", VAR_CONTEXT),
+                CodeBlock.ofIf(!isService, "$L, ", VAR_CONTEXT),
                 VAR_RESOLVER_KEYS,
                 isService ? uncapitalize(queryLocation) : getQueryClassName(queryLocation),
                 capitalize(queryMethodName),
-                String.join(", ", params)
+                String.join(", ", inputList)
         );
     }
 
@@ -366,7 +324,7 @@ public class FormatCodeBlocks {
      * @return CodeBlock consisting of a function for a generic DB call.
      */
     @NotNull
-    public static CodeBlock queryFunction(String queryLocation, String queryMethodName, String inputList, boolean hasKeyValues, boolean usesKeyValues, boolean isService) {
+    public static CodeBlock queryFunction(String queryLocation, String queryMethodName, List<String> inputList, boolean hasKeyValues, boolean usesKeyValues, boolean isService) {
         var inputs = new ArrayList<String>();
         var params = new ArrayList<String>();
         if (!isService) {
@@ -382,9 +340,7 @@ public class FormatCodeBlocks {
         if (usesKeyValues) {
             params.add(VAR_RESOLVER_KEYS);
         }
-        if (!inputList.isEmpty()) {
-            params.add(inputList);
-        }
+        params.addAll(inputList);
         if (!isService) {
             inputs.add(VAR_SELECTION_SET);
             params.add(VAR_SELECTION_SET);
@@ -408,7 +364,7 @@ public class FormatCodeBlocks {
                 "int $L = $T.getPageSize($N, $L, $L)",
                 VAR_PAGE_SIZE,
                 RESOLVER_HELPERS.className,
-                GraphQLReservedName.PAGINATION_FIRST.getName(),
+                inputPrefix(GraphQLReservedName.PAGINATION_FIRST.getName()),
                 GeneratorConfig.getMaxAllowedPageSize(),
                 defaultFirst
         );
@@ -434,7 +390,7 @@ public class FormatCodeBlocks {
     public static CodeBlock wrapFor(String variable, CodeBlock code) {
         return CodeBlock
                 .builder()
-                .beginControlFlow("for (var $L : $N)", asIterable(variable), variable)
+                .beginControlFlow("for (var $L : $N)", namedIteratorPrefix(variable), inputPrefix(variable))
                 .add(code)
                 .endControlFlow()
                 .build();
@@ -447,7 +403,7 @@ public class FormatCodeBlocks {
     public static CodeBlock wrapForIndexed(String variable, CodeBlock code) {
         return CodeBlock
                 .builder()
-                .beginControlFlow("for (int $1L = 0; $1N < $2N.size(); $1N++)", asIndexName(asIterable(variable)), variable)
+                .beginControlFlow("for (int $1L = 0; $1N < $2N.size(); $1N++)", namedIndexIteratorPrefix(variable), inputPrefix(variable))
                 .add(code)
                 .endControlFlow()
                 .build();
@@ -641,12 +597,12 @@ public class FormatCodeBlocks {
     public static CodeBlock applyTransform(String recordName, TypeName recordTypeName, Method transform) {
         return CodeBlock.statementOf(
                 "$N = ($T) $T.$L($N, $N)",
-                asListedName(recordName),
+                listedOutputPrefix(recordName),
                 wrapArrayList(recordTypeName),
                 ClassName.get(transform.getDeclaringClass()),
                 transform.getName(),
                 VAR_CONTEXT,
-                asListedName(recordName)
+                listedOutputPrefix(recordName)
         );
     }
 
@@ -744,17 +700,6 @@ public class FormatCodeBlocks {
 
     public static CodeBlock hasIdBlock(CodeBlock id, RecordObjectSpecification<?> obj, String targetAlias) {
         return hasIdOrIdsBlock(id, obj, targetAlias, CodeBlock.empty(), false);
-    }
-
-    public static CodeBlock reassignFromServiceBlock(String variableName, String methodName, String targetAlias, String args) {
-        return CodeBlock.of(
-                "$N = $L",
-                targetAlias,
-                invokeExternalMethod(
-                        CodeBlock.of("$N", uncapitalize(variableName)),
-                        methodName,
-                        args)
-        );
     }
 
     public static CodeBlock hasIdOrIdsBlock(CodeBlock idOrRecordParamName, RecordObjectSpecification<?> obj, String targetAlias, CodeBlock mappedFkFields, boolean isMultiple) {

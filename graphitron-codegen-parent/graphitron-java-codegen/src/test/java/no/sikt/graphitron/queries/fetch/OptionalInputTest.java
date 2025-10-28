@@ -41,7 +41,7 @@ public class OptionalInputTest extends GeneratorTest {
     @Test
     @DisplayName("Listed field")
     void list() {
-        assertGeneratedContentContains("list", "email != null && email.size() > 0 ? _a_customer.EMAIL.in(email) :DSL.noCondition()");
+        assertGeneratedContentContains("list", "email != null && _mi_email.size() > 0 ? _a_customer.EMAIL.in(_mi_email) :DSL.noCondition()");
     }
 
     @Test
@@ -49,7 +49,7 @@ public class OptionalInputTest extends GeneratorTest {
     void input() {
         assertGeneratedContentContains(
                 "input", Set.of(DUMMY_INPUT),
-                "in != null && in.getId() != null ? _a_customer.hasId(in.getId()) : DSL.noCondition()"
+                "in != null && _mi_in.getId() != null ? _a_customer.hasId(_mi_in.getId()) : DSL.noCondition()"
         );
     }
 
@@ -58,7 +58,7 @@ public class OptionalInputTest extends GeneratorTest {
     void nestedInput() {
         assertGeneratedContentContains(
                 "nestedInput", Set.of(DUMMY_INPUT),
-                "in != null && in.getIn() != null && in.getIn().getId() != null ? _a_customer.hasId(in.getIn().getId()) : DSL.noCondition()"
+                "in != null && _mi_in.getIn() != null && _mi_in.getIn().getId() != null ? _a_customer.hasId(_mi_in.getIn().getId()) : DSL.noCondition()"
         );
     }
 
@@ -67,8 +67,8 @@ public class OptionalInputTest extends GeneratorTest {
     void listedNestedInput() {
         assertGeneratedContentContains(
                 "listedNestedInput", Set.of(DUMMY_INPUT),
-                "customer.hasId(in0.get(_iv_it).getIn1().getId())"
-                );
+                "customer.hasId(_mi_in0.get(_iv_it).getIn1().getId())"
+        );
     }
 
     @Test
@@ -76,7 +76,7 @@ public class OptionalInputTest extends GeneratorTest {
     void nestedListedInput() {
         assertGeneratedContentContains(
                 "nestedListedInput", Set.of(DUMMY_INPUT),
-                "customer.hasId(in.getIn().get(_iv_it).getId())"
+                "customer.hasId(_mi_in.getIn().get(_iv_it).getId())"
         );
     }
 }

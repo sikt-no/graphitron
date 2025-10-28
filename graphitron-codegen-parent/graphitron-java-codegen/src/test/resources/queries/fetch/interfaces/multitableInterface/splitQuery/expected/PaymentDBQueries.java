@@ -27,19 +27,19 @@ public class PaymentDBQueries {
 
     public static Map<Row1<Long>, PersonWithEmail> staffAndCustomersForPayment(DSLContext _iv_ctx, Set<Row1<Long>> _rk_payment, SelectionSet _iv_select) {
         var _a_payment = PAYMENT.as("payment_1831371789");
-        var unionKeysQuery = staffSortFieldsForStaffAndCustomers(_a_payment).unionAll(customerSortFieldsForStaffAndCustomers(_a_payment));
+        var _iv_unionKeysQuery = staffSortFieldsForStaffAndCustomers(_a_payment).unionAll(customerSortFieldsForStaffAndCustomers(_a_payment));
 
-        var mappedCustomer = customerForStaffAndCustomers();
-        var mappedStaff = staffForStaffAndCustomers();
+        var _sjs_customer = customerForStaffAndCustomers();
+        var _sjs_staff = staffForStaffAndCustomers();
 
         return _iv_ctx.select(
                         DSL.row(_a_payment.PAYMENT_ID),
                         DSL.field(
                                 DSL.select(
                                                 DSL.row(
-                                                        unionKeysQuery.field("$type", String.class),
-                                                        mappedCustomer.field("$data"),
-                                                        mappedStaff.field("$data")
+                                                        _iv_unionKeysQuery.field("$type", String.class),
+                                                        _sjs_customer.field("$data"),
+                                                        _sjs_staff.field("$data")
                                                 ).mapping((_iv_e0, _iv_e1, _iv_e2) -> switch (_iv_e0) {
                                                             case "Customer" -> (PersonWithEmail) _iv_e1;
                                                             case "Staff" -> (PersonWithEmail) _iv_e2;
@@ -47,12 +47,12 @@ public class PaymentDBQueries {
                                                                     throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "PersonWithEmail", _iv_e0));
                                                         }
                                                 ))
-                                        .from(unionKeysQuery)
-                                        .leftJoin(mappedCustomer)
-                                        .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedCustomer.field("$pkFields", JSONB.class)))
-                                        .leftJoin(mappedStaff)
-                                        .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedStaff.field("$pkFields", JSONB.class)))
-                                        .orderBy(unionKeysQuery.field("$type"), unionKeysQuery.field("$innerRowNum"))
+                                        .from(_iv_unionKeysQuery)
+                                        .leftJoin(_sjs_customer)
+                                        .on(_iv_unionKeysQuery.field("$pkFields", JSONB.class).eq(_sjs_customer.field("$pkFields", JSONB.class)))
+                                        .leftJoin(_sjs_staff)
+                                        .on(_iv_unionKeysQuery.field("$pkFields", JSONB.class).eq(_sjs_staff.field("$pkFields", JSONB.class)))
+                                        .orderBy(_iv_unionKeysQuery.field("$type"), _iv_unionKeysQuery.field("$innerRowNum"))
                         )
                 )
                 .from(_a_payment)

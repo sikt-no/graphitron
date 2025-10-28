@@ -50,10 +50,10 @@ public class ResolverPaginationTest extends GeneratorTest {
     void withOtherInput() {
         assertGeneratedContentContains(
                 "operation/withOtherInput",
-                "Integer first = _iv_env.getArgument(\"first\")",
-                "String after = _iv_env.getArgument(\"after\")",
-                "String other = _iv_env.getArgument(\"other\")",
-                "queryForQuery(_iv_ctx, other, _iv_pageSize, after,"
+                "Integer _mi_first = _iv_env.getArgument(\"first\")",
+                "String _mi_after = _iv_env.getArgument(\"after\")",
+                "String _mi_other = _iv_env.getArgument(\"other\")",
+                "queryForQuery(_iv_ctx, _mi_other, _iv_pageSize, _mi_after,"
         );
     }
 
@@ -68,10 +68,10 @@ public class ResolverPaginationTest extends GeneratorTest {
     void splitQueryWithOtherInput() {
         assertGeneratedContentContains(
                 "splitquery/withOtherInput", Set.of(SPLIT_QUERY_WRAPPER),
-                "Integer first = _iv_env.getArgument(\"first\")",
-                "String after = _iv_env.getArgument(\"after\")",
-                "String other = _iv_env.getArgument(\"other\")",
-                "queryForWrapper(_iv_ctx, _iv_keys, other, _iv_pageSize, after,"
+                "first = _iv_env.getArgument(\"first\")",
+                "after = _iv_env.getArgument(\"after\")",
+                "other = _iv_env.getArgument(\"other\")",
+                "queryForWrapper(_iv_ctx, _iv_keys, _mi_other, _iv_pageSize, _mi_after,"
         );
     }
 
@@ -100,7 +100,7 @@ public class ResolverPaginationTest extends GeneratorTest {
     void withContextCondition() {
         assertGeneratedContentContains(
                 "operation/withContextCondition",
-                "queryForQuery(_iv_ctx, _iv_pageSize, after, _cf_ctxField, _iv_selectionSet)",
+                "queryForQuery(_iv_ctx, _iv_pageSize, _mi_after, _cf_ctxField, _iv_selectionSet)",
                 "countQueryForQuery(_iv_ctx, _cf_ctxField)"
         );
     }

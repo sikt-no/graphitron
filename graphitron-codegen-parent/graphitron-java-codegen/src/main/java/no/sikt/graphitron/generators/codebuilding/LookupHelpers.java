@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asIterable;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 public class LookupHelpers {
@@ -216,7 +216,7 @@ public class LookupHelpers {
     }
 
     private static CodeBlock iterateComponents(String[] components, ProcessedSchema schema, ObjectField ref) {
-        var path = CodeBlock.builder().add("$N", ref.getArgumentByName(components[0]).getName());
+        var path = CodeBlock.builder().add("$N", inputPrefix(ref.getArgumentByName(components[0]).getName()));
         var collectBlock = CodeBlock.builder();
 
         var first = components[0];
@@ -232,7 +232,7 @@ public class LookupHelpers {
             collectBlock.addIf(previousField.isIterableWrapped(), " : $N)$L", "null", collectToList());
 
             path
-                    .addIf(previousField.isIterableWrapped(), ".stream().map($1L -> $1N != null ? $1N", asIterable(previousField.getName()))
+                    .addIf(previousField.isIterableWrapped(), ".stream().map($1L -> $1N != null ? $1N", namedIteratorPrefix(previousField.getName()))
                     .add(field.getMappingFromSchemaName().asGetCall());
             previousField = field;
         }

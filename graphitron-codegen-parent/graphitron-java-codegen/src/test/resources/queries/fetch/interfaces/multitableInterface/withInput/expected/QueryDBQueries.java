@@ -24,17 +24,17 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
 
-    public static List<Payment> paymentsForQuery(DSLContext _iv_ctx, String customerId, SelectionSet _iv_select) {
-        var unionKeysQuery = paymenttypetwoSortFieldsForPayments(customerId).unionAll(paymenttypeoneSortFieldsForPayments(customerId));
+    public static List<Payment> paymentsForQuery(DSLContext _iv_ctx, String _mi_customerId, SelectionSet _iv_select) {
+        var _iv_unionKeysQuery = paymenttypetwoSortFieldsForPayments(_mi_customerId).unionAll(paymenttypeoneSortFieldsForPayments(_mi_customerId));
 
-        var mappedPaymentTypeOne = paymenttypeoneForPayments();
-        var mappedPaymentTypeTwo = paymenttypetwoForPayments();
+        var _sjs_paymentTypeOne = paymenttypeoneForPayments();
+        var _sjs_paymentTypeTwo = paymenttypetwoForPayments();
 
         return _iv_ctx.select(
                         DSL.row(
-                                unionKeysQuery.field("$type", String.class),
-                                mappedPaymentTypeOne.field("$data"),
-                                mappedPaymentTypeTwo.field("$data")
+                                _iv_unionKeysQuery.field("$type", String.class),
+                                _sjs_paymentTypeOne.field("$data"),
+                                _sjs_paymentTypeTwo.field("$data")
                         ).mapping((_iv_e0, _iv_e1, _iv_e2) -> switch (_iv_e0) {
                                     case "PaymentTypeOne" -> (Payment) _iv_e1;
                                     case "PaymentTypeTwo" -> (Payment) _iv_e2;
@@ -42,16 +42,16 @@ public class QueryDBQueries {
                                             throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "Payment", _iv_e0));
                                 }
                         ))
-                .from(unionKeysQuery)
-                .leftJoin(mappedPaymentTypeOne)
-                .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedPaymentTypeOne.field("$pkFields", JSONB.class)))
-                .leftJoin(mappedPaymentTypeTwo)
-                .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedPaymentTypeTwo.field("$pkFields", JSONB.class)))
-                .orderBy(unionKeysQuery.field("$type"), unionKeysQuery.field("$innerRowNum"))
+                .from(_iv_unionKeysQuery)
+                .leftJoin(_sjs_paymentTypeOne)
+                .on(_iv_unionKeysQuery.field("$pkFields", JSONB.class).eq(_sjs_paymentTypeOne.field("$pkFields", JSONB.class)))
+                .leftJoin(_sjs_paymentTypeTwo)
+                .on(_iv_unionKeysQuery.field("$pkFields", JSONB.class).eq(_sjs_paymentTypeTwo.field("$pkFields", JSONB.class)))
+                .orderBy(_iv_unionKeysQuery.field("$type"), _iv_unionKeysQuery.field("$innerRowNum"))
                 .fetch(Record1::value1);
     }
 
-    private static SelectSeekStepN<Record3<String, Integer, JSONB>> paymenttypeoneSortFieldsForPayments(String customerId) {
+    private static SelectSeekStepN<Record3<String, Integer, JSONB>> paymenttypeoneSortFieldsForPayments(String _mi_customerId) {
         var _a_paymentp2007_01 = PAYMENT_P2007_01.as("paymentp200701_3585501569");
         var _iv_orderFields = _a_paymentp2007_01.fields(_a_paymentp2007_01.getPrimaryKey().getFieldsArray());
         return DSL.select(
@@ -59,7 +59,7 @@ public class QueryDBQueries {
                         DSL.rowNumber().over(DSL.orderBy(_iv_orderFields)).as("$innerRowNum"),
                         DSL.jsonbArray(DSL.inline("PaymentTypeOne"), _a_paymentp2007_01.PAYMENT_ID).as("$pkFields"))
                 .from(_a_paymentp2007_01)
-                .where(customerId != null ? _a_paymentp2007_01.CUSTOMER_ID.eq(customerId) : DSL.noCondition())
+                .where(_mi_customerId != null ? _a_paymentp2007_01.CUSTOMER_ID.eq(_mi_customerId) : DSL.noCondition())
                 .orderBy(_iv_orderFields);
     }
 
@@ -73,7 +73,7 @@ public class QueryDBQueries {
                 .from(_a_paymentp2007_01);
     }
 
-    private static SelectSeekStepN<Record3<String, Integer, JSONB>> paymenttypetwoSortFieldsForPayments(String customerId) {
+    private static SelectSeekStepN<Record3<String, Integer, JSONB>> paymenttypetwoSortFieldsForPayments(String _mi_customerId) {
         var _a_paymentp2007_02 = PAYMENT_P2007_02.as("paymentp200702_1287600187");
         var _iv_orderFields = _a_paymentp2007_02.fields(_a_paymentp2007_02.getPrimaryKey().getFieldsArray());
         return DSL.select(
@@ -81,7 +81,7 @@ public class QueryDBQueries {
                         DSL.rowNumber().over(DSL.orderBy(_iv_orderFields)).as("$innerRowNum"),
                         DSL.jsonbArray(DSL.inline("PaymentTypeTwo"), _a_paymentp2007_02.PAYMENT_ID).as("$pkFields"))
                 .from(_a_paymentp2007_02)
-                .where(customerId != null ? _a_paymentp2007_02.CUSTOMER_ID.eq(customerId) : DSL.noCondition())
+                .where(_mi_customerId != null ? _a_paymentp2007_02.CUSTOMER_ID.eq(_mi_customerId) : DSL.noCondition())
                 .orderBy(_iv_orderFields);
     }
 
