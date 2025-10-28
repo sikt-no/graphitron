@@ -152,8 +152,8 @@ public class ReferenceInputTest extends ReferenceTest {
 
     @Test
     @DisplayName("Input with table and return type with field having reference")
-    void inputWithTableReturnTypeWithReference() {
-        var generated = generateFiles("inputWithTableReturnTypeWithReference");
+    void inputWithTableReturnTypeWithScalarReference() {
+        var generated = generateFiles("inputWithTableReturnTypeWithScalarReference");
         contains(generated,
                 "_a_city_760939060_country = _a_city.country()",
                 "_a_city_760939060_country.COUNTRY_"
