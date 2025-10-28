@@ -40,8 +40,7 @@ import static no.sikt.graphitron.validation.ValidationHandler.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirective.NODE_ID;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
-import static org.apache.commons.lang3.StringUtils.capitalize;
-import static org.apache.commons.lang3.StringUtils.uncapitalize;
+import static org.apache.commons.lang3.StringUtils.*;
 
 /**
  * Class for producing warnings related to potential issues in the defined schema.
@@ -172,7 +171,7 @@ public class ProcessedDefinitionsValidator {
     private void checkNodeId(GenerationField field) {
         var fieldName = field instanceof ArgumentField
                 ? String.format("argument '%s' on a field in type '%s'", field.getName(), field.getContainerTypeName())
-                : String.format("field %s.%s", field.getContainerTypeName(), field.getName());
+                : String.format("field %s", field.formatPath());
 
         if (!(field.isID() || field.getTypeName().equals(STRING.className.simpleName()))) {
             addErrorMessage(
@@ -451,7 +450,7 @@ public class ProcessedDefinitionsValidator {
      */
     private String getTargetTableForField(GenerationField field) {
         if (schema.isNodeIdField(field)) {
-            return schema.getNodeType(field).getTable().getName();
+            return schema.getNodeTypeForNodeIdField(field).getTable().getName();
         }
         if (schema.hasTableObject(field)) {
             return schema.getObjectOrConnectionNode(field).getTable().getName();
@@ -683,15 +682,15 @@ public class ProcessedDefinitionsValidator {
                 .filter(schema::isMultiTableField)
                 .forEach(field -> {
                     if (!field.isResolver()) {
-                        addErrorMessage("'%s.%s' is a multitable field outside root, but is missing the %s directive. " +
+                        addErrorMessage("%s is a multitable field outside root, but is missing the %s directive. " +
                                         "Multitable queries outside root is only supported for resolver fields.",
-                                field.getContainerTypeName(), field.getName(), SPLIT_QUERY.getName()
+                                field.formatPath(), SPLIT_QUERY.getName()
                         );
                     }
 
                     if (field.hasFieldReferences()) {
-                        addErrorMessage("'%s.%s' has the %s directive which is not supported on multitable queries. Use %s directive instead.",
-                                field.getContainerTypeName(), field.getName(), REFERENCE.getName(), MULTITABLE_REFERENCE.getName()
+                        addErrorMessage("%s has the %s directive which is not supported on multitable queries. Use %s directive instead.",
+                                field.formatPath(), REFERENCE.getName(), MULTITABLE_REFERENCE.getName()
                         );
                     }
                 });
@@ -854,7 +853,7 @@ public class ProcessedDefinitionsValidator {
                                 ValidationHandler.isTrue(
                                         field.getArguments().size() == 1,
                                         "Only exactly one input field is currently supported for fields returning the '%s' interface. " +
-                                                "'%s.%s' has %s input fields", NODE_TYPE.getName(), field.getContainerTypeName(), field.getName(), field.getArguments().size()
+                                                "%s has %s input fields", NODE_TYPE.getName(), field.formatPath(), field.getArguments().size()
                                 );
                                 ValidationHandler.isTrue(
                                         !field.isIterableWrapped(),
@@ -1155,7 +1154,7 @@ public class ProcessedDefinitionsValidator {
             if (recordInputs.isEmpty()) {
                 addErrorMessage("Mutation "
                         + target.getName()
-                        + " is set as an insert operation, but does not link any input to tables.");
+                        + " is set as an " + lowerCase(mutationType.name()) + " operation, but does not link any input to tables.");
             }
 
             recordInputs.forEach(this::checkRequiredFields);
@@ -1287,9 +1286,8 @@ public class ProcessedDefinitionsValidator {
                 .flatMap(Collection::stream)
                 .filter(GenerationSourceField::isResolver)
                 .forEach(field -> {
-                    var errorMessageStart = String.format("'%s.%s' in a java record has %s directive, but",
-                            field.getContainerTypeName(),
-                            field.getName(),
+                    var errorMessageStart = String.format("%s in a java record has %s directive, but",
+                            field.formatPath(),
                             SPLIT_QUERY.getName()
                     );
 
@@ -1306,11 +1304,12 @@ public class ProcessedDefinitionsValidator {
     private void validateImplicitNodeTypeForInputFields() {
         if (!GeneratorConfig.shouldMakeNodeStrategy()) return;
         schema.getInputTypes().values()
-                .stream().flatMap(it -> it.getFields().stream())
+                .stream()
+                .filter(RecordObjectDefinition::hasTable)
+                .flatMap(it -> it.getFields().stream())
                 .filter(it -> it.isID() && !it.hasNodeID() && it.getName().equals(GraphQLReservedName.NODE_ID.getName()))
                 .forEach(it -> {
-                    var implicitNodeTypes =
-                            schema.getImplicitNodeTypesForInputField(it);
+                    var implicitNodeTypes = schema.getNodeTypesWithTable(schema.getRecordType(it.getContainerTypeName()).getTable());
                     if (implicitNodeTypes != null && implicitNodeTypes.size() > 1) {
                         addWarningMessage("Input type '%s' has an '%s' field " +
                                         "that may represent a node ID. " +
