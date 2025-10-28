@@ -35,28 +35,28 @@ import org.jooq.impl.DSL;
 
 public class PaymentDBQueries {
 
-    public static Map<Row1<Long>, List<Pair<String, PersonWithEmail>>>  staffAndCustomersForPayment(DSLContext _iv_ctx, Set<Row1<Long>> _rk_payment, Integer _iv_pageSize, String after, SelectionSet _iv_select) {
+    public static Map<Row1<Long>, List<Pair<String, PersonWithEmail>>>  staffAndCustomersForPayment(DSLContext _iv_ctx, Set<Row1<Long>> _rk_payment, Integer _iv_pageSize, String _mi_after, SelectionSet _iv_select) {
         var _iv_token = QueryHelper.getOrderByValuesForMultitableInterface(_iv_ctx,
                 Map.of(
                         "Customer", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray()),
                         "Staff", STAFF.fields(STAFF.getPrimaryKey().getFieldsArray())),
-                after);
+                _mi_after);
 
         var _a_payment = PAYMENT.as("payment_1831371789");
 
-        var unionKeysQuery = staffSortFieldsForStaffAndCustomers(_a_payment, _iv_pageSize, _iv_token).unionAll(customerSortFieldsForStaffAndCustomers(_a_payment, _iv_pageSize, _iv_token));
+        var _iv_unionKeysQuery = staffSortFieldsForStaffAndCustomers(_a_payment, _iv_pageSize, _iv_token).unionAll(customerSortFieldsForStaffAndCustomers(_a_payment, _iv_pageSize, _iv_token));
 
-        var mappedCustomer = customerForStaffAndCustomers();
-        var mappedStaff = staffForStaffAndCustomers();
+        var _sjs_customer = customerForStaffAndCustomers();
+        var _sjs_staff = staffForStaffAndCustomers();
 
         return _iv_ctx.select(
                         DSL.row(_a_payment.PAYMENT_ID),
                         DSL.multiset(
                                 DSL.select(
                                                 DSL.row(
-                                                        unionKeysQuery.field("$type", String.class),
-                                                        mappedCustomer.field("$data"),
-                                                        mappedStaff.field("$data")
+                                                        _iv_unionKeysQuery.field("$type", String.class),
+                                                        _sjs_customer.field("$data"),
+                                                        _sjs_staff.field("$data")
                                                 ).mapping((_iv_e0, _iv_e1 , _iv_e2) -> {
                                                     Record2 _iv_result = switch (_iv_e0) {
                                                         case "Customer" -> (Record2) _iv_e1;
@@ -67,12 +67,12 @@ public class PaymentDBQueries {
                                                             ;
                                                     return Pair.of(_iv_result.get(0, String.class), _iv_result.get(1, PersonWithEmail.class));
                                                 }))
-                                        .from(unionKeysQuery)
-                                        .leftJoin(mappedCustomer)
-                                        .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedCustomer.field("$pkFields", JSONB.class)))
-                                        .leftJoin(mappedStaff)
-                                        .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedStaff.field("$pkFields", JSONB.class)))
-                                        .orderBy(unionKeysQuery.field("$type"), unionKeysQuery.field("$innerRowNum"))
+                                        .from(_iv_unionKeysQuery)
+                                        .leftJoin(_sjs_customer)
+                                        .on(_iv_unionKeysQuery.field("$pkFields", JSONB.class).eq(_sjs_customer.field("$pkFields", JSONB.class)))
+                                        .leftJoin(_sjs_staff)
+                                        .on(_iv_unionKeysQuery.field("$pkFields", JSONB.class).eq(_sjs_staff.field("$pkFields", JSONB.class)))
+                                        .orderBy(_iv_unionKeysQuery.field("$type"), _iv_unionKeysQuery.field("$innerRowNum"))
                                         .limit(_iv_pageSize + 1)
                         )
                 )

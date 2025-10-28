@@ -18,7 +18,7 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
     public static List<Pair<String, CustomerTable>> queryForQuery(DSLContext _iv_ctx, Integer _iv_pageSize,
-                                                                  String after, SelectionSet _iv_select) {
+                                                                  String _mi_after, SelectionSet _iv_select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         var _iv_orderFields = _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray());
         return _iv_ctx
@@ -28,7 +28,7 @@ public class QueryDBQueries {
                 )
                 .from(_a_customer)
                 .orderBy(_iv_orderFields)
-                .seek(QueryHelper.getOrderByValues(_iv_ctx, _iv_orderFields, after))
+                .seek(QueryHelper.getOrderByValues(_iv_ctx, _iv_orderFields, _mi_after))
                 .limit(_iv_pageSize + 1)
                 .fetch()
                 .map(_iv_it -> new ImmutablePair<>(_iv_it.value1(), _iv_it.value2()));

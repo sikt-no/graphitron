@@ -74,10 +74,10 @@ public class ConditionRecordsTest extends GeneratorTest {
     void inputJavaRecordCondition() {
         assertGeneratedContentContains(
                 "inputJavaRecordCondition", Set.of(STAFF, NAME_INPUT_JAVA),
-                "staff.FIRST_NAME.eq(nameRecord.getFirstName())",
-                "staff.LAST_NAME.eq(nameRecord.getLastName())",
-                "staff.ACTIVE.eq(active)",
-                ".name(_a_staff, nameRecord))"
+                "staff.FIRST_NAME.eq(_mi_nameRecord.getFirstName())",
+                "staff.LAST_NAME.eq(_mi_nameRecord.getLastName())",
+                "staff.ACTIVE.eq(_mi_active)",
+                ".name(_a_staff, _mi_nameRecord))"
         );
     }
 
@@ -86,11 +86,11 @@ public class ConditionRecordsTest extends GeneratorTest {
     void listInputJavaRecordAndFieldCondition() {
         assertGeneratedContentContains(
                 "listInputJavaRecordAndFieldCondition", Set.of(STAFF, NAME_INPUT_JAVA),
-                "staff.ACTIVE.eq(active)",
-                "staff.FIRST_NAME,_a_staff.LAST_NAME).in(IntStream.range(0, namesRecordList.size()).mapToObj(_iv_it ->" +
-                        "DSL.row(DSL.val(namesRecordList.get(_iv_it).getFirstName()),DSL.val(namesRecordList.get(_iv_it).getLastName())",
-                ".nameList(_a_staff, namesRecordList)",
-                ".fieldWithListInput(_a_staff, namesRecordList, active)"
+                "staff.ACTIVE.eq(_mi_active)",
+                "staff.FIRST_NAME,_a_staff.LAST_NAME).in(IntStream.range(0, _mi_namesRecordList.size()).mapToObj(_iv_it ->" +
+                        "DSL.row(DSL.val(_mi_namesRecordList.get(_iv_it).getFirstName()),DSL.val(_mi_namesRecordList.get(_iv_it).getLastName())",
+                ".nameList(_a_staff, _mi_namesRecordList)",
+                ".fieldWithListInput(_a_staff, _mi_namesRecordList, _mi_active)"
         );
     }
 
@@ -99,8 +99,8 @@ public class ConditionRecordsTest extends GeneratorTest {
     void listInputJavaRecordAndFieldOverrideCondition() {
         assertGeneratedContentContains(
                 "listInputJavaRecordAndFieldOverrideCondition", Set.of(STAFF, NAME_INPUT_JAVA),
-                ".where(no.sikt.graphitron.codereferences.conditions.RecordStaffCondition.nameList(_a_staff, namesRecordList))" +
-                ".and(no.sikt.graphitron.codereferences.conditions.RecordStaffCondition.fieldWithListInput(_a_staff, namesRecordList, active))" +
+                ".where(no.sikt.graphitron.codereferences.conditions.RecordStaffCondition.nameList(_a_staff, _mi_namesRecordList))" +
+                ".and(no.sikt.graphitron.codereferences.conditions.RecordStaffCondition.fieldWithListInput(_a_staff, _mi_namesRecordList, _mi_active))" +
                 ".orderBy"
         );
     }
@@ -110,7 +110,7 @@ public class ConditionRecordsTest extends GeneratorTest {
     void nestedListInputJavaRecordOverrideCondition() {
         assertGeneratedContentContains(
                 "nestedListInputJavaRecordOverrideCondition", Set.of(STAFF, NAME_INPUT_JAVA),
-                ".where(no.sikt.graphitron.codereferences.conditions.RecordStaffCondition.input1(_a_staff, inputs1RecordList))" +
+                ".where(no.sikt.graphitron.codereferences.conditions.RecordStaffCondition.input1(_a_staff, _mi_inputs1RecordList))" +
                 ".orderBy"
         );
     }
@@ -120,10 +120,10 @@ public class ConditionRecordsTest extends GeneratorTest {
     void multiLevelInputJavaRecordOverrideCondition() {
         assertGeneratedContentContains(
                 "multiLevelInputJavaRecordOverrideCondition", Set.of(STAFF, NAME_INPUT_JAVA),
-                ".where(input3Record.getInputs2() != null && input3Record.getInputs2().size() > 0 ?" +
+                ".where(_mi_input3Record.getInputs2() != null && _mi_input3Record.getInputs2().size() > 0 ?" +
                         "DSL.row(DSL.trueCondition()).in(" +
-                                "IntStream.range(0, input3Record.getInputs2().size()).mapToObj(_iv_it ->" +
-                                        "DSL.row(no.sikt.graphitron.codereferences.conditions.RecordStaffCondition.input1(_a_staff, input3Record.getInputs2().get(_iv_it).getInput1()))" +
+                                "IntStream.range(0, _mi_input3Record.getInputs2().size()).mapToObj(_iv_it ->" +
+                                        "DSL.row(no.sikt.graphitron.codereferences.conditions.RecordStaffCondition.input1(_a_staff, _mi_input3Record.getInputs2().get(_iv_it).getInput1()))" +
                                 ").toList()) : DSL.noCondition()" +
                 ").orderBy"
         );

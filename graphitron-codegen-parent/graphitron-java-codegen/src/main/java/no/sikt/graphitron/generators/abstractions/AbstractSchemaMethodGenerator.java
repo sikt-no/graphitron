@@ -16,8 +16,6 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import javax.lang.model.element.Modifier;
 import java.util.*;
 
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
-
 /**
  * An abstract generator that contains methods that are common between both DB-method generators and resolver generators.
  */
@@ -67,39 +65,6 @@ abstract public class AbstractSchemaMethodGenerator<T extends GenerationTarget, 
     @Override
     public Map<String, List<Dependency>> getDependencyMap() {
         return dependencyMap;
-    }
-
-    /**
-     * @return Get the javapoet TypeName for this field's type, and wrap it in a list ParameterizedTypeName if it is iterable.
-     */
-    protected TypeName iterableWrapType(GenerationField field) {
-        return wrapListIf(inferFieldTypeName(field, false), field.isIterableWrapped());
-    }
-
-    /**
-     * @return Get the javapoet TypeName for this field's type.
-     */
-    protected TypeName inferFieldTypeName(GenerationField field, boolean checkRecordReferences) {
-        if (processedSchema.isRecordType(field)) {
-            var type = processedSchema.getRecordType(field);
-            if (!checkRecordReferences || !type.hasRecordReference()) {
-                return type.getGraphClassName();
-            }
-            return type.getRecordClassName();
-        }
-
-        if (processedSchema.isEnum(field)) {
-            return processedSchema.getEnum(field).getGraphClassName();
-        }
-
-        var typeName = field.getTypeName();
-
-        var typeClass = field.getTypeClass();
-        if (typeClass == null) {
-            throw new IllegalStateException("Field \"" + field.getName() + "\" has a type \"" + typeName + "\" that can not be resolved.");
-        }
-
-        return typeClass;
     }
 
     /**

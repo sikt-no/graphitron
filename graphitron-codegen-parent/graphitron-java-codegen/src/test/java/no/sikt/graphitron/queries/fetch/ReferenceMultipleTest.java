@@ -12,7 +12,7 @@ public class ReferenceMultipleTest extends ReferenceTest {
                 "multipleToSameTable",
                 "customer_2168032777_address.DISTRICT",
                 ".leftJoin(_a_customer_2168032777_address_left",
-                ".where(_a_customer_2168032777_address_left.DISTRICT.eq(district"
+                ".where(_a_customer_2168032777_address_left.DISTRICT.eq(_mi_district"
         );
     }
 

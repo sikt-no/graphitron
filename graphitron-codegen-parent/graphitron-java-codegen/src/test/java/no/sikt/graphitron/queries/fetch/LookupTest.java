@@ -39,7 +39,7 @@ public class LookupTest extends GeneratorTest {
     @Test
     @DisplayName("Key other than an ID")
     void nonIDKey() {
-        assertGeneratedContentContains("nonIDKey", ",List<Integer> integer,", ".select(_a_film.LENGTH.cast(String.class),");
+        assertGeneratedContentContains("nonIDKey", ",List<Integer> _mi_integer,", ".select(_a_film.LENGTH.cast(String.class),");
     }
 
     @Test
@@ -47,7 +47,7 @@ public class LookupTest extends GeneratorTest {
     void manyKeys() {
         assertGeneratedContentContains(
                 "manyKeys",
-                ",List<String> firstName,List<String> lastName,",
+                ",List<String> _mi_firstName,List<String> _mi_lastName,",
                 ".select(DSL.concat(DSL.inlined(_a_customer.FIRST_NAME), DSL.inline(\",\"), DSL.inlined(_a_customer.LAST_NAME)),"
         );
     }
@@ -57,7 +57,7 @@ public class LookupTest extends GeneratorTest {
     void otherNonKeyField() {
         assertGeneratedContentContains(
                 "otherNonKeyField",
-                ",List<String> firstName,List<String> lastName,",
+                ",List<String> _mi_firstName,List<String> _mi_lastName,",
                 ".select(_a_customer.FIRST_NAME,"
         );
     }
@@ -65,12 +65,12 @@ public class LookupTest extends GeneratorTest {
     @Test
     @DisplayName("Key inside listed input type")
     void inputKey() {
-        assertGeneratedContentContains("inputKey", ",List<Input> in,", ".select(_a_customer.getId(),");
+        assertGeneratedContentContains("inputKey", ",List<Input> _mi_in,", ".select(_a_customer.getId(),");
     }
 
     @Test
     @DisplayName("Key listed inside input type")
     void listedKeyInInput() {
-        assertGeneratedContentContains("listedKeyInInput", ", Input in,", ".select(_a_customer.getId(),");
+        assertGeneratedContentContains("listedKeyInInput", ", Input _mi_in,", ".select(_a_customer.getId(),");
     }
 }

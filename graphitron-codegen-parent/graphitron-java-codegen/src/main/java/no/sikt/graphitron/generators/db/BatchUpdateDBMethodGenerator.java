@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ITERATOR;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.internalPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
@@ -38,7 +39,7 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
             MutationType.UPSERT, "batchMerge"
     );
 
-    private static final String VARIABLE_RECORD_LIST = "recordList", CONFIG = internalPrefix("config");
+    private static final String VARIABLE_RECORD_LIST = internalPrefix("recordList"), CONFIG = internalPrefix("config");
 
     public BatchUpdateDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -59,14 +60,9 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
 
         var parser = new InputParser(target, processedSchema);
         var spec = getDefaultSpecBuilder(asQueryMethodName(target.getName(), getLocalObject().getName()), TypeName.INT)
-                .addParameters(getMethodParametersWithOrderField(parser));
+                .addParameters(parser.getMethodParameterSpecs(true, false, false));
 
-        var recordInputs = parser
-                .getMethodInputsWithOrderField()
-                .entrySet()
-                .stream()
-                .filter(it -> processedSchema.hasJOOQRecord(it.getValue()))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        var recordInputs = parser.getJOOQRecords();
         if (recordInputs.isEmpty()) {
             return spec.addCode(returnWrap("0")).build();
         }
@@ -74,11 +70,11 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
         var code = CodeBlock.builder();
         String batchInputVariable;
         if (recordInputs.size() == 1) {
-            batchInputVariable = recordInputs.keySet().stream().findFirst().get();
+            batchInputVariable = inputPrefix(recordInputs.keySet().stream().findFirst().get());
         } else {
             batchInputVariable = VARIABLE_RECORD_LIST;
             code.declareNew(VARIABLE_RECORD_LIST, ARRAY_LIST.className);
-            recordInputs.forEach((name, type) -> code.addStatement("$N.$L($N)", VARIABLE_RECORD_LIST, type.isIterableWrapped() ? "addAll" : "add", name));
+            recordInputs.forEach((name, type) -> code.addStatement("$N.$L($N)", VARIABLE_RECORD_LIST, type.isIterableWrapped() ? "addAll" : "add", inputPrefix(name)));
         }
 
         if (target.hasMutationType() && target.getMutationType() == MutationType.UPSERT) {
@@ -88,7 +84,7 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
                     .map(Optional::get)
                     .findFirst()
                     .ifPresent(it -> {
-                        var recordInputName = it.getKey();
+                        var recordInputName = inputPrefix(it.getKey());
                         var inputType = it.getValue();
                         var nodeType = processedSchema.getNodeTypeForNodeIdField(inputType);
                         if (nodeType != null) {

@@ -25,15 +25,17 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.db.FetchSingleTableInterfaceDBMethodGenerator.TOKEN;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECT_JOIN_STEP;
 import static no.sikt.graphitron.mappings.TableReflection.getPrimaryKeyForTable;
 import static no.sikt.graphitron.mappings.TableReflection.getTableClass;
 import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAndThrow;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
 public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
-    public static final String UNION_KEYS_QUERY = "unionKeysQuery";
+    public static final String UNION_KEYS_QUERY = internalPrefix("unionKeysQuery");
     public static final String TYPE_FIELD = "$type";
     public static final String DATA_FIELD = "$data";
     public static final String PK_FIELDS = "$pkFields";
@@ -58,11 +60,11 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         LinkedHashSet<ObjectDefinition> implementations = new LinkedHashSet<>(processedSchema.getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName()));
 
         return getSpecBuilder(target, unionOrInterfaceDefinition.getGraphClassName(), inputParser)
-                .addCode(implementations.isEmpty() ? CodeBlock.of("return null;") : getCode(target, implementations, inputParser.getMethodInputs().keySet()))
+                .addCode(implementations.isEmpty() ? CodeBlock.of("return null;") : getCode(target, implementations, inputParser.getMethodInputNames(false, false, true)))
                 .build();
     }
 
-    private CodeBlock getCode(ObjectField target, LinkedHashSet<ObjectDefinition> implementations, Set<String> inputs) {
+    private CodeBlock getCode(ObjectField target, LinkedHashSet<ObjectDefinition> implementations, List<String> inputs) {
         List<String> sortFieldQueryMethodCalls = new ArrayList<>();
         LinkedHashMap<String, String> mappedQueryVariables = new LinkedHashMap<>();
         var joins = CodeBlock.builder();
@@ -82,7 +84,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
             }
             String typeName = implementation.getName();
             sortFieldQueryMethodCalls.add(getSortFieldsMethodName(target, implementation));
-            String mappedVariableName = "mapped" + typeName;
+            String mappedVariableName = joinStepPrefix(typeName);
             mappedQueryVariables.put(typeName, mappedVariableName);
             mappedDeclarationBlock.declare(
                     mappedVariableName,
@@ -149,11 +151,11 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         return code
                 .add(CodeBlock.join(mapEntries, ","))
                 .unindent()
-                .add("\n),\n$N)", PAGINATION_AFTER.getName())
+                .add("\n),\n$N)", inputPrefix(PAGINATION_AFTER.getName()))
                 .build();
     }
 
-    private @NotNull CodeBlock getUnionQuery(List<String> subselectVariableNames, Set<String> inputNames, boolean isConnection) {
+    private @NotNull CodeBlock getUnionQuery(List<String> subselectVariableNames, List<String> inputNames, boolean isConnection) {
         var additionalInputs = new LinkedHashSet<String>();
 
         Optional.ofNullable(initialContext)
@@ -252,7 +254,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
     public List<MethodSpec> generateWithSubselectMethods(ObjectField target) {
         var mainMethod = generate(target);
-        var methodInputs = getMethodParameters(new InputParser(target, processedSchema));
+        var methodInputs = new InputParser(target, processedSchema).getMethodParameterSpecs(false, false, true);
         var unionOrInterfaceDefinition = processedSchema.isUnion(target)
                 ? processedSchema.getUnion(target)
                 : processedSchema.getInterface(target);
@@ -288,7 +290,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                     .ifPresent(startAlias ->
                             methodBuilder.addParameter(
                                     getTableClass(startAlias.getAlias().getTable().getName()).orElseThrow(),
-                                    startAlias.getAlias().getMappingName()
+                                    aliasPrefix(startAlias.getAlias().getMappingName())
                             )
                     );
         }

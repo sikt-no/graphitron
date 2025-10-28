@@ -29,7 +29,7 @@ public class ReferenceInputTest extends ReferenceTest {
     void table() {
         assertGeneratedContentContains("table", Set.of(CUSTOMER_TABLE),
                 ".leftJoin(_a_customer_2168032777_address_left",
-                ".where(_a_customer_2168032777_address_left.DISTRICT.eq(district"
+                ".where(_a_customer_2168032777_address_left.DISTRICT.eq(_mi_district"
         );
     }
 
@@ -48,7 +48,7 @@ public class ReferenceInputTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "keyWithSinglePath", Set.of(CUSTOMER_TABLE),
                 ".leftJoin(_a_customer_2168032777_address_left",
-                ".where(_a_customer_2168032777_address_left.DISTRICT.eq(district"
+                ".where(_a_customer_2168032777_address_left.DISTRICT.eq(_mi_district"
         );
     }
 
@@ -58,7 +58,7 @@ public class ReferenceInputTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "keyWithMultiplePaths",
                 ".leftJoin(_a_film_2185543202_filmoriginallanguageidfkey_left",
-                ".where(_a_film_2185543202_filmoriginallanguageidfkey_left.NAME.eq(name"
+                ".where(_a_film_2185543202_filmoriginallanguageidfkey_left.NAME.eq(_mi_name"
         );
     }
 
@@ -78,7 +78,7 @@ public class ReferenceInputTest extends ReferenceTest {
                 "condition", Set.of(CUSTOMER_TABLE),
                 ".leftJoin(_a_customer_district_customer_left",
                 ".district(_a_customer, _a_customer_district_customer_left)",
-                ".where(_a_customer_district_customer_left.DISTRICT.eq(district"
+                ".where(_a_customer_district_customer_left.DISTRICT.eq(_mi_district"
         );
     }
 
@@ -109,7 +109,7 @@ public class ReferenceInputTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "keyAndCondition", Set.of(CUSTOMER_TABLE),
                 "customer_2168032777_address_left = _a_customer.address().as(", // Note, implicit join is present when we use a key, but not table.
-                ".leftJoin(_a_customer_2168032777_address_left).where(_a_customer_2168032777_address_left.DISTRICT.eq(district)).and(",
+                ".leftJoin(_a_customer_2168032777_address_left).where(_a_customer_2168032777_address_left.DISTRICT.eq(_mi_district)).and(",
                 ".district(_a_customer, _a_customer_2168032777_address_left)" // Note, no condition override unlike table case.
         );
     }
@@ -120,14 +120,14 @@ public class ReferenceInputTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "insideInputType", Set.of(CUSTOMER_TABLE),
                 ".leftJoin(_a_customer_2168032777_address_left",
-                ".where(_a_customer_2168032777_address_left.DISTRICT.eq(in.getDistrict()"
+                ".where(_a_customer_2168032777_address_left.DISTRICT.eq(_mi_in.getDistrict()"
         );
     }
 
     @Test // TODO: This behaviour is undefined and results in illegal code.
     @DisplayName("Reference used on an input type")
     void onInputType() {
-        assertGeneratedContentContains("onInputType", Set.of(CUSTOMER_TABLE), "customer.DISTRICT.eq(in.getDistrict())");
+        assertGeneratedContentContains("onInputType", Set.of(CUSTOMER_TABLE), "customer.DISTRICT.eq(_mi_in.getDistrict())");
     }
 
     @Test
@@ -135,8 +135,8 @@ public class ReferenceInputTest extends ReferenceTest {
     void multipleToSameTable() {
         assertGeneratedContentContains("multipleToSameTable", Set.of(CUSTOMER_TABLE),
                 ".leftJoin(_a_customer_2168032777_address_left",
-                ".where(_a_customer_2168032777_address_left.DISTRICT.eq(district1",
-                ".and(_a_customer_2168032777_address_left.DISTRICT.eq(district2" // Silly case, but valid.
+                ".where(_a_customer_2168032777_address_left.DISTRICT.eq(_mi_district1",
+                ".and(_a_customer_2168032777_address_left.DISTRICT.eq(_mi_district2" // Silly case, but valid.
         );
     }
 
@@ -145,7 +145,7 @@ public class ReferenceInputTest extends ReferenceTest {
     void onSingleTableInterface() {
         assertGeneratedContentContains("onSingleTableInterface",
                 "= _a_address.city()",
-                ".and(_a_address_223244161_city_left.CITY_.eq(filter.getCity()))",
+                ".and(_a_address_223244161_city_left.CITY_.eq(_mi_filter.getCity()))",
                 ".leftJoin(_a_address_223244161_city_left)"
         );
     }

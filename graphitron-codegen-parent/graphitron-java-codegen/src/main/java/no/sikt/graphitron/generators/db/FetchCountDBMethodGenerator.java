@@ -148,8 +148,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 isRoot ? INTEGER.className : wrapMap(getKeyRowTypeName(referenceField, processedSchema), INTEGER.className)
         )
                 .addParameterIf(!isRoot, () -> wrapSet(getKeyRowTypeName(referenceField, processedSchema)), resolverKeyParamName)
-                .addParameters(getMethodParameters(parser))
-                .addParameters(getContextParameters(referenceField));
+                .addParameters(parser.getMethodParameterSpecs(false, false, true));
     }
 
     @Override

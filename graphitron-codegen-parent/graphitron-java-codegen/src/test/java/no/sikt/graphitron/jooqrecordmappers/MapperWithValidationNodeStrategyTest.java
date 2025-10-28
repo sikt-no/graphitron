@@ -57,18 +57,18 @@ public class MapperWithValidationNodeStrategyTest extends GeneratorTest {
     void toRecord() {
         assertGeneratedContentContains("toRecord/default", Set.of(CUSTOMER_NODE),
                 // In mapper
-                "toJOOQRecord(List<CustomerInputTable> customerInputTable, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path, RecordTransformer _iv_transform)",
-                "nodeIdStrategy.setId(customerRecord, itCustomerInputTable.getId(), \"CustomerNode\", Customer.CUSTOMER.getPrimaryKey().getFieldsArray())",
+                "toJOOQRecord(List<CustomerInputTable> _mi_customerInputTable, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path, RecordTransformer _iv_transform)",
+                "nodeIdStrategy.setId(_mo_customerRecord, _nit_customerInputTable.getId(), \"CustomerNode\", Customer.CUSTOMER.getPrimaryKey().getFieldsArray())",
 
                 // In recordtransformer
-                "customerInputTableToJOOQRecord(List<CustomerInputTable> input, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path, String _iv_indexPath)",
-                "customerInputTableToJOOQRecord(CustomerInputTable input, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path, String _iv_indexPath)",
-                "customerInputTableToJOOQRecord(List.of(input), _iv_nodeIdStrategy, _iv_path, _iv_indexPath)",
-                ".toJOOQRecord(input, _iv_nodeIdStrategy, _iv_path, this)",
+                "customerInputTableToJOOQRecord(List<CustomerInputTable> _mi_input, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path, String _iv_indexPath)",
+                "customerInputTableToJOOQRecord(CustomerInputTable _mi_input, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path, String _iv_indexPath)",
+                "customerInputTableToJOOQRecord(List.of(_mi_input), _iv_nodeIdStrategy, _iv_path, _iv_indexPath)",
+                ".toJOOQRecord(_mi_input, _iv_nodeIdStrategy, _iv_path, this)",
 
                 // validation
-                "validate(List<CustomerRecord> customerRecordList, String _iv_path, RecordTransformer _iv_transform)",
-                ".validate(records, _iv_indexPath, this)"
+                "validate(List<CustomerRecord> _mi_customerRecord, String _iv_path, RecordTransformer _iv_transform)",
+                ".validate(_mo_records, _iv_indexPath, this)"
         );
     }
 }

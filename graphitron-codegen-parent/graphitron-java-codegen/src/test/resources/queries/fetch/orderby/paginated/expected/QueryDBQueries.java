@@ -19,27 +19,27 @@ import org.jooq.SelectField;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static List<Pair<String, CustomerTable>> queryForQuery(DSLContext _iv_ctx, Order orderBy, Integer _iv_pageSize,
-                                                    String after, SelectionSet _iv_select) {
+    public static List<Pair<String, CustomerTable>> queryForQuery(DSLContext _iv_ctx, Order _mi_orderBy, Integer _iv_pageSize,
+                                                    String _mi_after, SelectionSet _iv_select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
-        var _iv_orderFields = orderBy == null
+        var _iv_orderFields = _mi_orderBy == null
                 ? _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())
                 : QueryHelper.getSortFields(_a_customer, Map.ofEntries(Map.entry("NAME", "IDX_LAST_NAME"))
-                .get(orderBy.getOrderByField().toString()), orderBy.getDirection().toString());
+                .get(_mi_orderBy.getOrderByField().toString()), _mi_orderBy.getDirection().toString());
         return _iv_ctx
                 .select(
                         QueryHelper.getOrderByToken(_a_customer, _iv_orderFields),
-                        queryForQuery_customerTable(orderBy)
+                        queryForQuery_customerTable(_mi_orderBy)
                 )
                 .from(_a_customer)
                 .orderBy(_iv_orderFields)
-                .seek(QueryHelper.getOrderByValues(_iv_ctx, _iv_orderFields, after))
+                .seek(QueryHelper.getOrderByValues(_iv_ctx, _iv_orderFields, _mi_after))
                 .limit(_iv_pageSize + 1)
                 .fetch()
                 .map(_iv_it -> new ImmutablePair<>(_iv_it.value1(), _iv_it.value2()));
     }
 
-    private static SelectField<CustomerTable> queryForQuery_customerTable(Order orderBy) {
+    private static SelectField<CustomerTable> queryForQuery_customerTable(Order _mi_orderBy) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         return DSL.row(_a_customer.LAST_NAME).mapping(Functions.nullOnAllNull(CustomerTable::new));
     }

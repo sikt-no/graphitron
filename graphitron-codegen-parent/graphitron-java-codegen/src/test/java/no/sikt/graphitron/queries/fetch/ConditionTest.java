@@ -50,8 +50,8 @@ public class ConditionTest extends GeneratorTest {
     void onParam() {
         assertGeneratedContentContains(
                 "onParam",
-                ".where(_a_customer.EMAIL.eq(email))" +
-                        ".and(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.email(_a_customer, email)).fetch"
+                ".where(_a_customer.EMAIL.eq(_mi_email))" +
+                        ".and(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.email(_a_customer, _mi_email)).fetch"
         );
     }
 
@@ -60,7 +60,7 @@ public class ConditionTest extends GeneratorTest {
     void onParamOverride() {
         assertGeneratedContentContains(
                 "onParamOverride",
-                ".where(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.email(_a_customer, email)).fetch"
+                ".where(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.email(_a_customer, _mi_email)).fetch"
         );
     }
 
@@ -69,34 +69,34 @@ public class ConditionTest extends GeneratorTest {
     void onParamWithOtherField() {
         assertGeneratedContentContains(
                 "onParamWithOtherField",
-                "customer.EMAIL.eq(email",
-                "customer.FIRST_NAME.eq(name",
-                ".email(_a_customer, email)"
+                "customer.EMAIL.eq(_mi_email",
+                "customer.FIRST_NAME.eq(_mi_name",
+                ".email(_a_customer, _mi_email)"
         );
     }
 
     @Test
     @DisplayName("Condition on a listed parameter")
     void onListedParam() {
-        assertGeneratedContentContains("onListedParam", ".emails(_a_customer, emails)).fetch");
+        assertGeneratedContentContains("onListedParam", ".emails(_a_customer, _mi_emails)).fetch");
     }
 
     @Test
     @DisplayName("Referencing other method name than default assumption")
     void withMethodNameOverride() {
-        assertGeneratedContentContains("withMethodNameOverride", ".id(_a_customer, someID)");
+        assertGeneratedContentContains("withMethodNameOverride", ".id(_a_customer, _mi_someID)");
     }
 
     @Test
     @DisplayName("Condition on a single field")
     void onField() {
-        assertGeneratedContentContains("onField", "customer.EMAIL.eq(email", ".query(_a_customer, email)");
+        assertGeneratedContentContains("onField", "customer.EMAIL.eq(_mi_email", ".query(_a_customer, _mi_email)");
     }
 
     @Test
     @DisplayName("Condition on a field with multiple parameters")
     void onFieldMultipleParams() {
-        assertGeneratedContentContains("onFieldMultipleParams", ".query(_a_customer, email, name)");
+        assertGeneratedContentContains("onFieldMultipleParams", ".query(_a_customer, _mi_email, _mi_name)");
     }
 
     @Test
@@ -104,7 +104,7 @@ public class ConditionTest extends GeneratorTest {
     void onFieldOverride() {
         assertGeneratedContentContains(
                 "onFieldOverride",
-                ".where(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.query(_a_customer, email)).fetch"
+                ".where(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.query(_a_customer, _mi_email)).fetch"
         );
     }
 
@@ -113,10 +113,10 @@ public class ConditionTest extends GeneratorTest {
     void onParamAndField() {
         assertGeneratedContentContains(
                 "onParamAndField",
-                "customer.EMAIL.eq(email",
-                ".email(_a_customer, email)",
-                "customer.FIRST_NAME.eq(name",
-                ".query(_a_customer, email, name)"
+                "customer.EMAIL.eq(_mi_email",
+                ".email(_a_customer, _mi_email)",
+                "customer.FIRST_NAME.eq(_mi_name",
+                ".query(_a_customer, _mi_email, _mi_name)"
         );
     }
 
@@ -125,8 +125,8 @@ public class ConditionTest extends GeneratorTest {
     void onParamAndOverrideField() {
         assertGeneratedContentContains(
                 "onParamAndOverrideField",
-                ".where(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.email(_a_customer, email))" +
-                        ".and(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.query(_a_customer, email, name)).fetch"
+                ".where(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.email(_a_customer, _mi_email))" +
+                        ".and(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.query(_a_customer, _mi_email, _mi_name)).fetch"
         );
     }
 
@@ -135,8 +135,8 @@ public class ConditionTest extends GeneratorTest {
     void onParamAndFieldOverrideBoth() {
         assertGeneratedContentContains(
                 "onParamAndOverrideField",
-                ".where(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.email(_a_customer, email))" +
-                        ".and(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.query(_a_customer, email, name)).fetch"
+                ".where(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.email(_a_customer, _mi_email))" +
+                        ".and(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.query(_a_customer, _mi_email, _mi_name)).fetch"
         );
     }
 
@@ -145,9 +145,9 @@ public class ConditionTest extends GeneratorTest {
     void onInputParam() {
         assertGeneratedContentContains(
                 "onInputParam", Set.of(STAFF, NAME_INPUT),
-                "staff.FIRST_NAME.eq(name.getFirstname())",
-                "staff.LAST_NAME.eq(name.getLastname())",
-                ".name(_a_staff, name.getFirstname(), name.getLastname())"
+                "staff.FIRST_NAME.eq(_mi_name.getFirstname())",
+                "staff.LAST_NAME.eq(_mi_name.getLastname())",
+                ".name(_a_staff, _mi_name.getFirstname(), _mi_name.getLastname())"
         );
     }
 
@@ -156,8 +156,8 @@ public class ConditionTest extends GeneratorTest {
     void onInputParamOverride() {
         assertGeneratedContentContains(
                 "onInputParamOverride", Set.of(STAFF, NAME_INPUT),
-                ".where(active != null ? _a_staff.ACTIVE.eq(active) : DSL.noCondition())" +
-                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.name(_a_staff, name.getFirstname(), name.getLastname()))" +
+                ".where(_mi_active != null ? _a_staff.ACTIVE.eq(_mi_active) : DSL.noCondition())" +
+                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.name(_a_staff, _mi_name.getFirstname(), _mi_name.getLastname()))" +
                 ".orderBy"
         );
     }
@@ -167,12 +167,12 @@ public class ConditionTest extends GeneratorTest {
     void onInputAndScalarParams() {
         assertGeneratedContentContains(
                 "onInputAndScalarParams", Set.of(STAFF, NAME_INPUT),
-                "staff.FIRST_NAME.eq(name.getFirstname())",
-                "staff.LAST_NAME.eq(name.getLastname())",
-                "email != null ? _a_staff.EMAIL.eq(email) : DSL.noCondition()",
-                ".email(_a_staff, email)",
-                "staff.ACTIVE.eq(active)",
-                ".name(_a_staff, name.getFirstname(), name.getLastname())"
+                "staff.FIRST_NAME.eq(_mi_name.getFirstname())",
+                "staff.LAST_NAME.eq(_mi_name.getLastname())",
+                "email != null ? _a_staff.EMAIL.eq(_mi_email) : DSL.noCondition()",
+                ".email(_a_staff, _mi_email)",
+                "staff.ACTIVE.eq(_mi_active)",
+                ".name(_a_staff, _mi_name.getFirstname(), _mi_name.getLastname())"
         );
     }
 
@@ -180,9 +180,9 @@ public class ConditionTest extends GeneratorTest {
     @DisplayName("Overriding condition on parameter of input type and condition on scalar type")
     public void onInputOverrideAndScalarParams() {
         assertGeneratedContentContains("onInputOverrideAndScalarParams", Set.of(STAFF, NAME_INPUT),
-                ".where(_a_staff.EMAIL.eq(email))" +
-                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.email(_a_staff, email))" +
-                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.name(_a_staff, name.getFirstname(), name.getLastname()))" +
+                ".where(_a_staff.EMAIL.eq(_mi_email))" +
+                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.email(_a_staff, _mi_email))" +
+                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.name(_a_staff, _mi_name.getFirstname(), _mi_name.getLastname()))" +
                 ".orderBy"
         );
     }
@@ -192,7 +192,7 @@ public class ConditionTest extends GeneratorTest {
     public void onFieldOverrideInputParam() {
         assertGeneratedContentContains(
                 "onFieldOverrideInputParam", Set.of(STAFF, NAME_INPUT),
-                ".where(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.field(_a_staff, name.getFirstname(), name.getLastname(), active))" +
+                ".where(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.field(_a_staff, _mi_name.getFirstname(), _mi_name.getLastname(), _mi_active))" +
                 ".orderBy"
         );
     }
@@ -202,11 +202,11 @@ public class ConditionTest extends GeneratorTest {
     public void onInputParamAndField() {
         assertGeneratedContentContains(
                 "onInputParamAndField", Set.of(STAFF, NAME_INPUT),
-                "staff.FIRST_NAME.eq(name.getFirstname())",
-                "staff.LAST_NAME.eq(name.getLastname())",
-                "active != null ? _a_staff.ACTIVE.eq(active) : DSL.noCondition())",
-                ".field(_a_staff, name.getFirstname(), name.getLastname(), active)",
-                ".name(_a_staff, name.getFirstname(), name.getLastname())"
+                "staff.FIRST_NAME.eq(_mi_name.getFirstname())",
+                "staff.LAST_NAME.eq(_mi_name.getLastname())",
+                "active != null ? _a_staff.ACTIVE.eq(_mi_active) : DSL.noCondition())",
+                ".field(_a_staff, _mi_name.getFirstname(), _mi_name.getLastname(), _mi_active)",
+                ".name(_a_staff, _mi_name.getFirstname(), _mi_name.getLastname())"
         );
     }
 
@@ -215,8 +215,8 @@ public class ConditionTest extends GeneratorTest {
     public void onInputParamAndFieldOverride() {
         assertGeneratedContentContains(
                 "onInputParamAndFieldOverride", Set.of(STAFF, NAME_INPUT),
-                ".where(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.field(_a_staff, name.getFirstname(), name.getLastname(), active))" +
-                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.name(_a_staff, name.getFirstname(), name.getLastname()))" +
+                ".where(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.field(_a_staff, _mi_name.getFirstname(), _mi_name.getLastname(), _mi_active))" +
+                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.name(_a_staff, _mi_name.getFirstname(), _mi_name.getLastname()))" +
                 ".orderBy"
         );
     }
@@ -226,8 +226,8 @@ public class ConditionTest extends GeneratorTest {
     public void onInputParamAndFieldOverrideBoth() {
         assertGeneratedContentContains(
                 "onInputParamAndFieldOverrideBoth", Set.of(STAFF, NAME_INPUT),
-                ".where(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.field(_a_staff, name.getFirstname(), name.getLastname(), active))" +
-                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.name(_a_staff, name.getFirstname(), name.getLastname()))" +
+                ".where(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.field(_a_staff, _mi_name.getFirstname(), _mi_name.getLastname(), _mi_active))" +
+                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.name(_a_staff, _mi_name.getFirstname(), _mi_name.getLastname()))" +
                 ".orderBy"
         );
     }
@@ -237,10 +237,10 @@ public class ConditionTest extends GeneratorTest {
     public void onNestedInputParam() {
         assertGeneratedContentContains(
                 "onNestedInputParam", Set.of(STAFF, NAME_INPUT),
-                "staff.FIRST_NAME.eq(staff.getName().getFirstname())",
-                "staff.LAST_NAME.eq(staff.getName().getLastname())",
-                "staff.getActive() != null ? _a_staff.ACTIVE.eq(staff.getActive()) : DSL.noCondition())",
-                ".staffMin(_a_staff, staff.getName().getFirstname(), staff.getName().getLastname(), staff.getActive() != null ? staff.getActive() : null))"
+                "staff.FIRST_NAME.eq(_mi_staff.getName().getFirstname())",
+                "staff.LAST_NAME.eq(_mi_staff.getName().getLastname())",
+                "staff.getActive() != null ? _a_staff.ACTIVE.eq(_mi_staff.getActive()) : DSL.noCondition())",
+                ".staffMin(_a_staff, _mi_staff.getName().getFirstname(), _mi_staff.getName().getLastname(), _mi_staff.getActive() != null ? _mi_staff.getActive() : null))"
         );
     }
 
@@ -249,7 +249,7 @@ public class ConditionTest extends GeneratorTest {
     public void onNestedInputOverrideParam() {
         assertGeneratedContentContains(
                 "onNestedInputOverrideParam", Set.of(STAFF, NAME_INPUT),
-                ".where(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.staffMin(_a_staff, staff.getName().getFirstname(), staff.getName().getLastname(), staff.getActive()))" +
+                ".where(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.staffMin(_a_staff, _mi_staff.getName().getFirstname(), _mi_staff.getName().getLastname(), _mi_staff.getActive()))" +
                 ".orderBy"
         );
     }
@@ -259,11 +259,11 @@ public class ConditionTest extends GeneratorTest {
     public void onFieldNestedInputParam() {
         assertGeneratedContentContains(
                 "onFieldNestedInputParam", Set.of(STAFF, NAME_INPUT),
-                "staff.FIRST_NAME.eq(staff.getName().getFirstname())",
-                "staff.LAST_NAME.eq(staff.getName().getLastname())",
-                "staff.EMAIL.eq(staff.getEmail())",
-                "staff.ACTIVE.eq(staff.getActive())",
-                ".staff(_a_staff, staff.getName().getFirstname(), staff.getName().getLastname(), staff.getEmail(), staff.getActive())"
+                "staff.FIRST_NAME.eq(_mi_staff.getName().getFirstname())",
+                "staff.LAST_NAME.eq(_mi_staff.getName().getLastname())",
+                "staff.EMAIL.eq(_mi_staff.getEmail())",
+                "staff.ACTIVE.eq(_mi_staff.getActive())",
+                ".staff(_a_staff, _mi_staff.getName().getFirstname(), _mi_staff.getName().getLastname(), _mi_staff.getEmail(), _mi_staff.getActive())"
         );
     }
 
@@ -272,7 +272,7 @@ public class ConditionTest extends GeneratorTest {
     public void onFieldOverrideNestedInputParam() {
         assertGeneratedContentContains(
                 "onFieldOverrideNestedInputParam", Set.of(STAFF, NAME_INPUT),
-                ".where(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.staff(_a_staff, staff.getName().getFirstname(), staff.getName().getLastname(), staff.getEmail(), staff.getActive()))" +
+                ".where(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.staff(_a_staff, _mi_staff.getName().getFirstname(), _mi_staff.getName().getLastname(), _mi_staff.getEmail(), _mi_staff.getActive()))" +
                 ".orderBy"
         );
     }
@@ -282,10 +282,10 @@ public class ConditionTest extends GeneratorTest {
     public void onMultiLevelInputDifferentOverride() {
         assertGeneratedContentContains(
                 "onMultiLevelInputDifferentOverride", Set.of(STAFF, NAME_INPUT),
-                ".where(_a_staff.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()))" +
-                ".and(_a_staff.ACTIVE.eq(staff.getActive()))" +
-                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.name(_a_staff, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname()))" +
-                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.email(_a_staff, staff.getInfo().getJobEmail().getEmail()))" +
+                ".where(_a_staff.EMAIL.eq(_mi_staff.getInfo().getJobEmail().getEmail()))" +
+                ".and(_a_staff.ACTIVE.eq(_mi_staff.getActive()))" +
+                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.name(_a_staff, _mi_staff.getInfo().getName().getFirstname(), _mi_staff.getInfo().getName().getLastname()))" +
+                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.email(_a_staff, _mi_staff.getInfo().getJobEmail().getEmail()))" +
                 ".orderBy"
         );
     }
@@ -295,9 +295,9 @@ public class ConditionTest extends GeneratorTest {
     public void onMultiLevelInputAndFieldDifferentOverride() {
         assertGeneratedContentContains(
                 "onMultiLevelInputAndFieldDifferentOverride", Set.of(STAFF, NAME_INPUT),
-                ".where(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.staff(_a_staff, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname(), staff.getInfo().getJobEmail().getEmail(), staff.getActive() ))" +
-                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.name(_a_staff, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname()))" +
-                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.email(_a_staff, staff.getInfo().getJobEmail().getEmail()))" +
+                ".where(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.staff(_a_staff, _mi_staff.getInfo().getName().getFirstname(), _mi_staff.getInfo().getName().getLastname(), _mi_staff.getInfo().getJobEmail().getEmail(), _mi_staff.getActive()))" +
+                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.name(_a_staff, _mi_staff.getInfo().getName().getFirstname(), _mi_staff.getInfo().getName().getLastname()))" +
+                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.email(_a_staff, _mi_staff.getInfo().getJobEmail().getEmail()))" +
                 ".orderBy"
         );
     }
@@ -307,13 +307,13 @@ public class ConditionTest extends GeneratorTest {
     public void onMultiLevelInputAndScalarDifferentOverride() {
         assertGeneratedContentContains(
                 "onMultiLevelInputAndScalarDifferentOverride", Set.of(STAFF, NAME_INPUT),
-                ".where(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.firstname(_a_staff, staff.getInfo().getName().getFirstname()))" +
-                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.lastname(_a_staff, staff.getInfo().getName().getLastname()))" +
-                ".and(_a_staff.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()))" +
-                ".and(_a_staff.ACTIVE.eq(staff.getActive()))" +
-                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.staff(_a_staff, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname(), staff.getInfo().getJobEmail().getEmail(), staff.getActive()))" +
-                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.name(_a_staff, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname()))" +
-                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.email(_a_staff, staff.getInfo().getJobEmail().getEmail()))" +
+                ".where(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.firstname(_a_staff, _mi_staff.getInfo().getName().getFirstname()))" +
+                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.lastname(_a_staff, _mi_staff.getInfo().getName().getLastname()))" +
+                ".and(_a_staff.EMAIL.eq(_mi_staff.getInfo().getJobEmail().getEmail()))" +
+                ".and(_a_staff.ACTIVE.eq(_mi_staff.getActive()))" +
+                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.staff(_a_staff, _mi_staff.getInfo().getName().getFirstname(), _mi_staff.getInfo().getName().getLastname(), _mi_staff.getInfo().getJobEmail().getEmail(), _mi_staff.getActive()))" +
+                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.name(_a_staff, _mi_staff.getInfo().getName().getFirstname(), _mi_staff.getInfo().getName().getLastname()))" +
+                ".and(no.sikt.graphitron.codereferences.conditions.QueryStaffCondition.email(_a_staff, _mi_staff.getInfo().getJobEmail().getEmail()))" +
                 ".orderBy"
         );
     }
@@ -321,7 +321,7 @@ public class ConditionTest extends GeneratorTest {
     @Test
     @DisplayName("Condition on a field with an input type parameter")
     void withInput() {
-        assertGeneratedContentContains("withInput", Set.of(DUMMY_INPUT), ".query(_a_customer, in.getId() != null ? in.getId() : null)");
+        assertGeneratedContentContains("withInput", Set.of(DUMMY_INPUT), ".query(_a_customer, _mi_in.getId() != null ? _mi_in.getId() : null)");
     }
 
     @Test
@@ -334,7 +334,7 @@ public class ConditionTest extends GeneratorTest {
     @Test
     @DisplayName("Condition on a field inside an input type")
     void onFieldInInput() {
-        assertGeneratedContentContains("onFieldInInput", ".id(_a_customer, in.getId())");
+        assertGeneratedContentContains("onFieldInInput", ".id(_a_customer, _mi_in.getId())");
     }
 
     @Test
@@ -342,7 +342,7 @@ public class ConditionTest extends GeneratorTest {
     void onEnum() {
         assertGeneratedContentContains(
                 "onEnum", Set.of(DUMMY_ENUM_CONVERTED),
-                ".enumInput(_a_customer, QueryHelper.makeEnumMap(enumInput,"
+                ".enumInput(_a_customer, QueryHelper.makeEnumMap(_mi_enumInput,"
         );
     }
 
@@ -351,7 +351,7 @@ public class ConditionTest extends GeneratorTest {
     void onStringEnum() {
         assertGeneratedContentContains(
                 "onStringEnum", Set.of(DUMMY_ENUM),
-                ".email(_a_customer, QueryHelper.makeEnumMap(enumInput,"
+                ".email(_a_customer, QueryHelper.makeEnumMap(_mi_enumInput,"
         );
     }
 
@@ -360,7 +360,7 @@ public class ConditionTest extends GeneratorTest {
     void onListedEnum() {
         assertGeneratedContentContains(
                 "onListedEnum", Set.of(DUMMY_ENUM_CONVERTED),
-                ".enumInputList(_a_customer, QueryHelper.makeEnumMap(enumInputList,"
+                ".enumInputList(_a_customer, QueryHelper.makeEnumMap(_mi_enumInputList,"
         );
     }
 
@@ -369,7 +369,7 @@ public class ConditionTest extends GeneratorTest {
     void onParamWithEnum() {
         assertGeneratedContentContains(
                 "onParamWithEnum", Set.of(DUMMY_ENUM_CONVERTED),
-                ".queryEnum(_a_customer, QueryHelper.makeEnumMap(enumInput,"
+                ".queryEnum(_a_customer, QueryHelper.makeEnumMap(_mi_enumInput,"
         );
     }
 
@@ -378,7 +378,7 @@ public class ConditionTest extends GeneratorTest {
     void onParamWithListedEnum() {
         assertGeneratedContentContains(
                 "onParamWithListedEnum", Set.of(DUMMY_ENUM_CONVERTED),
-                "queryEnumList(_a_customer, QueryHelper.makeEnumMap(enumInputList,"
+                "queryEnumList(_a_customer, QueryHelper.makeEnumMap(_mi_enumInputList,"
         );
     }
 
@@ -387,7 +387,7 @@ public class ConditionTest extends GeneratorTest {
     void onParamWithEnumInInput() {
         assertGeneratedContentContains(
                 "onParamWithEnumInInput", Set.of(DUMMY_ENUM_CONVERTED),
-                ".queryEnum(_a_customer, QueryHelper.makeEnumMap(in.getE(),"
+                ".queryEnum(_a_customer, QueryHelper.makeEnumMap(_mi_in.getE(),"
         );
     }
 
@@ -395,8 +395,8 @@ public class ConditionTest extends GeneratorTest {
     @DisplayName("Condition on field returning single table interface")
     void onSingleTableInterface() {
         assertGeneratedContentContains("onFieldReturningSingleTableInterface",
-                ".and(_a_address.POSTAL_CODE.eq(filter.getPostalCode()",
-                ".and(no.sikt.graphitron.codereferences.conditions.QueryAddressInterfaceCondition.address(_a_address, filter.getPostalCode()"
+                ".and(_a_address.POSTAL_CODE.eq(_mi_filter.getPostalCode()",
+                ".and(no.sikt.graphitron.codereferences.conditions.QueryAddressInterfaceCondition.address(_a_address, _mi_filter.getPostalCode()"
         );
     }
 
@@ -405,9 +405,9 @@ public class ConditionTest extends GeneratorTest {
     void onParamWithWrongCapitalisation() {
         assertGeneratedContentContains(
                 "onParamWithWrongCapitalisation",
-                ", String sTRING,",
-                ".where(_a_customer.EMAIL.eq(sTRING))" +
-                        ".and(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.email(_a_customer, sTRING)).fetch"
+                ", String _mi_sTRING,",
+                ".where(_a_customer.EMAIL.eq(_mi_sTRING))" +
+                        ".and(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.email(_a_customer, _mi_sTRING)).fetch"
         );
     }
 
@@ -416,10 +416,10 @@ public class ConditionTest extends GeneratorTest {
     void onInputParamWithWrongCapitalisation() {
         assertGeneratedContentContains(
                 "onInputParamWithWrongCapitalisation", Set.of(STAFF, NAME_INPUT),
-                ", NameInput nAME,",
-                "staff.FIRST_NAME.eq(nAME.getFirstname())",
-                "staff.LAST_NAME.eq(nAME.getLastname())",
-                ".name(_a_staff, nAME.getFirstname(), nAME.getLastname())"
+                ", NameInput _mi_nAME,",
+                "staff.FIRST_NAME.eq(_mi_nAME.getFirstname())",
+                "staff.LAST_NAME.eq(_mi_nAME.getLastname())",
+                ".name(_a_staff, _mi_nAME.getFirstname(), _mi_nAME.getLastname())"
         );
     }
 
@@ -428,8 +428,8 @@ public class ConditionTest extends GeneratorTest {
     void onParamWithContextField() {
         assertGeneratedContentContains(
                 "onParamWithContextField",
-                "String email, String _cf_ctxField, SelectionSet",
-                "ContextCondition.email(_a_customer, email, _cf_ctxField)"
+                "email, String _cf_ctxField, SelectionSet",
+                "ContextCondition.email(_a_customer, _mi_email, _cf_ctxField)"
         );
     }
 
@@ -438,8 +438,8 @@ public class ConditionTest extends GeneratorTest {
     void onFieldWithContextField() {
         assertGeneratedContentContains(
                 "onFieldWithContextField",
-                "String email, String _cf_ctxField, SelectionSet",
-                "ContextCondition.query(_a_customer, email, _cf_ctxField)"
+                "email, String _cf_ctxField, SelectionSet",
+                "ContextCondition.query(_a_customer, _mi_email, _cf_ctxField)"
         );
     }
 
@@ -448,8 +448,8 @@ public class ConditionTest extends GeneratorTest {
     void onInputParamWithContextField() {
         assertGeneratedContentContains(
                 "onInputParamWithContextField",
-                "In in, String _cf_ctxField, SelectionSet",
-                "ContextCondition.email(_a_customer, in != null ? in.getEmail() : null, _cf_ctxField)"
+                "In _mi_in, String _cf_ctxField, SelectionSet",
+                "ContextCondition.email(_a_customer, _mi_in != null ? _mi_in.getEmail() : null, _cf_ctxField)"
         );
     }
 
@@ -458,8 +458,8 @@ public class ConditionTest extends GeneratorTest {
     void onParamWithMultipleContextFields() {
         assertGeneratedContentContains(
                 "onParamWithMultipleContextFields",
-                "String email, String _cf_ctxField1, String _cf_ctxField2, SelectionSet",
-                "ContextCondition.email(_a_customer, email, _cf_ctxField1, _cf_ctxField2)"
+                "email, String _cf_ctxField1, String _cf_ctxField2, SelectionSet",
+                "ContextCondition.email(_a_customer, _mi_email, _cf_ctxField1, _cf_ctxField2)"
         );
     }
 
@@ -468,9 +468,9 @@ public class ConditionTest extends GeneratorTest {
     void onMultipleParamsWithContextFields() {
         assertGeneratedContentContains(
                 "onMultipleParamsWithContextFields",
-                "String email2, String _cf_ctxField1, String _cf_ctxField2, SelectionSet",
-                "ContextCondition.email(_a_customer, email1, _cf_ctxField1)",
-                "ContextCondition.email(_a_customer, email2, _cf_ctxField2)"
+                "email2, String _cf_ctxField1, String _cf_ctxField2, SelectionSet",
+                "ContextCondition.email(_a_customer, _mi_email1, _cf_ctxField1)",
+                "ContextCondition.email(_a_customer, _mi_email2, _cf_ctxField2)"
         );
     }
 
@@ -479,9 +479,9 @@ public class ConditionTest extends GeneratorTest {
     void onMultipleParamsWithSameContextField() {
         assertGeneratedContentContains(
                 "onMultipleParamsWithSameContextField",
-                "String email2, String _cf_ctxField, SelectionSet",
-                "ContextCondition.email(_a_customer, email1, _cf_ctxField)",
-                "ContextCondition.email(_a_customer, email2, _cf_ctxField)"
+                "email2, String _cf_ctxField, SelectionSet",
+                "ContextCondition.email(_a_customer, _mi_email1, _cf_ctxField)",
+                "ContextCondition.email(_a_customer, _mi_email2, _cf_ctxField)"
         );
     }
 }

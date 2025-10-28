@@ -149,7 +149,7 @@ public class OutputTest extends GeneratorTest {
                 """
                     return DSL.row(
                             DSL.field(
-                                    DSL.select(queryForQuery_wrapper_d1_customer())
+                                    DSL.select(_1_queryForQuery_wrapper_customer())
                                     .from(_a_customer)
                             )
                     ).mapping(Functions.nullOnAllNull(Wrapper::new))
@@ -167,7 +167,7 @@ public class OutputTest extends GeneratorTest {
                 DSL.row(
                         DSL.row(
                                 DSL.multiset(
-                                        DSL.select(queryForQuery_wrapper_d1_customer())
+                                        DSL.select(_1_queryForQuery_wrapper_customer())
                                         .from(_a_customer)
                                         .orderBy(_a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))
                                 )
@@ -182,7 +182,7 @@ public class OutputTest extends GeneratorTest {
     void outerNestedRowExtraField() {
         assertGeneratedContentContains(
                 "outerNestedRowExtraField", Set.of(CUSTOMER_TABLE),
-                ".row(.EMAIL,DSL.field(DSL.select(queryForQuery_wrapper_d1_customer())"
+                ".row(.EMAIL,DSL.field(DSL.select(_1_queryForQuery_wrapper_customer())"
         );
     }
 
@@ -195,7 +195,7 @@ public class OutputTest extends GeneratorTest {
                 return DSL.row(
                                 DSL.row(
                                         DSL.field(
-                                                DSL.select(queryForQuery_wrapper1_d1_customer())
+                                                DSL.select(_1_queryForQuery_wrapper1_customer())
                                                 .from(_a_customer)
                                         )
                                 ).mapping(Functions.nullOnAllNull(Wrapper2::new))
@@ -209,14 +209,14 @@ public class OutputTest extends GeneratorTest {
     void outerNestedWithArgument() {
         assertGeneratedContentContains(
                 "outerNestedWithArgument", Set.of(CUSTOMER_TABLE),
-                "queryForQuery(DSLContext _iv_ctx, String firstName,",
-                "queryForQuery_outer(firstName)).fetchOne",
-                "queryForQuery_outer(String firstName)",
+                "queryForQuery(DSLContext _iv_ctx, String _mi_firstName,",
+                "queryForQuery_outer(_mi_firstName)).fetchOne",
+                "queryForQuery_outer(String _mi_firstName)",
                 """
                 DSL.field(
-                        DSL.select(queryForQuery_outer_d1_customers())
+                        DSL.select(_1_queryForQuery_outer_customers())
                         .from(_a_customer)
-                        .where(firstName != null ? _a_customer.FIRST_NAME.eq(firstName) : DSL.noCondition())
+                        .where(_mi_firstName != null ? _a_customer.FIRST_NAME.eq(_mi_firstName) : DSL.noCondition())
                 """,
                 "return DSL.row(_a_customer.getId()).mapping" // Checks that no outer where statement exists.
         );
@@ -227,14 +227,14 @@ public class OutputTest extends GeneratorTest {
     void outerNestedWithArgumentListed() {
         assertGeneratedContentContains(
                 "outerNestedWithArgumentListed", Set.of(CUSTOMER_TABLE),
-                "queryForQuery(DSLContext _iv_ctx, List<String> firstName,",
-                ".select(queryForQuery_outer(firstName)).fetchOne",
-                "queryForQuery_outer(List<String> firstName)",
+                "queryForQuery(DSLContext _iv_ctx, List<String> _mi_firstName,",
+                ".select(queryForQuery_outer(_mi_firstName)).fetchOne",
+                "queryForQuery_outer(List<String> _mi_firstName)",
                 """
                 DSL.multiset(
-                        DSL.select(queryForQuery_outer_d1_customers())
+                        DSL.select(_1_queryForQuery_outer_customers())
                         .from(_a_customer)
-                        .where(firstName.size() > 0 ? _a_customer.FIRST_NAME.in(firstName) : DSL.noCondition())
+                        .where(_mi_firstName.size() > 0 ? _a_customer.FIRST_NAME.in(_mi_firstName) : DSL.noCondition())
                         .orderBy(_a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))
                 )
                 """
@@ -250,9 +250,9 @@ public class OutputTest extends GeneratorTest {
                 return DSL.row(
                         DSL.row(
                                 DSL.field(
-                                        DSL.select(queryForQuery_wrapper1_d1_customer())
+                                        DSL.select(_1_queryForQuery_wrapper1_customer())
                                         .from(_a_customer)
-                                        .where(firstName != null ? _a_customer.FIRST_NAME.eq(firstName) : DSL.noCondition())
+                                        .where(_mi_firstName != null ? _a_customer.FIRST_NAME.eq(_mi_firstName) : DSL.noCondition())
                """
         );
     }

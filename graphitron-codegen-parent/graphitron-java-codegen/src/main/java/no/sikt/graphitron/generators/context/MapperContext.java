@@ -19,7 +19,9 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.findKeyForResolverField;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getForeignKeyForNodeIdReference;
+import static no.sikt.graphitron.javapoet.CodeBlock.declareNew;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.ReflectionHelpers.classHasMethod;
 import static no.sikt.graphitron.mappings.TableReflection.recordUsesFSHack;
@@ -44,7 +46,8 @@ public class MapperContext {
             isInitContext,
             pastFieldOverrideExists,
             noRecordIterability,
-            isSimpleIDMode;
+            isSimpleIDMode,
+            lastInputDeclarationWasIterable;
     private final String sourceName, targetName, path, indexPath;
     private final MethodMapping getSourceMapping, setTargetMapping, lastRecordMapping;
     private final MapperContext previousContext;
@@ -57,6 +60,7 @@ public class MapperContext {
         indexPath = "";
         isIterable = false;
         wasIterable = false;
+        lastInputDeclarationWasIterable = true;
         targetIsType = false;
         sourceName = "";
         targetName = "";
@@ -117,6 +121,8 @@ public class MapperContext {
         path = getNextPath();
         indexPath = getNextIndexPath();
         noRecordIterability = targetIsType && sourceName.isEmpty() && target.isIterableWrapped();
+
+        lastInputDeclarationWasIterable = previousContext.lastInputDeclarationWasIterable && !target.isIterableWrapped() || previousContext.isInitContext;
     }
 
     private @Nullable MethodMapping getNextRecordMapping() {
@@ -155,7 +161,7 @@ public class MapperContext {
 
         return (mapsJavaRecord ? hasJavaRecordReference : hasTable)
                 ? uncapitalize(targetType.asRecordName())
-                : select(previousContext.targetName, asIterableIf(previousContext.sourceName, previousContext.isIterable));
+                : select(previousContext.targetName, previousContext.sourceName);
     }
 
     private String getNextPath() {
@@ -244,11 +250,7 @@ public class MapperContext {
     }
 
     private String getIndexName() {
-        return asIndexName(asIterable(formatSourceForIndexLoop()));
-    }
-
-    private String formatSourceForIndexLoop() {
-        return isValidation ? asListedName(sourceName) : sourceName;
+        return namedIndexIteratorPrefix(sourceName);
     }
 
     public boolean targetCanNotBeMapped() {
@@ -264,16 +266,23 @@ public class MapperContext {
         if (secondLastContext == null) {
             return false;
         }
-        return asIterableIf(previousContext.sourceName, previousContext.isIterable).equals(asIterableIf(secondLastContext.sourceName, secondLastContext.isIterable));
+        return previousContext.sourceName.equals(secondLastContext.sourceName);
     }
 
     public CodeBlock getSourceGetCallBlock() {
         if (isSimpleIDMode) {
-            return CodeBlock.of(asRecordName(previousContext.targetName));
-        } else if (!toRecord && schema.isNodeIdField(target)) {
-            return createNodeIdBlockForRecord(schema.getRecordType(target.getContainerTypeName()), asIterableIf(previousContext.sourceName, previousContext.isIterable));
+            return CodeBlock.of(inputPrefix(asRecordName(previousContext.targetName)));
         }
-        return getValue(asIterableIf(previousContext.sourceName, previousContext.isIterable), getSourceMapping);
+
+        if (!toRecord && schema.isNodeIdField(target)) {
+            return createNodeIdBlockForRecord(schema.getRecordType(target.getContainerTypeName()), namedIteratorPrefixIf(previousContext.sourceName, previousContext.isIterable));
+        }
+
+        return getValue(
+                (!isValidation || toRecord) && previousContext.isIterable || !toRecord && previousContext.lastInputDeclarationWasIterable
+                        ? namedIteratorPrefix(previousContext.sourceName)
+                        : inputPrefix(previousContext.sourceName), getSourceMapping
+        );
     }
 
     public MapperContext iterateContext(GenerationField field) {
@@ -282,7 +291,7 @@ public class MapperContext {
     }
 
     public String getInputVariableName() {
-        return select(targetType.getName(), targetType.asRecordName());
+        return inputPrefix(select(targetType.getName(), targetType.asRecordName()));
     }
 
     public String getOutputName() {
@@ -290,7 +299,7 @@ public class MapperContext {
     }
 
     public String getHelperVariableName() {
-        return uncapitalize(mapsJavaRecord ? getSourceMapping.getName() : (previousContext.targetType.getName() + "_" + uncapitalize(setTargetMapping.getName())));
+        return mapsJavaRecord ? getSourceMapping.getName() : (previousContext.targetType.getName() + "_" + uncapitalize(setTargetMapping.getName()));
     }
 
     public ClassName getReturnType() {
@@ -305,13 +314,13 @@ public class MapperContext {
         var targetEqualsPrevious = targetName.equals(previousContext.targetName);
         var code = CodeBlock.builder();
         if (isIterable && hasSourceName()) {
-            code.declareIf(isResolver || isValidation, asIterable(sourceName), "$N.get($N)", formatSourceForIndexLoop(), getIndexName());
+            code.declareIf(isResolver || isValidation, namedIteratorPrefix(sourceName), "$N.get($N)", inputPrefix(sourceName), getIndexName());
 
             if (!isValidation) {
-                code.add(continueCheck(asIterable(sourceName)));
+                code.add(continueCheck(namedIteratorPrefix(sourceName)));
 
                 if (!isResolver && !mapsJavaRecord && !targetEqualsPrevious) {
-                    code.add(select(declareRecord(targetName, targetType, false, false), CodeBlock.declareNew(targetName, targetType.getGraphClassName())));
+                    code.add(select(declareRecord(outputPrefix(targetName), targetType, false, false), declareNew(outputPrefix(targetName), targetType.getGraphClassName())));
                 }
             } else if (previousContext.isInitContext) {
                 code.declareNew(VAR_PATHS_FOR_PROPERTIES, ParameterizedTypeName.get(HASH_MAP.className, STRING.className, STRING.className));
@@ -319,7 +328,7 @@ public class MapperContext {
         }
 
         code
-                .declareNewIf(!isValidation && mapsJavaRecord && !targetEqualsPrevious, targetName, targetType.asTargetClassName(toRecord))
+                .declareNewIf(!isValidation && mapsJavaRecord && !targetEqualsPrevious, outputPrefix(targetName), targetType.asTargetClassName(toRecord))
                 .add(fieldCode);
 
         if (isResolver) {
@@ -328,24 +337,24 @@ public class MapperContext {
 
         if (hasSourceName()) {
             if (!isValidation && isIterable && (!mapsJavaRecord || hasRecordReference)) {
-                code.add(addToList(targetName));
+                code.add(CodeBlock.statementOf("$N.add($N)", listedOutputPrefix(targetName), outputPrefix(targetName)));
             } else if (isValidation && previousContext.isInitContext) {
-                code.addStatement("$N.addAll($T.validatePropertiesAndGenerateGraphQLErrors($N, $N, $N))", VAR_VALIDATION_ERRORS, RECORD_VALIDATOR.className, asIterableIf(sourceName, isIterable), VAR_PATHS_FOR_PROPERTIES, VAR_ENV);
+                code.addStatement("$N.addAll($T.validatePropertiesAndGenerateGraphQLErrors($N, $N, $N))", VAR_VALIDATION_ERRORS, RECORD_VALIDATOR.className, namedIteratorPrefixIf(sourceName, isIterable), VAR_PATHS_FOR_PROPERTIES, VAR_ENV);
             }
         }
 
-        var forCode = CodeBlock.builder().add(isIterable && hasSourceName() ? (isValidation ? wrapForIndexed(asListedName(sourceName), code.build()): wrapFor(sourceName, code.build())) : code.build());
+        var forCode = CodeBlock.builder().add(isIterable && hasSourceName() ? (isValidation ? wrapForIndexed(sourceName, code.build()) : wrapFor(sourceName, code.build())) : code.build());
         if (isValidation || !previousContext.isInitContext && (toRecord || !mapsJavaRecord)) {
             return forCode.build();
         }
 
         if (!previousContext.isInitContext) {
-            return forCode.add(getSetMappingBlock(targetName)).build();
+            return forCode.add(getSetMappingBlock(outputPrefix(targetName))).build();
         }
 
         return CodeBlock
                 .builder()
-                .add(hasSourceName() ? wrapNotNull(sourceName, forCode.build()) : forCode.build())
+                .add(hasSourceName() ? wrapNotNull(inputPrefix(sourceName), forCode.build()) : forCode.build())
                 .addIf(toRecord && !mapsJavaRecord, () -> applyGlobalTransforms(targetName, targetType.getRecordClassName(), TransformScope.ALL_MUTATIONS)) // Note: This is done after records are filled.
                 .build();
     }
@@ -358,13 +367,13 @@ public class MapperContext {
             return CodeBlock.statementOf("$N.$L($N, $L, $S, $L)",
                     VAR_NODE_STRATEGY,
                     foreignKey.isPresent() ? METHOD_SET_RECORD_REFERENCE_ID : METHOD_SET_RECORD_ID,
-                    previousContext.targetName,
+                    outputPrefix(previousContext.targetName),
                     valueToSet,
                     nodeType.getTypeId(),
                     foreignKey.isPresent() ? referenceNodeIdColumnsBlock(schema.getRecordType(target.getContainerTypeName()), nodeType, foreignKey.get()) : nodeIdColumnsBlock(nodeType)
             );
         }
-        return setValue(previousContext.targetName, setTargetMapping, valueToSet, target.isResolver());
+        return setValue(outputPrefix(previousContext.targetName), setTargetMapping, valueToSet, target.isResolver());
     }
 
     public CodeBlock getSetMappingBlock(String valueToSet) {
@@ -376,7 +385,7 @@ public class MapperContext {
     }
 
     public CodeBlock getResolverKeySetMappingBlockForJooqRecord() {
-        return getResolverKeySetMappingBlock(asIterableIf(previousContext.sourceName, previousContext.isIterable), false);
+        return getResolverKeySetMappingBlock(namedIteratorPrefixIf(previousContext.sourceName, previousContext.isIterable), false);
     }
 
     public CodeBlock getResolverKeySetMappingBlock(String varName) {
@@ -406,7 +415,8 @@ public class MapperContext {
     }
 
     public CodeBlock getReturnBlock() {
-        return returnWrap(asListedNameIf(select(targetType.getRecordReferenceName(), targetType.getName()), hasSourceName() || noRecordIterability));
+        var name = select(targetType.getRecordReferenceName(), targetType.getName());
+        return returnWrap(hasSourceName() || noRecordIterability ? listedOutputPrefix(name) : outputPrefix(name));
     }
 
     /**
@@ -440,7 +450,7 @@ public class MapperContext {
     }
 
     private CodeBlock recordTransformPart(String varName, String typeName) {
-        return FormatCodeBlocks.recordTransformPart(VAR_TRANSFORMER, varName, typeName, hasJavaRecordReference, toRecord);
+        return FormatCodeBlocks.recordTransformPart(VAR_TRANSFORMER, inputPrefix(varName), typeName, hasJavaRecordReference, toRecord);
     }
 
     private boolean isMappingPossible() {

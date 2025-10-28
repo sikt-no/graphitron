@@ -22,7 +22,7 @@ import org.jooq.impl.DSL;
 
 public class WrapperDBQueries {
     public static Map<Row1<Long>, List<Pair<String, CustomerTable>>> queryForWrapper(
-            DSLContext _iv_ctx, Set<Row1<Long>> _rk_wrapper, Integer _iv_pageSize, String after,
+            DSLContext _iv_ctx, Set<Row1<Long>> _rk_wrapper, Integer _iv_pageSize, String _mi_after,
             SelectionSet _iv_select) {
         var _a_address = ADDRESS.as("address_223244161");
         var _a_address_223244161_customer = _a_address.customer().as("customer_1589604633");
@@ -37,7 +37,8 @@ public class WrapperDBQueries {
                                                 queryForWrapper_customerTable()
                                         )
                                         .from(_a_address_223244161_customer)
-                                        .orderBy(_iv_orderFields).seek(QueryHelper.getOrderByValues(_iv_ctx, _iv_orderFields, after))
+                                        .orderBy(_iv_orderFields)
+                                        .seek(QueryHelper.getOrderByValues(_iv_ctx, _iv_orderFields, _mi_after))
                                         .limit(_iv_pageSize + 1)
 
                         )

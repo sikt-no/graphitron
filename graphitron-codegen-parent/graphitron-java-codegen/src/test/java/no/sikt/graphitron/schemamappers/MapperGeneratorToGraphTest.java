@@ -41,8 +41,8 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     void listedFields() {
         assertGeneratedContentContains(
                 "listedFields",
-                "Response0 recordToGraphType(List<String> response0Record,",
-                "Response1 recordToGraphType(List<String> response1Record,"
+                "Response0 recordToGraphType(List<String> _mi_response0Record,",
+                "Response1 recordToGraphType(List<String> _mi_response1Record,"
         );
     }
 
@@ -52,7 +52,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "splitQueryInNestedJavaRecord",
                 " if (_iv_select.contains(_iv_pathHere + \"customerJavaRecords\")) {" +
-                        "payload.setCustomerJavaRecords(_iv_transform.customerJavaRecordToGraphType(payloadRecord, _iv_pathHere + \"customerJavaRecords\"));}"
+                        "_mo_payload.setCustomerJavaRecords(_iv_transform.customerJavaRecordToGraphType(_mi_payloadRecord, _iv_pathHere + \"customerJavaRecords\"));}"
         );
     }
 
@@ -61,7 +61,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     void listedSplitQueryInNestedJooqRecord() {
         assertGeneratedContentContains(
                 "listedSplitQueryInNestedJooqRecord",
-                "city.setAddressesKey(DSL.row(itCityRecord.getCityId()));"
+                "city.setAddressesKey(DSL.row(_nit_cityRecord.getCityId()));"
         );
     }
 
@@ -69,7 +69,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("Wrapped field containing listed splitQuery with listed splitQuery field")
     void nestedListWithSplitQuery() {
         var generatedFiles = generateFiles("nestedListWithSplitQuery");
-        contains(generatedFiles, "payload.setCitiesKey(payloadRecord.stream().map(_iv_it -> DSL.row(_iv_it.getCityId())).toList());");
+        contains(generatedFiles, "payload.setCitiesKey(_mi_payloadRecord.stream().map(_iv_it -> DSL.row(_iv_it.getCityId())).toList());");
 //         TODO: fix this below in Jira: https://sikt.atlassian.net/browse/GG-277
 //        doesNotContain(generatedFiles, "class CityTypeMapper");
     }

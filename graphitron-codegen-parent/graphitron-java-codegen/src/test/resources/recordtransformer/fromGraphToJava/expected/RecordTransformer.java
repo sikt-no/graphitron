@@ -13,11 +13,11 @@ public class RecordTransformer extends AbstractTransformer {
         super(_iv_env);
     }
 
-    public List<IDJavaRecord> dummyInputRecordToJavaRecord(List<DummyInputRecord> input, String _iv_path) {
-        return DummyInputRecordJavaMapper.toJavaRecord(input, _iv_path, this);
+    public List<IDJavaRecord> dummyInputRecordToJavaRecord(List<DummyInputRecord> _mi_input, String _iv_path) {
+        return DummyInputRecordJavaMapper.toJavaRecord(_mi_input, _iv_path, this);
     }
 
-    public IDJavaRecord dummyInputRecordToJavaRecord(DummyInputRecord input, String _iv_path) {
-        return dummyInputRecordToJavaRecord(List.of(input), _iv_path).stream().findFirst().orElse(new IDJavaRecord());
+    public IDJavaRecord dummyInputRecordToJavaRecord(DummyInputRecord _mi_input, String _iv_path) {
+        return dummyInputRecordToJavaRecord(List.of(_mi_input), _iv_path).stream().findFirst().orElse(new IDJavaRecord());
     }
 }

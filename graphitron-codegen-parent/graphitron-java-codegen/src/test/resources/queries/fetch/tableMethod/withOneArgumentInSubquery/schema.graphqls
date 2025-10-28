@@ -1,0 +1,12 @@
+type Query {
+    customer(first_name: String): Customer @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.codereferences.services.CustomerTableMethod", method: "customerTable"})
+}
+
+type Customer @table {
+    id: ID
+    address: Address
+}
+
+type Address @table {
+    id: ID
+}

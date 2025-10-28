@@ -65,9 +65,9 @@ public class RecordTransformerTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "withValidation",
                 Set.of(CUSTOMER_INPUT_TABLE),
-                "records = CustomerInputTableJOOQMapper.toJOOQRecord(input, _iv_path, this);" +
-                        "_iv_validationErrors.addAll(CustomerInputTableJOOQMapper.validate(records, _iv_indexPath, this));" +
-                        "return records"
+                "records = CustomerInputTableJOOQMapper.toJOOQRecord(_mi_input, _iv_path, this);" +
+                        "_iv_validationErrors.addAll(CustomerInputTableJOOQMapper.validate(_mo_records, _iv_indexPath, this));" +
+                        "return _mo_records"
         );
     }
 }

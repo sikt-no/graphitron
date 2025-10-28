@@ -11,9 +11,9 @@ import org.jooq.impl.DSL;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 
 public class MutationDBQueries {
-    public static String mutationForMutation(DSLContext _iv_ctx, NodeIdStrategy _iv_nodeIdStrategy, CustomerInput in, SelectionSet _iv_select) {
+    public static String mutationForMutation(DSLContext _iv_ctx, NodeIdStrategy _iv_nodeIdStrategy, CustomerInput _mi_in, SelectionSet _iv_select) {
         return _iv_ctx.insertInto(CUSTOMER, CUSTOMER.CUSTOMER_ID)
-                .values(DSL.val(in.getCustomerId()))
+                .values(DSL.val(_mi_in.getCustomerId()))
                 .returningResult(_iv_nodeIdStrategy.createId("CustomerNode", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))
                 .fetchOne(_iv_it -> _iv_it.into(String.class));
     }

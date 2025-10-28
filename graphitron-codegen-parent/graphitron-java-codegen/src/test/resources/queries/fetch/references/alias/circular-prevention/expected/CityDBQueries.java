@@ -41,14 +41,14 @@ public class CityDBQueries {
         return DSL.row(
                 _a_city_760939060_address.getId(),
                 DSL.field(
-                        DSL.select(addressesForCity_address_d1_city())
+                        DSL.select(_1_addressesForCity_address_city())
                                 .from(_a_address_609487378_city)
 
                 )
         ).mapping(Functions.nullOnAllNull(Address::new));
     }
 
-    private static SelectField<City> addressesForCity_address_d1_city() {
+    private static SelectField<City> _1_addressesForCity_address_city() {
         var _a_city = CITY.as("city_760939060");
         var _a_city_760939060_address = _a_city.address().as("address_609487378");
         var _a_address_609487378_city = _a_city_760939060_address.city().as("city_3747560710");
