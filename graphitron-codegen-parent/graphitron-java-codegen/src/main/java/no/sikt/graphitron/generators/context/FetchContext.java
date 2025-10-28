@@ -387,7 +387,7 @@ public class FetchContext {
      * or other appropriate start points for a sequence.
      */
     public JoinListSequence iterateJoinSequence(JoinListSequence previousSequence) {
-        var refTable = Optional.ofNullable(getReferenceTable()).orElse(inputTable);
+        var refTable = getReferenceTable() == null && !hasApplicableTable() ? inputTable : getReferenceTable();
         if (refTable == null && !referenceObjectField.hasFieldReferences()) {
             return previousSequence;
         }

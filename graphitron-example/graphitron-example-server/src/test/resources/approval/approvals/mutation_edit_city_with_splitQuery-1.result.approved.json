@@ -1,0 +1,12 @@
+{
+    "data": {
+        "updateCityName": {
+            "name": "NEW_NAME",
+            "addresses": [
+                {
+                    "id": "QWRkcmVzczo1Ng"
+                }
+            ]
+        }
+    }
+}

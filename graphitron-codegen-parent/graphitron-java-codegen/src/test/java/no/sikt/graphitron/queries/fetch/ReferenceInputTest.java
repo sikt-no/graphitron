@@ -149,4 +149,16 @@ public class ReferenceInputTest extends ReferenceTest {
                 ".leftJoin(_a_address_223244161_city_left)"
         );
     }
+
+    @Test
+    @DisplayName("Input with table and return type with field having reference")
+    void inputWithTableReturnTypeWithScalarReference() {
+        var generated = generateFiles("inputWithTableReturnTypeWithScalarReference");
+        contains(generated,
+                "_a_city_760939060_country = _a_city.country()",
+                "_a_city_760939060_country.COUNTRY_"
+        );
+
+        doesNotContain(generated, "city()");
+    }
 }
