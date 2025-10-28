@@ -87,7 +87,7 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
                     .ifPresent(it -> {
                         var recordInputName = it.getKey();
                         var inputType = it.getValue();
-                        var nodeType = processedSchema.getNodeType(inputType);
+                        var nodeType = processedSchema.getNodeTypeForNodeIdField(inputType);
                         if (nodeType != null) {
                             String tableName = nodeType.getTable().getName();
                             var columnNames = getNodeIdKeyColumnNames(nodeType.getKeyColumns(), tableName);

@@ -78,4 +78,6 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
     boolean hasFieldDirective();
 
     boolean hasTableMethodDirective();
+
+    String formatPath();
 }

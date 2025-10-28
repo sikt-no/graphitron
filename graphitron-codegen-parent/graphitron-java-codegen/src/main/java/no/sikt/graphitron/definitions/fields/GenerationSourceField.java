@@ -272,4 +272,8 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return hasTableMethod;
     }
 
+    public String formatPath() {
+        return String.format("'%s.%s'", getContainerTypeName(), getName());
+    }
+
 }
