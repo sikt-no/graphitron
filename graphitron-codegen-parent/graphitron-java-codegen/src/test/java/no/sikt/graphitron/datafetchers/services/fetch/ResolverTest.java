@@ -56,7 +56,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "operation/withContextInput",
                 "graphCtx = _iv_env.getGraphQlContext()",
-                "graphitronContext = _iv_graphCtx.get(\"graphitronContext\")",
+                "GraphitronContext graphitronContext = _iv_graphCtx.get(\"graphitronContext\")",
                 "ctxField = _iv_graphitronContext.getContextArgument(_iv_env, \"ctxField\")",
                 "query(_cf_ctxField)"
         );

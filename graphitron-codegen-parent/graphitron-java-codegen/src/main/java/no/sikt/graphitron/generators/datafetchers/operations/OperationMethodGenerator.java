@@ -17,6 +17,7 @@ import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphql.GraphitronContext;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
@@ -388,7 +389,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         var code = CodeBlock
                 .builder()
                 .declare(VAR_GRAPH_CONTEXT, asMethodCall(VAR_ENV, METHOD_GRAPH_CONTEXT))
-                .declare(VAR_GRAPHITRON_CONTEXT, CodeBlock.of("$N.get($S)", VAR_GRAPH_CONTEXT, GRAPHITRON_CONTEXT_NAME));
+                .declare(TypeName.get(GraphitronContext.class), VAR_GRAPHITRON_CONTEXT, CodeBlock.of("$N.get($S)", VAR_GRAPH_CONTEXT, GRAPHITRON_CONTEXT_NAME));
 
         contextFields.forEach((name, type) -> code.declare(type, VariablePrefix.contextFieldPrefix(name), CodeBlock.of("$N.getContextArgument($L, $S)", VAR_GRAPHITRON_CONTEXT, VAR_ENV, name)));
         return code.build();
