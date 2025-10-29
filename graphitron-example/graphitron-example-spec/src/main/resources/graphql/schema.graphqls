@@ -55,6 +55,8 @@ type Mutation {
     updateCityName(in: CityNameInput): City @mutation(typeName: UPDATE)
 
     insertFilm(in: FilmCreateInput): Film @mutation(typeName: INSERT)
+    updateFilmsNameByRef(in: [FilmWithRefInput]): [Film] @mutation(typeName: UPDATE)
+    upsertFilmsByRef(in: [FilmWithRefInput]): [Film] @mutation(typeName: UPSERT)
 
     deleteFilmID(in: FilmInput): ID @nodeId(typeName: "Film") @mutation(typeName: DELETE)
     deleteFilmIDListed(in: [FilmInput!]!): [ID] @nodeId(typeName: "Film") @mutation(typeName: DELETE)
@@ -203,6 +205,12 @@ input FilmDescriptionInput @table(name: "FILM") {
 
 input FilmCreateInput @table(name: "FILM") {
     languageId: ID! @nodeId(typeName: "Language") @reference(path: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
+    title: String!
+}
+
+input FilmWithRefInput @table(name: "FILM") {
+    filmId: ID @nodeId(typeName: "Film")
+    languageId: ID @nodeId(typeName: "Language") @reference(path: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
     title: String!
 }
 
