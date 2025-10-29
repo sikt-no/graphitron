@@ -33,6 +33,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.groupingBy;
+import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForDeletes;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getForeignKeyForNodeIdReference;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
@@ -1164,7 +1165,7 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateDeleteMutation(ObjectField field) {
-        if (field.isDeleteMutation()) {
+        if (field.isDeleteMutation() && useJdbcBatchingForDeletes()) {
             /* Validate output */
             var dataField = schema.inferDataTargetForMutation(field);
 

@@ -18,6 +18,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForDeletes;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ITERATOR;
@@ -129,7 +130,7 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
                 .stream()
                 .filter(ObjectField::isGeneratedWithResolver)
                 .filter(ObjectField::hasMutationType)
-                .filter(it -> !it.isDeleteMutation())
+                .filter(it -> !it.isDeleteMutation() || useJdbcBatchingForDeletes())
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());

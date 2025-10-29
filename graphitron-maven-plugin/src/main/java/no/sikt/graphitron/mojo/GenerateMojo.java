@@ -104,6 +104,10 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @SuppressWarnings("unused")
     private boolean makeNodeStrategy;
 
+    @Parameter(property = "generate.useJdbcBatchingForDeletes", defaultValue = "true")
+    @SuppressWarnings("unused")
+    private boolean useJdbcBatchingForDeletes;
+
     @Parameter(property = "generate.codeGenerationThresholds")
     @SuppressWarnings("unused")
     private CodeGenerationThresholds codeGenerationThresholds;
@@ -198,6 +202,11 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Override
     public boolean makeNodeStrategy() {
         return makeNodeStrategy;
+    }
+
+    @Override
+    public boolean useJdbcBatchingForDeletes() {
+        return useJdbcBatchingForDeletes;
     }
 
     @Override

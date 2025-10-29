@@ -50,6 +50,12 @@ public class BatchingQueryTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Delete")
+    void delete() {
+        assertGeneratedContentContains("delete", ".batchDelete(inRecord)");
+    }
+
+    @Test
     @DisplayName("Insert")
     void insert() {
         assertGeneratedContentContains("insert", ".batchInsert(inRecord)");

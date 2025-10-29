@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForDeletes;
 import static no.sikt.graphitron.definitions.fields.containedtypes.MutationType.DELETE;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
@@ -113,7 +114,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .getFields()
                 .stream()
                 .filter(ObjectField::isGeneratedWithResolver)
-                .filter(ObjectField::isDeleteMutation) // Will be expanded to include all mutation types
+                .filter(it -> it.isDeleteMutation() && !useJdbcBatchingForDeletes()) // Will be expanded to include all mutation types
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());

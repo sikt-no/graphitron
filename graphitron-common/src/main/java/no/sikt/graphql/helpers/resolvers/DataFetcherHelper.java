@@ -182,6 +182,17 @@ public class DataFetcherHelper extends AbstractFetcher {
     }
 
     /**
+     * Load the data for a delete resolver.
+     * @param dbFunction Function to call to retrieve the IDs.
+     * @param idFilteringFunction Function to call to filter out undeleted IDs.
+     * @return A resolver result.
+     * @param <T> Type that the resolver fetches.
+     */
+    public <T, U> CompletableFuture<U> loadDelete(DBQueryRoot<T> dbFunction, Function<T, U> idFilteringFunction) {
+        return CompletableFuture.completedFuture(idFilteringFunction.apply(dbFunction.callDBMethod(dslContext, select)));
+    }
+
+    /**
      * Load the data for a resolver returning wrapped data.
      * @param dbFunction Function to call to retrieve the data.
      * @param wrappingFunction Function to call to wrap the data.

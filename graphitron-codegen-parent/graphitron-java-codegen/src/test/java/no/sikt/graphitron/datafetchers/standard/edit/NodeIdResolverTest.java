@@ -50,9 +50,11 @@ public class NodeIdResolverTest extends GeneratorTest {
     @Test
     @DisplayName("A delete mutation that uses nodeIdStrategy")
     void nodeIdStrategyInDeleteMutation() {
+        GeneratorConfig.setUseJdbcBatchingForDeletes(false);
         assertGeneratedContentContains(
                 "delete/withNodeIdStrategy", Set.of(CUSTOMER_INPUT_TABLE),
                 ".mutationForMutation(_iv_ctx, _iv_nodeIdStrategy, in, _iv_selectionSet)"
         );
+        GeneratorConfig.setUseJdbcBatchingForDeletes(true);
     }
 }

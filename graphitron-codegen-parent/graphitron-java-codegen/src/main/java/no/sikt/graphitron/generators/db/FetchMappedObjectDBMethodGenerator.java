@@ -16,6 +16,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.util.List;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForDeletes;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -179,7 +180,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .filter(it -> !processedSchema.isFederationService(it))
                 .filter(GenerationSourceField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())
-                .filter(it -> !it.isDeleteMutation())
+                .filter(it -> !(it.isDeleteMutation() && !useJdbcBatchingForDeletes()))
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .toList();

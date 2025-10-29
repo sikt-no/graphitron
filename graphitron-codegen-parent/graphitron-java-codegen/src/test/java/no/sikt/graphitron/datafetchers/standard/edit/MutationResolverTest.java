@@ -7,9 +7,7 @@ import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.datafetchers.operations.OperationClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.junit.jupiter.api.Disabled;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
 import java.util.List;
 import java.util.Set;
@@ -27,6 +25,16 @@ public class MutationResolverTest extends GeneratorTest {
     @Override
     protected Set<SchemaComponent> getComponents() {
         return makeComponents(CUSTOMER_INPUT_TABLE);
+    }
+
+    @BeforeAll
+    static void setUp() {
+        GeneratorConfig.setUseJdbcBatchingForDeletes(false);
+    }
+
+    @AfterAll
+    static void tearDown() {
+        GeneratorConfig.setUseJdbcBatchingForDeletes(true);
     }
 
     @Override

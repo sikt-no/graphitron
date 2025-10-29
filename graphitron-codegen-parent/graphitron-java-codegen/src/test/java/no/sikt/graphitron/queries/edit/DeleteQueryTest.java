@@ -1,5 +1,8 @@
 package no.sikt.graphitron.queries.edit;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -8,6 +11,16 @@ public class DeleteQueryTest extends MutationQueryTest {
     @Override
     protected String getSubpath() {
         return super.getSubpath() + "delete";
+    }
+
+    @BeforeAll
+    static void setUp() {
+        GeneratorConfig.setUseJdbcBatchingForDeletes(false);
+    }
+
+    @AfterAll
+    static void tearDown() {
+        GeneratorConfig.setUseJdbcBatchingForDeletes(true);
     }
 
 
