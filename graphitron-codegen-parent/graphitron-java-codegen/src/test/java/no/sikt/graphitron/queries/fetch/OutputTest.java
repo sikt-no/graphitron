@@ -235,11 +235,14 @@ public class OutputTest extends GeneratorTest {
                                 return DSL.row(
                                       DSL.row(
                                               DSL.field(
-                                                      DSL.select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
+                                                      DSL.select(queryForQuery_wrapper1_customer(_a_customer))
                                                       .from(_a_customer)
                                               )
                                       ).mapping(Functions.nullOnAllNull(Wrapper2::new))
                                 ).mapping(Functions.nullOnAllNull(Wrapper1::new));
+                            }
+                            private static SelectField<CustomerTable> queryForQuery_wrapper1_customer(Customer _a_customer) {
+                                return DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new));
                             }
                             """
         );
@@ -324,13 +327,16 @@ public class OutputTest extends GeneratorTest {
                             return DSL.row(
                                     DSL.row(
                                             DSL.field(
-                                                    DSL.select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
+                                                    DSL.select(queryForQuery_wrapper1_customer(_a_customer))
                                                     .from(_a_customer)
                                                     .where(firstName != null ? _a_customer.FIRST_NAME.eq(firstName) : DSL.noCondition())
                                             )
                                     ).mapping(Functions.nullOnAllNull(Wrapper2::new))
                             ).mapping(Functions.nullOnAllNull(Wrapper1::new));
-                        }""" //TODO extract the inner row as well?
+                        }
+                        private static SelectField<CustomerTable> queryForQuery_wrapper1_customer(Customer _a_customer) {
+                            return DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new));
+                        }"""
         );
     }
 

@@ -209,15 +209,6 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
     @Override
     protected CodeBlock getHelperMethodCallForCorrelatedSubquery(ObjectField field, FetchContext context) {
-        // Check if we're in a deep nesting scenario where we should inline table types
-        if (isGeneratingHelperMethod && shouldSkipNestedHelpersForWrapperDepth()) {
-            var recordType = processedSchema.getRecordType(field);
-            if (recordType != null && recordType.hasTable()) {
-                // If wrapper depth exceeds threshold and this field maps to a table, inline it
-                return null;
-            }
-        }
-
         // Use helper methods for record types in correlated subqueries
         if (processedSchema.isRecordType(field)) {
             // Check if this is a nested field within a parent field
@@ -262,77 +253,6 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         return callingMethodName + "_" + returnTypeName;
     }
 
-    /**
-     * Threshold for wrapper depth before inlining instead of extracting helper methods.
-     * When wrapper depth exceeds this value, nested types are inlined to avoid excessive method extraction.
-     * <p>
-     * For example, with threshold = 1:
-     * - Single wrapper (Wrapper -> Table): Extract helper methods
-     * - Double wrapper (Wrapper1 -> Wrapper2 -> Table): Inline everything
-     */
-    private static final int WRAPPER_DEPTH_THRESHOLD = 1;
-
-    /**
-     * Determines if the current parent field has exceeded the wrapper depth threshold.
-     * <p>
-     * A "wrapper" is a non-table type that wraps other types. When multiple wrappers are nested
-     * before reaching a table type, it can lead to excessive helper method extraction and
-     * compilation performance issues. This method calculates the wrapper depth and determines
-     * if nested helper generation should be skipped in favor of inlining.
-     *
-     * @return true if wrapper depth exceeds threshold and nested helpers should be skipped
-     */
-    private boolean shouldSkipNestedHelpersForWrapperDepth() {
-        if (currentParentField == null) {
-            return false;
-        }
-
-        // Calculate the wrapper depth starting from the current parent field
-        int wrapperDepth = calculateWrapperDepth(currentParentField);
-
-        // Skip nested helper generation if depth exceeds threshold
-        return wrapperDepth > WRAPPER_DEPTH_THRESHOLD;
-    }
-
-    /**
-     * Recursively calculates the depth of non-table wrapper types before reaching a table type.
-     * <p>
-     * For example:
-     * - Wrapper (no table) -> TableType: depth = 1
-     * - Wrapper1 (no table) -> Wrapper2 (no table) -> TableType: depth = 2
-     * - TableType: depth = 0
-     *
-     * @param field the field to start depth calculation from
-     * @return the number of non-table wrapper levels before reaching a table type
-     */
-    private int calculateWrapperDepth(ObjectField field) {
-        var recordType = processedSchema.getRecordType(field);
-        if (recordType == null) {
-            return 0; // Not a record type
-        }
-
-        if (recordType.hasTable()) {
-            return 0; // Reached a table type, no wrapper depth
-        }
-
-        // This is a non-table wrapper, check its nested fields
-        var objectType = processedSchema.getObjectOrConnectionNode(field);
-        if (objectType == null) {
-            return 0;
-        }
-
-        // Find the maximum depth among nested fields
-        int maxNestedDepth = 0;
-        for (var nestedField : objectType.getFields()) {
-            if (processedSchema.isRecordType(nestedField)) {
-                int nestedDepth = calculateWrapperDepth((ObjectField) nestedField);
-                maxNestedDepth = Math.max(maxNestedDepth, nestedDepth);
-            }
-        }
-
-        // Current wrapper counts as 1, plus the maximum nested depth
-        return 1 + maxNestedDepth;
-    }
 
     private CodeBlock setFetch(ObjectField referenceField) {
         var refObject = processedSchema.getObjectOrConnectionNode(referenceField);
@@ -438,13 +358,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 helperMethods.add(helperMethod);
             }
 
-            // Set current parent field to check wrapper depth
+            // Set current parent field for context
             currentParentField = field;
 
-            // Skip nested helper method generation when wrapper depth exceeds threshold
-            if (!shouldSkipNestedHelpersForWrapperDepth()) {
-                helperMethods.addAll(generateNestedHelperMethods(field));
-            }
+            // Generate nested helper methods
+            helperMethods.addAll(generateNestedHelperMethods(field));
 
             // Clear current parent field and root field
             currentParentField = null;
@@ -568,14 +486,17 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 boolean shouldSkipGeneration = objectField.isResolver() &&
                         processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(objectField.getContainerTypeName());
 
-                // Check if this field's record type has a table - if not, it might be a subtype that should be handled inline
+                // Check if this field's record type has a table - if not, it might be a wrapper that should be traversed
                 // But we need to generate helper methods for wrapper types in multiset contexts
                 var nestedRecordType = processedSchema.getRecordType(objectField);
+                boolean isWrapperType = false;
                 if (!shouldSkipGeneration && (nestedRecordType == null || !nestedRecordType.hasTable())) {
                     // Check if this is a list/array field that needs a helper method for multiset handling
                     if (!objectField.isIterableWrapped()) {
-                        // This is a singular subtype without its own table, handle it inline in the parent
+                        // This is a singular wrapper without its own table
+                        // Don't generate a helper for the wrapper itself, but DO recurse to its children
                         shouldSkipGeneration = true;
+                        isWrapperType = true;
                     }
                 }
 
@@ -617,6 +538,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                     // Recursively generate methods for deeper nesting, maintaining the naming chain
                     var nestedHelperMethodName = parentHelperMethodName + "_" + objectField.getName();
                     nestedMethods.addAll(generateNestedHelperMethods(objectField, nestedHelperMethodName, visitedTypes));
+                } else if (isWrapperType) {
+                    // For wrapper types, don't generate a helper method for the wrapper itself,
+                    // but DO recurse to generate helpers for its table-type descendants
+                    // Use the parent's method name directly (don't append the wrapper field name)
+                    nestedMethods.addAll(generateNestedHelperMethods(objectField, parentHelperMethodName, visitedTypes));
                 }
             }
         }
@@ -642,7 +568,8 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                     .addModifiers(PRIVATE, STATIC)
                     .returns(ParameterizedTypeName.get(SELECT_FIELD.className, returnType));
 
-            // Check if the nested field's record type has a table
+            // Only generate helper methods for types that have tables
+            // Wrapper types without tables should be traversed, not extracted
             var nestedRecordType = processedSchema.getRecordType(nestedField);
             if (nestedRecordType != null && nestedRecordType.hasTable()) {
                 // Create a context for the nested field
@@ -651,51 +578,58 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
                 var selectRowBlock = generateSelectRow(refContext);
 
-                // For nested helper methods, add base table as parameter and declare derived aliases
+                // For nested helper methods with tables, add base table as parameter and declare derived aliases
+                // For wrapper types without tables, we don't need table parameters
                 var allAliases = refContext.getAliasSet();
                 java.util.Set<AliasWrapper> aliasesToDeclare;
                 String tableParameterAlias = null;
 
-                // Determine parameter type based on field characteristics
-                var targetAlias = refContext.getTargetAlias();
-                var targetTable = refContext.getTargetTable();
+                // Only add table parameters if this type has a table
+                if (nestedRecordType.hasTable()) {
+                    // Determine parameter type based on field characteristics
+                    var targetAlias = refContext.getTargetAlias();
+                    var targetTable = refContext.getTargetTable();
 
-                // Use the same logic as method call generation to determine parameter type
-                if (shouldUseTargetTableParameter(nestedField)) {
-                    // For split query multisets, complex reference multisets, and single reference fields, use the target table
-                    // For single reference fields, use the nested record type's table to get the correct table class
-                    var tableClass = (!nestedField.isIterableWrapped() && nestedField.hasFieldReferences() && nestedRecordType.hasTable())
-                            ? nestedRecordType.getTable().getTable().getTableClass()
-                            : targetTable.getTableClass();
-                    methodBuilder.addParameter(tableClass, targetAlias);
-                    tableParameterAlias = targetAlias;
-                } else {
-                    // For single fields and simple table path multisets, add base table as parameter
-                    for (var alias : allAliases) {
-                        if (!alias.hasTableMethod()) {
-                            var tableMapping = alias.getAlias().getTable();
-                            var underlyingTable = tableMapping.getTable();
-                            methodBuilder.addParameter(underlyingTable.getTableClass(), alias.getAlias().getMappingName());
-                            tableParameterAlias = alias.getAlias().getMappingName();
-                            break; // Only add the first one as parameter
+                    // Use the same logic as method call generation to determine parameter type
+                    if (shouldUseTargetTableParameter(nestedField)) {
+                        // For split query multisets, complex reference multisets, and single reference fields, use the target table
+                        // For single reference fields, use the nested record type's table to get the correct table class
+                        var tableClass = (!nestedField.isIterableWrapped() && nestedField.hasFieldReferences() && nestedRecordType.hasTable())
+                                ? nestedRecordType.getTable().getTable().getTableClass()
+                                : targetTable.getTableClass();
+                        methodBuilder.addParameter(tableClass, targetAlias);
+                        tableParameterAlias = targetAlias;
+                    } else {
+                        // For single fields and simple table path multisets, add base table as parameter
+                        for (var alias : allAliases) {
+                            if (!alias.hasTableMethod()) {
+                                var tableMapping = alias.getAlias().getTable();
+                                var underlyingTable = tableMapping.getTable();
+                                methodBuilder.addParameter(underlyingTable.getTableClass(), alias.getAlias().getMappingName());
+                                tableParameterAlias = alias.getAlias().getMappingName();
+                                break; // Only add the first one as parameter
+                            }
                         }
                     }
-                }
 
-                // Declare remaining aliases that are derived from the base table parameter
-                // For fields that receive target table directly, don't declare aliases
-                // For fields that receive base table parameters, declare the aliases they need
-                // Use the same logic as parameter determination: only declare aliases for fields using base table parameters
-                boolean shouldDeclareAliases = !shouldUseTargetTableParameter(nestedField);
+                    // Declare remaining aliases that are derived from the base table parameter
+                    // For fields that receive target table directly, don't declare aliases
+                    // For fields that receive base table parameters, declare the aliases they need
+                    // Use the same logic as parameter determination: only declare aliases for fields using base table parameters
+                    boolean shouldDeclareAliases = !shouldUseTargetTableParameter(nestedField);
 
-                if (shouldDeclareAliases) {
-                    aliasesToDeclare = filterAliasesToDeclare(allAliases, tableParameterAlias, false);
+                    if (shouldDeclareAliases) {
+                        aliasesToDeclare = filterAliasesToDeclare(allAliases, tableParameterAlias, false);
+                    } else {
+                        aliasesToDeclare = java.util.Collections.emptySet();
+                    }
+
+                    if (!aliasesToDeclare.isEmpty()) {
+                        methodBuilder.addCode(createAliasDeclarations(aliasesToDeclare));
+                    }
                 } else {
+                    // For wrapper types without tables, no parameters or alias declarations needed
                     aliasesToDeclare = java.util.Collections.emptySet();
-                }
-
-                if (!aliasesToDeclare.isEmpty()) {
-                    methodBuilder.addCode(createAliasDeclarations(aliasesToDeclare));
                 }
 
                 return methodBuilder
