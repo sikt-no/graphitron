@@ -95,6 +95,17 @@ public class Alias implements JoinElement {
         return variableValue;
     }
 
+    /**
+     * Checks if this alias is derived from a join sequence (relationship traversal).
+     * Derived aliases have method calls in their variable value (e.g., "_a_city.address()"),
+     * while base table aliases have simple table names (e.g., "CITY").
+     *
+     * @return true if this alias is derived from a join sequence, false if it's a base table alias
+     */
+    public boolean isDerivedAlias() {
+        return variableValue.endsWith("()");
+    }
+
     public AliasWrapper toAliasWrapper() {
         return new AliasWrapper(this);
     }

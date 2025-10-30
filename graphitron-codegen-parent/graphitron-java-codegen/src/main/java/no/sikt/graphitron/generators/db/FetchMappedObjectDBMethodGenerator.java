@@ -28,7 +28,40 @@ import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
 
 /**
- * Generator that creates the default data fetching methods
+ * Generator that creates data fetching methods for GraphQL fields mapped to database tables using jOOQ.
+ * <p>
+ * This generator produces two types of methods:
+ * <ol>
+ *   <li><b>Main query methods</b> - Public methods that correspond to GraphQL query fields.
+ *       These handle parameter binding, WHERE clauses, and result mapping.</li>
+ *   <li><b>Helper methods</b> - Private static methods that extract the SelectField row mapping logic
+ *       for record types. This extraction improves compilation performance by reducing method complexity
+ *       and enables reuse of mapping logic across different query contexts.</li>
+ * </ol>
+ *
+ * <h3>Key Patterns</h3>
+ * <ul>
+ *   <li><b>Split Queries</b> - Resolver fields that reference a table object from a previous context.
+ *       These use correlated subqueries and require special parameter handling.</li>
+ *   <li><b>Container Pattern</b> - Non-table types that exist solely to wrap input parameters for
+ *       a nested table query (e.g., FilmContainer). These skip helper method generation and traverse
+ *       directly to nested fields.</li>
+ *   <li><b>Wrapper Pattern</b> - Non-table types that add structural indirection for schema design
+ *       purposes (e.g., Outer). These generate helper methods for proper nesting.</li>
+ *   <li><b>Double Nested Wrappers</b> - Special case where two wrapper types appear in sequence
+ *       before reaching a table type. These are inlined to avoid excessive method extraction.</li>
+ * </ul>
+ *
+ * <h3>Helper Method Generation Rules</h3>
+ * <ul>
+ *   <li>Helper methods are only generated for record types (not scalars or interfaces)</li>
+ *   <li>Split queries and fields with table methods receive the target table as a parameter</li>
+ *   <li>Other fields receive base table parameters with alias declarations in the method body</li>
+ *   <li>Circular references are detected and prevented during nested helper generation</li>
+ *   <li>Input parameters are omitted from split query helpers (applied at main method level)</li>
+ * </ul>
+ *
+ * @see FetchDBMethodGenerator
  */
 public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     private ObjectField currentParentField = null;
@@ -74,7 +107,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
         // For record types that are NOT split queries, extract the row mapping into a helper method
         // Split queries need to preserve their correlated subquery structure
-        var isSplitQuery = target.isResolver() && processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(target.getContainerTypeName());
+        var isSplitQuery = isSplitQueryField(target);
         var selectBlock = processedSchema.isRecordType(target) && !isSplitQuery
                 ? createSelectBlockWithHelperMethod(target, context, actualRefTable)
                 : createSelectBlock(target, context, actualRefTable, selectRowBlock);
@@ -103,7 +136,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         if (!processedSchema.isRecordType(target)) {
             return generateForField(target, context);
         }
-        return target.isResolver() && processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(target.getContainerTypeName())
+        return isSplitQueryField(target)
                 ? generateCorrelatedSubquery(target, context.nextContext(target))
                 : generateSelectRow(context);
     }
@@ -138,7 +171,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var tableParameters = new java.util.ArrayList<String>();
 
         // Check if this is a split query that would have table parameters in its signature
-        var isSplitQuery = target.isResolver() && processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(target.getContainerTypeName());
+        var isSplitQuery = isSplitQueryField(target);
 
         // Check if the target table has a table method applied
         boolean hasTableMethodAlias = false;
@@ -176,11 +209,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
     @Override
     protected CodeBlock getHelperMethodCallForCorrelatedSubquery(ObjectField field, FetchContext context) {
-        // Check if we're in a double nesting scenario where we should inline table types
-        if (isGeneratingHelperMethod && hasDoubleNestedWrapperPattern()) {
+        // Check if we're in a deep nesting scenario where we should inline table types
+        if (isGeneratingHelperMethod && shouldSkipNestedHelpersForWrapperDepth()) {
             var recordType = processedSchema.getRecordType(field);
             if (recordType != null && recordType.hasTable()) {
-                // If we're in a double nested wrapper pattern and this field maps to a table, inline it
+                // If wrapper depth exceeds threshold and this field maps to a table, inline it
                 return null;
             }
         }
@@ -230,50 +263,75 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     /**
-     * Detects if the current parent field has a double nested wrapper pattern:
-     * Wrapper1 -> Wrapper2 -> TableType
-     * where Wrapper1 and Wrapper2 are record types without tables, and the final type has a table.
+     * Threshold for wrapper depth before inlining instead of extracting helper methods.
+     * When wrapper depth exceeds this value, nested types are inlined to avoid excessive method extraction.
+     * <p>
+     * For example, with threshold = 1:
+     * - Single wrapper (Wrapper -> Table): Extract helper methods
+     * - Double wrapper (Wrapper1 -> Wrapper2 -> Table): Inline everything
      */
-    private boolean hasDoubleNestedWrapperPattern() { //TODO: this seems strange and not generic
+    private static final int WRAPPER_DEPTH_THRESHOLD = 1;
+
+    /**
+     * Determines if the current parent field has exceeded the wrapper depth threshold.
+     * <p>
+     * A "wrapper" is a non-table type that wraps other types. When multiple wrappers are nested
+     * before reaching a table type, it can lead to excessive helper method extraction and
+     * compilation performance issues. This method calculates the wrapper depth and determines
+     * if nested helper generation should be skipped in favor of inlining.
+     *
+     * @return true if wrapper depth exceeds threshold and nested helpers should be skipped
+     */
+    private boolean shouldSkipNestedHelpersForWrapperDepth() {
         if (currentParentField == null) {
             return false;
         }
 
-        // Check if the parent field is a record type without a table (first wrapper)
-        var parentRecordType = processedSchema.getRecordType(currentParentField);
-        if (parentRecordType == null || parentRecordType.hasTable()) {
-            return false; // Parent should be a wrapper type without a table
+        // Calculate the wrapper depth starting from the current parent field
+        int wrapperDepth = calculateWrapperDepth(currentParentField);
+
+        // Skip nested helper generation if depth exceeds threshold
+        return wrapperDepth > WRAPPER_DEPTH_THRESHOLD;
+    }
+
+    /**
+     * Recursively calculates the depth of non-table wrapper types before reaching a table type.
+     * <p>
+     * For example:
+     * - Wrapper (no table) -> TableType: depth = 1
+     * - Wrapper1 (no table) -> Wrapper2 (no table) -> TableType: depth = 2
+     * - TableType: depth = 0
+     *
+     * @param field the field to start depth calculation from
+     * @return the number of non-table wrapper levels before reaching a table type
+     */
+    private int calculateWrapperDepth(ObjectField field) {
+        var recordType = processedSchema.getRecordType(field);
+        if (recordType == null) {
+            return 0; // Not a record type
         }
 
-        // Look for nested record types within the parent that might be wrapper types
-        var parentObject = processedSchema.getObjectOrConnectionNode(currentParentField);
-        if (parentObject == null) {
-            return false;
+        if (recordType.hasTable()) {
+            return 0; // Reached a table type, no wrapper depth
         }
 
-        // Check if any field in the parent is a wrapper type that leads to a table type
-        for (var field : parentObject.getFields()) {
-            if (processedSchema.isRecordType(field)) {
-                var fieldRecordType = processedSchema.getRecordType(field);
-                if (fieldRecordType != null && !fieldRecordType.hasTable()) {
-                    // This is a potential second wrapper, check if it leads to a table type
-                    var fieldObject = processedSchema.getObjectOrConnectionNode(field);
-                    if (fieldObject != null) {
-                        for (var nestedField : fieldObject.getFields()) {
-                            if (processedSchema.isRecordType(nestedField)) {
-                                var nestedRecordType = processedSchema.getRecordType(nestedField);
-                                if (nestedRecordType != null && nestedRecordType.hasTable()) {
-                                    // Found the pattern: Wrapper1 -> Wrapper2 -> TableType
-                                    return true;
-                                }
-                            }
-                        }
-                    }
-                }
+        // This is a non-table wrapper, check its nested fields
+        var objectType = processedSchema.getObjectOrConnectionNode(field);
+        if (objectType == null) {
+            return 0;
+        }
+
+        // Find the maximum depth among nested fields
+        int maxNestedDepth = 0;
+        for (var nestedField : objectType.getFields()) {
+            if (processedSchema.isRecordType(nestedField)) {
+                int nestedDepth = calculateWrapperDepth((ObjectField) nestedField);
+                maxNestedDepth = Math.max(maxNestedDepth, nestedDepth);
             }
         }
 
-        return false;
+        // Current wrapper counts as 1, plus the maximum nested depth
+        return 1 + maxNestedDepth;
     }
 
     private CodeBlock setFetch(ObjectField referenceField) {
@@ -380,11 +438,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 helperMethods.add(helperMethod);
             }
 
-            // Set current parent field to check for double nested wrapper pattern
+            // Set current parent field to check wrapper depth
             currentParentField = field;
 
-            // Skip nested helper method generation for double nested wrapper patterns
-            if (!hasDoubleNestedWrapperPattern()) {
+            // Skip nested helper method generation when wrapper depth exceeds threshold
+            if (!shouldSkipNestedHelpersForWrapperDepth()) {
                 helperMethods.addAll(generateNestedHelperMethods(field));
             }
 
@@ -417,64 +475,47 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             var returnType = processedSchema.getRecordType(target).getGraphClassName();
             var selectRowBlock = generateSelectRow(refContext);  // Use refContext to get the correct table context
 
-        var methodBuilder = MethodSpec.methodBuilder(helperMethodName)
-                .addModifiers(PRIVATE, STATIC)
-                .returns(ParameterizedTypeName.get(SELECT_FIELD.className, returnType));
+            var methodBuilder = MethodSpec.methodBuilder(helperMethodName)
+                    .addModifiers(PRIVATE, STATIC)
+                    .returns(ParameterizedTypeName.get(SELECT_FIELD.className, returnType));
 
-        // For split queries, we don't add input parameters to the helper method
-        // as they're used in the main method's WHERE clause, not in the helper
-        var isSplitQuery = target.isResolver() && processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(target.getContainerTypeName());
+            // For split queries, we don't add input parameters to the helper method
+            // as they're used in the main method's WHERE clause, not in the helper
+            var isSplitQuery = isSplitQueryField(target);
 
-        // Add input parameters from the original method only for non-split queries
-        // Split query helper methods don't need input parameters as WHERE clauses are applied at the main level
-        if (!isSplitQuery) {
-            var parser = new InputParser(target, processedSchema);
-            methodBuilder.addParameters(getMethodParametersWithOrderField(parser));
-        }
-
-        // For split queries and tables with table methods, we need the target table as a parameter
-        String targetParameterAlias = null;
-
-        // Check if the target table has a table method applied
-        boolean hasTableMethodAlias = false;
-        for (var alias : refContext.getAliasSet()) {
-            if (alias.hasTableMethod() && alias.getAlias().getMappingName().equals(refContext.getTargetAlias())) {
-                hasTableMethodAlias = true;
-                break;
+            // Add input parameters from the original method only for non-split queries
+            // Split query helper methods don't need input parameters as WHERE clauses are applied at the main level
+            if (!isSplitQuery) {
+                var parser = new InputParser(target, processedSchema);
+                methodBuilder.addParameters(getMethodParametersWithOrderField(parser));
             }
-        }
 
-        if (isSplitQuery || hasTableMethodAlias) {
-            var targetAlias = refContext.getTargetAlias();
-            var targetTable = refContext.getTargetTable();
-            methodBuilder.addParameter(targetTable.getTableClass(), targetAlias);
-            targetParameterAlias = targetAlias;
-        }
+            // For split queries and tables with table methods, we need the target table as a parameter
+            String targetParameterAlias = null;
 
-        // Declare aliases used within this method (excluding the target parameter for split queries)
-        var allAliases = refContext.getAliasSet();
-        var aliasesToDeclare = new java.util.LinkedHashSet<AliasWrapper>();
-
-        for (var alias : allAliases) {
-            var aliasName = alias.getAlias().getMappingName();
-            if (!alias.hasTableMethod() &&
-                (!aliasName.equals(targetParameterAlias))) {
-                // For split queries: only declare derived aliases, not the parameter
-                // For regular queries: declare all aliases
-                if (isSplitQuery) {
-                    // Only declare aliases that appear to be derived from relationships
-                    if (aliasName.matches(".*_\\d+_.*")) { // Pattern like "_a_city_621065670_country"
-                        aliasesToDeclare.add(alias);
-                    }
-                } else {
-                    aliasesToDeclare.add(alias);
+            // Check if the target table has a table method applied
+            boolean hasTableMethodAlias = false;
+            for (var alias : refContext.getAliasSet()) {
+                if (alias.hasTableMethod() && alias.getAlias().getMappingName().equals(refContext.getTargetAlias())) {
+                    hasTableMethodAlias = true;
+                    break;
                 }
             }
-        }
 
-        if (!aliasesToDeclare.isEmpty()) {
-            methodBuilder.addCode(createAliasDeclarations(aliasesToDeclare));
-        }
+            if (isSplitQuery || hasTableMethodAlias) {
+                var targetAlias = refContext.getTargetAlias();
+                var targetTable = refContext.getTargetTable();
+                methodBuilder.addParameter(targetTable.getTableClass(), targetAlias);
+                targetParameterAlias = targetAlias;
+            }
+
+            // Declare aliases used within this method (excluding the target parameter for split queries)
+            var allAliases = refContext.getAliasSet();
+            var aliasesToDeclare = filterAliasesToDeclare(allAliases, targetParameterAlias, isSplitQuery);
+
+            if (!aliasesToDeclare.isEmpty()) {
+                methodBuilder.addCode(createAliasDeclarations(aliasesToDeclare));
+            }
 
             return methodBuilder
                     .addCode("return $L;\n", selectRowBlock)
@@ -516,33 +557,16 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         // Find nested record fields
         for (var field : recordType.getFields()) {
             if (field instanceof ObjectField objectField &&
-                !objectField.isExplicitlyNotGenerated() &&  // Skip fields with @notGenerated directive
-                processedSchema.isRecordType(objectField) &&
-                processedSchema.getRecordType(objectField) != null &&
-                !processedSchema.isUnion(objectField)) {  // Skip union types
+                    !objectField.isExplicitlyNotGenerated() &&  // Skip fields with @notGenerated directive
+                    processedSchema.isRecordType(objectField) &&
+                    processedSchema.getRecordType(objectField) != null &&
+                    !processedSchema.isUnion(objectField)) {  // Skip union types
 
-                // Check if this field would create a circular reference or is already handled by a split query
-                var fieldTypeName = processedSchema.getRecordType(objectField).getName();
-                var methodParts = parentHelperMethodName.split("_");
-                boolean shouldSkipGeneration = false;
-
-                // Check for circular reference in method chain
-                for (int i = 1; i < methodParts.length; i++) { // Skip the base method name part
-                    var part = methodParts[i];
-                    if (part.equalsIgnoreCase(fieldTypeName) ||
-                        (part.endsWith("s") && part.substring(0, part.length()-1).equalsIgnoreCase(fieldTypeName))) {
-                        // This field type is already in the method chain, would create a circular reference
-                        shouldSkipGeneration = true;
-                        break;
-                    }
-                }
-
+                // Check various conditions to determine if we should skip helper method generation
                 // Check if this field is already handled by its own split query resolver
-                if (!shouldSkipGeneration && objectField.isResolver() &&
-                    processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(objectField.getContainerTypeName())) {
-                    // This field has its own split query resolver, don't generate nested helper methods for it
-                    shouldSkipGeneration = true;
-                }
+                // This field has its own split query resolver, don't generate nested helper methods for it
+                boolean shouldSkipGeneration = objectField.isResolver() &&
+                        processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(objectField.getContainerTypeName());
 
                 // Check if this field's record type has a table - if not, it might be a subtype that should be handled inline
                 // But we need to generate helper methods for wrapper types in multiset contexts
@@ -555,21 +579,26 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                     }
                 }
 
-                // Check if this is a container pattern: non-table parent with single field to table type
-                // We distinguish container types from wrapper types based on whether the current root query field
-                // has input parameters that map to tables. If it does, intermediate non-table types
-                // should not generate helper methods (container pattern).
+                // Container pattern detection:
+                // A "container" is a non-table type that exists solely to wrap input parameters, where
+                // the input parameters directly map to the nested table type (e.g., FilmContainer with
+                // films field - the container exists to accept input parameters for the Film query).
+                //
+                // This is distinct from a "wrapper" type, which is a non-table type that adds a layer
+                // of indirection for structural purposes (e.g., Outer wrapping Customer - the wrapper
+                // exists for schema design, not to accept query parameters).
+                //
+                // Detection: If the root query field has input parameters that map to tables, and we
+                // encounter a non-table parent with a single non-list field to a table type, this is
+                // a container pattern. We skip generating a helper method for the container itself
+                // and traverse directly to the nested table type's fields.
                 if (!shouldSkipGeneration && !recordType.hasTable() &&
-                    !objectField.isIterableWrapped() && !objectField.hasFieldReferences()) {
+                        !objectField.isIterableWrapped() && !objectField.hasFieldReferences()) {
                     // Check if the nested type has a table
                     var nestedType = processedSchema.getRecordType(objectField);
                     if (nestedType != null && nestedType.hasTable()) {
                         // Check if the current root query field has input parameters that map to tables
-                        boolean rootHasInputTableArguments = currentRootField != null &&
-                            currentRootField.getArguments().stream()
-                                .anyMatch(processedSchema::hasInputJOOQRecord);
-
-                        if (rootHasInputTableArguments) {
+                        if (rootFieldHasInputTableArguments()) {
                             // This is a container pattern, skip the intermediate helper
                             shouldSkipGeneration = true;
                             // Traverse nested fields using parent method name
@@ -624,23 +653,20 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
                 // For nested helper methods, add base table as parameter and declare derived aliases
                 var allAliases = refContext.getAliasSet();
-                var aliasesToDeclare = new java.util.LinkedHashSet<AliasWrapper>();
+                java.util.Set<AliasWrapper> aliasesToDeclare;
                 String tableParameterAlias = null;
 
                 // Determine parameter type based on field characteristics
                 var targetAlias = refContext.getTargetAlias();
                 var targetTable = refContext.getTargetTable();
-                var isSplitQuery = nestedField.isResolver() && processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(nestedField.getContainerTypeName());
-                var hasComplexReferencePath = nestedField.hasFieldReferences() && nestedField.getFieldReferences().size() > 1;
 
                 // Use the same logic as method call generation to determine parameter type
-                if ((nestedField.isIterableWrapped() && (isSplitQuery || hasComplexReferencePath)) ||
-                    (!nestedField.isIterableWrapped() && nestedField.hasFieldReferences())) {
+                if (shouldUseTargetTableParameter(nestedField)) {
                     // For split query multisets, complex reference multisets, and single reference fields, use the target table
                     // For single reference fields, use the nested record type's table to get the correct table class
                     var tableClass = (!nestedField.isIterableWrapped() && nestedField.hasFieldReferences() && nestedRecordType.hasTable())
-                        ? nestedRecordType.getTable().getTable().getTableClass()
-                        : targetTable.getTableClass();
+                            ? nestedRecordType.getTable().getTable().getTableClass()
+                            : targetTable.getTableClass();
                     methodBuilder.addParameter(tableClass, targetAlias);
                     tableParameterAlias = targetAlias;
                 } else {
@@ -660,19 +686,12 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 // For fields that receive target table directly, don't declare aliases
                 // For fields that receive base table parameters, declare the aliases they need
                 // Use the same logic as parameter determination: only declare aliases for fields using base table parameters
-                boolean usesTargetTableParameter = (nestedField.isIterableWrapped() && (isSplitQuery || hasComplexReferencePath)) ||
-                    (!nestedField.isIterableWrapped() && nestedField.hasFieldReferences());
-                boolean shouldDeclareAliases = !usesTargetTableParameter;
+                boolean shouldDeclareAliases = !shouldUseTargetTableParameter(nestedField);
 
                 if (shouldDeclareAliases) {
-                    for (var alias : allAliases) {
-                        var aliasName = alias.getAlias().getMappingName();
-                        if (!alias.hasTableMethod() &&
-                            (!aliasName.equals(tableParameterAlias))) {
-                            // These are derived aliases that need to be declared within the method
-                            aliasesToDeclare.add(alias);
-                        }
-                    }
+                    aliasesToDeclare = filterAliasesToDeclare(allAliases, tableParameterAlias, false);
+                } else {
+                    aliasesToDeclare = java.util.Collections.emptySet();
                 }
 
                 if (!aliasesToDeclare.isEmpty()) {
@@ -695,6 +714,89 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             // Restore the previous helper method name
             currentHelperMethodName = previousHelperMethodName;
         }
+    }
+
+    /**
+     * Checks if a field is a split query field.
+     * Split queries are resolver fields that reference a table object from a previous context.
+     *
+     * @param field the field to check
+     * @return true if the field is a split query field
+     */
+    private boolean isSplitQueryField(ObjectField field) {
+        return field.isResolver() &&
+                processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(field.getContainerTypeName());
+    }
+
+    /**
+     * Checks if the current root query field has input parameters that map to tables.
+     * This is used to distinguish container patterns from wrapper patterns.
+     *
+     * @return true if the current root field has input table arguments
+     */
+    private boolean rootFieldHasInputTableArguments() {
+        return currentRootField != null &&
+                currentRootField.getArguments().stream()
+                        .anyMatch(processedSchema::hasInputJOOQRecord);
+    }
+
+    /**
+     * Determines whether a field should use the target table directly as a parameter,
+     * as opposed to using a base table parameter with declared aliases.
+     * <p>
+     * Target table parameters are used for:
+     * - Split query multisets
+     * - Complex reference multisets (multiple field references)
+     * - Single reference fields (non-iterable with field references)
+     *
+     * @param field the field to check
+     * @return true if the field should receive target table as parameter
+     */
+    private boolean shouldUseTargetTableParameter(ObjectField field) {
+        var isSplitQuery = isSplitQueryField(field);
+        var hasComplexReferencePath = field.hasFieldReferences() && field.getFieldReferences().size() > 1;
+        return (field.isIterableWrapped() && (isSplitQuery || hasComplexReferencePath)) ||
+                (!field.isIterableWrapped() && field.hasFieldReferences());
+    }
+
+    /**
+     * Filters aliases to determine which should be declared in a helper method body.
+     * <p>
+     * Excludes:
+     * <ul>
+     *   <li>Aliases with table methods (handled separately)</li>
+     *   <li>The parameter alias (passed as method parameter, not declared)</li>
+     * </ul>
+     * <p>
+     * Optionally filters to only derived aliases (for split query helpers).
+     *
+     * @param allAliases the complete set of aliases in scope
+     * @param excludeParameterAlias the alias passed as a parameter (to exclude from declarations)
+     * @param onlyDerivedAliases if true, only include aliases derived from join sequences
+     * @return filtered set of aliases that should be declared in the method body
+     */
+    private java.util.Set<AliasWrapper> filterAliasesToDeclare(
+            java.util.Set<AliasWrapper> allAliases,
+            String excludeParameterAlias,
+            boolean onlyDerivedAliases) {
+        var aliasesToDeclare = new java.util.LinkedHashSet<AliasWrapper>();
+
+        for (var alias : allAliases) {
+            var aliasName = alias.getAlias().getMappingName();
+            if (!alias.hasTableMethod() && !aliasName.equals(excludeParameterAlias)) {
+                if (onlyDerivedAliases) {
+                    // For split queries: only declare derived aliases (from join sequences)
+                    if (alias.getAlias().isDerivedAlias()) {
+                        aliasesToDeclare.add(alias);
+                    }
+                } else {
+                    // For regular queries: declare all aliases that pass the filters
+                    aliasesToDeclare.add(alias);
+                }
+            }
+        }
+
+        return aliasesToDeclare;
     }
 
 }
