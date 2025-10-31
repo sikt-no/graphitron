@@ -468,6 +468,17 @@ public class TableReflection {
         return getTable(tableName).map(Table::getPrimaryKey).stream().findFirst();
     }
 
+    public static Optional<List<? extends UniqueKey<?>>> getUniqueKeysForTable(String tableName) {
+        return getTable(tableName).map(Table::getUniqueKeys);
+    }
+
+    public static Set<? extends UniqueKey<?>> getPrimaryAndUniqueKeysForTable(String tableName) {
+        var allKeys = new HashSet<UniqueKey<?>>();
+        getPrimaryKeyForTable(tableName).map(allKeys::add);
+        getUniqueKeysForTable(tableName).map(allKeys::addAll);
+        return allKeys;
+    }
+
     public static Optional<? extends UniqueKey<?>> getPrimaryOrUniqueKeyMatchingFields(String table, List<String> fields) {
         return getTable(table)
                 .flatMap(value ->

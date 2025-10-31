@@ -131,6 +131,7 @@
                                     <fullyQualifiedClassName>no.sikt.graphitron.example.service.ConsumerProvidedScalars</fullyQualifiedClassName>
                                 </class>
                             </scalars>
+                            <useJdbcBatchingForDeletes>false</useJdbcBatchingForDeletes>
                         </configuration>
                     </execution>
                 </executions>

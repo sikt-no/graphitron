@@ -1,0 +1,8 @@
+mutation DeleteCategories($in: [CategoryInput!]!) {
+    deleteCategoriesWrapped(in: $in) {
+        categories {
+            id
+            categoryId
+        }
+    }
+}
