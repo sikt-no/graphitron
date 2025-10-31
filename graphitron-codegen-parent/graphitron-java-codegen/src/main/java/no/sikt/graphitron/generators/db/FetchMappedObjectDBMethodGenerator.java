@@ -506,13 +506,15 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                     }
                 }
 
-                // Skip helper generation for fields with @reference reached through wrapper parents
-                // When a wrapper type (no @table) contains a field with @reference, extracting a helper
-                // creates a FetchContext with incorrect table context, causing @reference resolution to fail.
-                // These fields should be inlined in the main query instead.
+                // Skip helper generation for fields with @reference in wrappers only if the target also has no table
+                // Allow extraction when the field's target type HAS a table, even if parent doesn't.
+                // For example: WrapperType → TableType via @reference is valid and should be extracted.
                 if (!shouldSkipGeneration && !recordType.hasTable() && objectField.hasFieldReferences()) {
-                    // Parent is a wrapper (no table) and field has @reference - don't extract helper
-                    shouldSkipGeneration = true;
+                    var fieldTargetType = processedSchema.getRecordType(objectField);
+                    if (fieldTargetType == null || !fieldTargetType.hasTable()) {
+                        // Parent has no table AND field's target has no table - don't extract helper
+                        shouldSkipGeneration = true;
+                    }
                 }
 
                 // Container pattern detection:
@@ -558,19 +560,23 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                     }
                     // If helper generation was skipped (empty method), don't recurse into children
                 } else if (isWrapperType) {
-                    // For wrapper types, check if any child fields have @reference
-                    // If so, don't recurse at all - inline everything to preserve correct table context
-                    boolean hasChildWithReference = nestedRecordType != null &&
+                    // For wrapper types, check if any child fields have @reference to non-table types
+                    // Only skip recursion if child references lead to non-table types (problematic cases)
+                    // Allow recursion if child @reference fields point to table types (valid extraction)
+                    boolean hasProblematicChildWithReference = nestedRecordType != null &&
                             nestedRecordType.getFields().stream()
-                                .anyMatch(f -> f instanceof ObjectField && ((ObjectField) f).hasFieldReferences());
+                                .filter(f -> f instanceof ObjectField && ((ObjectField) f).hasFieldReferences())
+                                .anyMatch(f -> {
+                                    var childTarget = processedSchema.getRecordType(f);
+                                    return childTarget == null || !childTarget.hasTable();
+                                });
 
-                    if (!hasChildWithReference) {
-                        // For wrapper types without @reference children, don't generate a helper method for the wrapper itself,
-                        // but DO recurse to generate helpers for its table-type descendants
+                    if (!hasProblematicChildWithReference) {
+                        // For wrapper types without problematic @reference children, recurse to generate helpers
                         // Use the parent's method name directly (don't append the wrapper field name)
                         nestedMethods.addAll(generateNestedHelperMethods(objectField, parentHelperMethodName, visitedTypes));
                     }
-                    // If wrapper has @reference children, skip recursion entirely - will be inlined
+                    // If wrapper has problematic @reference children, skip recursion - will be inlined
                 }
             }
         }
@@ -596,20 +602,24 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                     .addModifiers(PRIVATE, STATIC)
                     .returns(ParameterizedTypeName.get(SELECT_FIELD.className, returnType));
 
-            // Defensive check: If this field has @reference and its parent container doesn't have a table,
-            // we cannot safely extract a helper because the FetchContext will lack proper table context.
-            // Return empty method to skip generation - the field will be inlined in parent context instead.
+            // Get the record type to check if it has a table
+            var nestedRecordType = processedSchema.getRecordType(nestedField);
+
+            // Defensive check: Skip helper generation for complex @reference patterns through wrappers
+            // where the target type also lacks a table (e.g., nested wrappers with references).
+            // But allow extraction when the field's target type HAS a table, even if parent doesn't.
             if (nestedField.hasFieldReferences()) {
                 var parentType = processedSchema.getObjectOrConnectionNode(nestedField.getContainerTypeName());
                 if (parentType == null || !parentType.hasTable()) {
-                    // Field with @reference in a non-table parent - cannot extract safely
-                    return MethodSpec.methodBuilder(helperMethodName).build();
+                    // Parent has no table - only skip if the field's target type also has no table
+                    if (nestedRecordType == null || !nestedRecordType.hasTable()) {
+                        return MethodSpec.methodBuilder(helperMethodName).build();
+                    }
                 }
             }
 
             // Only generate helper methods for types that have tables
             // Wrapper types without tables should be traversed, not extracted
-            var nestedRecordType = processedSchema.getRecordType(nestedField);
             if (nestedRecordType != null && nestedRecordType.hasTable()) {
                 try {
                     // Create a context for the nested field
