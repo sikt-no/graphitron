@@ -500,6 +500,15 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                     }
                 }
 
+                // Skip helper generation for fields with @reference reached through wrapper parents
+                // When a wrapper type (no @table) contains a field with @reference, extracting a helper
+                // creates a FetchContext with incorrect table context, causing @reference resolution to fail.
+                // These fields should be inlined in the main query instead.
+                if (!shouldSkipGeneration && !recordType.hasTable() && objectField.hasFieldReferences()) {
+                    // Parent is a wrapper (no table) and field has @reference - don't extract helper
+                    shouldSkipGeneration = true;
+                }
+
                 // Container pattern detection:
                 // A "container" is a non-table type that exists solely to wrap input parameters, where
                 // the input parameters directly map to the nested table type (e.g., FilmContainer with
@@ -531,18 +540,31 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 if (!shouldSkipGeneration) {
                     // Generate helper method for this nested field, passing the parent helper method name
                     var nestedHelperMethod = generateNestedHelperMethodWithParentName(parentHelperMethodName, objectField);
-                    if (!nestedHelperMethod.code().isEmpty()) {
-                        nestedMethods.add(nestedHelperMethod);
-                    }
+                    boolean helperWasGenerated = !nestedHelperMethod.code().isEmpty();
 
-                    // Recursively generate methods for deeper nesting, maintaining the naming chain
-                    var nestedHelperMethodName = parentHelperMethodName + "_" + objectField.getName();
-                    nestedMethods.addAll(generateNestedHelperMethods(objectField, nestedHelperMethodName, visitedTypes));
+                    if (helperWasGenerated) {
+                        nestedMethods.add(nestedHelperMethod);
+
+                        // Recursively generate methods for deeper nesting, maintaining the naming chain
+                        // Only recurse if we actually generated a helper (not bailed out with empty method)
+                        var nestedHelperMethodName = parentHelperMethodName + "_" + objectField.getName();
+                        nestedMethods.addAll(generateNestedHelperMethods(objectField, nestedHelperMethodName, visitedTypes));
+                    }
+                    // If helper generation was skipped (empty method), don't recurse into children
                 } else if (isWrapperType) {
-                    // For wrapper types, don't generate a helper method for the wrapper itself,
-                    // but DO recurse to generate helpers for its table-type descendants
-                    // Use the parent's method name directly (don't append the wrapper field name)
-                    nestedMethods.addAll(generateNestedHelperMethods(objectField, parentHelperMethodName, visitedTypes));
+                    // For wrapper types, check if any child fields have @reference
+                    // If so, don't recurse at all - inline everything to preserve correct table context
+                    boolean hasChildWithReference = nestedRecordType != null &&
+                            nestedRecordType.getFields().stream()
+                                .anyMatch(f -> f instanceof ObjectField && ((ObjectField) f).hasFieldReferences());
+
+                    if (!hasChildWithReference) {
+                        // For wrapper types without @reference children, don't generate a helper method for the wrapper itself,
+                        // but DO recurse to generate helpers for its table-type descendants
+                        // Use the parent's method name directly (don't append the wrapper field name)
+                        nestedMethods.addAll(generateNestedHelperMethods(objectField, parentHelperMethodName, visitedTypes));
+                    }
+                    // If wrapper has @reference children, skip recursion entirely - will be inlined
                 }
             }
         }
@@ -568,19 +590,31 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                     .addModifiers(PRIVATE, STATIC)
                     .returns(ParameterizedTypeName.get(SELECT_FIELD.className, returnType));
 
+            // Defensive check: If this field has @reference and its parent container doesn't have a table,
+            // we cannot safely extract a helper because the FetchContext will lack proper table context.
+            // Return empty method to skip generation - the field will be inlined in parent context instead.
+            if (nestedField.hasFieldReferences()) {
+                var parentType = processedSchema.getObjectOrConnectionNode(nestedField.getContainerTypeName());
+                if (parentType == null || !parentType.hasTable()) {
+                    // Field with @reference in a non-table parent - cannot extract safely
+                    return MethodSpec.methodBuilder(helperMethodName).build();
+                }
+            }
+
             // Only generate helper methods for types that have tables
             // Wrapper types without tables should be traversed, not extracted
             var nestedRecordType = processedSchema.getRecordType(nestedField);
             if (nestedRecordType != null && nestedRecordType.hasTable()) {
-                // Create a context for the nested field
-                var context = new FetchContext(processedSchema, nestedField, getLocalObject(), false);
-                var refContext = nestedField.isResolver() ? context.nextContext(nestedField) : context;
+                try {
+                    // Create a context for the nested field
+                    var context = new FetchContext(processedSchema, nestedField, getLocalObject(), false);
+                    var refContext = nestedField.isResolver() ? context.nextContext(nestedField) : context;
 
-                var selectRowBlock = generateSelectRow(refContext);
+                    var selectRowBlock = generateSelectRow(refContext);
 
-                // For nested helper methods with tables, add base table as parameter and declare derived aliases
-                // For wrapper types without tables, we don't need table parameters
-                var allAliases = refContext.getAliasSet();
+                    // For nested helper methods with tables, add base table as parameter and declare derived aliases
+                    // For wrapper types without tables, we don't need table parameters
+                    var allAliases = refContext.getAliasSet();
                 java.util.Set<AliasWrapper> aliasesToDeclare;
                 String tableParameterAlias = null;
 
@@ -612,16 +646,22 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                         }
                     }
 
-                    // Declare remaining aliases that are derived from the base table parameter
-                    // For fields that receive target table directly, don't declare aliases
-                    // For fields that receive base table parameters, declare the aliases they need
-                    // Use the same logic as parameter determination: only declare aliases for fields using base table parameters
-                    boolean shouldDeclareAliases = !shouldUseTargetTableParameter(nestedField);
+                    // Declare remaining aliases that are derived from the table parameter
+                    // For fields that receive target table directly, declare only derived aliases (not the target itself)
+                    // For fields that receive base table parameters, declare derived aliases (not the base table itself)
+                    boolean usesTargetTableParameter = shouldUseTargetTableParameter(nestedField);
 
-                    if (shouldDeclareAliases) {
-                        aliasesToDeclare = filterAliasesToDeclare(allAliases, tableParameterAlias, false);
+                    if (usesTargetTableParameter) {
+                        // When target table is a parameter, declare only aliases derived from that parameter
+                        // Filter to derived aliases, then further filter to only those starting with the parameter
+                        var derivedAliases = filterAliasesToDeclare(allAliases, tableParameterAlias, true);
+                        final String paramPrefix = tableParameterAlias + ".";
+                        aliasesToDeclare = derivedAliases.stream()
+                                .filter(alias -> alias.getAlias().getVariableValue().startsWith(paramPrefix))
+                                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
                     } else {
-                        aliasesToDeclare = java.util.Collections.emptySet();
+                        // When base table is a parameter, declare all other aliases
+                        aliasesToDeclare = filterAliasesToDeclare(allAliases, tableParameterAlias, false);
                     }
 
                     if (!aliasesToDeclare.isEmpty()) {
@@ -632,10 +672,19 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                     aliasesToDeclare = java.util.Collections.emptySet();
                 }
 
-                return methodBuilder
-                        .addCode("return $L;\n", selectRowBlock)
-                        .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY)
-                        .build();
+                    return methodBuilder
+                            .addCode("return $L;\n", selectRowBlock)
+                            .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY)
+                            .build();
+                } catch (Exception e) {
+                    // If FetchContext creation or select row generation fails, it's likely due to
+                    // @reference resolution issues when context lacks proper table information.
+                    // Log a warning and skip this helper - the field will be inlined instead.
+                    System.err.println("Warning: Could not generate helper for field " + nestedField.getName() +
+                                     " in type " + nestedField.getContainerTypeName() +
+                                     ": " + e.getMessage());
+                    return MethodSpec.methodBuilder(helperMethodName).build();
+                }
             } else {
                 // For record types without tables, just generate the simple mapping
                 // This handles cases like Wrapper type without @table directive

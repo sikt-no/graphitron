@@ -487,7 +487,10 @@ public class FetchContext {
                                         referenceObjectField.getContainerTypeName(), referenceObjectField.getName(), previous.getName())));
 
                 for (var fieldName : getJavaFieldNamesForKey(previous.getName(), primaryKey)) {
-                    this.conditionList.add(CodeBlock.of("$L.$L.eq($L.$L)", previousContext.getCurrentJoinSequence().getLast().getMappingName(), fieldName, alias.getMappingName(), fieldName));
+                    var previousMappingName = previousContext != null && !previousContext.getCurrentJoinSequence().isEmpty()
+                            ? previousContext.getCurrentJoinSequence().getLast().getMappingName()
+                            : previous.getMappingName();
+                    this.conditionList.add(CodeBlock.of("$L.$L.eq($L.$L)", previousMappingName, fieldName, alias.getMappingName(), fieldName));
                 }
             }
             var join = fRef.createConditionJoinFor(newSequence, targetOrPrevious, requiresLeftJoin);
