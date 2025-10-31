@@ -41,8 +41,10 @@ public class DeleteMutationTest extends ValidationTest {
     @Test
     @DisplayName("With ID as unique identifier")
     void id() { // Temporary test until node ID strategy is required
+        GeneratorConfig.setNodeStrategy(false);
         getProcessedSchema("id", Set.of(CUSTOMER_INPUT_TABLE));
         assertNoWarnings();
+        GeneratorConfig.setNodeStrategy(true);
     }
 
     @Test
@@ -57,7 +59,18 @@ public class DeleteMutationTest extends ValidationTest {
     void missingFieldToMatchPrimaryKey() {
         assertErrorsContain(
                 "missingFieldToMatchPrimaryKey",
-                "Mutation field 'Mutation.mutation' is a generated delete mutation, but does not have input with non-nullable fields corresponding to a PK/UK of the table."
+                "Mutation field 'Mutation.mutation' is a generated delete mutation, but does not have input with non-nullable fields corresponding to a PK/UK of the table.",
+                "Possible fix(es):\n* Add non-nullable input fields for COUNTRY_NAME to match PK/UK 'vacation_destination_pkey'."
+        );
+    }
+
+    @Test
+    @DisplayName("Missing multiple fields to match primary key of table")
+    void missingMultipleFieldsToMatchPrimaryKey() {
+        assertErrorsContain(
+                "missingMultipleFieldsToMatchPrimaryKey",
+                "Mutation field 'Mutation.mutation' is a generated delete mutation, but does not have input with non-nullable fields corresponding to a PK/UK of the table.",
+                "Possible fix(es):\n* Add non-nullable input fields for COUNTRY_NAME, DESTINATION_ID to match PK/UK 'vacation_destination_pkey'."
         );
     }
 
@@ -66,7 +79,8 @@ public class DeleteMutationTest extends ValidationTest {
     void onePrimaryKeyFieldNullable() {
         assertErrorsContain(
                 "onePrimaryKeyFieldNullable",
-                "Mutation field 'Mutation.mutation' is a generated delete mutation, but does not have input with non-nullable fields corresponding to a PK/UK of the table."
+                "Mutation field 'Mutation.mutation' is a generated delete mutation, but does not have input with non-nullable fields corresponding to a PK/UK of the table.",
+                "Possible fix(es):\n* Add non-nullable input fields for DESTINATION_ID to match PK/UK 'vacation_destination_pkey'."
         );
     }
 
@@ -75,8 +89,35 @@ public class DeleteMutationTest extends ValidationTest {
     void nullableNodeId() {
         assertErrorsContain(
                 "nullableNodeId",
-                "Mutation field 'Mutation.mutation' is a generated delete mutation, but does not have input with non-nullable fields corresponding to a PK/UK of the table."
+                "Mutation field 'Mutation.mutation' is a generated delete mutation, but does not have input with non-nullable fields corresponding to a PK/UK of the table.",
+                """
+                        Possible fix(es):
+                        * Make 'CustomerInput.id' non-nullable.
+                        * Add non-nullable node ID input field for type 'CustomerNode'.
+                        * Add non-nullable input fields for CUSTOMER_ID to match PK/UK 'customer_pkey'."""
         );
+    }
+
+    @Test
+    @DisplayName("Reference node ID should not be mistaken for identifying a row in target table")
+    void referenceNodeId() {
+        assertErrorsContain(
+                "referenceNodeId",
+                "Mutation field 'Mutation.mutation' is a generated delete mutation, but does not have input with non-nullable fields corresponding to a PK/UK of the table.",
+                "Possible fix(es):\n* Add non-nullable node ID input field for type 'CustomerNode'.\n* Add non-nullable input fields for CUSTOMER_ID to match PK/UK 'customer_pkey'."
+        );
+    }
+
+    @Test
+    @DisplayName("Reference ID should not be mistaken for identifying a row in target table")
+    void referenceId() { // Temporary test until node ID strategy is required
+        GeneratorConfig.setNodeStrategy(false);
+        assertErrorsContain(
+                "referenceId",
+                "Mutation field 'Mutation.mutation' is a generated delete mutation, but does not have input with non-nullable fields corresponding to a PK/UK of the table.",
+                "Possible fix(es):\n* Add non-nullable node ID input field for type 'CustomerNode'.\n* Add non-nullable input fields for CUSTOMER_ID to match PK/UK 'customer_pkey'."
+        );
+        GeneratorConfig.setNodeStrategy(true);
     }
 
     @Test
