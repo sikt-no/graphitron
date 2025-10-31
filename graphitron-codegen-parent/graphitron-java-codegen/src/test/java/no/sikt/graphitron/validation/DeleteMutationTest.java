@@ -84,7 +84,7 @@ public class DeleteMutationTest extends ValidationTest {
     void withoutJooqRecordInput() {
         assertErrorsContain(
                 "withoutJooqRecordInput",
-                "Mutation field 'Mutation.mutation' is a generated delete mutation, but does not link any input to tables."
+                "Field 'Mutation.mutation' is a generated delete mutation, but does not link any input to tables."
         );
     }
 
@@ -152,7 +152,7 @@ public class DeleteMutationTest extends ValidationTest {
     void withReference() {
         assertErrorsContain(
                 "withReference",
-                "Mutation field 'Mutation.mutation' has references returned from the data field. This is not supported. Found reference fields are: 'Customer.address'"
+                "Mutation field 'Mutation.mutation' has references returned from the data field. This is not supported for DELETE mutations. Found reference fields are: 'Customer.address'"
         );
     }
 
@@ -161,7 +161,7 @@ public class DeleteMutationTest extends ValidationTest {
     void withNestedReference() {
         assertErrorsContain(
                 "withNestedReference",
-                "Mutation field 'Mutation.mutation' has references returned from the data field. This is not supported. Found reference fields are: 'AddressWrapper.address'"
+                "Mutation field 'Mutation.mutation' has references returned from the data field. This is not supported for DELETE mutations. Found reference fields are: 'AddressWrapper.address'"
         );
     }
 

@@ -46,17 +46,17 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        var isDeleteWithoutBatching = target.isDeleteMutation() && !useJdbcBatchingForDeletes();
-        var parser = new InputParser(target, processedSchema, !isDeleteWithoutBatching);
+        var isMutationReturningData = target.isDeleteMutation() && !useJdbcBatchingForDeletes();
+        var parser = new InputParser(target, processedSchema, !isMutationReturningData);
         var methodCall = getMethodCall(target, parser, false); // Note, do this before declaring services.
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
         return getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(getReturnTypeName(target))))
                 .beginControlFlow("return $N ->", VAR_ENV)
                 .addCode(extractParams(target))
                 .addCode(declareContextArgs(target))
-                .addCodeIf(!isDeleteWithoutBatching || recordValidationEnabled(), () -> transformInputs(target, parser))
+                .addCodeIf(!isMutationReturningData || recordValidationEnabled(), () -> transformInputs(target, parser))
                 .addCode(declareAllServiceClasses(target.getName()))
-                .addCodeIf(!isDeleteWithoutBatching  && localObject.getName().equals(SCHEMA_MUTATION.getName()),
+                .addCodeIf(!isMutationReturningData  && localObject.getName().equals(SCHEMA_MUTATION.getName()),
                         () -> getMethodCall(target, parser, true))
                 .addCode(methodCall)
                 .endControlFlow("") // Keep this, logic to set semicolon only kicks in if a string is set.

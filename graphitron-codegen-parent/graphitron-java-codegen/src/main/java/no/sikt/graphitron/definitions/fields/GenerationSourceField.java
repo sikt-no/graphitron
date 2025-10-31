@@ -276,4 +276,18 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return String.format("'%s.%s'", getContainerTypeName(), getName());
     }
 
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (obj == null || getClass() != obj.getClass()) return false;
+        GenerationSourceField<?> that = (GenerationSourceField<?>) obj;
+        return Objects.equals(getName(), that.getName())
+            && Objects.equals(getContainerTypeName(), that.getContainerTypeName());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getName(), getContainerTypeName());
+    }
 }

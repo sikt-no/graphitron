@@ -47,8 +47,8 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
         // Field containing the actual data returned after the mutation
         var dataTarget = processedSchema.inferDataTargetForMutation(target)
                 .orElseThrow(() -> new RuntimeException(String.format(
-                        "Cannot find data field for mutation '%s.%s'",
-                        target.getContainerTypeName(), target.getName())));
+                        "Cannot determine field to output data to for mutation %s.",
+                        target.formatPath())));
 
         var returnType = processedSchema.isRecordType(dataTarget)
                 ? processedSchema.getRecordType(dataTarget).getGraphClassName()
@@ -56,7 +56,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
 
         var targetTable = processedSchema.findInputTables(target).stream() // TODO: support inferring target table from data output
                 .findFirst()
-                .orElseThrow(() -> new RuntimeException(String.format("Cannot infer target table for mutation '%s.%s'", target.getContainerTypeName(), target.getName())));
+                .orElseThrow(() -> new RuntimeException(String.format("Cannot infer target table for mutation %s.", target.formatPath())));
 
         var parser = new InputParser(target, processedSchema, false);
         var contextForData = new FetchContext(processedSchema, dataTarget, getLocalObject(), true, true);
@@ -101,7 +101,8 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
     private CodeBlock setFetch(ObjectField referenceField) {
         var refObject = processedSchema.getObjectOrConnectionNode(referenceField);
         var resType = refObject == null ? referenceField.getTypeClass() : refObject.getGraphClassName();
-        return CodeBlock.statementOf(".fetch$L(it -> it.into($T.class))", referenceField.isIterableWrapped() ? "" : "One", resType);
+        return CodeBlock.statementOf(".fetch$1L($2N -> $2N.into($3T.class))",
+                referenceField.isIterableWrapped() ? "" : "One", VAR_ITERATOR, resType);
     }
 
     @Override

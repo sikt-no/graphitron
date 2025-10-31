@@ -29,7 +29,7 @@ public class MutationOutputTest extends MutationQueryTest {
         assertGeneratedContentContains("scalar",
                 "String mutationForMutation",
                 ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
-                        ".fetchOne(it -> it.into(String.class))"
+                        ".fetchOne(_iv_it -> _iv_it.into(String.class))"
         );
     }
 
@@ -39,7 +39,7 @@ public class MutationOutputTest extends MutationQueryTest {
         assertGeneratedContentContains("wrappedScalar",
                 "CustomerNodeInputTable in, SelectionSet _iv_select)",
                 ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
-                        ".fetchOne(it -> it.into(String.class))"
+                        ".fetchOne(_iv_it -> _iv_it.into(String.class))"
         );
     }
 
@@ -49,7 +49,7 @@ public class MutationOutputTest extends MutationQueryTest {
         assertGeneratedContentContains("scalarList",
                 "List<String> mutationForMutation",
                 ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
-                        ".fetch(it -> it.into(String.class))"
+                        ".fetch(_iv_it -> _iv_it.into(String.class))"
         );
     }
 
@@ -59,7 +59,7 @@ public class MutationOutputTest extends MutationQueryTest {
         assertGeneratedContentContains("wrappedScalarList",
                 "List<String> mutationForMutation",
                 ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
-                        ".fetch(it -> it.into(String.class))"
+                        ".fetch(_iv_it -> _iv_it.into(String.class))"
         );
     }
 
@@ -70,7 +70,7 @@ public class MutationOutputTest extends MutationQueryTest {
                 "CustomerNode mutationForMutation",
                 ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
                         ".mapping(Functions.nullOnAllNull(CustomerNode::new)))" +
-                        ".fetchOne(it -> it.into(CustomerNode.class))"
+                        ".fetchOne(_iv_it -> _iv_it.into(CustomerNode.class))"
         );
     }
 
@@ -81,7 +81,7 @@ public class MutationOutputTest extends MutationQueryTest {
                 "CustomerNode mutationForMutation",
                 ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
                         ".mapping(Functions.nullOnAllNull(CustomerNode::new)))" +
-                        ".fetchOne(it -> it.into(CustomerNode.class))"
+                        ".fetchOne(_iv_it -> _iv_it.into(CustomerNode.class))"
         );
     }
 
@@ -92,7 +92,7 @@ public class MutationOutputTest extends MutationQueryTest {
                 "List<CustomerNode> mutationForMutation",
                 ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
                         ".mapping(Functions.nullOnAllNull(CustomerNode::new)))" +
-                        ".fetch(it -> it.into(CustomerNode.class))"
+                        ".fetch(_iv_it -> _iv_it.into(CustomerNode.class))"
         );
     }
 
@@ -103,7 +103,7 @@ public class MutationOutputTest extends MutationQueryTest {
                 "List<CustomerNode> mutationForMutation",
                 ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
                         ".mapping(Functions.nullOnAllNull(CustomerNode::new)))" +
-                        ".fetch(it -> it.into(CustomerNode.class))"
+                        ".fetch(_iv_it -> _iv_it.into(CustomerNode.class))"
         );
     }
 }

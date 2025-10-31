@@ -14,6 +14,6 @@ public class MutationDBQueries {
         return _iv_ctx.deleteFrom(CUSTOMER)
                 .where(_iv_nodeIdStrategy.hasId("CustomerNode", in.getId(), CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))
                 .returningResult(_iv_nodeIdStrategy.createId("CustomerNode", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))
-                .fetchOne(it -> it.into(String.class));
+                .fetchOne(_iv_it -> _iv_it.into(String.class));
     }
 }

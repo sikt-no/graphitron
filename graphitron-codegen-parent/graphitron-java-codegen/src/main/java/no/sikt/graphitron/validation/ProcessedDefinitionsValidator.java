@@ -1176,7 +1176,7 @@ public class ProcessedDefinitionsValidator {
             /* Validate input */
             var recordInputs = new InputParser(field, schema).getJOOQRecords().values(); // TODO: support non-jOOQ record inputs
             if (recordInputs.isEmpty()) {
-                addErrorMessage("Mutation field %s is a generated delete mutation, but does not link any input to tables.", field.formatPath());
+                addErrorMessage("Field %s is a generated delete mutation, but does not link any input to tables.", field.formatPath());
                 return;
             }
 
@@ -1190,8 +1190,10 @@ public class ProcessedDefinitionsValidator {
                 } else {
                     var subqueryReferenceFields = findSubqueryReferenceFieldsForTableObject(dataField.get(), outputTable, 0);
                     if (!subqueryReferenceFields.isEmpty()) {
-                        addErrorMessage("Mutation field %s has references returned from the data field. This is not supported. Found reference fields are: %s",
-                                field.formatPath(), String.join(", ", subqueryReferenceFields.stream().map(GenerationField::formatPath).toList()));
+                        addErrorMessage(
+                                "Mutation field %s has references returned from the data field. " +
+                                        "This is not supported for %s mutations. Found reference fields are: %s",
+                                field.formatPath(), MutationType.DELETE, String.join(", ", subqueryReferenceFields.stream().map(GenerationField::formatPath).toList()));
                     }
                 }
             }
