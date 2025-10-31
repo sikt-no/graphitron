@@ -431,6 +431,12 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             var allAliases = refContext.getAliasSet();
             var aliasesToDeclare = filterAliasesToDeclare(allAliases, targetParameterAlias, isSplitQuery);
 
+            // For split queries with target table parameters, keep aliases that form a valid derivation chain
+            // from the parameter, excluding aliases that reference undefined parent context variables
+            if (isSplitQuery && targetParameterAlias != null) {
+                aliasesToDeclare = filterToValidAliasChain(aliasesToDeclare, targetParameterAlias);
+            }
+
             if (!aliasesToDeclare.isEmpty()) {
                 methodBuilder.addCode(createAliasDeclarations(aliasesToDeclare));
             }
@@ -780,6 +786,63 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         }
 
         return aliasesToDeclare;
+    }
+
+    /**
+     * Filters aliases to only include those that form a valid derivation chain from the parameter.
+     * This keeps aliases that derive from the parameter or from other kept aliases (transitive closure),
+     * while excluding aliases that reference undefined parent context variables.
+     * <p>
+     * Example: Given parameter {@code _a_city} and aliases:
+     * <ul>
+     *   <li>{@code _a_city.address()} → KEEP (derives from parameter)</li>
+     *   <li>{@code _a_address.customer()} → KEEP (derives from previous)</li>
+     *   <li>{@code _a_film.inventory()} → EXCLUDE (references undefined {@code _a_film})</li>
+     * </ul>
+     *
+     * @param aliases the set of aliases to filter
+     * @param parameterAlias the parameter alias name
+     * @return filtered set containing only aliases in the valid derivation chain
+     */
+    private java.util.Set<AliasWrapper> filterToValidAliasChain(
+            java.util.Set<AliasWrapper> aliases,
+            String parameterAlias) {
+        // Track which variable names exist in this method's scope
+        var validNames = new java.util.HashSet<String>();
+        validNames.add(parameterAlias);
+
+        var result = new java.util.LinkedHashSet<AliasWrapper>();
+        boolean addedAny = true;
+
+        // Iteratively add aliases that derive from valid names until no more can be added
+        while (addedAny) {
+            addedAny = false;
+            for (var alias : aliases) {
+                if (result.contains(alias)) continue;
+
+                if (derivesFromValidName(alias, validNames)) {
+                    result.add(alias);
+                    validNames.add(alias.getAlias().getMappingName());
+                    addedAny = true;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Checks if an alias derives from any of the given valid variable names.
+     * An alias derives from a name if its variable value starts with that name followed by a dot.
+     * For example: {@code _a_city.address()} derives from {@code _a_city}
+     */
+    private boolean derivesFromValidName(AliasWrapper alias, java.util.Set<String> validNames) {
+        var variableValue = alias.getAlias().getVariableValue();
+        var dotIndex = variableValue.indexOf('.');
+        if (dotIndex <= 0) return false;
+
+        var baseName = variableValue.substring(0, dotIndex);
+        return validNames.contains(baseName);
     }
 
 }

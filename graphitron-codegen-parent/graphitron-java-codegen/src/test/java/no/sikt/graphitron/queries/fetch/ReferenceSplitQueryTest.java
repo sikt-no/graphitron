@@ -367,4 +367,37 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 ".select(DSL.row(_a_address.ADDRESS_ID), addressForWrapper_address("
         );
     }
+
+    @Test
+    @DisplayName("Split query helpers with complex paths declare only valid alias chains")
+    void splitQueryComplexReferencePathAliasFiltering() {
+        assertGeneratedContentContains(
+                "viaTables", Set.of(CUSTOMER_TABLE),
+                """
+                            private static SelectField<Store> storesThatHaveThisFilmForFilm_store(
+                                    no.sikt.graphitron.jooq.generated.testdata.public_.tables.Store _a_inventory_744357058_store) {
+                                return DSL.row(_a_inventory_744357058_store.getId()).mapping(Functions.nullOnAllNull(Store::new));
+                            }"""
+                ,
+                            """
+                            private static SelectField<City> citiesWhereFilmIsStockedForFilm_city(
+                                    no.sikt.graphitron.jooq.generated.testdata.public_.tables.City _a_address_2813127756_city) {
+                                var _a_city_3468131846_address = _a_address_2813127756_city.address().as("address_2618309002");
+                                var _a_address_2618309002_customer = _a_city_3468131846_address.customer().as("customer_672486254");
+                                var _a_customer_672486254_payment = _a_address_2618309002_customer.payment().as("payment_3112599430");
+                                return DSL.row(
+                                        _a_address_2813127756_city.getId(),
+                                        DSL.row(
+                                                DSL.multiset(
+                                                        DSL.select(citiesWhereFilmIsStockedForFilm_city_payments(_a_customer_672486254_payment))
+                                                        .from(_a_city_3468131846_address)
+                                                        .join(_a_address_2618309002_customer)
+                                                        .join(_a_customer_672486254_payment)
+                                                        .orderBy(_a_customer_672486254_payment.fields(_a_customer_672486254_payment.getPrimaryKey().getFieldsArray()))
+                                                )
+                                        ).mapping(_iv_e -> _iv_e.map(Record1::value1))
+                                ).mapping(Functions.nullOnAllNull(City::new));
+                            }"""
+        );
+    }
 }
