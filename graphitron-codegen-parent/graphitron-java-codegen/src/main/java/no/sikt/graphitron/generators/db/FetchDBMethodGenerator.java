@@ -6,6 +6,7 @@ import no.sikt.graphitron.definitions.helpers.InputCondition;
 import no.sikt.graphitron.definitions.helpers.InputConditions;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
+import no.sikt.graphitron.definitions.interfaces.JoinElement;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
@@ -579,16 +580,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             );
         }
 
-        var renderedSource = field.isInput()
-                ? context.iterateJoinSequenceFor(field).render()
-                : context.renderQuerySource(
-                        hasResolverWithPagination(context)
-                        ? getLocalTable()
-                        : context.getCurrentJoinSequence().size() > 1
-                          ? context.getCurrentJoinSequence().getLast()
-                          : !context.getCurrentJoinSequence().isEmpty()
-                            ? context.getCurrentJoinSequence().getFirst()
-                            : null);
+        var renderedSource = getRenderedSource(field, context);
 
         if (field.isID() && !shouldMakeNodeStrategy()) {
             return CodeBlock.join(
@@ -839,6 +831,25 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 !checks.isEmpty() && !condition.getNamePath().isEmpty() ? checks + " ? $L : null" : "$L",
                 enumConverter.isEmpty() ? nameWithPath : enumConverter
         );
+    }
+
+    private CodeBlock getRenderedSource(GenerationField field, FetchContext context) {
+        if (field.isInput()) {
+            return context.iterateJoinSequenceFor(field).render();
+        }
+
+        var joinSequence = context.getCurrentJoinSequence();
+        JoinElement renderedSource = null;
+
+        if (hasResolverWithPagination(context)) {
+            renderedSource = getLocalTable();
+        } else if (joinSequence.size() > 1) {
+            renderedSource = joinSequence.getLast();
+        } else if (!joinSequence.isEmpty()) {
+            renderedSource = joinSequence.getFirst();
+        }
+
+        return context.renderQuerySource(renderedSource);
     }
 
     private CodeBlock createTupleCondition(
@@ -1195,7 +1206,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
     }
 
-    private boolean hasResolverWithPagination(FetchContext context) {
+    protected boolean hasResolverWithPagination(FetchContext context) {
         return context.getReferenceObjectField().isResolver()
                && ((ObjectField) context.getReferenceObjectField()).hasForwardPagination();
     }

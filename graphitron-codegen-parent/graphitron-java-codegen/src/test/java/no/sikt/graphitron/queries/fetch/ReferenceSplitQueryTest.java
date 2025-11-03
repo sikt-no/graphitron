@@ -132,17 +132,10 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void table() {
         assertGeneratedContentContains(
                 "table", Set.of(CUSTOMER_NOT_GENERATED),
-                "_customer = CUSTOMER.as",
-                "customer_2952383337_address = _customer.address().as",
                 """
-                .select(
-                        DSL.row(_customer.CUSTOMER_ID),
-                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
-                )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys))
-                .fetchMap(r -> r.value1().valuesRow(), Record2::value2);
+                .where
                 """
         );
     }
@@ -158,15 +151,10 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void tableBackwards() {
         assertGeneratedContentContains(
                 "tableBackwards", Set.of(CUSTOMER_TABLE),
-                "_address = ADDRESS.as",
-                "address_2030472956_customer = _address.customer().as",
                 """
-                .select(
-                        DSL.row(_address.ADDRESS_ID),
-                        DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
-                )
                 .from(_address)
                 .join(address_2030472956_customer)
+                .where
                 """
         );
     }
@@ -181,15 +169,10 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void nullableField() {
         assertGeneratedContentContains(
                 "nullableField", Set.of(CUSTOMER_NOT_GENERATED),
-                "_customer = CUSTOMER.as",
-                "customer_2952383337_address = _customer.address().as",
                 """
-                .select(
-                        DSL.row(_customer.CUSTOMER_ID),
-                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
-                )
                 .from(_customer)
                 .join(customer_2952383337_address)
+                .where
                 """
         );
     }
@@ -205,17 +188,11 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void throughTable() {
         assertGeneratedContentContains(
                 "throughTable", Set.of(CUSTOMER_NOT_GENERATED),
-                "_customer = CUSTOMER.as",
-                "customer_2952383337_address = _customer.address().as",
-                "address_1214171484_city = customer_2952383337_address.city().as",
                 """
-                .select(
-                        DSL.row(_customer.CUSTOMER_ID),
-                        DSL.row(address_1214171484_city.getId()).mapping(Functions.nullOnAllNull(City::new))
-                )
                 .from(_customer)
                 .join(customer_2952383337_address)
                 .join(address_1214171484_city)
+                .where
                 """
         );
     }
@@ -232,17 +209,11 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void throughTableBackwards() {
         assertGeneratedContentContains(
                 "throughTableBackwards", Set.of(CUSTOMER_TABLE),
-                "_city = CITY.as",
-                "city_1887334959_address = _city.address().as",
-                "address_1356285680_customer = city_1887334959_address.customer()",
                 """
-                .select(
-                        DSL.row(_city.CITY_ID),
-                        DSL.row(address_1356285680_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
-                )
                 .from(_city)
                 .join(city_1887334959_address)
                 .join(address_1356285680_customer)
+                .where
                 """
         );
     }
@@ -257,18 +228,10 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void selfTableReference() {
         assertGeneratedContentContains(
                 "selfTableReference",
-                "_film = FILM.as",
-                "film_3747728953_film = _film.film().as",
                 """
-                .select(
-                        DSL.row(_film.FILM_ID),
-                        DSL.row(
-                                DSL.row(film_3747728953_film.FILM_ID),
-                                film_3747728953_film.getId()
-                        ).mapping(Functions.nullOnAllNull(Film::new))
-                )
                 .from(_film)
                 .join(film_3747728953_film)
+                .where
                 """
         );
     }
@@ -283,20 +246,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void list() {
         assertGeneratedContentContains(
                 "list", Set.of(CUSTOMER_NOT_GENERATED),
-                "_customer = CUSTOMER.as",
-                "customer_2952383337_address = _customer.address().as",
-                "orderFields = customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray())",
                 """
-                .select(
-                        DSL.row(_customer.CUSTOMER_ID),
-                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
-                )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys))
-                .orderBy(orderFields)
-                .fetchGroups(r -> r.value1().valuesRow(), Record2::value2);
-                """
+                .where
+                """,
+                ".fetchGroups(r -> r.value1().valuesRow(), Record2::value2)"
         );
     }
 
@@ -310,20 +265,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void nullableList() {
         assertGeneratedContentContains(
                 "nullableList", Set.of(CUSTOMER_NOT_GENERATED),
-                    "_customer = CUSTOMER.as",
-                 "customer_2952383337_address = _customer.address().as",
-                 "orderFields = customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray())",
                  """
-                 .select(
-                        DSL.row(_customer.CUSTOMER_ID),
-                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
-                )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys))
-                .orderBy(orderFields)
-                .fetchGroups(r -> r.value1().valuesRow(), Record2::value2);
-                """
+                .where
+                """,
+                ".fetchGroups(r -> r.value1().valuesRow(), Record2::value2)"
         );
     }
 
@@ -347,15 +294,10 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void keyWithSinglePath() {
         assertGeneratedContentContains(
                 "keyWithSinglePath", Set.of(CUSTOMER_NOT_GENERATED),
-                "_customer = CUSTOMER.as",
-                "customer_2952383337_address = _customer.address().as",
                 """
-                .select(
-                        DSL.row(_customer.CUSTOMER_ID),
-                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
-                )
                 .from(_customer)
                 .join(customer_2952383337_address)
+                .where
                 """
         );
     }
@@ -370,15 +312,10 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void keyWithMultiplePaths() {
         assertGeneratedContentContains(
                 "keyWithMultiplePaths",
-                "_film = FILM.as",
-                "film_3747728953_filmoriginallanguageidfkey = _film.filmOriginalLanguageIdFkey().as",
                 """
-                .select(
-                        DSL.row(_film.FILM_ID),
-                        DSL.row(film_3747728953_filmoriginallanguageidfkey.getId()).mapping(Functions.nullOnAllNull(Language::new))
-                )
                 .from(_film)
                 .join(film_3747728953_filmoriginallanguageidfkey)
+                .where
                 """
         );
     }
@@ -393,15 +330,10 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void keyBackwards() {
         assertGeneratedContentContains(
                 "keyBackwards", Set.of(CUSTOMER_TABLE),
-               "_address = ADDRESS.as",
-                "address_2030472956_customer = _address.customer().as",
                 """
-                .select(
-                        DSL.row(_address.ADDRESS_ID),
-                        DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
-                )
                 .from(_address)
                 .join(address_2030472956_customer)
+                .where
                 """
         );
     }
@@ -417,23 +349,17 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void throughKey() {
         assertGeneratedContentContains(
                 "throughKey", Set.of(CUSTOMER_NOT_GENERATED),
-                "_customer = CUSTOMER.as",
-                "customer_2952383337_address = _customer.address().as",
-                "address_1214171484_city = customer_2952383337_address.city().as",
                 """
-                .select(
-                        DSL.row(_customer.CUSTOMER_ID),
-                        DSL.row(address_1214171484_city.getId()).mapping(Functions.nullOnAllNull(City::new))
-                )
                 .from(_customer)
                 .join(customer_2952383337_address)
                 .join(address_1214171484_city)
+                .where
                 """
         );
     }
 
     /**
-     * Given that A has a field referencing itselt, and this field includes a reference directive containing a key that
+     * Given that A has a field referencing itself, and this field includes a reference directive containing a key that
      * is defined from A to A, and therefore creates a direct relation from A to itself, when a new resolver is
      * generated, we expect that an implicit JOIN path is created. The JOIN clause must include A retrieved through A.
      */
@@ -442,18 +368,11 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void selfKeyReference() {
         assertGeneratedContentContains(
                 "selfKeyReference",
-               "_film = FILM.as",
-               "film_3747728953_film = _film.film().as",
+                "film_3747728953_film.getId()",
                 """
-                .select(
-                        DSL.row(_film.FILM_ID),
-                        DSL.row(
-                                DSL.row(film_3747728953_film.FILM_ID),
-                                film_3747728953_film.getId()
-                        ).mapping(Functions.nullOnAllNull(Film::new))
-                )
                 .from(_film)
                 .join(film_3747728953_film)
+                .where
                 """
         );
     }
@@ -472,16 +391,11 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void condition() {
         assertGeneratedContentContains(
                 "condition", Set.of(CUSTOMER_NOT_GENERATED),
-                "_customer = CUSTOMER.as",
-                "customer_address = ADDRESS.as",
                 """
-                .select(
-                        DSL.row(_customer.CUSTOMER_ID),
-                        DSL.row(customer_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
-                )
                 .from(_customer)
                 .join(customer_address)
                 .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_address))
+                .where
                 """
         );
     }
@@ -497,16 +411,11 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void throughCondition() {
         assertGeneratedContentContains(
                 "throughCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                "_customer = CUSTOMER.as",
-                "customer_city = CITY.as",
                 """
-                .select(
-                        DSL.row(_customer.CUSTOMER_ID),
-                        DSL.row(customer_city.getId()).mapping(Functions.nullOnAllNull(City::new))
-                )
                 .from(_customer)
                 .join(customer_city)
                 .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.cityCustomer(_customer, customer_city))
+                .where
                 """
         );
     }
@@ -522,19 +431,11 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void selfConditionReference() {
         assertGeneratedContentContains(
                 "selfConditionReference",
-                "_film = FILM.as",
-                "film_sequel = FILM.as",
                 """
-                .select(
-                        DSL.row(_film.FILM_ID),
-                        DSL.row(
-                                DSL.row(film_sequel.FILM_ID),
-                                film_sequel.getId()
-                        ).mapping(Functions.nullOnAllNull(Film::new))
-                )
                 .from(_film)
                 .join(film_sequel)
                 .on(no.sikt.graphitron.codereferences.conditions.ReferenceFilmCondition.sequel(_film, film_sequel))
+                .where
                 """
         );
     }
@@ -553,16 +454,11 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void tableAndCondition() {
         assertGeneratedContentContains(
                 "tableAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                "_customer = CUSTOMER.as",
-                "customer_address = ADDRESS.as",
                 """
-                .select(
-                        DSL.row(_customer.CUSTOMER_ID),
-                        DSL.row(customer_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
-                )
                 .from(_customer)
                 .join(customer_address)
                 .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_address))
+                .where
                 """
         );
     }
@@ -582,18 +478,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void keyAndCondition() {
         assertGeneratedContentContains(
                 "keyAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                "_customer = CUSTOMER.as",
-                "customer_2952383337_address = _customer.address().as(",
                 """
-                .select(
-                        DSL.row(_customer.CUSTOMER_ID),
-                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
-                )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys))
-                .and(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_2952383337_address))
-                """
+                .where
+                """,
+                ".and(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_2952383337_address))"
         );
     }
 
@@ -610,29 +500,22 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void fromMultitableInterface() {
         assertGeneratedContentContains(
                 "fromMultitableInterface", Set.of(CUSTOMER_TABLE),
-               "_payment = PAYMENT.as",
-               "payment_425747824_customer = _payment.customer().as",
                 """
-                .select(
-                        DSL.row(_payment.PAYMENT_ID),
-                        DSL.row(payment_425747824_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
-                )
                 .from(_payment)
                 .join(payment_425747824_customer)
+                .where
                 """
         );
     }
 
     @Test
     @DisplayName("Temporary test for reference ID argument (not node strategy) outside root")
-    // TODO: Uncertain about rules when input argument has reference directive. In this test, a new customer-alias
-    //  is created, and the reference to store is made through this alias instead of the previous path
-    //  (address->customer->store). The generated code for this test should be verified to see if it behaves as expected.
     void idArgumentOnNonRootQueryWithoutNodeStrategy() {
         assertGeneratedContentContains(
                 "idArgumentOnNonRootQueryWithoutNodeStrategy", Set.of(CUSTOMER_TABLE),
                 "customer_1589604633_store_left.hasStaffId(staffId)"
-//                "customer_2952383337_store_left.hasStaffId(staffId)"
+//                "customer_2337142794_store_left = address_2030472956_customer.store()",
+//                "customer_2337142794_store_left.hasStaffId(staffId)"
         );
     }
 

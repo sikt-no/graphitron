@@ -117,15 +117,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                     .add(where)
                     .add(createSelectConditions(context.getConditionList(), !where.isEmpty()));
 
-            aliasSet.addAll(isResolverWithPagination(target)
-                           ? refContext.getAliasSet()
-                           : context.getAliasSet().size() > 1
-                             ? context.getAliasSet().stream()
-                                      .findFirst()
-                                      .map(startAlias -> context.getAliasSet().stream().filter(
-                                            it -> !it.equals(startAlias)).collect(Collectors.toSet()))
-                                      .orElse(refContext.getAliasSet())
-                             : refContext.getAliasSet());
+            aliasSet.addAll(getRelevantAliasSet(target, context, refContext));
 
             codeForImplementations.declare(getCountVariableName(implementation.getName()), countForImplementation.build());
         });
@@ -168,6 +160,31 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
     private static String getCountVariableName(String implementationName) {
         return String.format("count%s", implementationName);
+    }
+
+    private LinkedHashSet<AliasWrapper> getRelevantAliasSet(
+            ObjectField target,
+            FetchContext context,
+            FetchContext refContext
+    ) {
+        if (isResolverWithPagination(target)) {
+            return new LinkedHashSet<>(refContext.getAliasSet());
+        }
+
+        if (context.getAliasSet().size() > 1) {
+            return context
+                    .getAliasSet()
+                    .stream()
+                    .findFirst()
+                    .map(startAlias -> context
+                            .getAliasSet()
+                            .stream()
+                            .filter(it -> !it.equals(startAlias))
+                            .collect(Collectors.toCollection(LinkedHashSet::new)))
+                    .orElse(new LinkedHashSet<>(refContext.getAliasSet()));
+        }
+
+        return new LinkedHashSet<>(refContext.getAliasSet());
     }
 
     @NotNull

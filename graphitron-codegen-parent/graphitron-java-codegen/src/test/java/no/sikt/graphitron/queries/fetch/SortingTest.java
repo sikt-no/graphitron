@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.REFERENCE_PG_USER_MAPPING_CONDITION;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION;
 
 @DisplayName("Sorting - Queries with default ordering")
 public class SortingTest extends GeneratorTest {
@@ -29,7 +29,7 @@ public class SortingTest extends GeneratorTest {
 
     @Override
     protected Set<SchemaComponent> getComponents() {
-        return makeComponents(CUSTOMER_TABLE);
+        return makeComponents(CUSTOMER_CONNECTION);
     }
 
     @Override
@@ -60,6 +60,23 @@ public class SortingTest extends GeneratorTest {
 //                .where(DSL.row(_address.ADDRESS_ID).in(addressResolverKeys))
 //                .orderBy(orderFields)
 //                """
+        );
+    }
+
+    @Test
+    @DisplayName("Default sorting on list with splitQuery and pagination")
+    void splitQueryAndPagination() {
+        assertGeneratedContentContains("splitQueryAndPagination",
+                "orderFields = address_2030472956_customer",
+                """
+                .orderBy(orderFields)
+               .seek(QueryHelper.getOrderByValues(ctx, orderFields, after))
+               .limit
+               """,
+               """
+               ))).from(_address)
+               .where
+               """
         );
     }
 

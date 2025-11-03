@@ -403,7 +403,8 @@ public class FetchContext {
                 getReferenceTable(),
                 fieldReferences,
                 true,
-                false
+                false,
+                field.isInput()
         );
         return !newJoinSequence.isEmpty() ? newJoinSequence : currentSequence;
     }
@@ -425,7 +426,8 @@ public class FetchContext {
                 getReferenceOrPreviousTable(),
                 referenceObjectField.getFieldReferences(),
                 false,
-                true
+                true,
+                referenceObjectField.isInput()
         );
 
         var updatedJoinSequence = !joinSequenceFromFieldReferences.isEmpty()
@@ -454,13 +456,14 @@ public class FetchContext {
         }
 
         // Add fake reference to the reference table so that the last step is also executed if no table or key is
-        // specified. If method creates an alias that has previously been generated, the new alias will be "ignored"
+        // specified. If method creates an alias that has previously been generated, the new alias will be ignored
         var finalSequence = resolveNextSequence(
                 new FieldReference(refTable),
                 new TableRelation(lastTable, refTable),
                 updatedJoinSequence,
                 false,
-                this.aliasSet.isEmpty()
+                this.aliasSet.isEmpty(),
+                referenceObjectField.isInput()
         );
 
         if (!finalSequence.isEmpty()) {
@@ -485,7 +488,8 @@ public class FetchContext {
             JOOQMapping refTable,
             List<FieldReference> directiveReferences,
             boolean requiresLeftJoin,
-            boolean checkLastRef
+            boolean checkLastRef,
+            boolean isCurrentFieldAnInput
     ) {
         var previousTable = joinSequence.isEmpty()
                             ? getPreviousTable()
@@ -518,7 +522,8 @@ public class FetchContext {
                     relations.get(i),
                     joinSequence,
                     requiresLeftJoin,
-                    i < 1
+                    i < 1,
+                    isCurrentFieldAnInput
             );
         }
 
@@ -540,22 +545,23 @@ public class FetchContext {
             TableRelation relation,
             JoinListSequence joinSequence,
             boolean requiresLeftJoin,
-            boolean checkResolver
+            boolean applyResolverCheck,
+            boolean isCurrentFieldAnInput
     ) {
         var previousTable = relation.getFrom();
         var targetTable = relation.getToTable();
 
-        // This indicates that the field we are processing is a field in a type referenced from the root type, Query.
+        // Are we processing a field in a type referenced from the root type, Query.
         if (previousTable == null) {
             return makeAlias(targetTable);
         }
 
-        // When field has a @splitQuery directive or field has arguments and are not in the root type Query.
-        if (getReferenceObjectField().isResolver() && this.previousContext == null && checkResolver) {
-            joinSequence = makeAlias(previousTable);
+        if (getReferenceObjectField().isResolver() && this.previousContext == null && applyResolverCheck) {
+            if (!isCurrentFieldAnInput) {
+                joinSequence = makeAlias(previousTable);
+            }
 
-            // Do not add additional joins or aliases for connection objects, as these are handled in the subquery
-            // itself.
+            // Skip additional joins or aliases for connection objects, as these are handled in the subquery itself.
             if (processedSchema.isConnectionObject(getReferenceObjectField())) {
                 return joinSequence;
             }

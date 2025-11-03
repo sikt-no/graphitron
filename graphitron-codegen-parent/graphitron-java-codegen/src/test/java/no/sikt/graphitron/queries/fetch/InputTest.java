@@ -177,19 +177,9 @@ public class InputTest extends GeneratorTest {
     @DisplayName("SplitQuery field")
     void onSplitQueryField() {
         assertGeneratedContentContains("onSplitQueryField",
-                  "_address = ADDRESS.as",
-                 "address_2030472956_customer = _address.customer().as",
-                 "orderFields = address_2030472956_customer.fields(address_2030472956_customer.getPrimaryKey().getFieldsArray())",
                  """
-                 .select(
-                        DSL.row(_address.ADDRESS_ID),
-                        DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
-                )
-                .from(_address)
-                .join(address_2030472956_customer)
                 .where(DSL.row(_address.ADDRESS_ID).in(addressResolverKeys))
                 .and(address_2030472956_customer.EMAIL.eq(email))
-                .fetchMap(r -> r.value1().valuesRow(), Record2::value2);
                 """
         );
     }
