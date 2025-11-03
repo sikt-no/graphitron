@@ -96,24 +96,24 @@ public class NodeIdStrategy {
     private void setFields(UpdatableRecordImpl<?> record, String id, String typeId, Field<?>... keyColumnFields) {
         var values = new String[keyColumnFields.length];
         if (id != null) {
-            values = unpack(typeId, keyColumnFields, id);
+            values = unpackIdValues(typeId, keyColumnFields, id);
         }
         record.from(values, keyColumnFields);
     }
 
     private static List<? extends RowN> getRows(String typeId, Field<?>[] fields, Set<String> base64Ids) {
         return base64Ids.stream().map(base64Id -> {
-            String[] values = unpack(typeId, fields, base64Id);
+            String[] values = unpackIdValues(typeId, fields, base64Id);
 
             return row(IntStream.range(0, values.length)
                     .mapToObj(i -> {
                         var f = fields[i];
-                        return fieldValue(f, values[i]);
+                        return getFieldValue(f, values[i]);
                     }).toList());
         }).toList();
     }
 
-    private static String[] unpack(String typeId, Field<?>[] fields, String base64Id) {
+    public static String[] unpackIdValues(String typeId, Field<?>[] fields, String base64Id) {
         String id = dec(base64Id);
         var foundTypeId = getTypeIdPartOf(id, id);
         var keyPart = id.substring(id.indexOf(':') + 1);
@@ -134,7 +134,7 @@ public class NodeIdStrategy {
         return values;
     }
 
-    private static <T> T fieldValue(Field<T> field, String value) {
+    public static <T> T getFieldValue(Field<T> field, String value) {
         var fieldType = field.getDataType().getType();
         if (fieldType.isAssignableFrom(OffsetDateTime.class)) {
             return (T) OffsetDateTime.parse(value);
