@@ -1,0 +1,11 @@
+mutation {
+    updateTitleAndLanguageForFilm(
+        in: [{languageId: "TGFuZ3VhZ2U6Mw", title: "UPDATE_LANGUAGE_AND_TITLE", filmId: "RmlsbTo5Ng"}]
+    ) {
+        id
+        title
+        language {
+            id
+        }
+    }
+}
