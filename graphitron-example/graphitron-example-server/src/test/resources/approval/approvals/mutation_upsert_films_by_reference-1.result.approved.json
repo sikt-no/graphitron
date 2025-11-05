@@ -1,20 +1,20 @@
 {
-    "data": {
-        "upsertFilmsByRef": [
-            {
-                "id": "RmlsbTo5Ng",
-                "title": "UPDATE_LANGUAGE_AND_TITLE",
-                "language": {
-                    "id": "TGFuZ3VhZ2U6Mw"
-                }
-            },
-            {
-                "id": "RmlsbTo5OTk5",
-                "title": "INSERTED",
-                "language": {
-                    "id": "TGFuZ3VhZ2U6Mw"
-                }
-            }
-        ]
-    }
+  "data": {
+    "upsertFilmWithTitleAndLanguage": [
+      {
+        "id": "RmlsbTo5Ng",
+        "title": "UPDATE_LANGUAGE_AND_TITLE",
+        "language": {
+          "id": "TGFuZ3VhZ2U6Mw"
+        }
+      },
+      {
+        "id": "RmlsbTo5OTk5",
+        "title": "INSERTED",
+        "language": {
+          "id": "TGFuZ3VhZ2U6Mw"
+        }
+      }
+    ]
+  }
 }
