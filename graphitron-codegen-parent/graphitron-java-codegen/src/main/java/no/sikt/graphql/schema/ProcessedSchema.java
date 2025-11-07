@@ -19,6 +19,7 @@ import no.sikt.graphitron.validation.ProcessedDefinitionsValidator;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import org.jetbrains.annotations.NotNull;
+import org.jooq.Key;
 
 import java.util.*;
 import java.util.function.Function;
@@ -26,6 +27,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
+import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -465,6 +467,18 @@ public class ProcessedSchema {
         return nodeTypes.values().stream()
                 .filter(it -> it.getTable().equals(table))
                 .toList();
+    }
+
+    public Optional<LinkedList<String>> getKeyColumnsForNodeType(RecordObjectSpecification<?> type) {
+        if (!isNodeType(type.getName())) {
+            return Optional.empty();
+        }
+        if (!type.getKeyColumns().isEmpty()) {
+            return Optional.of(type.getKeyColumns());
+        }
+
+        return getPrimaryKeyForTable(type.getTable().getName())
+                .map(f -> new LinkedList<>(getJavaFieldNamesForKey(type.getTable().getName(), f)));
     }
 
     /**
@@ -998,7 +1012,7 @@ public class ProcessedSchema {
         var possibleMatches = getObject(initialTarget)
                 .getFields()
                 .stream()
-                .filter(it -> !it.getName().equals(ERROR_FIELD.getName()))
+                .filter(it -> !isExceptionOrExceptionUnion(it))
                 .toList();
         return possibleMatches.size() == 1 ? Optional.of(possibleMatches.get(0)) : Optional.empty();
     }

@@ -8,6 +8,7 @@ import no.sikt.graphitron.definitions.interfaces.TypeResolverTarget;
 import no.sikt.graphitron.definitions.keys.EntityKeySet;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 
+import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -93,7 +94,7 @@ public class UnionDefinition extends RecordObjectDefinition<UnionTypeDefinition,
     }
 
     @Override
-    public List<String> getKeyColumns() {
+    public LinkedList<String> getKeyColumns() {
         return null;
     }
 

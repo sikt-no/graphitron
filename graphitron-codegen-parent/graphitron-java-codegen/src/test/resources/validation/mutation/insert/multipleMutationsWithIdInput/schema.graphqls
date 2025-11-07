@@ -1,0 +1,4 @@
+type Mutation {
+    mutation1(in: CustomerInputTable!): Customer @mutation(typeName: INSERT)
+    mutation2(in: CustomerInputTable!): Customer @mutation(typeName: INSERT)
+}

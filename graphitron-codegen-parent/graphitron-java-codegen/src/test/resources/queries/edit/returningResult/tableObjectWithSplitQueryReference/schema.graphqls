@@ -1,0 +1,16 @@
+type Mutation {
+  mutation(in: CustomerInput!): Customer @mutation(typeName: INSERT)
+}
+
+input CustomerInput @table(name: "CUSTOMER") {
+    customerId: Int! @field(name: "CUSTOMER_ID")
+}
+
+type Customer implements Node @node @table {
+    id: ID!
+    address: Address @splitQuery
+}
+
+type Address @table {
+    addressId: Int @field(name: "ADDRESS_ID")
+}

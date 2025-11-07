@@ -129,6 +129,10 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
         return hasMutationType() && getMutationType().equals(MutationType.DELETE);
     }
 
+    public boolean isInsertMutation() {
+        return hasMutationType() && getMutationType().equals(MutationType.INSERT);
+    }
+
     /**
      * @return List of all input arguments for this field.
      */

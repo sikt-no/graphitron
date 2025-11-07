@@ -1,7 +1,10 @@
 mutation {
     insertFilm(in: {languageId: "TGFuZ3VhZ2U6Mw", title: "Jojo's Bizarre Adventure: The Motion Picture"}) {
         title
-        language {
+        language { # Subquery reference
+            id
+        }
+        originalLanguage { # splitQuery reference
             id
         }
     }

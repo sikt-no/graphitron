@@ -33,9 +33,9 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.groupingBy;
-import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForDeletes;
+import static no.sikt.graphitron.configuration.GeneratorConfig.*;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
-import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getForeignKeyForNodeIdReference;
+import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getForeignKeyForNodeIdReference;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphitron.validation.ValidationHandler.*;
@@ -1166,8 +1166,9 @@ public class ProcessedDefinitionsValidator {
 
     private void validateMutationWithReturning(ObjectField field) {
         boolean isDeleteWithReturning = field.isDeleteMutation() && !useJdbcBatchingForDeletes();
+        boolean isInsertWithReturning = field.isInsertMutation() && !useJdbcBatchingForInserts();
 
-        if (!isDeleteWithReturning) {
+        if (!isDeleteWithReturning && !isInsertWithReturning) {
             return;
         }
         /* Validate output */
@@ -1183,9 +1184,19 @@ public class ProcessedDefinitionsValidator {
         if (recordInputs.isEmpty()) {
             addErrorMessage("Field %s is a generated %s mutation, but does not link any input to tables.", field.formatPath(), field.getMutationType());
             return;
+        } else if (recordInputs.size() != 1) {
+            addErrorMessage("Field %s is a generated %s mutation, but has multiple input records. This is not supported.", field.formatPath(), field.getMutationType());
+            return;
         }
 
         var input = recordInputs.stream().findFirst().orElseThrow();
+
+        if (isInsertWithReturning && !shouldMakeNodeStrategy() && schema.getInputType(input).getFields().stream().anyMatch(AbstractField::isID)) {
+            addErrorMessage("%s is a generated insert field with ID input, but this is only supported with node ID strategy enabled.",
+                    field.formatPath()
+            );
+            return;
+        }
 
         var inputTable = schema.getRecordType(input).getTable();
         var outputTable = schema.isScalar(dataField.get()) ? inputTable : schema.getRecordType(dataField.get()).getTable();
@@ -1198,6 +1209,9 @@ public class ProcessedDefinitionsValidator {
 
         if (isDeleteWithReturning) {
             validateDeleteMutation(field, dataField.orElse(null), input);
+        }
+        if (isInsertWithReturning) {
+            validateInsertMutation(field, input);
         }
     }
 
@@ -1268,6 +1282,15 @@ public class ProcessedDefinitionsValidator {
             );
         }
 
+    }
+
+    private void validateInsertMutation(ObjectField field, InputField input) {
+        if (input.isNullable() || input.isIterableWrappedWithNullableContent()) {
+            addErrorMessage("Field %s is a generated %s mutation, but has nullable input. This is not supported. Consider changing the input type from '%s' to '%s'.",
+                    field.formatPath(), field.getMutationType(),
+                    input.formatSchemaType(),
+                    input.isIterableWrapped() ? "[" + input.getTypeName() + "!]!" : input.getTypeName() + "!");
+        }
     }
 
     private Set<GenerationField> findSubqueryReferenceFieldsForTableObject(GenerationField target, JOOQMapping targetTable, int recursion) {

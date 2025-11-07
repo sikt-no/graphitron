@@ -1,0 +1,11 @@
+type Mutation {
+  mutation(in: CustomerInput!): ID @mutation(typeName: INSERT) @nodeId(typeName: "Customer")
+}
+
+type Customer implements Node @node(typeId: "C", keyColumns: "CUSTOMER_ID") @table {
+    id: ID!
+}
+
+input CustomerInput @table(name: "CUSTOMER") {
+    id: ID! @nodeId(typeName: "Customer")
+}

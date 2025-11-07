@@ -5,6 +5,7 @@ import no.sikt.graphitron.definitions.keys.EntityKeySet;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphql.directives.GenerationDirective;
 
+import java.util.LinkedList;
 import java.util.List;
 
 /**
@@ -78,5 +79,5 @@ public interface RecordObjectSpecification<T extends GenerationField> extends Ob
 
     public boolean hasCustomKeyColumns();
 
-    public List<String> getKeyColumns();
+    public LinkedList<String> getKeyColumns();
 }

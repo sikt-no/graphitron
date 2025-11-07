@@ -1,0 +1,10 @@
+type Mutation {
+  mutation(in: CustomerInput!): ID @mutation(typeName: INSERT) @nodeId(typeName: "CustomerNode")
+}
+
+input CustomerInput @table(name: "CUSTOMER") {
+    addressId: Int! @field(name: "ADDRESS_ID")
+    id: ID!
+    firstName: String! @field(name: "FIRST_NAME")
+    lastName: String! @field(name: "LAST_NAME")
+}

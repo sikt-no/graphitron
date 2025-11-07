@@ -148,6 +148,8 @@ type Film implements Node @node @table {
     title: String
     description: String
     language: Language @reference(path: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
+    originalLanguage: Language @reference(path: {key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}) @splitQuery
+    rentalDuration: Int @field(name: "RENTAL_DURATION")
 }
 
 input FilmLookupInput {

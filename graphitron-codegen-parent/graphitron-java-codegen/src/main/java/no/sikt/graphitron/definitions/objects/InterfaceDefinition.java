@@ -10,6 +10,7 @@ import no.sikt.graphitron.definitions.keys.EntityKeySet;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphql.directives.GenerationDirective;
 
+import java.util.LinkedList;
 import java.util.List;
 
 import static no.sikt.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
@@ -145,7 +146,7 @@ public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeD
     }
 
     @Override
-    public List<String> getKeyColumns() {
+    public LinkedList<String> getKeyColumns() {
         return null;
     }
 }
