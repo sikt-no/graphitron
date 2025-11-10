@@ -38,8 +38,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
 
 public class ParameterSpecTest {
-    @Rule
-    public final CompilationRule compilation = new CompilationRule();
+    @org.junit.ClassRule
+    public static final CompilationRule compilation = new CompilationRule();
 
     private Elements elements;
 
