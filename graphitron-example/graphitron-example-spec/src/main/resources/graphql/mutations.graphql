@@ -1,0 +1,43 @@
+type Mutation {
+    insertFilm(in: FilmCreateInput): Film @mutation(typeName: INSERT)
+
+    # TODO: This case fails if the inputs are not in a record. Technically, we have the table in Film, and that should suffice to resolve this.
+    updateFilmName(in: FilmNameInput): Film @mutation(typeName: UPDATE)
+    updateFilmNames(in: [FilmNameInput]): [Film] @mutation(typeName: UPDATE)
+    updateCityName(in: CityNameInput): City @mutation(typeName: UPDATE)
+    updateTitleAndLanguageForFilm(in: [FilmWithRefInput]): [Film] @mutation(typeName: UPDATE)
+
+    upsertFilmWithTitleAndLanguage(in: [FilmWithRefInput]): [Film] @mutation(typeName: UPSERT)
+    upsertCategory(in: CategoryNameInput): Category @mutation(typeName: UPSERT)
+    upsertCategories(in: [CategoryNameInput]): [Category] @mutation(typeName: UPSERT)
+
+    deleteFilmID(in: FilmInput): ID @nodeId(typeName: "Film") @mutation(typeName: DELETE)
+    deleteFilmIDListed(in: [FilmInput!]!): [ID] @nodeId(typeName: "Film") @mutation(typeName: DELETE)
+    deleteCategories(in: [CategoryInput!]!): [ID] @nodeId(typeName: "Category") @mutation(typeName: DELETE)
+}
+
+input FilmNameInput @table(name: "FILM") {
+    filmId: ID! @nodeId(typeName: "Film")
+    title: String
+}
+
+input CityNameInput @table(name: "CITY") {
+    cityId: ID! @nodeId(typeName: "City")
+    name: String! @field(name: "CITY_")
+}
+
+input FilmCreateInput @table(name: "FILM") {
+    languageId: ID! @nodeId(typeName: "Language") @reference(path: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
+    title: String!
+}
+
+input FilmWithRefInput @table(name: "FILM") {
+    filmId: ID @nodeId(typeName: "Film")
+    languageId: ID @nodeId(typeName: "Language") @reference(path: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
+    title: String!
+}
+
+input CategoryNameInput @table(name: "CATEGORY") {
+    categoryId: ID! @nodeId(typeName: "Category")
+    name: String
+}
