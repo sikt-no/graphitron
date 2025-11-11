@@ -51,14 +51,14 @@ import static no.sikt.graphitron.javapoet.TestUtil.findFirst;
 import static org.junit.Assert.fail;
 
 public final class MethodSpecTest {
-    @Rule
-    public final CompilationRule compilation = new CompilationRule();
+    @org.junit.ClassRule
+    public static final CompilationRule compilation = new CompilationRule();
 
-    private Elements elements;
-    private Types types;
+    private static Elements elements;
+    private static Types types;
 
-    @Before
-    public void setUp() {
+    @org.junit.BeforeClass
+    public static void setUp() {
         elements = compilation.getElements();
         types = compilation.getTypes();
     }

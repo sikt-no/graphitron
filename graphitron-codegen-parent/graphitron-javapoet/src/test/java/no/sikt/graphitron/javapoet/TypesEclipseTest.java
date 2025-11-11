@@ -146,8 +146,8 @@ public final class TypesEclipseTest extends AbstractTypesTest {
         }
     }
 
-    @Rule
-    public final CompilationRule compilation = new CompilationRule();
+    @org.junit.ClassRule
+    public static final CompilationRule compilation = new CompilationRule();
 
     @Override
     protected Elements getElements() {

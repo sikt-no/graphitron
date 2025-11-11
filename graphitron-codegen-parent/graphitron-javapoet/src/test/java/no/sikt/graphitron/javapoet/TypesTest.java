@@ -27,8 +27,8 @@ import javax.lang.model.util.Types;
 
 @RunWith(JUnit4.class)
 public final class TypesTest extends AbstractTypesTest {
-    @Rule
-    public final CompilationRule compilation = new CompilationRule();
+    @org.junit.ClassRule
+    public static final CompilationRule compilation = new CompilationRule();
 
     @Override
     protected Elements getElements() {

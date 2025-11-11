@@ -40,10 +40,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 @RunWith(JUnit4.class)
 public final class JavaFileTest {
 
-    @Rule
-    public final CompilationRule compilation = new CompilationRule();
+    @org.junit.ClassRule
+    public static final CompilationRule compilation = new CompilationRule();
 
-    private TypeElement getElement(Class<?> clazz) {
+    private static TypeElement getElement(Class<?> clazz) {
         return compilation.getElements().getTypeElement(clazz.getCanonicalName());
     }
 

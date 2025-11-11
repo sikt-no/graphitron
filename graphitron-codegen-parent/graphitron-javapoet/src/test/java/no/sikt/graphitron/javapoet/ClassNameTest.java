@@ -33,8 +33,8 @@ import static org.junit.Assert.fail;
 
 @RunWith(JUnit4.class)
 public final class ClassNameTest {
-    @Rule
-    public CompilationRule compilationRule = new CompilationRule();
+    @org.junit.ClassRule
+    public static CompilationRule compilationRule = new CompilationRule();
 
     @Test
     public void bestGuessForString_simpleClass() {
