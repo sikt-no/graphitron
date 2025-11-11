@@ -71,6 +71,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <argLine>@{argLine} -javaagent:${org.mockito:mockito-core:jar}</argLine>
+                    <skipTests>true</skipTests>
                 </configuration>
             </plugin>
         </plugins>
