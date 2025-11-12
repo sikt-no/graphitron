@@ -96,14 +96,14 @@ public class NodeIdStrategy {
     private void setFields(UpdatableRecordImpl<?> record, String id, String typeId, Field<?>... keyColumnFields) {
         var values = new String[keyColumnFields.length];
         if (id != null) {
-            values = unpackIdValues(typeId, keyColumnFields, id);
+            values = unpackIdValues(typeId, id, keyColumnFields);
         }
         record.from(values, keyColumnFields);
     }
 
     private List<? extends RowN> getRows(String typeId, Field<?>[] fields, Set<String> base64Ids) {
         return base64Ids.stream().map(base64Id -> {
-            String[] values = unpackIdValues(typeId, fields, base64Id);
+            String[] values = unpackIdValues(typeId, base64Id, fields);
 
             return row(IntStream.range(0, values.length)
                     .mapToObj(i -> {
@@ -113,7 +113,7 @@ public class NodeIdStrategy {
         }).toList();
     }
 
-    public String[] unpackIdValues(String typeId, Field<?>[] fields, String base64Id) {
+    public String[] unpackIdValues(String typeId, String base64Id, Field<?>... fields) {
         String id = dec(base64Id);
         var foundTypeId = getTypeIdPartOf(id, id);
         var keyPart = id.substring(id.indexOf(':') + 1);
