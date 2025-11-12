@@ -3,7 +3,6 @@ package no.sikt.graphitron.generators.datafetchers.operations;
 import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.ArgumentField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
@@ -24,8 +23,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
-import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
+import static no.sikt.graphitron.configuration.GeneratorConfig.*;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
@@ -48,17 +46,18 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        var parser = new InputParser(target, processedSchema);
+        var isMutationReturningData = target.isDeleteMutation() && !useJdbcBatchingForDeletes();
+        var parser = new InputParser(target, processedSchema, !isMutationReturningData);
         var methodCall = getMethodCall(target, parser, false); // Note, do this before declaring services.
-        var mutationMethodCall = localObject.getName().equals(SCHEMA_MUTATION.getName()) ? getMethodCall(target, parser, true) : CodeBlock.empty();
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
         return getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(getReturnTypeName(target))))
                 .beginControlFlow("return $N ->", VAR_ENV)
                 .addCode(extractParams(target))
                 .addCode(declareContextArgs(target))
-                .addCode(transformInputs(target, parser))
+                .addCodeIf(!isMutationReturningData || recordValidationEnabled(), () -> transformInputs(target, parser))
                 .addCode(declareAllServiceClasses(target.getName()))
-                .addCode(mutationMethodCall)
+                .addCodeIf(!isMutationReturningData  && localObject.getName().equals(SCHEMA_MUTATION.getName()),
+                        () -> getMethodCall(target, parser, true))
                 .addCode(methodCall)
                 .endControlFlow("") // Keep this, logic to set semicolon only kicks in if a string is set.
                 .build();
@@ -125,9 +124,12 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
     private CodeBlock callQueryBlockInner(ObjectField target, String objectToCall, String method, InputParser parser, CodeBlock queryFunction) {
         // Is this query call the result of a delete operation?
-        var isDeleteMutationWithoutService = target.hasMutationType() && target.getMutationType().equals(MutationType.DELETE);
-        if (isDeleteMutationWithoutService) {
-            return CodeBlock.of("$L,\n$L", queryFunction, filterDeleteIDsFunction(target));
+        if (target.isDeleteMutation()) {
+            if (useJdbcBatchingForDeletes()) {
+                return CodeBlock.of("$L,\n$L", queryFunction, filterDeleteIDsFunction(target));
+            }
+            return !processedSchema.inferDataTargetForMutation(target).map(target::equals).orElse(false) ?
+                    CodeBlock.of("$L,\n$L", queryFunction, wrapMutationOutputFunction(target)) :  queryFunction;
         }
 
         var object = processedSchema.getObjectOrConnectionNode(target);
@@ -168,6 +170,16 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 CodeBlock.ofIf(shouldMakeNodeStrategy(), "$N, ", VAR_NODE_STRATEGY),
                 ""
         );
+    }
+
+    /**
+     * @return CodeBlock for wrapping output from mutations. Does not use recursion to check for arbitrarily deep nesting.
+     */
+    private CodeBlock wrapMutationOutputFunction(ObjectField target) {
+        var isRecord = processedSchema.isRecordType(target);
+        if (!isRecord) return CodeBlock.empty();
+        var recordType = processedSchema.getRecordType(target);
+        return  CodeBlock.of("($1N) -> new $2T($1N)", VAR_RESULT, recordType.getGraphClassName());
     }
 
     /**
@@ -252,9 +264,10 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         return target.getArguments().stream().filter(AbstractField::isID).findFirst().orElse(null);
     }
 
-    private static String getFetcherMethodName(ObjectField target, RecordObjectSpecification<?> localObject) {
-        if (target.hasMutationType() && target.getMutationType().equals(MutationType.DELETE)) {
-            return "loadDelete";
+    private String getFetcherMethodName(ObjectField target, RecordObjectSpecification<?> localObject) {
+        if (target.isDeleteMutation()) {
+            if (useJdbcBatchingForDeletes()) return "loadDelete";
+            return processedSchema.isObject(target) && !processedSchema.hasTableObject(target) ? "loadWrapped" : "load";
         }
 
         if (!localObject.isOperationRoot() && target.isIterableWrapped() && target.isNonNullable())  {

@@ -14,6 +14,8 @@ type Mutation {
     deleteFilmID(in: FilmInput): ID @nodeId(typeName: "Film") @mutation(typeName: DELETE)
     deleteFilmIDListed(in: [FilmInput!]!): [ID] @nodeId(typeName: "Film") @mutation(typeName: DELETE)
     deleteCategories(in: [CategoryInput!]!): [ID] @nodeId(typeName: "Category") @mutation(typeName: DELETE)
+    deleteCategoriesWrapped(in: [CategoryInput!]!): DeleteCategoriesResult @mutation(typeName: DELETE)
+    deleteCategoriesByPkAndName(in: [CategoryPkAndNameInput!]!): [ID] @nodeId(typeName: "Category") @mutation(typeName: DELETE)
 }
 
 input FilmNameInput @table(name: "FILM") {
@@ -40,4 +42,24 @@ input FilmWithRefInput @table(name: "FILM") {
 input CategoryNameInput @table(name: "CATEGORY") {
     categoryId: ID! @nodeId(typeName: "Category")
     name: String
+}
+
+input CategoryPkAndNameInput @table(name: "CATEGORY") {
+    categoryId: Int! @field(name: "CATEGORY_ID")
+    name: String
+}
+
+type DeleteCategoriesResult {
+    categories: [DeletedCategory]
+    errors: [DeleteCategoryDummyError]
+}
+
+type DeletedCategory @table(name: "Category"){
+    id: ID! @nodeId(typeName: "Category")
+    categoryId: Int! @field(name: "CATEGORY_ID")
+}
+
+type DeleteCategoryDummyError implements Error @error(handlers: []) {
+    path: [String!]!
+    message: String!
 }
