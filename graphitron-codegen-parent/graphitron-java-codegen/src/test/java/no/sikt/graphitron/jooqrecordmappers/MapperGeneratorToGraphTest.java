@@ -165,6 +165,14 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("SplitQuery field with key provided in reference directive")
+    void withSplitQueryReferenceWithKey() {
+        assertGeneratedContentContains("withSplitQueryReferenceWithKey",
+                "if (_iv_select.contains(_iv_pathHere + \"address\")) {customer.setAddressKey(DSL.row(itCustomerRecord.getCustomerId()));}"
+        );
+    }
+
+    @Test
     @DisplayName("SplitQuery list")
     void withSplitQueryList() {
         assertGeneratedContentContains("withSplitQueryList",

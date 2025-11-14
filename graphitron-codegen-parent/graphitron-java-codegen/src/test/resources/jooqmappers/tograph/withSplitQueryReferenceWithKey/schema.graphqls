@@ -1,0 +1,11 @@
+type Query {
+  query: Customer @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Customer @table {
+  address: Address @splitQuery  @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
+}
+
+type Address @table {
+  id: ID!
+}

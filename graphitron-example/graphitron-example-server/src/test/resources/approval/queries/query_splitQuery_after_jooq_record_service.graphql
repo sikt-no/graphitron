@@ -5,5 +5,9 @@
             id
             addressLine1
         }
+        addressSplitQueryWithKey {
+            id
+            addressLine1
+        }
     }
 }

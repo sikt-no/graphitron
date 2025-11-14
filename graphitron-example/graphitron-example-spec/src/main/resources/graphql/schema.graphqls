@@ -87,6 +87,7 @@ type Customer implements Node @node @table {
     emailAsId: ID @field(name: "EMAIL")
     address: Address!
     addressSplitQuery: Address @splitQuery
+    addressSplitQueryWithKey: Address @splitQuery @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
 }
 
 type CustomerName {
