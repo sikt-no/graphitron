@@ -5,6 +5,10 @@
             "addressSplitQuery": {
                 "id": "QWRkcmVzczo3",
                 "addressLine1": "692 Joliet Street"
+            },
+            "addressSplitQueryWithKey": {
+                "id": "QWRkcmVzczo3",
+                "addressLine1": "692 Joliet Street"
             }
         }
     }
