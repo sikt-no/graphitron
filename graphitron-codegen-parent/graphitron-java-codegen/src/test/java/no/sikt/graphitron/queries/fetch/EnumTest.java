@@ -30,9 +30,9 @@ public class EnumTest extends GeneratorTest {
     void inputJOOQ() {
         assertGeneratedContentContains(
                 "input/jOOQ", Set.of(DUMMY_ENUM_CONVERTED),
-                ", DummyEnumConverted e,",
+                ", DummyEnumConverted _mi_e,",
                 "e != null ? _a_film.RATING.convert(DummyEnumConverted.class,",
-                ".eq(e) : DSL.noCondition()"
+                ".eq(_mi_e) : DSL.noCondition()"
         );
     }
 
@@ -41,9 +41,9 @@ public class EnumTest extends GeneratorTest {
     void inputString() {
         assertGeneratedContentContains(
                 "input/string", Set.of(DUMMY_ENUM),
-                ", DummyEnum e,",
+                ", DummyEnum _mi_e,",
                 "e != null ? _a_film.RATING.convert(DummyEnum.class,",
-                ".eq(e) : DSL.noCondition()"
+                ".eq(_mi_e) : DSL.noCondition()"
         );
     }
 
@@ -52,7 +52,7 @@ public class EnumTest extends GeneratorTest {
     void jOOQRecord() {
         assertGeneratedContentContains(
                 "input/jOOQRecord", Set.of(DUMMY_ENUM_CONVERTED),
-                "inRecord.getRating() != null ? _a_film.RATING.eq(inRecord.getRating()) : DSL.noCondition()"
+                "inRecord.getRating() != null ? _a_film.RATING.eq(_mi_inRecord.getRating()) : DSL.noCondition()"
         );
     }
 
@@ -61,7 +61,7 @@ public class EnumTest extends GeneratorTest {
     void jOOQRecordString() {
         assertGeneratedContentContains(
                 "input/jOOQRecordString", Set.of(DUMMY_ENUM),
-                "inRecord.getRating() != null ? _a_film.RATING.eq(inRecord.getRating()) : DSL.noCondition()"
+                "inRecord.getRating() != null ? _a_film.RATING.eq(_mi_inRecord.getRating()) : DSL.noCondition()"
         );
     }
 
@@ -79,7 +79,7 @@ public class EnumTest extends GeneratorTest {
     void listedJOOQRecordNested() {
         assertGeneratedContentContains(
                 "input/listedJOOQRecordNested", Set.of(DUMMY_ENUM_CONVERTED),
-                "DSL.val(inRecordList.get(_iv_it).getRating()) : _a_film.RATING)"
+                "DSL.val(_mi_inRecordList.get(_iv_it).getRating()) : _a_film.RATING)"
         );
     }
 

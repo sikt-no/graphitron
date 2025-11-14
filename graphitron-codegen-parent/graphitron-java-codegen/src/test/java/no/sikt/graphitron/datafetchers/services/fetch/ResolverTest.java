@@ -47,7 +47,7 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Basic root service with a parameter")
     void withInput() {
-        assertGeneratedContentContains("operation/withInput", "String id = _iv_env.getArgument(\"id\")", "resolverFetchService.query(id)");
+        assertGeneratedContentContains("operation/withInput", "String _mi_id = _iv_env.getArgument(\"id\")", "resolverFetchService.query(_mi_id)");
     }
 
     @Test
@@ -71,7 +71,7 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Basic root service with both a context parameter and a standard parameter")
     void withContextInputAndArgument() {
-        assertGeneratedContentContains("operation/withContextInputAndArgument", "query(i, _cf_ctxField)");
+        assertGeneratedContentContains("operation/withContextInputAndArgument", "query(_mi_i, _cf_ctxField)");
     }
 
     @Test
@@ -80,7 +80,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "operation/withContextInputAndPagination",
                 Set.of(DUMMY_CONNECTION),
-                "query(_iv_pageSize, after, _cf_ctxField)",
+                "query(_iv_pageSize, _mi_after, _cf_ctxField)",
                 ".countQuery(_cf_ctxField)"
         );
     }
@@ -97,9 +97,9 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "operation/withPaginationAndRecord", Set.of(CUSTOMER_CONNECTION, CUSTOMER_INPUT_TABLE),
                 "in = ResolverHelpers.transformDTO(_iv_env.getArgument(\"in\"), CustomerInputTable.class)",
-                "inRecord = _iv_transform.customerInputTableToJOOQRecord(in, \"in\")",
-                "resolverFetchService.queryList(inRecord, _iv_pageSize, after",
-                "resolverFetchService.countQueryList(inRecord"
+                "inRecord = _iv_transform.customerInputTableToJOOQRecord(_mi_in, \"in\")",
+                "resolverFetchService.queryList(_mi_inRecord, _iv_pageSize, _mi_after",
+                "resolverFetchService.countQueryList(_mi_inRecord"
         );
     }
 
@@ -114,8 +114,8 @@ public class ResolverTest extends GeneratorTest {
     void splitQueryWithInput() {
         assertGeneratedContentContains(
                 "splitquery/withInput", Set.of(SPLIT_QUERY_WRAPPER),
-                "String id = _iv_env.getArgument(\"id\")",
-                "resolverFetchService.query(_iv_keys, id)"
+                "String _mi_id = _iv_env.getArgument(\"id\")",
+                "resolverFetchService.query(_iv_keys, _mi_id)"
         );
     }
 
@@ -130,9 +130,9 @@ public class ResolverTest extends GeneratorTest {
     void splitQueryWithPaginationAndRecord() {
         assertGeneratedContentContains(
                 "splitquery/withPaginationAndRecord", Set.of(SPLIT_QUERY_WRAPPER, CUSTOMER_CONNECTION, CUSTOMER_INPUT_TABLE),
-                "inRecord = _iv_transform.customerInputTableToJOOQRecord(in, \"in\")",
-                "resolverFetchService.queryMap(_iv_keys, inRecord, _iv_pageSize, after",
-                "resolverFetchService.countQueryMap(_iv_keys, inRecord"
+                "inRecord = _iv_transform.customerInputTableToJOOQRecord(_mi_in, \"in\")",
+                "resolverFetchService.queryMap(_iv_keys, _mi_inRecord, _iv_pageSize, _mi_after",
+                "resolverFetchService.countQueryMap(_iv_keys, _mi_inRecord"
         );
     }
 
@@ -142,7 +142,7 @@ public class ResolverTest extends GeneratorTest {
     void queryAfterService() {
         assertGeneratedContentContains(
                 "operation/queryAfterService",
-                "var resolverFetchService",
+                "var _rs_resolverFetchService",
                 "queryNormal() {return _iv_env -> {return"
         );
     }

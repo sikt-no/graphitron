@@ -1,6 +1,7 @@
 package no.sikt.graphitron.generators.abstractions;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -13,10 +14,13 @@ import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 
-import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.contextFieldPrefix;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_STRATEGY;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.contextFieldPrefix;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_STRATEGY;
 
@@ -47,30 +51,35 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractS
         return wrapListIf(inferFieldTypeName(field, true), field.isIterableWrapped());
     }
 
-    protected List<ParameterSpec> getContextParameters(GenerationField referenceField) {
-        return processedSchema
-                .getAllContextFields(referenceField)
+    protected List<ParameterSpec> getContextParameters(InputParser parser) {
+        return parser
+                .getContextInputs()
                 .entrySet()
                 .stream()
                 .map((it) -> ParameterSpec.of(it.getValue(), contextFieldPrefix(it.getKey())))
                 .toList();
     }
 
-    protected List<ParameterSpec> getMethodParameters(InputParser parser) {
-        return parser
-                .getMethodInputs()
-                .entrySet()
-                .stream()
-                .map((it) -> ParameterSpec.of(iterableWrapType(it.getValue()), it.getKey()))
-                .toList();
+    protected List<ParameterSpec> getMethodAndContextParameters(InputParser parser) {
+        return Stream.concat(
+                getMethodParameters(parser).stream(),
+                getContextParameters(parser).stream()
+        ).toList();
+    }
+
+    private List<ParameterSpec> getMethodParameters(InputParser parser) {
+        return getMethodParameters(parser.getMethodInputs());
     }
 
     protected List<ParameterSpec> getMethodParametersWithOrderField(InputParser parser) {
-        return parser
-                .getMethodInputsWithOrderField()
+        return getMethodParameters(parser.getMethodInputsWithOrderField());
+    }
+
+    private List<ParameterSpec> getMethodParameters(Map<String, InputField> inputs) {
+        return inputs
                 .entrySet()
                 .stream()
-                .map((it) -> ParameterSpec.of(iterableWrapType(it.getValue()), it.getKey()))
+                .map((it) -> ParameterSpec.of(iterableWrapType(it.getValue()), inputPrefix(it.getKey())))
                 .toList();
     }
 }

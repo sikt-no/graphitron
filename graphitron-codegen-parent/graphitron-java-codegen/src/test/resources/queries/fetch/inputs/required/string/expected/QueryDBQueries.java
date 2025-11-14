@@ -11,12 +11,12 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static CustomerTable queryForQuery(DSLContext _iv_ctx, String email, SelectionSet _iv_select) {
+    public static CustomerTable queryForQuery(DSLContext _iv_ctx, String _mi_email, SelectionSet _iv_select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         return _iv_ctx
                 .select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
                 .from(_a_customer)
-                .where(_a_customer.EMAIL.eq(email))
+                .where(_a_customer.EMAIL.eq(_mi_email))
                 .fetchOne(_iv_it -> _iv_it.into(CustomerTable.class));
     }
 }

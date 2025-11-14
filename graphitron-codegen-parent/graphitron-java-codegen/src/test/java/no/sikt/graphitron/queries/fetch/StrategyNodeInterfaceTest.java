@@ -63,7 +63,7 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
     @DisplayName("Input ID field which is not node ID")
     void regularIdInputField() {
         assertGeneratedContentContains("regularIdInputField", Set.of(CUSTOMER_TABLE),
-                "customer.CUSTOMER_ID.eq(id)"
+                "customer.CUSTOMER_ID.eq(_mi_id)"
         );
     }
 
@@ -87,8 +87,8 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "twoInterfaces",
                 "customerForNode",
-                ",Set<String> id,",
-                ".where(_iv_nodeIdStrategy.hasIds(\"Customer\", id, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))"
+                ",Set<String> _mi_id,",
+                ".where(_iv_nodeIdStrategy.hasIds(\"Customer\", _mi_id, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))"
         );
     }
 
@@ -99,7 +99,7 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
         assertGeneratedContentContains("splitQuery",
                 "nodeIdStrategy.createId(\"Customer\", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))," +
                         "DSL.field(",
-                ".where(_iv_nodeIdStrategy.hasIds(\"Customer\", customerIds, _a_customer.fields"
+                ".where(_iv_nodeIdStrategy.hasIds(\"Customer\", _mi_customerIds, _a_customer.fields"
         );
     }
 

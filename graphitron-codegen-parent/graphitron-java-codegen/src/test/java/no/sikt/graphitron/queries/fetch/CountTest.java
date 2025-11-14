@@ -45,7 +45,7 @@ public class CountTest extends GeneratorTest {
     @Test
     @DisplayName("Connection with an extra field")
     void withOtherField() {
-        assertGeneratedContentContains("withOtherField", ", String email)", ".where(_a_customer.EMAIL.eq(email)");
+        assertGeneratedContentContains("withOtherField", ", String _mi_email)", ".where(_a_customer.EMAIL.eq(_mi_email)");
     }
 
     @Test
@@ -70,8 +70,8 @@ public class CountTest extends GeneratorTest {
     @DisplayName("Connection on multitable interface with an extra field")
     void multiTableInterfaceWithOtherField() {
         assertGeneratedContentContains("multiTableInterfaceWithOtherField",
-                ", String customerId){",
-                ".from(_a_paymentp2007_01).where(_a_paymentp2007_01.CUSTOMER_ID.eq(customerId))"
+                ", String _mi_customerId){",
+                ".from(_a_paymentp2007_01).where(_a_paymentp2007_01.CUSTOMER_ID.eq(_mi_customerId))"
         );
     }
 

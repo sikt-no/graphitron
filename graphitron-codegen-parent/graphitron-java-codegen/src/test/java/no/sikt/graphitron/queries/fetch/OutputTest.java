@@ -202,9 +202,9 @@ public class OutputTest extends GeneratorTest {
     void outerNestedWithArgument() {
         assertGeneratedContentContains(
                 "outerNestedWithArgument", Set.of(CUSTOMER_TABLE),
-                "ctx, String firstName,",
+                "ctx, String _mi_firstName,",
                 "CustomerTable::new))).from(_a_customer)" +
-                        ".where(firstName != null ? _a_customer.FIRST_NAME.eq(firstName) : DSL.noCondition())",
+                        ".where(_mi_firstName != null ? _a_customer.FIRST_NAME.eq(_mi_firstName) : DSL.noCondition())",
                 "Outer::new))).fetchOne" // Checks that no outer where statement exists.
         );
     }
@@ -214,9 +214,9 @@ public class OutputTest extends GeneratorTest {
     void outerNestedWithArgumentListed() {
         assertGeneratedContentContains(
                 "outerNestedWithArgumentListed", Set.of(CUSTOMER_TABLE),
-                "ctx, List<String> firstName,",
+                "ctx, List<String> _mi_firstName,",
                 "CustomerTable::new))).from(_a_customer)" +
-                        ".where(firstName.size() > 0 ? _a_customer.FIRST_NAME.in(firstName) : DSL.noCondition())" +
+                        ".where(_mi_firstName.size() > 0 ? _a_customer.FIRST_NAME.in(_mi_firstName) : DSL.noCondition())" +
                         ".orderBy(_a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))",
                 "new Outer(_iv_it)))).fetchOne"
         );
@@ -227,9 +227,9 @@ public class OutputTest extends GeneratorTest {
     void outerDoubleNestedWithArgument() {
         assertGeneratedContentContains(
                 "outerDoubleNestedWithArgument", Set.of(CUSTOMER_TABLE),
-                "ctx, String firstName,",
+                "ctx, String _mi_firstName,",
                 "CustomerTable::new))).from(_a_customer)" +
-                        ".where(firstName != null ? _a_customer.FIRST_NAME.eq(firstName) : DSL.noCondition())",
+                        ".where(_mi_firstName != null ? _a_customer.FIRST_NAME.eq(_mi_firstName) : DSL.noCondition())",
                 "Wrapper1::new))).fetchOne"
         );
     }

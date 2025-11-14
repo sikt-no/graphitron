@@ -123,7 +123,7 @@ public class NodeDirectiveTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "nodeQuery/default", Set.of(NODE_QUERY),
                 "nodeIdStrategy.createId(\"Customer\", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())), DSL.row(",
-                ".where(_iv_nodeIdStrategy.hasIds(\"Customer\", id, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())))"
+                ".where(_iv_nodeIdStrategy.hasIds(\"Customer\", _mi_id, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())))"
         );
     }
 
@@ -133,7 +133,7 @@ public class NodeDirectiveTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "nodeQuery/customTypeId", Set.of(NODE_QUERY),
                 "createId(\"C\", _a_customer.fields(",
-                ".where(_iv_nodeIdStrategy.hasIds(\"C\", id, _a_customer.fields("
+                ".where(_iv_nodeIdStrategy.hasIds(\"C\", _mi_id, _a_customer.fields("
         );
     }
 
@@ -143,7 +143,7 @@ public class NodeDirectiveTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "nodeQuery/customKeyColumns", Set.of(NODE_QUERY),
                 "nodeIdStrategy.createId(\"Customer\", _a_customer.CUSTOMER_ID, _a_customer.EMAIL), DSL.row(",
-                ".where(_iv_nodeIdStrategy.hasIds(\"Customer\", id, _a_customer.CUSTOMER_ID, _a_customer.EMAIL))"
+                ".where(_iv_nodeIdStrategy.hasIds(\"Customer\", _mi_id, _a_customer.CUSTOMER_ID, _a_customer.EMAIL))"
         );
     }
 

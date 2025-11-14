@@ -18,8 +18,8 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static List<Pair<String, CustomerTable>> customerForQuery(DSLContext _iv_ctx, CustomerRecord inRecord,
-                                                   Integer _iv_pageSize, String after, SelectionSet _iv_select) {
+    public static List<Pair<String, CustomerTable>> customerForQuery(DSLContext _iv_ctx, CustomerRecord _mi_inRecord,
+                                                   Integer _iv_pageSize, String _mi_after, SelectionSet _iv_select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         var _iv_orderFields = _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray());
         return _iv_ctx
@@ -28,20 +28,20 @@ public class QueryDBQueries {
                         DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
                 )
                 .from(_a_customer)
-                .where(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_a_customer, inRecord))
+                .where(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_a_customer, _mi_inRecord))
                 .orderBy(_iv_orderFields)
-                .seek(QueryHelper.getOrderByValues(_iv_ctx, _iv_orderFields, after))
+                .seek(QueryHelper.getOrderByValues(_iv_ctx, _iv_orderFields, _mi_after))
                 .limit(_iv_pageSize + 1)
                 .fetch()
                 .map(_iv_it -> new ImmutablePair<>(_iv_it.value1(), _iv_it.value2()));
     }
 
-    public static Integer countCustomerForQuery(DSLContext _iv_ctx, CustomerRecord inRecord) {
+    public static Integer countCustomerForQuery(DSLContext _iv_ctx, CustomerRecord _mi_inRecord) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         return _iv_ctx
                 .select(DSL.count())
                 .from(_a_customer)
-                .where(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_a_customer, inRecord))
+                .where(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_a_customer, _mi_inRecord))
                 .fetchOne(0, Integer.class);
     }
 }

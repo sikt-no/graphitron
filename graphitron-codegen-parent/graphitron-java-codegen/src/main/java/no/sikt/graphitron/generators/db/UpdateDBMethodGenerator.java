@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ITERATOR;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.internalPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
@@ -35,7 +36,7 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
             MutationType.UPSERT, "batchMerge"
     );
 
-    private static final String VARIABLE_RECORD_LIST = "recordList", CONFIG = internalPrefix("config");
+    private static final String VARIABLE_RECORD_LIST = internalPrefix("recordList"), CONFIG = internalPrefix("config");
 
     public UpdateDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -71,11 +72,11 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
         var code = CodeBlock.builder();
         String batchInputVariable;
         if (recordInputs.size() == 1) {
-            batchInputVariable = recordInputs.keySet().stream().findFirst().get();
+            batchInputVariable = inputPrefix(recordInputs.keySet().stream().findFirst().get());
         } else {
             batchInputVariable = VARIABLE_RECORD_LIST;
             code.declareNew(VARIABLE_RECORD_LIST, ARRAY_LIST.className);
-            recordInputs.forEach((name, type) -> code.addStatement("$N.$L($N)", VARIABLE_RECORD_LIST, type.isIterableWrapped() ? "addAll" : "add", name));
+            recordInputs.forEach((name, type) -> code.addStatement("$N.$L($N)", VARIABLE_RECORD_LIST, type.isIterableWrapped() ? "addAll" : "add", inputPrefix(name)));
         }
 
         if (target.hasMutationType() && target.getMutationType() == MutationType.UPSERT) {
@@ -85,7 +86,7 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
                     .map(Optional::get)
                     .findFirst()
                     .ifPresent(it -> {
-                        var recordInputName = it.getKey();
+                        var recordInputName = inputPrefix(it.getKey());
                         var inputType = it.getValue();
                         var nodeType = processedSchema.getNodeTypeForNodeIdField(inputType);
                         if (nodeType != null) {

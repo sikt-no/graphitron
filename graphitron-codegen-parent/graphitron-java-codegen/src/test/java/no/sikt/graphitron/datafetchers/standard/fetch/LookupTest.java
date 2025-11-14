@@ -14,7 +14,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
-@DisplayName("Lookup resolvers - Resolvers that look up exact data points based on keys")
+@DisplayName("Lookup datafetchers - Datafetchers that look up exact data points based on keys")
 public class LookupTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
@@ -46,19 +46,19 @@ public class LookupTest extends GeneratorTest {
     @Test
     @DisplayName("Integer key")
     void integerKey() {
-        assertGeneratedContentContains("integerKey", "keys = List.of(ResolverHelpers.formatString(i))");
+        assertGeneratedContentContains("integerKey", "_iv_lookupKeys = List.of(ResolverHelpers.formatString(_mi_i))");
     }
 
     @Test
     @DisplayName("Several flat keys")
     void multipleKeys() {
-        assertGeneratedContentContains("multipleKeys", "keys = List.of(id0, id1, id2)");
+        assertGeneratedContentContains("multipleKeys", "lookupKeys = List.of(_mi_id0, _mi_id1, _mi_id2)");
     }
 
     @Test
     @DisplayName("One key and one other field")
     void otherNonKeyField() {
-        assertGeneratedContentContains("otherNonKeyField", "keys = List.of(id0)", "queryForQuery(_iv_ctx, id0, id1,");
+        assertGeneratedContentContains("otherNonKeyField", "lookupKeys = List.of(_mi_id0)", "queryForQuery(_iv_ctx, _mi_id0, _mi_id1,");
     }
 
     @Test
@@ -66,8 +66,8 @@ public class LookupTest extends GeneratorTest {
     void mixedKeys() {
         assertGeneratedContentContains(
                 "mixedKeys", Set.of(DUMMY_INPUT),
-                "keys = List.of(id, ResolverHelpers.formatString(i), in.stream().map(itIn -> itIn != null ? itIn.getId() : null).toList())",
-                "queryForQuery(_iv_ctx, id, in, i,"
+                "lookupKeys = List.of(_mi_id, ResolverHelpers.formatString(_mi_i), _mi_in.stream().map(_nit_in -> _nit_in != null ? _nit_in.getId() : null).toList())",
+                "queryForQuery(_iv_ctx, _mi_id, _mi_in, _mi_i,"
         );
     }
 
@@ -76,7 +76,7 @@ public class LookupTest extends GeneratorTest {
     void inputKey() {
         assertGeneratedContentContains(
                 "inputKey", Set.of(DUMMY_INPUT),
-                "keys = List.of(in.stream().map(itIn -> itIn != null ? itIn.getId() : null).toList())"
+                "lookupKeys = List.of(_mi_in.stream().map(_nit_in -> _nit_in != null ? _nit_in.getId() : null).toList())"
         );
     }
 
@@ -86,7 +86,7 @@ public class LookupTest extends GeneratorTest {
     void nestedInputKey() {
         assertGeneratedContentContains(
                 "nestedInputKey", Set.of(DUMMY_INPUT),
-                "keys = List.of(in.stream().map(_iv_it -> _iv_it != null ? _iv_it.getIn().getId() : null).toList())"
+                "lookupKeys = List.of(_mi_in.stream().map(_iv_it -> _iv_it != null ? _iv_it.getIn().getId() : null).toList())"
         );
     }
 
@@ -96,7 +96,7 @@ public class LookupTest extends GeneratorTest {
     void nestedInputIntegerKey() {
         assertGeneratedContentContains(
                 "nestedInputIntegerKey",
-                "List.of(ResolverHelpers.formatString(in.stream().map(_iv_it -> _iv_it != null ? _iv_it.getIn().getId() : null).toList()))"
+                "List.of(ResolverHelpers.formatString(_mi_in.stream().map(_iv_it -> _iv_it != null ? _iv_it.getIn().getId() : null).toList()))"
         );
     }
 
@@ -106,7 +106,7 @@ public class LookupTest extends GeneratorTest {
     void nestedInputKeyMiddle() {
         assertGeneratedContentContains(
                 "nestedInputKeyMiddle", Set.of(DUMMY_INPUT),
-                "keys = List.of(in.stream().map(_iv_it -> _iv_it != null ? _iv_it.getIn().getId() : null).toList())"
+                "lookupKeys = List.of(_mi_in.stream().map(_iv_it -> _iv_it != null ? _iv_it.getIn().getId() : null).toList())"
         );
     }
 
@@ -116,7 +116,7 @@ public class LookupTest extends GeneratorTest {
     void nestedInputKeyWithMiddleList() {
         assertGeneratedContentContains(
                 "nestedInputKeyWithMiddleList", Set.of(DUMMY_INPUT),
-                "keys = List.of(in.getIn().stream().map(itIn -> itIn != null ? itIn.getId() : null).toList())"
+                "lookupKeys = List.of(_mi_in.getIn().stream().map(_iv_it -> _iv_it != null ? _iv_it.getId() : null).toList())"
         );
     }
 
@@ -125,14 +125,14 @@ public class LookupTest extends GeneratorTest {
     void keyInListedInput() {
         assertGeneratedContentContains(
                 "keyInListedInput",
-                "keys = List.of(in.stream().map(itIn -> itIn != null ? itIn.getId() : null).toList())"
+                "lookupKeys = List.of(_mi_in.stream().map(_nit_in -> _nit_in != null ? _nit_in.getId() : null).toList())"
         );
     }
 
     @Test
     @DisplayName("Listed key inside an input type")
     void listedKeyInInput() {
-        assertGeneratedContentContains("listedKeyInInput", "keys = List.of(in.getId())");
+        assertGeneratedContentContains("listedKeyInInput", "lookupKeys = List.of(_mi_in.getId())");
     }
 
     @Test
@@ -140,32 +140,32 @@ public class LookupTest extends GeneratorTest {
     void keyInInputWithDuplicateDirective() {
         assertGeneratedContentContains(
                 "keyInInputWithDuplicateDirective",
-                "keys = List.of(in.stream().map(itIn -> itIn != null ? itIn.getId() : null).toList())"
+                "lookupKeys = List.of(_mi_in.stream().map(_nit_in -> _nit_in != null ? _nit_in.getId() : null).toList())"
         );
     }
 
     @Test
     @DisplayName("Key inside a nested input type")
     void keyInNestedInput() {
-        assertGeneratedContentContains("keyInNestedInput", "keys = List.of(in1.getIn2().getId())");
+        assertGeneratedContentContains("keyInNestedInput", "lookupKeys = List.of(_mi_in1.getIn2().getId())");
     }
 
     @Test
     @DisplayName("Key inside a nested input type where the directive is placed on a intermediate level")
     void keyInNestedInputMiddle() {
-        assertGeneratedContentContains("keyInNestedInputMiddle", "keys = List.of(in1.getIn2().getId())");
+        assertGeneratedContentContains("keyInNestedInputMiddle", "lookupKeys = List.of(_mi_in1.getIn2().getId())");
     }
 
     @Test
     @DisplayName("Integer key inside a nested input type")
     void integerKeyInInput() {
-        assertGeneratedContentContains("integerKeyInInput", "keys = List.of(ResolverHelpers.formatString(in.getI()))");
+        assertGeneratedContentContains("integerKeyInInput", "lookupKeys = List.of(ResolverHelpers.formatString(_mi_in.getI()))");
     }
 
     @Test
     @Disabled("Does not work. Maybe it should not?")
     @DisplayName("Key that is not a list")
     void withoutList() {
-        assertGeneratedContentContains("withoutList", "keys = List.of(List.of(id))");
+        assertGeneratedContentContains("withoutList", "lookupKeys = List.of(List.of(_mi_id))");
     }
 }

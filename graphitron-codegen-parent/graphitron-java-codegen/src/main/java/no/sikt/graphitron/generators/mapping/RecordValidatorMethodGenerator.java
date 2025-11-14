@@ -14,11 +14,11 @@ import java.util.List;
 import static no.sikt.graphitron.configuration.GeneratorConfig.getRecordValidation;
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordValidateMethod;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.GRAPHQL_ERROR;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.HASH_SET;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -36,7 +36,7 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
         }
 
         var input = processedSchema.getInputType(target);
-        return getDefaultSpecBuilder(methodName, asListedName(input.getRecordReferenceName()), wrapList(input.getRecordClassName()), wrapSet(GRAPHQL_ERROR.className))
+        return getDefaultSpecBuilder(methodName, inputPrefix(input.getRecordReferenceName()), wrapList(input.getRecordClassName()), wrapSet(GRAPHQL_ERROR.className))
                 .declare(VAR_ARGS, asMethodCall(VAR_TRANSFORMER, METHOD_ARGS_NAME))
                 .declare(VAR_ENV, asMethodCall(VAR_TRANSFORMER, METHOD_ENV_NAME))
                 .declareNew(VAR_VALIDATION_ERRORS, ParameterizedTypeName.get(HASH_SET.className, GRAPHQL_ERROR.className))

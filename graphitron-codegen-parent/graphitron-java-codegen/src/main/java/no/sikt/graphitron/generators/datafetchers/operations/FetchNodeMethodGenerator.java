@@ -19,6 +19,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFetcher;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFuture;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.ILLEGAL_ARGUMENT_EXCEPTION;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_HANDLER;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
@@ -38,6 +39,7 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
     public MethodSpec generate(ObjectField target) {
         var inputField = target.getArguments().get(0);
         var inputFieldName = inputField.getName();
+        var prefixedInputFieldName = inputPrefix(inputFieldName);
 
         var interfaceDefinition = processedSchema.getInterface(target);
         var implementations = processedSchema
@@ -51,9 +53,9 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
         var targetBlock = CodeBlock.builder();
         if (anyImplementation.isPresent() && interfaceDefinition.getName().equals(NODE_TYPE.getName())) {  // Node special case.
             if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                targetBlock.add("$N.getTypeId($N)", VAR_NODE_STRATEGY, inputFieldName);
+                targetBlock.add("$N.getTypeId($N)", VAR_NODE_STRATEGY, prefixedInputFieldName);
             } else {
-                targetBlock.add("$N.get($N.getTable($N).getName())", VAR_NODE_MAP, VAR_NODE_HANDLER, inputFieldName);
+                targetBlock.add("$N.get($N.getTable($N).getName())", VAR_NODE_MAP, VAR_NODE_HANDLER, prefixedInputFieldName);
             }
         } else {
             targetBlock.add("null");
@@ -63,7 +65,7 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
                 "throw new $T(\"Could not resolve input $N with value \" + $N + \" within type \" + $N)",
                 ILLEGAL_ARGUMENT_EXCEPTION.className,
                 inputFieldName,
-                inputFieldName,
+                prefixedInputFieldName,
                 GeneratorConfig.shouldMakeNodeStrategy() ? VAR_TYPE_ID : VAR_TYPE_NAME
         );
 
@@ -88,7 +90,7 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
                 .addCode(
                         implementations
                                 .stream()
-                                .map(implementation -> codeForImplementation(implementation, inputFieldName))
+                                .map(implementation -> codeForImplementation(implementation, prefixedInputFieldName))
                                 .collect(CodeBlock.joining())
                 )
                 .addCode("default: $L", illegalBlock)

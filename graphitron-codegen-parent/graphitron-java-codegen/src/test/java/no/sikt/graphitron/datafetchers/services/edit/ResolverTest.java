@@ -43,7 +43,7 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Single input")
     void oneInput() {
-        assertGeneratedContentContains("oneInput", "String in = _iv_env.getArgument(\"in\")", ".mutation(in)");
+        assertGeneratedContentContains("oneInput", "_mi_in = _iv_env.getArgument(\"in\")", ".mutation(_mi_in)");
     }
 
     @Test
@@ -59,49 +59,49 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Listed input")
     void listedInput() {
-        assertGeneratedContentContains("listedInput", "List<String> in = _iv_env.getArgument(\"in\")", ".mutation(in)");
+        assertGeneratedContentContains("listedInput", "in = _iv_env.getArgument(\"in\")", ".mutation(_mi_in)");
     }
 
     @Test
     @DisplayName("Two inputs")
     void multipleInputs() {
-        assertGeneratedContentContains("multipleInputs", ".mutation(in0, in1)");
+        assertGeneratedContentContains("multipleInputs", ".mutation(_mi_in0, _mi_in1)");
     }
 
     @Test
     @DisplayName("Record input")
     void recordInput() {
-        assertGeneratedContentContains("recordInput", Set.of(CUSTOMER_INPUT_TABLE), ".mutation(inRecord)");
+        assertGeneratedContentContains("recordInput", Set.of(CUSTOMER_INPUT_TABLE), ".mutation(_mi_inRecord)");
     }
 
     @Test // Tests this only once as it is treated the same as jOOQ records otherwise.
     @DisplayName("Java record input")
     void javaRecordInput() {
-        assertGeneratedContentContains("javaRecordInput", Set.of(DUMMY_INPUT_RECORD), ".mutation(inRecord)");
+        assertGeneratedContentContains("javaRecordInput", Set.of(DUMMY_INPUT_RECORD), ".mutation(_mi_inRecord)");
     }
 
     @Test
     @DisplayName("Two record inputs")
     void multipleRecordInputs() {
-        assertGeneratedContentContains("multipleRecordInputs", Set.of(CUSTOMER_INPUT_TABLE), ".mutation(in0Record, in1Record)");
+        assertGeneratedContentContains("multipleRecordInputs", Set.of(CUSTOMER_INPUT_TABLE), ".mutation(_mi_in0Record, _mi_in1Record)");
     }
 
     @Test
     @DisplayName("Listed record input")
     void listedRecordInput() {
-        assertGeneratedContentContains("listedRecordInput", Set.of(CUSTOMER_INPUT_TABLE), ".mutation(inRecordList)");
+        assertGeneratedContentContains("listedRecordInput", Set.of(CUSTOMER_INPUT_TABLE), ".mutation(_mi_inRecordList)");
     }
 
     @Test  // Not sure if this is the intended behaviour for such cases. The service will not be able to handle this type.
     @DisplayName("Input with non-record wrapper")
     void wrappedInput() {
-        assertGeneratedContentContains("wrappedInput", ".mutation(in)");
+        assertGeneratedContentContains("wrappedInput", ".mutation(_mi_in)");
     }
 
     @Test
     @DisplayName("JOOQ input record containing another input jOOQ record")
     void nestedInputRecord() {
-        assertGeneratedContentContains("nestedInputRecord", Set.of(CUSTOMER_INPUT_TABLE), ".mutation(in0Record, in1Record)");
+        assertGeneratedContentContains("nestedInputRecord", Set.of(CUSTOMER_INPUT_TABLE), ".mutation(_mi_in0Record, _mi_in1Record)");
     }
 
     @Test
@@ -111,7 +111,7 @@ public class ResolverTest extends GeneratorTest {
                 "nestedListedInputRecord", Set.of(CUSTOMER_INPUT_TABLE),
                 "in1RecordList = new ArrayList<",
                 "in1RecordList = _iv_transform.",
-                ".mutation(in0Record, in1RecordList)"
+                ".mutation(_mi_in0Record, _mi_in1RecordList)"
         );
     }
 
@@ -121,11 +121,11 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "nestedTwiceListedInputRecord", Set.of(CUSTOMER_INPUT_TABLE),
                 "in1RecordList = new ArrayList<",
-                "for (int itIn0Index = 0; itIn0Index < in0.size(); itIn0Index++) {" +
-                        "var itIn0 = in0.get(itIn0Index);if (itIn0 == null) continue;" +
-                        "var in1 = itIn0.getIn1();" +
-                        "in1RecordList.addAll(_iv_transform.customerInputTableToJOOQRecord(in1, \"in0/in1\"",
-                ".mutation(in0RecordList, in1RecordList)"
+                "for (int _niit_in0 = 0; _niit_in0 < _mi_in0.size(); _niit_in0++) {" +
+                        "var _nit_in0 = _mi_in0.get(_niit_in0);if (_nit_in0 == null) continue;" +
+                        "var _mi_in1 = _nit_in0.getIn1();" +
+                        "_mi_in1RecordList.addAll(_iv_transform.customerInputTableToJOOQRecord(_mi_in1, \"in0/in1\"",
+                ".mutation(_mi_in0RecordList, _mi_in1RecordList)"
         );
     }
 
@@ -135,9 +135,9 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "doubleNestedInputRecord", Set.of(CUSTOMER_INPUT_TABLE),
                 "in0Record = _iv_transform.",
-                "var in1 = in0.getIn1();if (in1 != null) {in1Record = _iv_transform.wrapper1ToJOOQRecord(in1, \"in0/in1\");" +
-                        "var in2 = in1.getIn2();in2Record = _iv_transform.customerInputTableToJOOQRecord(in2, \"in0/in1/in2\"",  // Inconsistent logic, but should work anyway.
-                ".mutation(in0Record, in1Record, in2Record)"
+                "var _mi_in1 = _mi_in0.getIn1();if (_mi_in1 != null) {_mi_in1Record = _iv_transform.wrapper1ToJOOQRecord(_mi_in1, \"in0/in1\");" +
+                        "var _mi_in2 = _mi_in1.getIn2();_mi_in2Record = _iv_transform.customerInputTableToJOOQRecord(_mi_in2, \"in0/in1/in2\"",  // Inconsistent logic, but should work anyway.
+                ".mutation(_mi_in0Record, _mi_in1Record, _mi_in2Record)"
         );
     }
 
@@ -146,7 +146,7 @@ public class ResolverTest extends GeneratorTest {
     void returningJOOQRecord() {
         assertGeneratedContentContains(
                 "returningJOOQRecord", Set.of(CUSTOMER_TABLE),
-                ".customerTableRecordToGraphType(response, \"\")"
+                ".customerTableRecordToGraphType(_iv_response, \"\")"
         );
     }
 
@@ -155,7 +155,7 @@ public class ResolverTest extends GeneratorTest {
     void returningJavaRecord() {
         assertGeneratedContentContains(
                 "returningJavaRecord", Set.of(DUMMY_TYPE_RECORD),
-                ".dummyTypeRecordToGraphType(response, \"\")"
+                ".dummyTypeRecordToGraphType(_iv_response, \"\")"
         );
     }
 

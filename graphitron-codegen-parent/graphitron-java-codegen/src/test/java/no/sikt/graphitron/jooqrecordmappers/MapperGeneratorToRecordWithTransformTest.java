@@ -35,8 +35,8 @@ public class MapperGeneratorToRecordWithTransformTest extends GeneratorTest {
     void defaultCase() {
         assertGeneratedContentContains(
                 "withTransforms",
-                "customerRecordList = (ArrayList<CustomerRecord>) SomeTransform.someTransform(_iv_ctx, customerRecordList);" +
-                        "return customerRecordList"
+                "customerRecord = (ArrayList<CustomerRecord>) SomeTransform.someTransform(_iv_ctx, _mlo_customerRecord);" +
+                        "return _mlo_customerRecord"
         );
     }
 }

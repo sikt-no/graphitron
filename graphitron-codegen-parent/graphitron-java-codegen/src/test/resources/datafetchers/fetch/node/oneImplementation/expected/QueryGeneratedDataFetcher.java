@@ -16,17 +16,17 @@ public class QueryGeneratedDataFetcher {
 
     public static DataFetcher<CompletableFuture<Node>> node(NodeIdHandler _iv_nodeIdHandler) {
         return _iv_env -> {
-            String id = _iv_env.getArgument("id");
-            var _iv_targetType = _iv_tABLE_TO_TYPE.get(_iv_nodeIdHandler.getTable(id).getName());
+            String _mi_id = _iv_env.getArgument("id");
+            var _iv_targetType = _iv_tABLE_TO_TYPE.get(_iv_nodeIdHandler.getTable(_mi_id).getName());
             if (_iv_targetType == null) {
-                throw new IllegalArgumentException("Could not resolve input id with value " + id + " within type " + _iv_targetType);
+                throw new IllegalArgumentException("Could not resolve input id with value " + _mi_id + " within type " + _iv_targetType);
             }
             var _iv_loaderName = _iv_targetType + "_node";
             var _iv_fetcher = new DataFetcherHelper(_iv_env);
 
             switch (_iv_targetType) {
-                case "Customer": return _iv_fetcher.loadInterface(_iv_loaderName, id, (_iv_ctx, _iv_ids, _iv_selectionSet) -> CustomerDBQueries.customerForNode(_iv_ctx, _iv_ids, _iv_selectionSet));
-                default: throw new IllegalArgumentException("Could not resolve input id with value " + id + " within type " + _iv_targetType);
+                case "Customer": return _iv_fetcher.loadInterface(_iv_loaderName, _mi_id, (_iv_ctx, _iv_ids, _iv_selectionSet) -> CustomerDBQueries.customerForNode(_iv_ctx, _iv_ids, _iv_selectionSet));
+                default: throw new IllegalArgumentException("Could not resolve input id with value " + _mi_id + " within type " + _iv_targetType);
             }
         };
     }

@@ -45,7 +45,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "mappedField",
                 "pathHere + \"first\"",
-                "customerRecord.setFirstName(itCustomer.getFirst()"
+                "customerRecord.setFirstName(_nit_customer.getFirst()"
         );
     }
 
@@ -55,9 +55,9 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "twoFields",
                 "pathHere + \"id\"",
-                "customerRecord.setId(itCustomer.getId()",
+                "customerRecord.setId(_nit_customer.getId()",
                 "pathHere + \"first\"",
-                "customerRecord.setFirstName(itCustomer.getFirst()"
+                "customerRecord.setFirstName(_nit_customer.getFirst()"
         );
     }
 
@@ -66,10 +66,10 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     void containingNonRecordWrapper() {
         assertGeneratedContentContains(
                 "containingNonRecordWrapper",
-                "if (address_inner != null) {" +
+                "if (_mi_address_inner != null) {" +
                         "if (_iv_args.contains(_iv_pathHere + \"inner/postalCode\")) {" +
-                        "addressRecord.setPostalCode(address_inner.getPostalCode());}}" +
-                        "addressRecordList.add(addressRecord)"
+                        "_mo_addressRecord.setPostalCode(_mi_address_inner.getPostalCode());}}" +
+                        "_mlo_addressRecord.add(_mo_addressRecord)"
         );
     }
 
@@ -78,12 +78,12 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     void containingDoubleNonRecordWrapper() {
         assertGeneratedContentContains(
                 "containingDoubleNonRecordWrapper",
-                "address_inner0 = itAddress.getInner0();" +
-                        "if (address_inner0 != null) {" +
-                        "    var wrapper_inner1 = address_inner0.getInner1();" +
-                        "    if (wrapper_inner1 != null) {" +
-                        "        if (_iv_args.contains(_iv_pathHere + \"inner0/inner1/postalCode\")) {" +
-                        "            addressRecord.setPostalCode(wrapper_inner1.getPostalCode());"
+                "address_inner0 = _nit_address.getInner0();" +
+                        "if (_mi_address_inner0 != null) {" +
+                        "var _mi_wrapper_inner1 = _mi_address_inner0.getInner1();" +
+                        "if (_mi_wrapper_inner1 != null) {" +
+                        "if (_iv_args.contains(_iv_pathHere + \"inner0/inner1/postalCode\")) {" +
+                        "_mo_addressRecord.setPostalCode(_mi_wrapper_inner1.getPostalCode());"
         );
     }
 
@@ -92,12 +92,12 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     void nestingWithDuplicateFieldName() {
         assertGeneratedContentContains(
                 "nestingWithDuplicateFieldName",
-                "address_inner = itAddress.getInner();" +
-                        "if (address_inner != null) {" +
-                        "    var wrapper_inner = address_inner.getInner();" +
-                        "    if (wrapper_inner != null) {" +
-                        "        if (_iv_args.contains(_iv_pathHere + \"inner/inner/postalCode\")) {" +
-                        "            addressRecord.setPostalCode(wrapper_inner.getPostalCode()"
+                "address_inner = _nit_address.getInner();" +
+                        "if (_mi_address_inner != null) {" +
+                        "var _mi_wrapper_inner = _mi_address_inner.getInner();" +
+                        "if (_mi_wrapper_inner != null) {" +
+                        "if (_iv_args.contains(_iv_pathHere + \"inner/inner/postalCode\")) {" +
+                        "_mo_addressRecord.setPostalCode(_mi_wrapper_inner.getPostalCode()"
         );
     }
 
@@ -107,10 +107,10 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     void containingNonRecordWrapperWithFieldOverride() {
         assertGeneratedContentContains(
                 "containingNonRecordWrapperWithFieldOverride",
-                "address_inner1 = itAddress.getInner1()",
-                ".setPostalCode(address_inner1.getCode()",
-                "address_inner2 = itAddress.getInner2()",
-                ".setPostalCode(address_inner2.getCode()"
+                "address_inner1 = _nit_address.getInner1()",
+                ".setPostalCode(_mi_address_inner1.getCode()",
+                "address_inner2 = _nit_address.getInner2()",
+                ".setPostalCode(_mi_address_inner2.getCode()"
         );
     }
 
@@ -119,21 +119,21 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     void unconfiguredField() {
         assertGeneratedContentContains(
                 "unconfiguredField",
-                ".setId1(itCustomer.getId1()",
-                ".setWrongName(itCustomer.getId2()"
+                ".setId1(_nit_customer.getId1()",
+                ".setWrongName(_nit_customer.getId2()"
         );
     }
 
     @Test
     @DisplayName("Maps ID fields that are not the primary key")
     void idOtherThanPK() {
-        assertGeneratedContentContains("idOtherThanPK", ".setAddressId(itCustomer.getAddressId()");
+        assertGeneratedContentContains("idOtherThanPK", ".setAddressId(_nit_customer.getAddressId()");
     }
 
     @Test
     @DisplayName("Records with enum fields")
     void withEnum() {
-        assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM), ".setRating(QueryHelper.makeEnumMap(itFilmInput.getE(),");
+        assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM), ".setRating(QueryHelper.makeEnumMap(_nit_filmInput.getE(),");
     }
 
     @Test
@@ -141,7 +141,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     void containingRecords() {
         assertGeneratedContentContains(
                 "containingRecords",
-                "customerRecordList = new ArrayList<CustomerRecord>();return customerRecordList"
+                "customerRecord = new ArrayList<CustomerRecord>();return _mlo_customerRecord"
         );
     }
 }

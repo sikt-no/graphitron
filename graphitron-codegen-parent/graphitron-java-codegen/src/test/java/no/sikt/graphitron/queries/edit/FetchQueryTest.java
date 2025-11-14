@@ -38,7 +38,7 @@ public class FetchQueryTest extends GeneratorTest {
                 "CustomerTable::new",
                 "new Outer(_iv_it)",
                 ".fetchOne(_iv_it -> _iv_it.into(Outer.class))",
-                " DSL.val(inRecordList.get(_iv_it).getCustomerId())"
+                " DSL.val(_mi_inRecordList.get(_iv_it).getCustomerId())"
         );
     }
 
@@ -46,7 +46,7 @@ public class FetchQueryTest extends GeneratorTest {
     @DisplayName("Output after insert")
     void defaultCase() {
         assertGeneratedContentContains("insert",
-                ".where(inRecord != null && inRecord.getCustomerId() != null ? _a_customer.CUSTOMER_ID.eq(inRecord.getCustomerId()) : DSL.falseCondition())"
+                ".where(_mi_inRecord != null && _mi_inRecord.getCustomerId() != null ? _a_customer.CUSTOMER_ID.eq(_mi_inRecord.getCustomerId()) : DSL.falseCondition())"
         );
     }
 
@@ -54,8 +54,8 @@ public class FetchQueryTest extends GeneratorTest {
     @DisplayName("Output with composite primary key")
     void tableWithCompositePrimaryKey() {
         assertGeneratedContentContains("tableWithCompositePrimaryKey",
-                ".where(inRecord != null && inRecord.getDestinationId() != null ? _a_vacationdestination.DESTINATION_ID.eq(inRecord.getDestinationId()) : DSL.falseCondition())" +
-                        ".and(inRecord != null && inRecord.getCountryName() != null ? _a_vacationdestination.COUNTRY_NAME.eq(inRecord.getCountryName())"
+                ".where(_mi_inRecord != null && _mi_inRecord.getDestinationId() != null ? _a_vacationdestination.DESTINATION_ID.eq(_mi_inRecord.getDestinationId()) : DSL.falseCondition())" +
+                        ".and(_mi_inRecord != null && _mi_inRecord.getCountryName() != null ? _a_vacationdestination.COUNTRY_NAME.eq(_mi_inRecord.getCountryName())"
         );
     }
 
@@ -64,7 +64,7 @@ public class FetchQueryTest extends GeneratorTest {
     void tableWithCompositePrimaryKeyListed() {
         assertGeneratedContentContains("tableWithCompositePrimaryKeyListed",
                 "DSL.row(_a_vacationdestination.DESTINATION_ID, _a_vacationdestination.COUNTRY_NAME)",
-                "DSL.val(inRecordList.get(_iv_it).getDestinationId())"
+                "DSL.val(_mi_inRecordList.get(_iv_it).getDestinationId())"
         );
     }
 
@@ -72,7 +72,7 @@ public class FetchQueryTest extends GeneratorTest {
     @DisplayName("Don't filter on non-PK fields in jOOQ record input when fetching after mutation")
     void inputRecordWithNonPkField() {
         assertGeneratedContentContains("inputRecordWithNonPkField",
-                ".where(inRecord != null && inRecord.getCustomerId() != null ? _a_customer.CUSTOMER_ID.eq(inRecord.getCustomerId()) : DSL.falseCondition()).fetch"
+                ".where(_mi_inRecord != null && _mi_inRecord.getCustomerId() != null ? _a_customer.CUSTOMER_ID.eq(_mi_inRecord.getCustomerId()) : DSL.falseCondition()).fetch"
         );
     }
 }

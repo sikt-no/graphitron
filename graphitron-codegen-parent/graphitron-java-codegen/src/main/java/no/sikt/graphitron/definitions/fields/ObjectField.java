@@ -168,18 +168,6 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
     }
 
     /**
-     * @return List of all non-reserved and orderBy arguments for this field
-     */
-    public List<ArgumentField> getNonReservedArgumentsWithOrderField() {
-        List<ArgumentField> result = new ArrayList<>(nonReservedArguments);
-
-        if (orderField != null) {
-            result.add(orderField);
-        }
-        return result;
-    }
-
-    /**
      * @return Does this field have any input fields defined?
      */
     public boolean hasInputFields() {

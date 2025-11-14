@@ -20,10 +20,12 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.outputPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<GenerationField, RecordObjectSpecification<GenerationField>> {
-    protected static final String VARIABLE_INPUT = "input", VARIABLE_RECORDS = "records";
+    protected static final String VARIABLE_INPUT = inputPrefix("input"), VARIABLE_RECORDS = outputPrefix("records");
 
     public TransformerMethodGenerator(ProcessedSchema processedSchema) {
         super(null, processedSchema);
@@ -65,7 +67,7 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
             return code
                     .addStatement(validateCode(mapperClass))
                     .add(returnWrap(VARIABLE_RECORDS))
-                    .build(); // TODO: Test this.
+                    .build();
         }
 
         return CodeBlock.statementOf(

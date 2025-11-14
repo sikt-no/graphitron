@@ -312,7 +312,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void idArgumentOnNonRootQueryWithoutNodeStrategy() {
         assertGeneratedContentContains(
                 "idArgumentOnNonRootQueryWithoutNodeStrategy", Set.of(CUSTOMER_TABLE),
-                "customer_1589604633_store_left.hasStaffId(staffId)"
+                "customer_1589604633_store_left.hasStaffId(_mi_staffId)"
         );
 
     }

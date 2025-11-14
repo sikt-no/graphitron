@@ -57,7 +57,7 @@ public class StrategyNodeServiceTest extends GeneratorTest {
     @DisplayName("Service resolver with node strategy enabled")
     void resolver() {
         assertGeneratedContentContains("default",
-                "customerNodeRecordToGraphType(response, _iv_nodeIdStrategy, \"\")"
+                "customerNodeRecordToGraphType(_iv_response, _iv_nodeIdStrategy, \"\")"
         );
     }
 
@@ -66,8 +66,8 @@ public class StrategyNodeServiceTest extends GeneratorTest {
     void withInputJOOQRecord() {
         assertGeneratedContentContains(
                 "withInputJOOQRecord",
-                ".customerNodeInputTableToJOOQRecord(in, _iv_nodeIdStrategy, \"in\")",
-                ".customerNodeRecordToGraphType(response, _iv_nodeIdStrategy, \"\")"
+                ".customerNodeInputTableToJOOQRecord(_mi_in, _iv_nodeIdStrategy, \"in\")",
+                ".customerNodeRecordToGraphType(_iv_response, _iv_nodeIdStrategy, \"\")"
         );
     }
 }
