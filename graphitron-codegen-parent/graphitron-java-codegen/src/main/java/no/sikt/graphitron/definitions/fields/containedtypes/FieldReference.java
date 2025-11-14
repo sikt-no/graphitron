@@ -15,6 +15,11 @@ import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveAr
 import static no.sikt.graphql.directives.GenerationDirective.REFERENCE;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.*;
 
+/**
+ * This class represents a reference to another table in the database, and it's use is related to the reference
+ * directive. It contains information about the table to be referenced, the key to be used for the join,
+ * and any conditions that should be applied to the join.
+ */
 public class FieldReference {
     private final JOOQMapping table;
     private final JOOQMapping key;
@@ -78,17 +83,20 @@ public class FieldReference {
             JoinListSequence joinSequence,
             JOOQMapping tableNameBackup,
             SQLJoinField joinField,
-            boolean isNullable
+            boolean isNullable,
+            JOOQMapping aliasShortNameTable
     ) {
         var targetTable = hasTable() ? getTable() : tableNameBackup;
         var secondLast = joinSequence.getSecondLast();
         var adjustedReference = joinSequence.getLast().equals(targetTable)
-                ? secondLast != null ? secondLast.getCodeName() : targetTable.getCodeName()
+                ? secondLast != null
+                  ? secondLast.getCodeName()
+                  : targetTable.getCodeName()
                 : joinSequence.render() + (joinName.isEmpty() ? "" : "_" + joinName);
         return new SQLJoinStatement(
                 joinSequence,
                 targetTable,
-                new Alias(adjustedReference, targetTable, isNullable).toAliasWrapper(),
+                new Alias(adjustedReference, targetTable, isNullable, aliasShortNameTable).toAliasWrapper(),
                 List.of(joinField),
                 isNullable
         );
@@ -97,14 +105,25 @@ public class FieldReference {
     /**
      * @return A join statement based on a condition.
      */
-    public SQLJoinStatement createConditionJoinFor(JoinListSequence joinSequence, JOOQMapping tableNameBackup, boolean isNullable) {
+    public SQLJoinStatement createConditionJoinFor(JoinListSequence joinSequence, JOOQMapping tableNameBackup, boolean isNullable, JOOQMapping aliasShortNameTable) {
         return createJoinFor(
                 tableCondition.getReference().getMethodName().toLowerCase(),
                 joinSequence,
                 tableNameBackup,
                 new SQLJoinOnCondition(tableCondition),
-                isNullable
+                isNullable,
+                aliasShortNameTable
         );
+    }
+
+    public SQLJoinStatement createConditionJoinFor(JoinListSequence joinSequence, Alias alias, JOOQMapping tableNameBackup, boolean isNullable) {
+       return new SQLJoinStatement(
+               joinSequence, // Left side of the join
+               hasTable() ? getTable() : tableNameBackup,
+               alias.toAliasWrapper(),
+               List.of(new SQLJoinOnCondition(tableCondition)),
+               isNullable
+       );
     }
 
     /**
@@ -116,7 +135,8 @@ public class FieldReference {
                 joinSequence,
                 tableNameBackup,
                 new SQLJoinOnKey(key),
-                isNullable
+                isNullable,
+                null
         );
     }
 
@@ -129,7 +149,8 @@ public class FieldReference {
                 joinSequence,
                 tableNameBackup,
                 new SQLJoinOnKey(keyOverride),
-                isNullable
+                isNullable,
+                null
         );
     }
 

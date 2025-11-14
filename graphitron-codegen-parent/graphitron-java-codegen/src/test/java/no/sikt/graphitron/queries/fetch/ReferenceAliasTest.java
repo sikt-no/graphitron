@@ -58,6 +58,10 @@ public class ReferenceAliasTest extends ReferenceTest {
 
     @Test
     @DisplayName("Condition path")
+    /**
+     * TODO: This does not represent a valid schema because there is no two tables to join. Remove or modify test,
+     *  perhaps?
+     */
     void aliasCondition() {
         assertGeneratedContentContains(
                 "field/condition", Set.of(CUSTOMER_QUERY),
@@ -68,17 +72,6 @@ public class ReferenceAliasTest extends ReferenceTest {
         );
     }
 
-    @Test
-    @DisplayName("Table path on a split query")
-    void splitQuery() {
-        assertGeneratedContentContains(
-                "splitQuery/table", Set.of(CUSTOMER_NOT_GENERATED),
-                "customer.address().as(",
-                "DSL.row(_a_customer_2168032777_address.getId()",
-                ".from(_a_customer)",
-                ".where(DSL.row(_a_customer.CUSTOMER_ID).in(_rk_customer))"
-        );
-    }
 
     @Test
     @DisplayName("Type containing a table type")
@@ -149,34 +142,6 @@ public class ReferenceAliasTest extends ReferenceTest {
     }
 
     @Test
-    @DisplayName("Indirect table path")
-    void throughTable() {
-        assertGeneratedContentContains(
-                "splitQuery/throughTable", Set.of(CUSTOMER_NOT_GENERATED),
-                "customer.address().as(", "customer_2168032777_address.city().as("
-        );
-    }
-
-    @Test
-    @DisplayName("Indirect key path")
-    void throughKey() {
-        assertGeneratedContentContains(
-                "splitQuery/throughKey", Set.of(CUSTOMER_NOT_GENERATED),
-                "customer.address().as(", "customer_2168032777_address.city().as("
-        );
-    }
-
-    @Test
-    @DisplayName("Indirect condition path")
-    void throughCondition() {
-        assertGeneratedContentContains(
-                "splitQuery/throughCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                "customer_city = CUSTOMER.as(\"",
-                "customer_city_citycustomer_city = CITY.as("
-        );
-    }
-
-    @Test
     @DisplayName("Path from a table to another table")
     void tableToTable() {
         assertGeneratedContentContains(
@@ -207,6 +172,10 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "CITY.as(",
                 "customer_2168032777_address_cityaddress_city.CITY",
                 ".cityAddress(_a_customer_2168032777_address, _a_customer_2168032777_address_cityaddress_city)"
+//                "_customer.address().as(\"address_",
+//                "CITY.as(\"city_",
+//                "customer_2952383337_address_cityaddress_city.CITY",
+//                ".cityAddress(customer_2952383337_address, customer_2952383337_address_cityaddress_city)"
         );
     }
 
@@ -314,11 +283,13 @@ public class ReferenceAliasTest extends ReferenceTest {
 
     @Test
     @DisplayName("Path from a condition to another condition")
-    void conditionToCondition() {
+    void ConditionToCondition() {
         assertGeneratedContentContains(
                 "alias/conditionToCondition", Set.of(CUSTOMER_QUERY),
-                "ADDRESS.as(",
-                "CITY.as(",
+                "CUSTOMER.as(\"customer_29",
+                "CUSTOMER.as(\"customer_20",
+                "ADDRESS.as(\"address_",
+                "CITY.as(\"city_",
                 "customer_city_addresscustomer_address_cityaddress_city.CITY",
                 ".addressCustomer(_a_customer_city, _a_customer_city_addresscustomer_address)",
                 ".cityAddress(_a_customer_city_addresscustomer_address, _a_customer_city_addresscustomer_address_cityaddress_city)"
@@ -334,6 +305,10 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "customer_city_addresscustomer_address.city().as(",
                 "address_4217265996_city.CITY",
                 ".addressCustomer(_a_customer_city, _a_customer_city_addresscustomer_address)"
+//                "ADDRESS.as(\"address_",
+//                "customer_city_addresscustomer_address.city().as(\"city_",
+//                "address_1981026222_city.CITY",
+//                ".addressCustomer(customer_city, customer_city_addresscustomer_address)"
         );
     }
 
@@ -346,6 +321,10 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "customer_city_addresscustomer_address.city().as(",
                 "address_4217265996_city.CITY",
                 ".addressCustomer(_a_customer_city, _a_customer_city_addresscustomer_address)"
+//                "ADDRESS.as(\"address_",
+//                "customer_city_addresscustomer_address.city().as(\"city_",
+//                "address_1981026222_city.CITY",
+//                ".addressCustomer(customer_city, customer_city_addresscustomer_address)"
         );
     }
 
@@ -354,8 +333,8 @@ public class ReferenceAliasTest extends ReferenceTest {
     void conditionToConditionReverse() {
         assertGeneratedContentContains(
                 "alias/conditionToConditionReverse", Set.of(CITY_QUERY),
-                "ADDRESS.as(",
-                "CUSTOMER.as(",
+                "ADDRESS.as(\"address_",
+                "CUSTOMER.as(\"customer_",
                 "city_email_addresscity_address_email_customer.EMAIL",
                 ".addressCity(_a_city_email, _a_city_email_addresscity_address)",
                 ".email(_a_city_email_addresscity_address, _a_city_email_addresscity_address_email_customer)"
@@ -371,6 +350,10 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "city_email_addresscity_address.customer().as(",
                 "address_3704850880_customer.EMAIL",
                 ".addressCity(_a_city_email, _a_city_email_addresscity_address)"
+//                "ADDRESS.as(\"address_",
+//                "city_email_addresscity_address.customer().as(\"customer_",
+//                "address_3210818138_customer.EMAIL",
+//                ".addressCity(city_email, city_email_addresscity_address)"
         );
     }
 
@@ -383,6 +366,124 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "city_email_addresscity_address.customer().as(",
                 "address_3704850880_customer.EMAIL",
                 ".addressCity(_a_city_email, _a_city_email_addresscity_address)"
+//                "ADDRESS.as(\"address_",
+//                "city_email_addresscity_address.customer().as(\"customer_",
+//                "address_3210818138_customer.EMAIL",
+//                ".addressCity(city_email, city_email_addresscity_address)"
+        );
+    }
+
+    // ===== Reference directive in combination with split query =====
+
+    @Test
+    @DisplayName("Table path on a split query")
+    void splitQuery() {
+        assertGeneratedContentContains(
+                "splitQuery/table", Set.of(CUSTOMER_NOT_GENERATED),
+                "customer.address().as(",
+                "DSL.row(_a_customer_2168032777_address.getId()",
+                ".from(_a_customer)",
+                ".where(DSL.row(_a_customer.CUSTOMER_ID).in(_rk_customer))"
+//                "_customer = CUSTOMER.as(\"customer_2",
+//                "customer_2952383337_address = _customer.address().as(\"address_1",
+//                "DSL.row(customer_2952383337_address.getId()",
+//                ".where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys))"
+        );
+    }
+
+    @Test
+    @DisplayName("Reverse table path on a split query")
+    void reversePathOnSplitQuery() {
+        assertGeneratedContentContains(
+                "splitQuery/tableBackwards", Set.of(CUSTOMER_TABLE),
+                "_address = ADDRESS.as(\"address_2",
+                "address_2030472956_customer = _address.customer().as(\"customer_2"
+        );
+    }
+
+    @Test
+    @DisplayName("Indirect reverse table path on a split query")
+    void indirectReversePathOnSplitQuery() {
+        assertGeneratedContentContains(
+                "splitQuery/throughTableBackwards", Set.of(CUSTOMER_TABLE),
+                "_city = CITY.as(\"city_1",
+                "city_1887334959_address = _city.address().as(\"address_1",
+                "address_1356285680_customer = city_1887334959_address.customer().as(\"customer_2");
+    }
+
+    @Test
+    @DisplayName("Table path to the same table as source on a split query")
+    void selfTableReferenceOnSplitQuery() {
+        assertGeneratedContentContains(
+                "splitQuery/selfTableReference",
+                "_film = FILM.as(\"film_3",
+                "film_3747728953_film = _film.film().as(\"film_2"
+        );
+    }
+
+    @Test
+    @DisplayName("Indirect table path on a split query")
+    void throughTableOnSplitQuery() {
+        assertGeneratedContentContains(
+                "splitQuery/throughTable", Set.of(CUSTOMER_NOT_GENERATED),
+                "customer.address().as(", "customer_2168032777_address.city().as("
+//                "_customer = CUSTOMER.as(\"customer_2",
+//                "customer_2952383337_address = _customer.address().as(\"address_1",
+//                "address_1214171484_city = customer_2952383337_address.city().as(\"city_2"
+        );
+    }
+
+    @Test
+    @DisplayName("Indirect key path on a split query")
+    void throughKeyOnSplitQuery() {
+        assertGeneratedContentContains(
+                "splitQuery/throughKey", Set.of(CUSTOMER_NOT_GENERATED),
+                "customer.address().as(", "customer_2168032777_address.city().as("
+//                "_customer = CUSTOMER.as(\"customer_2",
+//                "customer_2952383337_address = _customer.address().as(\"address_1",
+//                "address_1214171484_city = customer_2952383337_address.city().as(\"city_2"
+        );
+    }
+
+    @Test
+    @DisplayName("Key path to the same table as source on a split query")
+    void selfKeyReferenceOnSplitQuery() {
+        assertGeneratedContentContains(
+                "splitQuery/selfKeyReference",
+                "_film = FILM.as(\"film_3",
+                "film_3747728953_film = _film.film().as(\"film_2"
+        );
+    }
+
+    @Test
+    @DisplayName("Indirect condition path on a split query")
+    void throughConditionOnSplitQuery() {
+        assertGeneratedContentContains(
+                "splitQuery/throughCondition", Set.of(CUSTOMER_NOT_GENERATED),
+                "_customer = CUSTOMER.as(\"customer_",
+                "customer_city = CITY.as(\"city_"
+//                "_customer = CUSTOMER.as(\"customer_2",
+//                "customer_city = CITY.as(\"city_2"
+        );
+    }
+
+    @Test
+    @DisplayName("Both a table and a condition set on the same path element on a split query")
+    void tableAndConditionOnSplitQuery() {
+        assertGeneratedContentContains(
+                "splitQuery/tableAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
+                "_customer = CUSTOMER.as(\"customer_2",
+                "customer_address = ADDRESS.as(\"address_2"
+        );
+    }
+
+    @Test
+    @DisplayName("Both a key and a condition set on the same path element on a split query")
+    void keyAndConditionOnSplitQuery() {
+        assertGeneratedContentContains(
+                "splitQuery/keyAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
+                "_customer = CUSTOMER.as(\"customer_2",
+                "customer_2952383337_address = _customer.address().as(\"address_1"
         );
     }
 }

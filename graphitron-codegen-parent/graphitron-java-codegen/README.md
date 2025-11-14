@@ -1118,7 +1118,7 @@ Requirements:
 - The `type` where **externalField** is used needs to have a table associated to it
 
 #### Example
-Say you have a GraphQL schema like this, where you have defined a type with an associated database table, which returns a one field:
+Say you have a GraphQL schema like this, where you have defined a type with an associated database table, which returns a field:
 
 ```graphql
 type Film @table(name: "FILM") {
