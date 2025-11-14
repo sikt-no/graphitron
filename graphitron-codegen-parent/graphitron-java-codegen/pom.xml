@@ -90,6 +90,7 @@
                         </goals>
 
                         <configuration>
+                            <skip>${jooq.codegen.skip}</skip> <!--To skip: -Djooq.codegen.skip=true-->
                             <jdbc>
                                 <driver>org.testcontainers.jdbc.ContainerDatabaseDriver</driver>
                                 <url>${db.url}</url>
@@ -159,6 +160,7 @@
 
     </build>
     <properties>
+        <jooq.codegen.skip>false</jooq.codegen.skip>
         <db.url>jdbc:tc:postgresql:15:///sakila?TC_TMPFS=/testtmpfs:rw&amp;TC_INITSCRIPT=file:${basedir}/src/test/resources/database/postgres-sakila-schema.sql</db.url>
         <db.username>postgres</db.username>
         <db.password>postgres</db.password>
