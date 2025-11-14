@@ -109,8 +109,8 @@ public class ReferenceSubqueryTest extends ReferenceTest {
     void nestedLists() {
         assertGeneratedContentContains(
                 "nestedLists", Set.of(CUSTOMER_QUERY),
-                ".from(_a_address_2138977089_store)",
-                ".from(_a_customer_2168032777_address)"
+                ".select(queryForQuery_customer_d1_address()).from(_a_customer_2168032777_address)",
+                ".select(queryForQuery_customer_d1_address_d2_stores()).from(_a_address_2138977089_store)"
         );
     }
 

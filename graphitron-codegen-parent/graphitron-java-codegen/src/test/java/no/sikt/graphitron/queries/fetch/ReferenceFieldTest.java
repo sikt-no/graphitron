@@ -114,4 +114,33 @@ public class ReferenceFieldTest extends ReferenceTest {
                 ".from(_a_customer_2168032777_address)"
         );
     }
+
+    @Test
+    @DisplayName("Wrapper with @reference key to table type")
+    void wrapperWithKey() {
+        assertGeneratedContentContains(
+                "wrapperWithKey",
+                """
+                          private static SelectField<Film> queryForQuery_film() {
+                                var _a_film = FILM.as("film_2185543202");
+                                var _a_film_2185543202_filmlanguageidfkey = _a_film.filmLanguageIdFkey().as("language_4253626089");
+                                return DSL.row(
+                                        DSL.row(
+                                                DSL.field(
+                                                        DSL.select(queryForQuery_film_d1_language())
+                                                        .from(_a_film_2185543202_filmlanguageidfkey)
+                                                )
+                                        ).mapping(Functions.nullOnAllNull(LanguageWrapper::new))
+                                ).mapping(Functions.nullOnAllNull(Film::new));
+                            }
+                        """,
+                        """
+                        private static SelectField<Language> queryForQuery_film_d1_language() {
+                            var _a_film = FILM.as("film_2185543202");
+                            var _a_film_2185543202_filmlanguageidfkey = _a_film.filmLanguageIdFkey().as("language_4253626089");
+                            return DSL.row(_a_film_2185543202_filmlanguageidfkey.NAME).mapping(Functions.nullOnAllNull(Language::new));
+                        }
+                        """
+        );
+    }
 }

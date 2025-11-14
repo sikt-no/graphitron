@@ -958,6 +958,10 @@ public class ProcessedSchema {
         return (isObject(name) || isConnectionObject(name)) && objectWithPreviousTable.containsKey(name);
     }
 
+    public boolean isReferenceResolverField(ObjectField field) {
+        return field.isResolver() && isObjectOrConnectionNodeWithPreviousTableObject(field.getContainerTypeName());
+    }
+
     public boolean returnsList(ObjectField field) {
         return field.isIterableWrapped() || field.hasPagination();
     }

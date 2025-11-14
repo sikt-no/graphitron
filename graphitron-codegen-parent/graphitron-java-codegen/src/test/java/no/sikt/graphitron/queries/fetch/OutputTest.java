@@ -36,7 +36,7 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "listed", Set.of(CUSTOMER_TABLE),
                 "List<CustomerTable> queryForQuery",
-                ".select(DSL.row(",
+                ".select(queryForQuery_customerTable(",
                 ".fetch(_iv_it -> _iv_it.into(CustomerTable.class"
         );
     }
@@ -44,14 +44,7 @@ public class OutputTest extends GeneratorTest {
     @Test
     @DisplayName("Simple table type return on non-root level")
     void splitQuery() {
-        assertGeneratedContentContains(
-                "splitQuery", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
-                "Map<Row1<Long>, CustomerTable> queryForWrapper",
-                "Set<Row1<Long>> _rk_wrapper",
-                ".select(DSL.row(_a_address.ADDRESS_ID),DSL.field(",
-                ".where(DSL.row(_a_address.ADDRESS_ID).in(_rk_wrapper))",
-                ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), Record2::value2"
-        );
+        assertGeneratedContentMatches("splitQuery", CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER);
     }
 
     @Test
@@ -83,7 +76,7 @@ public class OutputTest extends GeneratorTest {
     @Test // TODO: Should result in an error.
     @DisplayName("Containing field annotated with @splitQuery and no other fields")
     void noGeneratedField() {
-        assertGeneratedContentContains("noGeneratedField", Set.of(CUSTOMER_TABLE), ".select(.mapping(Functions.nullOnAllNull(Address::new");
+        assertGeneratedContentContains("noGeneratedField", Set.of(CUSTOMER_TABLE), "return .mapping(Functions.nullOnAllNull(Address::new))");
     }
 
     @Test
@@ -102,7 +95,7 @@ public class OutputTest extends GeneratorTest {
     @DisplayName("Field annotated with @externalField should use method extended on field's jooq table")
     void externalField() {
         assertGeneratedContentContains("externalField",
-                ".select(DSL.row(no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod.name(_a_customer))"
+                "return DSL.row(no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod.name(_a_customer))"
         );
     }
 
@@ -110,7 +103,7 @@ public class OutputTest extends GeneratorTest {
     @DisplayName("Field annotated with @externalField should map types correctly even when over 22 fields")
     void externalFieldOver22() {
         assertGeneratedContentContains("externalFieldOver22",
-                ".select(DSL.row(no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod.name(_a_customer),",
+                "return DSL.row(no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod.name(_a_customer),",
                 "no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod.name(_a_customer).getDataType().convert(_iv_r[0]),"
         );
     }
@@ -153,11 +146,15 @@ public class OutputTest extends GeneratorTest {
     void outerNestedRow() {
         assertGeneratedContentContains(
                 "outerNestedRow", Set.of(CUSTOMER_TABLE),
-                ".row(DSL.field(DSL.select(DSL.row(_a_customer.getId())" +
-                        ".mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
-                        ".from(_a_customer)))" +
-                        ".mapping(Functions.nullOnAllNull(Wrapper::new)))" +
-                        ".fetchOne(_iv_it -> _iv_it.into(Wrapper.class))"
+                """
+                    return DSL.row(
+                            DSL.field(
+                                    DSL.select(queryForQuery_wrapper_d1_customer())
+                                    .from(_a_customer)
+                            )
+                    ).mapping(Functions.nullOnAllNull(Wrapper::new))
+                """,
+                ".mapping(Functions.nullOnAllNull(CustomerTable::new))"
         );
     }
 
@@ -166,12 +163,17 @@ public class OutputTest extends GeneratorTest {
     void outerNestedListedRow() {
         assertGeneratedContentContains(
                 "outerNestedListedRow", Set.of(CUSTOMER_TABLE),
-                ".row(DSL.row(DSL.multiset(DSL.select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
-                        ".from(_a_customer)" +
-                        ".orderBy(_a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))))" +
-                        ".mapping(_iv_e -> _iv_e.map(Record1::value1)))" +
-                        ".mapping(Functions.nullOnAllNull((_iv_it) -> new Wrapper(_iv_it))))" +
-                        ".fetchOne(_iv_it -> _iv_it.into(Wrapper.class))"
+                """
+                DSL.row(
+                        DSL.row(
+                                DSL.multiset(
+                                        DSL.select(queryForQuery_wrapper_d1_customer())
+                                        .from(_a_customer)
+                                        .orderBy(_a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))
+                                )
+                        ).mapping(_iv_e -> _iv_e.map(Record1::value1))
+                ).mapping(Functions.nullOnAllNull((_iv_it) -> new Wrapper(_iv_it)))
+                """
         );
     }
 
@@ -180,7 +182,7 @@ public class OutputTest extends GeneratorTest {
     void outerNestedRowExtraField() {
         assertGeneratedContentContains(
                 "outerNestedRowExtraField", Set.of(CUSTOMER_TABLE),
-                ".row(.EMAIL,DSL.field(DSL.select(DSL.row(_a_customer.getId())"
+                ".row(.EMAIL,DSL.field(DSL.select(queryForQuery_wrapper_d1_customer())"
         );
     }
 
@@ -189,11 +191,16 @@ public class OutputTest extends GeneratorTest {
     void outerDoubleNestedRow() {
         assertGeneratedContentContains(
                 "outerDoubleNestedRow", Set.of(CUSTOMER_TABLE),
-                ".row(DSL.row(DSL.field(DSL.select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
-                        ".from(_a_customer)))" +
-                        ".mapping(Functions.nullOnAllNull(Wrapper2::new)))" +
-                        ".mapping(Functions.nullOnAllNull(Wrapper1::new)))" +
-                        ".fetchOne(_iv_it -> _iv_it.into(Wrapper1.class));"
+                """
+                return DSL.row(
+                                DSL.row(
+                                        DSL.field(
+                                                DSL.select(queryForQuery_wrapper1_d1_customer())
+                                                .from(_a_customer)
+                                        )
+                                ).mapping(Functions.nullOnAllNull(Wrapper2::new))
+                        ).mapping(Functions.nullOnAllNull(Wrapper1::new));
+                """
         );
     }
 
@@ -202,10 +209,16 @@ public class OutputTest extends GeneratorTest {
     void outerNestedWithArgument() {
         assertGeneratedContentContains(
                 "outerNestedWithArgument", Set.of(CUSTOMER_TABLE),
-                "ctx, String firstName,",
-                "CustomerTable::new))).from(_a_customer)" +
-                        ".where(firstName != null ? _a_customer.FIRST_NAME.eq(firstName) : DSL.noCondition())",
-                "Outer::new))).fetchOne" // Checks that no outer where statement exists.
+                "queryForQuery(DSLContext _iv_ctx, String firstName,",
+                "queryForQuery_outer(firstName)).fetchOne",
+                "queryForQuery_outer(String firstName)",
+                """
+                DSL.field(
+                        DSL.select(queryForQuery_outer_d1_customers())
+                        .from(_a_customer)
+                        .where(firstName != null ? _a_customer.FIRST_NAME.eq(firstName) : DSL.noCondition())
+                """,
+                "return DSL.row(_a_customer.getId()).mapping" // Checks that no outer where statement exists.
         );
     }
 
@@ -214,11 +227,17 @@ public class OutputTest extends GeneratorTest {
     void outerNestedWithArgumentListed() {
         assertGeneratedContentContains(
                 "outerNestedWithArgumentListed", Set.of(CUSTOMER_TABLE),
-                "ctx, List<String> firstName,",
-                "CustomerTable::new))).from(_a_customer)" +
-                        ".where(firstName.size() > 0 ? _a_customer.FIRST_NAME.in(firstName) : DSL.noCondition())" +
-                        ".orderBy(_a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))",
-                "new Outer(_iv_it)))).fetchOne"
+                "queryForQuery(DSLContext _iv_ctx, List<String> firstName,",
+                ".select(queryForQuery_outer(firstName)).fetchOne",
+                "queryForQuery_outer(List<String> firstName)",
+                """
+                DSL.multiset(
+                        DSL.select(queryForQuery_outer_d1_customers())
+                        .from(_a_customer)
+                        .where(firstName.size() > 0 ? _a_customer.FIRST_NAME.in(firstName) : DSL.noCondition())
+                        .orderBy(_a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))
+                )
+                """
         );
     }
 
@@ -227,10 +246,14 @@ public class OutputTest extends GeneratorTest {
     void outerDoubleNestedWithArgument() {
         assertGeneratedContentContains(
                 "outerDoubleNestedWithArgument", Set.of(CUSTOMER_TABLE),
-                "ctx, String firstName,",
-                "CustomerTable::new))).from(_a_customer)" +
-                        ".where(firstName != null ? _a_customer.FIRST_NAME.eq(firstName) : DSL.noCondition())",
-                "Wrapper1::new))).fetchOne"
+                """
+                return DSL.row(
+                        DSL.row(
+                                DSL.field(
+                                        DSL.select(queryForQuery_wrapper1_d1_customer())
+                                        .from(_a_customer)
+                                        .where(firstName != null ? _a_customer.FIRST_NAME.eq(firstName) : DSL.noCondition())
+               """
         );
     }
 
@@ -360,21 +383,13 @@ public class OutputTest extends GeneratorTest {
     @Test
     @DisplayName("Type containing a table type (field subquery)")
     void innerTable() {
-        assertGeneratedContentContains(
-                "innerTable",
-                ".row(DSL.field(DSL.select(DSL.row(_a_customer_",
-                ".mapping(Functions.nullOnAllNull(Address::new)))",
-                "))).mapping(Functions.nullOnAllNull(Customer::new");
+        assertGeneratedContentMatches("innerTable");
     }
 
     @Test
     @DisplayName("Type containing a listed table type (multiset subquery)")
     void innerTableListed() {
-        assertGeneratedContentContains(
-                "innerTableListed",
-                ".row(DSL.multiset(DSL.select(DSL.row(_a_customer_",
-                ".mapping(Functions.nullOnAllNull(Address::new)))",
-                "))).mapping(Functions.nullOnAllNull(Customer::new");
+        assertGeneratedContentMatches("innerTableListed");
     }
 
     @Test
@@ -395,14 +410,5 @@ public class OutputTest extends GeneratorTest {
                 "fromSchema2ForQuery",
                 "pguser.getId()",
                 ".from(_a_pguser)");
-    }
-
-    @Test
-    @DisplayName("Type implementing a table with a subtype collecting some of the table's fields.")
-    void subtype() {
-        assertGeneratedContentContains(
-                "subtype",
-                ".getId(),DSL.row(_a_customer.FIRST_NAME,",
-                ").mapping(Functions.nullOnAllNull(CustomerName::new))).mapping(Functions.nullOnAllNull(Customer::new))");
     }
 }

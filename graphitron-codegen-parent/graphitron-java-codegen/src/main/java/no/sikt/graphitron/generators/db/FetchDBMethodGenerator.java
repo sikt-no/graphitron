@@ -169,7 +169,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (context.getReferenceObject() == null || field.hasNodeID()) {
             select.add(generateForField(field, context));
         } else {
-            select.add(generateSelectRow(context));
+            // Allow subclasses to use helper methods for record types
+            var helperMethodCall = getHelperMethodCallForNestedField((ObjectField) field, context);
+            if (helperMethodCall != null) {
+                select.add(helperMethodCall);
+            } else {
+                select.add(generateSelectRow(context));
+            }
         }
 
         var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
@@ -194,6 +200,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 : wrapInMultisetWithMapping(contents, shouldHaveOrderByToken);
     }
 
+    /**
+     * Override this method to provide a helper method call for nested record type fields.
+     * Return null to use inline generation.
+     */
+    protected CodeBlock getHelperMethodCallForNestedField(ObjectField field, FetchContext context) {
+        return null;
+    }
+    
     private CodeBlock wrapInMultisetWithMapping(CodeBlock contents, boolean hasOrderByToken) {
         return CodeBlock.of(
                 "$L.mapping($L -> $N.map($T::value$L))",

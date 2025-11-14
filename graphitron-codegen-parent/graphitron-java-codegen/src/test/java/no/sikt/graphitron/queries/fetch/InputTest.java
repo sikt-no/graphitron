@@ -144,18 +144,18 @@ public class InputTest extends GeneratorTest {
         );
     }
 
-   @Test
-   @DisplayName("Three-level input type containing two other input types on the same level")
-   void multiLevelInput() {
+    @Test
+    @DisplayName("Three-level input type containing two other input types on the same level")
+    void multiLevelInput() {
         assertGeneratedContentContains(
                 "multiLevelInput", Set.of(STAFF, NAME_INPUT),
                 ".where(_a_staff.FIRST_NAME.eq(staff.getInfo().getName().getFirstname()))" +
-                ".and(_a_staff.LAST_NAME.eq(staff.getInfo().getName().getLastname()))" +
-                ".and(staff.getInfo().getJobEmail().getEmail() != null ? _a_staff.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()) : DSL.noCondition())" +
-                ".and(_a_staff.ACTIVE.eq(staff.getActive()))" +
-                ".orderBy"
+                        ".and(_a_staff.LAST_NAME.eq(staff.getInfo().getName().getLastname()))" +
+                        ".and(staff.getInfo().getJobEmail().getEmail() != null ? _a_staff.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()) : DSL.noCondition())" +
+                        ".and(_a_staff.ACTIVE.eq(staff.getActive()))" +
+                        ".orderBy"
         );
-   }
+    }
 
     @Test
     @DisplayName("On field returning single table interface")
@@ -171,6 +171,29 @@ public class InputTest extends GeneratorTest {
         assertGeneratedContentContains("onSplitQueryField",
                 ".from(_a_address_223244161_customer).where(_a_address_223244161_customer.EMAIL.eq(email))",
                 ".from(_a_address).where(DSL.row(_a_address.ADDRESS_ID).in(_rk_address)).fetch" // Make sure conditon is not applied on outer query
+        );
+    }
+
+    @Test
+    @DisplayName("Wrapper type that also has input table parameter")
+    void wrappedTypeWithInputTable() {
+        assertGeneratedContentContains(
+                "inputTable",
+                // Main method signature includes input record parameter
+                "public static FilmContainer filmWrappedWithInputTableAndTableFieldForQuery(DSLContext _iv_ctx,\n" +
+                "                    FilmRecord inputRecord, SelectionSet _iv_select)",
+                // Helper method signature receives input record parameter
+                "private static SelectField<FilmContainer> filmWrappedWithInputTableAndTableFieldForQuery_filmContainer(\n" +
+                "                    FilmRecord inputRecord)",
+                // Nested helper method at depth 1
+                "private static SelectField<Language> filmWrappedWithInputTableAndTableFieldForQuery_filmContainer_d1_language()",
+                // Main method calls helper with input record parameter
+                ".select(filmWrappedWithInputTableAndTableFieldForQuery_filmContainer(inputRecord))",
+                // Helper declares necessary aliases
+                "var _a_film = FILM.as(\"film_2185543202\");",
+                "var _a_film_2185543202_film = _a_film.film().as(\"film_3535906766\");",
+                // Helper calls nested helper
+                "DSL.select(filmWrappedWithInputTableAndTableFieldForQuery_filmContainer_d1_language())"
         );
     }
 }
