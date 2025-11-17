@@ -49,15 +49,20 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     @Override
     public MethodSpec generate(ObjectField target) {
         var parser = new InputParser(target, processedSchema);
+
         if (processedSchema.isMultiTableInterface(target.getTypeName()) || processedSchema.isUnion(target.getTypeName())) {
             return getSpecBuilder(target, parser)
                     .addCode(getCodeForMultitableCountMethod(target))
                     .build();
         }
+
         var context = new FetchContext(processedSchema, target, getLocalObject(), true);
         var targetSource = context.renderQuerySource(getLocalTable());
-        var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
-        var nextContext = target.isResolver() ? context.nextContext(target) : context;
+        var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver(), false);
+        var nextContext = isResolverWithPagination(target)
+                          ? context.nextContext(target)
+                          : context;
+
         return getSpecBuilder(target, parser)
                 .addCode(declareAllServiceClassesInAliasSet(nextContext.getAliasSet()))
                 .addCode(createAliasDeclarations(nextContext.getAliasSet()))
@@ -85,26 +90,42 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         var aliasSet = new LinkedHashSet<AliasWrapper>();
         var codeForImplementations = CodeBlock.builder();
 
+        if (target.isResolver()) {
+            implementations
+                    .stream()
+                    .findFirst()
+                    .map(it -> new FetchContext(
+                            processedSchema, new VirtualSourceField(it, target), localObject, false))
+                    .map(FetchContext::getAliasSet)
+                    .ifPresent(aliasSet::addAll);
+        }
+
         implementations.forEach(implementation -> {
             var virtualTarget = new VirtualSourceField(implementation, target);
             var context = new FetchContext(processedSchema, virtualTarget, localObject, true);
-            var refContext = virtualTarget.isResolver() ? context.nextContext(virtualTarget) : context;
-            var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
-            var countForImplementation = CodeBlock.builder()
+            var refContext = isResolverWithPagination(virtualTarget)
+                             ? context.nextContext(virtualTarget)
+                             : context;
+            var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver(), true);
+            var countForImplementation = CodeBlock
+                    .builder()
                     .add("$T.select(", DSL.className)
                     .addIf(!isRoot,() -> CodeBlock.of("$L)",getSelectKeyColumnRow(context)))
                     .addIf(isRoot, "$T.count().as($S))", DSL.className, COUNT_FIELD_NAME)
-                    .add("\n.from($L)\n", context.getTargetAlias())
+                    .add("\n.from($L)\n", context.getSourceAlias())
                     .add(createSelectJoins(refContext.getJoinSet()))
                     .add(where)
                     .add(createSelectConditions(context.getConditionList(), !where.isEmpty()));
 
-            aliasSet.addAll(refContext.getAliasSet());
+            aliasSet.addAll(getRelevantAliasSet(target, context, refContext));
+
             codeForImplementations.declare(getCountVariableName(implementation.getName()), countForImplementation.build());
         });
 
-        var code = CodeBlock.builder()
+        var code = CodeBlock
+                .builder()
                 .add(createAliasDeclarations(aliasSet))
+                .add("\n")
                 .add(codeForImplementations.build());
 
         var resolverKey = implementations.stream()
@@ -139,6 +160,31 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
     private static String getCountVariableName(String implementationName) {
         return String.format("count%s", implementationName);
+    }
+
+    private LinkedHashSet<AliasWrapper> getRelevantAliasSet(
+            ObjectField target,
+            FetchContext context,
+            FetchContext refContext
+    ) {
+        if (isResolverWithPagination(target)) {
+            return new LinkedHashSet<>(refContext.getAliasSet());
+        }
+
+        if (context.getAliasSet().size() > 1) {
+            return context
+                    .getAliasSet()
+                    .stream()
+                    .findFirst()
+                    .map(startAlias -> context
+                            .getAliasSet()
+                            .stream()
+                            .filter(it -> !it.equals(startAlias))
+                            .collect(Collectors.toCollection(LinkedHashSet::new)))
+                    .orElse(new LinkedHashSet<>(refContext.getAliasSet()));
+        }
+
+        return new LinkedHashSet<>(refContext.getAliasSet());
     }
 
     @NotNull

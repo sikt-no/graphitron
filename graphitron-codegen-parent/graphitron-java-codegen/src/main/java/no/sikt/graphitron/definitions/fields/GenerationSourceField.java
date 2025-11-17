@@ -155,6 +155,10 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (x, y) -> y, LinkedHashMap::new));
     }
 
+    /**
+     *  A field is considered a resolver if it has a `@splitQuery` directive applied, or if it is a field with
+     *  arguments.
+     */
     @Override
     public boolean isResolver() {
         return isResolver;
@@ -165,6 +169,9 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return !isResolver && (hasFieldReferences() || (hasNodeID() && !getNodeIdTypeName().equals(getContainerTypeName())) || isIterableWrapped());
     }
 
+    /**
+     * A field is considered an external field if it has the `@externalField` directive applied.
+     */
     public boolean isExternalField() {
         return isExternalField;
     }
@@ -216,6 +223,9 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return hasCondition() && condition.isOverride();
     }
 
+    /**
+     * A field is considered generated unless the `@notGenerated` directive is applied.
+     */
     @Override
     public boolean isGenerated() {
         return isGenerated;
@@ -244,6 +254,10 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return null;
     }
 
+    /**
+     * A field is considered generated with a resolver if it is generated and satisfies one of the following
+     * conditions: it is a resolver, it is a field in the root type `Query`, or it is a field in the `Mutation` type.
+     */
     @Override
     public boolean isGeneratedWithResolver() {
         return isGeneratedAsResolver;

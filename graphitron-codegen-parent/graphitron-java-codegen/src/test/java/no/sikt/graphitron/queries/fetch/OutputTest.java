@@ -51,6 +51,10 @@ public class OutputTest extends GeneratorTest {
                 ".select(DSL.row(_a_address.ADDRESS_ID),DSL.field(",
                 ".where(DSL.row(_a_address.ADDRESS_ID).in(_rk_wrapper))",
                 ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), Record2::value2"
+//                "Set<Row1<Long>> wrapperResolverKeys",
+//                ".select(DSL.row(_address.ADDRESS_ID),DSL.row(",
+//                ".where(DSL.row(_address.ADDRESS_ID).in(wrapperResolverKeys))",
+//                ".fetchMap(r -> r.value1().valuesRow(), Record2::value2"
         );
     }
 
@@ -62,6 +66,8 @@ public class OutputTest extends GeneratorTest {
                 "Map<Row1<Long>, List<CustomerTable>> queryForWrapper",
                 ".select(DSL.row(_a_address.ADDRESS_ID),DSL.multiset(DSL.select",
                 ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), _iv_r -> _iv_r.value2().map(Record1::value1))"
+//                ".select(DSL.row(_address.ADDRESS_ID),DSL.row(address_2030472956_customer.getId()).mapping",
+//                ".fetchGroups(r -> r.value1().valuesRow(), Record2::value2)"
         );
     }
 
@@ -383,6 +389,7 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "innerTableSelfReference",
                 ".row(_a_film.FILM_ID),DSL.field(",
+//                ".row(_film.FILM_ID),DSL.row(DSL.row(",
                 ".mapping(Functions.nullOnAllNull(Film::new");
     }
 
