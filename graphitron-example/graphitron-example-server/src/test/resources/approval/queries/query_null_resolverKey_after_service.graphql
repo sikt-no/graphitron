@@ -1,0 +1,10 @@
+{
+    helloWorldWithNullResolverKeys {
+        film {
+            id
+        }
+        films {
+            id
+        }
+    }
+}

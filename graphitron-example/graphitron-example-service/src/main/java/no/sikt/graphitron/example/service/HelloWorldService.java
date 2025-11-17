@@ -67,4 +67,8 @@ public class HelloWorldService {
 
         return List.of(record1, record2);
     }
+
+    public List<HelloWorldRecord> helloWorldWithNullResolverKeys() {
+        return List.of(new HelloWorldRecord());
+    }
 }

@@ -4,6 +4,7 @@ extend type Query {
     helloWorldAgainWithJavaRecordInput(input: HelloWorldInputObject!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
     helloWorldWithSplitQueryField(addressIds: [String]!): [HelloWorldObject] @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
     helloWorldWithSplitQueryListField: [HelloWorldObject] @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
+    helloWorldWithNullResolverKeys: [HelloWorldObject] @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
 
     customerService: Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
     customerServiceWithJooqRecordInput(input: CustomerInput!): Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
