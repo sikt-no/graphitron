@@ -150,6 +150,7 @@ public class DataFetcherHelper extends AbstractFetcher {
     }
 
     public <K, V> CompletableFuture<List<V>> loadByResolverKeys(List<K> keys, DBQuery<K, V> dbFunction) {
+        keys = keys == null ? List.of() : keys.stream().filter(Objects::nonNull).toList();
         if (keys.isEmpty()) {
             return CompletableFuture.completedFuture(List.of());
         }
@@ -225,6 +226,7 @@ public class DataFetcherHelper extends AbstractFetcher {
     }
 
     private <K, V> CompletableFuture<Map<KeyWithPath<K>, V>> getMappedDataLoader(Set<KeyWithPath<K>> keys, SelectionSet selectionSet, DBQuery<K, V> dbFunction) {
+        keys = keys.stream().filter(Objects::nonNull).collect(Collectors.toSet());
         if (keys.isEmpty()) {
             return CompletableFuture.completedFuture(Map.of());
         }
