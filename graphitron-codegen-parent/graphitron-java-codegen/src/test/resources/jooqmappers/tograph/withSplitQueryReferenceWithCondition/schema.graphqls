@@ -1,0 +1,11 @@
+type Query {
+  query: Customer @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Customer @table {
+  address: Address @splitQuery @reference(path: [{condition: {className: "no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition", method: "addressCustomer"}}])
+}
+
+type Address @table {
+  id: ID!
+}

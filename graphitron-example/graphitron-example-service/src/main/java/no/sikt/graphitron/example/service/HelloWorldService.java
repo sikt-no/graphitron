@@ -49,4 +49,22 @@ public class HelloWorldService {
                 }
         ).toList();
     }
+
+    public List<HelloWorldRecord> helloWorldWithSplitQueryListField() {
+        var record1 = new HelloWorldRecord();
+        var record2 = new HelloWorldRecord();
+
+        record1.setGreeting("First");
+        record2.setGreeting("Second");
+
+        var film1 = new FilmRecord();
+        film1.setFilmId("1");
+        var film2 = new FilmRecord();
+        film2.setFilmId("2");
+
+        record1.setFilms(List.of(film2, film1));
+        record2.setFilms(List.of());
+
+        return List.of(record1, record2);
+    }
 }

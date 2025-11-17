@@ -1,0 +1,23 @@
+{
+    "data": {
+        "helloWorldWithSplitQueryListField": [
+            {
+                "greeting": "First",
+                "films": [
+                    {
+                        "id": "RmlsbToy"
+                    },
+                    {
+                        "id": "RmlsbTox"
+                    }
+                ]
+            },
+            {
+                "greeting": "Second",
+                "films": [
+                    
+                ]
+            }
+        ]
+    }
+}

@@ -1,0 +1,87 @@
+{
+    "data": {
+        "customerService": {
+            "id": "Q3VzdG9tZXI6Mw",
+            "payments": [
+                {
+                    "paymentId": 60
+                },
+                {
+                    "paymentId": 61
+                },
+                {
+                    "paymentId": 62
+                },
+                {
+                    "paymentId": 63
+                },
+                {
+                    "paymentId": 64
+                },
+                {
+                    "paymentId": 65
+                },
+                {
+                    "paymentId": 66
+                },
+                {
+                    "paymentId": 67
+                },
+                {
+                    "paymentId": 68
+                },
+                {
+                    "paymentId": 69
+                },
+                {
+                    "paymentId": 70
+                },
+                {
+                    "paymentId": 71
+                },
+                {
+                    "paymentId": 72
+                },
+                {
+                    "paymentId": 73
+                },
+                {
+                    "paymentId": 74
+                },
+                {
+                    "paymentId": 75
+                },
+                {
+                    "paymentId": 76
+                },
+                {
+                    "paymentId": 77
+                },
+                {
+                    "paymentId": 78
+                },
+                {
+                    "paymentId": 79
+                },
+                {
+                    "paymentId": 80
+                },
+                {
+                    "paymentId": 81
+                },
+                {
+                    "paymentId": 82
+                },
+                {
+                    "paymentId": 83
+                },
+                {
+                    "paymentId": 84
+                },
+                {
+                    "paymentId": 85
+                }
+            ]
+        }
+    }
+}

@@ -1,0 +1,8 @@
+{
+    customerService {
+        id
+        payments {
+            paymentId
+        }
+    }
+}

@@ -88,6 +88,7 @@ type Customer implements Node @node @table {
     address: Address!
     addressSplitQuery: Address @splitQuery
     addressSplitQueryWithKey: Address @splitQuery @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
+    payments: [Payment] @reference(path: [{key: "PAYMENT__PAYMENT_CUSTOMER_ID_FKEY"}]) @splitQuery
 }
 
 type CustomerName {
@@ -210,6 +211,7 @@ enum OrderDirection {
 }
 
 type Payment @table {
+    paymentId: Int @field(name: "PAYMENT_ID")
     amount: BigDecimal
     dateTime: LocalDateTime @field(name: "PAYMENT_DATE")
 #    customer: CustomerRecord @splitQuery @service(service: {className: "no.sikt.graphitron.example.service.CustomerService"}) # kommentert ut pga bug i mapper
