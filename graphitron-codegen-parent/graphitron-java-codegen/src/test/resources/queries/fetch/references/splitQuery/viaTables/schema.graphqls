@@ -1,0 +1,25 @@
+type Query {
+  query: Film @notGenerated
+}
+
+type Film @table {
+    #  Film -> Inventory -> Store
+    storesThatHaveThisFilm: [Store] @splitQuery @reference(path: [{key: "INVENTORY__INVENTORY_FILM_ID_FKEY"}, {table: "STORE"}])
+
+    # Film -> Inventory -> Store -> Address -> City
+    citiesWhereFilmIsStocked: [City] @splitQuery @reference(path: [{key: "INVENTORY__INVENTORY_FILM_ID_FKEY"}, {table: "STORE"}, {table: "ADDRESS"}, {table: "CITY"}])
+}
+
+type Store @table {
+    id: ID
+}
+
+type City @table {
+    id: ID
+    # City -> Address -> Customer -> Payment
+    payments: [Payment] @reference(path: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}])
+}
+
+type Payment @table {
+    id: ID
+}

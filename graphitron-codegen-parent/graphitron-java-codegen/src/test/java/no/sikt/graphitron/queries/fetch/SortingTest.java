@@ -69,7 +69,7 @@ public class SortingTest extends GeneratorTest {
     void multiset() {
         var generatedFiles = generateFiles("multiset", Set.of());
         contains(generatedFiles,
-                "ctx.select(DSL",
+                "_iv_ctx.select(queryForQuery_address(",
                 ".from(_a_address_223244161_customer).orderBy(_a_address_223244161_customer.fields(_a_address_223244161_customer.getPrimaryKey().getFieldsArray()))"
         );
         doesNotContain(generatedFiles, "orderFields");

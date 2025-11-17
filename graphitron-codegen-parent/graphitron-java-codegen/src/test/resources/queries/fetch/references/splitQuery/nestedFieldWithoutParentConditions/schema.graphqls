@@ -1,0 +1,20 @@
+type Query {
+    query: Customer
+}
+
+type Customer @table {
+    customerId: Int @field(name: "CUSTOMER_ID")
+    # SplitQuery to payments with a condition that generates WHERE clauses
+    payments: [Payment] @splitQuery
+}
+
+type Payment @table {
+    paymentId: Int @field(name: "PAYMENT_ID")
+    amount: String
+    staff: Staff! @reference(path: [{table: "STAFF", condition: {name: "PAYMENT_CONDITION", method: "paymentStaff"}}])
+}
+
+type Staff @table {
+    staffId: Int @field(name: "STAFF_ID")
+    firstName: String @field(name: "FIRST_NAME")
+}

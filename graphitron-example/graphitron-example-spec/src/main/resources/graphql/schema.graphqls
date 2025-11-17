@@ -149,6 +149,16 @@ type Film implements Node @node @table {
     title: String
     description: String
     language: Language @reference(path: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
+    #Film -> Inventory -> Store
+    storesThatHaveThisFilm: [Store] @splitQuery @reference(path: [{key: "INVENTORY__INVENTORY_FILM_ID_FKEY"}, {table: "STORE"}])
+    # Film -> Inventory -> Store -> Address -> City
+    citiesWhereFilmIsStocked: [City] @splitQuery @reference(path: [{key: "INVENTORY__INVENTORY_FILM_ID_FKEY"}, {table: "STORE"}, {table: "ADDRESS"}, {table: "CITY"}])
+
+    languageWrapper: LanguageWrapper
+}
+
+type LanguageWrapper {
+    originalLanguage: Language @reference(path: {key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"})
 }
 
 input FilmLookupInput {

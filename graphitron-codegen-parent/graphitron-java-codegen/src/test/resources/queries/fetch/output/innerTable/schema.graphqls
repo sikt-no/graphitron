@@ -3,6 +3,7 @@ type Query {
 }
 
 type Customer @table {
+  id: ID
   address: Address
 }
 

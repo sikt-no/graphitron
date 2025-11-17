@@ -1,0 +1,15 @@
+
+type Address implements Node @table {
+    id: ID!
+    city: City!
+}
+
+type City implements Node @table {
+    id: ID!
+    addresses: [Address] @splitQuery
+    payments: [Payment] @reference(path: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}])
+}
+
+type Payment @table {
+    amount: BigDecimal
+}

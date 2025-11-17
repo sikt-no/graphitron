@@ -1,0 +1,10 @@
+
+type Address implements Node @table {
+    id: ID!
+    city: City!
+}
+
+type City implements Node @table {
+    id: ID!
+    addresses: [Address] @splitQuery
+}

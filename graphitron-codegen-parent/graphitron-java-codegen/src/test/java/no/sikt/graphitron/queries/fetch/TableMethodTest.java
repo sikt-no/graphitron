@@ -55,14 +55,28 @@ public class TableMethodTest extends GeneratorTest {
     @DisplayName("With pagination")
     void paginated() {
         assertGeneratedContentContains("paginated" , Set.of(CUSTOMER_CONNECTION),
-                "customer = customerTableMethod.customerTable(_a_customer, first_name)"
-        );
+                """
+                _a_customer = customerTableMethod.customerTable(_a_customer, first_name);
+                var _iv_orderFields = _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray());
+                return _iv_ctx
+                        .select(
+                                QueryHelper.getOrderByToken(_a_customer, _iv_orderFields),
+                                customerForQuery_customerTable(first_name)
+                        )
+                """, """
+                private static SelectField<CustomerTable> customerForQuery_customerTable(String first_name) {
+                        var customerTableMethod = new CustomerTableMethod();
+                        var _a_customer = CUSTOMER.as("customer_2168032777");
+                        _a_customer = customerTableMethod.customerTable(_a_customer, first_name);
+                        return DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new));""");
     }
+
     @Test
     @DisplayName("On splitQuery")
     void splitQuery() {
         assertGeneratedContentContains("splitQuery" , Set.of(CUSTOMER_CONNECTION),
-                "customer = customerTableMethod.customerTable(_a_customer)"
+                "customer = customerTableMethod.customerTable(_a_customer);return _iv_ctx.select",
+                "customer = customerTableMethod.customerTable(_a_customer);return DSL.row("
         );
     }
 
@@ -81,8 +95,12 @@ public class TableMethodTest extends GeneratorTest {
     @DisplayName("With ContextArgument")
     void withContextArgument() {
         assertGeneratedContentContains("withContextArgument",
-                "customer = customerTableMethod.customerTable(_a_customer, _cf_ctxField)",
-                "Customer customerForQuery(DSLContext _iv_ctx, String _cf_ctxField"
+                "Customer customerForQuery(DSLContext _iv_ctx, String _cf_ctxField",
+                "customer = customerTableMethod.customerTable(_a_customer, _cf_ctxField);" +
+                "return _iv_ctx.",
+                "SelectField<Customer> customerForQuery_customer(String _cf_ctxField) {",
+                "customer = customerTableMethod.customerTable(_a_customer, _cf_ctxField);" +
+                "return DSL.row(_a_customer."
         );
 
     }

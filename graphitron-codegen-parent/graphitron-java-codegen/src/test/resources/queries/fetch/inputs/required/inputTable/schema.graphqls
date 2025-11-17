@@ -1,0 +1,20 @@
+type Query {
+    filmWrappedWithInputTableAndTableField(input: FilmInput!): FilmContainer
+}
+
+type FilmContainer {
+    films: Film
+}
+
+type Film @table {
+    id: ID!
+    language: Language @reference(path: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
+}
+
+type Language @table {
+    name: String
+}
+
+input FilmInput @table(name: "FILM") {
+    description: String!
+}
