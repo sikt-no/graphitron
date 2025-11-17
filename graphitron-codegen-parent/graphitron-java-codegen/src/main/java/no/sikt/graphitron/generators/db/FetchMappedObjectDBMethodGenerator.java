@@ -22,6 +22,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForDeletes;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.javapoet.CodeBlock.empty;
@@ -240,6 +241,7 @@ public class FetchMappedObjectDBMethodGenerator extends NestedFetchDBMethodGener
                 .filter(it -> !processedSchema.isFederationService(it))
                 .filter(GenerationSourceField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())
+                .filter(it -> !(it.isDeleteMutation() && !useJdbcBatchingForDeletes()))
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .toList();
@@ -252,6 +254,7 @@ public class FetchMappedObjectDBMethodGenerator extends NestedFetchDBMethodGener
                 .filter(it -> !processedSchema.isFederationService(it))
                 .filter(GenerationSourceField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())
+                .filter(it -> !(it.isDeleteMutation() && !useJdbcBatchingForDeletes()))
                 .filter(processedSchema::isRecordType)
                 .toList();
 

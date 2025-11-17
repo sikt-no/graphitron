@@ -17,11 +17,11 @@ import java.util.Set;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_INPUT_TABLE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 
-@DisplayName("Mutation resolvers - Resolvers for mutations")
+@DisplayName("Mutation resolvers (old) - Resolvers for mutations except delete")
 public class ResolverTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
-        return "datafetchers/edit/standard";
+        return "datafetchers/edit/standard/withBatching";
     }
 
     @Override

@@ -1,0 +1,3 @@
+type Mutation {
+  mutation(in: CustomerNodeInputTable!): Int @mutation(typeName: DELETE) @field(name: "CUSTOMER_ID")
+}

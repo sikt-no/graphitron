@@ -1,0 +1,4 @@
+type Mutation {
+    mutation(id: ID! @nodeId(typeName: "CustomerNode")): ID! @mutation(typeName: DELETE) @nodeId(typeName: "CustomerNode")
+}
+

@@ -27,8 +27,10 @@ public class InputParser {
     private final String serviceInputString;
     private final List<ObjectField> allErrors;
     private final ExceptionDefinition validationErrorException;
+    private final boolean mapTableInputToJooqRecord;
 
-    public InputParser(ObjectField target, ProcessedSchema schema) {
+    public InputParser(ObjectField target, ProcessedSchema schema, boolean mapTableInputToJooqRecord) {
+        this.mapTableInputToJooqRecord = mapTableInputToJooqRecord;
         methodInputs = parseInputs(target.getNonReservedArguments(), schema);
         methodInputsWithOrderField = parseInputs(target.getNonReservedArgumentsWithOrderField(), schema);
         recordInputs = methodInputsWithOrderField
@@ -65,6 +67,10 @@ public class InputParser {
         ).orElse(null);
     }
 
+    public InputParser(ObjectField target, ProcessedSchema schema) {
+        this(target, schema, true);
+    }
+
     /**
      * @return Map of variable names and types for the declared and fully set records.
      */
@@ -76,7 +82,7 @@ public class InputParser {
             var inType = schema.getInputType(in);
             if (inType == null) {
                 serviceInputs.put(uncapitalize(in.getName()), in);
-            } else if (inType.hasTable() && !inType.hasJavaRecordReference()) {
+            } else if (mapTableInputToJooqRecord && inType.hasTable() && !inType.hasJavaRecordReference()) {
                 serviceInputs.putAll(parseInputs(in, schema, 0));
             } else if (inType.hasJavaRecordReference()) {
                 serviceInputs.put(asListedRecordNameIf(in.getName(), in.isIterableWrapped()), in);

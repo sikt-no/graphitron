@@ -1,0 +1,7 @@
+type Mutation {
+    mutation(in: [CustomerNodeInputTable!]!): Outer @mutation(typeName: DELETE)
+}
+
+type Outer {
+    customers: [CustomerNode]
+}

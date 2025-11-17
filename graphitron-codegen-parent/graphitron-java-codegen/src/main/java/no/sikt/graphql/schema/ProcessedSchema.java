@@ -988,6 +988,26 @@ public class ProcessedSchema {
     }
 
     /**
+     * Finds the target field which the returned data from mutation should be outputted.
+     * In the case of the mutation field being a wrapper type, this method will find the correct field inside the wrapper type which will contain data.
+     * This method assumes there is maximum one level of nesting.
+     * @param initialTarget The mutation field
+     * @return The field which should contain the return data
+     */
+    public Optional<ObjectField> inferDataTargetForMutation(ObjectField initialTarget) {
+        if (isScalar(initialTarget) || (isObject(initialTarget) && getObject(initialTarget).hasTable())) {
+            return Optional.of(initialTarget);
+        }
+
+        var possibleMatches = getObject(initialTarget)
+                .getFields()
+                .stream()
+                .filter(it -> !it.getName().equals(ERROR_FIELD.getName()))
+                .toList();
+        return possibleMatches.size() == 1 ? Optional.of(possibleMatches.get(0)) : Optional.empty();
+    }
+
+    /**
      * Simple method that tries to find a table reference the field's type.
      * @return Table mapping for this context based on the contents of the field's type records, if any exists.
      */
