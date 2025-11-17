@@ -1,0 +1,8 @@
+{
+    helloWorldWithSplitQueryListField {
+        greeting
+        films {
+            id
+        }
+    }
+}

@@ -3,6 +3,7 @@ package no.sikt.graphitron.codereferences.conditions;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Address;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.City;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Customer;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Payment;
 import org.jooq.Condition;
 
 public class ReferenceCustomerCondition {
@@ -25,6 +26,9 @@ public class ReferenceCustomerCondition {
         return null;
     }
     public static Condition addressId(Customer c, Address a) {
+        return null;
+    }
+    public static Condition payments(Customer c, Payment p) {
         return null;
     }
 }

@@ -165,6 +165,14 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("SplitQuery list")
+    void withSplitQueryList() {
+        assertGeneratedContentContains("withSplitQueryList",
+                "if (_iv_select.contains(_iv_pathHere + \"customers\")) {customerPayload.setCustomersKey(customerPayloadRecord.stream().map(_iv_it -> DSL.row(_iv_it.getCustomerId())).toList());}"
+        );
+    }
+
+    @Test
     @DisplayName("SplitQuery field with key provided in reference directive")
     void withSplitQueryReferenceWithKey() {
         assertGeneratedContentContains("withSplitQueryReferenceWithKey",
@@ -173,10 +181,26 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("SplitQuery list")
-    void withSplitQueryList() {
-        assertGeneratedContentContains("withSplitQueryList",
-                "if (_iv_select.contains(_iv_pathHere + \"customers\")) {customerPayload.setCustomersKey(customerPayloadRecord.stream().map(_iv_it -> DSL.row(_iv_it.getCustomerId())).toList());}"
+    @DisplayName("SplitQuery list field with key provided in reference directive")
+    void withSplitQueryReferenceWithKeyList() {
+        assertGeneratedContentContains("withSplitQueryReferenceWithKeyList",
+                "\"payments\")) { customer.setPaymentsKey(DSL.row(itCustomerRecord.getCustomerId()))"
+        );
+    }
+
+    @Test
+    @DisplayName("SplitQuery field with condition and no key provided in reference directive")
+    void withSplitQueryReferenceWithCondition() {
+        assertGeneratedContentContains("withSplitQueryReferenceWithCondition",
+                "\"address\")) {customer.setAddressKey(DSL.row(itCustomerRecord.getCustomerId()))"
+        );
+    }
+
+    @Test
+    @DisplayName("SplitQuery list field with condition and no key provided in reference directive")
+    void withSplitQueryReferenceWithConditionList() {
+        assertGeneratedContentContains("withSplitQueryReferenceWithConditionList",
+                "\"payments\")) {customer.setPaymentsKey(DSL.row(itCustomerRecord.getCustomerId()))"
         );
     }
 
