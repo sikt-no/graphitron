@@ -1,0 +1,5 @@
+mutation InsertFilmActor($in: FilmActorValidationInput!) {
+    insertFilmActor(in: $in) {
+        id
+    }
+}
