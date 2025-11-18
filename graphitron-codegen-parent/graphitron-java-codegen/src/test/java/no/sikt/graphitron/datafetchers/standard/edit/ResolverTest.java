@@ -136,4 +136,5 @@ public class ResolverTest extends GeneratorTest {
                 "new CustomerOutput(in.stream().map(_iv_it -> _iv_it.getId()).filter(_iv_it -> !_iv_result.getId().contains(_iv_it)).toList()"
         );
     }
+
 }

@@ -24,6 +24,39 @@ public class MutationMatchTest extends MatchTestBase {
     }
 
     @Test
+    @DisplayName("Insert FilmActor with matching nodeId and actorId values should succeed")
+    public void insertFilmActorWithMatchingValues() {
+        var filmActorId = "RmlsbUFjdG9yOjIwMSw1MDA"; // Base64 of "FilmActor:201,500"
+        var actorId = "QWN0b3I6MjAx"; // Base64 of "Actor:201"
+
+        Map<String, Object> variables = Map.of("in", Map.of(
+                "id", filmActorId,
+                "actorId", actorId
+        ));
+
+        getValidatableResponse("mutation_insert_film_actor.graphql", variables)
+                .rootPath("data.insertFilmActor")
+                .body("id", is(filmActorId));
+    }
+
+    @Test
+    @DisplayName("Insert FilmActor with conflicting nodeId and actorId values should fail assertion")
+    public void insertFilmActorWithConflictingValues() {
+        var filmActorId = "RmlsbUFjdG9yOjIwMSw1MDA"; // Base64 of "FilmActor:201,500"
+        var actorId = "QWN0b3I6MjAy"; // Base64 of "Actor:202"
+
+        Map<String, Object> variables = Map.of("in", Map.of(
+                "id", filmActorId,
+                "actorId", actorId
+        ));
+
+        // This should trigger an IllegalArgumentException due to conflicting ACTOR_ID values
+        getValidatableResponse("mutation_insert_film_actor.graphql", variables)
+                .rootPath("errors[0]")
+                .body("message", org.hamcrest.Matchers.containsString("Conflicting values"));
+    }
+
+    @Test
     @DisplayName("Delete operation on data by node ID can be performed")
     public void deleteByNodeId() {
         var mutationFile = "mutation_upsert_categories.graphql";

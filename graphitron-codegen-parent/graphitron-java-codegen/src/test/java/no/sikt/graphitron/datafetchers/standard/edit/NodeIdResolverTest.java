@@ -5,10 +5,7 @@ import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.datafetchers.operations.OperationClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
 import java.util.List;
 import java.util.Set;
@@ -45,6 +42,23 @@ public class NodeIdResolverTest extends GeneratorTest {
                 ".mutationForMutation(_iv_transform.getCtx(), _iv_nodeIdStrategy, inRecord)",
                 ".mutationForMutation(_iv_ctx, _iv_nodeIdStrategy, inRecord, _iv_selectionSet)"
         );
+    }
+
+    @Test
+    @DisplayName("Assert statement from overlapping fields")
+    void assertInputColumns() {
+        assertGeneratedContentContains(
+                "assertInputColumns",
+                "throw new Illegal");
+    }
+
+    @Test
+    @DisplayName("Assert statement from overlapping fields with listed input record")
+    void assertListedInputColumns() {
+        assertGeneratedContentContains(
+                "assertListedInputColumns",
+                "for (var",
+                "throw new Illegal");
     }
 
     @Test
