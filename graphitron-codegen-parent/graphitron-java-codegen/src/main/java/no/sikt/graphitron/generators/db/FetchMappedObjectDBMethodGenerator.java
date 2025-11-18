@@ -157,7 +157,8 @@ public class FetchMappedObjectDBMethodGenerator extends NestedFetchDBMethodGener
             parameters.add(VAR_NODE_STRATEGY);
         }
 
-        var contextFields = processedSchema.getAllContextFields(field).keySet().stream()
+        var contextFieldSource = methodState != null ? methodState.rootField : field;
+        var contextFields = processedSchema.getAllContextFields(contextFieldSource).keySet().stream()
                 .map(VariablePrefix::contextFieldPrefix)
                 .toList();
         parameters.addAll(contextFields);

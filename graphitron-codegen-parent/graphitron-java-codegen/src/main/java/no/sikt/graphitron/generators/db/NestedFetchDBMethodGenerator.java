@@ -294,7 +294,7 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
                         methodBuilder
                                 .addStatement("return $L", selectRowBlock)
                                 .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY)
-                                .addParameters(getContextParameters(nestedField))
+                                .addParameters(getContextParameters(methodState.rootField))
                                 .build());
             } else {
                 // Field doesn't need a helper (wrapper types, error types, etc.)
