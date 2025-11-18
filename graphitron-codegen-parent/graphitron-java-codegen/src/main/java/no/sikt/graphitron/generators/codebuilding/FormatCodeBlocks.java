@@ -776,7 +776,7 @@ public class FormatCodeBlocks {
                 .collect(Collectors.toCollection(LinkedList::new));
     }
 
-    private static CodeBlock staticTableInstanceBlock(String tableName) {
+    public static CodeBlock staticTableInstanceBlock(String tableName) {
         var tableClass = getTable(tableName)
                 .orElseThrow(() -> new RuntimeException("Unknown table " + tableName))
                 .getClass();

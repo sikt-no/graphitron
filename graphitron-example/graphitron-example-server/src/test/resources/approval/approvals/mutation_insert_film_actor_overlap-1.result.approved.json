@@ -1,0 +1,22 @@
+{
+    "errors": [
+        {
+            "message": "Input fields id and actorId have conflicting values. This usually indicates that the ids correspond to different entities.",
+            "locations": [
+                {
+                    "line": 2,
+                    "column": 5
+                }
+            ],
+            "path": [
+                "insertFilmActor"
+            ],
+            "extensions": {
+                "classification": "DataFetchingException"
+            }
+        }
+    ],
+    "data": {
+        "insertFilmActor": null
+    }
+}

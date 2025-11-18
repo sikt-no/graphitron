@@ -125,6 +125,10 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @SuppressWarnings("unused")
     private OptionalSelect optionalSelect;
 
+    @Parameter(property = "generate.validateOverlappingInputFields", defaultValue = "true")
+    @SuppressWarnings("unused")
+    private boolean validateOverlappingInputFields;
+
     @Override
     public void execute() throws MojoExecutionException {
         GeneratorConfig.loadProperties(this);
@@ -249,5 +253,10 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Override
     public OptionalSelect getOptionalSelect() {
         return optionalSelect;
+    }
+
+    @Override
+    public boolean validateOverlappingInputFields() {
+        return validateOverlappingInputFields;
     }
 }
