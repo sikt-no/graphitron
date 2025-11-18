@@ -52,7 +52,7 @@ public class NodeIdResolverTest extends GeneratorTest {
     void nodeIdStrategyInDeleteMutation() {
         GeneratorConfig.setUseJdbcBatchingForDeletes(false);
         assertGeneratedContentContains(
-                "delete/withNodeIdStrategy", Set.of(CUSTOMER_INPUT_TABLE),
+                "withReturning/withNodeIdStrategy", Set.of(CUSTOMER_INPUT_TABLE),
                 ".mutationForMutation(_iv_ctx, _iv_nodeIdStrategy, in, _iv_selectionSet)"
         );
         GeneratorConfig.setUseJdbcBatchingForDeletes(true);

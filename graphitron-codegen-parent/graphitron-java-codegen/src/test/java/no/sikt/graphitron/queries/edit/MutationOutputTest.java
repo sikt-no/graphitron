@@ -1,8 +1,5 @@
 package no.sikt.graphitron.queries.edit;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -134,6 +131,25 @@ public class MutationOutputTest extends MutationQueryTest {
                 ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
                         ".mapping(Functions.nullOnAllNull(CustomerNode::new)))" +
                         ".fetch(_iv_it -> _iv_it.into(CustomerNode.class))"
+        );
+    }
+
+    @Test
+    @DisplayName("Returning table object with subquery reference")
+    void tableObjectWithSubqueryReference() {
+        assertGeneratedContentContains("tableObjectWithSubqueryReference",
+                "{ var _a_customer_address = CUSTOMER.address()",
+                "field(DSL.select(DSL.row(_a_customer_address.ADDRESS_ID).mapping(Functions.nullOnAllNull(Address::new))).from(_a_customer_address))"
+        );
+    }
+
+    @Test
+    @DisplayName("Returning table object with splitQuery reference")
+    void tableObjectWithSplitQueryReference() {
+        assertGeneratedContentContains("tableObjectWithSplitQueryReference",
+                "{ return",
+                "DSL.row(DSL.row(CUSTOMER.CUSTOMER_ID), _iv_nodeIdStrategy.createId",
+                "getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer"
         );
     }
 }

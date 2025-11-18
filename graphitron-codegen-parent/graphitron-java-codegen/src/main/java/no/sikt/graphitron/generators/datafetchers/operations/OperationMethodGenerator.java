@@ -3,6 +3,7 @@ package no.sikt.graphitron.generators.datafetchers.operations;
 import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.ArgumentField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
@@ -46,7 +47,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        var isMutationReturningData = target.isDeleteMutation() && !useJdbcBatchingForDeletes();
+        var isMutationReturningData = processedSchema.isDeleteMutationWithReturning(target) || processedSchema.isInsertMutationWithReturning(target);
         var parser = new InputParser(target, processedSchema, !isMutationReturningData);
         var methodCall = getMethodCall(target, parser, false); // Note, do this before declaring services.
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
@@ -123,13 +124,12 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
     }
 
     private CodeBlock callQueryBlockInner(ObjectField target, String objectToCall, String method, InputParser parser, CodeBlock queryFunction) {
-        // Is this query call the result of a delete operation?
-        if (target.isDeleteMutation()) {
-            if (useJdbcBatchingForDeletes()) {
-                return CodeBlock.of("$L,\n$L", queryFunction, filterDeleteIDsFunction(target));
-            }
+        if (processedSchema.isDeleteMutationWithReturning(target) || processedSchema.isInsertMutationWithReturning(target)) {
             return !processedSchema.inferDataTargetForMutation(target).map(target::equals).orElse(false) ?
                     CodeBlock.of("$L,\n$L", queryFunction, wrapMutationOutputFunction(target)) :  queryFunction;
+        }
+        if (target.hasMutationType() && target.getMutationType().equals(MutationType.DELETE)) {
+            return CodeBlock.of("$L,\n$L", queryFunction, filterDeleteIDsFunction(target));
         }
 
         var object = processedSchema.getObjectOrConnectionNode(target);
@@ -265,9 +265,12 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
     }
 
     private String getFetcherMethodName(ObjectField target, RecordObjectSpecification<?> localObject) {
-        if (target.isDeleteMutation()) {
-            if (useJdbcBatchingForDeletes()) return "loadDelete";
+        if (processedSchema.isDeleteMutationWithReturning(target) || processedSchema.isInsertMutationWithReturning(target)) {
             return processedSchema.isObject(target) && !processedSchema.hasTableObject(target) ? "loadWrapped" : "load";
+        }
+
+        if (target.hasMutationType() && target.getMutationType().equals(MutationType.DELETE)) {
+            return "loadDelete";
         }
 
         if (!localObject.isOperationRoot() && target.isIterableWrapped() && target.isNonNullable())  {

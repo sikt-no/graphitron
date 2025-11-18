@@ -1,20 +1,15 @@
 package no.sikt.graphitron.definitions.helpers;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.definitions.fields.InputField;
 
 import java.util.LinkedHashSet;
-import java.util.stream.Collectors;
 
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 
-public class InputCondition {
-    private final InputField input, sourceInput;
-    private final String namePath, startName;
-    private final LinkedHashSet<String> nullChecks;
-    private final boolean pastWasIterable, previousWasNullable, hasRecord;
-    private final Boolean isOverriddenByAncestors, isWrappedInList;
+public class InputCondition extends InputComponent {
+    private final boolean previousWasNullable, hasRecord;
+    private final Boolean isOverriddenByAncestors;
 
     private InputCondition(
             InputField input,
@@ -27,17 +22,10 @@ public class InputCondition {
             boolean hasRecord,
             Boolean isOverriddenByAncestors,
             Boolean isWrappedInList) {
-        this.input = input;
-        this.sourceInput = sourceInput;
-        this.startName = startName;
-        this.namePath = namePath;
-        this.nullChecks = new LinkedHashSet<>(nullChecks);
-        this.pastWasIterable = pastWasIterable;
+        super(input, sourceInput, startName, namePath, nullChecks, pastWasIterable, isWrappedInList);
         this.previousWasNullable = previousWasNullable;
         this.hasRecord = hasRecord;
         this.isOverriddenByAncestors = isOverriddenByAncestors;
-        this.isWrappedInList = isWrappedInList;
-
         inferAdditionalChecks(input);
     }
 
@@ -47,10 +35,6 @@ public class InputCondition {
 
     public InputCondition(InputField input, boolean hasRecord) {
         this(input, input, "", "",  new LinkedHashSet<>(), false, false, hasRecord, false, false);
-    }
-
-    public InputField getInput() {
-        return input;
     }
 
     public InputField getSourceInput() {
@@ -68,14 +52,7 @@ public class InputCondition {
         }
     }
 
-    public String getNamePath() {
-        return namePath;
-    }
-
-    public CodeBlock getNameWithPath() {
-        return CodeBlock.of(getNameWithPathString());
-    }
-
+    @Override
     public String getNameWithPathString() {
         if (namePath.isEmpty()) {
             return uncapitalize(startName.isEmpty() ? input.getName() : startName);
@@ -96,10 +73,7 @@ public class InputCondition {
         return this.isWrappedInList;
     }
 
-    public String getChecksAsSequence() {
-        return !nullChecks.isEmpty() ? nullChecks.stream().sorted().collect(Collectors.joining(" && ")) : "";
-    }
-
+    @Override
     public InputCondition iterate(InputField input) {
         return new InputCondition(
                 input,
@@ -114,6 +88,7 @@ public class InputCondition {
                 isWrappedInList || this.input.isIterableWrapped());
     }
 
+    @Override
     public InputCondition applyTo(InputField input) {
         return new InputCondition(
                 input,

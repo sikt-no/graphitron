@@ -156,6 +156,9 @@ type Film implements Node @node @table {
     citiesWhereFilmIsStocked: [City] @splitQuery @reference(path: [{key: "INVENTORY__INVENTORY_FILM_ID_FKEY"}, {table: "STORE"}, {table: "ADDRESS"}, {table: "CITY"}])
 
     languageWrapper: LanguageWrapper
+
+    originalLanguage: Language @reference(path: {key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}) @splitQuery
+    rentalDuration: Int @field(name: "RENTAL_DURATION")
 }
 
 type LanguageWrapper {

@@ -38,13 +38,13 @@ public class MutationQueryTest extends GeneratorTest {
 
     @BeforeAll
     static void setUp() {
-        GeneratorConfig.setUseJdbcBatchingForDeletes(false);
+        GeneratorConfig.setUseJdbcBatchingForAllMutations(false);
         GeneratorConfig.setNodeStrategy(true);
     }
 
     @AfterAll
     static void tearDown() {
-        GeneratorConfig.setUseJdbcBatchingForDeletes(true);
+        GeneratorConfig.setUseJdbcBatchingForAllMutations(true);
         GeneratorConfig.setNodeStrategy(false);
     }
 }

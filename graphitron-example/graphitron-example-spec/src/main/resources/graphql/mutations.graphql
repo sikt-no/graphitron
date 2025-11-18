@@ -1,5 +1,8 @@
 type Mutation {
-    insertFilm(in: FilmCreateInput): Film @mutation(typeName: INSERT)
+    insertFilm(in: FilmCreateInput!): Film @mutation(typeName: INSERT)
+    insertFilms(in: [FilmCreateInput!]!): [Film] @mutation(typeName: INSERT)
+    insertFilmWrapped(in: FilmCreateInput!): FilmWrapper @mutation(typeName: INSERT)
+    insertFilmsWrapped(in: [FilmCreateInput!]!): FilmsWrapper @mutation(typeName: INSERT)
 
     # TODO: This case fails if the inputs are not in a record. Technically, we have the table in Film, and that should suffice to resolve this.
     updateFilmName(in: FilmNameInput): Film @mutation(typeName: UPDATE)
@@ -11,7 +14,7 @@ type Mutation {
     upsertCategory(in: CategoryNameInput): Category @mutation(typeName: UPSERT)
     upsertCategories(in: [CategoryNameInput]): [Category] @mutation(typeName: UPSERT)
 
-    deleteFilmID(in: FilmInput): ID @nodeId(typeName: "Film") @mutation(typeName: DELETE)
+    deleteFilmID(in: FilmInput!): ID @nodeId(typeName: "Film") @mutation(typeName: DELETE)
     deleteFilmIDListed(in: [FilmInput!]!): [ID] @nodeId(typeName: "Film") @mutation(typeName: DELETE)
     deleteCategories(in: [CategoryInput!]!): [ID] @nodeId(typeName: "Category") @mutation(typeName: DELETE)
     deleteCategoriesWrapped(in: [CategoryInput!]!): DeleteCategoriesResult @mutation(typeName: DELETE)
@@ -30,7 +33,9 @@ input CityNameInput @table(name: "CITY") {
 
 input FilmCreateInput @table(name: "FILM") {
     languageId: ID! @nodeId(typeName: "Language") @reference(path: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
+    originalLanguageId: ID @nodeId(typeName: "Language") @reference(path: {key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"})
     title: String!
+    rentalDuration: Int @field(name: "RENTAL_DURATION")  # Default value in database: 3
 }
 
 input FilmWithRefInput @table(name: "FILM") {
@@ -62,4 +67,12 @@ type DeletedCategory @table(name: "Category"){
 type DeleteCategoryDummyError implements Error @error(handlers: []) {
     path: [String!]!
     message: String!
+}
+
+type FilmWrapper {
+    film: Film
+}
+
+type FilmsWrapper {
+    films: [Film]
 }

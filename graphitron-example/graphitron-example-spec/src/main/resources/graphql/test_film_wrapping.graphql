@@ -9,7 +9,7 @@ extend type Query {
 }
 
 extend type Mutation {
-    deleteFilmWrapped(in: FilmInput): FilmContainerID @mutation(typeName: DELETE)
+    deleteFilmWrapped(in: FilmInput!): FilmContainerID @mutation(typeName: DELETE)
     deleteFilmListedWrapped(in: [FilmInput!]!): FilmContainerListedID @mutation(typeName: DELETE)
 }
 

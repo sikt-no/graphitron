@@ -88,6 +88,11 @@ public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer
     }
 
     @Override
+    public boolean isIterableWrappedWithNullableElement() {
+        return fieldType.isIterableWrapped() && fieldType.isNullable();
+    }
+
+    @Override
     public TypeName getTypeClass() {
         return fieldType.getTypeClass();
     }
@@ -123,5 +128,17 @@ public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer
     @Override
     public boolean isRootField() {
         return containerType.equals(SCHEMA_QUERY.getName()) || containerType.equals(SCHEMA_MUTATION.getName());
+    }
+
+    public String formatGraphQLSchemaType() {
+        var typeName = getTypeName();
+
+        if (!fieldType.isNullable()) typeName += "!";
+
+        if (isIterableWrapped()) {
+            typeName = "[" + typeName + "]";
+            if (!fieldType.isIterableNullable()) typeName += "!";
+        }
+        return typeName;
     }
 }

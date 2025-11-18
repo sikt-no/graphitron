@@ -33,5 +33,7 @@ public interface Generator {
 
     boolean useJdbcBatchingForDeletes();
 
+    boolean useJdbcBatchingForInserts();
+
     CodeGenerationThresholds getCodeGenerationThresholds();
 }

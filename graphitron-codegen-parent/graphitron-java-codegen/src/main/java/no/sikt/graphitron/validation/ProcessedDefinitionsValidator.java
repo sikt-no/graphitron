@@ -33,9 +33,9 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.groupingBy;
-import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForDeletes;
+import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
-import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getForeignKeyForNodeIdReference;
+import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getForeignKeyForNodeIdReference;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphitron.validation.ValidationHandler.*;
@@ -1165,9 +1165,10 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateMutationWithReturning(ObjectField field) {
-        boolean isDeleteWithReturning = field.isDeleteMutation() && !useJdbcBatchingForDeletes();
+        boolean isDeleteWithReturning = schema.isDeleteMutationWithReturning(field);
+        boolean isInsertWithReturning = schema.isInsertMutationWithReturning(field);
 
-        if (!isDeleteWithReturning) {
+        if (!isDeleteWithReturning && !isInsertWithReturning) {
             return;
         }
         /* Validate output */
@@ -1183,9 +1184,20 @@ public class ProcessedDefinitionsValidator {
         if (recordInputs.isEmpty()) {
             addErrorMessage("Field %s is a generated %s mutation, but does not link any input to tables.", field.formatPath(), field.getMutationType());
             return;
+        } else if (recordInputs.size() != 1) {
+            addErrorMessage("Field %s is a generated %s mutation, but has multiple input records. This is not supported.", field.formatPath(), field.getMutationType());
+            return;
         }
 
         var input = recordInputs.stream().findFirst().orElseThrow();
+
+        if (isInsertWithReturning && !shouldMakeNodeStrategy() && schema.getInputType(input).getFields().stream().anyMatch(AbstractField::isID)) {
+            addErrorMessage("%s is a generated %s field with ID input, but this is only supported with node ID strategy enabled.",
+                    field.formatPath(),
+                    field.getMutationType()
+            );
+            return;
+        }
 
         var inputTable = schema.getRecordType(input).getTable();
         var outputTable = schema.isScalar(dataField.get()) ? inputTable : schema.getRecordType(dataField.get()).getTable();
@@ -1194,6 +1206,13 @@ public class ProcessedDefinitionsValidator {
             addErrorMessage("Mutation field %s has a mismatch between input and output tables. Input table is '%s', and output table is '%s'.",
                     field.formatPath(), inputTable.getMappingName(), outputTable.getMappingName());
             return;
+        }
+
+        if (input.isNullable() || input.isIterableWrappedWithNullableElement()) {
+            addErrorMessage("Field %s is a generated %s mutation, but has nullable input. This is not supported. Consider changing the input type from '%s' to '%s'.",
+                    field.formatPath(), field.getMutationType(),
+                    input.formatGraphQLSchemaType(),
+                    input.isIterableWrapped() ? "[" + input.getTypeName() + "!]!" : input.getTypeName() + "!");
         }
 
         if (isDeleteWithReturning) {

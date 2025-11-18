@@ -19,7 +19,7 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.findKeyForResolverField;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getForeignKeyForNodeIdReference;
+import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getForeignKeyForNodeIdReference;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.ReflectionHelpers.classHasMethod;
 import static no.sikt.graphitron.mappings.TableReflection.recordUsesFSHack;
