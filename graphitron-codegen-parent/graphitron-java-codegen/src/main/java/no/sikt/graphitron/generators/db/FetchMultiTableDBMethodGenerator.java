@@ -16,6 +16,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jooq.Field;
+import org.jooq.SelectConditionStep;
 import org.jooq.SelectLimitPercentStep;
 import org.jooq.SelectSeekStepN;
 
@@ -108,8 +109,9 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(".mapping($L)", createMappingContent(target, implementations, target.hasPagination()))
                 .add(")\n.from($L)", UNION_KEYS_QUERY)
                 .add(joins.build())
-                .add("\n.orderBy($N.field($S), $N.field($S))", UNION_KEYS_QUERY, TYPE_FIELD, UNION_KEYS_QUERY, INNER_ROW_NUM)
+                .addIf(processedSchema.returnsList(target), "\n.orderBy($N.field($S), $N.field($S))", UNION_KEYS_QUERY, TYPE_FIELD, UNION_KEYS_QUERY, INNER_ROW_NUM)
                 .addIf(target.hasPagination(), "\n.limit($N + 1)\n", VAR_PAGE_SIZE)
+                .addIf(!processedSchema.returnsList(target), "\n.limit(2)\n") // So that we get a DataFetchingException on multiple rows, without fetching more than necessary
                 .build();
 
         if (target.isResolver()) {
@@ -281,7 +283,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         var methodBuilder = MethodSpec
                 .methodBuilder(getSortFieldsMethodName(target, implementation))
                 .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-                .returns(getReturnTypeForKeysMethod(target.hasPagination()))
+                .returns(getReturnTypeForKeysMethod(target.hasPagination(), !processedSchema.returnsList(target)))
                 .addCode(getSortFieldsMethodCode(implementation, context, target));
 
         if (target.isResolver()) {
@@ -354,15 +356,18 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         var hasConditionReferenceAsFirstStep = queryTarget.isResolver()
                 && firstReferenceStep.map(it -> it.hasTableCondition() && !it.hasKey()).orElse(false);
 
+        boolean returnsList = processedSchema.returnsList(queryTarget);
+
         var code = CodeBlock.builder()
                 // Skip first alias declaration for resolvers - it's already declared in main method and passed to helpers
                 .add(createAliasDeclarations(context.getAliasSet(), queryTarget.isResolver()))
-                .declare(VAR_ORDER_FIELDS, getPrimaryKeyFieldsWithTableAliasBlock(targetAlias))
+                .declareIf(returnsList, VAR_ORDER_FIELDS, getPrimaryKeyFieldsWithTableAliasBlock(targetAlias))
                 .add("return $T.select(\n", DSL.className)
                 .indent()
-                .add("$T.inline($S).as($S),\n", DSL.className, implName, TYPE_FIELD)
-                .add("$T.rowNumber().over($T.orderBy($L", DSL.className, DSL.className, VAR_ORDER_FIELDS)
-                .add(")).as($S),\n", INNER_ROW_NUM)
+                .add("$T.inline($S).as($S)", DSL.className, implName, TYPE_FIELD)
+                .addIf(returnsList,
+                        ",\n$T.rowNumber().over($T.orderBy($L)).as($S)", DSL.className, DSL.className, VAR_ORDER_FIELDS, INNER_ROW_NUM)
+                .add(",\n")
                 .add(getPrimaryKeyFieldsArray(implName, targetAlias, context.getTargetTable().getName()))
                 .add(".as($S))", PK_FIELDS)
                 .add("\n.from($N)\n", context.getSourceAlias())
@@ -377,8 +382,9 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                     .add("\n.and($N != null && $N.matches($S) ? $T.row($L).gt($T.row($N.fields())) : $L)",
                             TOKEN, TOKEN, implementation.getName(), DSL.className, getPrimaryKeyFieldsWithTableAliasBlock(targetAlias), DSL.className, TOKEN, noCondition());
         }
-        return code.add(".orderBy($L)", VAR_ORDER_FIELDS)
+        return code.addIf(returnsList, ".orderBy($L)", VAR_ORDER_FIELDS)
                 .addIf(queryTarget.hasPagination(), "\n.limit($N + 1)", VAR_PAGE_SIZE)
+                .addIf(!returnsList, "\n.limit(2)") // So that we get a DataFetchingException on multiple rows, without fetching more than necessary
                 .add(";")
                 .unindent()
                 .build();
@@ -437,7 +443,16 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         );
     }
 
-    private static ParameterizedTypeName getReturnTypeForKeysMethod(boolean isConnection) {
+    private static ParameterizedTypeName getReturnTypeForKeysMethod(boolean isConnection, boolean returnsSingleObject) {
+        if (returnsSingleObject) {
+            return ParameterizedTypeName.get(
+                    ClassName.get(SelectLimitPercentStep.class),
+                    ParameterizedTypeName.get(RECORD2.className,
+                            STRING.className,
+                            JSONB.className)
+            );
+        }
+
         return ParameterizedTypeName.get(
                 ClassName.get(isConnection ? SelectLimitPercentStep.class : SelectSeekStepN.class),
                 ParameterizedTypeName.get(RECORD3.className,
