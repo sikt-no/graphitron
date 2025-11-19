@@ -13,13 +13,12 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_INPUT_TABLE;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 
 @DisplayName("Mutation resolvers - Resolvers for delete mutations (will be expanded to include all generated resolvers)")
 public class MutationResolverTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
-        return "datafetchers/edit/standard/delete";
+        return "datafetchers/edit/standard/withReturning";
     }
 
     @Override
@@ -29,12 +28,12 @@ public class MutationResolverTest extends GeneratorTest {
 
     @BeforeAll
     static void setUp() {
-        GeneratorConfig.setUseJdbcBatchingForDeletes(false);
+        GeneratorConfig.setUseJdbcBatchingForAllMutations(false);
     }
 
     @AfterAll
     static void tearDown() {
-        GeneratorConfig.setUseJdbcBatchingForDeletes(true);
+        GeneratorConfig.setUseJdbcBatchingForAllMutations(true);
     }
 
     @Override
@@ -49,13 +48,23 @@ public class MutationResolverTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Returning wrapped output")
-    void wrappedOutput() {
-        assertGeneratedContentContains("wrappedOutput",
+    @DisplayName("Returning wrapped output for delete mutation")
+    void wrappedOutputForDelete() {
+        assertGeneratedContentContains("wrappedOutputForDelete",
                 "loadWrapped(" +
                         "(_iv_ctx, _iv_selectionSet) -> MutationDBQueries.mutationForMutation(_iv_ctx, in, _iv_selectionSet)," +
                         "(_iv_result) -> new Wrapper(_iv_result));"
                 );
+    }
+
+    @Test
+    @DisplayName("Returning wrapped output for insert mutation")
+    void wrappedOutputForInsert() {
+        assertGeneratedContentContains("wrappedOutputForInsert",
+                "loadWrapped(" +
+                        "(_iv_ctx, _iv_selectionSet) -> MutationDBQueries.mutationForMutation(_iv_ctx, in, _iv_selectionSet)," +
+                        "(_iv_result) -> new Wrapper(_iv_result));"
+        );
     }
 
     @Test

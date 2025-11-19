@@ -3,7 +3,7 @@ package no.sikt.graphitron.generators.db;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.*;
 import no.sikt.graphitron.definitions.helpers.InputCondition;
-import no.sikt.graphitron.definitions.helpers.InputConditions;
+import no.sikt.graphitron.definitions.helpers.InputComponents;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
@@ -46,7 +46,7 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.internalPrefix;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.resolverKeyPrefix;
-import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getSourceFieldsForForeignKey;
+import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getSourceFieldsForForeignKey;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
@@ -685,11 +685,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return code.build();
     }
 
+    /**
+     * Returns condition code blocks for a field which is assumed to only have input conditions, and no set values.
+     */
     protected List<CodeBlock> getInputConditions(FetchContext context, ObjectField sourceField) {
         var allConditionCodeBlocks = new ArrayList<CodeBlock>();
-        var inputConditions = getInputConditions(sourceField);
-        var flatInputs = inputConditions.independentConditions();
-        var declaredInputConditions = inputConditions.declaredConditionsByField();
+        var inputComponents = getInputConditions(sourceField);
+        var flatInputs = inputComponents.independentConditions();
+        var declaredInputConditions = inputComponents.declaredConditionsByField();
         var splitInputs = flatInputs
                 .stream()
                 .collect(Collectors.partitioningBy(it -> processedSchema.hasRecord(it.getInput()) && !isDeleteMutationQuery));
@@ -733,8 +736,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
         }
 
-        for (var conditionTuple : inputConditions.conditionTuples()) {
-            if (inputConditions.conditionTuples()
+        for (var conditionTuple : inputComponents.conditionTuples()) {
+            if (inputComponents.conditionTuples()
                     .stream()
                     .anyMatch(it -> conditionTuple.path().startsWith(it.path())
                             && conditionTuple.path().length() > it.path().length())) {
@@ -935,8 +938,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return CodeBlock.of("$L$L", getElement, mapping);
     }
 
+    /**
+     * Returns an {@link InputComponents} object where all input for the field is categorized as conditions, and not set values.
+     */
     @NotNull
-    protected InputConditions getInputConditions(ObjectField referenceField) {
+    private InputComponents getInputConditions(ObjectField referenceField) {
         var pathNameForIterableFields = new ArrayList<String>();
         var flatInputs = new ArrayList<InputCondition>();
         var declaredConditionsByField = new LinkedHashMap<GenerationField, List<InputCondition>>();
@@ -1004,20 +1010,20 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         conditionTuples
                 .stream()
-                .map(InputConditions.ConditionTuple::conditions)
+                .map(InputComponents.ConditionTuple::conditions)
                 .forEach(flatInputs::removeAll);
 
         filterDeclaredConditions(declaredConditionsByField, conditionTuples);
 
-        return new InputConditions(flatInputs, conditionTuples, declaredConditionsByField);
+        return new InputComponents(flatInputs, conditionTuples, List.of(), null, declaredConditionsByField);
     }
 
-    private List<InputConditions.ConditionTuple> getConditionTuples(
+    private List<InputComponents.ConditionTuple> getConditionTuples(
             List<String> iterableInputFields,
             List<InputCondition> flatInputs) {
         return iterableInputFields
                 .stream()
-                .map(s -> new InputConditions.ConditionTuple(
+                .map(s -> new InputComponents.ConditionTuple(
                         s, flatInputs
                         .stream()
                         .filter(condition -> condition.getNamePath().startsWith(s))
@@ -1027,7 +1033,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     private void filterDeclaredConditions(
             LinkedHashMap<GenerationField, List<InputCondition>> declaredConditionsByField,
-            List<InputConditions.ConditionTuple> conditionTuples) {
+            List<InputComponents.ConditionTuple> conditionTuples) {
         for (var entry : declaredConditionsByField.entrySet()) {
             var recordConditions = entry
                     .getValue()
@@ -1050,7 +1056,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
             conditionTuples
                     .stream()
-                    .map(InputConditions.ConditionTuple::conditions)
+                    .map(InputComponents.ConditionTuple::conditions)
                     .forEach(conditions::removeAll);
 
             declaredConditionsByField.replace(

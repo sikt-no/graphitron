@@ -21,6 +21,8 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
@@ -493,6 +495,21 @@ public class FormatCodeBlocks {
         return CodeBlock.ofIf(!code.isEmpty(), "$T.val($L)", DSL.className, code);
     }
 
+    public static @NotNull CodeBlock defaultValue(CodeBlock field) {
+        return CodeBlock.of("$T.defaultValue($L)", DSL.className, field);
+    }
+
+    public static @NotNull CodeBlock defaultValue(String tableName, String fieldName) {
+        return defaultValue(tableFieldCodeBlock(tableName, fieldName));
+    }
+
+    public static CodeBlock tableFieldCodeBlock(String targetTable, String column) {
+        return tableFieldCodeBlock(CodeBlock.of("$N", targetTable), column);
+    }
+
+    public static CodeBlock tableFieldCodeBlock(CodeBlock targetTable, String column) {
+        return CodeBlock.of("$L.$L", targetTable, column);
+    }
 
     /**
      * @return Add appropriate indentation if this code has multiple lines.
@@ -780,6 +797,13 @@ public class FormatCodeBlocks {
     }
 
     public static CodeBlock referenceNodeIdColumnsBlock(RecordObjectSpecification<?> container, RecordObjectSpecification<?> target, ForeignKey<?,?> fk, CodeBlock tableReference) {
+        return getReferenceNodeIdFields(container.getTable().getName(), target, fk)
+                .stream()
+                .map(it -> tableFieldCodeBlock(tableReference, it))
+                .collect(CodeBlock.joining(", "));
+    }
+
+    public static LinkedList<String> getReferenceNodeIdFields(String targetTable, RecordObjectSpecification<?> targetNodeType, ForeignKey<?,?> fk) {
         var mapping = new HashMap<String, Field<?>>();
         var sourceColumns = fk.getFields();
         var targetColumns = fk.getInverseKey().getFields();
@@ -788,10 +812,9 @@ public class FormatCodeBlocks {
             mapping.put(targetColumns.get(i).getName(), sourceColumns.get(i));
         }
 
-        var sourceTable = target.getTable().getName();
-        var targetTable = container.getTable().getName();
+        var sourceTable = targetNodeType.getTable().getName();
 
-        var targetNodeIdFields = target.hasCustomKeyColumns() ? target.getKeyColumns()
+        var targetNodeIdFields = targetNodeType.hasCustomKeyColumns() ? targetNodeType.getKeyColumns()
                 : getPrimaryKeyForTable(sourceTable)
                 .orElseThrow(() -> new IllegalArgumentException("Cannot find primary key for table " + sourceTable)) // This should be validated and never thrown
                 .getFields()
@@ -804,8 +827,8 @@ public class FormatCodeBlocks {
                         .filter(fieldName -> fieldName.equalsIgnoreCase(it)).findFirst()
                         .orElseThrow(() -> new IllegalArgumentException("Node ID field " + it + " is not found in foreign key " + fk.getName() + "'s fields."))) // Should never be thrown
                 .map(mapping::get)
-                .map(it -> CodeBlock.of("$L.$L", tableReference, getJavaFieldName(targetTable, it.getName()).orElseThrow()))
-                .collect(CodeBlock.joining(", "));
+                .map(it -> getJavaFieldName(targetTable, it.getName()).orElseThrow())
+                .collect(Collectors.toCollection(LinkedList::new));
     }
 
     private static CodeBlock staticTableInstanceBlock(String tableName) {

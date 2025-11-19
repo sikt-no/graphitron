@@ -17,6 +17,7 @@ import no.sikt.graphql.directives.GenerationDirectiveParam;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.LinkedHashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -40,7 +41,7 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
     private final LinkedHashSet<String> requiredInputs;
     private final EntityKeySet keys;
     private final String typeId;
-    private final List<String> keyColumns;
+    private final LinkedList<String> keyColumns;
 
     public RecordObjectDefinition(T objectDefinition) {
         super(objectDefinition);
@@ -71,7 +72,7 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         keyColumns = getOptionalDirectiveArgumentStringList(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.KEY_COLUMNS)
                 .stream()
                 .map(columnName -> getJavaFieldName(getTable().getName(), columnName).orElse(columnName))
-                .toList();
+                .collect(Collectors.toCollection(LinkedList::new));
     }
 
     @NotNull
@@ -195,7 +196,7 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         return !keyColumns.isEmpty();
     }
 
-    public List<String> getKeyColumns() {
+    public LinkedList<String> getKeyColumns() {
         return keyColumns;
     }
 }

@@ -38,6 +38,7 @@ public class GeneratorConfig {
     private static boolean makeNodeStrategy = false;
     private static boolean alwaysUsePrimaryKeyInSplitQueries = true;
     private static boolean useJdbcBatchingForDeletes = true;
+    private static boolean useJdbcBatchingForInserts = true;
 
     private static int maxAllowedPageSize;
     private final static boolean USE_OPTIONAL_SELECTS = false;
@@ -108,6 +109,7 @@ public class GeneratorConfig {
         recordValidation = mojo.getRecordValidation();
         makeNodeStrategy = mojo.makeNodeStrategy();
         useJdbcBatchingForDeletes = mojo.useJdbcBatchingForDeletes();
+        useJdbcBatchingForInserts = mojo.useJdbcBatchingForInserts();
         alwaysUsePrimaryKeyInSplitQueries = true;
         codeGenerationThresholds = mojo.getCodeGenerationThresholds();
     }
@@ -203,6 +205,19 @@ public class GeneratorConfig {
 
     public static void setUseJdbcBatchingForDeletes(boolean useJdbcBatching) {
         useJdbcBatchingForDeletes = useJdbcBatching;
+    }
+
+    public static void setUseJdbcBatchingForAllMutations(boolean useJdbcBatching) {
+        setUseJdbcBatchingForDeletes(useJdbcBatching);
+        setUseJdbcBatchingForInserts(useJdbcBatching);
+    }
+
+    public static boolean useJdbcBatchingForInserts() {
+        return useJdbcBatchingForInserts;
+    }
+
+    public static void setUseJdbcBatchingForInserts(boolean useJdbcBatching) {
+        useJdbcBatchingForInserts = useJdbcBatching;
     }
 
     public static void setRecordValidation(RecordValidation recordValidation) {

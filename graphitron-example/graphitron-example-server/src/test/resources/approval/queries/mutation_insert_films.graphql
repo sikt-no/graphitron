@@ -1,0 +1,12 @@
+mutation InsertFilms($in: [FilmCreateInput!]!)  {
+    insertFilms(in: $in) {
+        title
+        language {
+            id
+        }
+        originalLanguage {
+            id
+        }
+        rentalDuration # Default value in database: 3
+    }
+}

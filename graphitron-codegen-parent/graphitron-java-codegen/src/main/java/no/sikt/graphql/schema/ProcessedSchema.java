@@ -9,6 +9,7 @@ import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
+import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.ObjectSpecification;
@@ -25,7 +26,11 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForDeletes;
+import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForInserts;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
+import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldNamesForKey;
+import static no.sikt.graphitron.mappings.TableReflection.getPrimaryKeyForTable;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -465,6 +470,18 @@ public class ProcessedSchema {
         return nodeTypes.values().stream()
                 .filter(it -> it.getTable().equals(table))
                 .toList();
+    }
+
+    public Optional<LinkedList<String>> getKeyColumnsForNodeType(RecordObjectSpecification<?> type) {
+        if (!isNodeType(type.getName())) {
+            throw new IllegalArgumentException("Non-node object type provided in getKeyColumnsForNodeType: " + type.getName());
+        }
+        if (!type.getKeyColumns().isEmpty()) {
+            return Optional.of(type.getKeyColumns());
+        }
+
+        return getPrimaryKeyForTable(type.getTable().getName())
+                .map(f -> new LinkedList<>(getJavaFieldNamesForKey(type.getTable().getName(), f)));
     }
 
     /**
@@ -1002,9 +1019,17 @@ public class ProcessedSchema {
         var possibleMatches = getObject(initialTarget)
                 .getFields()
                 .stream()
-                .filter(it -> !it.getName().equals(ERROR_FIELD.getName()))
+                .filter(it -> !isExceptionOrExceptionUnion(it))
                 .toList();
         return possibleMatches.size() == 1 ? Optional.of(possibleMatches.get(0)) : Optional.empty();
+    }
+
+    public boolean isDeleteMutationWithReturning(ObjectField field) {
+        return field.hasMutationType() && field.getMutationType().equals(MutationType.DELETE) && !useJdbcBatchingForDeletes();
+    }
+
+    public boolean isInsertMutationWithReturning(ObjectField field) {
+        return field.hasMutationType() && field.getMutationType().equals(MutationType.INSERT) && !useJdbcBatchingForInserts();
     }
 
     /**

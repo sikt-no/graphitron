@@ -90,4 +90,9 @@ public class OperationField implements FieldSpecification {
     public boolean isRootField() {
         return true;
     }
+
+    @Override
+    public boolean isIterableWrappedWithNullableElement() {
+        return fieldType.isIterableWrapped() && fieldType.isNullable();
+    }
 }

@@ -13,7 +13,7 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.refere
 import static no.sikt.graphitron.mappings.TableReflection.findImplicitKey;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 
-public class JooqRecordReferenceHelpers {
+public class NodeIdReferenceHelpers {
 
     public static Optional<ForeignKey<?,?>> getForeignKeyForNodeIdReference(GenerationField target, ProcessedSchema schema) {
         if (!schema.hasJOOQRecord(target.getContainerTypeName()) || target.getContainerTypeName().equals(SCHEMA_QUERY.getName())) {

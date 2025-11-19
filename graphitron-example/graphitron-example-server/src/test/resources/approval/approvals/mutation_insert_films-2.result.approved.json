@@ -1,0 +1,24 @@
+{
+    "data": {
+        "insertFilms": [
+            {
+                "title": "Film One",
+                "language": {
+                    "id": "TGFuZ3VhZ2U6Mw"
+                },
+                "originalLanguage": null,
+                "rentalDuration": 3
+            },
+            {
+                "title": "Film Two",
+                "language": {
+                    "id": "TGFuZ3VhZ2U6Mw"
+                },
+                "originalLanguage": {
+                    "id": "TGFuZ3VhZ2U6Ng"
+                },
+                "rentalDuration": 4
+            }
+        ]
+    }
+}

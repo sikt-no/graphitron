@@ -132,6 +132,7 @@
                                 </class>
                             </scalars>
                             <useJdbcBatchingForDeletes>false</useJdbcBatchingForDeletes>
+                            <useJdbcBatchingForInserts>false</useJdbcBatchingForInserts>
                         </configuration>
                     </execution>
                 </executions>

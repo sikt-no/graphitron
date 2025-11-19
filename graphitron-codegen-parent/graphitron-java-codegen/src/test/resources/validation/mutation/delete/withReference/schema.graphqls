@@ -1,5 +1,5 @@
 type Mutation {
-    mutation(in: CustomerNodeInputTable): Customer @mutation(typeName: DELETE)
+    mutation(in: CustomerNodeInputTable!): Customer @mutation(typeName: DELETE)
 }
 
 type Customer implements Node @node @table {

@@ -1,5 +1,5 @@
 type Mutation {
-    mutation(in: CustomerNodeInputTable): VacationDestination @mutation(typeName: DELETE)
+    mutation(in: CustomerNodeInputTable!): VacationDestination @mutation(typeName: DELETE)
 }
 
 type VacationDestination @table(name: "VACATION_DESTINATION") {

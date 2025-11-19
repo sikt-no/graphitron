@@ -82,4 +82,6 @@ public interface FieldSpecification {
      * @return Is this object field a Query or Mutation root field?
      */
     boolean isRootField();
+
+    boolean isIterableWrappedWithNullableElement();
 }

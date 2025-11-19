@@ -1,0 +1,15 @@
+type Mutation {
+  mutation(in: FilmInput!): ID @mutation(typeName: INSERT) @nodeId(typeName: "Film")
+}
+
+type Film implements Node @node @table {
+    id: ID!
+}
+
+type Language implements Node @node(keyColumns: "LANGUAGE_ID", typeId: "L") @table {
+    id: ID!
+}
+
+input FilmInput @table(name: "FILM") {
+    originalLanguageId: ID @nodeId(typeName: "Language") @reference(path: {key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"})
+}

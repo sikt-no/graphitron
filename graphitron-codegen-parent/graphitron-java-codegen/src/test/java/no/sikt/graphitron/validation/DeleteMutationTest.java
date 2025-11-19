@@ -172,10 +172,19 @@ public class DeleteMutationTest extends ValidationTest {
     }
 
     @Test
-    @DisplayName("No data fields should throw error")
-    void noDataFields() {
+    @DisplayName("Only errors field (and no data field) should throw error")
+    void onlyErrorsField() {
         assertErrorsContain(
-                "noDataFields", Set.of(VALIDATION_ERROR),
+                "onlyErrorsField", Set.of(VALIDATION_ERROR),
+                "Cannot find correct field to output data to after mutation for field 'Mutation.mutation'."
+        );
+    }
+
+    @Test
+    @DisplayName("Only error/exception union field (with non-reserved name) and no data field should throw error")
+    void onlyErrorExceptionUnionField() {
+        assertErrorsContain(
+                "onlyErrorExceptionUnionField", Set.of(VALIDATION_ERROR),
                 "Cannot find correct field to output data to after mutation for field 'Mutation.mutation'."
         );
     }
