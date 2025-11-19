@@ -77,16 +77,29 @@ public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer
         return fieldType.isIterableWrapped();
     }
 
+    /**
+     * Is this field nullable?
+     * In case of an iterable wrapped field, is the list nullable? E.g. [String!] will return true, and [String]! will return false.
+     */
     @Override
     public boolean isNullable() {
         return fieldType.isIterableWrapped() ? fieldType.isIterableNullable() : fieldType.isNullable();
     }
 
+    /**
+     * Is this field nullable?
+     * In case of an iterable wrapped field, is the list nullable? E.g. [String!] will return false, and [String]! will return true.
+     */
     @Override
     public boolean isNonNullable() {
         return fieldType.isIterableWrapped() ? !fieldType.isIterableNullable() : !fieldType.isNullable();
     }
 
+    /**
+     * Is this an iterable wrapped field with a nullable element?
+     * Will return true: [String] and [String]!
+     * Will return false: [String!], [String!]! and String
+     */
     @Override
     public boolean isIterableWrappedWithNullableElement() {
         return fieldType.isIterableWrapped() && fieldType.isNullable();

@@ -191,7 +191,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
 
     protected CodeBlock formatWhereContentsForDeleteMutation(ObjectField target) {
         var context = new FetchContext(processedSchema, target, getLocalObject(), false, true);
-        return formatJooqConditions(new ArrayList<>(getInputComponents(context, target)));
+        return formatJooqConditions(new ArrayList<>(getInputConditions(context, target)));
     }
 
     private CodeBlock setFetch(ObjectField referenceField) {

@@ -658,7 +658,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         if (!isResolverRoot && (context.hasNonSubqueryFields() || context.hasApplicableTable())) {
-            conditionList.addAll(getInputComponents(context, (ObjectField) context.getReferenceObjectField()));
+            conditionList.addAll(getInputConditions(context, (ObjectField) context.getReferenceObjectField()));
             var otherConditionsFields = context
                     .getConditionSourceFields()
                     .stream()  // In theory this filter should not be necessary, context logic should add these in a way such that this case never arises.
@@ -666,7 +666,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     .toList();
             if (!otherConditionsFields.isEmpty()) {
                 for (var otherConditionsField : otherConditionsFields) {
-                    conditionList.addAll(getInputComponents(context, (ObjectField) otherConditionsField));
+                    conditionList.addAll(getInputConditions(context, (ObjectField) otherConditionsField));
                 }
             }
         }
@@ -685,11 +685,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return code.build();
     }
 
-    protected List<CodeBlock> getInputComponents(FetchContext context, ObjectField sourceField) {
+    /**
+     * Returns condition code blocks for a field which is assumed to only have input conditions, and no set values.
+     */
+    protected List<CodeBlock> getInputConditions(FetchContext context, ObjectField sourceField) {
         var allConditionCodeBlocks = new ArrayList<CodeBlock>();
-        var inputConditions = getInputComponents(sourceField);
-        var flatInputs = inputConditions.independentConditions();
-        var declaredInputConditions = inputConditions.declaredConditionsByField();
+        var inputComponents = getInputConditions(sourceField);
+        var flatInputs = inputComponents.independentConditions();
+        var declaredInputConditions = inputComponents.declaredConditionsByField();
         var splitInputs = flatInputs
                 .stream()
                 .collect(Collectors.partitioningBy(it -> processedSchema.hasRecord(it.getInput()) && !isDeleteMutationQuery));
@@ -733,8 +736,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
         }
 
-        for (var conditionTuple : inputConditions.conditionTuples()) {
-            if (inputConditions.conditionTuples()
+        for (var conditionTuple : inputComponents.conditionTuples()) {
+            if (inputComponents.conditionTuples()
                     .stream()
                     .anyMatch(it -> conditionTuple.path().startsWith(it.path())
                             && conditionTuple.path().length() > it.path().length())) {
@@ -935,8 +938,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return CodeBlock.of("$L$L", getElement, mapping);
     }
 
+    /**
+     * Returns an {@link InputComponents} object where all input for the field is categorized as conditions, and not set values.
+     */
     @NotNull
-    private InputComponents getInputComponents(ObjectField referenceField) {
+    private InputComponents getInputConditions(ObjectField referenceField) {
         var pathNameForIterableFields = new ArrayList<String>();
         var flatInputs = new ArrayList<InputCondition>();
         var declaredConditionsByField = new LinkedHashMap<GenerationField, List<InputCondition>>();
