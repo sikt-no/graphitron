@@ -474,7 +474,7 @@ public class ProcessedSchema {
 
     public Optional<LinkedList<String>> getKeyColumnsForNodeType(RecordObjectSpecification<?> type) {
         if (!isNodeType(type.getName())) {
-            return Optional.empty();
+            throw new IllegalArgumentException("Non-node object type provided in getKeyColumnsForNodeType: " + type.getName());
         }
         if (!type.getKeyColumns().isEmpty()) {
             return Optional.of(type.getKeyColumns());
