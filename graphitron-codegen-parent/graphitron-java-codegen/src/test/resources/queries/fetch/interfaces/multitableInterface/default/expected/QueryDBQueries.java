@@ -24,25 +24,24 @@ import org.jooq.impl.DSL;
 public class QueryDBQueries {
 
     public static SomeInterface someInterfaceForQuery(DSLContext _iv_ctx, SelectionSet _iv_select) {
-        var unionKeysQuery = customerSortFieldsForSomeInterface();
-        var mappedCustomer = customerForSomeInterface();
+        var _iv_unionKeysQuery = customerSortFieldsForSomeInterface();
+        var _sjs_customer = customerForSomeInterface();
 
         return _iv_ctx
                 .select(
                         DSL.row(
-
-                                unionKeysQuery.field("$type", String.class),
-                                mappedCustomer.field("$data")
+                                _iv_unionKeysQuery.field("$type", String.class),
+                                _sjs_customer.field("$data")
                         ).mapping((_iv_e0, _iv_e1) -> switch (_iv_e0) {
                             case "Customer" -> (SomeInterface) _iv_e1;
                             default ->
                                     throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "SomeInterface", _iv_e0));
                         })
                 )
-                .from(unionKeysQuery)
-                .leftJoin(mappedCustomer)
-                .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedCustomer.field("$pkFields", JSONB.class)))
-                .orderBy(unionKeysQuery.field("$type"), unionKeysQuery.field("$innerRowNum"))
+                .from(_iv_unionKeysQuery)
+                .leftJoin(_sjs_customer)
+                .on(_iv_unionKeysQuery.field("$pkFields", JSONB.class).eq(_sjs_customer.field("$pkFields", JSONB.class)))
+                .orderBy(_iv_unionKeysQuery.field("$type"), _iv_unionKeysQuery.field("$innerRowNum"))
                 .fetchOne(Record1::value1);
     }
 

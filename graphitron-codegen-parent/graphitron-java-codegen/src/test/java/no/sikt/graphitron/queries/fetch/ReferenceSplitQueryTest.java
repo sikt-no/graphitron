@@ -156,7 +156,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "keyWithMultiplePathsAndNestedSplitQuery",
                 """
-                        private static SelectField<Language> filmsWithoutPaginationForLanguage_film_d1_language() {
+                        private static SelectField<Language> _1_filmsWithoutPaginationForLanguage_film_language() {
                             var _a_language = LANGUAGE.as("language_3571151285");
                             var _a_language_3571151285_filmlanguageidfkey = _a_language.filmLanguageIdFkey().as("film_4095514247");
                             var _a_film_4095514247_filmlanguageidfkey = _a_language_3571151285_filmlanguageidfkey.filmLanguageIdFkey().as("language_4281699989");
@@ -332,7 +332,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void idArgumentOnNonRootQueryWithoutNodeStrategy() {
         assertGeneratedContentContains(
                 "idArgumentOnNonRootQueryWithoutNodeStrategy", Set.of(CUSTOMER_TABLE),
-                "customer_1589604633_store_left.hasStaffId(staffId)"
+                "customer_1589604633_store_left.hasStaffId(_mi_staffId)"
         );
 
     }
@@ -396,7 +396,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                                         _a_address_2813127756_city.getId(),
                                         DSL.row(
                                                 DSL.multiset(
-                                                        DSL.select(citiesWhereFilmIsStockedForFilm_city_d1_payments())
+                                                        DSL.select(_1_citiesWhereFilmIsStockedForFilm_city_payments())
                                                         .from(_a_city_3468131846_address)
                                                         .join(_a_address_2618309002_customer)
                                                         .join(_a_customer_672486254_payment)
@@ -406,7 +406,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                                 ).mapping(Functions.nullOnAllNull(City::new));
                             }""",
                             """
-                            private static SelectField<Payment> citiesWhereFilmIsStockedForFilm_city_d1_payments() {
+                            private static SelectField<Payment> _1_citiesWhereFilmIsStockedForFilm_city_payments() {
                                 var _a_film = FILM.as("film_2185543202");
                                 var _a_film_2185543202_inventory = _a_film.inventory().as("inventory_744357058");
                                 var _a_inventory_744357058_store = _a_film_2185543202_inventory.store().as("store_3638207731");
@@ -441,7 +441,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                                     _a_customer_2168032777_payment.PAYMENT_ID,
                                     _a_customer_2168032777_payment.AMOUNT,
                                     DSL.field(
-                                            DSL.select(paymentsForCustomer_payment_d1_staff())
+                                            DSL.select(_1_paymentsForCustomer_payment_staff())
                                             .from(_a_payment_staff)
                                             .join(_a_payment_staff_paymentstaff_staff)
                                             .on(no.sikt.graphitron.codereferences.conditions.PaymentCondition.paymentStaff(_a_payment_staff, _a_payment_staff_paymentstaff_staff))
@@ -449,7 +449,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                                     )
                             ).mapping(Functions.nullOnAllNull(Payment::new));
                         }
-                        private static SelectField<Staff> paymentsForCustomer_payment_d1_staff() {
+                        private static SelectField<Staff> _1_paymentsForCustomer_payment_staff() {
                             var _a_payment_staff_paymentstaff_staff = STAFF.as("staff_3518249830");
                             return DSL.row(
                                     _a_payment_staff_paymentstaff_staff.STAFF_ID,

@@ -26,17 +26,17 @@ import org.jooq.impl.DSL;
 public class QueryDBQueries {
 
     public static List<SomeInterface> someInterfaceForQuery(DSLContext _iv_ctx, SelectionSet _iv_select) {
-        var unionKeysQuery = customerSortFieldsForSomeInterface().unionAll(addressSortFieldsForSomeInterface());
+        var _iv_unionKeysQuery = customerSortFieldsForSomeInterface().unionAll(addressSortFieldsForSomeInterface());
 
-        var mappedAddress = addressForSomeInterface();
-        var mappedCustomer = customerForSomeInterface();
+        var _sjs_address = addressForSomeInterface();
+        var _sjs_customer = customerForSomeInterface();
 
         return _iv_ctx
                 .select(
                         DSL.row(
-                                unionKeysQuery.field("$type", String.class),
-                                mappedAddress.field("$data"),
-                                mappedCustomer.field("$data")
+                                _iv_unionKeysQuery.field("$type", String.class),
+                                _sjs_address.field("$data"),
+                                _sjs_customer.field("$data")
                         ).mapping((_iv_e0, _iv_e1, _iv_e2) -> switch (_iv_e0) {
                                     case "Address" -> (SomeInterface) _iv_e1;
                                     case "Customer" -> (SomeInterface) _iv_e2;
@@ -44,12 +44,12 @@ public class QueryDBQueries {
                                             throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "SomeInterface", _iv_e0));
                                 }
                         ))
-                .from(unionKeysQuery)
-                .leftJoin(mappedAddress)
-                .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedAddress.field("$pkFields", JSONB.class)))
-                .leftJoin(mappedCustomer)
-                .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedCustomer.field("$pkFields", JSONB.class)))
-                .orderBy(unionKeysQuery.field("$type"), unionKeysQuery.field("$innerRowNum"))
+                .from(_iv_unionKeysQuery)
+                .leftJoin(_sjs_address)
+                .on(_iv_unionKeysQuery.field("$pkFields", JSONB.class).eq(_sjs_address.field("$pkFields", JSONB.class)))
+                .leftJoin(_sjs_customer)
+                .on(_iv_unionKeysQuery.field("$pkFields", JSONB.class).eq(_sjs_customer.field("$pkFields", JSONB.class)))
+                .orderBy(_iv_unionKeysQuery.field("$type"), _iv_unionKeysQuery.field("$innerRowNum"))
                 .fetch(Record1::value1);
     }
 

@@ -1,9 +1,11 @@
 package no.sikt.graphitron.generators.codebuilding;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphql.schema.ProcessedSchema;
 
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
@@ -113,5 +115,38 @@ public class TypeNameFormat {
      */
     public static ClassName getGeneratedClassName(String subPath, String name) {
         return ClassName.get(GeneratorConfig.outputPackage() + "." + subPath, name);
+    }
+
+    /**
+     * @return Get the javapoet TypeName for this field's type, and wrap it in a list ParameterizedTypeName if it is iterable.
+     */
+    public static TypeName iterableWrapType(GenerationField field, boolean checkRecordReferences, ProcessedSchema processedSchema) {
+        return wrapListIf(inferFieldTypeName(field, checkRecordReferences, processedSchema), field.isIterableWrapped());
+    }
+
+    /**
+     * @return Get the javapoet TypeName for this field's type.
+     */
+    public static TypeName inferFieldTypeName(GenerationField field, boolean checkRecordReferences, ProcessedSchema processedSchema) {
+        if (processedSchema.isRecordType(field)) {
+            var type = processedSchema.getRecordType(field);
+            if (!checkRecordReferences || !type.hasRecordReference()) {
+                return type.getGraphClassName();
+            }
+            return type.getRecordClassName();
+        }
+
+        if (processedSchema.isEnum(field)) {
+            return processedSchema.getEnum(field).getGraphClassName();
+        }
+
+        var typeName = field.getTypeName();
+
+        var typeClass = field.getTypeClass();
+        if (typeClass == null) {
+            throw new IllegalStateException("Field \"" + field.getName() + "\" has a type \"" + typeName + "\" that can not be resolved.");
+        }
+
+        return typeClass;
     }
 }

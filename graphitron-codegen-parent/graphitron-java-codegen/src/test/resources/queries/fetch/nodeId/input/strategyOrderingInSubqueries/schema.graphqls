@@ -1,0 +1,12 @@
+type Query {
+    query(customerId: ID! @nodeId(typeName: "Customer")): Customer @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.codereferences.services.CustomerTableMethod", method: "customerTable"})
+}
+
+type Customer implements Node @node @table {
+    id: ID!
+    address: Address
+}
+
+type Address implements Node @node @table {
+    id: ID!
+}

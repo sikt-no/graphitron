@@ -10,7 +10,6 @@ import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
@@ -21,9 +20,10 @@ import static no.sikt.graphitron.definitions.fields.containedtypes.MutationType.
 import static no.sikt.graphitron.definitions.fields.containedtypes.MutationType.INSERT;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.inferFieldTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.internalPrefix;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getForeignKeyForNodeIdReference;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
 import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldName;
@@ -57,7 +57,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
 
         var returnType = processedSchema.isRecordType(dataTarget)
                 ? processedSchema.getRecordType(dataTarget).getGraphClassName()
-                : inferFieldTypeName(dataTarget, true);
+                : inferFieldTypeName(dataTarget, true, processedSchema);
 
         var targetTable = processedSchema.findInputTables(target).stream() // TODO: support inferring target table from data output
                 .findFirst()
@@ -81,7 +81,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .add(setFetch(dataTarget));
 
         return getDefaultSpecBuilder(asQueryMethodName(target.getName(), getLocalObject().getName()), wrapListIf(returnType, dataTarget.isIterableWrapped()))
-                .addParameters(getMethodParametersWithOrderField(parser))
+                .addParameters(parser.getMethodParameterSpecs(true, false, false, false))
                 .addParameter(SELECTION_SET.className, VAR_SELECT)
                 .addCode(code.build())
                 .build();
@@ -124,7 +124,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                     );
                 }
 
-                nodeIdHelperVars.add(CodeBlock.declare(internalPrefix(inputField.getName()), unpackCodeBlock));
+                nodeIdHelperVars.add(CodeBlock.declare(insertHelperPrefix(inputField.getName()), unpackCodeBlock));
                 var keyColumns = processedSchema.getKeyColumnsForNodeType(nodeType).orElseThrow();
 
                 if (!nodeType.getTable().getName().equalsIgnoreCase(targetTable) || inputField.hasFieldReferences()) {
@@ -136,7 +136,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
 
                 for (int i = 0; i < keyColumns.size(); i++) {
                     var field = tableFieldCodeBlock(targetTable, getJavaFieldName(targetTable, keyColumns.get(i)).orElseThrow());
-                    var setValue = val(CodeBlock.of("$N.getFieldValue($L, $N[$L])", VAR_NODE_STRATEGY, field, internalPrefix(inputField.getName()), i));
+                    var setValue = val(CodeBlock.of("$N.getFieldValue($L, $N[$L])", VAR_NODE_STRATEGY, field, insertHelperPrefix(inputField.getName()), i));
 
                     if (!inputCondition.getChecksAsSequence().isEmpty()) {
                         setValue = ofTernary(inputCondition.getCheckSequenceCodeBlock(), setValue, defaultValue(field));
@@ -165,7 +165,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
 
         if (recordInput.isIterableWrapped())  {
             valuesContent = CodeBlock.builder()
-                    .beginControlFlow("$N.stream().map($N -> ", recordInput.getName(), VAR_ITERATOR)
+                    .beginControlFlow("$N.stream().map($N -> ", inputPrefix(recordInput.getName()), VAR_ITERATOR)
                     .addAll(nodeIdHelperVars)
                     .add("return ")
                     .addStatement(wrapRow(valuesContent))
@@ -182,11 +182,6 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .add(".insertInto($N, $L)", targetTable, CodeBlock.join(setValueMap.keySet(), ", "))
                 .add("\n.$L($L)", recordInput.isIterableWrapped() ? "valuesOfRows" : "values", valuesContent)
                 .build();
-    }
-
-    @Override
-    protected TypeName iterableWrapType(GenerationField field) {
-        return wrapListIf(inferFieldTypeName(field, false), field.isIterableWrapped());
     }
 
     protected CodeBlock formatWhereContentsForDeleteMutation(ObjectField target) {
@@ -214,7 +209,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .stream()
                 .map(it -> new InputSetValue(
                         it,
-                        it.getName()))
+                        inputPrefix(it.getName())))
                 .collect(Collectors.toCollection(LinkedList::new));
 
         while (!inputBuffer.isEmpty() && inputBuffer.size() < Integer.MAX_VALUE) {

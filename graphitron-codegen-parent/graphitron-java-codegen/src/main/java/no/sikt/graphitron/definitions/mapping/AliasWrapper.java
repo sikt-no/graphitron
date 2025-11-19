@@ -13,20 +13,17 @@ public class AliasWrapper {
     private final Alias alias;
     private ServiceWrapper tableMethod;
     private List<String> inputNames;
-    private ObjectField referenceObjectField;
+    private GenerationField referenceObjectField;
 
     public AliasWrapper(Alias alias, GenerationField referenceObjectField, boolean isTargetTable, ProcessedSchema processedSchema) {
         this.alias = alias;
         this.tableMethod = referenceObjectField.hasTableMethodDirective() && isTargetTable ? referenceObjectField.getExternalMethod() : null;
-        this.inputNames = new InputParser((ObjectField) referenceObjectField, processedSchema).getMethodInputNames();
-        this.referenceObjectField = (ObjectField) referenceObjectField;
+        this.inputNames = new InputParser((ObjectField) referenceObjectField, processedSchema).getMethodInputNames(false, false, true);
+        this.referenceObjectField = referenceObjectField;
     }
 
     public AliasWrapper(Alias alias, GenerationField referenceObjectField, ProcessedSchema processedSchema) {
-        this.alias = alias;
-        this.tableMethod = referenceObjectField.hasTableMethodDirective() ? referenceObjectField.getExternalMethod() : null;
-        this.inputNames = new InputParser((ObjectField) referenceObjectField, processedSchema).getMethodInputNames();
-        this.referenceObjectField = (ObjectField) referenceObjectField;
+        this(alias, referenceObjectField, true, processedSchema);
     }
 
     public AliasWrapper(Alias alias) {
@@ -40,13 +37,16 @@ public class AliasWrapper {
     public Alias getAlias() {
         return alias;
     }
+
     public ServiceWrapper getTableMethod() {
         return tableMethod;
     }
+
     public List<String> getInputNames() {
         return inputNames;
     }
-    public ObjectField getReferenceObjectField() {
+
+    public GenerationField getReferenceObjectField() {
         return referenceObjectField;
     }
 

@@ -9,6 +9,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.namedIteratorPrefix;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -20,12 +21,9 @@ public class NameFormat {
     public static final String
             PREFIX_COUNT = "count",
             PREFIX_GET = "get",
-            SUFFIX_RESULT = "",
             SUFFIX_LIST = "List",
-            PREFIX_ITERATE = "it",
             PREFIX_VALIDATE = "validate",
             SUFFIX_RECORD = "Record",
-            SUFFIX_INDEX = "Index",
             SUFFIX_RECORD_TRANSFORM = "ToJOOQ" + SUFFIX_RECORD,
             SUFFIX_RECORD_TRANSFORM_JAVA = "ToJava" + SUFFIX_RECORD,
             SUFFIX_RESPONSE_TRANSFORM = "ToGraphType",
@@ -141,35 +139,11 @@ public class NameFormat {
     }
 
     /**
-     * @return Input formatted as a result name.
-     */
-    @NotNull
-    public static String asResultName(String s) {
-        return uncapitalize(s) + SUFFIX_RESULT;
-    }
-
-    /**
      * @return Format this string as a record naming pattern.
      */
     @NotNull
     public static String asRecordName(String s) {
         return uncapitalize(s) + SUFFIX_RECORD;
-    }
-
-    /**
-     * @return Format this string as a record class naming pattern.
-     */
-    @NotNull
-    public static String asRecordClassName(String s) {
-        return capitalize(s) + SUFFIX_RECORD;
-    }
-
-    /**
-     * @return Format this string as an index naming pattern.
-     */
-    @NotNull
-    public static String asIndexName(String s) {
-        return uncapitalize(s) + SUFFIX_INDEX;
     }
 
     /**
@@ -203,35 +177,11 @@ public class NameFormat {
     }
 
     /**
-     * @return Input formatted as an iterable name.
-     */
-    @NotNull
-    public static String asIterable(String s) {
-        return PREFIX_ITERATE + capitalize(s);
-    }
-
-    /**
      * @return Input formatted as an iterable name, if condition is true.
      */
     @NotNull
-    public static String asIterableIf(String s, boolean condition) {
-        return condition ? PREFIX_ITERATE + capitalize(s) : uncapitalize(s);
-    }
-
-    /**
-     * @return Input formatted as an iterable result name.
-     */
-    @NotNull
-    public static String asIterableResultName(String s) {
-        return asIterable(asResultName(s));
-    }
-
-    /**
-     * @return Input formatted as a result name. It is iterable if condition is set to true.
-     */
-    @NotNull
-    public static String asIterableResultNameIf(String s, boolean condition) {
-        return asIterableIf(asResultName(s), condition);
+    public static String namedIteratorPrefixIf(String s, boolean condition) {
+        return condition ? namedIteratorPrefix(s) : uncapitalize(s);
     }
 
     /**

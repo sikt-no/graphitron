@@ -44,12 +44,19 @@ public class VariablePrefix {
     // There should also not exist any pair of prefixes that are substrings of each other.
     public static final String
             INTERNAL_VARIABLE = "iv",
-            OPERATION_INPUT = "oi",
-            RESOLVER_KEYS = "rk",
+            METHOD_INPUT = "mi",
+            METHOD_OUTPUT = "mo",
+            METHOD_LIST_OUTPUT = "mlo",
+            OPERATION_SOURCE = "os",
+            DATA_FETCHER_KEYS = "rk",
+            DATA_FETCHER_SERVICE = "rs",
+            DATA_FETCHER_QUERY = "rq",
+            SELECT_JOIN_STEP = "sjs",
+            INSERT_HELPER = "ih",
+            NAMED_ITERATOR = "nit",
+            NAMED_ITERATOR_INDEX = "niit",
             ALIAS = "a",
             CONTEXT_FIELD = "cf",
-            MAPPER_INPUT = "mi",
-            MAPPER_OUTPUT = "mo",
             SEPARATOR = "_";
 
     /**
@@ -63,14 +70,35 @@ public class VariablePrefix {
      * @return This name formatted as an input variable to avoid namespace collisions.
      */
     public static String inputPrefix(String name) {
-        return prefixName(OPERATION_INPUT, name);
+        return prefixName(METHOD_INPUT, name);
+    }
+
+    /**
+     * @return This name formatted as an output variable to avoid namespace collisions.
+     */
+    public static String outputPrefix(String name) {
+        return prefixName(METHOD_OUTPUT, name);
+    }
+
+    /**
+     * @return This name formatted as a listed output variable to avoid namespace collisions.
+     */
+    public static String listedOutputPrefix(String name) {
+        return prefixName(METHOD_LIST_OUTPUT, name);
+    }
+
+    /**
+     * @return This name formatted as an operation source variable to avoid namespace collisions.
+     */
+    public static String sourcePrefix(String name) {
+        return prefixName(OPERATION_SOURCE, name);
     }
 
     /**
      * @return This name formatted as a resolver key variable to avoid namespace collisions.
      */
     public static String resolverKeyPrefix(String name) {
-        return prefixName(RESOLVER_KEYS, name);
+        return prefixName(DATA_FETCHER_KEYS, name);
     }
 
     /**
@@ -88,23 +116,51 @@ public class VariablePrefix {
     }
 
     /**
-     * @return This name formatted as a mapper input variable to avoid namespace collisions.
+     * @return This name formatted as an iterator variable to avoid namespace collisions.
      */
-    public static String mapperInputPrefix(String name) {
-        return prefixName(MAPPER_INPUT, name);
+    public static String namedIteratorPrefix(String name) {
+        return prefixName(NAMED_ITERATOR, name);
     }
 
     /**
-     * @return This name formatted as a mapper output variable to avoid namespace collisions.
+     * @return This name formatted as an index iterator variable to avoid namespace collisions.
      */
-    public static String mapperOutputPrefix(String name) {
-        return prefixName(MAPPER_OUTPUT, name);
+    public static String namedIndexIteratorPrefix(String name) {
+        return prefixName(NAMED_ITERATOR_INDEX, name);
+    }
+
+    /**
+     * @return This name formatted as a service class object reference to avoid namespace collisions.
+     */
+    public static String servicePrefix(String name) {
+        return prefixName(DATA_FETCHER_SERVICE, name);
+    }
+
+    /**
+     * @return This name formatted as a query class object reference to avoid namespace collisions.
+     */
+    public static String queryPrefix(String name) {
+        return prefixName(DATA_FETCHER_QUERY, name);
+    }
+
+    /**
+     * @return This name formatted as an operation query select join step variable to avoid namespace collisions.
+     */
+    public static String joinStepPrefix(String name) {
+        return prefixName(SELECT_JOIN_STEP, name);
+    }
+
+    /**
+     * @return This name formatted as an insert mutation helpervariable to avoid namespace collisions.
+     */
+    public static String insertHelperPrefix(String name) {
+        return prefixName(INSERT_HELPER, name);
     }
 
     /**
      * @return This name prefixed with the provided prefix.
      */
-    private static String prefixName(String prefix, String name) {
+    public static String prefixName(String prefix, String name) {
         var actualPrefix = prefixFormat(prefix);
         return name.startsWith(actualPrefix) ? name : actualPrefix + uncapitalize(name);
     }

@@ -35,7 +35,7 @@ public class DeleteQueryTest extends MutationQueryTest {
     @DisplayName("Field in jOOQ record input")
     void nonNullableInput() {
         assertGeneratedContentContains("nonNullableInput",
-                ".where(CUSTOMER.CUSTOMER_ID.eq(in.getCustomerId())"
+                ".where(CUSTOMER.CUSTOMER_ID.eq(_mi_in.getCustomerId())"
         );
     }
 
@@ -43,7 +43,7 @@ public class DeleteQueryTest extends MutationQueryTest {
     @DisplayName("Nullable jOOQ record input")
     void nullableInput() {
         assertGeneratedContentContains("nullableInput",
-                ".where(in != null ? CUSTOMER.CUSTOMER_ID.eq(in.getId()) : DSL.falseCondition())"
+                ".where(_mi_in != null ? CUSTOMER.CUSTOMER_ID.eq(_mi_in.getId()) : DSL.falseCondition())"
         );
     }
 
@@ -52,10 +52,10 @@ public class DeleteQueryTest extends MutationQueryTest {
     void nonNullableListedInput() {
         assertGeneratedContentContains("nonNullableListedInput",
                 """
-                .where(in.size() > 0 ?
+                .where(_mi_in.size() > 0 ?
                             DSL.row(CUSTOMER.CUSTOMER_ID).in(
-                                IntStream.range(0, in.size()).mapToObj(_iv_it ->
-                                    DSL.row(DSL.val(in.get(_iv_it).getId()))
+                                IntStream.range(0, _mi_in.size()).mapToObj(_iv_it ->
+                                    DSL.row(DSL.val(_mi_in.get(_iv_it).getId()))
                                 ).toList()
                             ) : DSL.falseCondition()
                         )
@@ -67,7 +67,7 @@ public class DeleteQueryTest extends MutationQueryTest {
     @DisplayName("Nullable jOOQ record input list")
     void nullableListedInput() {
         assertGeneratedContentContains("nullableListedInput",
-                ".where(in != null && in.size() > 0 ?",
+                ".where(_mi_in != null && _mi_in.size() > 0 ?",
                 ".toList()) : DSL.falseCondition()"
         );
     }
@@ -80,7 +80,7 @@ public class DeleteQueryTest extends MutationQueryTest {
         * Therefore, it's safe to fall back to DSL.noCondition on nullable input fields.
         * */
         assertGeneratedContentContains("nullableFieldInInput",
-                ".and(in.getFirstName() != null ? CUSTOMER.FIRST_NAME.eq(in.getFirstName()) : DSL.noCondition())"
+                ".and(_mi_in.getFirstName() != null ? CUSTOMER.FIRST_NAME.eq(_mi_in.getFirstName()) : DSL.noCondition())"
         );
     }
 
@@ -88,7 +88,7 @@ public class DeleteQueryTest extends MutationQueryTest {
     @DisplayName("Input list with node ID field")
     void inputListWithNodeId() {
         assertGeneratedContentContains("inputListWithNodeId",
-                "DSL.row(_iv_nodeIdStrategy.hasId(\"CustomerNode\", in.get(_iv_it).getId(), CUSTOMER"
+                "DSL.row(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_in.get(_iv_it).getId(), CUSTOMER"
         );
     }
 
@@ -97,7 +97,7 @@ public class DeleteQueryTest extends MutationQueryTest {
     void wrappedOutput() {
         assertGeneratedContentContains("wrappedOutput",
                 "deleteFrom(CUSTOMER)",
-                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", in.getId(), CUSTOMER."
+                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_in.getId(), CUSTOMER."
         );
     }
 
@@ -106,8 +106,8 @@ public class DeleteQueryTest extends MutationQueryTest {
     void wrappedOutputListed() {
         assertGeneratedContentContains("wrappedOutputListed",
                 "deleteFrom(CUSTOMER)",
-                ".where(in.size() > 0 ?",
-                "DSL.row(_iv_nodeIdStrategy.hasId(\"CustomerNode\", in.get(_iv_it).getId(), CUSTOMER."
+                ".where(_mi_in.size() > 0 ?",
+                "DSL.row(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_in.get(_iv_it).getId(), CUSTOMER."
         );
     }
 
@@ -116,7 +116,7 @@ public class DeleteQueryTest extends MutationQueryTest {
     void wrappedScalar() {
         assertGeneratedContentContains("wrappedScalar",
                 "deleteFrom(CUSTOMER)",
-                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", in.getId(), CUSTOMER.fields"
+                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_in.getId(), CUSTOMER.fields"
         );
     }
 
@@ -125,8 +125,8 @@ public class DeleteQueryTest extends MutationQueryTest {
     void wrappedScalarListed() {
         assertGeneratedContentContains("wrappedScalarListed",
                 "deleteFrom(CUSTOMER)",
-                ".where(in.size() > 0",
-                "hasId(\"CustomerNode\", in.get(_iv_it).getId(), CUSTOMER"
+                ".where(_mi_in.size() > 0",
+                "hasId(\"CustomerNode\", _mi_in.get(_iv_it).getId(), CUSTOMER"
         );
     }
 }

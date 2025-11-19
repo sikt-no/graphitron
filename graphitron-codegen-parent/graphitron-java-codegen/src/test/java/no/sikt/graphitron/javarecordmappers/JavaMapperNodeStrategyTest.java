@@ -47,7 +47,7 @@ public class JavaMapperNodeStrategyTest extends GeneratorTest {
     @DisplayName("Java record input should not use node strategy (temporary test)")
     void toRecord() {
         assertGeneratedContentContains("toRecord/default", Set.of(CUSTOMER_NODE),
-                "iDJavaRecord.setId(itDummyInputRecord.getId());"
+                "iDJavaRecord.setId(_nit_dummyInputRecord.getId());"
         );
     }
 }

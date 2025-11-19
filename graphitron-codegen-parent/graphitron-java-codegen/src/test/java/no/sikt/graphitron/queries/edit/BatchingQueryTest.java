@@ -52,28 +52,28 @@ public class BatchingQueryTest extends GeneratorTest {
     @Test
     @DisplayName("Delete")
     void delete() {
-        assertGeneratedContentContains("delete", ".batchDelete(inRecord)");
+        assertGeneratedContentContains("delete", ".batchDelete(_mi_inRecord)");
     }
 
     @Test
     @DisplayName("Insert")
     void insert() {
-        assertGeneratedContentContains("insert", ".batchInsert(inRecord)");
+        assertGeneratedContentContains("insert", ".batchInsert(_mi_inRecord)");
     }
 
     @Test
     @DisplayName("Upsert")
     void upsert() {
-        assertGeneratedContentContains("upsert", ".batchMerge(inRecord)");
+        assertGeneratedContentContains("upsert", ".batchMerge(_mi_inRecord)");
     }
 
     @Test
     @DisplayName("Upsert with node id")
     void upsertNodeId() {
         assertGeneratedContentContains("upsertNodeId",
-                "inRecord.changed(VACATION_DESTINATION.DESTINATION_ID, true);",
+                "_mi_inRecord.changed(VACATION_DESTINATION.DESTINATION_ID, true);",
                 "inRecord.changed(VACATION_DESTINATION.COUNTRY_NAME, true);",
-                ".batchMerge(inRecord)"
+                ".batchMerge(_mi_inRecord)"
         );
     }
 
@@ -83,7 +83,7 @@ public class BatchingQueryTest extends GeneratorTest {
         assertGeneratedContentContains("upsertImplicitNodeId",
                 "inRecord.changed(VACATION_DESTINATION.DESTINATION_ID, true);",
                 "inRecord.changed(VACATION_DESTINATION.COUNTRY_NAME, true);",
-                ".batchMerge(inRecord)"
+                ".batchMerge(_mi_inRecord)"
         );
     }
 
@@ -94,7 +94,7 @@ public class BatchingQueryTest extends GeneratorTest {
                 "inRecordList.forEach(_iv_it -> {",
                 "it.changed(VACATION_DESTINATION.DESTINATION_ID, true);",
                 "it.changed(VACATION_DESTINATION.COUNTRY_NAME, true);",
-                ".batchMerge(inRecordList)"
+                ".batchMerge(_mi_inRecordList)"
         );
     }
 
@@ -104,20 +104,20 @@ public class BatchingQueryTest extends GeneratorTest {
         assertGeneratedContentContains("upsertNodeIdCustomKeyColumns",
                 "inRecord.changed(VACATION_DESTINATION.KEY_COLUMN1, true);",
                 "inRecord.changed(VACATION_DESTINATION.KEY_COLUMN2, true);",
-                ".batchMerge(inRecord)"
+                ".batchMerge(_mi_inRecord)"
         );
     }
 
     @Test
     @DisplayName("Mutation with an unusable extra field")
     void extraField() {
-        assertGeneratedContentContains("extraField", ", CustomerRecord inRecord, String id", ".batchUpdate(inRecord)");
+        assertGeneratedContentContains("extraField", ", CustomerRecord _mi_inRecord, String _mi_id", ".batchUpdate(_mi_inRecord)");
     }
 
     @Test
     @DisplayName("List") // Mutation type does not matter.
     void listed() {
-        assertGeneratedContentContains("listed", "List<CustomerRecord> inRecordList", ".batchUpdate(inRecordList)");
+        assertGeneratedContentContains("listed", "List<CustomerRecord> _mi_inRecordList", ".batchUpdate(_mi_inRecordList)");
     }
 
     // These four may be unused in practice and could have problems.
@@ -130,7 +130,7 @@ public class BatchingQueryTest extends GeneratorTest {
     @Test
     @DisplayName("Mutations with two distinct records")
     void twoDifferentRecords() {
-        assertGeneratedContentContains("twoDifferentRecords", ", CustomerRecord in1Record, AddressRecord in2Record");
+        assertGeneratedContentContains("twoDifferentRecords", ", CustomerRecord _mi_in1Record, AddressRecord _mi_in2Record");
     }
 
     @Test
@@ -138,9 +138,9 @@ public class BatchingQueryTest extends GeneratorTest {
     void twoListedRecords() {
         assertGeneratedContentContains(
                 "twoListedRecords",
-                ", List<CustomerRecord> in1RecordList, List<CustomerRecord> in2RecordList",
-                "recordList.addAll(in1RecordList)",
-                "recordList.addAll(in2RecordList)"
+                ", List<CustomerRecord> _mi_in1RecordList, List<CustomerRecord> _mi_in2RecordList",
+                "recordList.addAll(_mi_in1RecordList)",
+                "recordList.addAll(_mi_in2RecordList)"
         );
     }
 
@@ -149,9 +149,9 @@ public class BatchingQueryTest extends GeneratorTest {
     void twoRecordsOneListed() {
         assertGeneratedContentContains(
                 "twoRecordsOneListed",
-                ", List<CustomerRecord> in1RecordList, CustomerRecord in2Record",
-                "recordList.add(in2Record)",
-                "recordList.addAll(in1RecordList)"
+                ", List<CustomerRecord> _mi_in1RecordList, CustomerRecord _mi_in2Record",
+                "recordList.add(_mi_in2Record)",
+                "recordList.addAll(_mi_in1RecordList)"
         );
     }
 }

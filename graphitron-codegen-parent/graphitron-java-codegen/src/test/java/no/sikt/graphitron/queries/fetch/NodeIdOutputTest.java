@@ -34,8 +34,8 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("With reference and where statement")
     void referenceAndInput() {
         assertGeneratedContentContains("referenceAndInput", Set.of(CUSTOMER_NODE),
-                "customer.getPrimaryKey().getFieldsArray()))).from(_a_customer).where(_a_customer.FIRST_NAME.eq(inRecord.getFirstName()))",
-                "queryForQuery_customerNoTable(inRecord, _iv_nodeIdStrategy)).fetchOne("
+                "customer.getPrimaryKey().getFieldsArray()))).from(_a_customer).where(_a_customer.FIRST_NAME.eq(_mi_inRecord.getFirstName()))",
+                "queryForQuery_customerNoTable(_iv_nodeIdStrategy, _mi_inRecord)).fetchOne("
         );
     }
 

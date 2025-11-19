@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.datafetchers.operations;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.ArgumentField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
@@ -20,9 +21,9 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.GraphitronContext;
 import no.sikt.graphql.schema.ProcessedSchema;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.*;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
@@ -30,16 +31,18 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodNameForField;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.FUNCTION;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
-import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * This class generates the data fetchers for default fetch or mutation queries with potential arguments or pagination.
  */
 public class OperationMethodGenerator extends DataFetcherMethodGenerator {
-    private static final String LOOKUP_KEYS_NAME = "keys", RESPONSE_NAME = "response", TRANSFORMER_LAMBDA_NAME = "recordTransform";
+    private static final String
+            RESPONSE_NAME = internalPrefix("response"),
+            TRANSFORMER_LAMBDA_NAME = internalPrefix("recordTransform");
 
     public OperationMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -68,16 +71,16 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         var isService = target.hasServiceReference();
         var hasLookup = !isService && LookupHelpers.lookupExists(target, processedSchema);
 
-        var objectToCall = isService ? uncapitalize(createServiceDependency(target).getName()) : asQueryClass(localObject.getName());
+        var objectToCall = isService ? createServiceDependency(target).getName() : asQueryClass(localObject.getName());
         var methodName = isService ? target.getExternalMethod().getMethodName() : asQueryMethodName(target.getName(), localObject.getName());
         var isRoot = localObject.isOperationRoot();
-        var queryFunction = queryFunction(objectToCall, methodName, parser.getInputParamString(), !isRoot || hasLookup, !isRoot && !hasLookup, isService);
+        var queryFunction = queryFunction(objectToCall, methodName, parser.getMethodInputNames(true, true, true), !isRoot || hasLookup, !isRoot && !hasLookup, isService);
 
         if (hasLookup) { // Assume all keys are correlated.
             return CodeBlock
                     .builder()
-                    .declare(LOOKUP_KEYS_NAME, LookupHelpers.getLookupKeysAsList(target, processedSchema))
-                    .addStatement("return $L.$L($N, $L)", newDataFetcher(), "loadLookup", LOOKUP_KEYS_NAME, queryFunction)
+                    .declare(VAR_LOOKUP_KEYS, LookupHelpers.getLookupKeysAsList(target, processedSchema))
+                    .addStatement("return $L.$L($N, $L)", newDataFetcher(), "loadLookup", VAR_LOOKUP_KEYS, queryFunction)
                     .build();
         }
 
@@ -86,7 +89,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                     "return $L.$L($L, $L)",
                     newDataFetcher(),
                     "loadByResolverKeys",
-                    asMethodCall(uncapitalize(localObject.getName()), getDTOGetterMethodNameForField(target)),
+                    asMethodCall(sourcePrefix(localObject.getName()), getDTOGetterMethodNameForField(target)),
                     queryFunction
             );
         }
@@ -106,14 +109,14 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 methodName,
                 asMethodCall(VAR_TRANSFORMER, METHOD_CONTEXT_NAME),
                 CodeBlock.ofIf(shouldMakeNodeStrategy(), ", $L", VAR_NODE_STRATEGY),
-                parser.getInputParamString()
+                String.join(", ", parser.getMethodInputNames(true, true, true))
         );
     }
 
     private CodeBlock callQueryBlock(ObjectField target, String objectToCall, String method, InputParser parser, CodeBlock queryFunction) {
         var innerCode = CodeBlock
                 .builder()
-                .addIf(!localObject.isOperationRoot(), "$L,", asMethodCall(uncapitalize(localObject.getName()), getDTOGetterMethodNameForField(target)))
+                .addIf(!localObject.isOperationRoot(), "$L,", asMethodCall(sourcePrefix(localObject.getName()), getDTOGetterMethodNameForField(target)))
                 .add(callQueryBlockInner(target, objectToCall, method, parser, queryFunction))
                 .build();
         return CodeBlock
@@ -145,16 +148,20 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                     .build();
         }
 
-        var filteredInputs = parser
-                .getMethodInputsWithOrderField()
-                .keySet()
-                .stream()
-                .filter(it -> target.getOrderField().map(orderByField -> !orderByField.getName().equals(it)).orElse(true))
-                .collect(Collectors.joining(", "));
-        var inputsWithKeys = localObject.isOperationRoot() ? filteredInputs : (filteredInputs.isEmpty() ? VAR_RESOLVER_KEYS : VAR_RESOLVER_KEYS + ", " + filteredInputs);
-        var contextParams = String.join(", ", processedSchema.getAllContextFields(target).keySet().stream().map(VariablePrefix::contextFieldPrefix).toList());
-        var allParams = inputsWithKeys.isEmpty() ? contextParams : (contextParams.isEmpty() ? inputsWithKeys : inputsWithKeys + ", " + contextParams);
-        var countFunction = countFunction(objectToCall, method, allParams, target.hasServiceReference());
+        var params = new ArrayList<String>();
+        if (!target.hasServiceReference()) {
+            params.add(VAR_CONTEXT);
+        }
+
+        if (GeneratorConfig.shouldMakeNodeStrategy()) {
+            params.add(VAR_NODE_STRATEGY);
+        }
+
+        if (!localObject.isOperationRoot()) {
+            params.add(VAR_RESOLVER_KEYS);
+        }
+        params.addAll(parser.getMethodInputNames(false, false, true));
+        var countFunction = countFunction(objectToCall, method, params, target.hasServiceReference());
         return CodeBlock.of(" $N,\n$L,\n$L$L", VAR_PAGE_SIZE, queryFunction, countFunction, transformWrap);
     }
 
@@ -223,7 +230,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         if (outputIDField.isIterableWrapped()) {
             filter.add(
                     "$1L.stream().map($2L -> $2N$3L).filter($2L -> !$4L.contains($2N))$5L",
-                    idContainerField == null ? idField.getName() : idContainerField.getName(),
+                    inputPrefix(idContainerField == null ? idField.getName() : idContainerField.getName()),
                     VAR_ITERATOR,
                     idField.getMappingFromSchemaName().asGetCall(),
                     extraction.build(),
@@ -234,8 +241,8 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                     "$L == null ? $L : null",
                     extraction.build(),
                     idContainerField == null
-                            ? idField.getName()
-                            : CodeBlock.of("$N$L", idContainerField.getName(), idField.getMappingFromSchemaName().asGetCall()));
+                            ? inputPrefix(idField.getName())
+                            : CodeBlock.of("$N$L", inputPrefix(idContainerField.getName()), idField.getMappingFromSchemaName().asGetCall()));
         }
 
         var reWrapping = CodeBlock.builder().add("($L) -> ", VAR_RESULT);
@@ -324,8 +331,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         }
 
         var target = context.getTarget();
-        var targetName = target.getName();
-        var declareBlock = CodeBlock.declare(asListedRecordNameIf(targetName, context.isIterable()), context.transformInputRecord());
+        var declareBlock = CodeBlock.declare(inputPrefix(asListedRecordNameIf(target.getName(), context.isIterable())), context.transformInputRecord());
         if (context.hasJavaRecordReference()) {
             return declareBlock; // If the input type is a Java record, no further records should be declared.
         }
@@ -334,7 +340,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         if (context.hasTable() && recursion == 0) {
             code.add(declareBlock);
         } else {
-            code.add(declareRecord(asRecordName(target.getName()), context.getTargetType(), context.isIterable(), true));
+            code.add(declareRecord(inputPrefix(asRecordName(target.getName())), context.getTargetType(), context.isIterable(), true));
         }
 
         code.addAll(
@@ -369,7 +375,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         for (var in : containedInputTypes) {
             var innerContext = context.iterateContext(in);
             fieldCode
-                    .declare(in.getName(), innerContext.getSourceGetCallBlock())
+                    .declare(inputPrefix(in.getName()), innerContext.getSourceGetCallBlock())
                     .add(unwrapRecords(innerContext));
         }
 
@@ -378,9 +384,9 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         if (context.hasTable() && !context.isTopLevelContext()) {
             var record = context.transformInputRecord();
             if (!context.getPreviousContext().wasIterable()) {
-                code.addStatement("$L = $L", asListedRecordNameIf(sourceName, context.isIterable()), record);
+                code.addStatement("$L = $L", inputPrefix(asListedRecordNameIf(sourceName, context.isIterable())), record);
             } else {
-                code.addStatement("$N.add$L($L)", asListedRecordName(sourceName), context.isIterable() ? "All" : "", record);
+                code.addStatement("$N.add$L($L)", inputPrefix(asListedRecordName(sourceName)), context.isIterable() ? "All" : "", record);
             }
         }
 
@@ -393,7 +399,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
             return code.build();
         }
 
-        return wrapNotNull(sourceName, code.add(context.wrapFields(fieldCode.build())).build());
+        return wrapNotNull(inputPrefix(sourceName), code.add(context.wrapFields(fieldCode.build())).build());
     }
 
     private CodeBlock declareContextArgs(ObjectField target) {

@@ -127,7 +127,7 @@ public class ReferenceFieldTest extends ReferenceTest {
                                 return DSL.row(
                                         DSL.row(
                                                 DSL.field(
-                                                        DSL.select(queryForQuery_film_d1_language())
+                                                        DSL.select(_1_queryForQuery_film_language())
                                                         .from(_a_film_2185543202_filmlanguageidfkey)
                                                 )
                                         ).mapping(Functions.nullOnAllNull(LanguageWrapper::new))
@@ -135,7 +135,7 @@ public class ReferenceFieldTest extends ReferenceTest {
                             }
                         """,
                         """
-                        private static SelectField<Language> queryForQuery_film_d1_language() {
+                        private static SelectField<Language> _1_queryForQuery_film_language() {
                             var _a_film = FILM.as("film_2185543202");
                             var _a_film_2185543202_filmlanguageidfkey = _a_film.filmLanguageIdFkey().as("language_4253626089");
                             return DSL.row(_a_film_2185543202_filmlanguageidfkey.NAME).mapping(Functions.nullOnAllNull(Language::new));

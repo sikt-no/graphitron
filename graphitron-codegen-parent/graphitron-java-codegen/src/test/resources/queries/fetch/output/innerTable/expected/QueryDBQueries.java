@@ -27,14 +27,14 @@ public class QueryDBQueries {
         return DSL.row(
                 _a_customer.getId(),
                 DSL.field(
-                        DSL.select(queryForQuery_customer_d1_address())
+                        DSL.select(_1_queryForQuery_customer_address())
                                 .from(_a_customer_2168032777_address)
 
                 )
         ).mapping(Functions.nullOnAllNull(Customer::new));
     }
 
-    private static SelectField<Address> queryForQuery_customer_d1_address() {
+    private static SelectField<Address> _1_queryForQuery_customer_address() {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         var _a_customer_2168032777_address = _a_customer.address().as("address_2138977089");
         return DSL.row(_a_customer_2168032777_address.getId()).mapping(Functions.nullOnAllNull(Address::new));

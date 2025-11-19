@@ -7,6 +7,7 @@ public class VariableNames {
             VAR_SELECTION_SET = internalPrefix("selectionSet"),
             VAR_IDS = internalPrefix("ids"),
             VAR_RESOLVER_KEYS = internalPrefix("keys"),
+            VAR_LOOKUP_KEYS = internalPrefix("lookupKeys"),
             VAR_PAGE_SIZE = internalPrefix("pageSize"),
             VAR_CONTEXT = internalPrefix("ctx"),
             VAR_GRAPH_CONTEXT = internalPrefix("graphCtx"),

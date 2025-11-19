@@ -42,7 +42,7 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     @Test
     @DisplayName("Field using the @field directive")
     void mappedField() {
-        assertGeneratedContentContains("mappedField", "customerJavaRecord.setSomeID(itCustomer.getId()");
+        assertGeneratedContentContains("mappedField", "customerJavaRecord.setSomeID(_nit_customer.getId()");
     }
 
     @Test
@@ -51,9 +51,9 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "twoFields",
                 "pathHere + \"id\"",
-                "customerJavaRecord.setSomeID(itCustomer.getId()",
+                "customerJavaRecord.setSomeID(_nit_customer.getId()",
                 "pathHere + \"otherID\"",
-                "customerJavaRecord.setOtherID(itCustomer.getOtherID()"
+                "customerJavaRecord.setOtherID(_nit_customer.getOtherID()"
         );
     }
 
@@ -62,10 +62,10 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     void containingNonRecordWrapper() {
         assertGeneratedContentContains(
                 "containingNonRecordWrapper",
-                "inner = itAddress.getInner();" +
-                        "if (inner != null && _iv_args.contains(_iv_pathHere + \"inner\")) {" +
-                        "    if (_iv_args.contains(_iv_pathHere + \"inner/postalCode\")) {" +
-                        "        mapperAddressJavaRecord.setPostalCode(inner.getPostalCode());"
+                "inner = _nit_address.getInner();" +
+                        "if (_mi_inner != null && _iv_args.contains(_iv_pathHere + \"inner\")) {" +
+                        "if (_iv_args.contains(_iv_pathHere + \"inner/postalCode\")) {" +
+                        "_mo_mapperAddressJavaRecord.setPostalCode(_mi_inner.getPostalCode());"
         );
     }
 
@@ -74,11 +74,11 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     void containingDoubleNonRecordWrapper() {
         assertGeneratedContentContains(
                 "containingDoubleNonRecordWrapper",
-                        "if (inner0 != null && _iv_args.contains(_iv_pathHere + \"inner0\")) {" +
-                        "    var inner1 = inner0.getInner1();" +
-                        "    if (inner1 != null && _iv_args.contains(_iv_pathHere + \"inner0/inner1\")) {" +
-                        "        if (_iv_args.contains(_iv_pathHere + \"inner0/inner1/postalCode\")) {" +
-                        "            mapperAddressJavaRecord.setPostalCode(inner1.getPostalCode());"
+                        "if (_mi_inner0 != null && _iv_args.contains(_iv_pathHere + \"inner0\")) {" +
+                        "var _mi_inner1 = _mi_inner0.getInner1();" +
+                        "if (_mi_inner1 != null && _iv_args.contains(_iv_pathHere + \"inner0/inner1\")) {" +
+                        "if (_iv_args.contains(_iv_pathHere + \"inner0/inner1/postalCode\")) {" +
+                        "_mo_mapperAddressJavaRecord.setPostalCode(_mi_inner1.getPostalCode());"
         );
     }
 
@@ -90,10 +90,10 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
                 "nestingWithDuplicateFieldName",
                 "inner = itAddress.getInner();" +
                         "if (inner != null && _iv_args.contains(_iv_pathHere + \"inner\")) {" +
-                        "    var inner = inner.getInner();" +
-                        "    if (inner != null && _iv_args.contains(_iv_pathHere + \"inner/inner\")) {" +
-                        "        if (_iv_args.contains(_iv_pathHere + \"inner/inner/postalCode\")) {" +
-                        "            mapperAddressJavaRecord.setPostalCode(inner.getPostalCode()"
+                        "var inner = inner.getInner();" +
+                        "if (inner != null && _iv_args.contains(_iv_pathHere + \"inner/inner\")) {" +
+                        "if (_iv_args.contains(_iv_pathHere + \"inner/inner/postalCode\")) {" +
+                        "mapperAddressJavaRecord.setPostalCode(inner.getPostalCode()"
         );
     }
 
@@ -103,10 +103,10 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     void containingNonRecordWrapperWithFieldOverride() {
         assertGeneratedContentContains(
                 "containingNonRecordWrapperWithFieldOverride",
-                "inner1 = itAddress.getInner1()",
-                ".setPostalCode(inner1.getCode()",
-                "inner2 = itAddress.getInner2()",
-                ".setPostalCode(inner2.getCode()"
+                "inner1 = _nit_address.getInner1()",
+                ".setPostalCode(_mi_inner1.getCode()",
+                "inner2 = _nit_address.getInner2()",
+                ".setPostalCode(_mi_inner2.getCode()"
         );
     }
 
@@ -115,7 +115,7 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     void unconfiguredField() {
         assertGeneratedContentContains(
                 "unconfiguredField",
-                "customerJavaRecordList = new ArrayList<CustomerJavaRecord>();return customerJavaRecordList"
+                "customerJavaRecord = new ArrayList<CustomerJavaRecord>();return _mlo_customerJavaRecord"
         );
     }
 
@@ -125,7 +125,7 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "idOtherThanPK",
                 "pathHere + \"addressId\"",
-                ".setAddressId(itCustomer.getAddressId()"
+                ".setAddressId(_nit_customer.getAddressId()"
         );
     }
 
@@ -134,20 +134,20 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     void skipsSplitQuery() {
         assertGeneratedContentContains(
                 "skipsSplitQuery",
-                "customerJavaRecordList = new ArrayList<CustomerJavaRecord>();return customerJavaRecordList"
+                "customerJavaRecord = new ArrayList<CustomerJavaRecord>();return _mlo_customerJavaRecord"
         );
     }
 
     @Test
     @DisplayName("Enum fields")
     void withEnum() {
-        assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM), ".setEnum1(QueryHelper.makeEnumMap(itDummy.getE(),");
+        assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM), ".setEnum1(QueryHelper.makeEnumMap(_nit_dummy.getE(),");
     }
 
     @Test
     @DisplayName("List fields")
     void listField() {
-        assertGeneratedContentContains("listField", ".setIdList(itCustomer.getIdList()");
+        assertGeneratedContentContains("listField", ".setIdList(_nit_customer.getIdList()");
     }
 
     @Test
@@ -155,7 +155,7 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     void containingNonRecordWrapperWithJavaRecord() {
         assertGeneratedContentContains(
                 "containingNonRecordWrapperWithJavaRecord", Set.of(DUMMY_INPUT_RECORD),
-                "mapperNestedJavaRecord.setDummyRecord(_iv_transform.dummyInputRecordToJavaRecord(dummyRecord, _iv_pathHere + \"inner/dummyRecord\")"
+                "mapperNestedJavaRecord.setDummyRecord(_iv_transform.dummyInputRecordToJavaRecord(_mi_dummyRecord, _iv_pathHere + \"inner/dummyRecord\")"
         );
     }
 
@@ -164,7 +164,7 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     void containingNonRecordWrapperWithJOOQRecord() {
         assertGeneratedContentContains(
                 "containingNonRecordWrapperWithJOOQRecord", Set.of(CUSTOMER_INPUT_TABLE),
-                "mapperNestedJavaRecord.setCustomer(_iv_transform.customerInputTableToJOOQRecord(customer, _iv_pathHere + \"inner/customer\")"
+                "mapperNestedJavaRecord.setCustomer(_iv_transform.customerInputTableToJOOQRecord(_mi_customer, _iv_pathHere + \"inner/customer\")"
         );
     }
 
@@ -173,7 +173,7 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     void withUnconfiguredJavaRecord() {
         assertGeneratedContentContains(
                 "unconfiguredJavaRecord", Set.of(DUMMY_INPUT_RECORD),
-                "customerJavaRecordList = new ArrayList<CustomerJavaRecord>();return customerJavaRecordList"
+                "customerJavaRecord = new ArrayList<CustomerJavaRecord>();return _mlo_customerJavaRecord"
         );
     }
 
@@ -182,7 +182,7 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     void withUnconfiguredJOOQRecord() {
         assertGeneratedContentContains(
                 "unconfiguredJOOQRecord", Set.of(CUSTOMER_TABLE),
-                "customerJavaRecordList = new ArrayList<CustomerJavaRecord>();return customerJavaRecordList"
+                "customerJavaRecord = new ArrayList<CustomerJavaRecord>();return _mlo_customerJavaRecord"
         );
     }
 }

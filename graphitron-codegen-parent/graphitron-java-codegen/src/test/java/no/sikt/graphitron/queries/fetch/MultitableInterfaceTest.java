@@ -52,9 +52,9 @@ public class MultitableInterfaceTest extends InterfaceTest {
         assertGeneratedContentContains(
                 "multipleImplementations",
                 "citySortFieldsForSomeInterface().unionAll(customerSortFieldsForSomeInterface().unionAll(addressSortFieldsForSomeInterface()))",
-                "mappedAddress.field(\"$data\")," +
-                        "mappedCustomer.field(\"$data\")," +
-                        "mappedCity.field(\"$data\")",
+                "address.field(\"$data\")," +
+                        "_sjs_customer.field(\"$data\")," +
+                        "_sjs_city.field(\"$data\")",
                 "case \"Address\" -> (SomeInterface) _iv_e1",
                 "case \"Customer\" -> (SomeInterface) _iv_e2",
                 "case \"City\" -> (SomeInterface) _iv_e3"
@@ -116,8 +116,8 @@ public class MultitableInterfaceTest extends InterfaceTest {
     @DisplayName("Paginated with input")
     void paginatedWithInput() {
         assertGeneratedContentContains("paginatedWithInput",
-                "SortFieldsForPayments(_iv_pageSize, _iv_token, customerId).union",
-                ".where(customerId != null ? _a_paymentp2007_02.CUSTOMER_ID.eq(customerId) : DSL.noCondition()).and(_iv_token"
+                "SortFieldsForPayments(_iv_pageSize, _iv_token, _mi_customerId).union",
+                ".where(_mi_customerId != null ? _a_paymentp2007_02.CUSTOMER_ID.eq(_mi_customerId) : DSL.noCondition()).and(_iv_token"
         );
     }
 
@@ -125,11 +125,11 @@ public class MultitableInterfaceTest extends InterfaceTest {
     @DisplayName("Multiple inputs on multitable interface")
     void withMultipleInputs() {
         assertGeneratedContentContains("withMultipleInputs",
-                "paymenttypetwoSortFieldsForPayments(customerId, staff)" +
-                        ".unionAll(paymenttypeoneSortFieldsForPayments(customerId, staff))",
-                "SortFieldsForPayments(String customerId, PaymentStaffInput staff)",
-                ".where(customerId != null ? _a_paymentp2007_01.",
-                ".and(_a_paymentp2007_01.STAFF_ID.eq(staff.getStaffId()))"
+                "paymenttypetwoSortFieldsForPayments(_mi_customerId, _mi_staff)" +
+                        ".unionAll(paymenttypeoneSortFieldsForPayments(_mi_customerId, _mi_staff))",
+                "SortFieldsForPayments(String _mi_customerId, PaymentStaffInput _mi_staff)",
+                ".where(_mi_customerId != null ? _a_paymentp2007_01.",
+                ".and(_a_paymentp2007_01.STAFF_ID.eq(_mi_staff.getStaffId()))"
         );
     }
 
@@ -146,9 +146,9 @@ public class MultitableInterfaceTest extends InterfaceTest {
     @DisplayName("Condition on input on multi table interface")
     void withInputCondition() {
         assertGeneratedContentContains("withInputCondition",
-                ".from(_a_paymentp2007_01).where(customerId",
+                ".from(_a_paymentp2007_01).where(_mi_customerId",
                 ": DSL.noCondition()).and(no.sikt",
-                "QueryPaymentInterfaceCondition.payments(_a_paymentp2007_01, customerId)"
+                "QueryPaymentInterfaceCondition.payments(_a_paymentp2007_01, _mi_customerId)"
         );
     }
 
@@ -162,7 +162,7 @@ public class MultitableInterfaceTest extends InterfaceTest {
     @DisplayName("Listed multitable interface in splitQuery field")
     void listedInSplitQuery() {
         assertGeneratedContentContains("splitQueryListed", Set.of(PERSON_WITH_EMAIL),
-                "DSL.multiset(DSL.select(DSL.row(unionKeysQuery.",
+                "DSL.multiset(DSL.select(DSL.row(_iv_unionKeysQuery.",
                 ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), _iv_r -> _iv_r.value2().map(Record1::value1)",
                 "unionKeysQuery.field(\"$innerRowNum\")))).from" // Make sure there's no limit
         );
@@ -178,7 +178,7 @@ public class MultitableInterfaceTest extends InterfaceTest {
     @DisplayName("Multitable interface in splitQuery field with input")
     void splitQueryWithInput() {
         assertGeneratedContentContains("splitQueryWithInput", Set.of(PERSON_WITH_EMAIL_CONNECTION),
-                ".from(_a_payment_1831371789_customer).where(_a_payment_1831371789_customer.EMAIL.eq(email))",
+                ".from(_a_payment_1831371789_customer).where(_a_payment_1831371789_customer.EMAIL.eq(_mi_email))",
                 ".from(_a_payment).where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment)).fetch"
         );
     }

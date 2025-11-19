@@ -16,7 +16,7 @@ import org.jooq.DSLContext;
 
 public class QueryDBQueries {
 
-    public static List<Pair<String, Address>> addressForQuery(DSLContext _iv_ctx, Integer _iv_pageSize, String after, SelectionSet _iv_select) {
+    public static List<Pair<String, Address>> addressForQuery(DSLContext _iv_ctx, Integer _iv_pageSize, String _mi_after, SelectionSet _iv_select) {
         var _a_address = ADDRESS.as("address_223244161");
         var _iv_orderFields = _a_address.fields(_a_address.getPrimaryKey().getFieldsArray());
         return _iv_ctx.select(
@@ -28,7 +28,7 @@ public class QueryDBQueries {
                 .from(_a_address)
                 .where(_a_address.DISTRICT.in("ONE", "TWO"))
                 .orderBy(_iv_orderFields)
-                .seek(QueryHelper.getOrderByValues(_iv_ctx, _iv_orderFields, after))
+                .seek(QueryHelper.getOrderByValues(_iv_ctx, _iv_orderFields, _mi_after))
                 .limit(_iv_pageSize + 1)
                 .fetch(
                         _iv_it -> {

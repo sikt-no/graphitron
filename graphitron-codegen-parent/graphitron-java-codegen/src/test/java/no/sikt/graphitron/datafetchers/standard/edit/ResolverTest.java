@@ -45,8 +45,8 @@ public class ResolverTest extends GeneratorTest {
     void withNonRecordInput() {
         assertGeneratedContentContains(
                 "withNonRecordInput",
-                "String email = _iv_env.getArgument(\"email\")",
-                ".mutationForMutation(_iv_transform.getCtx(), inRecord, email)"
+                "String _mi_email = _iv_env.getArgument(\"email\")",
+                ".mutationForMutation(_iv_transform.getCtx(), _mi_inRecord, _mi_email)"
         );
     }
 
@@ -55,8 +55,8 @@ public class ResolverTest extends GeneratorTest {
     void listedInput() {
         assertGeneratedContentContains(
                 "listedInput",
-                ".getCtx(), inRecordList",
-                "ctx, inRecordList, _iv_selectionSet)"
+                ".getCtx(), _mi_inRecordList",
+                "ctx, _mi_inRecordList, _iv_selectionSet)"
         );
     }
 
@@ -66,8 +66,8 @@ public class ResolverTest extends GeneratorTest {
     void multipleInputs() {
         assertGeneratedContentContains(
                 "multipleInputs",
-                ".getCtx(), in0Record, in1Record",
-                "ctx, in0Record, in1Record, _iv_selectionSet"
+                ".getCtx(), _mi_in0Record, _mi_in1Record",
+                "ctx, _mi_in0Record, _mi_in1Record, _iv_selectionSet"
         );
     }
 
@@ -106,7 +106,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "delete",
                 "DataFetcherHelper(_iv_env).loadDelete(",
-                "(_iv_result) -> _iv_result == null ? in.getId() : null"
+                "(_iv_result) -> _iv_result == null ? _mi_in.getId() : null"
         );
     }
 
@@ -124,7 +124,7 @@ public class ResolverTest extends GeneratorTest {
     void deleteWrapped() {
         assertGeneratedContentContains(
                 "deleteWrapped", Set.of(CUSTOMER_TABLE),
-                "new CustomerTable(_iv_result.getId() == null ? in.getId() : null)"
+                "new CustomerTable(_iv_result.getId() == null ? _mi_in.getId() : null)"
         );
     }
 
@@ -133,7 +133,7 @@ public class ResolverTest extends GeneratorTest {
     void deleteWrappedListed() {
         assertGeneratedContentContains(
                 "deleteWrappedListed",
-                "new CustomerOutput(in.stream().map(_iv_it -> _iv_it.getId()).filter(_iv_it -> !_iv_result.getId().contains(_iv_it)).toList()"
+                "new CustomerOutput(_mi_in.stream().map(_iv_it -> _iv_it.getId()).filter(_iv_it -> !_iv_result.getId().contains(_iv_it)).toList()"
         );
     }
 }

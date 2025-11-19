@@ -34,7 +34,7 @@ public class MutationOutputTest extends MutationQueryTest {
     @DisplayName("Returning node ID field wrapped in type without table")
     void wrappedNodeId() {
         assertGeneratedContentContains("wrappedNodeId",
-                "CustomerNodeInputTable in, SelectionSet _iv_select)",
+                "CustomerNodeInputTable _mi_in, SelectionSet _iv_select)",
                 ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
                         ".fetchOne(_iv_it -> _iv_it.into(String.class))"
         );
@@ -44,7 +44,7 @@ public class MutationOutputTest extends MutationQueryTest {
     @DisplayName("Returning scalar field wrapped in type without table")
     void wrappedScalar() {
         assertGeneratedContentContains("wrappedScalar",
-                "CustomerNodeInputTable in, SelectionSet _iv_select)",
+                "CustomerNodeInputTable _mi_in, SelectionSet _iv_select)",
                 ".returningResult(CUSTOMER.CUSTOMER_ID)" +
                         ".fetchOne(_iv_it -> _iv_it.into(Integer.class))"
         );

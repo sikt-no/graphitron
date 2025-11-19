@@ -43,14 +43,14 @@ public class CityDBQueries {
         return DSL.row(
                 _a_city_760939060_address.getId(),
                 DSL.field(
-                        DSL.select(addressesForCity_address_d1_city())
+                        DSL.select(_1_addressesForCity_address_city())
                                 .from(_a_address_609487378_city)
 
                 )
         ).mapping(Functions.nullOnAllNull(Address::new));
     }
 
-    private static SelectField<City> addressesForCity_address_d1_city() {
+    private static SelectField<City> _1_addressesForCity_address_city() {
         var _a_city = CITY.as("city_760939060");
         var _a_city_760939060_address = _a_city.address().as("address_609487378");
         var _a_address_609487378_city = _a_city_760939060_address.city().as("city_3747560710");
@@ -62,7 +62,7 @@ public class CityDBQueries {
                 _a_address_609487378_city.getId(),
                 DSL.row(
                         DSL.multiset(
-                                DSL.select(addressesForCity_address_d1_city_d2_payments())
+                                DSL.select(_2_addressesForCity_address_city_payments())
                                         .from(_a_city_3747560710_address)
                                         .join(_a_address_2947374364_customer)
                                         .join(_a_customer_3296466506_payment)
@@ -72,7 +72,7 @@ public class CityDBQueries {
         ).mapping(Functions.nullOnAllNull(City::new));
     }
 
-    private static SelectField<Payment> addressesForCity_address_d1_city_d2_payments() {
+    private static SelectField<Payment> _2_addressesForCity_address_city_payments() {
         var _a_city = CITY.as("city_760939060");
         var _a_city_760939060_address = _a_city.address().as("address_609487378");
         var _a_address_609487378_city = _a_city_760939060_address.city().as("city_3747560710");

@@ -15,19 +15,19 @@ import org.jooq.SelectField;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static Map<String, CustomerTable> queryForQuery(DSLContext _iv_ctx, List<String> id, SelectionSet _iv_select) {
+    public static Map<String, CustomerTable> queryForQuery(DSLContext _iv_ctx, List<String> _mi_id, SelectionSet _iv_select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         return _iv_ctx
                 .select(
                         _a_customer.getId(),
-                        queryForQuery_customerTable(id)
+                        queryForQuery_customerTable(_mi_id)
                 )
                 .from(_a_customer)
-                .where(id.size() > 0 ? _a_customer.hasIds(id.stream().collect(Collectors.toSet())) : DSL.noCondition())
+                .where(_mi_id.size() > 0 ? _a_customer.hasIds(_mi_id.stream().collect(Collectors.toSet())) : DSL.noCondition())
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
-    private static SelectField<CustomerTable> queryForQuery_customerTable(List<String> id) {
+    private static SelectField<CustomerTable> queryForQuery_customerTable(List<String> _mi_id) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         return DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new));
     }

@@ -32,22 +32,22 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
 
-    public static List<Pair<String, SomeInterface>> someInterfaceForQuery(DSLContext _iv_ctx, Integer _iv_pageSize, String after, SelectionSet _iv_select) {
+    public static List<Pair<String, SomeInterface>> someInterfaceForQuery(DSLContext _iv_ctx, Integer _iv_pageSize, String _mi_after, SelectionSet _iv_select) {
         var _iv_token = QueryHelper.getOrderByValuesForMultitableInterface(_iv_ctx,
                 Map.of("Address", ADDRESS.fields(ADDRESS.getPrimaryKey().getFieldsArray()),
                         "Customer", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())),
-                after);
+                _mi_after);
 
-        var unionKeysQuery = customerSortFieldsForSomeInterface(_iv_pageSize, _iv_token).unionAll(addressSortFieldsForSomeInterface(_iv_pageSize, _iv_token));
+        var _iv_unionKeysQuery = customerSortFieldsForSomeInterface(_iv_pageSize, _iv_token).unionAll(addressSortFieldsForSomeInterface(_iv_pageSize, _iv_token));
 
-        var mappedAddress = addressForSomeInterface();
-        var mappedCustomer = customerForSomeInterface();
+        var _sjs_address = addressForSomeInterface();
+        var _sjs_customer = customerForSomeInterface();
 
         return _iv_ctx.select(
                         DSL.row(
-                                unionKeysQuery.field("$type", String.class),
-                                mappedAddress.field("$data"),
-                                mappedCustomer.field("$data")
+                                _iv_unionKeysQuery.field("$type", String.class),
+                                _sjs_address.field("$data"),
+                                _sjs_customer.field("$data")
                         ).mapping((_iv_e0, _iv_e1, _iv_e2) -> {
                                     Record2 _iv_result = switch (_iv_e0) {
                                         case "Address" -> (Record2) _iv_e1;
@@ -59,12 +59,12 @@ public class QueryDBQueries {
                                 }
                         )
                 )
-                .from(unionKeysQuery)
-                .leftJoin(mappedAddress)
-                .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedAddress.field("$pkFields", JSONB.class)))
-                .leftJoin(mappedCustomer)
-                .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedCustomer.field("$pkFields", JSONB.class)))
-                .orderBy(unionKeysQuery.field("$type"), unionKeysQuery.field("$innerRowNum"))
+                .from(_iv_unionKeysQuery)
+                .leftJoin(_sjs_address)
+                .on(_iv_unionKeysQuery.field("$pkFields", JSONB.class).eq(_sjs_address.field("$pkFields", JSONB.class)))
+                .leftJoin(_sjs_customer)
+                .on(_iv_unionKeysQuery.field("$pkFields", JSONB.class).eq(_sjs_customer.field("$pkFields", JSONB.class)))
+                .orderBy(_iv_unionKeysQuery.field("$type"), _iv_unionKeysQuery.field("$innerRowNum"))
                 .limit(_iv_pageSize + 1)
                 .fetch(Record1::value1);
     }

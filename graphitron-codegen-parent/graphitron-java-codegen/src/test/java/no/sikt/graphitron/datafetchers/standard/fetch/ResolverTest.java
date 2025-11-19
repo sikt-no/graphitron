@@ -62,7 +62,7 @@ public class ResolverTest extends GeneratorTest {
     void wrongInputCapitalisation() {
         assertGeneratedContentContains(
                 "operation/wrongInputCapitalisation",
-                "iN =", ".getArgument(\"IN\")", ", iN,"
+                "iN =", ".getArgument(\"IN\")", ", _mi_iN,"
         );
     }
 
@@ -72,7 +72,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "operation/wrongInputTypeCapitalisation",
                 Set.of(DUMMY_INPUT),
-                "iN =", ".getArgument(\"IN\")", ", iN,"
+                "iN =", ".getArgument(\"IN\")", ", _mi_iN,"
         );
     }
 
@@ -92,7 +92,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "operation/withArgumentContextCondition",
                 "ctxField = _iv_graphitronContext.getContextArgument(_iv_env, \"ctxField\")",
-                "queryForQuery(_iv_ctx, email, _cf_ctxField, _iv_selectionSet)"
+                "queryForQuery(_iv_ctx, _mi_email, _cf_ctxField, _iv_selectionSet)"
         );
     }
 
@@ -102,7 +102,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "operation/withInputTypeContextCondition",
                 "ctxField = _iv_graphitronContext.getContextArgument(_iv_env, \"ctxField\")",
-                "queryForQuery(_iv_ctx, in, _cf_ctxField, _iv_selectionSet)"
+                "queryForQuery(_iv_ctx, _mi_in, _cf_ctxField, _iv_selectionSet)"
         );
     }
 
@@ -113,7 +113,7 @@ public class ResolverTest extends GeneratorTest {
                 "operation/withMultipleContextConditions",
                 "ctxField1 = _iv_graphitronContext.getContextArgument(_iv_env, \"ctxField1\")",
                 "ctxField2 = _iv_graphitronContext.getContextArgument(_iv_env, \"ctxField2\")",
-                "queryForQuery(_iv_ctx, email, _cf_ctxField1, _cf_ctxField2, _iv_selectionSet)"
+                "queryForQuery(_iv_ctx, _mi_email, _cf_ctxField1, _cf_ctxField2, _iv_selectionSet)"
         );
     }
 
@@ -123,7 +123,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "operation/withDuplicateContextField",
                 "ctxField = _iv_graphitronContext.getContextArgument(_iv_env, \"ctxField\")",
-                "queryForQuery(_iv_ctx, email, _cf_ctxField, _iv_selectionSet)"
+                "queryForQuery(_iv_ctx, _mi_email, _cf_ctxField, _iv_selectionSet)"
         );
     }
 
@@ -160,13 +160,17 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Resolver that returns a list")
     void splitQueryReturningList() {
-        assertGeneratedContentContains("splitquery/returningList", Set.of(SPLIT_QUERY_WRAPPER), "public static DataFetcher<CompletableFuture<List<DummyType>>> query()");
+        assertGeneratedContentContains("splitquery/returningList", Set.of(SPLIT_QUERY_WRAPPER),
+                "public static DataFetcher<CompletableFuture<List<DummyType>>> query()"
+        );
     }
 
     @Test
     @DisplayName("Resolver that returns an optional list")
     void splitQueryReturningOptionalList() {
-        assertGeneratedContentContains("splitquery/returningOptionalList", Set.of(SPLIT_QUERY_WRAPPER), "public static DataFetcher<CompletableFuture<List<DummyType>>> query()");
+        assertGeneratedContentContains("splitquery/returningOptionalList", Set.of(SPLIT_QUERY_WRAPPER),
+                "public static DataFetcher<CompletableFuture<List<DummyType>>> query()"
+        );
     }
 
     @Test
@@ -212,7 +216,7 @@ public class ResolverTest extends GeneratorTest {
     @DisplayName("Listed splitQuery field in Java record")
     void listedSplitQueryFromJavaRecord() {
         assertGeneratedContentContains("splitquery/listedSplitQueryFromJavaRecord",
-                "return new DataFetcherHelper(_iv_env).loadByResolverKeys(myJavaRecord.getAddressKey()"
+                "return new DataFetcherHelper(_iv_env).loadByResolverKeys(_os_myJavaRecord.getAddressKey()"
         );
     }
 }

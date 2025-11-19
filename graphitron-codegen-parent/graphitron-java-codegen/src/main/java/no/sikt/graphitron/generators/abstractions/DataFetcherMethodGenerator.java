@@ -5,6 +5,7 @@ import no.sikt.graphitron.definitions.fields.ArgumentField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
+import no.sikt.graphitron.generators.codebuilding.TypeNameFormat;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -18,6 +19,8 @@ import java.util.List;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declarePageSize;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.sourcePrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_STRATEGY;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
 
@@ -43,7 +46,7 @@ abstract public class DataFetcherMethodGenerator extends AbstractSchemaMethodGen
                 .declareIf(
                         !localObject.isOperationRoot(),
                         localObject.getGraphClassName(),
-                        localObject.getName(),
+                        sourcePrefix(localObject.getName()),
                         () -> asMethodCall(VAR_ENV, METHOD_SOURCE_NAME)
                 )
                 .addAll(target.getArguments().stream().map(this::declareArgument).toList())
@@ -54,7 +57,7 @@ abstract public class DataFetcherMethodGenerator extends AbstractSchemaMethodGen
     private CodeBlock declareArgument(ArgumentField field) {
         var getBlock = CodeBlock.of("$N.getArgument($S)", VAR_ENV, field.getName());
         var transformBlock = processedSchema.isRecordType(field) ? transformDTOBlock(field, getBlock) : getBlock;
-        return CodeBlock.declare(iterableWrapType(field), field.getName(), transformBlock);
+        return CodeBlock.declare(TypeNameFormat.iterableWrapType(field, false, processedSchema), inputPrefix(field.getName()), transformBlock);
     }
 
     protected CodeBlock transformDTOBlock(GenerationField field, CodeBlock source) {

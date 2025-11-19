@@ -4,6 +4,9 @@ import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ExceptionDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
+import no.sikt.graphitron.javapoet.ParameterSpec;
+import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
@@ -14,26 +17,40 @@ import static no.sikt.graphitron.configuration.GeneratorConfig.getRecordValidati
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.iterableWrapType;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_PAGE_SIZE;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.contextFieldPrefix;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.INTEGER;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_TYPE;
 import static no.sikt.graphql.naming.GraphQLReservedName.PAGINATION_AFTER;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * A helper class for handling input type data for services and mutations.
+ * Order of fields is as follows: Basic non-reserved fields -> ordering field -> pagination fields -> context fields
  */
 public class InputParser {
-    private final Map<String, InputField> methodInputsWithOrderField, methodInputs, recordInputs, jOOQInputs;
-    private final String serviceInputString;
+    private final static List<ParameterSpec> FORWARD_PAGINATION_SPECS = List.of(
+            ParameterSpec.of(INTEGER.className, VAR_PAGE_SIZE),
+            ParameterSpec.of(STRING.className, inputPrefix(GraphQLReservedName.PAGINATION_AFTER.getName()))
+    );
+    private final static List<String> FORWARD_PAGINATION_INPUTS = List.of(VAR_PAGE_SIZE, inputPrefix(PAGINATION_AFTER.getName()));
+    private final Map<String, InputField> methodInputs, recordInputs, jOOQInputs, orderField;
+    private final Map<String, TypeName> contextInputs ;
+    private final List<String> methodInputParams, contextInputNames, orderFieldParam;
     private final List<ObjectField> allErrors;
     private final ExceptionDefinition validationErrorException;
-    private final boolean mapTableInputToJooqRecord;
+    private final ProcessedSchema schema;
+    private final boolean hasForwardPagination;
 
     public InputParser(ObjectField target, ProcessedSchema schema, boolean mapTableInputToJooqRecord) {
-        this.mapTableInputToJooqRecord = mapTableInputToJooqRecord;
-        methodInputs = parseInputs(target.getNonReservedArguments(), schema);
-        methodInputsWithOrderField = parseInputs(target.getNonReservedArgumentsWithOrderField(), schema);
-        recordInputs = methodInputsWithOrderField
+        this.schema = schema;
+        this.hasForwardPagination = target.hasForwardPagination();
+        methodInputs = parseInputs(target.getNonReservedArguments(), mapTableInputToJooqRecord, schema);
+        orderField = target.getOrderField().map(it -> parseInputs(List.of(it), mapTableInputToJooqRecord, schema)).orElse(Map.of());
+        recordInputs = methodInputs
                 .entrySet()
                 .stream()
                 .filter(it -> schema.hasRecord(it.getValue()))
@@ -43,14 +60,10 @@ public class InputParser {
                 .stream()
                 .filter(it -> schema.hasJOOQRecord(it.getValue()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (v1, v2) -> v1, LinkedHashMap::new));
-        var inputsJoined = String.join(", ", methodInputsWithOrderField.keySet());
-        var contextParams = String.join(", ", schema.getAllContextFields(target).keySet().stream().map(VariablePrefix::contextFieldPrefix).toList());
-        if (target.hasForwardPagination()) {
-            var contextParamsOrEmpty = contextParams.isEmpty() ? "" : ", " + contextParams;
-            serviceInputString = (!inputsJoined.isEmpty() ? inputsJoined + ", " : inputsJoined) + VAR_PAGE_SIZE + ", " + PAGINATION_AFTER.getName() + contextParamsOrEmpty;
-        } else {
-            serviceInputString = inputsJoined.isEmpty() ? contextParams : (contextParams.isEmpty() ? inputsJoined : inputsJoined + ", " + contextParams);
-        }
+        methodInputParams = methodInputs.keySet().stream().map(VariablePrefix::inputPrefix).toList();
+        orderFieldParam = orderField.keySet().stream().map(VariablePrefix::inputPrefix).toList();
+        contextInputs = schema.getAllContextFields(target);
+        contextInputNames = contextInputs.keySet().stream().map(VariablePrefix::contextFieldPrefix).toList();
 
         if (schema.isObject(target) && schema.isInterface(ERROR_TYPE.getName())) {
             allErrors = schema.getAllErrors(target.getTypeName());
@@ -75,22 +88,22 @@ public class InputParser {
      * @return Map of variable names and types for the declared and fully set records.
      */
     @NotNull
-    private Map<String, InputField> parseInputs(List<? extends InputField> specInputs, ProcessedSchema schema) {
-        var serviceInputs = new LinkedHashMap<String, InputField>();
+    private Map<String, InputField> parseInputs(List<? extends InputField> specInputs, boolean mapTableInputToJooqRecord, ProcessedSchema schema) {
+        var inputs = new LinkedHashMap<String, InputField>();
 
         for (var in : specInputs) {
             var inType = schema.getInputType(in);
             if (inType == null) {
-                serviceInputs.put(uncapitalize(in.getName()), in);
+                inputs.put(uncapitalize(in.getName()), in);
             } else if (mapTableInputToJooqRecord && inType.hasTable() && !inType.hasJavaRecordReference()) {
-                serviceInputs.putAll(parseInputs(in, schema, 0));
+                inputs.putAll(parseInputs(in, schema, 0));
             } else if (inType.hasJavaRecordReference()) {
-                serviceInputs.put(asListedRecordNameIf(in.getName(), in.isIterableWrapped()), in);
+                inputs.put(asListedRecordNameIf(in.getName(), in.isIterableWrapped()), in);
             } else {
-                serviceInputs.put(uncapitalize(in.getName()), in);
+                inputs.put(uncapitalize(in.getName()), in);
             }
         }
-        return serviceInputs;
+        return inputs;
     }
 
     /**
@@ -113,24 +126,27 @@ public class InputParser {
     }
 
     /**
-     * @return Map of inputs that the field specifies.
+     * @return List of all context input names that the field specifies.
      */
-    public Map<String, InputField> getMethodInputs() {
-        return methodInputs;
+    public List<String> getContextFieldNames() {
+        return contextInputNames;
     }
 
     /**
-     * @return List of input names that the field specifies.
+     * @return List of all input names that the field specifies.
      */
-    public List<String> getMethodInputNames() {
-        return new ArrayList<>(methodInputs.keySet());
-    }
-
-    /**
-     * @return Map of inputs that the field specifies.
-     */
-    public Map<String, InputField> getMethodInputsWithOrderField() {
-        return methodInputsWithOrderField;
+    public List<String> getMethodInputNames(boolean includeOrder, boolean includeForwardPagination, boolean includeContextFields) {
+        var fieldList = new ArrayList<>(methodInputParams);
+        if (includeOrder) {
+            fieldList.addAll(orderFieldParam);
+        }
+        if (includeForwardPagination && hasForwardPagination) {
+            fieldList.addAll(FORWARD_PAGINATION_INPUTS);
+        }
+        if (includeContextFields) {
+            fieldList.addAll(contextInputNames);
+        }
+        return fieldList;
     }
 
     /**
@@ -162,13 +178,6 @@ public class InputParser {
     }
 
     /**
-     * @return The inputs this service will require formatted as a comma separated string.
-     */
-    public String getInputParamString() {
-        return serviceInputString;
-    }
-
-    /**
      * @return List of all error types this operation has specified in the schema.
      */
     public List<ObjectField> getAllErrors() {
@@ -180,5 +189,39 @@ public class InputParser {
      */
     public Optional<ExceptionDefinition> getValidationErrorException() {
         return Optional.ofNullable(validationErrorException);
+    }
+
+    public List<ParameterSpec> getMethodParameterSpecs(boolean includeOrder, boolean includeForwardPagination, boolean includeContextFields) {
+        return getMethodParameterSpecs(includeOrder, includeForwardPagination, includeContextFields, true);
+    }
+
+    public List<ParameterSpec> getMethodParameterSpecs(boolean includeOrder, boolean includeForwardPagination, boolean includeContextFields, boolean checkRecordReferences) {
+        var specList = new ArrayList<>(getMethodParameterSpecs(methodInputs, checkRecordReferences));
+        if (includeOrder) {
+            specList.addAll(getMethodParameterSpecs(orderField, checkRecordReferences));
+        }
+        if (includeForwardPagination && hasForwardPagination) {
+            specList.addAll(FORWARD_PAGINATION_SPECS);
+        }
+        if (includeContextFields) {
+            specList.addAll(getContextParameterSpecs());
+        }
+        return specList;
+    }
+
+    private List<ParameterSpec> getMethodParameterSpecs(Map<String, InputField> inputs, boolean checkRecordReferences) {
+        return inputs
+                .entrySet()
+                .stream()
+                .map((it) -> ParameterSpec.of(iterableWrapType(it.getValue(), checkRecordReferences, schema), inputPrefix(it.getKey())))
+                .toList();
+    }
+
+    public List<ParameterSpec> getContextParameterSpecs() {
+        return contextInputs
+                .entrySet()
+                .stream()
+                .map((it) -> ParameterSpec.of(it.getValue(), contextFieldPrefix(it.getKey())))
+                .toList();
     }
 }

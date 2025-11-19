@@ -10,9 +10,9 @@ import org.jooq.DSLContext;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 
 public class MutationDBQueries {
-    public static String mutationForMutation(DSLContext _iv_ctx, NodeIdStrategy _iv_nodeIdStrategy, CustomerNodeInputTable in, SelectionSet _iv_select) {
+    public static String mutationForMutation(DSLContext _iv_ctx, NodeIdStrategy _iv_nodeIdStrategy, CustomerNodeInputTable _mi_in, SelectionSet _iv_select) {
         return _iv_ctx.deleteFrom(CUSTOMER)
-                .where(_iv_nodeIdStrategy.hasId("CustomerNode", in.getId(), CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))
+                .where(_iv_nodeIdStrategy.hasId("CustomerNode", _mi_in.getId(), CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))
                 .returningResult(_iv_nodeIdStrategy.createId("CustomerNode", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))
                 .fetchOne(_iv_it -> _iv_it.into(String.class));
     }

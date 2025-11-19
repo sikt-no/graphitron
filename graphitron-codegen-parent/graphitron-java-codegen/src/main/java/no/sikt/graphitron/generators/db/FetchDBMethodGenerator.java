@@ -16,7 +16,6 @@ import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
-import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -44,8 +43,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedReco
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.internalPrefix;
-import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.resolverKeyPrefix;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getSourceFieldsForForeignKey;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
@@ -148,13 +146,15 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var alias = aliasWrapper.getAlias();
             codeBuilder.declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getCodeName()));
             if (aliasWrapper.hasTableMethod()) {
-                var args = alias.getMappingName();
-                if (!aliasWrapper.getInputNames().isEmpty())
-                    args += ", " + String.join(", ", aliasWrapper.getInputNames());
-                if (!aliasWrapper.getReferenceObjectField().getContextFields().isEmpty())
-                    args += ", " + String.join(", ", aliasWrapper.getReferenceObjectField().getContextFields().keySet().stream().map(VariablePrefix::contextFieldPrefix).toList());
                 codeBuilder.addStatement(
-                        reassignFromServiceBlock(aliasWrapper.getTableMethod().getClassName().simpleName(), aliasWrapper.getTableMethod().getMethodName(), alias.getMappingName(), args));
+                        "$N = $L",
+                        alias.getMappingName(),
+                        invokeExternalMethod(
+                                CodeBlock.of("$N", servicePrefix(aliasWrapper.getTableMethod().getClassName().simpleName())),
+                                aliasWrapper.getTableMethod().getMethodName(),
+                                String.join(", ", Stream.concat(Stream.of(alias.getMappingName()), aliasWrapper.getInputNames().stream()).toList())
+                        )
+                );
             }
         });
         return codeBuilder.build();
@@ -213,7 +213,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected CodeBlock getHelperMethodCallForNestedField(ObjectField field, FetchContext context) {
         return null;
     }
-    
+
     private CodeBlock wrapInMultisetWithMapping(CodeBlock contents, boolean hasOrderByToken) {
         return CodeBlock.of(
                 "$L.mapping($L -> $N.map($T::value$L))",
@@ -838,24 +838,18 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             if (!field.hasOverridingCondition()) {
                 var argumentSelect = CodeBlock.ofIf(field.isNullable(), "$N.getArgumentSet().contains($S + $N + $S)",
                         VAR_SELECT, condition.getSourceInput().getName() + "[" , VAR_ITERATOR, "]/" + field.getName());
+                var isNullableAndNotVirtual = field.isNullable() && !(field instanceof VirtualInputField);
                 if (processedSchema.isNodeIdField(field)) {
-                    if(field.isNullable() && !(field instanceof VirtualInputField)) {
-                        tupleVariableBlocks.add(ofTernary(argumentSelect, unpacked, trueCondition()));
-                    } else {
-                        tupleVariableBlocks.add(unpacked);
-                    }
+                    tupleVariableBlocks.add(isNullableAndNotVirtual ? ofTernary(argumentSelect, unpacked, trueCondition()) : unpacked);
                 } else if (field.isID()) {
-                    if(field.isNullable() && !(field instanceof VirtualInputField)) {
-                        tupleVariableBlocks.add(ofTernary(argumentSelect, CodeBlock.join(fieldSequence.render(), generateHasForID(field.getMappingFromFieldOverride(), lastTable, unpacked, field.isIterableWrapped())), trueCondition()));
-                    } else {
-                        tupleVariableBlocks.add(CodeBlock.join(fieldSequence.render(), generateHasForID(field.getMappingFromFieldOverride(), lastTable, unpacked, field.isIterableWrapped())));
-                    }
+                    var check = CodeBlock.join(fieldSequence.render(), generateHasForID(field.getMappingFromFieldOverride(), lastTable, unpacked, field.isIterableWrapped()));
+                    tupleVariableBlocks.add(isNullableAndNotVirtual ? ofTernary(argumentSelect, check, trueCondition()) : check);
                 } else {
-                    if (field.isNullable() && !(field instanceof VirtualInputField)) {
-                        tupleVariableBlocks.add(ofTernary(argumentSelect, val(unpacked), makeTupleBlock(field, context, condition.hasRecord(), fieldTypeIsCLOB(lastTable.getName(), field.getUpperCaseName()))));
-                    }else{
-                        tupleVariableBlocks.add(val(unpacked));
-                    }
+                    tupleVariableBlocks.add(
+                            isNullableAndNotVirtual
+                                    ? ofTernary(argumentSelect, val(unpacked), makeTupleBlock(field, context, condition.hasRecord(), fieldTypeIsCLOB(lastTable.getName(), field.getUpperCaseName())))
+                                    : val(unpacked)
+                    );
                 }
 
                 tupleFieldBlocks.add(makeTupleBlock(field, context, condition.hasRecord(), fieldTypeIsCLOB(lastTable.getName(), field.getUpperCaseName())));
@@ -958,9 +952,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .stream()
                 .map(it -> new InputCondition(
                         it,
-                        inferFieldNamingConvention(it),
+                        inputPrefix(inferFieldNamingConvention(it)),
                         processedSchema.hasRecord(it) && !isDeleteMutationQuery,
-                        referenceField.hasOverridingCondition()))
+                        referenceField.hasOverridingCondition()
+                        )
+                )
                 .collect(Collectors.toCollection(LinkedList::new));
 
         while (!inputBuffer.isEmpty() && inputBuffer.size() < Integer.MAX_VALUE) {
@@ -1075,7 +1071,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected CodeBlock createSeekAndLimitBlock() {
         return CodeBlock
                 .builder()
-                .add(".seek($T.getOrderByValues($N, $L, $N))\n", QUERY_HELPER.className, VAR_CONTEXT, VAR_ORDER_FIELDS, GraphQLReservedName.PAGINATION_AFTER.getName())
+                .add(".seek($T.getOrderByValues($N, $L, $N))\n", QUERY_HELPER.className, VAR_CONTEXT, VAR_ORDER_FIELDS, inputPrefix(GraphQLReservedName.PAGINATION_AFTER.getName()))
                 .add(".limit($N + 1)\n", VAR_PAGE_SIZE)
                 .build();
     }
@@ -1126,7 +1122,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .unindent()
                 .build();
 
-        var orderInputFieldName = orderInputField.getName();
+        var orderInputFieldName = inputPrefix(orderInputField.getName());
         return CodeBlock.builder()
                 .add("$N == null\n", orderInputFieldName)
                 .indent().indent()
@@ -1152,10 +1148,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 getReturnType(referenceField, refTypeName)
         )
                 .addParameterIf(!isRoot, () -> wrapSet(getKeyRowTypeName(referenceField, processedSchema)), resolverKeyParamName)
-                .addParameters(getMethodParametersWithOrderField(parser))
-                .addParameterIf(referenceField.hasForwardPagination(), INTEGER.className, VAR_PAGE_SIZE)
-                .addParameterIf(referenceField.hasForwardPagination(), STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName())
-                .addParameters(getContextParameters(referenceField))
+                .addParameters(parser.getMethodParameterSpecs(true, true, true))
                 .addParameter(SELECTION_SET.className, VAR_SELECT);
     }
 

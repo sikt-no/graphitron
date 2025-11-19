@@ -9,6 +9,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.selectionSetLookup;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 
 public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
     public JavaRecordMapperMethodGenerator(GenerationField localField, ProcessedSchema processedSchema, boolean toRecord) {
@@ -24,6 +25,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
      * @return Code for setting the record data from input types.
      */
     @NotNull
+    @Override
     protected CodeBlock iterateRecords(MapperContext context) {
         if (context.isIterable() && !context.hasRecordReference()) {
             return CodeBlock.empty(); // Can not allow this, because input type may contain multiple fields. These can not be mapped to a single field in any reasonable way.
@@ -42,7 +44,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 continue;
             }
 
-            var varName = innerContext.getHelperVariableName();
+            var varName = inputPrefix(innerContext.getHelperVariableName());
             var innerCode = CodeBlock.builder();
             if (!innerContext.getTarget().isResolver()) {
                 if (!innerContext.targetIsType()) {

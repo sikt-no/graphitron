@@ -38,15 +38,15 @@ public class HelperMethodTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "duplicateNestedFields",
                 // Helper method for storeInfo at depth 1 (nested under customer)
-                "private static SelectField<StoreInfo> queryForQuery_customer_d1_storeInfo(",
-                "DSL.select(queryForQuery_customer_d1_storeInfo())",
+                "private static SelectField<StoreInfo> _1_queryForQuery_customer_storeInfo(",
+                "DSL.select(_1_queryForQuery_customer_storeInfo())",
                 // First helper for staff at depth 2 (nested under storeInfo, no counter suffix since it's the first)
-                "private static SelectField<Staff> queryForQuery_customer_d1_storeInfo_d2_staff(",
+                "private static SelectField<Staff> _2_queryForQuery_customer_storeInfo_staff(",
                 // Second helper for staff at depth 2 (with _1 counter suffix for uniqueness)
-                "private static SelectField<Staff> queryForQuery_customer_d1_storeInfo_d2_staff_1(",
+                "private static SelectField<Staff> _2_queryForQuery_customer_storeInfo_staff_1(",
                 // Both should be called from the storeInfo helper
-                "DSL.select(queryForQuery_customer_d1_storeInfo_d2_staff()",
-                "DSL.select(queryForQuery_customer_d1_storeInfo_d2_staff_1()"
+                "DSL.select(_2_queryForQuery_customer_storeInfo_staff()",
+                "DSL.select(_2_queryForQuery_customer_storeInfo_staff_1()"
         );
     }
 
@@ -56,14 +56,17 @@ public class HelperMethodTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "potentialCollision",
                 // Main rental() helper calls nested helpers with depth indicators
-                "DSL.select(rentalForQuery_rental_d1_staff())",
-                "DSL.select(rentalForQuery_rental_d1_staff_store())",
+                "DSL.select(_1_rentalForQuery_rental_staff())",
+                "DSL.select(_1_rentalForQuery_rental_staff_store())",
                 // staff at depth 1 (nested under rental)
-                "private static SelectField<Staff> rentalForQuery_rental_d1_staff(",
+                "private static SelectField<Staff> _1_rentalForQuery_rental_staff(",
                 // staff_store at depth 1 - distinct from staff.store due to depth nesting
-                "private static SelectField<Store> rentalForQuery_rental_d1_staff_store(",
+                "private static SelectField<Store> _1_rentalForQuery_rental_staff_store(",
                 // staff.store nested at depth 2 (staff at depth 1, store at depth 2) - distinct from staff_store
-                "private static SelectField<Store> rentalForQuery_rental_d1_staff_d2_store("
+                "private static SelectField<Store> _2_rentalForQuery_rental_staff_store(",
+
+                "_1_rentalForQuery_rental_staff_store()",
+                "_2_rentalForQuery_rental_staff_store()"
         );
     }
 
@@ -71,5 +74,25 @@ public class HelperMethodTest extends GeneratorTest {
     @DisplayName("Helper methods with correlated WHERE clauses should not reference undefined parent aliases")
     void correlatedSubqueryReferencesPossibleOutput() {
         assertGeneratedContentMatches("correlatedSubqueryReferences");
+    }
+
+    @Test
+    @DisplayName("Order at which inputs are sent in to subqueries")
+    void inputOrdering() {
+        assertGeneratedContentContains(
+                "potentialCollision",
+                // Main rental() helper calls nested helpers with depth indicators
+                "DSL.select(_1_rentalForQuery_rental_staff())",
+                "DSL.select(_1_rentalForQuery_rental_staff_store())",
+                // staff at depth 1 (nested under rental)
+                "private static SelectField<Staff> _1_rentalForQuery_rental_staff(",
+                // staff_store at depth 1 - distinct from staff.store due to depth nesting
+                "private static SelectField<Store> _1_rentalForQuery_rental_staff_store(",
+                // staff.store nested at depth 2 (staff at depth 1, store at depth 2) - distinct from staff_store
+                "private static SelectField<Store> _2_rentalForQuery_rental_staff_store(",
+
+                "_1_rentalForQuery_rental_staff_store()",
+                "_2_rentalForQuery_rental_staff_store()"
+        );
     }
 }
