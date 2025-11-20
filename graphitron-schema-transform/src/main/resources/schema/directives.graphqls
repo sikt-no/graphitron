@@ -1,10 +1,14 @@
 """
-Transformerer et GraphQL-felt som returnerer en liste med resultater til å være Relay-paginert.
+Transforms a GraphQL-field that returns a list of types to Relay pagination.
 """
 directive @asConnection(defaultFirstValue: Int = 100, connectionName: String) on FIELD_DEFINITION
 
 """
-Connection-direktivet til graphql-java-codegen. Brukes for å instruere denne om å generere interface heller enn konkrete typer for connections.
-Se https://github.com/kobylynskyi/graphql-java-codegen/blob/main/docs/codegen-options.md#option-relayconfig for detaljer.
+Deprecated directive for generating Relay pagination.
 """
 directive @connection(for: String) on FIELD_DEFINITION
+
+"""
+Directive for annotating fields with feature flags manually.
+"""
+directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
