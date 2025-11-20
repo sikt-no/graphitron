@@ -70,4 +70,17 @@ public class NodeInterfaceTest extends GeneratorTest {
     void withoutTableAndQuery() {
         assertDoesNotThrow(() -> generateFiles("withoutTableAndQuery"));
     }
+
+    @Test
+    @DisplayName("Node type that has nested list references and thus generates multiple layers of helper methods")
+    void nestedLists() {
+        assertGeneratedContentContains("nestedLists",
+                ".select(_a_customer.getId(), nodeForCustomer_customer())",
+                "nodeForCustomer_customer() {",
+                "DSL.multiset(DSL.select(_1_nodeForCustomer_customer_addresses())",
+                "_1_nodeForCustomer_customer_addresses() {",
+                "DSL.multiset(DSL.select(_2_nodeForCustomer_customer_addresses_stores())",
+                "_2_nodeForCustomer_customer_addresses_stores() {"
+        );
+    }
 }
