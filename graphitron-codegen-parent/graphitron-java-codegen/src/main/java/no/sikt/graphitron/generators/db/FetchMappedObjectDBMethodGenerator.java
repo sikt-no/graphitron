@@ -24,7 +24,6 @@ import java.util.stream.Stream;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.inferFieldTypeName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.prefixName;
 import static no.sikt.graphitron.javapoet.CodeBlock.empty;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
@@ -120,31 +119,6 @@ public class FetchMappedObjectDBMethodGenerator extends NestedFetchDBMethodGener
         );
     }
 
-    @Override
-    protected CodeBlock getHelperMethodCallForNestedField(ObjectField field, FetchContext context) {
-        String helperMethodName;
-        if (helperContext != null) {
-            // When calling from within a helper at depth N, the nested helper is at depth N+1
-            var nestedDepth = helperContext.depth + 1;
-            var baseName = NestedFetchDBMethodGenerator.generateNestedMethodName(helperContext.helperMethodName, field.getName());
-            helperMethodName = prefixName(String.valueOf(nestedDepth), helperContext.getNextCallName(baseName));
-        } else {
-            helperMethodName = generateHelperMethodName(field);
-        }
-
-        var parameters = new ArrayList<String>();
-        if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            parameters.add(VAR_NODE_STRATEGY);
-        }
-
-        if (methodState != null && methodState.rootFetchContext != null) {
-            var tableMethodInputs = collectTableMethodInputNames(methodState.rootFetchContext.getAliasSet());
-            parameters.addAll(tableMethodInputs);
-        }
-        parameters.addAll(new InputParser(methodState != null ? methodState.rootField : field, processedSchema).getContextFieldNames());
-        return CodeBlock.of("$L($L)", helperMethodName, String.join(", ", parameters));
-    }
-
     private CodeBlock setFetch(ObjectField referenceField) {
         var refObject = processedSchema.getObjectOrConnectionNode(referenceField);
         if (refObject == null) {
@@ -233,31 +207,10 @@ public class FetchMappedObjectDBMethodGenerator extends NestedFetchDBMethodGener
 
         var topLevelFields = fields.stream().filter(processedSchema::isRecordType).toList();
 
-        var helperMethods = new ArrayList<MethodSpec>();
-
-        // Generate helper methods for top-level fields
-        for (var field : topLevelFields) {
-            // Create per-method state for this top-level field and all its nested helpers
-            var rootContext = new FetchContext(processedSchema, field, getLocalObject(), false);
-            methodState = new NestedFetchDBMethodGenerator.MethodGenerationState(field, rootContext);
-
-            helperMethods.add(generateHelperMethod(field));
-            helperMethods.addAll(generateNestedHelperMethods(field));
-
-            // Clear per-method state before moving to next field
-            methodState = null;
-        }
-
+        var helperMethods = generateHelperMethods(topLevelFields);
         var allMethods = new ArrayList<MethodSpec>();
         allMethods.addAll(mainMethods);
         allMethods.addAll(helperMethods);
         return allMethods;
-    }
-
-    private Set<String> collectTableMethodInputNames(Set<AliasWrapper> aliasSet) {
-        return aliasSet.stream()
-                .filter(aliasWrapper -> aliasWrapper.hasTableMethod() && !aliasWrapper.getInputNames().isEmpty())
-                .flatMap(aliasWrapper -> aliasWrapper.getInputNames().stream())
-                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 }

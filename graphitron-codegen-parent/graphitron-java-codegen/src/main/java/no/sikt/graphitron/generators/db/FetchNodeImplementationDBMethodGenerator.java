@@ -7,20 +7,24 @@ import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
+import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asNodeQueryName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_STRATEGY;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_SELECT;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RECORD2;
@@ -31,7 +35,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 /**
  * Generator that creates the data fetching methods for interface implementations, e.g. queries used by the node resolver.
  */
-public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGenerator {
+public class FetchNodeImplementationDBMethodGenerator extends NestedFetchDBMethodGenerator {
     private final Set<ObjectField> objectFieldsReturningNode;
 
     public FetchNodeImplementationDBMethodGenerator(
@@ -54,23 +58,27 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
 
         var virtualReference = new VirtualSourceField(getLocalObject(), target.getTypeName());
         var context = new FetchContext(processedSchema, virtualReference, implementation, false);
-        var selectCode = generateSelectRow(context);
 
         var argument = target.getArguments().get(0);
         var argumentName = inputPrefix(argument.getName());
         var querySource = context.renderQuerySource(implementationTableObject);
 
+        var parser = new InputParser(virtualReference, processedSchema);
+        var methodInputs = parser.getMethodInputNames(true, false, true).stream();
+        var allInputs = GeneratorConfig.shouldMakeNodeStrategy() ? Stream.concat(Stream.of(VAR_NODE_STRATEGY), methodInputs) : methodInputs;
+        var selectBlock = CodeBlock.of("$L($L)", generateHelperMethodName(virtualReference), allInputs.collect(Collectors.joining(", ")));
+
         CodeBlock id;
         CodeBlock whereCondition;
         if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            id = CodeBlock.of("$L,\n$L", createNodeIdBlock(localObject, context.getTargetAlias()), selectCode);
+            id = CodeBlock.of("$L,\n$L", createNodeIdBlock(localObject, context.getTargetAlias()), selectBlock);
             whereCondition = hasIdOrIdsBlock(CodeBlock.of(argumentName), localObject, context.getTargetAlias(), CodeBlock.empty(), true);
         } else {
             var hasOrIn = argument.isID()
                     ? CodeBlock.of("hasIds")
                     : CodeBlock.of("$L.in", implementation.getFieldByName(argument.getName()).getUpperCaseName());
 
-            id = CodeBlock.of("$L.getId(),\n$L", querySource, selectCode);
+            id = CodeBlock.of("$L.getId(),\n$L", querySource, selectBlock);
             whereCondition = CodeBlock.of("$L.$L($N)", querySource, hasOrIn, argumentName);
         }
 
@@ -99,11 +107,26 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
 
     @Override
     public List<MethodSpec> generateAll() {
-        return objectFieldsReturningNode
+        var fields = objectFieldsReturningNode
                 .stream()
                 .filter(entry -> getLocalObject().implementsInterface(NODE_TYPE.getName()))
                 .sorted(Comparator.comparing(AbstractField::getName))
+                .toList();
+
+        var mainMethods = fields.stream()
                 .map(this::generate)
-                .collect(Collectors.toList());
+                .toList();
+
+        var topLevelFields = fields
+                .stream()
+                .map(it -> new VirtualSourceField(getLocalObject(), it.getTypeName()))
+                .toList();
+
+        var helperMethods = generateHelperMethods(topLevelFields);
+
+        var allMethods = new ArrayList<MethodSpec>();
+        allMethods.addAll(mainMethods);
+        allMethods.addAll(helperMethods);
+        return allMethods;
     }
 }
