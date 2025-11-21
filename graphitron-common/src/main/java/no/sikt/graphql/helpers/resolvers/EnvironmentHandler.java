@@ -90,7 +90,7 @@ public class EnvironmentHandler {
                 listValue.stream()
                         .filter(it -> it instanceof Map)
                         .forEach(it -> result.addAll(flattenArgumentKeys((Map<String, Object>) it, nextPath))
-                );
+                        );
             }
         }
 
@@ -106,16 +106,14 @@ public class EnvironmentHandler {
             result.add(nextPath);
 
             if (value instanceof Map) {
-                result.addAll(flattenArgumentKeys((Map<String, Object>) value, nextPath));
+                result.addAll(flattenIndexedArgumentKeys((Map<String, Object>) value, nextPath));
             }
 
             if (value instanceof List<?> listValue) {
-                var first = listValue.stream().findFirst();
-                if (first.isPresent() && first.get() instanceof Map) {
-                    IntStream.range(0, listValue.size()).forEach(index -> {
-                        result.addAll(flattenArgumentKeys((Map<String, Object>) listValue.get(index), nextPath+"["+index+"]"));
-                    });
-                }
+                var mapValues = listValue.stream().filter(it -> it instanceof Map).toList();
+                IntStream
+                        .range(0, mapValues.size())
+                        .forEach(index -> result.addAll(flattenIndexedArgumentKeys((Map<String, Object>) mapValues.get(index), nextPath + "[" + index + "]")));
             }
         }
 
