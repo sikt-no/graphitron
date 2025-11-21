@@ -6,11 +6,14 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import java.util.LinkedHashSet;
 import java.util.stream.Collectors;
 
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
+
 public abstract class InputComponent {
     protected final InputField input, sourceInput;
     protected final String namePath, startName;
     protected final LinkedHashSet<String> nullChecks;
     protected final boolean pastWasIterable;
+    protected final boolean hasRecord;
     protected final Boolean isWrappedInList;
 
     protected InputComponent(
@@ -20,7 +23,8 @@ public abstract class InputComponent {
             String namePath,
             LinkedHashSet<String> nullChecks,
             boolean pastWasIterable,
-            Boolean isWrappedInList) {
+            Boolean isWrappedInList,
+            boolean hasRecord) {
         this.input = input;
         this.sourceInput = sourceInput;
         this.startName = startName;
@@ -28,6 +32,7 @@ public abstract class InputComponent {
         this.nullChecks = new LinkedHashSet<>(nullChecks);
         this.pastWasIterable = pastWasIterable;
         this.isWrappedInList = isWrappedInList;
+        this.hasRecord = hasRecord;
     }
 
     public InputField getInput() {
@@ -42,7 +47,17 @@ public abstract class InputComponent {
         return CodeBlock.of(getNameWithPathString());
     }
 
-    public abstract String getNameWithPathString();
+    public String getNameWithPathString() {
+        if (namePath.isEmpty()) {
+            return uncapitalize(startName.isEmpty() ? input.getName() : startName);
+        }
+
+        return namePath + (
+                hasRecord
+                        ? input.getMappingForRecordFieldOverride().asGetCall()
+                        : input.getMappingFromSchemaName().asGetCall()
+        ).toString();
+    }
 
     public String getChecksAsSequence() {
         return !nullChecks.isEmpty() ? nullChecks.stream().sorted().collect(Collectors.joining(" && ")) : "";
@@ -55,4 +70,8 @@ public abstract class InputComponent {
     public abstract InputComponent iterate(InputField input);
 
     public abstract InputComponent applyTo(InputField input);
+
+    public boolean hasRecord() {
+        return hasRecord;
+    }
 }

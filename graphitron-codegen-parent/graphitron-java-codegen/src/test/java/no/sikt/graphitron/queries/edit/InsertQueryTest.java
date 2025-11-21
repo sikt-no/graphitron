@@ -20,9 +20,8 @@ public class InsertQueryTest extends MutationQueryTest {
     @DisplayName("With default node ID field")
     void nodeId() {
         assertGeneratedContentContains("nodeId",
-                "var _ih_id = _iv_nodeIdStrategy.unpackIdValues(\"CustomerNode\", _mi_in.getId(), CUSTOMER.fields(",
-                "insertInto(CUSTOMER, CUSTOMER.CUSTOMER_ID)" +
-                        ".values(DSL.val(_iv_nodeIdStrategy.getFieldValue(CUSTOMER.CUSTOMER_ID, _ih_id[0])))"
+                "insertInto(CUSTOMER, CUSTOMER.CUSTOMER_ID)",
+                        ".values(DSL.val(_mi_in.getCustomerId()))"
         );
     }
 
@@ -30,9 +29,8 @@ public class InsertQueryTest extends MutationQueryTest {
     @DisplayName("With custom node ID field")
     void customNodeId() {
         assertGeneratedContentContains("customNodeId",
-                "id = _iv_nodeIdStrategy.unpackIdValues(\"C\", _mi_in.getId(), CUSTOMER.CUSTOMER_ID)",
-                "insertInto(CUSTOMER, CUSTOMER.CUSTOMER_ID)" +
-                        ".values(DSL.val(_iv_nodeIdStrategy.getFieldValue(CUSTOMER.CUSTOMER_ID, _ih_id[0])))"
+                "insertInto(CUSTOMER, CUSTOMER.CUSTOMER_ID)",
+                ".values(DSL.val(_mi_in.getCustomerId()))"
         );
     }
 
@@ -40,12 +38,11 @@ public class InsertQueryTest extends MutationQueryTest {
     @DisplayName("With default node ID field with multiple key fields")
     void nodeIdWithMultipleFields() {
         assertGeneratedContentContains("nodeIdWithMultipleFields",
-                "_iv_nodeIdStrategy.unpackIdValues(\"VacationDestination\", _mi_in.getId(), VACATION_DESTINATION.fields",
                 "insertInto(VACATION_DESTINATION, VACATION_DESTINATION.DESTINATION_ID, VACATION_DESTINATION.COUNTRY_NAME)",
                 """
                     .values(
-                        DSL.val(_iv_nodeIdStrategy.getFieldValue(VACATION_DESTINATION.DESTINATION_ID, _ih_id[0])),
-                        DSL.val(_iv_nodeIdStrategy.getFieldValue(VACATION_DESTINATION.COUNTRY_NAME, _ih_id[1]))
+                        DSL.val(_mi_in.getDestinationId()),
+                        DSL.val(_mi_in.getCountryName())
                      )
                 """
         );
@@ -55,12 +52,11 @@ public class InsertQueryTest extends MutationQueryTest {
     @DisplayName("With custom node ID field with multiple key fields")
     void customNodeIdWithMultipleFields() {
         assertGeneratedContentContains("customNodeIdWithMultipleFields",
-                "_iv_nodeIdStrategy.unpackIdValues(\"V\", _mi_in.getId(), VACATION_DESTINATION.COUNTRY_NAME, VACATION_DESTINATION.DESTINATION_ID)",
                 "insertInto(VACATION_DESTINATION, VACATION_DESTINATION.COUNTRY_NAME, VACATION_DESTINATION.DESTINATION_ID)",
                 """
                     .values(
-                        DSL.val(_iv_nodeIdStrategy.getFieldValue(VACATION_DESTINATION.COUNTRY_NAME, _ih_id[0])),
-                        DSL.val(_iv_nodeIdStrategy.getFieldValue(VACATION_DESTINATION.DESTINATION_ID, _ih_id[1]))
+                        DSL.val(_mi_in.getCountryName()),
+                        DSL.val(_mi_in.getDestinationId())
                     )
                 """
         );
@@ -70,9 +66,8 @@ public class InsertQueryTest extends MutationQueryTest {
     @DisplayName("With default, implicit reference node ID field")
     void referenceNodeId() {
         assertGeneratedContentContains("referenceNodeId",
-                "addressId = _iv_nodeIdStrategy.unpackIdValues(\"Address\", _mi_in.getAddressId(), ADDRESS.fields(",
                 "insertInto(CUSTOMER, CUSTOMER.ADDRESS_ID)" +
-                        ".values(DSL.val(_iv_nodeIdStrategy.getFieldValue(CUSTOMER.ADDRESS_ID, _ih_addressId[0])))"
+                        ".values(DSL.val(_mi_in.getAddressId()))"
         );
     }
 
@@ -80,9 +75,8 @@ public class InsertQueryTest extends MutationQueryTest {
     @DisplayName("With custom reference node ID field")
     void customReferenceNodeId() {
         assertGeneratedContentContains("customReferenceNodeId",
-                "addressId = _iv_nodeIdStrategy.unpackIdValues(\"A\", _mi_in.getAddressId(), ADDRESS.ADDRESS_ID)",
                 "insertInto(CUSTOMER, CUSTOMER.ADDRESS_ID)" +
-                        ".values(DSL.val(_iv_nodeIdStrategy.getFieldValue(CUSTOMER.ADDRESS_ID, _ih_addressId[0])))"
+                        ".values(DSL.val(_mi_in.getAddressId()))"
         );
     }
 
@@ -91,8 +85,7 @@ public class InsertQueryTest extends MutationQueryTest {
     void referenceNodeIdWithColumnNameMismatch() {
         assertGeneratedContentContains("referenceNodeIdWithColumnNameMismatch",
                 "insertInto(FILM, FILM.ORIGINAL_LANGUAGE_ID)",
-                "unpackIdValues(\"L\", _mi_in.getOriginalLanguageId(), LANGUAGE.LANGUAGE_ID)",
-                ".values(_mi_in.getOriginalLanguageId() != null ? DSL.val(_iv_nodeIdStrategy.getFieldValue(FILM.ORIGINAL_LANGUAGE_ID, _ih_originalLanguageId[0])) : DSL.defaultValue(FILM.ORIGINAL_LANGUAGE_ID))"
+                ".values(_mi_in.getOriginalLanguageId() != null ? DSL.val(_mi_in.getOriginalLanguageId()) : DSL.defaultValue(FILM.ORIGINAL_LANGUAGE_ID))"
         );
     }
 
@@ -104,7 +97,7 @@ public class InsertQueryTest extends MutationQueryTest {
                 """
                     .values(
                         DSL.val(_mi_in.getAddressId()),
-                        DSL.val(_iv_nodeIdStrategy.getFieldValue(CUSTOMER.CUSTOMER_ID, _ih_id[0])),
+                        DSL.val(_mi_in.getCustomerId()),
                         DSL.val(_mi_in.getFirstName()),
                         DSL.val(_mi_in.getLastName())
                     )
@@ -125,12 +118,11 @@ public class InsertQueryTest extends MutationQueryTest {
     @DisplayName("With nullable node ID field")
     void nullableNodeId() {
         assertGeneratedContentContains("nullableNodeId",
-                "id = _mi_in.getId() != null ? _iv_nodeIdStrategy.unpackIdValues(\"V_D\", _mi_in.getId(), VACATION_DESTINATION.COUNTRY_NAME, VACATION_DESTINATION.DESTINATION_ID) : null;",
                 "insertInto(VACATION_DESTINATION, VACATION_DESTINATION.COUNTRY_NAME, VACATION_DESTINATION.DESTINATION_ID)",
                 """
                     .values(
-                        _mi_in.getId() != null ? DSL.val(_iv_nodeIdStrategy.getFieldValue(VACATION_DESTINATION.COUNTRY_NAME, _ih_id[0])) : DSL.defaultValue(VACATION_DESTINATION.COUNTRY_NAME),
-                        _mi_in.getId() != null ? DSL.val(_iv_nodeIdStrategy.getFieldValue(VACATION_DESTINATION.DESTINATION_ID, _ih_id[1])) : DSL.defaultValue(VACATION_DESTINATION.DESTINATION_ID)
+                        _mi_in.getId() != null ? DSL.val(_mi_in.getCountryName()) : DSL.defaultValue(VACATION_DESTINATION.COUNTRY_NAME),
+                        _mi_in.getId() != null ? DSL.val(_mi_in.getDestinationId()) : DSL.defaultValue(VACATION_DESTINATION.DESTINATION_ID)
                     )
                 """
         );
@@ -176,10 +168,9 @@ public class InsertQueryTest extends MutationQueryTest {
                 ".insertInto(VACATION_DESTINATION, VACATION_DESTINATION.DESTINATION_ID, VACATION_DESTINATION.COUNTRY_NAME)",
                 """
                     .valuesOfRows(_mi_in.stream().map(_iv_it -> {
-                                var _ih_id = _iv_nodeIdStrategy.unpackIdValues("V_D", _iv_it.getId(), VACATION_DESTINATION.DESTINATION_ID, VACATION_DESTINATION.COUNTRY_NAME);
                                 return DSL.row(
-                                    DSL.val(_iv_nodeIdStrategy.getFieldValue(VACATION_DESTINATION.DESTINATION_ID, _ih_id[0])),
-                                    DSL.val(_iv_nodeIdStrategy.getFieldValue(VACATION_DESTINATION.COUNTRY_NAME, _ih_id[1]))
+                                    DSL.val(_mi_in.getDestinationId()),
+                                    DSL.val(_mi_in.getCountryName())
                                 );
                             }).toList()
                     )

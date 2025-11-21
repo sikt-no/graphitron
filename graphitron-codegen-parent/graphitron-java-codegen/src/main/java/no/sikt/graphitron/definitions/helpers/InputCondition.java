@@ -8,7 +8,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 
 public class InputCondition extends InputComponent {
-    private final boolean previousWasNullable, hasRecord;
+    private final boolean previousWasNullable;
     private final Boolean isOverriddenByAncestors;
 
     private InputCondition(
@@ -22,9 +22,8 @@ public class InputCondition extends InputComponent {
             boolean hasRecord,
             Boolean isOverriddenByAncestors,
             Boolean isWrappedInList) {
-        super(input, sourceInput, startName, namePath, nullChecks, pastWasIterable, isWrappedInList);
+        super(input, sourceInput, startName, namePath, nullChecks, pastWasIterable, isWrappedInList, hasRecord);
         this.previousWasNullable = previousWasNullable;
-        this.hasRecord = hasRecord;
         this.isOverriddenByAncestors = isOverriddenByAncestors;
         inferAdditionalChecks(input);
     }
@@ -52,18 +51,18 @@ public class InputCondition extends InputComponent {
         }
     }
 
-    @Override
-    public String getNameWithPathString() {
-        if (namePath.isEmpty()) {
-            return uncapitalize(startName.isEmpty() ? input.getName() : startName);
-        }
-
-        return namePath + (
-                hasRecord
-                        ? input.getMappingForRecordFieldOverride().asGetCall()
-                        : input.getMappingFromSchemaName().asGetCall()
-        ).toString();
-    }
+//    @Override
+//    public String getNameWithPathString() {
+//        if (namePath.isEmpty()) {
+//            return uncapitalize(startName.isEmpty() ? input.getName() : startName);
+//        }
+//
+//        return namePath + (
+//                hasRecord
+//                        ? input.getMappingForRecordFieldOverride().asGetCall()
+//                        : input.getMappingFromSchemaName().asGetCall()
+//        ).toString();
+//    }
 
     public Boolean isOverriddenByAncestors() {
         return this.isOverriddenByAncestors;
@@ -101,10 +100,6 @@ public class InputCondition extends InputComponent {
                 hasRecord,
                 isOverriddenByAncestors,
                 isWrappedInList);
-    }
-
-    public boolean hasRecord() {
-        return hasRecord;
     }
 
     public boolean previousWasNullable() {
