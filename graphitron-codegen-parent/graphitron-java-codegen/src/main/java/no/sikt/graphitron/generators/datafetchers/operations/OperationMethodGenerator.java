@@ -50,7 +50,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        var isMutationReturningData = processedSchema.isDeleteMutationWithReturning(target) || processedSchema.isInsertMutationWithReturning(target);
+        var isMutationReturningData = processedSchema.isDeleteMutationWithReturning(target);
         var parser = new InputParser(target, processedSchema, !isMutationReturningData);
         var methodCall = getMethodCall(target, parser, false); // Note, do this before declaring services.
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
@@ -60,7 +60,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .addCode(declareContextArgs(target))
                 .addCodeIf(!isMutationReturningData || recordValidationEnabled(), () -> transformInputs(target, parser))
                 .addCode(declareAllServiceClasses(target.getName()))
-                .addCodeIf(!isMutationReturningData  && localObject.getName().equals(SCHEMA_MUTATION.getName()),
+                .addCodeIf(!isMutationReturningData && !processedSchema.isInsertMutationWithReturning(target) && localObject.getName().equals(SCHEMA_MUTATION.getName()),
                         () -> getMethodCall(target, parser, true))
                 .addCode(methodCall)
                 .endControlFlow("") // Keep this, logic to set semicolon only kicks in if a string is set.

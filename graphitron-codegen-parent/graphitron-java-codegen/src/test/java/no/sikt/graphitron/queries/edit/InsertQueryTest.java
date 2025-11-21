@@ -169,8 +169,8 @@ public class InsertQueryTest extends MutationQueryTest {
                 """
                     .valuesOfRows(_mi_in.stream().map(_iv_it -> {
                                 return DSL.row(
-                                    DSL.val(_mi_in.getDestinationId()),
-                                    DSL.val(_mi_in.getCountryName())
+                                    DSL.val(_iv_it.getDestinationId()),
+                                    DSL.val(_iv_it.getCountryName())
                                 );
                             }).toList()
                     )

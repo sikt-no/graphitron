@@ -83,7 +83,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .add(setFetch(dataTarget));
 
         return getDefaultSpecBuilder(asQueryMethodName(target.getName(), getLocalObject().getName()), wrapListIf(returnType, dataTarget.isIterableWrapped()))
-                .addParameters(parser.getMethodParameterSpecs(true, false, false, false))
+                .addParameters(parser.getMethodParameterSpecs(true, false, false, target.getMutationType().equals(INSERT)))
                 .addParameter(SELECTION_SET.className, VAR_SELECT)
                 .addCode(code.build())
                 .build();
@@ -148,7 +148,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                             true
                     );
                     var field = tableFieldCodeBlock(targetTable, getJavaFieldName(targetTable, keyColumn).orElseThrow());
-                    var setValue = val(CodeBlock.of("$N.$L()", test.getNameWithPathString(), new MethodMapping(keyColumn).asCamelGet()));
+                    var setValue = val(CodeBlock.of("$N.$L()", recordInput.isIterableWrapped() ? VAR_ITERATOR : test.getNameWithPathString(), new MethodMapping(keyColumn).asCamelGet()));
 
                     if (!inputSetValue.getChecksAsSequence().isEmpty()) {
                         setValue = ofTernary(inputSetValue.getCheckSequenceCodeBlock(), setValue, defaultValue(field));

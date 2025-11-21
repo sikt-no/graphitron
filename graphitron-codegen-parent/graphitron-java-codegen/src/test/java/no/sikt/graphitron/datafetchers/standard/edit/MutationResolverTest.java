@@ -64,9 +64,20 @@ public class MutationResolverTest extends GeneratorTest {
     @DisplayName("Returning wrapped output for insert mutation")
     void wrappedOutputForInsert() {
         assertGeneratedContentContains("wrappedOutputForInsert",
-                "loadWrapped(" +
-                        "(_iv_ctx, _iv_selectionSet) -> MutationDBQueries.mutationForMutation(_iv_ctx, _mi_in, _iv_selectionSet)," +
-                        "(_iv_result) -> new Wrapper(_iv_result));"
+//                "loadWrapped(" +
+//                        "(_iv_ctx, _iv_selectionSet) -> MutationDBQueries.mutationForMutation(_iv_ctx, _mi_in, _iv_selectionSet)," +
+//                        "(_iv_result) -> new Wrapper(_iv_result));"
+
+        """
+                {
+                            CustomerInputTable _mi_in = ResolverHelpers.transformDTO(_iv_env.getArgument("in"), CustomerInputTable.class);
+                            var _iv_transform = new RecordTransformer(_iv_env);
+                            var _mi_inRecord = _iv_transform.customerInputTableToJOOQRecord(_mi_in, "in");
+                            return new DataFetcherHelper(_iv_env).loadWrapped(
+                                    (_iv_ctx, _iv_selectionSet) -> MutationDBQueries.mutationForMutation(_iv_ctx, _mi_inRecord, _iv_selectionSet),
+                                    (_iv_result) -> new Wrapper(_iv_result)
+                            );
+                        }"""
         );
     }
 
