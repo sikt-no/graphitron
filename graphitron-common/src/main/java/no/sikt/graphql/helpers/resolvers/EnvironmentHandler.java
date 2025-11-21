@@ -74,7 +74,7 @@ public class EnvironmentHandler {
         return flattenArgumentKeys(arguments, "");
     }
 
-    private static Set<String> flattenArgumentKeys(Map<String, Object> arguments, String path) {
+    protected static Set<String> flattenArgumentKeys(Map<String, Object> arguments, String path) {
         var result = new HashSet<String>();
         for (var arg : arguments.entrySet()) {
             var key = arg.getKey();
@@ -87,10 +87,10 @@ public class EnvironmentHandler {
             }
 
             if (value instanceof List<?> listValue) {
-                var first = listValue.stream().findFirst();
-                if (first.isPresent() && first.get() instanceof Map) {
-                    result.addAll(flattenArgumentKeys((Map<String, Object>) first.get(), nextPath));
-                }
+                listValue.stream()
+                        .filter(it -> it instanceof Map)
+                        .forEach(it -> result.addAll(flattenArgumentKeys((Map<String, Object>) it, nextPath))
+                );
             }
         }
 
