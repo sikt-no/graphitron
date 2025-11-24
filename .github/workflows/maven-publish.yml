@@ -11,7 +11,7 @@ jobs:
       contents: read
       packages: write
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
 
     - name: Set up Java for publishing to Maven Central
       uses: actions/setup-java@v5
