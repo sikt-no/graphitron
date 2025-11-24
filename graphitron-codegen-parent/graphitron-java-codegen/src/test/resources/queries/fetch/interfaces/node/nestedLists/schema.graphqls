@@ -1,0 +1,16 @@
+type Query {
+    node(id: ID!): Node
+}
+
+type Customer implements Node @table {
+    addresses: [Address]!
+}
+
+type Address @table {
+    id: ID!
+    stores: [Store]
+}
+
+type Store @table {
+    id: ID!
+}

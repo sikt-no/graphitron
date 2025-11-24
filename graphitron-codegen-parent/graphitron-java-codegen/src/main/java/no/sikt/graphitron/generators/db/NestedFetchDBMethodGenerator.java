@@ -3,6 +3,7 @@ package no.sikt.graphitron.generators.db;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.AliasWrapper;
@@ -23,6 +24,7 @@ import static javax.lang.model.element.Modifier.PRIVATE;
 import static javax.lang.model.element.Modifier.STATIC;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.interfaceQueryName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_STRATEGY;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.prefixName;
@@ -140,25 +142,45 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
         }
     }
 
-    /**
-     * Generates a method name.
-     * Format: [parentHelperMethodName]_[fieldName]
-     * Example: queryForQuery_customer_storeInfo_staff
-     */
-    static String generateNestedMethodName(String parentHelperMethodName, String fieldName) {
-        return parentHelperMethodName + "_" + fieldName;
-    }
-
     public NestedFetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
+    }
+
+    ArrayList<MethodSpec> generateHelperMethods(List<? extends ObjectField> topLevelFields) {
+        var helperMethods = new ArrayList<MethodSpec>();
+
+        for (var field : topLevelFields) {
+            // Create per-method state for this top-level field and all its nested helpers
+            var rootContext = new FetchContext(processedSchema, field, getLocalObject(), false);
+            methodState = new MethodGenerationState(field, rootContext);
+
+            helperMethods.add(generateHelperMethod(field));
+            helperMethods.addAll(generateNestedHelperMethods(field));
+
+            // Clear per-method state before moving to next field
+            methodState = null;
+        }
+        return helperMethods;
     }
 
     String generateHelperMethodName(ObjectField target) {
         // Generate method name like: queryForQuery_outer
         // Pattern: [callingMethod]_[returnType]
-        var callingMethodName = asQueryMethodName(target.getName(), localObject.getName());
         var returnTypeName = processedSchema.getRecordType(target).getName();
-        return callingMethodName + "_" + uncapitalize(returnTypeName);
+
+        if (target instanceof VirtualSourceField && processedSchema.isInterface(target.getContainerTypeName())) {
+            return generateNestedMethodName(interfaceQueryName(returnTypeName, target.getContainerTypeName()), returnTypeName);
+        }
+        return generateNestedMethodName(asQueryMethodName(target.getName(), localObject.getName()), returnTypeName);
+    }
+
+    /**
+     * Generates a method name.
+     * Format: [parentHelperMethodName]_[fieldName]
+     * Example: queryForQuery_customer_storeInfo_staff
+     */
+    String generateNestedMethodName(String parentHelperMethodName, String fieldName) {
+        return parentHelperMethodName + "_" + uncapitalize(fieldName);
     }
 
     MethodSpec generateHelperMethod(ObjectField target) {
@@ -213,6 +235,31 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
         var parentContext = parentField.isResolver() ? context.nextContext(parentField) : context;
         // Start at depth 0 (root helper method level)
         return generateNestedHelperMethods(parentField, parentHelperName, parentContext, new HashSet<>(), 0);
+    }
+
+    @Override
+    protected CodeBlock getHelperMethodCallForNestedField(ObjectField field, FetchContext context) {
+        String helperMethodName;
+        if (helperContext != null) {
+            // When calling from within a helper at depth N, the nested helper is at depth N+1
+            var nestedDepth = helperContext.depth + 1;
+            var baseName = generateNestedMethodName(helperContext.helperMethodName,  field instanceof VirtualSourceField ? field.getContainerTypeName() : field.getName());
+            helperMethodName = prefixName(String.valueOf(nestedDepth), helperContext.getNextCallName(baseName));
+        } else {
+            helperMethodName = generateHelperMethodName(field);
+        }
+
+        var parameters = new ArrayList<String>();
+        if (GeneratorConfig.shouldMakeNodeStrategy()) {
+            parameters.add(VAR_NODE_STRATEGY);
+        }
+
+        if (methodState != null && methodState.rootFetchContext != null) {
+            var tableMethodInputs = collectTableMethodInputNames(methodState.rootFetchContext.getAliasSet());
+            parameters.addAll(tableMethodInputs);
+        }
+        parameters.addAll(new InputParser(methodState != null ? methodState.rootField : field, processedSchema).getContextFieldNames());
+        return CodeBlock.of("$L($L)", helperMethodName, String.join(", ", parameters));
     }
 
     private List<MethodSpec> generateNestedHelperMethods(ObjectField parentField, String parentHelperMethodName, FetchContext parentContext, Set<String> visitedTypes, int depth) {
