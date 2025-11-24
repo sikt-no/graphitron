@@ -5,7 +5,6 @@ import no.sikt.graphitron.definitions.fields.InputField;
 import java.util.LinkedHashSet;
 
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ITERATOR;
-import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 
 public class InputSetValue extends InputComponent {
@@ -17,28 +16,20 @@ public class InputSetValue extends InputComponent {
             String namePath,
             LinkedHashSet<String> nullChecks,
             boolean pastWasIterable,
-            Boolean isWrappedInList) {
-        super(input, sourceInput, startName, namePath, nullChecks, pastWasIterable, isWrappedInList);
+            Boolean isWrappedInList,
+            boolean hasRecord) {
+        super(input, sourceInput, startName, namePath, nullChecks, pastWasIterable, isWrappedInList, hasRecord);
         inferAdditionalChecks(input);
     }
 
-    public InputSetValue(InputField input, String startName) {
-        this(input, input, startName, "", new LinkedHashSet<>(), false, false);
+    public InputSetValue(InputField input, String startName, boolean hasRecord) {
+        this(input, input, startName, "", new LinkedHashSet<>(), false, false, hasRecord);
     }
 
     private void inferAdditionalChecks(InputField input) {
         if (input.isNullable()) {
             this.nullChecks.add(getNameWithPathString() + " != null");
         }
-    }
-
-    @Override
-    public String getNameWithPathString() {
-        if (namePath.isEmpty()) {
-            return uncapitalize(startName.isEmpty() ? input.getName() : startName);
-        }
-
-        return namePath + input.getMappingFromSchemaName().asGetCall().toString();
     }
 
     @Override
@@ -50,7 +41,9 @@ public class InputSetValue extends InputComponent {
                 sourceInput.isIterableWrapped() ? VAR_ITERATOR : startName, // TODO: how about further nesting?
                 nullChecks,
                 pastWasIterable || this.input.isIterableWrapped(),
-                isWrappedInList || this.input.isIterableWrapped());
+                isWrappedInList || this.input.isIterableWrapped(),
+                hasRecord
+        );
     }
 
     @Override
@@ -62,6 +55,8 @@ public class InputSetValue extends InputComponent {
                 namePath,
                 nullChecks,
                 pastWasIterable || this.input.isIterableWrapped(),
-                isWrappedInList);
+                isWrappedInList,
+                hasRecord
+        );
     }
 }

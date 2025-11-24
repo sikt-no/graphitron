@@ -5,6 +5,7 @@ import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.helpers.InputComponents;
 import no.sikt.graphitron.definitions.helpers.InputSetValue;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
+import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
@@ -19,11 +20,12 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.definitions.fields.containedtypes.MutationType.DELETE;
 import static no.sikt.graphitron.definitions.fields.containedtypes.MutationType.INSERT;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.inferFieldTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getForeignKeyForNodeIdReference;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
 import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldName;
@@ -63,7 +65,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException(String.format("Cannot infer target table for mutation %s.", target.formatPath())));
 
-        var parser = new InputParser(target, processedSchema, false);
+        var parser = new InputParser(target, processedSchema, target.getMutationType().equals(INSERT));
 
         var contextForData = new FetchContext(
                 processedSchema,
@@ -75,13 +77,13 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
         CodeBlock selectBlock = processedSchema.isScalar(dataTarget) ? generateForField(dataTarget, contextForData) : generateSelectRow(contextForData);
         var code = CodeBlock.builder()
                 .add(createAliasDeclarations(contextForData.getAliasSet()))
-                .addIf(target.getMutationType().equals(DELETE), getDeletePartOfQuery(targetTable.getName(), target))
-                .addIf(target.getMutationType().equals(INSERT), getInsertPartOfQuery(targetTable.getName(), target))
+                .addIf(target.getMutationType().equals(DELETE), () -> getDeletePartOfQuery(targetTable.getName(), target))
+                .addIf(target.getMutationType().equals(INSERT), () -> getInsertPartOfQuery(targetTable.getName(), target))
                 .add("\n.returningResult($L)\n", indentIfMultiline(selectBlock))
                 .add(setFetch(dataTarget));
 
         return getDefaultSpecBuilder(asQueryMethodName(target.getName(), getLocalObject().getName()), wrapListIf(returnType, dataTarget.isIterableWrapped()))
-                .addParameters(parser.getMethodParameterSpecs(true, false, false, false))
+                .addParameters(parser.getMethodParameterSpecs(true, false, false, target.getMutationType().equals(INSERT)))
                 .addParameter(SELECTION_SET.className, VAR_SELECT)
                 .addCode(code.build())
                 .build();
@@ -100,73 +102,61 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
     private CodeBlock getInsertPartOfQuery(String targetTable, ObjectField target) {
         var inputConditions = getInputComponents(target);
         var setValueMap = new LinkedHashMap<CodeBlock, CodeBlock>();
-        var nodeIdHelperVars = new HashSet<CodeBlock>();
         var setValues = !inputConditions.independentSetValues().isEmpty()
                 ? inputConditions.independentSetValues()
                 : inputConditions.setValueTuple().setValues();
 
-        for (var inputCondition : setValues) {
-            var inputField = inputCondition.getInput();
+        var recordInput = target.getArguments().stream()
+                .filter(processedSchema::hasJOOQRecord).findFirst()
+                .orElseThrow(() -> new RuntimeException("Cannot find jOOQ record input for " + target.formatPath()));
+
+        var recordInputVariableName = inputPrefix(inferFieldNamingConventionForInsertMutation(recordInput));
+
+        for (var inputSetValue : setValues) {
+            var inputField = inputSetValue.getInput();
             if (processedSchema.isNodeIdField(inputField)) {
                 var nodeType = processedSchema.getNodeTypeForNodeIdField(inputField);
-
-                var unpackCodeBlock = CodeBlock.of("$N.unpackIdValues($S, $L, $L)",
-                        VAR_NODE_STRATEGY,
-                        nodeType.getTypeId(),
-                        inputCondition.getNameWithPath(),
-                        nodeIdColumnsWithAliasBlock(nodeType.getTable().getName(), nodeType));
-
-                if (!inputCondition.getChecksAsSequence().isEmpty()) {
-                    unpackCodeBlock = ofTernary(
-                            inputCondition.getCheckSequenceCodeBlock(),
-                            unpackCodeBlock,
-                            CodeBlock.of("null")
-                    );
-                }
-
-                nodeIdHelperVars.add(CodeBlock.declare(insertHelperPrefix(inputField.getName()), unpackCodeBlock));
                 var keyColumns = processedSchema.getKeyColumnsForNodeType(nodeType).orElseThrow();
 
                 if (!nodeType.getTable().getName().equalsIgnoreCase(targetTable) || inputField.hasFieldReferences()) {
                     var key = getForeignKeyForNodeIdReference(inputField, processedSchema)
                             .orElseThrow(() -> new RuntimeException("Cannot find foreign key for input node ID field " + inputField.formatPath() + " for " + target.formatPath()));
                     keyColumns = getReferenceNodeIdFields(targetTable, nodeType, key);
-
                 }
 
-                for (int i = 0; i < keyColumns.size(); i++) {
-                    var field = tableFieldCodeBlock(targetTable, getJavaFieldName(targetTable, keyColumns.get(i)).orElseThrow());
-                    var setValue = val(CodeBlock.of("$N.getFieldValue($L, $N[$L])", VAR_NODE_STRATEGY, field, insertHelperPrefix(inputField.getName()), i));
+                for (String keyColumn : keyColumns) {
+                    var field = tableFieldCodeBlock(targetTable, getJavaFieldName(targetTable, keyColumn).orElseThrow());
+                    var setValue = val(
+                            CodeBlock.of("$N.$L()",
+                                recordInput.isIterableWrapped() ? VAR_ITERATOR : recordInputVariableName,
+                                new MethodMapping(keyColumn).asCamelGet()
+                            )
+                    );
 
-                    if (!inputCondition.getChecksAsSequence().isEmpty()) {
-                        setValue = ofTernary(inputCondition.getCheckSequenceCodeBlock(), setValue, defaultValue(field));
+                    if (!inputSetValue.getChecksAsSequence().isEmpty()) {
+                        setValue = ofTernary(inputSetValue.getCheckSequenceCodeBlock(), setValue, defaultValue(field));
                     }
                     setValueMap.put(field, setValue);
                 }
             } else {
-                var setValue = val(inputCondition.getNameWithPath());
-                if (!inputCondition.getChecksAsSequence().isEmpty()) {
+                var setValue = val(inputSetValue.getNameWithPath());
+                if (!inputSetValue.getChecksAsSequence().isEmpty()) {
                     setValue = ofTernary(
-                            inputCondition.getCheckSequenceCodeBlock(),
+                            inputSetValue.getCheckSequenceCodeBlock(),
                             setValue,
                             defaultValue(targetTable, inputField.getUpperCaseName())
                     );
                 }
-
                 setValueMap.put(tableFieldCodeBlock(targetTable, inputField.getUpperCaseName()), setValue);
             }
         }
 
-        var recordInput = target.getArguments().stream()
-                .filter(processedSchema::hasJOOQRecord).findFirst()
-                .orElseThrow(() -> new RuntimeException("Cannot find jOOQ record input for " + target.formatPath()));
 
         var valuesContent = indentIfMultiline(CodeBlock.join(setValueMap.values(), ",\n"));
 
         if (recordInput.isIterableWrapped())  {
             valuesContent = CodeBlock.builder()
-                    .beginControlFlow("$N.stream().map($N -> ", inputPrefix(recordInput.getName()), VAR_ITERATOR)
-                    .addAll(nodeIdHelperVars)
+                    .beginControlFlow("$N.stream().map($N -> ", recordInputVariableName, VAR_ITERATOR)
                     .add("return ")
                     .addStatement(wrapRow(valuesContent))
                     .endControlFlow()
@@ -175,7 +165,6 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
         }
 
         return CodeBlock.builder()
-                .addAllIf(!recordInput.isIterableWrapped(), nodeIdHelperVars)
                 .add("return $N", VAR_CONTEXT)
                 .indent()
                 .indent()
@@ -208,8 +197,11 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .getNonReservedArguments()
                 .stream()
                 .map(it -> new InputSetValue(
-                        it,
-                        inputPrefix(it.getName())))
+                                it,
+                                inputPrefix(inferFieldNamingConventionForInsertMutation(it)),
+                                processedSchema.hasRecord(it)
+                        )
+                )
                 .collect(Collectors.toCollection(LinkedList::new));
 
         while (!inputBuffer.isEmpty() && inputBuffer.size() < Integer.MAX_VALUE) {
@@ -263,5 +255,12 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());
+    }
+
+    /*
+    * Temporary method until delete mutations also use jOOQ record input
+    * */
+    protected String inferFieldNamingConventionForInsertMutation(GenerationField field) {
+        return asListedRecordNameIf(field.getName(), field.isIterableWrapped());
     }
 }
