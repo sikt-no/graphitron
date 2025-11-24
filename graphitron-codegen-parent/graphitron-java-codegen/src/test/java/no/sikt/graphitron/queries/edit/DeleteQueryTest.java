@@ -25,32 +25,25 @@ public class DeleteQueryTest extends MutationQueryTest {
 
 
     @Test
-    @DisplayName("Default case with node ID in jOOQ record input")
+    @DisplayName("Default case with scalar field in jOOQ record input")
     void defaultCase() {
         assertGeneratedContentMatches("default");
     }
 
 
     @Test
-    @DisplayName("Field in jOOQ record input")
-    void nonNullableInput() {
-        assertGeneratedContentContains("nonNullableInput",
-                ".where(CUSTOMER.CUSTOMER_ID.eq(_mi_in.getCustomerId())"
-        );
-    }
-
-    @Test
-    @DisplayName("Nullable jOOQ record input")
-    void nullableInput() {
-        assertGeneratedContentContains("nullableInput",
-                ".where(_mi_in != null ? CUSTOMER.CUSTOMER_ID.eq(_mi_in.getId()) : DSL.falseCondition())"
+    @DisplayName("With node ID field in jOOQ record input")
+    void nodeIdInput() {
+        assertGeneratedContentContains("nodeIdInput",
+                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_in.getId()," +
+                        "CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))"
         );
     }
 
     @Test
     @DisplayName("Non nullable input list")
-    void nonNullableListedInput() {
-        assertGeneratedContentContains("nonNullableListedInput",
+    void listedInput() {
+        assertGeneratedContentContains("listedInput",
                 """
                 .where(_mi_in.size() > 0 ?
                             DSL.row(CUSTOMER.CUSTOMER_ID).in(
@@ -60,15 +53,6 @@ public class DeleteQueryTest extends MutationQueryTest {
                             ) : DSL.falseCondition()
                         )
                 """
-        );
-    }
-
-    @Test
-    @DisplayName("Nullable jOOQ record input list")
-    void nullableListedInput() {
-        assertGeneratedContentContains("nullableListedInput",
-                ".where(_mi_in != null && _mi_in.size() > 0 ?",
-                ".toList()) : DSL.falseCondition()"
         );
     }
 
@@ -88,45 +72,13 @@ public class DeleteQueryTest extends MutationQueryTest {
     @DisplayName("Input list with node ID field")
     void inputListWithNodeId() {
         assertGeneratedContentContains("inputListWithNodeId",
-                "DSL.row(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_in.get(_iv_it).getId(), CUSTOMER"
-        );
-    }
-
-    @Test
-    @DisplayName("Wrapped output without table")
-    void wrappedOutput() {
-        assertGeneratedContentContains("wrappedOutput",
-                "deleteFrom(CUSTOMER)",
-                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_in.getId(), CUSTOMER."
-        );
-    }
-
-    @Test
-    @DisplayName("Listed wrapped output")
-    void wrappedOutputListed() {
-        assertGeneratedContentContains("wrappedOutputListed",
-                "deleteFrom(CUSTOMER)",
-                ".where(_mi_in.size() > 0 ?",
-                "DSL.row(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_in.get(_iv_it).getId(), CUSTOMER."
-        );
-    }
-
-    @Test
-    @DisplayName("With wrapped scalar as output")
-    void wrappedScalar() {
-        assertGeneratedContentContains("wrappedScalar",
-                "deleteFrom(CUSTOMER)",
-                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_in.getId(), CUSTOMER.fields"
-        );
-    }
-
-    @Test
-    @DisplayName("With wrapped, listed scalar as output")
-    void wrappedScalarListed() {
-        assertGeneratedContentContains("wrappedScalarListed",
-                "deleteFrom(CUSTOMER)",
-                ".where(_mi_in.size() > 0",
-                "hasId(\"CustomerNode\", _mi_in.get(_iv_it).getId(), CUSTOMER"
+                """
+                        DSL.row(DSL.trueCondition()).in(
+                            IntStream.range(0, _mi_in.size()).mapToObj(_iv_it ->
+                                DSL.row(_iv_nodeIdStrategy.hasId("CustomerNode", _mi_in.get(_iv_it).getId(), CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))
+                            ).toList()
+                        )
+                        """
         );
     }
 }

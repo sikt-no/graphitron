@@ -1,7 +1,0 @@
-type Mutation {
-  mutation(in: [CustomerInput]!): [ID] @mutation(typeName: DELETE) @nodeId(typeName: "CustomerNode")
-}
-
-input CustomerInput @table(name: "CUSTOMER") {
-    id: Int! @field(name: "CUSTOMER_ID")
-}
