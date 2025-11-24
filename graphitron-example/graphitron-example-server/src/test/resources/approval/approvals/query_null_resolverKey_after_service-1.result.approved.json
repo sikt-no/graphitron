@@ -1,0 +1,12 @@
+{
+    "data": {
+        "helloWorldWithNullResolverKeys": [
+            {
+                "film": null,
+                "films": [
+                    
+                ]
+            }
+        ]
+    }
+}
