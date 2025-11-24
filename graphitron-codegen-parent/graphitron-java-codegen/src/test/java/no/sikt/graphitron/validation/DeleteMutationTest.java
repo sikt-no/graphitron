@@ -234,4 +234,13 @@ public class DeleteMutationTest extends ValidationTest {
                 "Found reference fields are: 'AddressWrapper.addressId'"
         );
     }
+
+    @Test
+    @DisplayName("Nullable single input not allowed")
+    void nullableInput() {
+        assertErrorsContain("nullableInput",
+                // This is the same logic as for insert mutations, and more thoroughly tested in no.sikt.graphitron.validation.InsertMutationTest
+                "Field 'Mutation.mutation' is a generated DELETE mutation, but has nullable input. This is not supported."
+        );
+    }
 }

@@ -3,7 +3,7 @@ package no.sikt.graphitron.queries.edit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-@DisplayName("Mutation queries - Data returned from mutations")
+@DisplayName("Mutation queries - Inferring table target, and returning data from mutations")
 public class MutationOutputTest extends MutationQueryTest {
     @Override
     protected String getSubpath() {
@@ -15,6 +15,7 @@ public class MutationOutputTest extends MutationQueryTest {
     void nodeId() {
         assertGeneratedContentContains("nodeId",
                 "String mutationForMutation",
+                "deleteFrom(CUSTOMER)",
                 ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
                         ".fetchOne(_iv_it -> _iv_it.into(String.class))"
         );
@@ -25,6 +26,7 @@ public class MutationOutputTest extends MutationQueryTest {
     void scalar() {
         assertGeneratedContentContains("scalar",
                 "Integer mutationForMutation",
+                "deleteFrom(CUSTOMER)",
                 ".returningResult(CUSTOMER.CUSTOMER_ID)" +
                         ".fetchOne(_iv_it -> _iv_it.into(Integer.class))"
         );
@@ -35,6 +37,7 @@ public class MutationOutputTest extends MutationQueryTest {
     void wrappedNodeId() {
         assertGeneratedContentContains("wrappedNodeId",
                 "CustomerNodeInputTable _mi_in, SelectionSet _iv_select)",
+                "deleteFrom(CUSTOMER)",
                 ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
                         ".fetchOne(_iv_it -> _iv_it.into(String.class))"
         );
@@ -45,6 +48,7 @@ public class MutationOutputTest extends MutationQueryTest {
     void wrappedScalar() {
         assertGeneratedContentContains("wrappedScalar",
                 "CustomerNodeInputTable _mi_in, SelectionSet _iv_select)",
+                "deleteFrom(CUSTOMER)",
                 ".returningResult(CUSTOMER.CUSTOMER_ID)" +
                         ".fetchOne(_iv_it -> _iv_it.into(Integer.class))"
         );
@@ -55,6 +59,7 @@ public class MutationOutputTest extends MutationQueryTest {
     void nodeIdList() {
         assertGeneratedContentContains("nodeIdList",
                 "List<String> mutationForMutation",
+                "deleteFrom(CUSTOMER)",
                 ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
                         ".fetch(_iv_it -> _iv_it.into(String.class))"
         );
@@ -65,6 +70,7 @@ public class MutationOutputTest extends MutationQueryTest {
     void scalarList() {
         assertGeneratedContentContains("scalarList",
                 "List<Integer> mutationForMutation",
+                "deleteFrom(CUSTOMER)",
                 ".returningResult(CUSTOMER.CUSTOMER_ID)" +
                         ".fetch(_iv_it -> _iv_it.into(Integer.class))"
         );
@@ -75,6 +81,7 @@ public class MutationOutputTest extends MutationQueryTest {
     void wrappedNodeIdList() {
         assertGeneratedContentContains("wrappedNodeIdList",
                 "List<String> mutationForMutation",
+                "deleteFrom(CUSTOMER)",
                 ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
                         ".fetch(_iv_it -> _iv_it.into(String.class))"
         );
@@ -85,6 +92,7 @@ public class MutationOutputTest extends MutationQueryTest {
     void wrappedScalarList() {
         assertGeneratedContentContains("wrappedScalarList",
                 "List<Integer> mutationForMutation",
+                "deleteFrom(CUSTOMER)",
                 ".returningResult(CUSTOMER.CUSTOMER_ID)" +
                         ".fetch(_iv_it -> _iv_it.into(Integer.class))"
         );
@@ -95,6 +103,7 @@ public class MutationOutputTest extends MutationQueryTest {
     void tableObject() {
         assertGeneratedContentContains("tableObject",
                 "CustomerNode mutationForMutation",
+                "deleteFrom(CUSTOMER)",
                 ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
                         ".mapping(Functions.nullOnAllNull(CustomerNode::new)))" +
                         ".fetchOne(_iv_it -> _iv_it.into(CustomerNode.class))"
@@ -106,6 +115,7 @@ public class MutationOutputTest extends MutationQueryTest {
     void wrappedTableObject() {
         assertGeneratedContentContains("wrappedTableObject",
                 "CustomerNode mutationForMutation",
+                "deleteFrom(CUSTOMER)",
                 ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
                         ".mapping(Functions.nullOnAllNull(CustomerNode::new)))" +
                         ".fetchOne(_iv_it -> _iv_it.into(CustomerNode.class))"
@@ -117,6 +127,7 @@ public class MutationOutputTest extends MutationQueryTest {
     void tableObjectList() {
         assertGeneratedContentContains("tableObjectList",
                 "List<CustomerNode> mutationForMutation",
+                "deleteFrom(CUSTOMER)",
                 ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
                         ".mapping(Functions.nullOnAllNull(CustomerNode::new)))" +
                         ".fetch(_iv_it -> _iv_it.into(CustomerNode.class))"
@@ -128,6 +139,7 @@ public class MutationOutputTest extends MutationQueryTest {
     void wrappedTableObjectList() {
         assertGeneratedContentContains("wrappedTableObjectList",
                 "List<CustomerNode> mutationForMutation",
+                "deleteFrom(CUSTOMER)",
                 ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
                         ".mapping(Functions.nullOnAllNull(CustomerNode::new)))" +
                         ".fetch(_iv_it -> _iv_it.into(CustomerNode.class))"
