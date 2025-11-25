@@ -17,6 +17,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.definitions.fields.containedtypes.MutationType.DELETE;
 import static no.sikt.graphitron.definitions.fields.containedtypes.MutationType.INSERT;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
@@ -204,7 +205,8 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 )
                 .collect(Collectors.toCollection(LinkedList::new));
 
-        while (!inputBuffer.isEmpty() && inputBuffer.size() < Integer.MAX_VALUE) {
+        while (!inputBuffer.isEmpty()) {
+            recursionCheck(inputBuffer.size());
             var inputSetValue = inputBuffer.poll();
             var inputField = inputSetValue.getInput();
 
