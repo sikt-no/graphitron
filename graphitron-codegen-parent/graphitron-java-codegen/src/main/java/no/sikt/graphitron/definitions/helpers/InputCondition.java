@@ -6,7 +6,6 @@ import java.util.LinkedHashSet;
 
 
 public class InputCondition extends InputComponent {
-    private final boolean previousWasNullable;
     private final Boolean isOverriddenByAncestors;
 
     private InputCondition(
@@ -16,18 +15,16 @@ public class InputCondition extends InputComponent {
             String namePath,
             LinkedHashSet<String> nullChecks,
             boolean pastWasIterable,
-            boolean previousWasNullable,
             boolean hasRecord,
             Boolean isOverriddenByAncestors,
             Boolean isWrappedInList) {
         super(input, sourceInput, startName, namePath, nullChecks, pastWasIterable, isWrappedInList, hasRecord);
-        this.previousWasNullable = previousWasNullable;
         this.isOverriddenByAncestors = isOverriddenByAncestors;
         inferAdditionalChecks(input);
     }
 
     public InputCondition(InputField input, String startName, boolean hasRecord, Boolean isOverriddenByAncestors) {
-        this(input, input, startName, "", new LinkedHashSet<>(), false, false, hasRecord, isOverriddenByAncestors, false);
+        this(input, input, startName, "", new LinkedHashSet<>(), false, hasRecord, isOverriddenByAncestors, false);
     }
 
     public InputField getSourceInput() {
@@ -62,7 +59,6 @@ public class InputCondition extends InputComponent {
                 getNameWithPathString(),
                 nullChecks,
                 pastWasIterable || this.input.isIterableWrapped(),
-                sourceInput.isNullable(),
                 hasRecord,
                 isOverriddenByAncestors || this.input.hasOverridingCondition(),
                 isWrappedInList || this.input.isIterableWrapped());
@@ -77,13 +73,8 @@ public class InputCondition extends InputComponent {
                 namePath,
                 nullChecks,
                 pastWasIterable || this.input.isIterableWrapped(),
-                sourceInput.isNullable(),
                 hasRecord,
                 isOverriddenByAncestors,
                 isWrappedInList);
-    }
-
-    public boolean previousWasNullable() {
-        return previousWasNullable;
     }
 }

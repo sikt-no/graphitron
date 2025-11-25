@@ -25,7 +25,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-import static no.sikt.graphitron.configuration.GeneratorConfig.*;
+import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
+import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
@@ -50,16 +51,15 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        var isDeleteMutationReturningData = processedSchema.isDeleteMutationWithReturning(target); // Temporarily does not use jOOQ record input
-        var isMutationReturningData = isDeleteMutationReturningData || processedSchema.isInsertMutationWithReturning(target);
-        var parser = new InputParser(target, processedSchema, !isDeleteMutationReturningData);
+        var isMutationReturningData = processedSchema.isDeleteMutationWithReturning(target) || processedSchema.isInsertMutationWithReturning(target);
+        var parser = new InputParser(target, processedSchema);
         var methodCall = getMethodCall(target, parser, false); // Note, do this before declaring services.
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
         return getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(getReturnTypeName(target))))
                 .beginControlFlow("return $N ->", VAR_ENV)
                 .addCode(extractParams(target))
                 .addCode(declareContextArgs(target))
-                .addCodeIf(!isDeleteMutationReturningData || recordValidationEnabled(), () -> transformInputs(target, parser))
+                .addCode(transformInputs(target, parser))
                 .addCode(declareAllServiceClasses(target.getName()))
                 .addCodeIf(!isMutationReturningData && localObject.getName().equals(SCHEMA_MUTATION.getName()),
                         () -> getMethodCall(target, parser, true))

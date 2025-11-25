@@ -45,11 +45,11 @@ public class InputParser {
     private final ProcessedSchema schema;
     private final boolean hasForwardPagination;
 
-    public InputParser(ObjectField target, ProcessedSchema schema, boolean mapTableInputToJooqRecord) {
+    public InputParser(ObjectField target, ProcessedSchema schema) {
         this.schema = schema;
         this.hasForwardPagination = target.hasForwardPagination();
-        methodInputs = parseInputs(target.getNonReservedArguments(), mapTableInputToJooqRecord, schema);
-        orderField = target.getOrderField().map(it -> parseInputs(List.of(it), mapTableInputToJooqRecord, schema)).orElse(Map.of());
+        methodInputs = parseInputs(target.getNonReservedArguments(), schema);
+        orderField = target.getOrderField().map(it -> parseInputs(List.of(it), schema)).orElse(Map.of());
         recordInputs = methodInputs
                 .entrySet()
                 .stream()
@@ -80,22 +80,18 @@ public class InputParser {
         ).orElse(null);
     }
 
-    public InputParser(ObjectField target, ProcessedSchema schema) {
-        this(target, schema, true);
-    }
-
     /**
      * @return Map of variable names and types for the declared and fully set records.
      */
     @NotNull
-    private Map<String, InputField> parseInputs(List<? extends InputField> specInputs, boolean mapTableInputToJooqRecord, ProcessedSchema schema) {
+    private Map<String, InputField> parseInputs(List<? extends InputField> specInputs, ProcessedSchema schema) {
         var inputs = new LinkedHashMap<String, InputField>();
 
         for (var in : specInputs) {
             var inType = schema.getInputType(in);
             if (inType == null) {
                 inputs.put(uncapitalize(in.getName()), in);
-            } else if (mapTableInputToJooqRecord && inType.hasTable() && !inType.hasJavaRecordReference()) {
+            } else if (inType.hasTable() && !inType.hasJavaRecordReference()) {
                 inputs.putAll(parseInputs(in, schema, 0));
             } else if (inType.hasJavaRecordReference()) {
                 inputs.put(asListedRecordNameIf(in.getName(), in.isIterableWrapped()), in);
@@ -192,13 +188,9 @@ public class InputParser {
     }
 
     public List<ParameterSpec> getMethodParameterSpecs(boolean includeOrder, boolean includeForwardPagination, boolean includeContextFields) {
-        return getMethodParameterSpecs(includeOrder, includeForwardPagination, includeContextFields, true);
-    }
-
-    public List<ParameterSpec> getMethodParameterSpecs(boolean includeOrder, boolean includeForwardPagination, boolean includeContextFields, boolean checkRecordReferences) {
-        var specList = new ArrayList<>(getMethodParameterSpecs(methodInputs, checkRecordReferences));
+        var specList = new ArrayList<>(getMethodParameterSpecs(methodInputs));
         if (includeOrder) {
-            specList.addAll(getMethodParameterSpecs(orderField, checkRecordReferences));
+            specList.addAll(getMethodParameterSpecs(orderField));
         }
         if (includeForwardPagination && hasForwardPagination) {
             specList.addAll(FORWARD_PAGINATION_SPECS);
@@ -209,11 +201,11 @@ public class InputParser {
         return specList;
     }
 
-    private List<ParameterSpec> getMethodParameterSpecs(Map<String, InputField> inputs, boolean checkRecordReferences) {
+    private List<ParameterSpec> getMethodParameterSpecs(Map<String, InputField> inputs) {
         return inputs
                 .entrySet()
                 .stream()
-                .map((it) -> ParameterSpec.of(iterableWrapType(it.getValue(), checkRecordReferences, schema), inputPrefix(it.getKey())))
+                .map((it) -> ParameterSpec.of(iterableWrapType(it.getValue(), true, schema), inputPrefix(it.getKey())))
                 .toList();
     }
 
