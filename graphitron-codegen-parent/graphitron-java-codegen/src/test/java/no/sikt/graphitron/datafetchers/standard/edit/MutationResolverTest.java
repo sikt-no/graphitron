@@ -17,7 +17,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_INPUT_TABLE;
 
-@DisplayName("Mutation resolvers - Resolvers for delete mutations (will be expanded to include all generated resolvers)")
+@DisplayName("Mutation resolvers - Resolvers for delete and insert mutations (will be expanded to include all generated mutations)")
 public class MutationResolverTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
@@ -45,9 +45,24 @@ public class MutationResolverTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Single input")
-    void defaultCase() {
-        assertGeneratedContentMatches("default");
+    @DisplayName("Default case for delete")
+    void delete() {
+        assertGeneratedContentMatches("delete");
+    }
+
+    @Test
+    @DisplayName("Default case for insert")
+    void insert() {
+        assertGeneratedContentContains("insert",
+                """
+                    CustomerInputTable _mi_in = ResolverHelpers.transformDTO(_iv_env.getArgument("in"), CustomerInputTable.class);
+                    var _iv_transform = new RecordTransformer(_iv_env);
+                    var _mi_inRecord = _iv_transform.customerInputTableToJOOQRecord(_mi_in, "in");
+                    return new DataFetcherHelper(_iv_env).load(
+                            (_iv_ctx, _iv_selectionSet) -> MutationDBQueries.mutationForMutation(_iv_ctx, _mi_inRecord, _iv_selectionSet)
+                    );
+                """
+        );
     }
 
     @Test
@@ -65,16 +80,16 @@ public class MutationResolverTest extends GeneratorTest {
     void wrappedOutputForInsert() {
         assertGeneratedContentContains("wrappedOutputForInsert",
                 "loadWrapped(" +
-                        "(_iv_ctx, _iv_selectionSet) -> MutationDBQueries.mutationForMutation(_iv_ctx, _mi_in, _iv_selectionSet)," +
+                        "(_iv_ctx, _iv_selectionSet) -> MutationDBQueries.mutationForMutation(_iv_ctx, _mi_inRecord, _iv_selectionSet)," +
                         "(_iv_result) -> new Wrapper(_iv_result));"
         );
     }
 
     @Test
     @DisplayName("Map to jOOQ record for validation, but pass graph type to DB query")
-    void validation() {
+    void validation() { // This test will be removed when delete mutations start using jOOQ record input
         GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
-        assertGeneratedContentContains("default",
+        assertGeneratedContentContains("delete",
                 "var _iv_transform = new RecordTransformer(_iv_env);",
                 "inRecord = _iv_transform.customerInputTableToJOOQRecord(_mi_in, \"in\", \"in\");",
                 "_iv_transform.validate(); return new DataFetcherHelper(_iv_env).load(",

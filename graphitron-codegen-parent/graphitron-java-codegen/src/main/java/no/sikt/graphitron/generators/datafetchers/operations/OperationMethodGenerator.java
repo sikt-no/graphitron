@@ -50,17 +50,18 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        var isMutationReturningData = processedSchema.isDeleteMutationWithReturning(target) || processedSchema.isInsertMutationWithReturning(target);
-        var parser = new InputParser(target, processedSchema, !isMutationReturningData);
+        var isDeleteMutationReturningData = processedSchema.isDeleteMutationWithReturning(target); // Temporarily does not use jOOQ record input
+        var isMutationReturningData = isDeleteMutationReturningData || processedSchema.isInsertMutationWithReturning(target);
+        var parser = new InputParser(target, processedSchema, !isDeleteMutationReturningData);
         var methodCall = getMethodCall(target, parser, false); // Note, do this before declaring services.
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
         return getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(getReturnTypeName(target))))
                 .beginControlFlow("return $N ->", VAR_ENV)
                 .addCode(extractParams(target))
                 .addCode(declareContextArgs(target))
-                .addCodeIf(!isMutationReturningData || recordValidationEnabled(), () -> transformInputs(target, parser))
+                .addCodeIf(!isDeleteMutationReturningData || recordValidationEnabled(), () -> transformInputs(target, parser))
                 .addCode(declareAllServiceClasses(target.getName()))
-                .addCodeIf(!isMutationReturningData  && localObject.getName().equals(SCHEMA_MUTATION.getName()),
+                .addCodeIf(!isMutationReturningData && localObject.getName().equals(SCHEMA_MUTATION.getName()),
                         () -> getMethodCall(target, parser, true))
                 .addCode(methodCall)
                 .endControlFlow("") // Keep this, logic to set semicolon only kicks in if a string is set.

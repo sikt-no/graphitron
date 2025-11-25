@@ -36,6 +36,7 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.GeneratorConfig.useOptionalSelects;
+import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyRowTypeName;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
@@ -959,7 +960,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 )
                 .collect(Collectors.toCollection(LinkedList::new));
 
-        while (!inputBuffer.isEmpty() && inputBuffer.size() < Integer.MAX_VALUE) {
+        while (!inputBuffer.isEmpty()) {
+            recursionCheck(inputBuffer.size());
             var inputCondition = inputBuffer.poll();
             var inputField = inputCondition.getInput();
 
