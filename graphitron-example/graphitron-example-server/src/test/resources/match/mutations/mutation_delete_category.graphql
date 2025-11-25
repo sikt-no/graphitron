@@ -1,0 +1,3 @@
+mutation DeleteCategory($in: CategoryInput!) {
+    deleteCategory(in: $in)
+}

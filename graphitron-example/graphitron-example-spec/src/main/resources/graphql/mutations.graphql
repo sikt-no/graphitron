@@ -16,8 +16,10 @@ type Mutation {
 
     deleteFilmID(in: FilmInput!): ID @nodeId(typeName: "Film") @mutation(typeName: DELETE)
     deleteFilmIDListed(in: [FilmInput!]!): [ID] @nodeId(typeName: "Film") @mutation(typeName: DELETE)
+    deleteCategory(in: CategoryInput!): ID @nodeId(typeName: "Category") @mutation(typeName: DELETE)
     deleteCategories(in: [CategoryInput!]!): [ID] @nodeId(typeName: "Category") @mutation(typeName: DELETE)
     deleteCategoriesWrapped(in: [CategoryInput!]!): DeleteCategoriesResult @mutation(typeName: DELETE)
+    deleteCategoryByPkAndName(in: CategoryPkAndNameInput!): ID @nodeId(typeName: "Category") @mutation(typeName: DELETE)
     deleteCategoriesByPkAndName(in: [CategoryPkAndNameInput!]!): [ID] @nodeId(typeName: "Category") @mutation(typeName: DELETE)
 }
 
