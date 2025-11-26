@@ -47,6 +47,8 @@ type Query {
 
     categories(in: [CategoryInput!]): [Category]
     category(in: CategoryInput!): Category
+
+    stores: [Store] @asConnection
 }
 
 type Category implements Node @node @table {
@@ -252,4 +254,5 @@ type FilmCategory implements Node @node @table(name: "FILM_CATEGORY") {
 
 type Store implements Node @node @table {
     id: ID!
+    inactiveCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions"}, override: true)
 }

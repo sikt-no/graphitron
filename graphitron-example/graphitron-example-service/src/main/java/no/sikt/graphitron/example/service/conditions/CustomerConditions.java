@@ -9,8 +9,12 @@ public class CustomerConditions {
         return customer.ACTIVE.eq(1);
     }
 
+    public static Condition inactiveCustomers(Customer customer) {
+        return customer.ACTIVE.eq(0);
+    }
+
     public static Condition inactiveCustomers(Customer customer, String lastNameStartingWith) {
-        return customer.ACTIVE.eq(0)
+        return inactiveCustomers(customer)
                 .and(lastNameStartingWith != null ? customer.LAST_NAME.startsWith(lastNameStartingWith) : DSL.noCondition());
     }
 }

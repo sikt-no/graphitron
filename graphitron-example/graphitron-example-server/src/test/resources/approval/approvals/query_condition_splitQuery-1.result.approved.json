@@ -1,0 +1,38 @@
+{
+    "data": {
+        "stores": {
+            "nodes": [
+                {
+                    "inactiveCustomers": {
+                        "nodes": [
+                            {
+                                "id": "Q3VzdG9tZXI6MTI0"
+                            },
+                            {
+                                "id": "Q3VzdG9tZXI6Mjcx"
+                            },
+                            {
+                                "id": "Q3VzdG9tZXI6MzY4"
+                            },
+                            {
+                                "id": "Q3VzdG9tZXI6NDA2"
+                            },
+                            {
+                                "id": "Q3VzdG9tZXI6NDgy"
+                            },
+                            {
+                                "id": "Q3VzdG9tZXI6NTM0"
+                            },
+                            {
+                                "id": "Q3VzdG9tZXI6NTU4"
+                            },
+                            {
+                                "id": "Q3VzdG9tZXI6NTky"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+}
