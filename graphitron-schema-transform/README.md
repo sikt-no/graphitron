@@ -142,6 +142,7 @@ Important notes:
 * Files placed outside the feature folders will not have feature flags applied
 * Multiple schemas can be placed in the same directory
 * This process is not recursive — only the top-level feature directories are recognized
+* If an element already has explicit flags set then this takes precedence and automatic flags will not be added
 
 ### Schema Splitting
 

@@ -181,13 +181,14 @@ public class FeatureConfiguration implements ModifyingGraphQLTypeVisitor {
         }
 
         var existingFeatures = getOptionalDirectiveArgumentStringList((DirectivesContainer<?>) definition, FEATURE, FEATURE.getParamName(FLAGS));
+        if (!existingFeatures.isEmpty()) {
+            return null;
+        }
+
         var newDirectiveValue = new ArrayValue(
-                Stream
-                        .concat(existingFeatures.stream(), featuresFromDirectories.stream())
-                        .distinct()
+                featuresFromDirectories.stream()
                         .map(StringValue::new)
-                        .collect(Collectors.toList())
-        );
+                        .collect(Collectors.toList()));
 
         return transformDirective(featureDirective, featureArgument, newDirectiveValue, getDescriptionForNode(node, newDirectiveValue));
     }
@@ -199,6 +200,11 @@ public class FeatureConfiguration implements ModifyingGraphQLTypeVisitor {
         var definition = node.getDefinition();
         var directoryPath = getOptionalDirectoryPath(definition.getSourceLocation());
         if (directoryPath.isEmpty()) {
+            return null;
+        }
+
+        var existingTags = ((DirectivesContainer<?>) definition).getDirectives(tagDirective.getName());
+        if (!existingTags.isEmpty()) {
             return null;
         }
 

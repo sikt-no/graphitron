@@ -16,13 +16,13 @@ input InnerInput3 {
 
 type InnerObject {
   id: ID! @feature(flags : ["c"]) @tag(name: "c")
-  f0(a0: String @feature(flags : ["c"]) @tag(name: "EXTRA") @tag(name: "c")): String! @feature(flags : ["c"]) @tag(name: "c")
+  f0(a0: String @feature(flags : ["c"]) @tag(name: "EXTRA")): String! @feature(flags : ["c"]) @tag(name: "c")
   inner: InnerObject2 @dir @feature(flags : ["a"]) @tag(name: "a")
   f1(a0: String @dir2(param : "ARG") @feature(flags : ["a"]) @tag(name: "a")): String! @feature(flags : ["a"]) @tag(name: "a")
   double: ID @feature(flags : ["a"]) @tag(name: "a")
-  triple: ID @feature(flags : ["a"]) @tag(name: "FLAG") @tag(name: "a")
+  triple: ID @feature(flags : ["a"]) @tag(name: "FLAG")
   inner3: InnerObject3 @dir @feature(flags : ["b"]) @tag(name: "b")
-  extraFlag: ID @feature(flags : ["b"]) @tag(name: "b") @tag(name: "EXTRA")
+  extraFlag: ID @feature(flags : ["b"]) @tag(name: "EXTRA")
 }
 
 type InnerObject2 {
@@ -42,9 +42,9 @@ input Input {
   inner: InnerInput @dir @feature(flags : ["c"]) @tag(name: "c")
   inner2: InnerInput2 @dir2(param: "ARG") @feature(flags : ["a"]) @tag(name: "a")
   double: ID @feature(flags : ["a"]) @tag(name: "a")
-  triple: ID @feature(flags : ["a"]) @tag(name: "FLAG") @tag(name: "a")
+  triple: ID @feature(flags : ["a"]) @tag(name: "FLAG")
   inner3: InnerInput3 @feature(flags : ["b"]) @tag(name: "b")
-  extraFlag: ID @feature(flags : ["b"]) @tag(name: "b") @tag(name: "EXTRA")
+  extraFlag: ID @feature(flags : ["b"]) @tag(name: "EXTRA")
 }
 
 interface Interface {
@@ -52,8 +52,8 @@ interface Interface {
 }
 
 type Query {
-  getObject(a0: String! @dir @feature(flags : ["c"]) @tag(name: "EXTRA") @tag(name: "c")): SomeObject @feature(flags : ["c"]) @tag(name: "c")
-  getObjectWithInputs(a0: Input! @dir @feature(flags : ["c"]) @tag(name: "EXTRA") @tag(name: "c"), a1: [Input!] @feature(flags : ["c"]) @tag(name: "c")): SomeObject @dir @feature(flags : ["c"]) @tag(name: "c")
+  getObject(a0: String! @dir @feature(flags : ["c"]) @tag(name: "EXTRA") ): SomeObject @feature(flags : ["c"]) @tag(name: "c")
+  getObjectWithInputs(a0: Input! @dir @feature(flags : ["c"]) @tag(name: "EXTRA"), a1: [Input!] @feature(flags : ["c"]) @tag(name: "c")): SomeObject @dir @feature(flags : ["c"]) @tag(name: "c")
   getObject2: InnerObject2 @feature(flags : ["a"]) @tag(name: "a")
   getObject3: [InnerObjectC!]! @feature(flags : ["a"]) @tag(name: "a")
   getObject4: SomeEnum @feature(flags : ["a"]) @tag(name: "a")

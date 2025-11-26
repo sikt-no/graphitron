@@ -40,7 +40,7 @@ public class FeatureAdditionsTest extends AbstractTest {
         var newSchema = new FeatureConfiguration(schema, Map.of(), false).getModifiedGraphQLSchema();
 
         var expected = makeExpectedSchema(path);
-        assertTransformedSchemaMatches(newSchema, expected);
+            assertTransformedSchemaMatches(newSchema, expected);
         assertDirectives(newSchema, expected);
     }
 
