@@ -12,13 +12,13 @@ input InnerInput3 {
 
 type InnerObject {
   id: ID! @feature(flags : ["c"])
-  f0(a0: String @feature(flags : ["EXTRA", "c"])): String! @feature(flags : ["c"])
+  f0(a0: String @feature(flags : ["EXTRA"])): String! @feature(flags : ["c"])
   inner: InnerObject2 @dir @feature(flags : ["a"])
   f1(a0: String @dir2(param : "ARG") @feature(flags : ["a"])): String! @feature(flags : ["a"])
   double: ID @feature(flags : ["a"])
-  triple: ID @feature(flags : ["FLAG", "a"])
+  triple: ID @feature(flags : ["FLAG"])
   inner3: InnerObject3 @dir @feature(flags : ["b"])
-  extraFlag: ID @feature(flags : ["EXTRA", "b"])
+  extraFlag: ID @feature(flags : ["EXTRA"])
 }
 
 type InnerObject2 {
@@ -38,9 +38,9 @@ input Input {
   inner: InnerInput @dir @feature(flags : ["c"])
   inner2: InnerInput2 @dir2(param: "ARG") @feature(flags : ["a"])
   double: ID @feature(flags : ["a"])
-  triple: ID @feature(flags : ["FLAG", "a"])
+  triple: ID @feature(flags : ["FLAG"])
   inner3: InnerInput3 @feature(flags : ["b"])
-  extraFlag: ID @feature(flags : ["EXTRA", "b"])
+  extraFlag: ID @feature(flags : ["EXTRA"])
 }
 
 interface Interface {
@@ -55,8 +55,8 @@ type PageInfo {
 }
 
 type Query {
-  getObject(a0: String! @dir @feature(flags : ["EXTRA", "c"])): SomeObject @feature(flags : ["c"])
-  getObjectWithInputs(a0: Input! @dir @feature(flags : ["EXTRA", "c"]), a1: [Input!] @feature(flags : ["c"])): SomeObject @dir @feature(flags : ["c"])
+  getObject(a0: String! @dir @feature(flags : ["EXTRA"])): SomeObject @feature(flags : ["c"])
+  getObjectWithInputs(a0: Input! @dir @feature(flags : ["EXTRA"]), a1: [Input!] @feature(flags : ["c"])): SomeObject @dir @feature(flags : ["c"])
   getObject2: InnerObject2 @feature(flags : ["a"])
   getObject3: [InnerObjectC!]! @feature(flags : ["a"])
   getObject4: SomeEnum @feature(flags : ["a"])
