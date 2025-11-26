@@ -1,0 +1,38 @@
+{
+    "data": {
+        "cities": {
+            "nodes": [
+                {
+                    "id": "Q2l0eVR5cGU6MQ",
+                    "customers": [
+                        {
+                            "id": "Q3VzdG9tZXI6NTI"
+                        }
+                    ],
+                    "customersPaginated": {
+                        "nodes": [
+                            {
+                                "id": "Q3VzdG9tZXI6NTI"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "id": "Q2l0eVR5cGU6Mg",
+                    "customers": [
+                        {
+                            "id": "Q3VzdG9tZXI6MTAx"
+                        }
+                    ],
+                    "customersPaginated": {
+                        "nodes": [
+                            {
+                                "id": "Q3VzdG9tZXI6MTAx"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+}

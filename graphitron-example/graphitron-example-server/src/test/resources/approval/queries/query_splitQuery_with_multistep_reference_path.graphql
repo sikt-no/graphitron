@@ -1,0 +1,15 @@
+{
+    cities(first: 2) {
+        nodes {
+            id
+            customers {
+                id
+            }
+            customersPaginated(first: 5) {
+                nodes {
+                    id
+                }
+            }
+        }
+    }
+}
