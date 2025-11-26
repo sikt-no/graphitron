@@ -1,0 +1,18 @@
+{
+    "data": {
+        "staff": {
+            "nodes": [
+                {
+                    "id": "U3RhZmY6MQ",
+                    "email": "Mike.Hillyer@sakilastaff.com",
+                    "username": "Mike"
+                },
+                {
+                    "id": "U3RhZmY6Mg",
+                    "email": "Jon.Stephens@sakilastaff.com",
+                    "username": "Jon"
+                }
+            ]
+        }
+    }
+}
