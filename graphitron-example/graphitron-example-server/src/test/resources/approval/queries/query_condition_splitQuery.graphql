@@ -1,0 +1,11 @@
+{
+    stores(first: 1) {
+        nodes {
+            inactiveCustomers {
+                nodes {
+                    id
+                }
+            }
+        }
+    }
+}
