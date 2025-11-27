@@ -113,6 +113,8 @@ type City implements Node @table @node(typeId: "CityType"){
     addressExample: Address @splitQuery @notGenerated
     addresses: [Address] @splitQuery
     addressesPaginated: [Address] @splitQuery @asConnection
+    customers: [Customer] @splitQuery @reference(path: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY", condition: {className: "no.sikt.graphitron.example.service.conditions.CityConditions", method: "customersForCityViaAddresses"}}])
+    customersPaginated: [Customer] @splitQuery @asConnection @reference(path: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY", condition: {className: "no.sikt.graphitron.example.service.conditions.CityConditions", method: "customersForCityViaAddresses"}}])
     payments: [Payment] @reference(path: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}])
 }
 
