@@ -35,7 +35,7 @@ public class DeleteQueryTest extends MutationQueryTest {
     @DisplayName("With node ID field in jOOQ record input")
     void nodeIdInput() {
         assertGeneratedContentContains("nodeIdInput",
-                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_in.getId()," +
+                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_inRecord," +
                         "CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))"
         );
     }
@@ -45,10 +45,10 @@ public class DeleteQueryTest extends MutationQueryTest {
     void listedInput() {
         assertGeneratedContentContains("listedInput",
                 """
-                .where(_mi_in.size() > 0 ?
+                .where(_mi_inRecordList.size() > 0 ?
                             DSL.row(CUSTOMER.CUSTOMER_ID).in(
-                                IntStream.range(0, _mi_in.size()).mapToObj(_iv_it ->
-                                    DSL.row(DSL.val(_mi_in.get(_iv_it).getId()))
+                                IntStream.range(0, _mi_inRecordList.size()).mapToObj(_iv_it ->
+                                    DSL.row(DSL.val(_mi_inRecordList.get(_iv_it).getCustomerId()))
                                 ).toList()
                             ) : DSL.falseCondition()
                         )
@@ -64,7 +64,7 @@ public class DeleteQueryTest extends MutationQueryTest {
         * Therefore, it's safe to fall back to DSL.noCondition on nullable input fields.
         * */
         assertGeneratedContentContains("nullableFieldInInput",
-                ".and(_mi_in.getFirstName() != null ? CUSTOMER.FIRST_NAME.eq(_mi_in.getFirstName()) : DSL.noCondition())"
+                ".and(_mi_inRecord.getFirstName() != null ? CUSTOMER.FIRST_NAME.eq(_mi_inRecord.getFirstName()) : DSL.noCondition())"
         );
     }
 
@@ -74,8 +74,8 @@ public class DeleteQueryTest extends MutationQueryTest {
         assertGeneratedContentContains("inputListWithNodeId",
                 """
                         DSL.row(DSL.trueCondition()).in(
-                            IntStream.range(0, _mi_in.size()).mapToObj(_iv_it ->
-                                DSL.row(_iv_nodeIdStrategy.hasId("CustomerNode", _mi_in.get(_iv_it).getId(), CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))
+                            IntStream.range(0, _mi_inRecordList.size()).mapToObj(_iv_it ->
+                                DSL.row(_iv_nodeIdStrategy.hasId("CustomerNode", _mi_inRecordList.get(_iv_it), CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))
                             ).toList()
                         )
                         """

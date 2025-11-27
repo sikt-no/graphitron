@@ -70,7 +70,7 @@ public class MutationResolverTest extends GeneratorTest {
     void wrappedOutputForDelete() {
         assertGeneratedContentContains("wrappedOutputForDelete",
                 "loadWrapped(" +
-                        "(_iv_ctx, _iv_selectionSet) -> MutationDBQueries.mutationForMutation(_iv_ctx, _mi_in, _iv_selectionSet)," +
+                        "(_iv_ctx, _iv_selectionSet) -> MutationDBQueries.mutationForMutation(_iv_ctx, _mi_inRecord, _iv_selectionSet)," +
                         "(_iv_result) -> new Wrapper(_iv_result));"
                 );
     }
@@ -83,18 +83,5 @@ public class MutationResolverTest extends GeneratorTest {
                         "(_iv_ctx, _iv_selectionSet) -> MutationDBQueries.mutationForMutation(_iv_ctx, _mi_inRecord, _iv_selectionSet)," +
                         "(_iv_result) -> new Wrapper(_iv_result));"
         );
-    }
-
-    @Test
-    @DisplayName("Map to jOOQ record for validation, but pass graph type to DB query")
-    void validation() { // This test will be removed when delete mutations start using jOOQ record input
-        GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
-        assertGeneratedContentContains("delete",
-                "var _iv_transform = new RecordTransformer(_iv_env);",
-                "inRecord = _iv_transform.customerInputTableToJOOQRecord(_mi_in, \"in\", \"in\");",
-                "_iv_transform.validate(); return new DataFetcherHelper(_iv_env).load(",
-                "mutationForMutation(_iv_ctx, _mi_in,"
-        );
-        GeneratorConfig.setRecordValidation(new RecordValidation(false, null));
     }
 }

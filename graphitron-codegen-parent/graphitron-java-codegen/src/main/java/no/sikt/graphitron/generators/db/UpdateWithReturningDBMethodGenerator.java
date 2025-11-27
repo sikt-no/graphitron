@@ -4,7 +4,6 @@ import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.helpers.InputComponents;
 import no.sikt.graphitron.definitions.helpers.InputSetValue;
-import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
@@ -21,7 +20,6 @@ import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.definitions.fields.containedtypes.MutationType.DELETE;
 import static no.sikt.graphitron.definitions.fields.containedtypes.MutationType.INSERT;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.inferFieldTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
@@ -66,7 +64,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException(String.format("Cannot infer target table for mutation %s.", target.formatPath())));
 
-        var parser = new InputParser(target, processedSchema, target.getMutationType().equals(INSERT));
+        var parser = new InputParser(target, processedSchema);
 
         var contextForData = new FetchContext(
                 processedSchema,
@@ -84,7 +82,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .add(setFetch(dataTarget));
 
         return getDefaultSpecBuilder(asQueryMethodName(target.getName(), getLocalObject().getName()), wrapListIf(returnType, dataTarget.isIterableWrapped()))
-                .addParameters(parser.getMethodParameterSpecs(true, false, false, target.getMutationType().equals(INSERT)))
+                .addParameters(parser.getMethodParameterSpecs(true, false, false))
                 .addParameter(SELECTION_SET.className, VAR_SELECT)
                 .addCode(code.build())
                 .build();
@@ -111,7 +109,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .filter(processedSchema::hasJOOQRecord).findFirst()
                 .orElseThrow(() -> new RuntimeException("Cannot find jOOQ record input for " + target.formatPath()));
 
-        var recordInputVariableName = inputPrefix(inferFieldNamingConventionForInsertMutation(recordInput));
+        var recordInputVariableName = inputPrefix(inferFieldNamingConvention(recordInput));
 
         for (var inputSetValue : setValues) {
             var inputField = inputSetValue.getInput();
@@ -199,7 +197,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .stream()
                 .map(it -> new InputSetValue(
                                 it,
-                                inputPrefix(inferFieldNamingConventionForInsertMutation(it)),
+                                inputPrefix(inferFieldNamingConvention(it)),
                                 processedSchema.hasRecord(it)
                         )
                 )
@@ -257,12 +255,5 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());
-    }
-
-    /*
-    * Temporary method until delete mutations also use jOOQ record input
-    * */
-    protected String inferFieldNamingConventionForInsertMutation(GenerationField field) {
-        return asListedRecordNameIf(field.getName(), field.isIterableWrapped());
     }
 }

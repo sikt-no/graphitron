@@ -58,13 +58,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected static final String ELEMENT_NAME = internalPrefix("e");
     protected final String resolverKeyParamName;
     protected final boolean isRoot = getLocalObject().isOperationRoot();
-    protected final boolean isDeleteMutationQuery; // This will eventually apply to all generated mutations
+    protected final boolean conditionsShouldFallbackToFalse; // This will eventually apply to all generated mutations
     private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPE_SAFETY = 22;
 
-    public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema, boolean isDeleteMutationQuery) {
+    public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema, boolean conditionsShouldFallbackToFalse) {
         super(localObject, processedSchema);
         resolverKeyParamName = resolverKeyPrefix(localObject.getName());
-        this.isDeleteMutationQuery = isDeleteMutationQuery;
+        this.conditionsShouldFallbackToFalse = conditionsShouldFallbackToFalse;
     }
 
     public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
@@ -696,7 +696,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var declaredInputConditions = inputComponents.declaredConditionsByField();
         var splitInputs = flatInputs
                 .stream()
-                .collect(Collectors.partitioningBy(it -> processedSchema.hasRecord(it.getInput()) && !isDeleteMutationQuery));
+                .collect(Collectors.partitioningBy(it -> processedSchema.hasRecord(it.getInput())));
         var inputsWithRecord = splitInputs.get(true);
         var inputsWithoutRecord = splitInputs.get(false);
 
@@ -704,9 +704,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var conditionBuilder = CodeBlock.builder();
             var field = inputCondition.getInput();
             var checks = inputCondition.getChecksAsSequence();
-            var isInRecordInput = !isDeleteMutationQuery && processedSchema.isInputType(field.getContainerTypeName()) && processedSchema.hasJOOQRecord(field.getContainerTypeName());
+            var isInRecordInput = processedSchema.isInputType(field.getContainerTypeName()) && processedSchema.hasJOOQRecord(field.getContainerTypeName());
             var checksNotEmpty = !checks.isEmpty()
-                    && !(!isDeleteMutationQuery && isInRecordInput && processedSchema.isNodeIdField(field)); // Skip null checks for nodeId in jOOQ record inputs in queries
+                    && !(isInRecordInput && processedSchema.isNodeIdField(field)); // Skip null checks for nodeId in jOOQ record inputs in queries
             var renderedSequence = isInRecordInput ?
                     CodeBlock.of(context.getTargetAlias())
                     :  context.iterateJoinSequenceFor(field).render();
@@ -722,7 +722,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 conditionBuilder.add(formatCondition(inputCondition, renderedSequence, context));
 
                 if (checksNotEmpty) {
-                    var fallbackOnFalse = (isDeleteMutationQuery && (inputCondition.isWrappedInList() || inputCondition.previousWasNullable())) || field instanceof VirtualInputField;
+                    var fallbackOnFalse = (conditionsShouldFallbackToFalse && inputCondition.isWrappedInList()) || field instanceof VirtualInputField;
                     conditionBuilder
                             .add(" : ")
                             .addIf(fallbackOnFalse, falseCondition())
@@ -772,7 +772,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     private CodeBlock formatCondition(InputCondition inputCondition, CodeBlock renderedSequence, FetchContext context) {
         var field = inputCondition.getInput();
-        var name = !isDeleteMutationQuery && processedSchema.isNodeIdField(field) && processedSchema.hasJOOQRecord(field.getContainerTypeName())
+        var name = processedSchema.isNodeIdField(field) && processedSchema.hasJOOQRecord(field.getContainerTypeName())
                 ? CodeBlock.of(inputCondition.getNamePath())
                 : inputCondition.getNameWithPath();
         if (processedSchema.isNodeIdField(field)) {
@@ -893,7 +893,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add("\n)")
                 .unindent()
                 .unindent()
-                .add("$L\n) : $L", collectToList(), isDeleteMutationQuery ? falseCondition() : noCondition())
+                .add("$L\n) : $L", collectToList(), conditionsShouldFallbackToFalse ? falseCondition() : noCondition())
                 .unindent()
                 .unindent()
                 .build();
@@ -914,7 +914,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var field = condition.getInput();
         var getElement = CodeBlock.of("$N.get($N)", argumentInputFieldName, VAR_ITERATOR);
         if (processedSchema.isNodeIdField(field)) {
-            getElement = isDeleteMutationQuery && processedSchema.hasJOOQRecord(field.getContainerTypeName())
+            getElement = !condition.isWrappedInList() && processedSchema.hasJOOQRecord(field.getContainerTypeName())
                     ? CodeBlock.of("$L$L", getElement, field.getMappingForRecordFieldOverride().asGetCall())
                     : getElement;
             var referenceObject = processedSchema.hasJOOQRecord(field.getContainerTypeName())
@@ -954,7 +954,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .map(it -> new InputCondition(
                         it,
                         inputPrefix(inferFieldNamingConvention(it)),
-                        processedSchema.hasRecord(it) && !isDeleteMutationQuery,
+                        processedSchema.hasRecord(it),
                         referenceField.hasOverridingCondition()
                         )
                 )
@@ -979,7 +979,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     pathNameForIterableFields.add(inputCondition.getNameWithPathString());
                 }
 
-                var innerFields = !isDeleteMutationQuery  && getLocalObject().getName().equalsIgnoreCase(SCHEMA_MUTATION.getName()) && processedSchema.hasJOOQRecord(inputField) ?
+                var isMutationWithJDBCBatching = referenceField.hasMutationType()
+                        && !processedSchema.isDeleteMutationWithReturning(referenceField)
+                        && !processedSchema.isInsertMutationWithReturning(referenceField);
+
+                var innerFields = isMutationWithJDBCBatching ?
                         getPrimaryKeyForTable(processedSchema.getRecordType(inputField).getTable().getName())
                                 .map(it -> it.getFields().stream().map(col -> new VirtualInputField(col.getName(), inputField.getContainerTypeName())).toList())
                                 .orElse(List.of())
@@ -993,7 +997,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 );
             }
 
-            if (!processedSchema.isInputType(inputField) || (processedSchema.hasRecord(inputField) && !isDeleteMutationQuery)) {
+            if (!processedSchema.isInputType(inputField) || processedSchema.hasRecord(inputField)) {
                 var flatInput = inputCondition.applyTo(inputField);
 
                 flatInputs.add(flatInput);
@@ -1064,7 +1068,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     protected String inferFieldNamingConvention(GenerationField field) {
-        if (processedSchema.hasRecord(field) && !isDeleteMutationQuery) {
+        if (processedSchema.hasRecord(field)) {
             return asListedRecordNameIf(field.getName(), field.isIterableWrapped());
         }
         return field.getName();
