@@ -92,6 +92,7 @@ type Customer implements Node @node @table {
     addressSplitQuery: Address @splitQuery
     addressSplitQueryWithKey: Address @splitQuery @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
     payments: [Payment] @reference(path: [{key: "PAYMENT__PAYMENT_CUSTOMER_ID_FKEY"}]) @splitQuery
+    paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(path: [{table: "RENTAL"}])): [Payment] @asConnection @splitQuery
 }
 
 type CustomerName {
@@ -222,6 +223,7 @@ type Payment @table {
     paymentId: Int @field(name: "PAYMENT_ID")
     amount: BigDecimal
     dateTime: LocalDateTime @field(name: "PAYMENT_DATE")
+    rental: Rental
 #    customer: CustomerRecord @splitQuery @service(service: {className: "no.sikt.graphitron.example.service.CustomerService"}) # kommentert ut pga bug i mapper
 }
 
@@ -257,4 +259,8 @@ type FilmCategory implements Node @node @table(name: "FILM_CATEGORY") {
 type Store implements Node @node @table {
     id: ID!
     inactiveCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions"}, override: true)
+}
+
+type Rental @table {
+    inventory: Inventory
 }

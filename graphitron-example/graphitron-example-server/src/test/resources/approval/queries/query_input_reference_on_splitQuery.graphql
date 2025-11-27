@@ -1,0 +1,16 @@
+{
+    customers(first: 3, after: "WzZd") {
+        nodes {
+            id
+            paymentsFilteredByInventory(first: 10, inventoryId: 2484) {
+                nodes {
+                    rental {
+                        inventory {
+                            inventoryId
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
