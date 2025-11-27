@@ -44,6 +44,11 @@
             <version>${revision}${changelist}</version>
         </dependency>
         <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-schema-transform</artifactId>
+            <version>${revision}${changelist}</version>
+        </dependency>
+        <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-arc</artifactId>
         </dependency>

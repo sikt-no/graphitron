@@ -1,0 +1,16 @@
+{
+    "errors": [
+        {
+            "message": "Validation error (FieldUndefined@[customers/nodes/storeId]) : Field 'storeId' in type 'Customer' is undefined",
+            "locations": [
+                {
+                    "line": 6,
+                    "column": 13
+                }
+            ],
+            "extensions": {
+                "classification": "ValidationError"
+            }
+        }
+    ]
+}

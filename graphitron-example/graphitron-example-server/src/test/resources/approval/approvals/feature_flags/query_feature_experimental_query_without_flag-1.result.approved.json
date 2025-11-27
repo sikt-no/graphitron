@@ -1,0 +1,16 @@
+{
+    "errors": [
+        {
+            "message": "Validation error (FieldUndefined@[experimentalCustomers]) : Field 'experimentalCustomers' in type 'Query' is undefined",
+            "locations": [
+                {
+                    "line": 3,
+                    "column": 5
+                }
+            ],
+            "extensions": {
+                "classification": "ValidationError"
+            }
+        }
+    ]
+}
