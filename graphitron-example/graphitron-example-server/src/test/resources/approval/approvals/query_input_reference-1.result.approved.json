@@ -1,0 +1,24 @@
+{
+    "data": {
+        "paymentsFilteredByInventory": {
+            "nodes": [
+                {
+                    "paymentId": 1,
+                    "rental": {
+                        "inventory": {
+                            "inventoryId": 3021
+                        }
+                    }
+                },
+                {
+                    "paymentId": 2,
+                    "rental": {
+                        "inventory": {
+                            "inventoryId": 4020
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}

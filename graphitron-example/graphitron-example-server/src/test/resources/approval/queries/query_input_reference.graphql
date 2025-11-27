@@ -1,0 +1,12 @@
+query InputReference($inventoryId: Int) {
+    paymentsFilteredByInventory(first: 2, inventoryId: $inventoryId) {
+        nodes {
+            paymentId
+            rental {
+                inventory {
+                    inventoryId
+                }
+            }
+        }
+    }
+}

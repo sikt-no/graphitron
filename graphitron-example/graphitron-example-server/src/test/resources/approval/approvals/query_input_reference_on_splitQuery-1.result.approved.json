@@ -1,0 +1,44 @@
+{
+    "data": {
+        "customers": {
+            "nodes": [
+                {
+                    "id": "Q3VzdG9tZXI6Nw",
+                    "paymentsFilteredByInventory": {
+                        "nodes": [
+                            {
+                                "rental": {
+                                    "inventory": {
+                                        "inventoryId": 2484
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "id": "Q3VzdG9tZXI6OA",
+                    "paymentsFilteredByInventory": {
+                        "nodes": [
+                            
+                        ]
+                    }
+                },
+                {
+                    "id": "Q3VzdG9tZXI6OQ",
+                    "paymentsFilteredByInventory": {
+                        "nodes": [
+                            {
+                                "rental": {
+                                    "inventory": {
+                                        "inventoryId": 2484
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+}

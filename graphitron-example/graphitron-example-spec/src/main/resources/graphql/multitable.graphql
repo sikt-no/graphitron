@@ -42,7 +42,7 @@ extend type Film {
 
 union FilmActorAndFilmCategoryUnion = FilmActor | FilmCategory
 
-type Rental @table {
+extend type Rental {
     rentalId: Int @field(name: "RENTAL_ID")
 
     allContactPersons: [PersonWithEmail] @multitableReference(routes: [
