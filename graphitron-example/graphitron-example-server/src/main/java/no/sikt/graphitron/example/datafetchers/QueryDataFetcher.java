@@ -22,7 +22,8 @@ public class QueryDataFetcher {
                             "District",
                             null,
                             "ZIP1234",
-                            "98765432");
+                            "98765432",
+                            null);
                 });
     }
 }
