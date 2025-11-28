@@ -1,0 +1,175 @@
+{
+    "data": {
+        "cities": {
+            "nodes": [
+                {
+                    "payments": [
+                        {
+                            "paymentId": 1425
+                        },
+                        {
+                            "paymentId": 1426
+                        },
+                        {
+                            "paymentId": 1427
+                        },
+                        {
+                            "paymentId": 1428
+                        },
+                        {
+                            "paymentId": 1429
+                        },
+                        {
+                            "paymentId": 1430
+                        },
+                        {
+                            "paymentId": 1431
+                        },
+                        {
+                            "paymentId": 1432
+                        },
+                        {
+                            "paymentId": 1433
+                        },
+                        {
+                            "paymentId": 1434
+                        },
+                        {
+                            "paymentId": 1435
+                        },
+                        {
+                            "paymentId": 1436
+                        },
+                        {
+                            "paymentId": 1437
+                        },
+                        {
+                            "paymentId": 1438
+                        },
+                        {
+                            "paymentId": 1439
+                        },
+                        {
+                            "paymentId": 1440
+                        },
+                        {
+                            "paymentId": 1441
+                        },
+                        {
+                            "paymentId": 1442
+                        },
+                        {
+                            "paymentId": 1443
+                        },
+                        {
+                            "paymentId": 1444
+                        },
+                        {
+                            "paymentId": 1445
+                        },
+                        {
+                            "paymentId": 1446
+                        },
+                        {
+                            "paymentId": 1447
+                        },
+                        {
+                            "paymentId": 1448
+                        },
+                        {
+                            "paymentId": 1449
+                        },
+                        {
+                            "paymentId": 1450
+                        },
+                        {
+                            "paymentId": 1451
+                        },
+                        {
+                            "paymentId": 1452
+                        },
+                        {
+                            "paymentId": 1453
+                        }
+                    ]
+                },
+                {
+                    "payments": [
+                        {
+                            "paymentId": 2712
+                        },
+                        {
+                            "paymentId": 2713
+                        },
+                        {
+                            "paymentId": 2714
+                        },
+                        {
+                            "paymentId": 2715
+                        },
+                        {
+                            "paymentId": 2716
+                        },
+                        {
+                            "paymentId": 2717
+                        },
+                        {
+                            "paymentId": 2718
+                        },
+                        {
+                            "paymentId": 2719
+                        },
+                        {
+                            "paymentId": 2720
+                        },
+                        {
+                            "paymentId": 2721
+                        },
+                        {
+                            "paymentId": 2722
+                        },
+                        {
+                            "paymentId": 2723
+                        },
+                        {
+                            "paymentId": 2724
+                        },
+                        {
+                            "paymentId": 2725
+                        },
+                        {
+                            "paymentId": 2726
+                        },
+                        {
+                            "paymentId": 2727
+                        },
+                        {
+                            "paymentId": 2728
+                        },
+                        {
+                            "paymentId": 2729
+                        },
+                        {
+                            "paymentId": 2730
+                        },
+                        {
+                            "paymentId": 2731
+                        },
+                        {
+                            "paymentId": 2732
+                        },
+                        {
+                            "paymentId": 2733
+                        },
+                        {
+                            "paymentId": 2734
+                        },
+                        {
+                            "paymentId": 2735
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}

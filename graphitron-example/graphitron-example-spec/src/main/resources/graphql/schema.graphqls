@@ -125,7 +125,7 @@ type City implements Node @table @node(typeId: "CityType"){
     addressesPaginated: [Address] @splitQuery @asConnection
     customers: [Customer] @splitQuery @reference(path: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY", condition: {className: "no.sikt.graphitron.example.service.conditions.CityConditions", method: "customersForCityViaAddresses"}}])
     customersPaginated: [Customer] @splitQuery @asConnection @reference(path: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY", condition: {className: "no.sikt.graphitron.example.service.conditions.CityConditions", method: "customersForCityViaAddresses"}}])
-    payments: [Payment] @reference(path: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}])
+    payments: [Payment] @reference(path: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}]) # Subquery
 }
 
 type CityWithoutID @table(name: "CITY") {
@@ -229,7 +229,7 @@ type Payment @table {
     paymentId: Int @field(name: "PAYMENT_ID")
     amount: BigDecimal
     dateTime: LocalDateTime @field(name: "PAYMENT_DATE")
-    rental: Rental
+    rental: Rental # Subquery
 #    customer: CustomerRecord @splitQuery @service(service: {className: "no.sikt.graphitron.example.service.CustomerService"}) # kommentert ut pga bug i mapper
 }
 
