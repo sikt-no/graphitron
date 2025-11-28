@@ -1,0 +1,9 @@
+# storeId requires @feature(flags: ["experimental", "preview"]), X-Feature-Flags: experimental - should fail
+query CustomerWithMultiFlagField {
+    customers(first: 1) {
+        nodes {
+            id
+            storeId
+        }
+    }
+}

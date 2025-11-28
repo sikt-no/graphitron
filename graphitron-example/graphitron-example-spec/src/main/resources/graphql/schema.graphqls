@@ -5,6 +5,8 @@ extend schema
 scalar BigDecimal
 scalar LocalDateTime
 
+directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+
 type Query {
     helloWorld: String @notGenerated
 
@@ -49,6 +51,8 @@ type Query {
     category(in: CategoryInput!): Category
 
     stores: [Store] @asConnection
+
+    experimentalCustomers: [Customer] @asConnection @feature(flags: "experimental")
 }
 
 type Category implements Node @node @table {
@@ -93,6 +97,8 @@ type Customer implements Node @node @table {
     addressSplitQueryWithKey: Address @splitQuery @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
     payments: [Payment] @reference(path: [{key: "PAYMENT__PAYMENT_CUSTOMER_ID_FKEY"}]) @splitQuery
     paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(path: [{table: "RENTAL"}])): [Payment] @asConnection @splitQuery
+    activeBool: Boolean @field(name: "ACTIVEBOOL") @feature(flags: "experimental")
+    storeId: Int @field(name: "STORE_ID") @feature(flags: ["experimental", "preview"])
 }
 
 type CustomerName {

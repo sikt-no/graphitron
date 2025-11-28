@@ -1,0 +1,8 @@
+# experimentalCustomers requires @feature(flags: "experimental"), no header set - should fail
+query ExperimentalCustomersQuery {
+    experimentalCustomers(first: 1) {
+        nodes {
+            id
+        }
+    }
+}

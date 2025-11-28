@@ -1,0 +1,8 @@
+# experimentalCustomers requires @feature(flags: "experimental"), X-Feature-Flags: experimental - should succeed
+query ExperimentalCustomersQuery {
+    experimentalCustomers(first: 1) {
+        nodes {
+            id
+        }
+    }
+}
