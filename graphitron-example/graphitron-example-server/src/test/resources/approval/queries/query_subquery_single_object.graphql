@@ -1,0 +1,10 @@
+{
+    payments(first: 2) {
+        nodes {
+            rental {
+                rentalId
+            }
+            paymentId
+        }
+    }
+}

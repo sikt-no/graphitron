@@ -1,0 +1,20 @@
+{
+    "data": {
+        "payments": {
+            "nodes": [
+                {
+                    "rental": {
+                        "rentalId": 76
+                    },
+                    "paymentId": 1
+                },
+                {
+                    "rental": {
+                        "rentalId": 573
+                    },
+                    "paymentId": 2
+                }
+            ]
+        }
+    }
+}
