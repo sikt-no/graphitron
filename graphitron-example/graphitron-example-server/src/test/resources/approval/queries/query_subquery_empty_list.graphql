@@ -1,0 +1,9 @@
+{
+    addresses(first: 1, after: "WzJd") {
+        nodes {
+            stores {
+                id
+            }
+        }
+    }
+}
