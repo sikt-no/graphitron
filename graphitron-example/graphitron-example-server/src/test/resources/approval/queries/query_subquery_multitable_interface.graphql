@@ -1,0 +1,18 @@
+{
+    reachableByEmail(
+        first: 3
+        after: "eyJ0eXBlTmFtZSIgOiAiQ3VzdG9tZXJXaXRoRW1haWwiLCAiZmllbGRzIiA6IFs1OThdfQ"
+    ) {
+        nodes {
+            email
+            addressAsSubquery { # In interface definition
+                id
+            }
+            ... on StaffWithEmail {
+                storeAsSubquery { # In type implementing interface
+                    id
+                }
+            }
+        }
+    }
+}

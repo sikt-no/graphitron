@@ -1,0 +1,23 @@
+{
+    "data": {
+        "addressesByPostalCode": {
+            "nodes": [
+                {
+                    "cityAsSubquery": {
+                        "id": "Q2l0eVR5cGU6NDQ4"
+                    },
+                    "customersAsSubquery": [
+                        {
+                            "id": "Q3VzdG9tZXI6MjE3"
+                        }
+                    ]
+                },
+                {
+                    "cityAsSubquery": {
+                        "id": "Q2l0eVR5cGU6MjYy"
+                    }
+                }
+            ]
+        }
+    }
+}

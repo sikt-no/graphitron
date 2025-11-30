@@ -1,0 +1,14 @@
+{
+    addressesByPostalCode(first: 2) {
+        nodes {
+            cityAsSubquery { # In interface definition
+                id
+            }
+            ... on AddressInOneArea {
+                customersAsSubquery { # In type implementing interface
+                    id
+                }
+            }
+        }
+    }
+}
