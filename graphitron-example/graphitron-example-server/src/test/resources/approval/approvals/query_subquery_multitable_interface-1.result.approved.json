@@ -1,0 +1,32 @@
+{
+    "data": {
+        "reachableByEmail": {
+            "nodes": [
+                {
+                    "email": "AUSTIN.CINTRON@sakilacustomer.org",
+                    "addressAsSubquery": {
+                        "id": "QWRkcmVzczo2MDU"
+                    }
+                },
+                {
+                    "email": "Mike.Hillyer@sakilastaff.com",
+                    "addressAsSubquery": {
+                        "id": "QWRkcmVzczoz"
+                    },
+                    "storeAsSubquery": {
+                        "id": "U3RvcmU6MQ"
+                    }
+                },
+                {
+                    "email": "Jon.Stephens@sakilastaff.com",
+                    "addressAsSubquery": {
+                        "id": "QWRkcmVzczo0"
+                    },
+                    "storeAsSubquery": {
+                        "id": "U3RvcmU6Mg"
+                    }
+                }
+            ]
+        }
+    }
+}
