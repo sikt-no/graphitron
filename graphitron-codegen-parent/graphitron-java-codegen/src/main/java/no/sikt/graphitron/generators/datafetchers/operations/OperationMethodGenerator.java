@@ -357,7 +357,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         for (InputField inputRecord : parser.getJOOQRecords().values()) {
             var columnsToFieldMappings = new LinkedHashMap<String, List<ColumnFieldMapping>>();
             var type = processedSchema.getInputType(inputRecord);
-            var inputVarName = uncapitalize(inputRecord.getName());
+            var inputVarName = inputPrefix(uncapitalize(inputRecord.getName()));
             var isListed = inputRecord.isIterableWrapped();
             var itemVarName = namedIteratorPrefixIf(inputVarName, isListed);
 

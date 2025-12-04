@@ -51,11 +51,11 @@ public class NodeIdResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "assertInputColumns", Set.of(NODE),
                         """
-                        FilmActorInput in = ResolverHelpers.transformDTO(_iv_env.getArgument("in"), FilmActorInput.class);
+                        FilmActorInput _mi_in = ResolverHelpers.transformDTO(_iv_env.getArgument("in"), FilmActorInput.class);
                         var _iv_transform = new RecordTransformer(_iv_env);
-                        var inRecord = _iv_transform.filmActorInputToJOOQRecord(in, _iv_nodeIdStrategy, "in");
-                        var _unpacked_id = in.getId() != null ? _iv_nodeIdStrategy.unpackIdValues("FilmActor", in.getId(), FilmActor.FILM_ACTOR.getPrimaryKey().getFieldsArray()) : null;
-                        if (!Objects.equals(_unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null, in.getActor())) {
+                        var _mi_inRecord = _iv_transform.filmActorInputToJOOQRecord(_mi_in, _iv_nodeIdStrategy, "in");
+                        var _unpacked_id = _mi_in.getId() != null ? _iv_nodeIdStrategy.unpackIdValues("FilmActor", _mi_in.getId(), FilmActor.FILM_ACTOR.getPrimaryKey().getFieldsArray()) : null;
+                        if (!Objects.equals(_unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null, _mi_in.getActor())) {
                             throw new IllegalArgumentException("Field id and field actor differs in value but writes to the same column.");
                         }
                         """
@@ -68,12 +68,12 @@ public class NodeIdResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "assertListedInputColumns", Set.of(NODE),
                 """
-                        List<FilmActorInput> in = ResolverHelpers.transformDTOList(_iv_env.getArgument("in"), FilmActorInput.class);
+                        List<FilmActorInput> _mi_in = ResolverHelpers.transformDTOList(_iv_env.getArgument("in"), FilmActorInput.class);
                         var _iv_transform = new RecordTransformer(_iv_env);
-                        var inRecordList = _iv_transform.filmActorInputToJOOQRecord(in, _iv_nodeIdStrategy, "in");
-                        for (var itIn : in) {
-                            var _unpacked_id = itIn.getId() != null ? _iv_nodeIdStrategy.unpackIdValues("FilmActor", itIn.getId(), FilmActor.FILM_ACTOR.getPrimaryKey().getFieldsArray()) : null;
-                            if (!Objects.equals(_unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null, itIn.getActor())) {
+                        var _mi_inRecordList = _iv_transform.filmActorInputToJOOQRecord(_mi_in, _iv_nodeIdStrategy, "in");
+                        for (var _nit__mi_in : _mi_in) {
+                            var _unpacked_id = _nit__mi_in.getId() != null ? _iv_nodeIdStrategy.unpackIdValues("FilmActor", _nit__mi_in.getId(), FilmActor.FILM_ACTOR.getPrimaryKey().getFieldsArray()) : null;
+                            if (!Objects.equals(_unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null, _nit__mi_in.getActor())) {
                                 throw new IllegalArgumentException("Field id and field actor differs in value but writes to the same column.");
                             }
                         }
@@ -99,10 +99,10 @@ public class NodeIdResolverTest extends GeneratorTest {
                             if (!Objects.equals(_unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null, _unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_secondId[0]) : null)) {
                                 throw new IllegalArgumentException("Field id and field secondId differs in value but writes to the same column.");
                             }
-                            if (!Objects.equals(_unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null, itIn.getActor())) {
+                            if (!Objects.equals(_unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null, _nit__mi_in.getActor())) {
                                 throw new IllegalArgumentException("Field id and field actor differs in value but writes to the same column.");
                             }
-                            if (!Objects.equals(_unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_secondId[0]) : null, itIn.getActor())) {
+                            if (!Objects.equals(_unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_secondId[0]) : null, _nit__mi_in.getActor())) {
                                 throw new IllegalArgumentException("Field secondId and field actor differs in value but writes to the same column.");
                             }
                             if (!Objects.equals(_unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.FILM_ID, _unpacked_id[1]) : null, _unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.FILM_ID, _unpacked_secondId[1]) : null)) {
