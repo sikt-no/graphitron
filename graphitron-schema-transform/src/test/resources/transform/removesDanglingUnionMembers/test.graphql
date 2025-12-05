@@ -1,0 +1,26 @@
+type Query {
+  q1: U0
+}
+
+type T0 {
+  f0: [String] @feature(flags: "F0")
+  u1: U1 @feature(flags: "F0")
+}
+
+type T1 {
+  f0: [String]
+}
+
+union U0 = T0 | T1
+
+union U1 = UgyldigId
+
+interface Error {
+  path: [String!]! @feature(flags: "F0")
+  message: String! @feature(flags: "F0")
+}
+
+type UgyldigId implements Error {
+  path: [String!]! @feature(flags: "F0")
+  message: String! @feature(flags: "F0")
+}
