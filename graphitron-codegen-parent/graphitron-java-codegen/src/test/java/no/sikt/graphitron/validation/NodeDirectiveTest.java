@@ -71,4 +71,13 @@ public class NodeDirectiveTest extends ValidationTest {
     void multipleTypesWithSameTable() {
         getProcessedSchema("multipleTypesWithSameTable", NODE_QUERY);
     }
+
+    @Test
+    @DisplayName("Multiple node types with the same type ID is not supported")
+    void duplicateTypeId() {
+        assertErrorsContain("duplicateTypeId",
+                "Multiple node types (Film, Customer) have the same node type ID 'Film'. " +
+                        "Type IDs must be unique."
+        );
+    }
 }
