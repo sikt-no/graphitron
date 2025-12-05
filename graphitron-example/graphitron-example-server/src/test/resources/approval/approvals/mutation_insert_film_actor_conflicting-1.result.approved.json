@@ -1,0 +1,22 @@
+{
+    "errors": [
+        {
+            "message": "Field id and field actorId differs in value but writes to the same column.",
+            "locations": [
+                {
+                    "line": 2,
+                    "column": 5
+                }
+            ],
+            "path": [
+                "insertFilmActor"
+            ],
+            "extensions": {
+                "classification": "DataFetchingException"
+            }
+        }
+    ],
+    "data": {
+        "insertFilmActor": null
+    }
+}
