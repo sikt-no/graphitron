@@ -41,6 +41,7 @@ import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphitron.validation.ValidationHandler.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirective.NODE_ID;
+import static no.sikt.graphql.directives.GenerationDirectiveParam.TYPE_ID;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.*;
 
@@ -149,6 +150,10 @@ public class ProcessedDefinitionsValidator {
                     if (!objectDefinition.implementsInterface(NODE_TYPE.getName())) {
                         addErrorMessage("Type %s has the %s directive, but does not implement the %s interface.",
                                 objectDefinition.getName(), NODE.getName(), NODE_TYPE.getName());
+                    }
+                    if (GeneratorConfig.requireTypeIdOnNode() && !objectDefinition.hasCustomTypeId()) {
+                        addErrorMessage("Type '%s' has the '%s' directive, but is missing the '%s' parameter which has been configured to be required.",
+                                objectDefinition.getName(), NODE.getName(), TYPE_ID.getName());
                     }
                 });
     }

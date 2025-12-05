@@ -39,6 +39,7 @@ public class GeneratorConfig {
     private static boolean alwaysUsePrimaryKeyInSplitQueries = true;
     private static boolean useJdbcBatchingForDeletes = true;
     private static boolean useJdbcBatchingForInserts = true;
+    private static boolean requireTypeIdOnNode = false;
 
     private static int maxAllowedPageSize;
     private final static boolean USE_OPTIONAL_SELECTS = false;
@@ -112,6 +113,7 @@ public class GeneratorConfig {
         useJdbcBatchingForInserts = mojo.useJdbcBatchingForInserts();
         alwaysUsePrimaryKeyInSplitQueries = true;
         codeGenerationThresholds = mojo.getCodeGenerationThresholds();
+        requireTypeIdOnNode = mojo.requireTypeIdOnNode();
     }
 
     /**
@@ -254,5 +256,13 @@ public class GeneratorConfig {
 
     public static void setCodeGenerationThresholds(CodeGenerationThresholds thresholds) {
         codeGenerationThresholds = thresholds;
+    }
+
+    public static boolean requireTypeIdOnNode() {
+        return requireTypeIdOnNode;
+    }
+
+    public static void setRequireTypeIdOnNode(boolean require) {
+        requireTypeIdOnNode = require;
     }
 }

@@ -35,7 +35,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_KEY_ARGUMENT
  */
 public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U extends GenerationField> extends AbstractObjectDefinition<T, U> implements RecordObjectSpecification<U> {
     private final JOOQMapping table;
-    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated, hasKeys, hasNodeDirective;
+    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated, hasKeys, hasNodeDirective, hasCustomTypeId;
     private final ClassReference classReference;
     private final List<U> inputsSortedByNullability;
     private final LinkedHashSet<String> requiredInputs;
@@ -67,8 +67,9 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         keys = hasKeys ? new EntityKeySet(getRepeatableDirectiveArgumentString(objectDefinition, FEDERATION_KEY.getName(), FEDERATION_KEY_ARGUMENT.getName())) : null;
 
         hasNodeDirective = objectDefinition.hasDirective(NODE.getName());
-        typeId = getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.TYPE_ID)
-                .orElse(getTable() != null ? getName() : null);
+        var typeIdParameter = getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.TYPE_ID);
+        hasCustomTypeId = typeIdParameter.isPresent();
+        typeId = typeIdParameter.orElse(hasTable() ? getName() : null);
         keyColumns = getOptionalDirectiveArgumentStringList(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.KEY_COLUMNS)
                 .stream()
                 .map(columnName -> getJavaFieldName(getTable().getName(), columnName).orElse(columnName))
@@ -190,6 +191,10 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
 
     public String getTypeId() {
         return typeId;
+    }
+
+    public boolean hasCustomTypeId() {
+        return hasCustomTypeId;
     }
 
     public boolean hasCustomKeyColumns() {

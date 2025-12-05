@@ -36,4 +36,6 @@ public interface Generator {
     boolean useJdbcBatchingForInserts();
 
     CodeGenerationThresholds getCodeGenerationThresholds();
+
+    boolean requireTypeIdOnNode();
 }
