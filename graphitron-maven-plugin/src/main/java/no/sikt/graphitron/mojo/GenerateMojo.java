@@ -112,6 +112,10 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @SuppressWarnings("unused")
     private boolean useJdbcBatchingForInserts;
 
+    @Parameter(property = "generate.experimental_requireTypeIdOnNode", defaultValue = "false")
+    @SuppressWarnings("unused")
+    private boolean experimental_requireTypeIdOnNode;
+
     @Parameter(property = "generate.codeGenerationThresholds")
     @SuppressWarnings("unused")
     private CodeGenerationThresholds codeGenerationThresholds;
@@ -221,6 +225,11 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Override
     public CodeGenerationThresholds getCodeGenerationThresholds() {
         return codeGenerationThresholds;
+    }
+
+    @Override
+    public boolean requireTypeIdOnNode() {
+        return experimental_requireTypeIdOnNode;
     }
 
     public void setJooqGeneratedPackage(String jooqGeneratedPackage) {
