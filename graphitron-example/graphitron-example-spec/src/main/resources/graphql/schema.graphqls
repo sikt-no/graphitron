@@ -107,7 +107,7 @@ type CustomerName {
     lastName: String! @field(name: "LAST_NAME")
 }
 
-type Address implements Node @node @table @key(fields: "id", resolvable: false) {
+type Address implements Node @node @table @key(fields: "id", resolvable: true) {
     id: ID!
     addressLine1: String! @field(name: "ADDRESS_")
     addressLine2: String @field(name: "ADDRESS2")

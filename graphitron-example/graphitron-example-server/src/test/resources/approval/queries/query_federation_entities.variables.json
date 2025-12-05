@@ -18,5 +18,13 @@
         "id": "U3RhZmY6Mg=="
       }
     ]
+  },
+  {
+    "representations": [
+      {
+        "__typename": "Address",
+        "id": "QWRkcmVzczox"
+      }
+    ]
   }
 ]

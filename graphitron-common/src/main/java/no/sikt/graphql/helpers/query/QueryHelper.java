@@ -115,7 +115,7 @@ public class QueryHelper {
         if (row == null) {
             return null;
         }
-        return DSL.row(row).mapping(Map.class, r -> Map.of(label, row));
+        return DSL.row(row).mapping(Map.class, r -> Map.of(label, r));
     }
 
     public static SelectField<Map> objectRow(List<String> labels, List<Object> row) {
