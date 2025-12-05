@@ -242,7 +242,7 @@ input StaffInput {
     withAddressIdInCity300: Int @field(name: "ADDRESS_ID") @reference(path: [{key: "STAFF__STAFF_ADDRESS_ID_FKEY"}]) @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions"})
 }
 
-type Staff implements Node @node @table(name: "STAFF") {
+type Staff implements Node @node @table(name: "STAFF") @key(fields: "id", resolvable: true) {
     id: ID!
     email: String
     username: String

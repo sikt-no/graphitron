@@ -1,0 +1,9 @@
+query FederationEntities($representations: [_Any!]!) {
+    _entities(representations: $representations) {
+        ... on Staff {
+            id
+            email
+            username
+        }
+    }
+}

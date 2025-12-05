@@ -16,6 +16,8 @@ import no.sikt.graphitron.example.exceptionhandling.SchemaBasedErrorStrategyImpl
 import no.sikt.graphitron.example.generated.graphitron.exception.GeneratedExceptionStrategyConfiguration;
 import no.sikt.graphitron.example.generated.graphitron.exception.GeneratedExceptionToErrorMappingProvider;
 import no.sikt.graphitron.example.generated.graphitron.graphitron.Graphitron;
+import no.sikt.graphitron.example.generated.graphitron.resolvers.operations.QueryEntityGeneratedDataFetcher;
+import no.sikt.graphitron.example.generated.graphitron.resolvers.typeresolvers.EntityTypeResolver;
 import no.sikt.graphitron.servlet.GraphitronServlet;
 import no.sikt.graphql.DefaultGraphitronContext;
 import no.sikt.graphql.NodeIdStrategy;
@@ -67,6 +69,8 @@ public class GraphqlServlet extends GraphitronServlet {
         var schema = Federation
                 .transform(registry, newWiring.build())
                 .setFederation2(true)
+                .resolveEntityType(EntityTypeResolver.entityTypeResolver())
+                .fetchEntities(QueryEntityGeneratedDataFetcher.entityFetcher(nodeIdStrategy))
                 .build();
 
         schema = applyFeatureFlags(request, schema);
