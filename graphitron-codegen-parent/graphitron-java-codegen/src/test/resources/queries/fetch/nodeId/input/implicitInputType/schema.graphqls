@@ -3,5 +3,5 @@ type Query {
 }
 
 input CustomerFilter @table(name: "CUSTOMER") {
-    id: ID!
+    id: ID! @nodeId
 }

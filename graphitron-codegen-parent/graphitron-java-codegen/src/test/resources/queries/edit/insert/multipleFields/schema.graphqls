@@ -4,7 +4,7 @@ type Mutation {
 
 input CustomerInput @table(name: "CUSTOMER") {
     addressId: Int! @field(name: "ADDRESS_ID")
-    id: ID!
+    id: ID! @nodeId
     firstName: String! @field(name: "FIRST_NAME")
     lastName: String! @field(name: "LAST_NAME")
 }

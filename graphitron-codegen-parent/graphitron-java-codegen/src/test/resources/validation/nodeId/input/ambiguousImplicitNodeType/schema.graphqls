@@ -1,15 +1,11 @@
-type Query {
-    query(filter: [CustomerFilter]!): [Customer]
-}
-
 type Customer implements Node @node @table(name: "CUSTOMER") {
-    id: ID!
+    id: ID! @nodeId
 }
 
 type AnotherCustomer implements Node @node @table(name: "CUSTOMER") {
-    id: ID!
+    id: ID! @nodeId
 }
 
 input CustomerFilter @table(name: "CUSTOMER") {
-    id: ID!
+    id: ID! @nodeId
 }

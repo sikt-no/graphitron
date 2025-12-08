@@ -34,6 +34,33 @@ public class NodeIdOutputTest extends ValidationTest {
     }
 
     @Test
+    @DisplayName("Should log error when node ID field has ambiguous implicit node type")
+    void ambiguousNodeTypeForNodeId() {
+        assertErrorsContain("ambiguousNodeTypeForNodeId",
+                "Cannot automatically deduce node type for node ID field 'Customer.id'. " +
+                        "Please specify the node type with the typeName parameter in the nodeId directive."
+        );
+    }
+
+    @Test
+    @DisplayName("Should log error when reference node ID field has ambiguous implicit node type")
+    void ambiguousNodeTypeForReferenceNodeId() {
+        assertErrorsContain("ambiguousNodeTypeForReferenceNodeId",
+                "Cannot automatically deduce node type for node ID field 'Customer.addressId'. " +
+                        "Please specify the node type with the typeName parameter"
+        );
+    }
+
+    @Test
+    @DisplayName("Should log error when a node ID field without typeName is returned after a mutation.")
+    void typeNameOmittedOnMutationReturningNodeId() {
+        assertErrorsContain("typeNameOmittedOnMutationReturningNodeId",
+                "Cannot automatically deduce node type for node ID field 'Mutation.mutation'. " +
+                        "Please specify the node type with the typeName parameter in the nodeId directive."
+        );
+    }
+
+    @Test
     @DisplayName("@nodeId on non-ID/string field")
     void nonIdOrStringField() {
         assertErrorsContain(

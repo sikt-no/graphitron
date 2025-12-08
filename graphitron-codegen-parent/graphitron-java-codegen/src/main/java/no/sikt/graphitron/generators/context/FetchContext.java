@@ -379,16 +379,17 @@ public class FetchContext {
      */
     public JoinListSequence iterateJoinSequenceFor(GenerationField field) {
         var currentSequence = getCurrentJoinSequence();
-        List<FieldReference> fieldReferences;
+        List<FieldReference> fieldReferences = field.getFieldReferences();
 
-        if (field.hasNodeID() && !field.getNodeIdTypeName().equals(getReferenceObjectField().getTypeName())) {
-            // Add implicit table reference from typeName in @nodeId directive
-            fieldReferences = Stream.of(
-                            field.getFieldReferences(),
-                            List.of(new FieldReference(fromTable(processedSchema.getObject(field.getNodeIdTypeName()).getTable().getName()))))
-                    .flatMap(Collection::stream).toList();
-        } else {
-            fieldReferences = field.getFieldReferences();
+        if (field.hasNodeID()) {
+            var nodeType = processedSchema.getNodeTypeForNodeIdField(field);
+            if (!nodeType.getName().equals(getReferenceObjectField().getTypeName())) {
+                // Add implicit table reference from typeName in @nodeId directive
+                fieldReferences = Stream.of(
+                                field.getFieldReferences(),
+                                List.of(new FieldReference(fromTable(nodeType.getTable().getName()))))
+                        .flatMap(Collection::stream).toList();
+            }
         }
 
         if (fieldReferences.isEmpty()) {
