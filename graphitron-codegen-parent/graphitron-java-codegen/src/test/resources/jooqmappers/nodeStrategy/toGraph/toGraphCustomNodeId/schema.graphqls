@@ -3,5 +3,5 @@ type Query {
 }
 
 type CustomerNode implements Node @node(typeId: "C", keyColumns: ["CUSTOMER_ID"]) @table(name: "CUSTOMER") {
-    id: ID!
+    id: ID! @nodeId
 }

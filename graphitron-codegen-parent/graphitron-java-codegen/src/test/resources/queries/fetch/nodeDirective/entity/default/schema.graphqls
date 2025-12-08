@@ -1,5 +1,5 @@
 union _Entity = Customer
 
 type Customer implements Node @node @table @key(fields: "id") {
-  id: ID
+  id: ID! @nodeId
 }

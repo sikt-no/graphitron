@@ -51,6 +51,11 @@ public class OrderByEnumField extends AbstractField<EnumValueDefinition> {
     }
 
     @Override
+    public boolean hasNodeIdTypeName() {
+        return false;
+    }
+
+    @Override
     public String getNodeIdTypeName() {
         return null;
     }

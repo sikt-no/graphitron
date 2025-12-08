@@ -42,6 +42,10 @@ public class OperationField implements FieldSpecification {
         return false;
     }
 
+    public boolean hasNodeIdTypeName() {
+        return false;
+    }
+
     public String getNodeIdTypeName() {
         return null;
     }
