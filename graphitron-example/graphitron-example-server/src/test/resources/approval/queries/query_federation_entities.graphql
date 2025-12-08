@@ -5,5 +5,14 @@ query FederationEntities($representations: [_Any!]!) {
             email
             username
         }
+        ... on Address {
+            id
+            addressLine1
+            phone
+            zip
+            stores {
+                id
+            }
+        }
     }
 }

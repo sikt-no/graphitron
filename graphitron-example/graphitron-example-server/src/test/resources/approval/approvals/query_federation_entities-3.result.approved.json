@@ -1,0 +1,17 @@
+{
+    "data": {
+        "_entities": [
+            {
+                "id": "QWRkcmVzczox",
+                "addressLine1": "47 MySakila Drive",
+                "phone": " ",
+                "zip": null,
+                "stores": [
+                    {
+                        "id": "U3RvcmU6MQ"
+                    }
+                ]
+            }
+        ]
+    }
+}
