@@ -27,6 +27,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
+import org.jooq.impl.DefaultConfiguration;
 
 import java.io.Serial;
 import java.util.Arrays;
@@ -108,7 +109,11 @@ public class GraphqlServlet extends GraphitronServlet {
 
     @Override
     protected ExecutionInput buildExecutionInput(ExecutionInput.Builder builder) {
-        DSLContext ctx = DSL.using(dataSource, SQLDialect.POSTGRES);
+        var config = new DefaultConfiguration();
+        config.set(SQLDialect.POSTGRES);
+        config.set(dataSource);
+        QueryCapturingExecuteListener.getInstanceIfEnabled().ifPresent(config::set);
+        DSLContext ctx = DSL.using(config);
         return builder.graphQLContext(Map.of("graphitronContext", new DefaultGraphitronContext(ctx))).build();
     }
 }
