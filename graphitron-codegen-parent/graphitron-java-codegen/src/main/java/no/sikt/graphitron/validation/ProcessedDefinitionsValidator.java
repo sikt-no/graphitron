@@ -123,6 +123,7 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateNodeDirective() {
+        var typeIdMap = new HashMap<String, Set<String>>();
         schema.getObjects().values().stream()
                 .filter(ObjectDefinition::hasNodeDirective)
                 .forEach(objectDefinition -> {
@@ -155,7 +156,18 @@ public class ProcessedDefinitionsValidator {
                         addErrorMessage("Type '%s' has the '%s' directive, but is missing the '%s' parameter which has been configured to be required.",
                                 objectDefinition.getName(), NODE.getName(), TYPE_ID.getName());
                     }
+                    typeIdMap.computeIfAbsent(objectDefinition.getTypeId(), k -> new HashSet<>())
+                            .add(objectDefinition.getName());
                 });
+
+        typeIdMap.entrySet().stream()
+                .filter(it -> it.getValue().size() > 1)
+                .forEach((entry) ->
+                        addErrorMessage(
+                                "Multiple node types (%s) have the same node type ID '%s'. Type IDs must be unique.",
+                                String.join(", ", entry.getValue()),
+                                entry.getKey())
+                );
     }
 
     private Optional<? extends UniqueKey<?>> getPrimaryOrUniqueKeyMatchingIdFields(ObjectDefinition target) {
