@@ -838,7 +838,7 @@ public class ProcessedSchema {
      * @return Whether a field is a node ID field using NodeIdStrategy
      */
     public boolean isNodeIdField(GenerationField field) {
-        return GeneratorConfig.shouldMakeNodeStrategy() && (field.hasNodeID() || isImplicitNodeIdField(field));
+        return GeneratorConfig.shouldMakeNodeStrategy() && field.hasNodeID();
     }
 
     public boolean isNodeIdReferenceField(GenerationField field) {
@@ -877,38 +877,30 @@ public class ProcessedSchema {
     }
 
     /**
-     * @param field the {@link GenerationField} to check
-     * @return Whether a field implicitly is a node ID field using NodeIdStrategy
+     * @param field the {@link GenerationField} to resolve the node type for
+     * @return the corresponding {@link RecordObjectSpecification}, or {@code null} if not found
      */
-    private boolean isImplicitNodeIdField(GenerationField field) {
-        return field.isID()
-                && !field.hasNodeID() // Because we're not interested in explicit node ID here
-                && field.getName().equals(NODE_ID.getName())
-                && (isNodeType(field.getContainerTypeName()) || getImplicitNodeTypeForField(field).isPresent());
-    }
+    public ObjectDefinition getNodeTypeForNodeIdField(GenerationField field) {
+        if (!field.hasNodeID()) return null;
 
-    /**
-     * @param field the {@link GenerationField} for which to find the implicit node type
-     * @return the matching {@link RecordObjectSpecification}, or {@code null} if none found
-     */
-    private Optional<ObjectDefinition> getImplicitNodeTypeForField(GenerationField field) {
+        if (field.hasNodeIdTypeName()) {
+            return getNodeType(field.getNodeIdTypeName());
+        }
+
+        // Object field with implicit typeName
+        if (field instanceof ObjectField) {
+            return getNodeType(field.getContainerTypeName());
+        }
+
+        // Input field with implicit typeName
         var types = Optional.ofNullable(getRecordType(field.getContainerTypeName()))
                 .map(RecordObjectSpecification::getTable)
                 .map(this::getNodeTypesWithTable)
                 .orElse(List.of());
         if (types.size() != 1) {
-            return Optional.empty();
+            return null;
         }
-        return types.stream().findFirst();
-    }
-
-    /**
-     * @param field the {@link GenerationField} to resolve the node type for
-     * @return the corresponding {@link RecordObjectSpecification}, or {@code null} if not found
-     */
-    public ObjectDefinition getNodeTypeForNodeIdField(GenerationField field) {
-        return field.hasNodeID() ? getNodeType(field.getNodeIdTypeName())
-                : getImplicitNodeTypeForField(field).orElse(null);
+        return types.get(0);
     }
 
     /**

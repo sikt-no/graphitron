@@ -24,6 +24,11 @@ public interface FieldSpecification {
     String getNodeIdTypeName();
 
     /**
+     * @return Does this field have the @nodeId directive with the typeName parameter set?
+     */
+    boolean hasNodeIdTypeName();
+
+    /**
      * @return The name of the object as specified in the schema.
      */
     String getName();

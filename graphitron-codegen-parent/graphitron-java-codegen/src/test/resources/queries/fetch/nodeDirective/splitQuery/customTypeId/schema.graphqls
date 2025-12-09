@@ -3,5 +3,5 @@ type Address implements Node @node(typeId: "A") @table {
 }
 
 type Customer implements Node @node(typeId: "C") @table {
-  id: ID!
+  id: ID! @nodeId
 }

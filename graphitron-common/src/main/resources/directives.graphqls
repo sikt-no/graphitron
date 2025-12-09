@@ -195,9 +195,13 @@ If used as a reference in jOOQ record input types, the primary or unique key the
 """
 directive @nodeId(
   """
-  Name of the type the ID belongs to. The type must have the @node-directive set. This is case sensitive.
+  Name of the type the ID belongs to (case-sensitive). The type must have the @node directive set.
+
+  This parameter is optional - if omitted, Graphitron will deduce the node type as follows:
+  * For object fields without the @reference directive, uses the containing type (if it is a node type)
+  * For fields with the @reference directive or jOOQ record input fields, uses the node type with the same table (if unambiguous)
   """
-  typeName: String!
+  typeName: String
 ) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
 
 

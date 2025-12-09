@@ -1,0 +1,12 @@
+type Customer @table(name: "CUSTOMER") {
+    addressId: ID! @nodeId @reference(path: [{table: "ADDRESS"}])
+}
+
+
+type A implements Node @node @table(name: "ADDRESS") {
+    id: ID! @nodeId
+}
+
+type B implements Node @node @table(name: "ADDRESS") {
+    id: ID! @nodeId
+}

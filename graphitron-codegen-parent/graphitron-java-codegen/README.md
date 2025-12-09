@@ -1474,7 +1474,7 @@ The **node** directive supports two parameters for ID configuration:
 Given this schema:
 ```graphql
 type Customer implements Node @node @table {
-  id: ID!
+  id: ID! @nodeId
 }
 ```
 Graphitron passes the default arguments to the _createId_ method in your node strategy:
@@ -1486,7 +1486,7 @@ nodeIdStrategy.createId("Customer", CUSTOMER.getPrimaryKey().getFieldsArray())
 And with a custom configuration like this:
 ```graphql
 type Customer implements Node @node(typeId: "C", keyColumns: ["CUSTOMER_ID"]) @table {
-  id: ID!
+  id: ID! @nodeId
 }
 ```
 
@@ -1499,39 +1499,33 @@ nodeIdStrategy.createId("C", CUSTOMER.CUSTOMER_ID)
 ### nodeId directive
 > **Note:** This directive is not currently supported when combined with [services](#services).
 
-The **nodeId** directive can be placed on fields and arguments to indicate that they represent globally unique IDs, according to your node ID strategy. 
-This directive requires one parameter:
+The **nodeId** directive must be placed on all node ID fields to indicate that they represent globally unique IDs, according to your node ID strategy.
 
-- `typeName` — The name of the globally identifiable type the ID refers to.
-  - This type must have the [**node**](#node-directive) directive.
+The directive accepts one parameter:
 
-For types with the **node** directive, the _id_ field implicitly has **nodeId**, so you do not need to add it. The following schemas are equivalent:
+- `typeName` — The name of the node type the ID refers to.
+  - The type name is case-sensitive.
+  - The provided type must have the [**node**](#node-directive) directive.
 
-```graphql
-type Customer implements Node @node @table {
-  id: ID!
-}
-```
-```graphql
-type Customer implements Node @node @table {
-  id: ID! @nodeId(typeName: "Customer")
-}
-```
+#### Implicit typeName
+The typeName parameter of the nodeId directive is optional. If omitted, Graphitron will try to deduce the node type like this:
+  - For object fields without the **reference** directive: uses the containing type (if it is a node type)
+  - For fields with the **reference** directive or jOOQ record input fields: uses the node type with the same table (if unambiguous)
 
 #### Referencing another type's ID
-It is possible to reference another type's node ID. This is done by combining the **nodeId** directive with the [reference](#reference-directive) directive.
-Additionally, the _typeName_ may also imply a reference to another table when it doesn't match the field's containing type.
+It is possible to reference another type's node ID by specifying the `typeName` parameter.
+The _typeName_ implies a reference to another table, so this is often combined with the [reference](#reference-directive) directive.
 
-For example, if you have a `Customer` type that has a field referring to an `Address` ID, you can use the following schema:
+For example, if you have a `Customer` type that has a field referring to an `Address` ID:
 
 ```graphql
 type Customer implements Node @node @table {
-  id: ID!
+  id: ID! @nodeId
   addressId: ID @nodeId(typeName: "Address") # Implicit reference to the 'ADDRESS' table
 }
 
 type Address implements Node @node @table {
-  id: ID!
+  id: ID! @nodeId
 }
 ```
 
