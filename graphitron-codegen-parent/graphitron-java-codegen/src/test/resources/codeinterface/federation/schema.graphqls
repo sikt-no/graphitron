@@ -1,0 +1,5 @@
+union _Entity = Customer
+
+type Customer @table @key(fields: "id", resolvable: true) {
+  id: ID
+}

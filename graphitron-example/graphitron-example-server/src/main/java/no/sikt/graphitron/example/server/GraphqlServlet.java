@@ -1,6 +1,5 @@
 package no.sikt.graphitron.example.server;
 
-import com.apollographql.federation.graphqljava.Federation;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.execution.ExecutionStrategy;
@@ -16,8 +15,6 @@ import no.sikt.graphitron.example.exceptionhandling.SchemaBasedErrorStrategyImpl
 import no.sikt.graphitron.example.generated.graphitron.exception.GeneratedExceptionStrategyConfiguration;
 import no.sikt.graphitron.example.generated.graphitron.exception.GeneratedExceptionToErrorMappingProvider;
 import no.sikt.graphitron.example.generated.graphitron.graphitron.Graphitron;
-import no.sikt.graphitron.example.generated.graphitron.resolvers.operations.QueryEntityGeneratedDataFetcher;
-import no.sikt.graphitron.example.generated.graphitron.resolvers.typeresolvers.EntityTypeResolver;
 import no.sikt.graphitron.servlet.GraphitronServlet;
 import no.sikt.graphql.DefaultGraphitronContext;
 import no.sikt.graphql.NodeIdStrategy;
@@ -67,12 +64,7 @@ public class GraphqlServlet extends GraphitronServlet {
                 TypeRuntimeWiring.newTypeWiring("City")
                         .dataFetcher("addressExample", QueryDataFetcher.addressExample())
         );
-        var schema = Federation
-                .transform(registry, newWiring.build())
-                .setFederation2(true)
-                .resolveEntityType(EntityTypeResolver.entityTypeResolver())
-                .fetchEntities(QueryEntityGeneratedDataFetcher.entityFetcher(nodeIdStrategy))
-                .build();
+        var schema = Graphitron.getFederatedSchema(registry, newWiring, nodeIdStrategy);
 
         schema = applyFeatureFlags(request, schema);
 

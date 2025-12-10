@@ -106,7 +106,8 @@ public enum JavaPoetClassName {
     SELECT_FIELD(SelectField.class),
     SELECT_SELECT_STEP(SelectSelectStep.class),
     INT_STREAM(IntStream.class),
-    CONNECTION_IMPL(ConnectionImpl.class);
+    CONNECTION_IMPL(ConnectionImpl.class),
+    FEDERATION_HELPER(no.sikt.graphql.schema.FederationHelper.class);
 
     public final ClassName className;
 

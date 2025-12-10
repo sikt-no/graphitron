@@ -1,5 +1,6 @@
 package no.sikt.graphql.schema;
 
+import com.apollographql.federation.graphqljava.directives.LinkDirectiveProcessor;
 import graphql.language.*;
 import graphql.language.SchemaDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
@@ -55,6 +56,7 @@ public class ProcessedSchema {
     private final List<GenerationField> transformableFields;
     private final List<ObjectDefinition> unreferencedObjects;
     private final boolean nodeExists;
+    private final boolean federationIsImported;
 
     // Graphitron-provided special inputs. Should be excluded from certain operations.
     private final Set<String> specialInputs = Set.of("ExternalCodeReference", "ReferenceElement", "ErrorHandler", "ReferencesForType");
@@ -163,6 +165,8 @@ public class ProcessedSchema {
         interfaces.values().forEach(this::buildPreviousTableMap);
 
         transformableFields = findTransformableFields();
+
+        federationIsImported = LinkDirectiveProcessor.loadFederationImportedDefinitions(typeRegistry) != null;
     }
 
     private SchemaDefinition createSchemaDefinition() {
@@ -1311,5 +1315,9 @@ public class ProcessedSchema {
         );
 
         return array;
+    }
+
+    public boolean isFederationImported() {
+        return federationIsImported;
     }
 }
