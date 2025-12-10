@@ -1,3 +1,7 @@
+extend schema
+@link(url: "https://specs.apollo.dev/federation/v2.4",
+    import: ["@key"])
+
 scalar _Any
 scalar FieldSet
 
