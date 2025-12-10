@@ -3,6 +3,8 @@ package no.fellesstudentsystem.schema_transformer;
 import com.apollographql.federation.graphqljava.Federation;
 import com.apollographql.federation.graphqljava.directives.LinkDirectiveProcessor;
 import graphql.language.ScalarTypeDefinition;
+import graphql.language.TypeName;
+import graphql.language.UnionTypeDefinition;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLType;
 import graphql.schema.idl.*;
@@ -45,6 +47,11 @@ public class SchemaTransformer {
         if (config.expandConnections()) {
             transforms.add(MakeConnections::transform);
         }
+
+        if (config.addKeyDirectiveToNodes()) {
+            transforms.add(AddKeyDirectives::transform);
+        }
+
         return transforms;
     }
 
@@ -103,11 +110,16 @@ public class SchemaTransformer {
             });
         });
 
-        if (federationIsImported(typeDefinitionRegistry)) {
+        if (federationIsImported(typeDefinitionRegistry) && !federationAlreadyAssembled(typeDefinitionRegistry)) {
             return assembleSchemaWithFederation(typeDefinitionRegistry, runtimeWiring);
         } else {
             return new SchemaGenerator().makeExecutableSchema(typeDefinitionRegistry, runtimeWiring);
         }
+    }
+
+    private static boolean federationAlreadyAssembled(TypeDefinitionRegistry typeDefinitionRegistry) {
+        var _entity = typeDefinitionRegistry.getType("_Entity", UnionTypeDefinition.class);
+        return _entity.isPresent();
     }
 
     private static boolean federationIsImported(TypeDefinitionRegistry typeDefinitionRegistry) {
