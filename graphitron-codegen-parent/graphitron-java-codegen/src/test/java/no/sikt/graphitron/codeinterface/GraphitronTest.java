@@ -98,4 +98,56 @@ public class GraphitronTest extends GeneratorTest {
                 "FederationHelper"
         );
     }
+
+    @Test
+    @DisplayName("Simple getSchema overload with includeFederation parameter is generated when federation is imported")
+    void getSchemaWithIncludeFederationParameter() {
+        assertGeneratedContentContains(
+                "federation", Set.of(FEDERATION_QUERY),
+                "getSchema(boolean includeFederation)",
+                """
+                public static GraphQLSchema getSchema(boolean includeFederation) {
+                    if (!includeFederation) {
+                        return getSchema();
+                    }
+                    var wiring = getRuntimeWiringBuilder();
+                    var registry = getTypeRegistry();
+                    return getFederatedSchema(registry, wiring);
+                }
+                """
+        );
+    }
+
+    @Test
+    @DisplayName("Simple getSchema overload with includeFederation parameter includes NodeIdStrategy when Node is enabled")
+    void getSchemaWithIncludeFederationAndNodeStrategy() {
+        try {
+            GeneratorConfig.setNodeStrategy(true);
+            assertGeneratedContentContains(
+                    "federation", Set.of(FEDERATION_QUERY, NODE),
+                    "getSchema(NodeIdStrategy _iv_nodeIdStrategy, boolean includeFederation)",
+                    """
+                    public static GraphQLSchema getSchema(NodeIdStrategy _iv_nodeIdStrategy, boolean includeFederation) {
+                        if (!includeFederation) {
+                            return getSchema(_iv_nodeIdStrategy);
+                        }
+                        var wiring = getRuntimeWiringBuilder(_iv_nodeIdStrategy);
+                        var registry = getTypeRegistry();
+                        return getFederatedSchema(registry, wiring, _iv_nodeIdStrategy);
+                    }
+                    """
+            );
+        } finally {
+            GeneratorConfig.setNodeStrategy(false);
+        }
+    }
+
+    @Test
+    @DisplayName("Simple getSchema overload is NOT generated when federation is not imported")
+    void noGetSchemaOverloadWithoutFederation() {
+        resultDoesNotContain(
+                "default",
+                "includeFederation"
+        );
+    }
 }
