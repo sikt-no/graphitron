@@ -30,7 +30,8 @@ public class CodeInterfaceClassGenerator extends AbstractClassGenerator {
         generators.add(new WiringMethodGenerator(processedSchema));
         generators.add(new CodeInterfaceSchemaMethodGenerator(includeNode));
         if (processedSchema.isFederationImported()) {
-            generators.add(new CodeInterfaceFederatedSchemaMethodGenerator(processedSchema));
+            generators.add(new CodeInterfaceGetFederatedSchemaMethodGenerator(processedSchema));
+            generators.add(new CodeInterfaceSchemaWithFederationMethodGenerator(processedSchema));
         }
         return List.of(getSpec(CLASS_NAME, generators).build());
     }

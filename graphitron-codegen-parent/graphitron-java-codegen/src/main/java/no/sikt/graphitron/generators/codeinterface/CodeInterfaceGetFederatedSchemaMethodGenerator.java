@@ -5,6 +5,7 @@ import no.sikt.graphitron.generators.abstractions.SimpleMethodGenerator;
 import no.sikt.graphitron.generators.datafetchers.operations.EntityFetcherClassGenerator;
 import no.sikt.graphitron.generators.datafetchers.operations.EntityFetcherMethodGenerator;
 import no.sikt.graphitron.generators.datafetchers.typeresolvers.TypeResolverClassGenerator;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -16,28 +17,35 @@ import static no.sikt.graphitron.generators.abstractions.DataFetcherClassGenerat
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asTypeResolverMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_HANDLER;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_STRATEGY;
 import static no.sikt.graphitron.javapoet.CodeBlock.empty;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITY_UNION;
 
 /**
- * Generates a method for building a Federation 2 compatible GraphQL schema.
+ * Generates the {@code getFederatedSchema(registry, wiringBuilder, ...)} method for building
+ * a Federation 2 compatible GraphQL schema.
  * <p>
- * When the schema has resolvable entities (hasEntitiesField), generates a method with
- * entity type resolver and entity fetcher parameters.
- * <p>
- * When federation is imported but no entities exist, generates a simpler method
- * without entity resolution support.
+ * This provides a flexible API for consumers who need custom type registry and wiring configuration.
+ * When the schema has resolvable entities, the method includes entity type resolver and entity fetcher parameters.
  */
-public class CodeInterfaceFederatedSchemaMethodGenerator extends SimpleMethodGenerator {
+public class CodeInterfaceGetFederatedSchemaMethodGenerator extends SimpleMethodGenerator {
     public static final String METHOD_NAME = "getFederatedSchema";
     private static final String VAR_REGISTRY = "registry", VAR_WIRING_BUILDER = "wiringBuilder";
 
     private final ProcessedSchema processedSchema;
+    private final boolean hasEntities;
+    private final boolean useNodeStrategy;
+    private final String nodeParam;
+    private final ClassName nodeParamClass;
 
-    public CodeInterfaceFederatedSchemaMethodGenerator(ProcessedSchema processedSchema) {
+    public CodeInterfaceGetFederatedSchemaMethodGenerator(ProcessedSchema processedSchema) {
         this.processedSchema = processedSchema;
+        this.hasEntities = processedSchema.hasEntitiesField();
+        this.useNodeStrategy = GeneratorConfig.shouldMakeNodeStrategy();
+        this.nodeParam = useNodeStrategy ? VAR_NODE_STRATEGY : VAR_NODE_HANDLER;
+        this.nodeParamClass = useNodeStrategy ? NODE_ID_STRATEGY.className : NODE_ID_HANDLER.className;
     }
 
     @Override
@@ -48,8 +56,8 @@ public class CodeInterfaceFederatedSchemaMethodGenerator extends SimpleMethodGen
                 .addParameter(TYPE_DEFINITION_REGISTRY.className, VAR_REGISTRY)
                 .addParameter(RUNTIME_WIRING_BUILDER.className, VAR_WIRING_BUILDER);
 
-        if (processedSchema.hasEntitiesField()) {
-            spec.addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY);
+        if (hasEntities) {
+            spec.addParameterIf(useNodeStrategy, nodeParamClass, nodeParam);
             spec.addCode(returnWrap(buildFederatedSchemaWithEntities()));
         } else {
             spec.addCode(returnWrap(buildFederatedSchemaSimple()));
@@ -80,7 +88,7 @@ public class CodeInterfaceFederatedSchemaMethodGenerator extends SimpleMethodGen
         var typeResolverMethodName = asTypeResolverMethodName(FEDERATION_ENTITY_UNION.getName());
 
         var entityFetcherCall = CodeBlock.of("$T.$L($L)", entityFetcherClassName, EntityFetcherMethodGenerator.METHOD_NAME,
-                GeneratorConfig.shouldMakeNodeStrategy() ? VAR_NODE_STRATEGY : empty());
+                useNodeStrategy ? nodeParam : empty());
 
         return CodeBlock.of(
                 "$T.buildFederatedSchema($N, $N, $T.$L(), $L)",
