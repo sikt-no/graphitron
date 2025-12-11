@@ -1,0 +1,11 @@
+extend schema
+@link(url: "https://specs.apollo.dev/federation/v2.4",
+    import: ["@shareable"])
+
+type Query {
+  customer: Customer
+}
+
+type Customer @table {
+  id: ID
+}
