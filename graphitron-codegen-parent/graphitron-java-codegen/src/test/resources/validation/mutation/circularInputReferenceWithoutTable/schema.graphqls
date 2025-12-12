@@ -1,0 +1,11 @@
+type Mutation {
+  createSomething(input: InputA): String
+}
+
+input InputA {
+  nested: InputB
+}
+
+input InputB {
+  back: InputA
+}

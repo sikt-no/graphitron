@@ -1,0 +1,7 @@
+type Mutation {
+  createSomething(input: InputA): String
+}
+
+input InputA {
+  self: InputA
+}
