@@ -220,4 +220,11 @@ public class QueryTest extends ValidationTest {
     void errorUnionWithOneSubtype() {
         getProcessedSchema("errorUnionWithOneSubtype", Set.of(ERROR));
     }
+
+    @Test
+    @DisplayName("Circular reference between wrapper types without @table should report the cycle")
+    void circularReferenceWithoutTable() {
+        assertErrorsContain("circularReferenceWithoutTable",
+                "Circular reference detected without @table directive: WrapperA -> WrapperB -> WrapperA. Add a @table directive to one of these types to break the cycle.");
+    }
 }

@@ -527,18 +527,18 @@ public class ProcessedDefinitionsValidator {
     private HashMap<String, HashSet<String>> getUsedTablesWithRequiredMethods() {
         var tableMethodsRequired = new HashMap<String, HashSet<String>>();
         schema.getObjects().values().stream().filter(it -> it.hasTable() || it.isOperationRoot()).forEach(object -> {
-            var flattenedFields = flattenObjectFields(object.isOperationRoot() ? null : object.getTable().getMappingName(), object.getFields());
+            var flattenedFields = flattenObjectFields(object.isOperationRoot() ? null : object.getTable().getMappingName(), object.getFields(), new LinkedHashSet<>());
             unpackReferences(flattenedFields).forEach((key, value) -> tableMethodsRequired.computeIfAbsent(key, k -> new HashSet<>()).addAll(value));
         });
         schema.getInputTypes().values().stream().filter(RecordObjectDefinition::hasTable).forEach(input -> {
-            var flattenedFields = flattenInputFields(input.getTable().getMappingName(), input.getFields(), false);
+            var flattenedFields = flattenInputFields(input.getTable().getMappingName(), input.getFields(), false, new LinkedHashSet<>());
 
             unpackReferences(flattenedFields).forEach((key, value) -> tableMethodsRequired.computeIfAbsent(key, k -> new HashSet<>()).addAll(value));
         });
         return tableMethodsRequired;
     }
 
-    private Map<String, ArrayList<FieldWithOverrideStatus>> flattenObjectFields(String lastTable, Collection<ObjectField> fields) {
+    private Map<String, ArrayList<FieldWithOverrideStatus>> flattenObjectFields(String lastTable, Collection<ObjectField> fields, Set<String> visitedTypes) {
         var flatFields = new HashMap<String, ArrayList<FieldWithOverrideStatus>>();
         var lastTableIsNonNull = lastTable != null;
         for (var field : fields) {
@@ -548,14 +548,21 @@ public class ProcessedDefinitionsValidator {
                         : (schema.hasTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : null);
                 var object = schema.getObjectOrConnectionNode(field);
                 if (!object.hasTable()) {
-                    flattenObjectFields(table, object.getFields()).forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
+                    var typeName = object.getName();
+                    if (hasCircularReference(typeName, visitedTypes)) {
+                        continue;
+                    }
+                    // Copy to avoid accumulating types across sibling fields
+                    var newVisited = new LinkedHashSet<>(visitedTypes);
+                    newVisited.add(typeName);
+                    flattenObjectFields(table, object.getFields(), newVisited).forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
                 }
             }
 
             var hasCondition = field.hasOverridingCondition();
             if (field.hasNonReservedInputFields() && field.isGeneratedWithResolver()) {
                 var targetTable = schema.hasTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable;
-                flattenInputFields(targetTable, field.getNonReservedArguments(), field.hasOverridingCondition())
+                flattenInputFields(targetTable, field.getNonReservedArguments(), field.hasOverridingCondition(), new HashSet<>())
                         .forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
             }
 
@@ -566,14 +573,21 @@ public class ProcessedDefinitionsValidator {
         return flatFields;
     }
 
-    private Map<String, ArrayList<FieldWithOverrideStatus>> flattenInputFields(String lastTable, Collection<? extends InputField> fields, boolean hasOverridingCondition) {
+    private Map<String, ArrayList<FieldWithOverrideStatus>> flattenInputFields(String lastTable, Collection<? extends InputField> fields, boolean hasOverridingCondition, Set<String> visitedTypes) {
         var flatFields = new HashMap<String, ArrayList<FieldWithOverrideStatus>>();
         for (var field : fields) {
             var hasCondition = hasOverridingCondition || field.hasOverridingCondition();
             if (schema.isInputType(field)) {
                 var object = schema.getInputType(field);
                 if (!object.hasTable()) {
-                    flattenInputFields(lastTable, object.getFields(), hasCondition)
+                    var typeName = object.getName();
+                    if (hasCircularReference(typeName, visitedTypes)) {
+                        continue;
+                    }
+                    // Copy to avoid accumulating types across sibling fields
+                    var newVisited = new LinkedHashSet<>(visitedTypes);
+                    newVisited.add(typeName);
+                    flattenInputFields(lastTable, object.getFields(), hasCondition, newVisited)
                             .forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
                 }
             } else if (field.isGenerated() && !ObjectField.RESERVED_PAGINATION_NAMES.contains(field.getName())) {
@@ -581,6 +595,15 @@ public class ProcessedDefinitionsValidator {
             }
         }
         return flatFields;
+    }
+
+    private boolean hasCircularReference(String typeName, Set<String> visitedTypes) {
+        if (visitedTypes.contains(typeName)) {
+            addErrorMessage("Circular reference detected without @table directive: %s. Add a @table directive to one of these types to break the cycle.",
+                    String.join(" -> ", visitedTypes) + " -> " + typeName);
+            return true;
+        }
+        return false;
     }
 
     private HashMap<String, HashSet<String>> unpackReferences(Map<String, ArrayList<FieldWithOverrideStatus>> flattenedFields) {
