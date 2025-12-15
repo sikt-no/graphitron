@@ -165,7 +165,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     public boolean invokesSubquery() {
         return !isResolver && (
                 hasFieldReferences()
-                        || (hasNodeID() && getNodeIdTypeName() != null && !getNodeIdTypeName().equals(getContainerTypeName()))
+                        || (hasNodeID() && getNodeIdTypeName().isPresent() && !getNodeIdTypeName().get().equals(getContainerTypeName()))
                         || isIterableWrapped()
         );
     }
@@ -266,15 +266,11 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return hasNodeID;
     }
 
-    public boolean hasNodeIdTypeName() {
-        return hasNodeID() && nodeIdTypeName != null;
-    }
-
     /**
      * @return The type name configured in the @nodeId directive
      */
-    public String getNodeIdTypeName() {
-        return nodeIdTypeName;
+    public Optional<String> getNodeIdTypeName() {
+        return Optional.ofNullable(nodeIdTypeName);
     }
 
     public boolean hasTableMethodDirective() {

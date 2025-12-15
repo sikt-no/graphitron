@@ -114,7 +114,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
         for (var inputSetValue : setValues) {
             var inputField = inputSetValue.getInput();
             if (processedSchema.isNodeIdField(inputField)) {
-                var nodeType = processedSchema.getNodeTypeForNodeIdField(inputField);
+                var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(inputField);
                 var keyColumns = processedSchema.getKeyColumnsForNodeType(nodeType).orElseThrow();
 
                 if (!nodeType.getTable().getName().equalsIgnoreCase(targetTable) || inputField.hasFieldReferences()) {

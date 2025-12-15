@@ -568,7 +568,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         if (processedSchema.isNodeIdField(field)) {
             return createNodeIdBlock(
-                    field.hasNodeID() ? processedSchema.getNodeTypeForNodeIdField(field) : context.getReferenceObject(),
+                    processedSchema.isNodeIdField(field) ? processedSchema.getNodeTypeForNodeIdFieldOrThrow(field) : context.getReferenceObject(),
                     context.getTargetAlias()
             );
         }
@@ -778,7 +778,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (processedSchema.isNodeIdField(field)) {
             return hasIdOrIdsBlock(
                     name,
-                    processedSchema.getNodeTypeForNodeIdField(field),
+                    processedSchema.getNodeTypeForNodeIdFieldOrThrow(field),
                     renderedSequence.toString(),
                     getSourceFieldsForForeignKey(field, processedSchema, renderedSequence),
                     field.isIterableWrapped()
@@ -918,7 +918,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     ? CodeBlock.of("$L$L", getElement, field.getMappingForRecordFieldOverride().asGetCall())
                     : getElement;
             var referenceObject = processedSchema.hasJOOQRecord(field.getContainerTypeName())
-                    ? processedSchema.getNodeTypeForNodeIdField(field)
+                    ? processedSchema.getNodeTypeForNodeIdFieldOrThrow(field)
                     : context.getReferenceObject();
             return hasIdBlock(getElement, referenceObject, context.getTargetAlias());
         }

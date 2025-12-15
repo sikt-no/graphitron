@@ -847,7 +847,7 @@ public class ProcessedSchema {
                 return false;
             }
 
-            return field.hasFieldReferences() || Optional.ofNullable(getNodeTypeForNodeIdField(field)).map(n -> !n.getName().equals(field.getContainerTypeName())).orElse(false);
+            return field.hasFieldReferences() || !getNodeTypeForNodeIdFieldOrThrow(field).getName().equals(field.getContainerTypeName());
         }
         return false;
     }
@@ -871,7 +871,7 @@ public class ProcessedSchema {
                 : Optional.ofNullable(getPreviousTableObjectForObject(containerType)).map(RecordObjectSpecification::getTable);
 
 
-        var nodeObject = Optional.ofNullable(getObject(field.getNodeIdTypeName()));
+        var nodeObject = getNodeTypeForNodeIdField(field);
         return nodeObject.isPresent() && localTable.filter(t -> nodeObject.get().getTable().equals(t)).isPresent();
 
     }
@@ -880,16 +880,16 @@ public class ProcessedSchema {
      * @param field the {@link GenerationField} to resolve the node type for
      * @return the corresponding {@link RecordObjectSpecification}, or {@code null} if not found
      */
-    public ObjectDefinition getNodeTypeForNodeIdField(GenerationField field) {
-        if (!field.hasNodeID()) return null;
+    public Optional<ObjectDefinition> getNodeTypeForNodeIdField(GenerationField field) {
+        if (!field.hasNodeID()) return Optional.empty();
 
-        if (field.hasNodeIdTypeName()) {
-            return getNodeType(field.getNodeIdTypeName());
+        if (field.getNodeIdTypeName().isPresent()) {
+            return Optional.ofNullable(getNodeType(field.getNodeIdTypeName().get()));
         }
 
         // Object field with implicit typeName
         if (field instanceof ObjectField) {
-            return getNodeType(field.getContainerTypeName());
+            return Optional.ofNullable(getNodeType(field.getContainerTypeName()));
         }
 
         // Input field with implicit typeName
@@ -898,9 +898,18 @@ public class ProcessedSchema {
                 .map(this::getNodeTypesWithTable)
                 .orElse(List.of());
         if (types.size() != 1) {
-            return null;
+            return Optional.empty();
         }
-        return types.get(0);
+        return types.stream().findFirst();
+    }
+
+    /**
+     * Finds node type for a node ID field. If not found an error is thrown.
+     * @param field The {@link GenerationField} to resolve the node type for. The field must be a node ID field.
+     * @return the corresponding {@link RecordObjectSpecification}
+     */
+    public ObjectDefinition getNodeTypeForNodeIdFieldOrThrow(GenerationField field) {
+        return getNodeTypeForNodeIdField(field).orElseThrow(() -> new RuntimeException("Cannot find node type for node ID field " + field.formatPath()));
     }
 
     /**

@@ -163,8 +163,8 @@ public class LookupHelpers {
 
     private static @NotNull CodeBlock getKeyFieldBlock(ProcessedSchema schema, CodeBlock table, InputField it) {
         if (it.isID()) {
-            return GeneratorConfig.shouldMakeNodeStrategy()
-                    ? createNodeIdBlock(schema.getObject(it.getNodeIdTypeName()), table.toString())
+            return schema.isNodeIdField(it)
+                    ? createNodeIdBlock(schema.getNodeTypeForNodeIdFieldOrThrow(it), table.toString())
                     : CodeBlock.of("$L$L", table, it.getMappingFromFieldOverride().asGetCall());
         }
         var fieldBlock =  CodeBlock.of("$L.$L", table, it.getUpperCaseName());

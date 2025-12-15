@@ -26,14 +26,4 @@ public class EnumField extends AbstractField<EnumValueDefinition> {
     public boolean hasNodeID() {
         return false;
     }
-
-    @Override
-    public String getNodeIdTypeName() {
-        return null;
-    }
-
-    @Override
-    public boolean hasNodeIdTypeName() {
-        return false;
-    }
 }

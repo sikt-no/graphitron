@@ -85,7 +85,7 @@ public class FetchContext {
         this.processedSchema = processedSchema;
 
         if (referenceObjectField.hasNodeID()) {
-             referenceObject = processedSchema.getObject(referenceObjectField.getNodeIdTypeName());
+             referenceObject = processedSchema.getNodeTypeForNodeIdFieldOrThrow(referenceObjectField);
          } else {
              referenceObject = processedSchema.getRecordType(referenceObjectField);
          }
@@ -381,8 +381,8 @@ public class FetchContext {
         var currentSequence = getCurrentJoinSequence();
         List<FieldReference> fieldReferences = field.getFieldReferences();
 
-        if (field.hasNodeID()) {
-            var nodeType = processedSchema.getNodeTypeForNodeIdField(field);
+        if (processedSchema.isNodeIdField(field)) {
+            var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(field);
             if (!nodeType.getName().equals(getReferenceObjectField().getTypeName())) {
                 // Add implicit table reference from typeName in @nodeId directive
                 fieldReferences = Stream.of(
