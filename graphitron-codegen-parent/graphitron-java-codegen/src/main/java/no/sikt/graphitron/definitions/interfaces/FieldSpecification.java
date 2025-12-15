@@ -4,6 +4,8 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphql.directives.GenerationDirective;
 
+import java.util.Optional;
+
 /**
  * Specifies that this Java object represents a GraphQL field.
  */
@@ -21,7 +23,9 @@ public interface FieldSpecification {
     /**
      * @return The type name configured in the @nodeId directive
      */
-    String getNodeIdTypeName();
+    default Optional<String> getNodeIdTypeName(){
+        return Optional.empty();
+    }
 
     /**
      * @return The name of the object as specified in the schema.

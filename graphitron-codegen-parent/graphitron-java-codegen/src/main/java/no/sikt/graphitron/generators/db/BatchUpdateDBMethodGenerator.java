@@ -87,9 +87,9 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
                         var recordInputName = inputPrefix(it.getKey());
                         var inputType = it.getValue();
                         var nodeType = processedSchema.getNodeTypeForNodeIdField(inputType);
-                        if (nodeType != null) {
-                            String tableName = nodeType.getTable().getName();
-                            var columnNames = getNodeIdKeyColumnNames(nodeType.getKeyColumns(), tableName);
+                        if (nodeType.isPresent()) {
+                            String tableName = nodeType.get().getTable().getName();
+                            var columnNames = getNodeIdKeyColumnNames(nodeType.get().getKeyColumns(), tableName);
                             if (!columnNames.isEmpty()) {
                                 var isIterable = recordInputs.get(it.getKey()).isIterableWrapped();
                                 code.addIf(isIterable, "$N.forEach($N -> {\n", recordInputName, VAR_ITERATOR);

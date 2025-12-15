@@ -80,7 +80,7 @@ public class BatchingQueryTest extends GeneratorTest {
     @Test
     @DisplayName("Upsert with implicit node id")
     void upsertImplicitNodeId() {
-        assertGeneratedContentContains("upsertImplicitNodeId",
+        assertGeneratedContentContains("upsertNodeIdWithImplicitTypeName",
                 "inRecord.changed(VACATION_DESTINATION.DESTINATION_ID, true);",
                 "inRecord.changed(VACATION_DESTINATION.COUNTRY_NAME, true);",
                 ".batchMerge(_mi_inRecord)"

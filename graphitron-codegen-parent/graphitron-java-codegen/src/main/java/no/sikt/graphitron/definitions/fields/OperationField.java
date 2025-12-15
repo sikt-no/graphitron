@@ -1,10 +1,10 @@
 package no.sikt.graphitron.definitions.fields;
 
-import no.sikt.graphitron.javapoet.TypeName;
 import graphql.language.OperationTypeDefinition;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
+import no.sikt.graphitron.javapoet.TypeName;
 
 /**
  * This class represents operation fields in the schema type.
@@ -40,10 +40,6 @@ public class OperationField implements FieldSpecification {
 
     public boolean hasNodeID() {
         return false;
-    }
-
-    public String getNodeIdTypeName() {
-        return null;
     }
 
     @Override

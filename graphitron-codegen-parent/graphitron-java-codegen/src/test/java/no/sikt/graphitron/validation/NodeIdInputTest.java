@@ -164,18 +164,11 @@ public class NodeIdInputTest extends ValidationTest {
     }
 
     @Test
-    @DisplayName("Should log warning when input has ambiguous implicit node " +
-            "type")
+    @DisplayName("Should log error when node ID field has ambiguous implicit node type")
     void ambiguousImplicitNodeType() {
-        getProcessedSchema("ambiguousImplicitNodeType");
-        assertWarningsContain(
-                "Input type 'CustomerFilter' has an 'id' field that may " +
-                        "represent a node ID. However, the node type cannot " +
-                        "be automatically determined because multiple node " +
-                        "types ('Customer', 'AnotherCustomer') have the same " +
-                        "table as the input type. To enable node ID " +
-                        "resolution, specify @nodeId(typeName: \"\") on the field."
+        assertErrorsContain("ambiguousImplicitNodeType",
+                "Cannot automatically deduce node type for node ID field 'CustomerFilter.id'. " +
+                        "Please specify the node type with the typeName parameter"
         );
     }
-
 }

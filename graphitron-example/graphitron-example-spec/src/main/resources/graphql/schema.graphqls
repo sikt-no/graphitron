@@ -57,7 +57,7 @@ type Query {
 }
 
 type Category implements Node @node @table {
-    id: ID!
+    id: ID! @nodeId
     name: String
 }
 
@@ -89,7 +89,7 @@ type CustomerConnectionEdge {
 }
 
 type Customer implements Node @node @table {
-    id: ID!
+    id: ID! @nodeId
     name: CustomerName
     email: String
     emailAsId: ID @field(name: "EMAIL")
@@ -108,7 +108,7 @@ type CustomerName {
 }
 
 type Address implements Node @node @table @key(fields: "id", resolvable: true) {
-    id: ID!
+    id: ID! @nodeId
     addressLine1: String! @field(name: "ADDRESS_")
     addressLine2: String @field(name: "ADDRESS2")
     city: City!
@@ -119,7 +119,7 @@ type Address implements Node @node @table @key(fields: "id", resolvable: true) {
 }
 
 type City implements Node @table @node(typeId: "CityType"){
-    id: ID!
+    id: ID! @nodeId
     name: String! @field(name: "CITY_")
     countryName: String! @field(name: "COUNTRY_") @reference(path: [{table: "COUNTRY"}])
     addressExample: Address @splitQuery @notGenerated
@@ -153,14 +153,14 @@ enum FilmCategoryEnum { # Note that this enum is not complete, and other values 
 }
 
 type Language implements Node @table @node(keyColumns: ["LANGUAGE_ID"]){
-    id: ID!
+    id: ID! @nodeId
     name: String
     films(releaseYear: Int @field(name: "RELEASE_YEAR")): [Film] @splitQuery @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}]) @asConnection
     filmsWithoutPagination: [Film] @splitQuery @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
 }
 
 type Film implements Node @node @table {
-    id: ID!
+    id: ID! @nodeId
     title: String
     description: String
     language: Language @reference(path: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
@@ -205,7 +205,7 @@ enum FilmsOrderByFields {
 }
 
 type Inventory implements Node @node @table {
-    id: ID!
+    id: ID! @nodeId
     inventoryId: Int! @field(name: "INVENTORY_ID")
     filmId: Int! @field(name: "FILM_ID")
     storeId: Int! @field(name: "STORE_ID")
@@ -243,7 +243,7 @@ input StaffInput {
 }
 
 type Staff implements Node @node @table(name: "STAFF") @key(fields: "id", resolvable: true) {
-    id: ID!
+    id: ID! @nodeId
     email: String
     username: String
 }
@@ -257,15 +257,15 @@ input CustomerJavaRecordInput @record(record: {className: "no.sikt.graphitron.ex
 }
 
 type FilmActor implements Node @node @table(name: "FILM_ACTOR") {
-    id: ID!
+    id: ID! @nodeId
 }
 
 type FilmCategory implements Node @node @table(name: "FILM_CATEGORY") {
-    id: ID!
+    id: ID! @nodeId
 }
 
 type Store implements Node @node @table {
-    id: ID!
+    id: ID! @nodeId
     inactiveCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions"}, override: true)
 }
 

@@ -3,9 +3,9 @@ type Mutation {
 }
 
 type VacationDestination implements Node @node(keyColumns: ["COUNTRY_NAME", "DESTINATION_ID"], typeId: "V_D") @table(name: "VACATION_DESTINATION") {
-    id: ID!
+    id: ID! @nodeId
 }
 
 input VacationDestinationInput @table(name: "VACATION_DESTINATION") {
-    id: ID
+    id: ID @nodeId
 }

@@ -838,7 +838,7 @@ public class ProcessedSchema {
      * @return Whether a field is a node ID field using NodeIdStrategy
      */
     public boolean isNodeIdField(GenerationField field) {
-        return GeneratorConfig.shouldMakeNodeStrategy() && (field.hasNodeID() || isImplicitNodeIdField(field));
+        return GeneratorConfig.shouldMakeNodeStrategy() && field.hasNodeID();
     }
 
     public boolean isNodeIdReferenceField(GenerationField field) {
@@ -847,7 +847,7 @@ public class ProcessedSchema {
                 return false;
             }
 
-            return field.hasFieldReferences() || Optional.ofNullable(getNodeTypeForNodeIdField(field)).map(n -> !n.getName().equals(field.getContainerTypeName())).orElse(false);
+            return field.hasFieldReferences() || !getNodeTypeForNodeIdFieldOrThrow(field).getName().equals(field.getContainerTypeName());
         }
         return false;
     }
@@ -871,27 +871,28 @@ public class ProcessedSchema {
                 : Optional.ofNullable(getPreviousTableObjectForObject(containerType)).map(RecordObjectSpecification::getTable);
 
 
-        var nodeObject = Optional.ofNullable(getObject(field.getNodeIdTypeName()));
+        var nodeObject = getNodeTypeForNodeIdField(field);
         return nodeObject.isPresent() && localTable.filter(t -> nodeObject.get().getTable().equals(t)).isPresent();
 
     }
 
     /**
-     * @param field the {@link GenerationField} to check
-     * @return Whether a field implicitly is a node ID field using NodeIdStrategy
+     * @param field the {@link GenerationField} to resolve the node type for
+     * @return the corresponding {@link RecordObjectSpecification}, or {@code null} if not found
      */
-    private boolean isImplicitNodeIdField(GenerationField field) {
-        return field.isID()
-                && !field.hasNodeID() // Because we're not interested in explicit node ID here
-                && field.getName().equals(NODE_ID.getName())
-                && (isNodeType(field.getContainerTypeName()) || getImplicitNodeTypeForField(field).isPresent());
-    }
+    public Optional<ObjectDefinition> getNodeTypeForNodeIdField(GenerationField field) {
+        if (!field.hasNodeID()) return Optional.empty();
 
-    /**
-     * @param field the {@link GenerationField} for which to find the implicit node type
-     * @return the matching {@link RecordObjectSpecification}, or {@code null} if none found
-     */
-    private Optional<ObjectDefinition> getImplicitNodeTypeForField(GenerationField field) {
+        if (field.getNodeIdTypeName().isPresent()) {
+            return Optional.ofNullable(getNodeType(field.getNodeIdTypeName().get()));
+        }
+
+        // Object field with implicit typeName
+        if (field instanceof ObjectField) {
+            return Optional.ofNullable(getNodeType(field.getContainerTypeName()));
+        }
+
+        // Input field with implicit typeName
         var types = Optional.ofNullable(getRecordType(field.getContainerTypeName()))
                 .map(RecordObjectSpecification::getTable)
                 .map(this::getNodeTypesWithTable)
@@ -903,12 +904,12 @@ public class ProcessedSchema {
     }
 
     /**
-     * @param field the {@link GenerationField} to resolve the node type for
-     * @return the corresponding {@link RecordObjectSpecification}, or {@code null} if not found
+     * Finds node type for a node ID field. If not found an error is thrown.
+     * @param field The {@link GenerationField} to resolve the node type for. The field must be a node ID field.
+     * @return the corresponding {@link RecordObjectSpecification}
      */
-    public ObjectDefinition getNodeTypeForNodeIdField(GenerationField field) {
-        return field.hasNodeID() ? getNodeType(field.getNodeIdTypeName())
-                : getImplicitNodeTypeForField(field).orElse(null);
+    public ObjectDefinition getNodeTypeForNodeIdFieldOrThrow(GenerationField field) {
+        return getNodeTypeForNodeIdField(field).orElseThrow(() -> new RuntimeException("Cannot find node type for node ID field " + field.formatPath()));
     }
 
     /**

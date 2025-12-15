@@ -7,11 +7,11 @@ interface Address @table(name: "ADDRESS") @discriminate(on: "DISTRICT"){
 }
 
 type AddressInDistrictOne implements Node & Address @table(name: "ADDRESS") @discriminator(value: "ONE") @node(typeId: "A1", keyColumns: "ADDRESS_ID"){
-  id: ID!
+  id: ID! @nodeId
   postalCode: String @field(name: "POSTAL_CODE")
 }
 
 type AddressInDistrictTwo implements Node & Address @table(name: "ADDRESS") @discriminator(value: "TWO") @node(typeId: "A2"){
-  id: ID!
+  id: ID! @nodeId
   postalCode: String @field(name: "POSTAL_CODE")
 }

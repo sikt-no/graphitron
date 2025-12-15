@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.toCamelCase;
-import static no.sikt.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
+import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
 import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalObjectFieldByName;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirective.SERVICE;
@@ -82,7 +82,8 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         isGeneratedAsResolver = (isResolver || container.equals(SCHEMA_QUERY.getName()) || container.equals(SCHEMA_MUTATION.getName())) && isGenerated;
 
         hasNodeID = field.hasDirective(GenerationDirective.NODE_ID.getName());
-        nodeIdTypeName = hasNodeID ? getDirectiveArgumentString(field, GenerationDirective.NODE_ID, GenerationDirectiveParam.TYPE_NAME) : null;
+        nodeIdTypeName = getOptionalDirectiveArgumentString(field, GenerationDirective.NODE_ID, GenerationDirectiveParam.TYPE_NAME)
+                .orElse(null);
         contextFields = findContextFields();
     }
 
@@ -162,7 +163,11 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
 
     @Override
     public boolean invokesSubquery() {
-        return !isResolver && (hasFieldReferences() || (hasNodeID() && !getNodeIdTypeName().equals(getContainerTypeName())) || isIterableWrapped());
+        return !isResolver && (
+                hasFieldReferences()
+                        || (hasNodeID() && getNodeIdTypeName().isPresent() && !getNodeIdTypeName().get().equals(getContainerTypeName()))
+                        || isIterableWrapped()
+        );
     }
 
     public boolean isExternalField() {
@@ -264,8 +269,8 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     /**
      * @return The type name configured in the @nodeId directive
      */
-    public String getNodeIdTypeName() {
-        return nodeIdTypeName;
+    public Optional<String> getNodeIdTypeName() {
+        return Optional.ofNullable(nodeIdTypeName);
     }
 
     public boolean hasTableMethodDirective() {

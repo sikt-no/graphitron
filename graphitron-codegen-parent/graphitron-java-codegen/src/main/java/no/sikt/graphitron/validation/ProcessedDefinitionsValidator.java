@@ -16,6 +16,7 @@ import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
 import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphql.directives.GenerationDirectiveParam;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.text.similarity.LevenshteinDistance;
@@ -95,7 +96,6 @@ public class ProcessedDefinitionsValidator {
         validateNodeId();
         validateNodeIdReferenceInJooqRecordInput();
         validateSplitQueryFieldsInJavaRecords();
-        validateImplicitNodeTypeForInputFields();
 
         logWarnings();
         throwIfErrors();
@@ -200,30 +200,44 @@ public class ProcessedDefinitionsValidator {
             );
         }
 
-        var referencedType = schema.getObject(field.getNodeIdTypeName());
+        if (field.getNodeIdTypeName().isPresent()) {
+            var providedType = schema.getObject(field.getNodeIdTypeName().get());
+            if (providedType == null) {
+                addErrorMessage(
+                        "Type with name '%s' referenced in the %s directive for %s does not exist.",
+                        field.getNodeIdTypeName().get(),
+                        NODE_ID.getName(),
+                        fieldName
+                );
+                return;
+            } else if (!providedType.hasNodeDirective()) {
+                addErrorMessage(
+                        "Referenced type '%s' referenced in the %s directive for %s is missing the necessary %s directive.",
+                        providedType.getName(),
+                        NODE_ID.getName(),
+                        fieldName,
+                        NODE.getName()
+                );
+                return;
+            }
+        } else if (schema.getNodeTypeForNodeIdField(field).isEmpty()) { // Implicit nodeType
+            addErrorMessage("Cannot automatically deduce node type for node ID field %s. " +
+                            "Please specify the node type with the %s parameter in the %s directive.",
+                    field.formatPath(),
+                    GenerationDirectiveParam.TYPE_NAME.getName(),
+                    NODE_ID.getName()
+            );
+            return;
+        }
 
-        if (referencedType == null) {
-            addErrorMessage(
-                    "Type with name '%s' referenced in the %s directive for %s does not exist.",
-                    field.getNodeIdTypeName(),
-                    NODE_ID.getName(),
-                    fieldName
-            );
-        } else if (!referencedType.hasNodeDirective()) {
-            addErrorMessage(
-                    "Referenced type '%s' referenced in the %s directive for %s is missing the necessary %s directive.",
-                    field.getNodeIdTypeName(),
-                    NODE_ID.getName(),
-                    fieldName,
-                    NODE.getName()
-            );
-        } else if (field instanceof ObjectField && (!field.getNodeIdTypeName().equals(field.getContainerTypeName()) || field.hasFieldReferences())) {
+        if (field instanceof ObjectField && schema.isNodeIdReferenceField(field)) {
             // Only filter object fields because we currently don't have reference validation on input (GGG-209)
             var recordType = Optional
                     .ofNullable(schema.getRecordType(field.getContainerTypeName()))
                     .flatMap(it -> Optional.ofNullable(it.getTable()));
 
-            var referenceTable = referencedType.getTable();
+            var referenceTable = schema.getNodeTypeForNodeIdFieldOrThrow(field) // This should have been validated above
+                    .getTable();
             recordType.ifPresent(it -> validateReferencePath(field, it.getMappingName(), referenceTable.getMappingName()));
             if (recordType.isEmpty()) {
                 var inputMapping = schema.findInputTables(field).stream().findFirst();
@@ -262,9 +276,9 @@ public class ProcessedDefinitionsValidator {
                 .forEach(jooqRecordInput ->
                         jooqRecordInput.getFields()
                                 .stream()
-                                .filter(FieldSpecification::hasNodeID)
-                                .filter(it -> schema.isObject(it.getNodeIdTypeName())) // This is validated in checkNodeId
-                                .filter(it -> !schema.getRecordType(it.getNodeIdTypeName()).getTable().equals(jooqRecordInput.getTable()))
+                                .filter(schema::isNodeIdField)
+                                .filter(it -> schema.getNodeTypeForNodeIdField(it).isPresent()) // This is validated in checkNodeId
+                                .filter(it -> !schema.getNodeTypeForNodeIdFieldOrThrow(it).getTable().equals(jooqRecordInput.getTable()))
                                 .forEach(field -> {
                                     var foreignKeyOptional = getForeignKeyForNodeIdReference(field, schema);
 
@@ -286,7 +300,7 @@ public class ProcessedDefinitionsValidator {
                                         return;
                                     }
 
-                                    var nodeType = schema.getObject(field.getNodeIdTypeName());
+                                    var nodeType = schema.getNodeTypeForNodeIdFieldOrThrow(field);
                                     var firstForeignKeyReferencesTargetTable = foreignKey.getInverseKey().getTable().getName().equalsIgnoreCase(nodeType.getTable().getName());
 
                                     if (field.getFieldReferences().size() > 1 || (field.hasFieldReferences() && !firstForeignKeyReferencesTargetTable)) {
@@ -306,7 +320,7 @@ public class ProcessedDefinitionsValidator {
                                                 field.getName(),
                                                 field.getContainerTypeName(),
                                                 foreignKey.getName(),
-                                                field.getNodeIdTypeName()
+                                                nodeType.getName()
                                         );
                                     }
 
@@ -469,7 +483,7 @@ public class ProcessedDefinitionsValidator {
      */
     private String getTargetTableForField(GenerationField field) {
         if (schema.isNodeIdField(field)) {
-            return schema.getNodeTypeForNodeIdField(field).getTable().getName();
+            return schema.getNodeTypeForNodeIdFieldOrThrow(field).getTable().getName();
         }
         if (schema.hasTableObject(field)) {
             return schema.getObjectOrConnectionNode(field).getTable().getName();
@@ -1256,7 +1270,7 @@ public class ProcessedDefinitionsValidator {
         var idFields = inputType.getFields().stream()
                 .filter(it -> it.isID() || schema.isNodeIdField(it))
                 .filter(it -> !it.hasFieldReferences())
-                .filter(it -> !schema.isNodeIdField(it) || schema.getNodeTypeForNodeIdField(it).getTable().equals(targetTable))
+                .filter(it -> !schema.isNodeIdField(it) || schema.getNodeTypeForNodeIdField(it).map(n -> n.getTable().equals(targetTable)).orElse(false))
                 .filter(it -> schema.isNodeIdField(it) || it.getUpperCaseName().equalsIgnoreCase(GraphQLReservedName.NODE_ID.getName()))
                 .toList();
 
@@ -1474,35 +1488,6 @@ public class ProcessedDefinitionsValidator {
 
                     if (field.hasForwardPagination()) {
                         addErrorMessage(errorMessageStart + " is paginated. This is not supported.");
-                    }
-                });
-    }
-
-    private void validateImplicitNodeTypeForInputFields() {
-        if (!GeneratorConfig.shouldMakeNodeStrategy()) return;
-        schema.getInputTypes().values()
-                .stream()
-                .filter(RecordObjectDefinition::hasTable)
-                .flatMap(it -> it.getFields().stream())
-                .filter(it -> it.isID() && !it.hasNodeID() && it.getName().equals(GraphQLReservedName.NODE_ID.getName()))
-                .forEach(it -> {
-                    var implicitNodeTypes = schema.getNodeTypesWithTable(schema.getRecordType(it.getContainerTypeName()).getTable());
-                    if (implicitNodeTypes != null && implicitNodeTypes.size() > 1) {
-                        addWarningMessage("Input type '%s' has an '%s' field " +
-                                        "that may represent a node ID. " +
-                                        "However, the node type cannot be " +
-                                        "automatically determined because " +
-                                        "multiple node types " +
-                                        "(%s) have the same table as the " +
-                                        "input type. To enable node ID " +
-                                        "resolution, specify @nodeId" +
-                                        "(typeName: \"\") on the field.",
-                                it.getContainerTypeName(),
-                                it.getName(),
-                                implicitNodeTypes.stream()
-                                        .map(type -> String.format("'%s'",
-                                                type.getName()))
-                                        .collect(Collectors.joining(", ")));
                     }
                 });
     }

@@ -3,5 +3,5 @@ type Customer implements Node @node(keyColumns: ["CUSTOMER_ID", "EMAIL"]) @table
 }
 
 type Address implements Node @node(keyColumns: ["ADDRESS_ID"]) @table {
-id: ID!
+  id: ID! @nodeId
 }

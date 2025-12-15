@@ -7,5 +7,5 @@ input CustomerInput @table(name: "CUSTOMER") {
 }
 
 type Address implements Node @node(typeId: "A", keyColumns: "ADDRESS_ID") @table {
-    id: ID!
+    id: ID! @nodeId
 }

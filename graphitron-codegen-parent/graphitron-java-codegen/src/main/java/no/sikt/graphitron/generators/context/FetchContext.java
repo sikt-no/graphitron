@@ -85,7 +85,7 @@ public class FetchContext {
         this.processedSchema = processedSchema;
 
         if (referenceObjectField.hasNodeID()) {
-             referenceObject = processedSchema.getObject(referenceObjectField.getNodeIdTypeName());
+             referenceObject = processedSchema.getNodeTypeForNodeIdFieldOrThrow(referenceObjectField);
          } else {
              referenceObject = processedSchema.getRecordType(referenceObjectField);
          }
@@ -379,16 +379,17 @@ public class FetchContext {
      */
     public JoinListSequence iterateJoinSequenceFor(GenerationField field) {
         var currentSequence = getCurrentJoinSequence();
-        List<FieldReference> fieldReferences;
+        List<FieldReference> fieldReferences = field.getFieldReferences();
 
-        if (field.hasNodeID() && !field.getNodeIdTypeName().equals(getReferenceObjectField().getTypeName())) {
-            // Add implicit table reference from typeName in @nodeId directive
-            fieldReferences = Stream.of(
-                            field.getFieldReferences(),
-                            List.of(new FieldReference(fromTable(processedSchema.getObject(field.getNodeIdTypeName()).getTable().getName()))))
-                    .flatMap(Collection::stream).toList();
-        } else {
-            fieldReferences = field.getFieldReferences();
+        if (processedSchema.isNodeIdField(field)) {
+            var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(field);
+            if (!nodeType.getName().equals(getReferenceObjectField().getTypeName())) {
+                // Add implicit table reference from typeName in @nodeId directive
+                fieldReferences = Stream.of(
+                                field.getFieldReferences(),
+                                List.of(new FieldReference(fromTable(nodeType.getTable().getName()))))
+                        .flatMap(Collection::stream).toList();
+            }
         }
 
         if (fieldReferences.isEmpty()) {
