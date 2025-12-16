@@ -25,7 +25,11 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.GraphitronContext;
 import no.sikt.graphql.schema.ProcessedSchema;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
@@ -410,7 +414,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
             for (InputField nodeIdField : nodeIdFieldsToUnpack) {
                 var nodeType = processedSchema.getNodeTypeForNodeIdField(nodeIdField);
-                var unpackedVarName = "_unpacked_" + nodeIdField.getName();
+                var unpackedVarName = unpackedPrefix(nodeIdField.getName());
 
                 code.addStatement("var $N = $N.$L() != null ? $N.unpackIdValues($S, $N.$L(), $L) : null",
                         unpackedVarName,
@@ -427,18 +431,23 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 var columnName = entry.getKey();
                 var mappings = entry.getValue();
 
+                // Extract values into variables for cleaner comparison code
+                var valueVarNames = new ArrayList<String>();
+                for (var mapping : mappings) {
+                    var valueVarName = VariablePrefix.valuePrefix(mapping.field.getName() + "_" + columnName);
+                    valueVarNames.add(valueVarName);
+                    code.addStatement("var $N = $L", valueVarName, getValueExtractionCode(mapping, itemVarName, type));
+                }
+
                 for (int i = 0; i < mappings.size() - 1; i++) {
                     for (int j = i + 1; j < mappings.size(); j++) {
                         var mapping1 = mappings.get(i);
                         var mapping2 = mappings.get(j);
+                        var var1 = valueVarNames.get(i);
+                        var var2 = valueVarNames.get(j);
 
-                        var value1 = getValueExtractionCode(mapping1, itemVarName, type);
-                        var value2 = getValueExtractionCode(mapping2, itemVarName, type);
-
-                        code.beginControlFlow("if (!$T.equals($L, $L))",
-                                        Objects.class,
-                                        value1,
-                                        value2)
+                        code.beginControlFlow("if ($N != null && $N != null && !$N.equals($N))",
+                                        var1, var2, var1, var2)
                                 .addStatement("throw new $T($S)",
                                         IllegalArgumentException.class,
                                         "Field " + mapping1.field.getName() + " and field " + mapping2.field.getName() +
