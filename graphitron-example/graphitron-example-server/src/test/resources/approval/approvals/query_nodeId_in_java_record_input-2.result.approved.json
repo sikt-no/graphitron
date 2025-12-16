@@ -3,6 +3,9 @@
         "customerWithJavaRecordInput": {
             "nodes": [
                 {
+                    "name": {
+                        "firstName": "MARY"
+                    },
                     "id": "Q3VzdG9tZXI6MQ"
                 }
             ]
