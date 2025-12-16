@@ -1,0 +1,17 @@
+type Query {
+    test: TestOutput @notGenerated
+}
+
+# Output type with @record - validates getter methods
+type TestOutput @record(record: {className: "no.sikt.graphitron.codereferences.records.CustomerJavaRecord"}) {
+    someID: ID
+    email: String @field(name: "EMAIL")
+    myField: ID @field(name: "OTHER_ID", javaName: "otherID")
+    invalidField: String @notGenerated
+    wrapper: Wrapper
+}
+
+# Nested wrapper type without @record - its fields are validated against parent Java record (flattened)
+type Wrapper {
+    addressId: String
+}

@@ -1,0 +1,9 @@
+type Query {
+    test: TestOutput @notGenerated
+}
+
+# Field 'efail' (typo) expects getEfail which doesn't exist,
+# but getEmail exists and should be suggested
+type TestOutput @record(record: {className: "no.sikt.graphitron.codereferences.records.CustomerJavaRecord"}) {
+    efail: String
+}

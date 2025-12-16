@@ -1,6 +1,9 @@
 query QueryWithJavaRecordInput ($input: CustomerJavaRecordInput!){
     customerWithJavaRecordInput(input: $input) {
         nodes {
+            name {
+                firstName
+            }
             id
         }
     }

@@ -1,6 +1,8 @@
 package no.sikt.graphitron.generators.context;
 
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
+import no.sikt.graphitron.definitions.fields.AbstractField;
+import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
@@ -135,7 +137,7 @@ public class MapperContext {
             return new MethodMapping(target.getName() + "_");
         }
 
-        return mapsJavaRecord ? target.getMappingFromFieldOverride() : target.getMappingForRecordFieldOverride();
+        return target.getJavaRecordMethodMapping(mapsJavaRecord);
     }
 
     private String getSchemaNameToUse() {
@@ -459,12 +461,12 @@ public class MapperContext {
 
     private boolean sourceHasRequiredMethod() {
         // Assume the schema ones are OK anyway. It is done like this because these classes are not defined in tests.
-        return toRecord || classHasMethod(toRecord ? previousContext.targetType.getClassReference() : previousContext.targetType.getRecordReference(), getSourceMapping.asGet());
+        return toRecord || classHasMethod(previousContext.targetType.getRecordReference(), getSourceMapping.asGet());
     }
 
     private boolean targetHasRequiredMethod() {
         // Assume the schema ones are OK anyway. It is done like this because these classes are not defined in tests.
-        return !toRecord || classHasMethod(toRecord ? previousContext.targetType.getRecordReference() : previousContext.targetType.getClassReference(), setTargetMapping.asSet());
+        return !toRecord || classHasMethod(previousContext.targetType.getRecordReference(), setTargetMapping.asSet());
     }
 
     /**

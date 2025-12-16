@@ -1,0 +1,9 @@
+type Query {
+    test(in: TestInput): ID @notGenerated
+}
+
+# Field 'emaill' (typo) expects setEmaill which doesn't exist,
+# but setEmail exists and should be suggested
+input TestInput @record(record: {className: "no.sikt.graphitron.codereferences.records.CustomerJavaRecord"}) {
+    emaill: String
+}
