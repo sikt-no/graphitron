@@ -19,35 +19,38 @@ public class VirtualSourceField extends ObjectField {
     private final boolean isResolver;
     private final List<FieldReference> fieldReferences;
     private String originalFieldName;
+    private boolean isOriginalMultitableField;
 
-    public VirtualSourceField(String targetTypeName, String container, List<ArgumentField> nonReservedArguments, SQLCondition condition, boolean isResolver, List<FieldReference> fieldReferences) {
+    public VirtualSourceField(String targetTypeName, String container, List<ArgumentField> nonReservedArguments, SQLCondition condition, boolean isResolver, List<FieldReference> fieldReferences, boolean isOriginalMultitableField) {
         super(new FieldDefinition("for_" + targetTypeName,new TypeName(targetTypeName)), container);
         this.nonReservedArguments = nonReservedArguments;
         this.condition = condition;
         this.isResolver = isResolver;
         this.fieldReferences = fieldReferences;
+        this.isOriginalMultitableField = isOriginalMultitableField;
     }
 
-    public VirtualSourceField(String targetTypeName, ObjectField target) {
+    public VirtualSourceField(String targetTypeName, ObjectField target, boolean isOriginalMultitableField) {
         this(targetTypeName,
-                target.getContainerTypeName(),
-                target.getNonReservedArguments(),
-                target.getCondition(),
-                target.isResolver(),
-                target.getMultitableReferences().getOrDefault(targetTypeName, List.of()));
+             target.getContainerTypeName(),
+             target.getNonReservedArguments(),
+             target.getCondition(),
+             target.isResolver(),
+             target.getMultitableReferences().getOrDefault(targetTypeName, List.of()),
+             isOriginalMultitableField);
         this.originalFieldName = target.getName();
     }
 
-    public VirtualSourceField(RecordObjectSpecification<?> targetType, ObjectField target) {
-        this(targetType.getName(), target);
+    public VirtualSourceField(RecordObjectSpecification<?> targetType, ObjectField target, boolean isOriginalMultitableField) {
+        this(targetType.getName(), target, isOriginalMultitableField);
     }
 
-    public VirtualSourceField(RecordObjectSpecification<?> targetType, String container) {
-        this(targetType.getName(), container, List.of(), null, false, List.of());
+    public VirtualSourceField(RecordObjectSpecification<?> targetType, String container, boolean isOriginalMultitableField) {
+        this(targetType.getName(), container, List.of(), null, false, List.of(), isOriginalMultitableField);
     }
 
-    public VirtualSourceField(RecordObjectSpecification<?> targetType) {
-        this(targetType.getName(), SCHEMA_QUERY.getName(), List.of(), null, false, List.of());
+    public VirtualSourceField(RecordObjectSpecification<?> targetType, boolean isOriginalMultitableField) {
+        this(targetType.getName(), SCHEMA_QUERY.getName(), List.of(), null, false, List.of(), isOriginalMultitableField);
     }
 
     /**
@@ -98,5 +101,9 @@ public class VirtualSourceField extends ObjectField {
 
     public String getOriginalFieldName() {
         return originalFieldName;
+    }
+
+    public boolean isOriginalMultitableField() {
+        return isOriginalMultitableField;
     }
 }

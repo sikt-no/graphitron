@@ -181,6 +181,6 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
         if (!getLocalObject().isEntity()) { // Note: No entity field here yet: || processedSchema.getEntitiesField().isExplicitlyNotGenerated()) {
             return List.of();
         }
-        return List.of(generate(new VirtualSourceField(getLocalObject(), query.getName())));
+        return List.of(generate(new VirtualSourceField(getLocalObject(), query.getName(), false)));
     }
 }

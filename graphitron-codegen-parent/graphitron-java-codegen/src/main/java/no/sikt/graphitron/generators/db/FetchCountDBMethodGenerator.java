@@ -95,15 +95,15 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                     .stream()
                     .findFirst()
                     .map(it -> new FetchContext(
-                            processedSchema, new VirtualSourceField(it, target), localObject, false))
+                            processedSchema, new VirtualSourceField(it, target, processedSchema.isMultiTableField(target)), localObject, false))
                     .map(FetchContext::getAliasSet)
                     .ifPresent(aliasSet::addAll);
         }
 
         implementations.forEach(implementation -> {
-            var virtualTarget = new VirtualSourceField(implementation, target);
+            var virtualTarget = new VirtualSourceField(implementation, target, processedSchema.isMultiTableField(target));
             var context = new FetchContext(processedSchema, virtualTarget, localObject, true);
-            var refContext = isResolverWithPagination(virtualTarget)
+            var refContext = virtualTarget.isResolver()
                              ? context.nextContext(virtualTarget)
                              : context;
             var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver(), true);
@@ -130,7 +130,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
         var resolverKey = implementations.stream()
                 .findFirst()
-                .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), localObject, true))
+                .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target, processedSchema.isMultiTableField(target)), localObject, true))
                 .map(FetchContext::getResolverKey);
 
         var unionQuery = implementations.stream()

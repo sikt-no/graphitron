@@ -24,46 +24,48 @@ import org.jooq.SelectSeekStepN;
 import org.jooq.impl.DSL;
 
 public class PaymentDBQueries {
-
-    public static Map<Row1<Long>, PersonWithEmail> staffAndCustomersForPayment(DSLContext _iv_ctx, Set<Row1<Long>> _rk_payment, SelectionSet _iv_select) {
+    public static Map<Row1<Long>, PersonWithEmail> staffAndCustomersForPayment(DSLContext _iv_ctx,
+            Set<Row1<Long>> _rk_payment, SelectionSet _iv_select) {
         var _a_payment = PAYMENT.as("payment_1831371789");
-        var unionKeysQuery = staffSortFieldsForStaffAndCustomers(_a_payment).unionAll(customerSortFieldsForStaffAndCustomers(_a_payment));
+        var unionKeysQuery = staffSortFieldsForStaffAndCustomers(_a_payment)
+                .unionAll(customerSortFieldsForStaffAndCustomers(_a_payment));
 
         var mappedCustomer = customerForStaffAndCustomers();
         var mappedStaff = staffForStaffAndCustomers();
 
         return _iv_ctx.select(
-                        DSL.row(_a_payment.PAYMENT_ID),
-                        DSL.field(
-                                DSL.select(
-                                                DSL.row(
-                                                        unionKeysQuery.field("$type", String.class),
-                                                        mappedCustomer.field("$data"),
-                                                        mappedStaff.field("$data")
-                                                ).mapping((_iv_e0, _iv_e1, _iv_e2) -> switch (_iv_e0) {
-                                                            case "Customer" -> (PersonWithEmail) _iv_e1;
-                                                            case "Staff" -> (PersonWithEmail) _iv_e2;
-                                                            default ->
-                                                                    throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "PersonWithEmail", _iv_e0));
-                                                        }
-                                                ))
-                                        .from(unionKeysQuery)
-                                        .leftJoin(mappedCustomer)
-                                        .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedCustomer.field("$pkFields", JSONB.class)))
-                                        .leftJoin(mappedStaff)
-                                        .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedStaff.field("$pkFields", JSONB.class)))
-                                        .orderBy(unionKeysQuery.field("$type"), unionKeysQuery.field("$innerRowNum"))
-                        )
+                DSL.row(_a_payment.PAYMENT_ID),
+                DSL.field(
+                        DSL.select(
+                                        DSL.row(
+                                                unionKeysQuery.field("$type", String.class),
+                                                mappedCustomer.field("$data"),
+                                                mappedStaff.field("$data")
+                                        ).mapping((_iv_e0, _iv_e1, _iv_e2) -> switch (_iv_e0) {
+                                                    case "Customer" -> (PersonWithEmail) _iv_e1;
+                                                    case "Staff" -> (PersonWithEmail) _iv_e2;
+                                                    default ->
+                                                            throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "PersonWithEmail", _iv_e0));
+                                                }
+                                        ))
+                                .from(unionKeysQuery)
+                                .leftJoin(mappedCustomer)
+                                .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedCustomer.field("$pkFields", JSONB.class)))
+                                .leftJoin(mappedStaff)
+                                .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedStaff.field("$pkFields", JSONB.class)))
+                                .orderBy(unionKeysQuery.field("$type"), unionKeysQuery.field("$innerRowNum"))
                 )
-                .from(_a_payment)
-                .where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment))
-                .fetchMap(
-                        _iv_r -> _iv_r.value1().valuesRow(),
-                        Record2::value2
-                );
+            )
+            .from(_a_payment)
+            .where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment))
+            .fetchMap(
+                    _iv_r -> _iv_r.value1().valuesRow(),
+                    Record2::value2
+            );
     }
 
-    private static SelectSeekStepN<Record3<String, Integer, JSONB>> customerSortFieldsForStaffAndCustomers(Payment _a_payment) {
+    private static SelectSeekStepN<Record3<String, Integer, JSONB>> customerSortFieldsForStaffAndCustomers(
+            Payment _a_payment) {
         var _a_payment_1831371789_customer = _a_payment.customer().as("customer_1463568749");
         var _iv_orderFields = _a_payment_1831371789_customer.fields(_a_payment_1831371789_customer.getPrimaryKey().getFieldsArray());
         return DSL.select(
@@ -84,7 +86,8 @@ public class PaymentDBQueries {
                 .from(_a_customer);
     }
 
-    private static SelectSeekStepN<Record3<String, Integer, JSONB>> staffSortFieldsForStaffAndCustomers(Payment _a_payment) {
+    private static SelectSeekStepN<Record3<String, Integer, JSONB>> staffSortFieldsForStaffAndCustomers(
+            Payment _a_payment) {
         var _a_payment_1831371789_staff = _a_payment.staff().as("staff_2269035563");
         var _iv_orderFields = _a_payment_1831371789_staff.fields(_a_payment_1831371789_staff.getPrimaryKey().getFieldsArray());
         return DSL.select(

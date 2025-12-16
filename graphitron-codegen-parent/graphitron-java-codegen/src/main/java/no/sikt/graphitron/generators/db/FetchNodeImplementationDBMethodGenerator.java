@@ -51,7 +51,7 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
                     implementation.getName(), GenerationDirective.TABLE.getName(), NODE_TYPE.getName());
         }
 
-        var virtualReference = new VirtualSourceField(getLocalObject(), target.getTypeName());
+        var virtualReference = new VirtualSourceField(getLocalObject(), target.getTypeName(), processedSchema.isMultiTableField(target));
         var context = new FetchContext(processedSchema, virtualReference, implementation, false);
         var selectCode = generateSelectRow(context);
 

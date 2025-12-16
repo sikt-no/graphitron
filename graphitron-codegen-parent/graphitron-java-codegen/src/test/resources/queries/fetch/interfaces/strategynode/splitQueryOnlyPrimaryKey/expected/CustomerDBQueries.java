@@ -25,21 +25,11 @@ public class CustomerDBQueries {
         return _iv_ctx
                 .select(
                         DSL.row(_a_customer.CUSTOMER_ID),
-                        DSL.field(
-                                DSL.select(DSL.row(_iv_nodeIdStrategy.createId("Address", _a_customer_2168032777_address.fields(_a_customer_2168032777_address.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Address::new)))
-                                .from(_a_customer_2168032777_address)
-
-                        )
+                        DSL.row(_iv_nodeIdStrategy.createId("Address", _a_customer_2168032777_address.fields(_a_customer_2168032777_address.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(_a_customer)
+                .join(_a_customer_2168032777_address)
                 .where(DSL.row(_a_customer.CUSTOMER_ID).in(_rk_customer))
                 .fetchMap(_iv_r -> _iv_r.value1().valuesRow(), Record2::value2);
-//                        DSL.row(_customer.CUSTOMER_ID),
-//                        DSL.row(nodeIdStrategy.createId("Address", customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Address::new))
-//                )
-//                .from(_customer)
-//                .join(customer_2952383337_address)
-//                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys))
-//                .fetchMap(r -> r.value1().valuesRow(), Record2::value2);
     }
 }

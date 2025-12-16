@@ -21,6 +21,7 @@ import org.jooq.SelectSeekStepN;
 
 import javax.lang.model.element.Modifier;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
@@ -75,7 +76,11 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
             initialContext = implementations
                     .stream()
                     .findFirst()
-                    .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), localObject, false))
+                    .map(it -> new FetchContext(
+                            processedSchema,
+                            new VirtualSourceField(it, target, processedSchema.isMultiTableField(target)),
+                            localObject,
+                            false))
                     .orElse(null);
         }
 
@@ -277,9 +282,9 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     private List<MethodSpec> getMethodsForImplementation(ObjectField target, ObjectDefinition implementation, List<ParameterSpec> methodInputs) {
-        var virtualTarget = new VirtualSourceField(implementation, target);
+        var virtualTarget = new VirtualSourceField(implementation, target, processedSchema.isMultiTableField(target));
         var context = new FetchContext(processedSchema, virtualTarget, localObject, true);
-        var refContext = isResolverWithPagination(virtualTarget)
+        var refContext = virtualTarget.isResolver()
                          ? context.nextContext(virtualTarget)
                          : context;
 
@@ -311,7 +316,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     private MethodSpec getMappedMethod(ObjectField target, ObjectDefinition implementation) {
-        var mappedContext = new FetchContext(processedSchema, new VirtualSourceField(implementation), processedSchema.getQueryType(), false);
+        var mappedContext = new FetchContext(processedSchema, new VirtualSourceField(implementation, processedSchema.isMultiTableField(target)), processedSchema.getQueryType(), false);
         return MethodSpec
                 .methodBuilder(getMappedMethodName(target, implementation))
                 .addModifiers(Modifier.PRIVATE, Modifier.STATIC)

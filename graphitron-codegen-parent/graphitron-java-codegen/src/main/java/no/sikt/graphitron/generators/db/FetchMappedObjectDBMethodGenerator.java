@@ -162,15 +162,12 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             );
         }
 
-        // Use fetchGroups only for fields that are not record types. The reason for this, is that for record types,
-        // the Datafetcher for the field passes a set of keys and expects a map in return, where each key maps to
-        // exactly one model or DTO.
+        // Use groupingBy only for fields that are not record types. For record types, the DataFetcher for the field
+        // passes a set of keys and expects a Map in return, where each key maps to exactly one model or DTO.
+        // The method below is an alternative to jOOQ's fetchGroups, because fetchGroups does not return empty lists
+        // for keys with no results, something that is expected from our generated data fetchers.
         if (processedSchema.isIterableResolverFieldAndNoJavaRecord(referenceField)) {
-            return CodeBlock
-                    .builder()
-                    .add(".fetchGroups")
-                    .addStatement("(r -> r.value1().valuesRow(), $T::value2)", RECORD2.className)
-                    .build();
+            return groupingCollectorWithEmptyLists();
         }
 
         var code = CodeBlock.builder()

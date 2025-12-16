@@ -45,38 +45,6 @@ public class Alias implements JoinElement {
     }
 
     /**
-     * @param shortnameTable Set to the table that should be used as a short name for the alias.
-     *                       If null, default short name will be used.
-     */
-//    public Alias(String prefix, JOOQMapping table, boolean isLeft, JOOQMapping shortNameTable) {
-//        var name = prefix + "_" + table.getMappingName() + (isLeft ? "_left" : "");
-//        this.name = prefixStringIfFirstCharIsDigit(name.toLowerCase());
-//        this.shortName = prefixStringIfFirstCharIsDigit(createShortAliasName(
-//                shortNameTable != null
-//                ? shortNameTable.getCodeName()
-//                : Arrays.stream(prefix.split("_")).findFirst().orElse(prefix),
-//                name));
-//        this.type = table;
-//        this.variableValue = table.getMappingName();
-//    }
-
-    /**
-     * @param shortNameTable Set to the table that should be used as a short name for the alias.
-     *                       If null, default short name will be used.
-     */
-//    public Alias(String prefix, JoinListSequence joinSequence, boolean isLeft, JOOQMapping shortNameTable) {
-//        this.type = joinSequence.getLast().getTable();
-//        var name = prefix + (isLeft ? "_left" : "");
-//        this.name = prefixStringIfFirstCharIsDigit(name.toLowerCase());
-//        this.shortName = prefixStringIfFirstCharIsDigit(createShortAliasName(
-//                shortNameTable != null
-//                ? shortNameTable.getCodeName()
-//                : StringUtils.substringAfterLast(prefix, "_"),
-//                name));
-//        this.variableValue = joinSequence.render().toString();
-//    }
-
-    /**
      * @return Alias name.
      */
     @Override

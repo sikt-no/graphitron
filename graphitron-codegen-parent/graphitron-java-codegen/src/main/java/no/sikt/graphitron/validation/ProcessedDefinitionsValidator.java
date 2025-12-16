@@ -370,7 +370,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(it -> !schema.isMultiTableInterface(it.getName())) // Don't validate fields on the interface definition since the interface itself has no table
                 .flatMap(it -> it.getFields().stream())
                 .flatMap(it -> schema.isMultiTableField(it)
-                        ? schema.getTypesFromInterfaceOrUnion(it.getTypeName()).stream().map(o -> new VirtualSourceField(o.getName(), (ObjectField) it))
+                        ? schema.getTypesFromInterfaceOrUnion(it.getTypeName()).stream().map(o -> new VirtualSourceField(o.getName(), (ObjectField) it, true))
                         : Stream.of(it))
                 .filter(field -> schema.isRecordType(field.getTypeName()) || field.hasFieldReferences() || field.isResolver())
                 .forEach(this::validateReferencePath);

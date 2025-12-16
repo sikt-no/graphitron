@@ -5,4 +5,3 @@ type Query {
 type Payment @table {
     staffAndCustomers(first: Int = 100, after: String): PersonWithEmailConnection
 }
-

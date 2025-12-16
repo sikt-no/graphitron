@@ -637,7 +637,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var union = processedSchema.getUnion(field).getFieldTypeNames();
         var code = new ArrayList<CodeBlock>();
         for (var fieldObject : union) {
-            var objectField = new VirtualSourceField(processedSchema.getObject(fieldObject), fieldObject);
+            var objectField = new VirtualSourceField(processedSchema.getObject(fieldObject), fieldObject, processedSchema.isMultiTableField(field));
             code.add(generateSelectRow(context.nextContext(objectField).withShouldUseOptional(false)));
         }
         return CodeBlock.join(code, ",\n");
@@ -1105,7 +1105,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected CodeBlock createSeekAndLimitBlock() {
         return CodeBlock
                 .builder()
-                .add(".seek($T.getOrderByValues($N, $L, $N))\n", QUERY_HELPER.className, VAR_CONTEXT, VAR_ORDER_FIELDS, GraphQLReservedName.PAGINATION_AFTER.getName())
+                .add("\n.seek($T.getOrderByValues($N, $L, $N))\n", QUERY_HELPER.className, VAR_CONTEXT, VAR_ORDER_FIELDS, GraphQLReservedName.PAGINATION_AFTER.getName())
                 .add(".limit($N + 1)\n", VAR_PAGE_SIZE)
                 .build();
     }
@@ -1204,6 +1204,47 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         } else {
             return wrapMap(STRING.className, wrapListIf(type, referenceField.hasForwardPagination()));
         }
+    }
+
+
+    /**
+     * Used as an alternative to jOOQ's fetchGroups-method. fetchGroups does not seem to support the return of empty
+     * lists when no values are found for a given key. The following method on the other hand, uses a combination of
+     * collectingAndThen and groupingBy to ensure that all keys are present with lists in the resulting map.
+     *
+     * @return CodeBlock representing keys and their grouped values.
+     */
+    protected CodeBlock groupingCollectorWithEmptyLists() {
+        return CodeBlock.builder()
+                .add(".collect(\n")
+                .indent()
+                .add("$T.collectingAndThen(\n", COLLECTORS.className)
+                .indent()
+                .add("$T.groupingBy(\n", COLLECTORS.className)
+                .indent()
+                .add("$1L -> $1N.value1().valuesRow(),\n", VAR_RECORD_ITERATOR)
+                .add("$T.mapping(\n", COLLECTORS.className)
+                .indent()
+                .add("$1L -> $1N.value2(),\n", VAR_RECORD_ITERATOR)
+                .add("$T.toList()\n", COLLECTORS.className)
+                .unindent()
+                .add(")\n")
+                .unindent()
+                .add("), $L -> {\n", VAR_RESULT)
+                .indent()
+                .add("$1L.forEach(key -> $2L.computeIfAbsent(\n", resolverKeyParamName, VAR_RESULT)
+                .indent()
+                .add("key,\n")
+                .add("k -> List.of()\n")
+                .unindent()
+                .add("));\nreturn $L;\n", VAR_RESULT)
+                .unindent()
+                .add("}\n")
+                .unindent()
+                .add(")\n")
+                .unindent()
+                .addStatement(")")
+                .build();
     }
 
     protected boolean hasResolverWithPagination(FetchContext context) {

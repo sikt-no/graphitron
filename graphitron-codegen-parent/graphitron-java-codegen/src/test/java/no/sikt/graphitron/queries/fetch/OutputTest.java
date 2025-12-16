@@ -48,13 +48,11 @@ public class OutputTest extends GeneratorTest {
                 "splitQuery", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
                 "Map<Row1<Long>, CustomerTable> queryForWrapper",
                 "Set<Row1<Long>> _rk_wrapper",
-                ".select(DSL.row(_a_address.ADDRESS_ID),DSL.field(",
-                ".where(DSL.row(_a_address.ADDRESS_ID).in(_rk_wrapper))",
-                ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), Record2::value2"
-//                "Set<Row1<Long>> wrapperResolverKeys",
-//                ".select(DSL.row(_address.ADDRESS_ID),DSL.row(",
-//                ".where(DSL.row(_address.ADDRESS_ID).in(wrapperResolverKeys))",
-//                ".fetchMap(r -> r.value1().valuesRow(), Record2::value2"
+                ".select(DSL.row(_a_address.ADDRESS_ID),DSL.row(_a_address_2",
+                """
+                .where(DSL.row(_a_address.ADDRESS_ID).in(_rk_wrapper))
+                .fetchMap(_iv_r -> _iv_r.value1().valuesRow(), Record2::value2
+                """
         );
     }
 
@@ -64,10 +62,9 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "splitQueryListed", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
                 "Map<Row1<Long>, List<CustomerTable>> queryForWrapper",
-                ".select(DSL.row(_a_address.ADDRESS_ID),DSL.multiset(DSL.select",
-                ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), _iv_r -> _iv_r.value2().map(Record1::value1))"
-//                ".select(DSL.row(_address.ADDRESS_ID),DSL.row(address_2030472956_customer.getId()).mapping",
-//                ".fetchGroups(r -> r.value1().valuesRow(), Record2::value2)"
+                ".select(DSL.row(_a_address.ADDRESS_ID),DSL.row(_a_address_223244161_customer.getId()).mapping",
+                ".collect(",
+                ".groupingBy("
         );
     }
 
@@ -388,8 +385,7 @@ public class OutputTest extends GeneratorTest {
     void innerTableSelfReference() {
         assertGeneratedContentContains(
                 "innerTableSelfReference",
-                ".row(_a_film.FILM_ID),DSL.field(",
-//                ".row(_film.FILM_ID),DSL.row(DSL.row(",
+                ".row(_a_film.FILM_ID),DSL.row(DSL.row(",
                 ".mapping(Functions.nullOnAllNull(Film::new");
     }
 

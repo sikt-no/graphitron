@@ -170,7 +170,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                     var fieldContext = context;
                     if (isOverriddenField) {
                         fieldAlias = getOverriddenFieldAlias(processedSchema.getObject(field.getContainerTypeName()), fieldAlias);
-                        var virtualField = new VirtualSourceField(field.getContainerTypeName(), (ObjectField) field);
+                        var virtualField = new VirtualSourceField(field.getContainerTypeName(), (ObjectField) field, processedSchema.isMultiTableField(target));
                         fieldContext = context.forVirtualField(virtualField);
                     }
                     rowElements.add(CodeBlock.of("$L.as($S)", getSelectCodeAndFieldSource(field, fieldContext).getLeft(), fieldAlias));

@@ -397,7 +397,7 @@ public class FormatCodeBlocks {
     }
 
     public static CodeBlock invokeExternalMethod(CodeBlock source, String methodName, String parameters) {
-        return CodeBlock.of("$L.$L($L)",source, methodName, String.join(", ", parameters));
+        return CodeBlock.of("$L.$L($L)", source, methodName, String.join(", ", parameters));
     }
 
     /**
@@ -712,10 +712,10 @@ public class FormatCodeBlocks {
      * @return Select code for the columns in the resolver key
      */
     public static CodeBlock getSelectKeyColumnRow(FetchContext context) {
-        var table = hasIterableWrappedResolverWithPagination(context)
+        var table = hasResolverWithPagination(context)
                     ? context.getTargetTableName()
                     : context.getSourceTableName();
-        var alias = hasIterableWrappedResolverWithPagination(context)
+        var alias = hasResolverWithPagination(context)
                     ? context.getTargetAlias()
                     : context.getSourceAlias();
 
@@ -730,10 +730,10 @@ public class FormatCodeBlocks {
     }
 
     public static CodeBlock getSelectKeyColumn(FetchContext context) {
-        var table = hasIterableWrappedResolverWithPagination(context)
+        var table = hasResolverWithPagination(context)
                     ? context.getTargetTableName()
                     : context.getSourceTableName();
-        var alias = hasIterableWrappedResolverWithPagination(context)
+        var alias = hasResolverWithPagination(context)
                     ? context.getTargetAlias()
                     : context.getSourceAlias();
 
@@ -854,9 +854,8 @@ public class FormatCodeBlocks {
         return CodeBlock.of("$L ? $L : $L", ifExpr, thenExpr, elseExpr);
     }
 
-    private static boolean hasIterableWrappedResolverWithPagination(FetchContext context) {
+    private static boolean hasResolverWithPagination(FetchContext context) {
         return context.getReferenceObjectField().isResolver() &&
-               context.getReferenceObjectField().isIterableWrapped() &&
                ((ObjectField) context.getReferenceObjectField()).hasForwardPagination();
     }
 }

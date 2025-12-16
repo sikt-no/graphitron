@@ -133,8 +133,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "table", Set.of(CUSTOMER_NOT_GENERATED),
                 """
-                .from(_customer)
-                .join(customer_2952383337_address)
+                .from(_a_customer)
+                .join(_a_customer_2168032777_address)
                 .where
                 """
         );
@@ -152,8 +152,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "tableBackwards", Set.of(CUSTOMER_TABLE),
                 """
-                .from(_address)
-                .join(address_2030472956_customer)
+                .from(_a_address)
+                .join(_a_address_223244161_customer)
                 .where
                 """
         );
@@ -170,8 +170,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "nullableField", Set.of(CUSTOMER_NOT_GENERATED),
                 """
-                .from(_customer)
-                .join(customer_2952383337_address)
+                .from(_a_customer)
+                .join(_a_customer_2168032777_address)
                 .where
                 """
         );
@@ -189,9 +189,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "throughTable", Set.of(CUSTOMER_NOT_GENERATED),
                 """
-                .from(_customer)
-                .join(customer_2952383337_address)
-                .join(address_1214171484_city)
+                .from(_a_customer)
+                .join(_a_customer_2168032777_address)
+                .join(_a_address_2138977089_city)
                 .where
                 """
         );
@@ -210,9 +210,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "throughTableBackwards", Set.of(CUSTOMER_TABLE),
                 """
-                .from(_city)
-                .join(city_1887334959_address)
-                .join(address_1356285680_customer)
+                .from(_a_city)
+                .join(_a_city_760939060_address)
+                .join(_a_address_609487378_customer)
                 .where
                 """
         );
@@ -229,8 +229,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "selfTableReference",
                 """
-                .from(_film)
-                .join(film_3747728953_film)
+                .from(_a_film)
+                .join(_a_film_2185543202_film)
                 .where
                 """
         );
@@ -247,11 +247,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "list", Set.of(CUSTOMER_NOT_GENERATED),
                 """
-                .from(_customer)
-                .join(customer_2952383337_address)
+                .from(_a_customer)
+                .join(_a_customer_2168032777_address)
                 .where
                 """,
-                ".fetchGroups(r -> r.value1().valuesRow(), Record2::value2)"
+                ".collect(",
+                ".groupingBy("
         );
     }
 
@@ -266,11 +267,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "nullableList", Set.of(CUSTOMER_NOT_GENERATED),
                  """
-                .from(_customer)
-                .join(customer_2952383337_address)
+                .from(_a_customer)
+                .join(_a_customer_2168032777_address)
                 .where
                 """,
-                ".fetchGroups(r -> r.value1().valuesRow(), Record2::value2)"
+                ".collect(",
+                ".groupingBy("
         );
     }
 
@@ -295,8 +297,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "keyWithSinglePath", Set.of(CUSTOMER_NOT_GENERATED),
                 """
-                .from(_customer)
-                .join(customer_2952383337_address)
+                .from(_a_customer)
+                .join(_a_customer_2168032777_address)
                 .where
                 """
         );
@@ -313,8 +315,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "keyWithMultiplePaths",
                 """
-                .from(_film)
-                .join(film_3747728953_filmoriginallanguageidfkey)
+                .from(_a_film)
+                .join(_a_film_2185543202_filmoriginallanguageidfkey)
                 .where
                 """
         );
@@ -331,8 +333,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "keyBackwards", Set.of(CUSTOMER_TABLE),
                 """
-                .from(_address)
-                .join(address_2030472956_customer)
+                .from(_a_address)
+                .join(_a_address_223244161_customer)
                 .where
                 """
         );
@@ -350,9 +352,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "throughKey", Set.of(CUSTOMER_NOT_GENERATED),
                 """
-                .from(_customer)
-                .join(customer_2952383337_address)
-                .join(address_1214171484_city)
+                .from(_a_customer)
+                .join(_a_customer_2168032777_address)
+                .join(_a_address_2138977089_city)
                 .where
                 """
         );
@@ -368,10 +370,10 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void selfKeyReference() {
         assertGeneratedContentContains(
                 "selfKeyReference",
-                "film_3747728953_film.getId()",
+                "_a_film_2185543202_film.getId()",
                 """
-                .from(_film)
-                .join(film_3747728953_film)
+                .from(_a_film)
+                .join(_a_film_2185543202_film)
                 .where
                 """
         );
@@ -392,9 +394,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "condition", Set.of(CUSTOMER_NOT_GENERATED),
                 """
-                .from(_customer)
-                .join(customer_address)
-                .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_address))
+                .from(_a_customer)
+                .join(_a_customer_addresscustomer_address)
+                .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_a_customer, _a_customer_addresscustomer_address))
                 .where
                 """
         );
@@ -412,9 +414,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "throughCondition", Set.of(CUSTOMER_NOT_GENERATED),
                 """
-                .from(_customer)
-                .join(customer_city)
-                .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.cityCustomer(_customer, customer_city))
+                .from(_a_customer)
+                .join(_a_customer_citycustomer_city)
+                .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.cityCustomer(_a_customer, _a_customer_citycustomer_city))
                 .where
                 """
         );
@@ -432,9 +434,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "selfConditionReference",
                 """
-                .from(_film)
-                .join(film_sequel)
-                .on(no.sikt.graphitron.codereferences.conditions.ReferenceFilmCondition.sequel(_film, film_sequel))
+                .from(_a_film)
+                .join(_a_film_sequel_film)
+                .on(no.sikt.graphitron.codereferences.conditions.ReferenceFilmCondition.sequel(_a_film, _a_film_sequel_film))
                 .where
                 """
         );
@@ -455,9 +457,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "tableAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
                 """
-                .from(_customer)
-                .join(customer_address)
-                .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_address))
+                .from(_a_customer)
+                .join(_a_customer_addresscustomer_address)
+                .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_a_customer, _a_customer_addresscustomer_address))
                 .where
                 """
         );
@@ -479,11 +481,11 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "keyAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
                 """
-                .from(_customer)
-                .join(customer_2952383337_address)
+                .from(_a_customer)
+                .join(_a_customer_2168032777_address)
                 .where
                 """,
-                ".and(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_2952383337_address))"
+                ".and(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_a_customer, _a_customer_2168032777_address))"
         );
     }
 
@@ -501,8 +503,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "fromMultitableInterface", Set.of(CUSTOMER_TABLE),
                 """
-                .from(_payment)
-                .join(payment_425747824_customer)
+                .from(_a_payment)
+                .join(_a_payment_1831371789_customer)
                 .where
                 """
         );
@@ -513,9 +515,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void idArgumentOnNonRootQueryWithoutNodeStrategy() {
         assertGeneratedContentContains(
                 "idArgumentOnNonRootQueryWithoutNodeStrategy", Set.of(CUSTOMER_TABLE),
-                "customer_1589604633_store_left.hasStaffId(staffId)"
-//                "customer_2337142794_store_left = address_2030472956_customer.store()",
-//                "customer_2337142794_store_left.hasStaffId(staffId)"
+                "_a_customer_1589604633_store_left = _a_address_223244161_customer.store()",
+                "_a_customer_1589604633_store_left.hasStaffId(staffId)"
         );
     }
 

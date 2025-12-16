@@ -218,6 +218,29 @@ public class FetchContext {
         return getPreviousTable() == null ? "" : getPreviousTable().getName();
     }
 
+    public String getSourceAlias() {
+        return !currentJoinSequence.isEmpty() ? currentJoinSequence.getFirst().getMappingName() : null;
+    }
+
+    public String getSecondOrFirstAliasName(boolean hasConditionReferenceAsFirstStep) {
+        String joinTableName = null;
+
+        if (!getJoinSet().isEmpty()) {
+            var firstJoin = getJoinSet().stream().findFirst().orElse(null);
+            if (firstJoin != null) {
+                joinTableName = firstJoin.getJoinTargetTable().getMappingName();
+            }
+        }
+
+        return !currentJoinSequence.isEmpty()
+               ? currentJoinSequence.size() > 1
+                 ? !hasConditionReferenceAsFirstStep
+                   ? currentJoinSequence.get(1).getMappingName()
+                   : currentJoinSequence.getFirst().getMappingName()
+                 : currentJoinSequence.getFirst().getMappingName()
+               : null;
+    }
+
     public JOOQMapping getSourceTable() {
         return currentJoinSequence.isEmpty()
                ? getPreviousTable()
@@ -228,10 +251,6 @@ public class FetchContext {
         return getSourceTable() == null
                ? ""
                : currentJoinSequence.getFirst().getTable().getName();
-    }
-
-    public String getSourceAlias() {
-        return currentJoinSequence.render(currentJoinSequence.getFirst()).toString();
     }
 
     /**
@@ -248,9 +267,6 @@ public class FetchContext {
         return getTargetTable() == null ? "" : getTargetTable().getName();
     }
 
-    public String getSourceAlias() {
-        return !currentJoinSequence.isEmpty() ? currentJoinSequence.getFirst().getMappingName() : null;
-    }
 
     /**
      * @return The target table alias of this context.
@@ -434,7 +450,7 @@ public class FetchContext {
                                   ? joinSequenceFromFieldReferences
                                   : previousJoinSequence;
 
-        // When no more tables are reachable, return the acumulated join sequence retrieved from the field references
+        // When no more tables are reachable, return the accumulated join sequence retrieved from the field references
         // and/or the previous join sequence.
         if (refTable == null) {
             return updatedJoinSequence;
@@ -455,6 +471,10 @@ public class FetchContext {
             }
         }
 
+        boolean isMultiTableField = getReferenceObjectField() instanceof VirtualSourceField
+                                    ? ((VirtualSourceField) getReferenceObjectField()).isOriginalMultitableField()
+                                    : processedSchema.isMultiTableField(getReferenceObjectField());
+
         // Add fake reference to the reference table so that the last step is also executed if no table or key is
         // specified. If method creates an alias that has previously been generated, the new alias will be ignored
         var finalSequence = resolveNextSequence(
@@ -463,7 +483,8 @@ public class FetchContext {
                 updatedJoinSequence,
                 false,
                 this.aliasSet.isEmpty(),
-                referenceObjectField.isInput()
+                referenceObjectField.isInput(),
+                isMultiTableField
         );
 
         if (!finalSequence.isEmpty()) {
@@ -516,15 +537,29 @@ public class FetchContext {
             relations.add(new TableRelation(previousTable, refTable));
         }
 
-        for (int i = 0; i < directiveReferences.size(); i++) {
-            joinSequence = resolveNextSequence(
-                    directiveReferences.get(i),
-                    relations.get(i),
-                    joinSequence,
-                    requiresLeftJoin,
-                    i < 1,
-                    isCurrentFieldAnInput
-            );
+        boolean isMultitableField = getReferenceObjectField() instanceof VirtualSourceField
+                                    ? ((VirtualSourceField) getReferenceObjectField()).isOriginalMultitableField()
+                                    : processedSchema.isMultiTableField(getReferenceObjectField());
+
+        if (isMultitableField) {
+            for (int i = 0; i < directiveReferences.size(); i++) {
+                if (getReferenceObjectField().isResolver() && previousContext == null && i > 0)
+                    break;
+
+                joinSequence = resolveNextSequence(directiveReferences.get(i), relations.get(i), joinSequence, requiresLeftJoin, i < 1, isCurrentFieldAnInput, isMultitableField);
+            }
+        } else {
+            for (int i = 0; i < directiveReferences.size(); i++) {
+                joinSequence = resolveNextSequence(
+                        directiveReferences.get(i),
+                        relations.get(i),
+                        joinSequence,
+                        requiresLeftJoin,
+                        i < 1,
+                        isCurrentFieldAnInput,
+                        isMultitableField
+                );
+            }
         }
 
         return joinSequence;
@@ -546,7 +581,8 @@ public class FetchContext {
             JoinListSequence joinSequence,
             boolean requiresLeftJoin,
             boolean applyResolverCheck,
-            boolean isCurrentFieldAnInput
+            boolean isCurrentFieldAnInput,
+            boolean isMultitableField
     ) {
         var previousTable = relation.getFrom();
         var targetTable = relation.getToTable();
@@ -556,13 +592,13 @@ public class FetchContext {
             return makeAlias(targetTable);
         }
 
-        if (getReferenceObjectField().isResolver() && this.previousContext == null && applyResolverCheck) {
+        if (getReferenceObjectField().isResolver() && this.previousContext == null && (applyResolverCheck || isMultitableField)) {
             if (!isCurrentFieldAnInput) {
                 joinSequence = makeAlias(previousTable);
             }
 
             // Skip additional joins or aliases for connection objects, as these are handled in the subquery itself.
-            if (processedSchema.isConnectionObject(getReferenceObjectField())) {
+            if (processedSchema.isConnectionObject(getReferenceObjectField()) || isMultitableField) {
                 return joinSequence;
             }
         }
@@ -572,35 +608,12 @@ public class FetchContext {
         var keyToUse = getKey(fieldRef, relation);
 
         if (fieldRef.hasTableCondition() && keyToUse == null) {
-            if (referenceObjectField.isResolver()) {
-                var alias = new Alias(
-                        previousTable.getCodeName() + "_" + getReferenceObjectField().getName(),
-                        JoinListSequence.of(targetTable),
-                        false,
-                        null
-                );
-
-                this.joinSet.add(fieldRef.createConditionJoinFor(
-                        this.previousContext != null && this.referenceObjectField.isResolver()
-                        ? JoinListSequence.of(this.previousContext.getCurrentJoinSequence().getLast())
-                        : newSequence,
-                        alias,
-                        targetOrPrevious,
-                        requiresLeftJoin
-                ));
-
-                newSequence.add(alias);
-                this.aliasSet.add(alias.toAliasWrapper());
-                return newSequence.cloneAdd(alias);
-            }
-
             // Indicates first alias in new subquery.
             if (newSequence.isEmpty()) {
                 var alias = new Alias(
                         previousTable.getCodeName() + "_" + getReferenceObjectField().getName(),
                         JoinListSequence.of(previousTable),
-                        false,
-                        previousTable
+                        false
                 );
 
                 newSequence.add(alias);
@@ -624,7 +637,7 @@ public class FetchContext {
                 }
             }
 
-            var join = fieldRef.createConditionJoinFor(newSequence, targetOrPrevious, requiresLeftJoin, targetTable);
+            var join = fieldRef.createConditionJoinFor(newSequence, targetOrPrevious, requiresLeftJoin);
             if (!newSequence.isEmpty() || this.addAllJoinsToJoinSet) {
                 this.joinSet.add(join);
             }
@@ -681,8 +694,7 @@ public class FetchContext {
                 new Alias(
                         prefix + "_" + keyOverride.getCodeName(),
                         joinSequence,
-                        isNullable,
-                        null),
+                        isNullable),
                 referenceObjectField,
                 targetTable.equals(referenceTable),
                 processedSchema);
@@ -696,21 +708,16 @@ public class FetchContext {
         );
     }
 
-    private JoinListSequence makeAlias(JOOQMapping mapping, JOOQMapping shortnameTable) {
+    private JoinListSequence makeAlias(JOOQMapping mapping) {
         AliasWrapper alias = new AliasWrapper(
                 new Alias(
                         mapping.getCodeName(),
                         JoinListSequence.of(mapping),
-                        false,
-                        shortnameTable),
+                        false),
                 referenceObjectField,
                 processedSchema);
         aliasSet.add(alias);
         return JoinListSequence.of(alias.getAlias());
-    }
-
-    private JoinListSequence makeAlias(JOOQMapping mapping) {
-        return makeAlias(mapping, null);
     }
 
     public CodeBlock renderQuerySource(JoinElement localTable) {
@@ -773,7 +780,7 @@ public class FetchContext {
         var targetOrPrevious = targetTable != null ? targetTable : previousTable;
 
         // TODO: If a condition exists but no key is provided in the field reference, no key is registered, even though
-        //  an implicit key might exist. Should this case be handled differently?
+        //  an explicit key might exist. Perhaps handle this case differently?
         var keyToUse = fieldReference.hasKey() || fieldReference.hasTableCondition()
                        ? fieldReference.getKey()
                        : findImplicitKey(previousTable.getMappingName(), targetOrPrevious.getMappingName())

@@ -154,7 +154,7 @@ public class InputTest extends GeneratorTest {
                 .and(_a_staff.LAST_NAME.eq(staff.getInfo().getName().getLastname()))
                 .and(staff.getInfo().getJobEmail().getEmail() != null ? _a_staff.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()) : DSL.noCondition())
                 .and(_a_staff.ACTIVE.eq(staff.getActive()))
-                .orderBy(orderFields)
+                .orderBy(_iv_orderFields)
                 """
         );
    }
@@ -178,8 +178,8 @@ public class InputTest extends GeneratorTest {
     void onSplitQueryField() {
         assertGeneratedContentContains("onSplitQueryField",
                  """
-                .where(DSL.row(_address.ADDRESS_ID).in(addressResolverKeys))
-                .and(address_2030472956_customer.EMAIL.eq(email))
+                .where(DSL.row(_a_address.ADDRESS_ID).in(_rk_address))
+                .and(_a_address_223244161_customer.EMAIL.eq(email))
                 """
         );
     }

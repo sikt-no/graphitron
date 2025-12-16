@@ -56,7 +56,7 @@ public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator {
                     .add("case $S: ", entity.getName())
                     .add(returnWrap(CodeBlock.of("($T) $L",
                                     processedSchema.getUnion(target.getTypeName()).getGraphClassName(),
-                                    transformDTOBlock(new VirtualSourceField(entity, target.getTypeName()), fetchBlock))
+                                    transformDTOBlock(new VirtualSourceField(entity, target.getTypeName(), processedSchema.isMultiTableField(target)), fetchBlock))
                             )
                     );
         }

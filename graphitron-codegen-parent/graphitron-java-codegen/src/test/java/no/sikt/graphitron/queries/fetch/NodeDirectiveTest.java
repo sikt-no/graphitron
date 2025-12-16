@@ -95,11 +95,10 @@ public class NodeDirectiveTest extends GeneratorTest {
     void splitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/default",
-                "DSL.select(DSL.row(_iv_nodeIdStrategy.createId(\"Customer\", _a_address_2"
-//                """
-//                DSL.row(_address.ADDRESS_ID),
-//                DSL.row(nodeIdStrategy.createId("Customer", address_2030472956
-//                """
+                """
+                DSL.row(_a_address.ADDRESS_ID),
+                DSL.row(_iv_nodeIdStrategy.createId("Customer", _a_address_2
+                """
         );
     }
 
@@ -108,11 +107,10 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customTypeIdInSplitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/customTypeId",
-                "DSL.select(DSL.row(_iv_nodeIdStrategy.createId(\"C\", _a_address_2"
-//                """
-//                DSL.row(_address.ADDRESS_ID),
-//                DSL.row(nodeIdStrategy.createId("C", address_2
-//                """
+                """
+                DSL.row(_a_address.ADDRESS_ID),
+                DSL.row(_iv_nodeIdStrategy.createId("C", _a_address_2
+                """
         );
     }
 
@@ -121,11 +119,10 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customKeyColumnsInSplitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/customKeyColumns",
-                "DSL.select(DSL.row(_iv_nodeIdStrategy.createId(\"Address\", _a_customer_2168032777_address.ADDRESS_ID)).mapping"
-//                """
-//                DSL.row(_customer.CUSTOMER_ID),
-//                DSL.row(nodeIdStrategy.createId("Address", customer_2952383337_address.ADDRESS_ID)).mapping
-//                """
+                """
+                DSL.row(_a_customer.CUSTOMER_ID),
+                DSL.row(_iv_nodeIdStrategy.createId("Address", _a_customer_2168032777_address.ADDRESS_ID)).mapping
+                """
         );
     }
 

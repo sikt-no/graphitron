@@ -53,13 +53,11 @@ public class SortingTest extends GeneratorTest {
     @DisplayName("Default sorting on list with splitQuery")
     void splitQuery() {
         assertGeneratedContentContains("splitQuery",
-                "orderFields = _a_address_223244161_customer",
-                "customer).orderBy(_iv_orderFields"
-//                "orderFields = address_2030472956_customer",
-//                """
-//                .where(DSL.row(_address.ADDRESS_ID).in(addressResolverKeys))
-//                .orderBy(orderFields)
-//                """
+                "_iv_orderFields = _a_address_223244161_customer",
+                """
+                .where(DSL.row(_a_address.ADDRESS_ID).in(_rk_address))
+                .orderBy(_iv_orderFields)
+                """
         );
     }
 
@@ -67,16 +65,13 @@ public class SortingTest extends GeneratorTest {
     @DisplayName("Default sorting on list with splitQuery and pagination")
     void splitQueryAndPagination() {
         assertGeneratedContentContains("splitQueryAndPagination",
-                "orderFields = address_2030472956_customer",
+                "_iv_orderFields = _a_address_223244161_customer",
                 """
-                .orderBy(orderFields)
-               .seek(QueryHelper.getOrderByValues(ctx, orderFields, after))
-               .limit
-               """,
-               """
-               ))).from(_address)
-               .where
-               """
+                .orderBy(_iv_orderFields)
+                .seek(QueryHelper.getOrderByValues(_iv_ctx, _iv_orderFields, after))
+                .limit(_iv_pageSize + 1)
+                """,
+                "))).from(_a_address).where"
         );
     }
 
