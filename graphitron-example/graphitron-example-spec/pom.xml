@@ -115,6 +115,21 @@
                             <optionalSelect><onSubqueryReferences>true</onSubqueryReferences></optionalSelect>
                         </configuration>
                     </execution>
+                    <execution>
+                        <id>default-cli</id>
+                        <!-- The @Execute annotation on ValidateMojo forks lifecycle to generate-resources first -->
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>validate</goal>
+                        </goals>
+                        <configuration>
+                            <schemaFiles>
+                                <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/generator-schema.graphql</schemaFile>
+                            </schemaFiles>
+                            <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
+                            <makeNodeStrategy>true</makeNodeStrategy>
+                        </configuration>
+                    </execution>
                 </executions>
                 <dependencies>
                     <dependency>
