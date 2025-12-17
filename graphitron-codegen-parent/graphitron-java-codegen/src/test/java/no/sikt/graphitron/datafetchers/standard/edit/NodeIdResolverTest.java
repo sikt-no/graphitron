@@ -55,11 +55,9 @@ public class NodeIdResolverTest extends GeneratorTest {
                         var _iv_transform = new RecordTransformer(_iv_env);
                         var _mi_inRecord = _iv_transform.filmActorInputToJOOQRecord(_mi_in, _iv_nodeIdStrategy, "in");
                         var _unpacked_id = _mi_in.getId() != null ? _iv_nodeIdStrategy.unpackIdValues("FilmActor", _mi_in.getId(), FilmActor.FILM_ACTOR.getPrimaryKey().getFieldsArray()) : null;
-                        var _val_id_ACTOR_ID = _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null;
-                        var _val_actor_ACTOR_ID = _mi_in.getActor();
-                        if (_val_id_ACTOR_ID != null && _val_actor_ACTOR_ID != null && !_val_id_ACTOR_ID.equals(_val_actor_ACTOR_ID)) {
-                            throw new IllegalArgumentException("Field id and field actor differs in value but writes to the same column.");
-                        }
+                        ResolverHelpers.assertSameColumnValues(
+                            "id", _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null,
+                            "actor", _mi_in.getActor());
                         """
         );
     }
@@ -73,13 +71,11 @@ public class NodeIdResolverTest extends GeneratorTest {
                         List<FilmActorInput> _mi_in = ResolverHelpers.transformDTOList(_iv_env.getArgument("in"), FilmActorInput.class);
                         var _iv_transform = new RecordTransformer(_iv_env);
                         var _mi_inRecordList = _iv_transform.filmActorInputToJOOQRecord(_mi_in, _iv_nodeIdStrategy, "in");
-                        for (var _nit__mi_in : _mi_in) {
-                            var _unpacked_id = _nit__mi_in.getId() != null ? _iv_nodeIdStrategy.unpackIdValues("FilmActor", _nit__mi_in.getId(), FilmActor.FILM_ACTOR.getPrimaryKey().getFieldsArray()) : null;
-                            var _val_id_ACTOR_ID = _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null;
-                            var _val_actor_ACTOR_ID = _nit__mi_in.getActor();
-                            if (_val_id_ACTOR_ID != null && _val_actor_ACTOR_ID != null && !_val_id_ACTOR_ID.equals(_val_actor_ACTOR_ID)) {
-                                throw new IllegalArgumentException("Field id and field actor differs in value but writes to the same column.");
-                            }
+                        for (var _nit_in : _mi_in) {
+                            var _unpacked_id = _nit_in.getId() != null ? _iv_nodeIdStrategy.unpackIdValues("FilmActor", _nit_in.getId(), FilmActor.FILM_ACTOR.getPrimaryKey().getFieldsArray()) : null;
+                            ResolverHelpers.assertSameColumnValues(
+                                "id", _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null,
+                                "actor", _nit_in.getActor());
                         }
                         """
                 );
@@ -90,16 +86,12 @@ public class NodeIdResolverTest extends GeneratorTest {
     void assertOverlappingNodeIds() {
         assertGeneratedContentContains("assertOverlappingNodeIds", Set.of(NODE),
                 """
-                        var _val_id_ACTOR_ID = _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null;
-                        var _val_secondId_ACTOR_ID = _unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_secondId[0]) : null;
-                        if (_val_id_ACTOR_ID != null && _val_secondId_ACTOR_ID != null && !_val_id_ACTOR_ID.equals(_val_secondId_ACTOR_ID)) {
-                            throw new IllegalArgumentException("Field id and field secondId differs in value but writes to the same column.");
-                        }
-                        var _val_id_FILM_ID = _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.FILM_ID, _unpacked_id[1]) : null;
-                        var _val_secondId_FILM_ID = _unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.FILM_ID, _unpacked_secondId[1]) : null;
-                        if (_val_id_FILM_ID != null && _val_secondId_FILM_ID != null && !_val_id_FILM_ID.equals(_val_secondId_FILM_ID)) {
-                            throw new IllegalArgumentException("Field id and field secondId differs in value but writes to the same column.");
-                        }
+                        ResolverHelpers.assertSameColumnValues(
+                            "id", _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null,
+                            "secondId", _unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_secondId[0]) : null);
+                        ResolverHelpers.assertSameColumnValues(
+                            "id", _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.FILM_ID, _unpacked_id[1]) : null,
+                            "secondId", _unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.FILM_ID, _unpacked_secondId[1]) : null);
                         """
         );
     }
@@ -109,23 +101,13 @@ public class NodeIdResolverTest extends GeneratorTest {
     void assertMultipleOverlappingFields() {
         assertGeneratedContentContains("assertManyOverlappingFields", Set.of(NODE),
                 """
-                            var _val_id_ACTOR_ID = _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null;
-                            var _val_secondId_ACTOR_ID = _unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_secondId[0]) : null;
-                            var _val_actor_ACTOR_ID = _nit__mi_in.getActor();
-                            if (_val_id_ACTOR_ID != null && _val_secondId_ACTOR_ID != null && !_val_id_ACTOR_ID.equals(_val_secondId_ACTOR_ID)) {
-                                throw new IllegalArgumentException("Field id and field secondId differs in value but writes to the same column.");
-                            }
-                            if (_val_id_ACTOR_ID != null && _val_actor_ACTOR_ID != null && !_val_id_ACTOR_ID.equals(_val_actor_ACTOR_ID)) {
-                                throw new IllegalArgumentException("Field id and field actor differs in value but writes to the same column.");
-                            }
-                            if (_val_secondId_ACTOR_ID != null && _val_actor_ACTOR_ID != null && !_val_secondId_ACTOR_ID.equals(_val_actor_ACTOR_ID)) {
-                                throw new IllegalArgumentException("Field secondId and field actor differs in value but writes to the same column.");
-                            }
-                            var _val_id_FILM_ID = _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.FILM_ID, _unpacked_id[1]) : null;
-                            var _val_secondId_FILM_ID = _unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.FILM_ID, _unpacked_secondId[1]) : null;
-                            if (_val_id_FILM_ID != null && _val_secondId_FILM_ID != null && !_val_id_FILM_ID.equals(_val_secondId_FILM_ID)) {
-                                throw new IllegalArgumentException("Field id and field secondId differs in value but writes to the same column.");
-                            }
+                            ResolverHelpers.assertSameColumnValues(
+                                "id", _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null,
+                                "secondId", _unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_secondId[0]) : null,
+                                "actor", _nit_in.getActor());
+                            ResolverHelpers.assertSameColumnValues(
+                                "id", _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.FILM_ID, _unpacked_id[1]) : null,
+                                "secondId", _unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.FILM_ID, _unpacked_secondId[1]) : null);
                         """);
     }
 

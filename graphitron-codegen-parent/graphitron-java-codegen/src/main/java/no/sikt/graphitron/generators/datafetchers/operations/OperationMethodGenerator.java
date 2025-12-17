@@ -41,6 +41,7 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodNameForField;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.FUNCTION;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -363,7 +364,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
             var type = processedSchema.getInputType(inputRecord);
             var inputVarName = inputPrefix(uncapitalize(inputRecord.getName()));
             var isListed = inputRecord.isIterableWrapped();
-            var itemVarName = namedIteratorPrefixIf(inputVarName, isListed);
+            var itemVarName = isListed ? namedIteratorPrefix(inputRecord.getName()) : inputVarName;
 
             var targetTable = type.getTable().getName();
             for (InputField recordField : type.getFields()) {
@@ -428,33 +429,21 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
             }
 
             for (var entry : overlappingColumns) {
-                var columnName = entry.getKey();
                 var mappings = entry.getValue();
 
-                // Extract values into variables for cleaner comparison code
-                var valueVarNames = new ArrayList<String>();
-                for (var mapping : mappings) {
-                    var valueVarName = VariablePrefix.valuePrefix(mapping.field.getName() + "_" + columnName);
-                    valueVarNames.add(valueVarName);
-                    code.addStatement("var $N = $L", valueVarName, getValueExtractionCode(mapping, itemVarName, type));
-                }
-
-                for (int i = 0; i < mappings.size() - 1; i++) {
-                    for (int j = i + 1; j < mappings.size(); j++) {
-                        var mapping1 = mappings.get(i);
-                        var mapping2 = mappings.get(j);
-                        var var1 = valueVarNames.get(i);
-                        var var2 = valueVarNames.get(j);
-
-                        code.beginControlFlow("if ($N != null && $N != null && !$N.equals($N))",
-                                        var1, var2, var1, var2)
-                                .addStatement("throw new $T($S)",
-                                        IllegalArgumentException.class,
-                                        "Field " + mapping1.field.getName() + " and field " + mapping2.field.getName() +
-                                                " differs in value but writes to the same column.")
-                                .endControlFlow();
+                // Build varargs call with alternating field names and value extraction expressions
+                var args = CodeBlock.builder();
+                for (int i = 0; i < mappings.size(); i++) {
+                    var mapping = mappings.get(i);
+                    if (i > 0) {
+                        args.add(",\n");
                     }
+                    args.add("$S, $L", mapping.field.getName(), getValueExtractionCode(mapping, itemVarName, type));
                 }
+
+                code.addStatement("$T.assertSameColumnValues(\n$L)",
+                        RESOLVER_HELPERS.className,
+                        args.build());
             }
 
             if (isListed) {
