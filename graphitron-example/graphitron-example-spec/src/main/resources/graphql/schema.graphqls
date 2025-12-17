@@ -257,7 +257,7 @@ input CustomerJavaRecordInput @record(record: {className: "no.sikt.graphitron.ex
 }
 
 type Actor implements Node @node @table(name: "ACTOR") {
-    id: ID!
+    id: ID! @nodeId
 }
 
 type FilmActor implements Node @node @table(name: "FILM_ACTOR") {

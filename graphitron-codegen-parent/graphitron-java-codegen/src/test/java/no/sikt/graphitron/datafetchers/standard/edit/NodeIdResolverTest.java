@@ -82,32 +82,16 @@ public class NodeIdResolverTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Assert overlapping NodeIds")
-    void assertOverlappingNodeIds() {
-        assertGeneratedContentContains("assertOverlappingNodeIds", Set.of(NODE),
-                """
-                        ResolverHelpers.assertSameColumnValues(
-                            "id", _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null,
-                            "secondId", _unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_secondId[0]) : null);
-                        ResolverHelpers.assertSameColumnValues(
-                            "id", _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.FILM_ID, _unpacked_id[1]) : null,
-                            "secondId", _unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.FILM_ID, _unpacked_secondId[1]) : null);
-                        """
-        );
-    }
-
-    @Test
     @DisplayName("Assert many overlapping fields")
     void assertMultipleOverlappingFields() {
         assertGeneratedContentContains("assertManyOverlappingFields", Set.of(NODE),
                 """
                             ResolverHelpers.assertSameColumnValues(
                                 "id", _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_id[0]) : null,
-                                "secondId", _unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.ACTOR_ID, _unpacked_secondId[0]) : null,
                                 "actor", _nit_in.getActor());
                             ResolverHelpers.assertSameColumnValues(
                                 "id", _unpacked_id != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.FILM_ID, _unpacked_id[1]) : null,
-                                "secondId", _unpacked_secondId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.FILM_ID, _unpacked_secondId[1]) : null);
+                                "filmId", _unpacked_filmId != null ? _iv_nodeIdStrategy.getFieldValue(FilmActor.FILM_ACTOR.FILM_ID, _unpacked_filmId[0]) : null);
                         """);
     }
 

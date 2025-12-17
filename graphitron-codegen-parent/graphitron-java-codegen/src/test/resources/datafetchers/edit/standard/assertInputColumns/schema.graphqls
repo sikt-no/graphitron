@@ -3,7 +3,7 @@ type Mutation {
 }
 
 input FilmActorInput @table(name: "film_actor"){
-    id: ID!
+    id: ID! @nodeId(typeName: "FilmActor")
     actor: String @field(name: "actor_id")
 }
 

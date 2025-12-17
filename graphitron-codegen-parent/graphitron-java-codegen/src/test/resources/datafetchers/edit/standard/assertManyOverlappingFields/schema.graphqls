@@ -3,11 +3,15 @@ type Mutation {
 }
 
 input FilmActorInput @table(name: "film_actor"){
-    id: ID!
-    secondId: ID! @nodeId(typeName: "FilmActor")
+    id: ID! @nodeId(typeName: "FilmActor")
+    filmId: ID! @nodeId(typeName: "Film")
     actor: String @field(name: "actor_id")
 }
 
 type FilmActor implements Node @table(name: "film_actor") @node {
+    id: ID!
+}
+
+type Film implements Node @table(name: "film") @node {
     id: ID!
 }
