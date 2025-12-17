@@ -1,0 +1,16 @@
+# Tests loadNonNullable methods
+# - DataFetcherHelper.loadNonNullable: City.addresses ([Address!]!)
+# - ServiceDataFetcherHelper.loadNonNullable: City.filmsFromCity ([Film!]! @service)
+{
+    cities(first: 2) {
+        nodes {
+            id
+            addresses {
+                id
+            }
+            filmsFromCity {
+                id
+            }
+        }
+    }
+}

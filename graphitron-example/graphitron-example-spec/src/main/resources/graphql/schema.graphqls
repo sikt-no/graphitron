@@ -123,7 +123,7 @@ type City implements Node @table @node(typeId: "CityType"){
     name: String! @field(name: "CITY_")
     countryName: String! @field(name: "COUNTRY_") @reference(path: [{table: "COUNTRY"}])
     addressExample: Address @splitQuery @notGenerated
-    addresses: [Address] @splitQuery
+    addresses: [Address!]! @splitQuery # Non-nullable for loadNonNullable approval test
     addressesPaginated: [Address] @splitQuery @asConnection
     customers: [Customer] @splitQuery @reference(path: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY", condition: {className: "no.sikt.graphitron.example.service.conditions.CityConditions", method: "customersForCityViaAddresses"}}])
     customersPaginated: [Customer] @splitQuery @asConnection @reference(path: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY", condition: {className: "no.sikt.graphitron.example.service.conditions.CityConditions", method: "customersForCityViaAddresses"}}])

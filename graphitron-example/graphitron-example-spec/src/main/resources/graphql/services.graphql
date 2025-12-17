@@ -83,3 +83,7 @@ input UpdateCustomerEmailInput @record(record: {className: "no.sikt.graphitron.e
   customerId: Int
   email: String
 }
+
+extend type City {
+    filmsFromCity: [Film!]! @splitQuery @service(service: {className: "no.sikt.graphitron.example.service.MockService", method: "filmsFromCity"}) # Non-nullable for loadNonNullable approval test
+}

@@ -405,6 +405,7 @@ public class ProcessedDefinitionsValidator {
                 .flatMap(it -> schema.isMultiTableField(it)
                         ? schema.getTypesFromInterfaceOrUnion(it.getTypeName()).stream().map(o -> new VirtualSourceField(o.getName(), (ObjectField) it))
                         : Stream.of(it))
+                .filter(field -> !field.hasServiceReference())
                 .filter(field -> schema.isRecordType(field.getTypeName()) || field.hasFieldReferences() || field.isResolver())
                 .forEach(this::validateReferencePath);
     }
