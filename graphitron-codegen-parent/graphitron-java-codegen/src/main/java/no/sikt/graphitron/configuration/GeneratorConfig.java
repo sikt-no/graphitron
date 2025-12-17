@@ -5,6 +5,7 @@ import no.sikt.graphitron.configuration.externalreferences.ExternalReferences;
 import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
 import no.sikt.graphitron.generate.Generator;
+import no.sikt.graphitron.generate.Validator;
 
 import java.io.File;
 import java.net.URL;
@@ -114,6 +115,41 @@ public class GeneratorConfig {
         alwaysUsePrimaryKeyInSplitQueries = true;
         codeGenerationThresholds = mojo.getCodeGenerationThresholds();
         requireTypeIdOnNode = mojo.requireTypeIdOnNode();
+    }
+
+    /**
+     * Load minimal properties needed for validation only.
+     * This is a subset of {@link #loadProperties(Generator)} for the validate goal.
+     */
+    public static void loadValidatorProperties(Validator validator) {
+        var files = validator.getSchemaFiles();
+        Set<String> inputFiles = Set.of();
+        if (files != null) {
+            inputFiles = new HashSet<>(files);
+            if (GENERATOR_DIRECTIVES_PATH != null) {
+                inputFiles.add(GENERATOR_DIRECTIVES_PATH.getPath());
+            }
+        }
+
+        generatorSchemaFiles = inputFiles;
+        userSchema = files;
+        generatedJooqPackage = validator.getJooqGeneratedPackage();
+        makeNodeStrategy = validator.makeNodeStrategy();
+        requireTypeIdOnNode = validator.requireTypeIdOnNode();
+
+        // Set defaults for unused fields to prevent NPEs
+        // Note: These packages are needed by ProcessedSchema during construction,
+        // even though code generation won't actually use them.
+        outputDirectory = null;
+        outputPackage = "validation.unused";
+        generatedSchemaResolversPackage = "validation.unused.api";
+        generatedSchemaModelsPackage = "validation.unused.model";
+        maxAllowedPageSize = 1000;
+        externalReferences = new ExternalReferences(List.of());
+        externalReferenceImports = Set.of();
+        globalTransforms = List.of();
+        recordValidation = new RecordValidation();
+        codeGenerationThresholds = new CodeGenerationThresholds();
     }
 
     /**
