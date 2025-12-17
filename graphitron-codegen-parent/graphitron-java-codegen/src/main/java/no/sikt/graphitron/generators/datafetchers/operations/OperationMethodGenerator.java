@@ -369,7 +369,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
             var targetTable = type.getTable().getName();
             for (InputField recordField : type.getFields()) {
                 if (processedSchema.isNodeIdField(recordField)) {
-                    var nodeType = processedSchema.getNodeTypeForNodeIdField(recordField);
+                    var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(recordField);
                     var unpackedVarName = VariablePrefix.unpackedPrefix(recordField.getName());
 
                     LinkedList<String> columns;
@@ -414,7 +414,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                     .toList();
 
             for (InputField nodeIdField : nodeIdFieldsToUnpack) {
-                var nodeType = processedSchema.getNodeTypeForNodeIdField(nodeIdField);
+                var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(nodeIdField);
                 var unpackedVarName = unpackedPrefix(nodeIdField.getName());
 
                 code.addStatement("var $N = $N.$L() != null ? $N.unpackIdValues($S, $N.$L(), $L) : null",

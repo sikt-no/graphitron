@@ -67,8 +67,8 @@ public class ResolverHelpers {
 
         if (conflictingEntry != null) {
             throw new IllegalArgumentException(
-                    "Field " + firstEntry.getKey() + " and field " + conflictingEntry.getKey() +
-                    " differs in value but writes to the same column.");
+                    "Input fields " + firstEntry.getKey() + " and " + conflictingEntry.getKey() +
+                    " have conflicting values.");
         }
     }
 

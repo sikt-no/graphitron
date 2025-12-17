@@ -40,7 +40,7 @@ class ResolverHelpersTest {
                 "id", 1, "actor", 2
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Field id and field actor differs in value but writes to the same column.");
+                .hasMessage("Input fields id and actor have conflicting values.");
     }
 
     @Test
@@ -50,7 +50,7 @@ class ResolverHelpersTest {
                 "id", 1, "secondId", 2, "actor", 3
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Field id and field secondId differs in value but writes to the same column.");
+                .hasMessage("Input fields id and secondId have conflicting values.");
     }
 
     @Test
@@ -68,7 +68,7 @@ class ResolverHelpersTest {
                 "actor", 1, "id", 2
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Field actor and field id differs in value but writes to the same column.");
+                .hasMessage("Input fields actor and id have conflicting values.");
     }
 
     @Test
