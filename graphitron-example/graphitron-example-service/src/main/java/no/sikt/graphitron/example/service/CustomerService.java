@@ -41,7 +41,7 @@ public class CustomerService {
 
     private CustomerRecord createCustomer(int id, String firstName, String lastName, String email) {
         return new CustomerRecord(
-                id, null, firstName, lastName, email, null, null, null, null, null
+                id, null, firstName, lastName, email, null, null, null, null, null, null, null
         );
     }
 

@@ -96,6 +96,16 @@ public class RewardsReport extends TableImpl<CustomerRecord> {
      */
     public final TableField<CustomerRecord, Integer> ACTIVE = createField(DSL.name("active"), SQLDataType.INTEGER, this, "");
 
+    /**
+     * The column <code>public.rewards_report.usernames</code>.
+     */
+    public final TableField<CustomerRecord, String[]> USERNAMES = createField(DSL.name("usernames"), SQLDataType.CLOB.array(), this, "");
+
+    /**
+     * The column <code>public.rewards_report.past_address_ids</code>.
+     */
+    public final TableField<CustomerRecord, Integer[]> PAST_ADDRESS_IDS = createField(DSL.name("past_address_ids"), SQLDataType.INTEGER.array(), this, "");
+
     private RewardsReport(Name alias, Table<CustomerRecord> aliased) {
         this(alias, aliased, new Field[] {
             DSL.val(null, SQLDataType.INTEGER),

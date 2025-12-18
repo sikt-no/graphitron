@@ -11,6 +11,8 @@ quarkus:
       enabled: true
       image-name: sakiladb/postgres:15
       port: 53143
+      db-name: sakila
+      init-script-path: init-script.sql
       properties:
         POSTGRES_DB: sakila
         POSTGRES_USER: sakila

@@ -171,6 +171,34 @@ public class CustomerRecord extends UpdatableRecordImpl<CustomerRecord> {
         return (Integer) get(9);
     }
 
+    /**
+     * Setter for <code>public.customer.usernames</code>.
+     */
+    public void setUsernames(String[] value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for <code>public.customer.usernames</code>.
+     */
+    public String[] getUsernames() {
+        return (String[]) get(10);
+    }
+
+    /**
+     * Setter for <code>public.customer.past_address_ids</code>.
+     */
+    public void setPastAddressIds(Integer[] value) {
+        set(11, value);
+    }
+
+    /**
+     * Getter for <code>public.customer.past_address_ids</code>.
+     */
+    public Integer[] getPastAddressIds() {
+        return (Integer[]) get(11);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -194,7 +222,7 @@ public class CustomerRecord extends UpdatableRecordImpl<CustomerRecord> {
     /**
      * Create a detached, initialised CustomerRecord
      */
-    public CustomerRecord(Integer customerId, Integer storeId, String firstName, String lastName, String email, Integer addressId, Boolean activebool, LocalDate createDate, LocalDateTime lastUpdate, Integer active) {
+    public CustomerRecord(Integer customerId, Integer storeId, String firstName, String lastName, String email, Integer addressId, Boolean activebool, LocalDate createDate, LocalDateTime lastUpdate, Integer active, String[] usernames, Integer[] pastAddressIds) {
         super(Customer.CUSTOMER);
 
         setCustomerId(customerId);
@@ -207,6 +235,8 @@ public class CustomerRecord extends UpdatableRecordImpl<CustomerRecord> {
         setCreateDate(createDate);
         setLastUpdate(lastUpdate);
         setActive(active);
+        setUsernames(usernames);
+        setPastAddressIds(pastAddressIds);
         resetChangedOnNotNull();
     }
 }
