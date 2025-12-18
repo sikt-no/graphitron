@@ -1,5 +1,6 @@
 package no.sikt.graphitron.validation;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -31,5 +32,19 @@ public class JavaRecordMappingValidationTest extends ValidationTest {
         assertErrorsContain("nestedUnmappedField",
                 "Cannot map field 'invalidNestedField' in input 'NestedInput' to setter in Java record 'CustomerJavaRecord'. Expected method: setInvalidNestedField"
         );
+    }
+
+    @Test
+    @DisplayName("Unmapped field should produce warning instead of error when failOnJavaRecordMappingErrors=false")
+    void unmappedFieldAsWarning() {
+        GeneratorConfig.setFailOnJavaRecordMappingErrors(false);
+        try {
+            getProcessedSchema("unmappedField");
+            assertWarningsContain(
+                    "Cannot map field 'invalidField' in input 'TestInput' to setter in Java record 'CustomerJavaRecord'. Expected method: setInvalidField"
+            );
+        } finally {
+            GeneratorConfig.setFailOnJavaRecordMappingErrors(true);
+        }
     }
 }

@@ -40,6 +40,7 @@ public class GeneratorConfig {
     private static boolean useJdbcBatchingForDeletes = true;
     private static boolean useJdbcBatchingForInserts = true;
     private static boolean requireTypeIdOnNode = false;
+    private static boolean failOnJavaRecordMappingErrors = true;
 
     private static int maxAllowedPageSize;
     private final static boolean USE_OPTIONAL_SELECTS = false;
@@ -114,6 +115,7 @@ public class GeneratorConfig {
         alwaysUsePrimaryKeyInSplitQueries = true;
         codeGenerationThresholds = mojo.getCodeGenerationThresholds();
         requireTypeIdOnNode = mojo.requireTypeIdOnNode();
+        failOnJavaRecordMappingErrors = mojo.failOnJavaRecordMappingErrors();
     }
 
     /**
@@ -132,6 +134,7 @@ public class GeneratorConfig {
         globalTransforms = List.of();
         recordValidation = new RecordValidation();
         codeGenerationThresholds = new CodeGenerationThresholds();
+        failOnJavaRecordMappingErrors = true;
     }
 
     public static Set<String> generatorSchemaFiles() {
@@ -264,5 +267,13 @@ public class GeneratorConfig {
 
     public static void setRequireTypeIdOnNode(boolean require) {
         requireTypeIdOnNode = require;
+    }
+
+    public static boolean failOnJavaRecordMappingErrors() {
+        return failOnJavaRecordMappingErrors;
+    }
+
+    public static void setFailOnJavaRecordMappingErrors(boolean fail) {
+        failOnJavaRecordMappingErrors = fail;
     }
 }

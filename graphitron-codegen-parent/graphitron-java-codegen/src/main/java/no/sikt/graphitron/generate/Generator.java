@@ -38,4 +38,6 @@ public interface Generator {
     CodeGenerationThresholds getCodeGenerationThresholds();
 
     boolean requireTypeIdOnNode();
+
+    boolean failOnJavaRecordMappingErrors();
 }

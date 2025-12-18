@@ -1529,13 +1529,13 @@ public class ProcessedDefinitionsValidator {
                         String setterName = mapping.asSet();
 
                         if (!ReflectionHelpers.classHasMethod(recordClass, setterName)) {
-                            addErrorMessage(
-                                    "Cannot map field '%s' in input '%s' to setter in Java record '%s'. Expected method: %s",
-                                    field.getName(),
-                                    inputType.getName(),
-                                    recordClass.getSimpleName(),
-                                    setterName
-                            );
+                            var message = "Cannot map field '%s' in input '%s' to setter in Java record '%s'. Expected method: %s";
+
+                            if (GeneratorConfig.failOnJavaRecordMappingErrors()) {
+                                addErrorMessage(message, field.getName(), inputType.getName(), recordClass.getSimpleName(), setterName);
+                            } else {
+                                addWarningMessage(message, field.getName(), inputType.getName(), recordClass.getSimpleName(), setterName);
+                            }
                         }
                     }
                 });
