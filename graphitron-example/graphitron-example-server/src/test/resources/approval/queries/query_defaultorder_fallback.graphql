@@ -1,0 +1,19 @@
+# Tests that @defaultOrder is used as fallback when @orderBy is present but no value provided
+# The filmsWithDefaultOrder query has @orderBy and @defaultOrder(index: "idx_title")
+# When orderBy is null, results should be ordered by the idx_title index
+query DefaultOrderFallback {
+    filmsWithDefaultOrder(first: 3) {
+        edges {
+            cursor
+            node {
+                id
+                title
+            }
+        }
+        pageInfo {
+            startCursor
+            endCursor
+            hasNextPage
+        }
+    }
+}
