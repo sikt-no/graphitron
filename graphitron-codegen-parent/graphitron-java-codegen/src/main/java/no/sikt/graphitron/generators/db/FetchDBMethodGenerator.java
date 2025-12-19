@@ -310,7 +310,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return reference.get();
     }
 
-     protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements, LinkedHashSet<KeyWrapper> keySet) {
+    protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements, LinkedHashSet<KeyWrapper> keySet) {
         boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplitting.size() + keySet.size() > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPE_SAFETY;
 
         CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()
@@ -951,10 +951,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .getNonReservedArguments()
                 .stream()
                 .map(it -> new InputCondition(
-                        it,
-                        inputPrefix(inferFieldNamingConvention(it)),
-                        processedSchema.hasRecord(it),
-                        referenceField.hasOverridingCondition()
+                                it,
+                                inputPrefix(inferFieldNamingConvention(it)),
+                                processedSchema.hasRecord(it),
+                                referenceField.hasOverridingCondition()
                         )
                 )
                 .collect(Collectors.toCollection(LinkedList::new));
@@ -1052,7 +1052,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     .filter(c1 -> recordConditions
                             .stream()
                             .noneMatch(c2 -> !c1.getNamePath().equals(c2.getNamePath()) &&
-                                             c1.getNamePath().startsWith(c2.getNamePath())))
+                                    c1.getNamePath().startsWith(c2.getNamePath())))
                     .toList();
 
             conditionTuples
@@ -1088,15 +1088,34 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     protected CodeBlock createOrderFieldsBlock(ObjectField referenceField, String actualRefTable, String tableName) {
         var orderByField = referenceField.getOrderField();
+        var defaultOrderIndex = referenceField.getDefaultOrderIndex();
         var hasPrimaryKey = tableHasPrimaryKey(tableName);
 
-        if (orderByField.isEmpty() && !hasPrimaryKey) {
+        // No sorting possible if no orderBy, no defaultOrder, and no primary key
+        if (orderByField.isEmpty() && defaultOrderIndex.isEmpty() && !hasPrimaryKey) {
             return CodeBlock.empty();
         }
 
-        var defaultOrderByFields = hasPrimaryKey
-                ? getPrimaryKeyFieldsWithTableAliasBlock(actualRefTable)
-                : CodeBlock.of("new $T[] {}", SORT_FIELD.className);
+        // Determine default order fields (defaultOrder takes precedence over primary key)
+        CodeBlock defaultOrderByFields = defaultOrderIndex.map( index -> {
+            ValidationHandler.isTrue(
+                    TableReflection.tableHasIndex(tableName, defaultOrderIndex.get()),
+                    "Table '%s' has no index '%s' specified in @defaultOrder for field '%s'",
+                    tableName, defaultOrderIndex.get(), referenceField.getName()
+            );
+            return CodeBlock.of(
+                    "$T.getSortFields($N, $S, $S)",
+                    QUERY_HELPER.className,
+                    actualRefTable,
+                    defaultOrderIndex.get(),
+                    referenceField.getDefaultOrderDirection()
+            );
+        }).orElseGet( () ->
+                hasPrimaryKey
+                        ? getPrimaryKeyFieldsWithTableAliasBlock(actualRefTable)
+                        : CodeBlock.of("new $T[] {}", SORT_FIELD.className)
+        );
+
         var code = CodeBlock.builder();
         orderByField.ifPresentOrElse(
                 it -> code.add(createCustomOrderBy(it, actualRefTable, defaultOrderByFields, tableName)),

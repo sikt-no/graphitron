@@ -1,0 +1,11 @@
+type Query {
+  query(orderBy: Order @orderBy): [CustomerTable] @defaultOrder(index: "IDX_LAST_NAME")
+}
+
+enum OrderByField {
+  STORE @index(name: "IDX_FK_STORE_ID")
+}
+
+type CustomerTable @table(name: "Customer") {
+  name: String @field(name: "LAST_NAME")
+}

@@ -1,0 +1,34 @@
+{
+    "data": {
+        "filmsWithDefaultOrder": {
+            "edges": [
+                {
+                    "cursor": "WyJBQ0FERU1ZIERJTk9TQVVSIl0",
+                    "node": {
+                        "id": "RmlsbTox",
+                        "title": "ACADEMY DINOSAUR"
+                    }
+                },
+                {
+                    "cursor": "WyJBQ0UgR09MREZJTkdFUiJd",
+                    "node": {
+                        "id": "RmlsbToy",
+                        "title": "ACE GOLDFINGER"
+                    }
+                },
+                {
+                    "cursor": "WyJBREFQVEFUSU9OIEhPTEVTIl0",
+                    "node": {
+                        "id": "RmlsbToz",
+                        "title": "ADAPTATION HOLES"
+                    }
+                }
+            ],
+            "pageInfo": {
+                "startCursor": "WyJBQ0FERU1ZIERJTk9TQVVSIl0",
+                "endCursor": "WyJBREFQVEFUSU9OIEhPTEVTIl0",
+                "hasNextPage": true
+            }
+        }
+    }
+}
