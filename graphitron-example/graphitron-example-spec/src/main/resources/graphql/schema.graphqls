@@ -90,6 +90,7 @@ type CustomerConnectionEdge {
 
 type Customer implements Node @node @table {
     id: ID! @nodeId
+    usernames: [String]
     name: CustomerName
     email: String
     emailAsId: ID @field(name: "EMAIL")
@@ -100,6 +101,7 @@ type Customer implements Node @node @table {
     paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(path: [{table: "RENTAL"}])): [Payment] @asConnection @splitQuery
     activeBool: Boolean @field(name: "ACTIVEBOOL") @feature(flags: "experimental")
     storeId: Int @field(name: "STORE_ID") @feature(flags: ["experimental", "preview"])
+    pastAddressIds: [Int] @field(name: "PAST_ADDRESS_IDS")
 }
 
 type CustomerName {
