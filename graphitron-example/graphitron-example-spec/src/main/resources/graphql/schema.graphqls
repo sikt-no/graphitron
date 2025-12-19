@@ -11,6 +11,7 @@ type Query {
     helloWorld: String @notGenerated
 
     customers(first: Int = 100, after: String): CustomerConnection
+    customersWithDefaultOrder(first: Int = 100, after: String): CustomerConnection @defaultOrder(index: "idx_last_name")
     activeCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "activeCustomers"}, override: true)
     inactiveCustomers(lastNameStartingWith: String): [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions"}, override: true)
     customersByAddress(addressId: ID! @nodeId(typeName: "Address")): [Customer] @asConnection
@@ -20,6 +21,7 @@ type Query {
     customerLookupInt(id: Int! @field(name: "CUSTOMER_ID") @lookupKey): [Customer]
 
     films(orderBy: FilmsOrderByInput @orderBy): [Film] @asConnection
+    filmsWithDefaultOrder(orderBy: FilmsOrderByInput @orderBy): [Film] @asConnection @defaultOrder(index: "idx_title")
     filmLookup(filmId: [String!]! @lookupKey @field(name: "FILM_ID")): [Film]
     filmLookupWithAdditionalField(filmId: [String!]! @lookupKey @field(name: "FILM_ID"), title: [String!] @lookupKey): [Film]
     filmLookupWithInputObject(filmIds: [FilmLookupInput] @lookupKey): [Film]

@@ -137,6 +137,20 @@ directive @orderBy on ARGUMENT_DEFINITION
 """Connect this enum value to an index with the given name"""
 directive @index(name: String) on ENUM_VALUE
 
+"""
+Specifies the default sort order for this field when no @orderBy input is provided.
+Uses a database index for consistent, efficient sorting.
+If @orderBy is also present and the user provides an orderBy value, that takes precedence.
+"""
+directive @defaultOrder(
+  """Name of the database index to use for sorting"""
+  index: String!
+  """Sort direction (default: ASC)"""
+  direction: SortDirection = ASC
+) on FIELD_DEFINITION
+
+enum SortDirection { ASC, DESC }
+
 """Wrap type in the given Java record. Currently, this can only be used with services."""
 directive @record(record: ExternalCodeReference) on OBJECT | INPUT_OBJECT
 
