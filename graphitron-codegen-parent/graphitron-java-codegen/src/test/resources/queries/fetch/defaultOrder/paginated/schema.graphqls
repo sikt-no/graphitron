@@ -1,0 +1,24 @@
+type Query {
+  query(first: Int, after: String): CustomerTableConnection @defaultOrder(index: "IDX_LAST_NAME")
+}
+
+type CustomerTableConnection {
+  edges: [CustomerTableEdge]
+  pageInfo: PageInfo
+}
+
+type CustomerTableEdge {
+  node: CustomerTable
+  cursor: String
+}
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type CustomerTable @table(name: "Customer") {
+  name: String @field(name: "LAST_NAME")
+}

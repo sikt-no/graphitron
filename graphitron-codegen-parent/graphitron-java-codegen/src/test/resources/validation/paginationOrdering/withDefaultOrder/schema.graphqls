@@ -1,0 +1,29 @@
+type Query {
+    # FILM_LIST is a view without primary key
+    # With @defaultOrder, this should pass validation
+    # Note: idx_title exists on FILM table, not FILM_LIST view - but validation only checks directive presence
+    filmLists(first: Int, after: String): FilmListConnection @defaultOrder(index: "idx_title")
+}
+
+type FilmListConnection {
+    edges: [FilmListEdge]
+    pageInfo: PageInfo
+}
+
+type FilmListEdge {
+    cursor: String
+    node: FilmList
+}
+
+type PageInfo {
+    hasPreviousPage: Boolean!
+    hasNextPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+type FilmList @table(name: "FILM_LIST") {
+    title: String
+    description: String
+    category: String
+}
