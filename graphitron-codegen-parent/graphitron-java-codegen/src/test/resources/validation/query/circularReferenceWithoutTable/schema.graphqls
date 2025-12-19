@@ -1,0 +1,11 @@
+type Query {
+  wrapper: WrapperA
+}
+
+type WrapperA {
+  nested: WrapperB
+}
+
+type WrapperB {
+  back: WrapperA
+}
