@@ -43,6 +43,8 @@ input CustomerInput @table(name: "CUSTOMER") {
     id: ID! @nodeId(typeName: "Customer")
     addressId: ID @nodeId(typeName: "Address") @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
     firstName: String @field(name: "FIRST_NAME")
+    usernames: [String!]
+    pastAddressIds: [Int] @field(name: "PAST_ADDRESS_IDS")
 }
 
 extend type Mutation {

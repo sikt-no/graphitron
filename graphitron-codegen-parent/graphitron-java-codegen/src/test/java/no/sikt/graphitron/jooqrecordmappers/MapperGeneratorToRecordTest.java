@@ -144,4 +144,13 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
                 "customerRecord = new ArrayList<CustomerRecord>();return _mlo_customerRecord"
         );
     }
+
+    @Test
+    @DisplayName("With scalar array field")
+    void arrayScalarField() {
+        assertGeneratedContentContains(
+                "arrayScalarField",
+                ".setUsernames(_nit_customer.getUsernames().stream().toArray(String[]::new));"
+        );
+    }
 }
