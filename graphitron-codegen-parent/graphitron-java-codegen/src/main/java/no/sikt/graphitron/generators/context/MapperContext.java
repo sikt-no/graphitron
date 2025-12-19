@@ -383,7 +383,13 @@ public class MapperContext {
     }
 
     public CodeBlock getFieldSetMappingBlock() {
-        return getSetMappingBlock(applyEnumConversion(target.getTypeName(), getSourceGetCallBlock()));
+        CodeBlock valueToSet = applyEnumConversion(target.getTypeName(), getSourceGetCallBlock());
+        if (isIterable && !targetIsType && !mapsJavaRecord) { // Array field
+            valueToSet = toRecord
+                    ? CodeBlock.of("$L.stream().toArray($T[]::new)", valueToSet, target.getTypeClass())
+                    : CodeBlock.of("$T.of($L)", LIST.className, valueToSet);
+        }
+        return getSetMappingBlock(valueToSet);
     }
 
     public CodeBlock getResolverKeySetMappingBlockForJooqRecord() {

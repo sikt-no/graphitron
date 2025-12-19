@@ -524,6 +524,14 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return CodeBlock that converts a SQL array field to a Java List using jOOQ's convertFrom with null-safety.
+     */
+    public static CodeBlock arrayToListConverter() {
+        return CodeBlock.of(".convertFrom($T.nullOnAllNull($N -> $T.of($L)))",
+                FUNCTIONS.className, VAR_ITERATOR, LIST.className, VAR_ITERATOR);
+    }
+
+    /**
      * @return Code block containing the enum conversion method call.
      */
     public static CodeBlock toGraphEnumConverter(String enumType, CodeBlock field, boolean toRecord, ProcessedSchema schema) {
