@@ -23,6 +23,7 @@ public enum GenerationDirective {
     ENUM("enum", EnumSet.of(GenerationDirectiveParam.ENUM)),
     CONDITION("condition", EnumSet.of(GenerationDirectiveParam.CONDITION, GenerationDirectiveParam.OVERRIDE, GenerationDirectiveParam.CONTEXT_ARGUMENTS)),
     ORDER_BY("orderBy"),
+    DEFAULT_ORDER("defaultOrder", EnumSet.of(GenerationDirectiveParam.INDEX, GenerationDirectiveParam.DIRECTION)),
     DISCRIMINATE("discriminate", EnumSet.of(GenerationDirectiveParam.ON)),
     DISCRIMINATOR("discriminator", EnumSet.of(GenerationDirectiveParam.VALUE)),
     EXTERNAL_FIELD("externalField"),

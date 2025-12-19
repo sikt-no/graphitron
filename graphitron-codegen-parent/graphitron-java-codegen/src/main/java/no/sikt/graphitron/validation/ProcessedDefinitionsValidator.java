@@ -96,6 +96,7 @@ public class ProcessedDefinitionsValidator {
         validateNodeId();
         validateNodeIdReferenceInJooqRecordInput();
         validateSplitQueryFieldsInJavaRecords();
+        validatePaginatedFieldsHaveOrdering();
 
         logWarnings();
         throwIfErrors();
@@ -1489,6 +1490,37 @@ public class ProcessedDefinitionsValidator {
 
                     if (field.hasForwardPagination()) {
                         addErrorMessage(errorMessageStart + " is paginated. This is not supported.");
+                    }
+                });
+    }
+
+    /**
+     * Validates that paginated fields on tables without primary keys have either @defaultOrder or @orderBy.
+     * Without ordering, cursor-based pagination produces unstable results.
+     */
+    private void validatePaginatedFieldsHaveOrdering() {
+        allFields.stream()
+                .filter(ObjectField::hasForwardPagination)
+                .filter(ObjectField::isGenerated)
+                .filter(field -> {
+                    var recordType = schema.getRecordType(field);
+                    return recordType != null && recordType.hasTable();
+                })
+                .forEach(field -> {
+                    var recordType = schema.getRecordType(field);
+                    var tableName = recordType.getTable().getMappingName();
+                    if (!tableHasPrimaryKey(tableName)) {
+                        var hasOrderBy = field.getOrderField().isPresent();
+                        var hasDefaultOrder = field.getDefaultOrderIndex().isPresent();
+                        if (!hasOrderBy && !hasDefaultOrder) {
+                            addErrorMessage(
+                                    "Paginated field '%s' in type '%s' requires @defaultOrder or @orderBy directive because table '%s' has no primary key. " +
+                                            "Without ordering, cursor-based pagination produces unstable results.",
+                                    field.getName(),
+                                    field.getContainerTypeName(),
+                                    tableName
+                            );
+                        }
                     }
                 });
     }
