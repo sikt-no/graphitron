@@ -1,6 +1,8 @@
 package no.sikt.graphitron.generators.context;
 
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
+import no.sikt.graphitron.definitions.fields.AbstractField;
+import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
@@ -135,7 +137,10 @@ public class MapperContext {
             return new MethodMapping(target.getName() + "_");
         }
 
-        return mapsJavaRecord ? target.getMappingFromFieldOverride() : target.getMappingForRecordFieldOverride();
+        if (target instanceof GenerationSourceField<?> sourceField) {
+            return sourceField.getJavaRecordMethodMapping(mapsJavaRecord);
+        }
+        return target.getMappingForRecordFieldOverride();
     }
 
     private String getSchemaNameToUse() {

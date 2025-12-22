@@ -144,6 +144,8 @@ The options are the same for both goals.
     _AbortExecutionExceptions_ to be thrown, leading to top-level GraphQL errors.
     Also, if the given error is not present in the schema as a returnable error for a specific mutation,
     validation violations and IllegalArgumentExceptions on this mutation will cause top-level GraphQL errors.
+* `failOnJavaRecordMappingErrors` - Controls whether Java record field mapping validation errors should fail the build (default: `true`).
+  When set to `false`, mapping errors are logged as warnings instead.
 
 See the [pom.xml](https://github.com/sikt-no/graphitron/blob/main/graphitron-example/graphitron-example-spec/pom.xml)
 of _graphitron-example-spec_ for an example on how to configure these settings.

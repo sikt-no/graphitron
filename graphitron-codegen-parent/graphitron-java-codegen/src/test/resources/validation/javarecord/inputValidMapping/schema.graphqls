@@ -1,0 +1,20 @@
+type Query {
+    test(in: TestInput): ID @notGenerated
+}
+
+input TestInput @record(record: {className: "no.sikt.graphitron.codereferences.records.CustomerJavaRecord"}) {
+    someID: ID
+    myField: ID @field(name: "OTHER_ID", javaName: "otherID")
+    invalidField: String @notGenerated
+    nested: NestedInput
+    jooqNested: JooqNestedInput
+}
+
+input NestedInput {
+    addressId: String
+}
+
+# Nested input with @table should NOT be validated against parent Java record
+input JooqNestedInput @table(name: "ADDRESS") {
+    unmappedField: String @field(name: "POSTAL_CODE")
+}

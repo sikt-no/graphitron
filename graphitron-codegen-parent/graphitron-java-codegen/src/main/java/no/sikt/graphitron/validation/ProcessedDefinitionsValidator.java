@@ -16,6 +16,7 @@ import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
 import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.mappings.ReflectionHelpers;
 import no.sikt.graphql.directives.GenerationDirectiveParam;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -96,6 +97,7 @@ public class ProcessedDefinitionsValidator {
         validateNodeId();
         validateNodeIdReferenceInJooqRecordInput();
         validateSplitQueryFieldsInJavaRecords();
+        validateJavaRecordFieldMappings();
 
         logWarnings();
         throwIfErrors();
@@ -136,16 +138,16 @@ public class ProcessedDefinitionsValidator {
                                 .filter(col -> tableFields.stream().noneMatch(it -> it.equalsIgnoreCase(col)))
                                 .forEach(col -> addErrorMessage(
                                         " Key column '%s' in node ID for type '%s' does not exist in table '%s'",
-                                                col,
-                                                objectDefinition.getName(),
-                                                objectDefinition.getTable().getName())
+                                        col,
+                                        objectDefinition.getName(),
+                                        objectDefinition.getTable().getName())
                                 );
 
                         if (getPrimaryOrUniqueKeyMatchingIdFields(objectDefinition).isEmpty()) {
                             addErrorMessage(
                                     "Key columns in node ID for type '%s' does not match a PK/UK for table '%s'",
-                                            objectDefinition.getName(),
-                                            objectDefinition.getTable().getName());
+                                    objectDefinition.getName(),
+                                    objectDefinition.getTable().getName());
                         }
                     }
                     if (!objectDefinition.implementsInterface(NODE_TYPE.getName())) {
@@ -1195,13 +1197,13 @@ public class ProcessedDefinitionsValidator {
         if (!inputField.isIterableWrapped() && payloadContainsIterableField) {
             addWarningMessage(
                     "Mutation %s with Input %s is not defined as a list while Payload type %s contains " +
-                                    "a list",
-                            objectField.getName(), inputField.getTypeName(), objectField.getTypeName());
+                            "a list",
+                    objectField.getName(), inputField.getTypeName(), objectField.getTypeName());
         } else if (inputField.isIterableWrapped() && !payloadContainsIterableField) {
             addWarningMessage(
                     "Mutation %s with Input %s is defined as a list while Payload type %s does not " +
-                                    "contain a list",
-                            objectField.getName(), inputField.getTypeName(), objectField.getTypeName());
+                            "contain a list",
+                    objectField.getName(), inputField.getTypeName(), objectField.getTypeName());
         }
     }
 
@@ -1405,10 +1407,10 @@ public class ProcessedDefinitionsValidator {
         if (!actualFields.containsAll(requiredFields)) {
             var missingFields = requiredFields.stream().filter(it -> !actualFields.contains(it)).collect(Collectors.joining(", "));
             addWarningMessage(
-                message,
-                recordInput.getTypeName(),
-                schema.getInputType(recordInput).getTable().getMappingName(),
-                missingFields
+                    message,
+                    recordInput.getTypeName(),
+                    schema.getInputType(recordInput).getTable().getMappingName(),
+                    missingFields
             );
         }
     }
@@ -1514,5 +1516,91 @@ public class ProcessedDefinitionsValidator {
                         addErrorMessage(errorMessageStart + " is paginated. This is not supported.");
                     }
                 });
+    }
+
+    /**
+     * Validates that all fields in types with @record directive can be mapped
+     * to methods in the referenced Java record class.
+     * - Input types: validates setter methods (setXxx)
+     * - Output types: validates getter methods (getXxx)
+     */
+    private void validateJavaRecordFieldMappings() {
+        schema.getInputTypes().values().stream()
+                .filter(RecordObjectDefinition::hasJavaRecordReference)
+                .forEach(type -> validateJavaRecordMethods(type, type.getRecordReference(), true));
+
+        schema.getRecordTypes().values().stream()
+                .filter(type -> !schema.isInputType(type.getName()))
+                .filter(RecordObjectSpecification::hasJavaRecordReference)
+                .forEach(type -> validateJavaRecordMethods(
+                        (RecordObjectDefinition<?, ?>) type,
+                        type.getRecordReference(),
+                        false));
+    }
+
+    private void validateJavaRecordMethods(RecordObjectDefinition<?, ?> type, Class<?> recordClass, boolean isInput) {
+        if (recordClass == null) return;
+
+        for (var field : type.getFields()) {
+            if (field.isExplicitlyNotGenerated() || field.isResolver()) {
+                continue;
+            }
+
+            // Flatten nested types without @record/@table
+            var flattenedType = getFlattenedNestedType(field, isInput);
+            if (flattenedType.isPresent()) {
+                validateJavaRecordMethods(flattenedType.get(), recordClass, isInput);
+                continue;
+            }
+
+            if (shouldSkipFieldValidation(field, isInput)) {
+                continue;
+            }
+
+            validateFieldHasMethod(field, type, recordClass, isInput);
+        }
+    }
+
+    private Optional<RecordObjectDefinition<?, ?>> getFlattenedNestedType(GenerationField field, boolean isInput) {
+        var nested = isInput
+                ? schema.getInputType(field)
+                : schema.getObject(field.getTypeName());
+
+        if (nested != null && !nested.hasJavaRecordReference() && !nested.hasTable()) {
+            return Optional.of(nested);
+        }
+        return Optional.empty();
+    }
+
+    private boolean shouldSkipFieldValidation(GenerationField field, boolean isInput) {
+        if (isInput) {
+            return schema.isInputType(field);
+        }
+        var typeName = field.getTypeName();
+        return schema.isObject(typeName);
+    }
+
+    private void validateFieldHasMethod(GenerationField field, RecordObjectDefinition<?, ?> type,
+                                        Class<?> recordClass, boolean isInput) {
+        if (!(field instanceof GenerationSourceField<?> sourceField)) {
+            return;
+        }
+
+        var mapping = sourceField.getJavaRecordMethodMapping(isInput);
+        var methodName = isInput ? mapping.asSet() : mapping.asGet();
+
+        if (ReflectionHelpers.classHasMethod(recordClass, methodName)) {
+            return;
+        }
+
+        var message = "Cannot map field '%s' in %s '%s' to %s in Java record '%s'. Expected method: %s";
+        var typeKind = isInput ? "input" : "type";
+        var methodType = isInput ? "setter" : "getter";
+
+        if (GeneratorConfig.failOnJavaRecordMappingErrors()) {
+            addErrorMessage(message, field.getName(), typeKind, type.getName(), methodType, recordClass.getSimpleName(), methodName);
+        } else {
+            addWarningMessage(message, field.getName(), typeKind, type.getName(), methodType, recordClass.getSimpleName(), methodName);
+        }
     }
 }

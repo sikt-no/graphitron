@@ -116,6 +116,10 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @SuppressWarnings("unused")
     private boolean experimental_requireTypeIdOnNode;
 
+    @Parameter(property = "generate.failOnJavaRecordMappingErrors", defaultValue = "true")
+    @SuppressWarnings("unused")
+    private boolean failOnJavaRecordMappingErrors;
+
     @Parameter(property = "generate.codeGenerationThresholds")
     @SuppressWarnings("unused")
     private CodeGenerationThresholds codeGenerationThresholds;
@@ -230,6 +234,11 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Override
     public boolean requireTypeIdOnNode() {
         return experimental_requireTypeIdOnNode;
+    }
+
+    @Override
+    public boolean failOnJavaRecordMappingErrors() {
+        return failOnJavaRecordMappingErrors;
     }
 
     public void setJooqGeneratedPackage(String jooqGeneratedPackage) {
