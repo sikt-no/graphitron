@@ -8,6 +8,9 @@ import java.util.Map;
 
 /**
  * An abstract generator that contains simple methods that are independent of the GraphQL schema.
+ * <p>
+ * Subclasses should override either {@link #generate()} for single method generation,
+ * or {@link #generateAll()} for multiple method generation.
  */
 abstract public class SimpleMethodGenerator implements MethodGenerator {
     @Override
@@ -21,7 +24,13 @@ abstract public class SimpleMethodGenerator implements MethodGenerator {
     }
 
     /**
+     * Generates a single method. Override this for simple single-method generators.
+     * <p>
+     * If your generator produces multiple methods, override {@link #generateAll()} instead.
+     *
      * @return The complete javapoet {@link MethodSpec} based on the provided target.
      */
-    abstract public MethodSpec generate();
+    public MethodSpec generate() {
+        throw new UnsupportedOperationException("Override either generate() or generateAll()");
+    }
 }
