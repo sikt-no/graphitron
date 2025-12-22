@@ -213,4 +213,13 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
                 "\"payments\")) {_mo_customer.setPaymentsKey(DSL.row(_nit_customerRecord.getCustomerId()))"
         );
     }
+
+    @Test
+    @DisplayName("With scalar array field")
+    void arrayScalarField() {
+        assertGeneratedContentContains(
+                "arrayScalarField",
+                "setUsernames(List.of(_nit_customerRecord.getUsernames()));"
+        );
+    }
 }

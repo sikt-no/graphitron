@@ -48,7 +48,6 @@ import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getSourceFieldsForForeignKey;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
-import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
 /**
@@ -272,8 +271,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         String fieldSource = null;
 
         if (processedSchema.isObject(field)) {
-            var table = processedSchema.getObject(field.getTypeName()).getTable();
-            innerRowCode = table != null && !table.equals(context.getTargetTable()) || field.invokesSubquery()
+            innerRowCode = processedSchema.invokesSubquery(field, context.getTargetTable())
                     ? generateCorrelatedSubquery(field, context.nextContext(field))
                     : generateSelectRow(context.nextContext(field));
         } else if (field.isExternalField()) {
@@ -288,7 +286,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     getImportReferenceOfValidExtensionMethod(field, table.getName()),
                     field.getName(),
                     context.getTargetAlias());
-        } else if (field.invokesSubquery() && !processedSchema.isNodeIdForNodeTypeWithSameTable(field)) {
+        } else if (processedSchema.invokesSubquery(field, context.getTargetTable())) {
             var fieldContext = context.nextContext(field);
             fieldSource = fieldContext.renderQuerySource(getLocalTable()).toString();
             innerRowCode = generateCorrelatedSubquery(field, fieldContext);
@@ -581,13 +579,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             );
         }
 
-        var content = CodeBlock.of(
-                "$L.$N$L",
-                renderedSource,
-                field.getUpperCaseName(),
-                overrideEnum ? CodeBlock.empty() : toJOOQEnumConverter(field.getTypeName(), processedSchema)
-        );
+        var convertArrayFieldToList = field.isIterableWrapped()
+                && getFieldType(context.getTargetTable().getName(), field.getUpperCaseName()).map(Class::isArray).orElse(false);
 
+        var content = CodeBlock.builder()
+                .add("$L.$N", renderedSource, field.getUpperCaseName())
+                .addIf(!overrideEnum, toJOOQEnumConverter(field.getTypeName(), processedSchema))
+                .addIf(convertArrayFieldToList, arrayToListConverter())
+                .build();
 
         return context.getShouldUseOptional() && useOptionalSelects() ? (CodeBlock.of("$N.optional($S, $L)", VAR_SELECT, context.getGraphPath() + field.getName(), content)) : content;
     }

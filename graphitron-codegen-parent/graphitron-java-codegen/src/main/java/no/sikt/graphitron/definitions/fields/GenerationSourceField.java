@@ -161,15 +161,6 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return isResolver;
     }
 
-    @Override
-    public boolean invokesSubquery() {
-        return !isResolver && (
-                hasFieldReferences()
-                        || (hasNodeID() && getNodeIdTypeName().isPresent() && !getNodeIdTypeName().get().equals(getContainerTypeName()))
-                        || isIterableWrapped()
-        );
-    }
-
     public boolean isExternalField() {
         return isExternalField;
     }
