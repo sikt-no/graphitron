@@ -1,0 +1,43 @@
+type Query {
+    # FILM_LIST is a view without primary key
+    # With @orderBy, this should pass validation
+    filmLists(first: Int, after: String, orderBy: FilmListOrderByInput @orderBy): FilmListConnection
+}
+
+type FilmListConnection {
+    edges: [FilmListEdge]
+    pageInfo: PageInfo
+}
+
+type FilmListEdge {
+    cursor: String
+    node: FilmList
+}
+
+type PageInfo {
+    hasPreviousPage: Boolean!
+    hasNextPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+type FilmList @table(name: "FILM_LIST") {
+    title: String
+    description: String
+    category: String
+}
+
+input FilmListOrderByInput {
+    orderByField: FilmListOrderByField!
+    direction: OrderDirection!
+}
+
+enum FilmListOrderByField {
+    # Note: idx_title exists on FILM table, not FILM_LIST view - but validation only checks directive presence
+    TITLE @index(name: "idx_title")
+}
+
+enum OrderDirection {
+    ASC
+    DESC
+}
