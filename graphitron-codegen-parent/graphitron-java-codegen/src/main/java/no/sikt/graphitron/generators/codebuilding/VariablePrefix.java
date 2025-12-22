@@ -57,7 +57,9 @@ public class VariablePrefix {
             NAMED_ITERATOR_INDEX = "niit",
             ALIAS = "a",
             CONTEXT_FIELD = "cf",
-            SEPARATOR = "_";
+            SEPARATOR = "_",
+            UNPACKED = "unpacked",
+            VALUE = "val";
 
     /**
      * @return This name formatted as an internal variable to avoid namespace collisions.
@@ -156,6 +158,16 @@ public class VariablePrefix {
     public static String insertHelperPrefix(String name) {
         return prefixName(INSERT_HELPER, name);
     }
+
+    /**
+     * @return This name formatted as an unpacked variable to avoid namespace collisions.
+     */
+    public static String unpackedPrefix(String name) { return prefixName(UNPACKED, name); }
+
+    /**
+     * @return This name formatted as a value variable to avoid namespace collisions.
+     */
+    public static String valuePrefix(String name) { return prefixName(VALUE, name); }
 
     /**
      * @return This name prefixed with the provided prefix.
