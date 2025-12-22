@@ -1,0 +1,9 @@
+type Query {
+    test: TestOutput @notGenerated
+}
+
+# Output type with @record - field 'invalidField' has no getter in Java record
+type TestOutput @record(record: {className: "no.sikt.graphitron.codereferences.records.CustomerJavaRecord"}) {
+    someID: ID
+    invalidField: String
+}

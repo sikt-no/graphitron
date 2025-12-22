@@ -10,7 +10,6 @@ import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
-import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.EnumDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -1497,47 +1496,88 @@ public class ProcessedDefinitionsValidator {
     }
 
     /**
-     * Validates that all fields in input types with @record directive can be mapped
-     * to setter methods in the referenced Java record class.
+     * Validates that all fields in types with @record directive can be mapped
+     * to methods in the referenced Java record class.
+     * - Input types: validates setter methods (setXxx)
+     * - Output types: validates getter methods (getXxx)
      */
     private void validateJavaRecordFieldMappings() {
         schema.getInputTypes().values().stream()
                 .filter(RecordObjectDefinition::hasJavaRecordReference)
-                .forEach(this::validateInputFieldsMapToJavaRecord);
+                .forEach(type -> validateJavaRecordMethods(type, type.getRecordReference(), true));
+
+        schema.getRecordTypes().values().stream()
+                .filter(type -> !schema.isInputType(type.getName()))
+                .filter(RecordObjectSpecification::hasJavaRecordReference)
+                .forEach(type -> validateJavaRecordMethods(
+                        (RecordObjectDefinition<?, ?>) type,
+                        type.getRecordReference(),
+                        false));
     }
 
-    private void validateInputFieldsMapToJavaRecord(RecordObjectDefinition<?, ?> inputType) {
-        Optional.ofNullable(inputType.getRecordReference())
-                .ifPresent(recordClass -> validateFieldsAgainstJavaRecord(inputType, recordClass));
+    private void validateJavaRecordMethods(RecordObjectDefinition<?, ?> type, Class<?> recordClass, boolean isInput) {
+        if (recordClass == null) return;
+
+        for (var field : type.getFields()) {
+            if (field.isExplicitlyNotGenerated() || field.isResolver()) {
+                continue;
+            }
+
+            // Flatten nested types without @record/@table
+            var flattenedType = getFlattenedNestedType(field, isInput);
+            if (flattenedType.isPresent()) {
+                validateJavaRecordMethods(flattenedType.get(), recordClass, isInput);
+                continue;
+            }
+
+            if (shouldSkipFieldValidation(field, isInput)) {
+                continue;
+            }
+
+            validateFieldHasMethod(field, type, recordClass, isInput);
+        }
     }
 
-    private void validateFieldsAgainstJavaRecord(RecordObjectDefinition<?, ?> inputType, Class<?> recordClass) {
-        inputType.getFields().stream()
-                .filter(field -> !field.isExplicitlyNotGenerated() && !field.isResolver())
-                .forEach(field -> {
-                    if (schema.isInputType(field)) {
-                        var nestedInput = schema.getInputType(field);
-                        if (nestedInput != null && !nestedInput.hasJavaRecordReference() && !nestedInput.hasTable()) {
-                            // Flattened nested input - validate its fields against parent Java record
-                            validateFieldsAgainstJavaRecord(nestedInput, recordClass);
-                        }
-                    } else if (field instanceof AbstractField<?> abstractField) {
-                        // For Java records: use javaName if specified, otherwise use raw @field(name: X) value
-                        MethodMapping mapping = abstractField.getJavaName().isEmpty()
-                                ? field.getMappingFromFieldOverride()
-                                : new MethodMapping(abstractField.getJavaName());
-                        String setterName = mapping.asSet();
+    private Optional<RecordObjectDefinition<?, ?>> getFlattenedNestedType(GenerationField field, boolean isInput) {
+        var nested = isInput
+                ? schema.getInputType(field)
+                : schema.getObject(field.getTypeName());
 
-                        if (!ReflectionHelpers.classHasMethod(recordClass, setterName)) {
-                            var message = "Cannot map field '%s' in input '%s' to setter in Java record '%s'. Expected method: %s";
+        if (nested != null && !nested.hasJavaRecordReference() && !nested.hasTable()) {
+            return Optional.of(nested);
+        }
+        return Optional.empty();
+    }
 
-                            if (GeneratorConfig.failOnJavaRecordMappingErrors()) {
-                                addErrorMessage(message, field.getName(), inputType.getName(), recordClass.getSimpleName(), setterName);
-                            } else {
-                                addWarningMessage(message, field.getName(), inputType.getName(), recordClass.getSimpleName(), setterName);
-                            }
-                        }
-                    }
-                });
+    private boolean shouldSkipFieldValidation(GenerationField field, boolean isInput) {
+        if (isInput) {
+            return schema.isInputType(field);
+        }
+        var typeName = field.getTypeName();
+        return schema.isObject(typeName);
+    }
+
+    private void validateFieldHasMethod(GenerationField field, RecordObjectDefinition<?, ?> type,
+                                        Class<?> recordClass, boolean isInput) {
+        if (!(field instanceof GenerationSourceField<?> sourceField)) {
+            return;
+        }
+
+        var mapping = sourceField.getJavaRecordMethodMapping(isInput);
+        var methodName = isInput ? mapping.asSet() : mapping.asGet();
+
+        if (ReflectionHelpers.classHasMethod(recordClass, methodName)) {
+            return;
+        }
+
+        var message = "Cannot map field '%s' in %s '%s' to %s in Java record '%s'. Expected method: %s";
+        var typeKind = isInput ? "input" : "type";
+        var methodType = isInput ? "setter" : "getter";
+
+        if (GeneratorConfig.failOnJavaRecordMappingErrors()) {
+            addErrorMessage(message, field.getName(), typeKind, type.getName(), methodType, recordClass.getSimpleName(), methodName);
+        } else {
+            addWarningMessage(message, field.getName(), typeKind, type.getName(), methodType, recordClass.getSimpleName(), methodName);
+        }
     }
 }

@@ -5,7 +5,7 @@ import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.Address
 import java.util.List;
 
 public class CustomerJavaRecord {
-    private String someID, addressId, otherID;
+    private String someID, addressId, otherID, email;
     private List<String> idList;
     private AddressRecord address;
 
@@ -47,5 +47,13 @@ public class CustomerJavaRecord {
 
     public void setIdList(List<String> idList) {
         this.idList = idList;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
     }
 }
