@@ -39,7 +39,7 @@
         <version.ch.qos.logback>1.5.20</version.ch.qos.logback>
 
         <version.postgresql>42.7.8</version.postgresql>
-        <version.testcontainers.postgresql>1.21.3</version.testcontainers.postgresql>
+        <version.testcontainers.postgresql>1.21.4</version.testcontainers.postgresql>
     </properties>
 
     <dependencyManagement>
