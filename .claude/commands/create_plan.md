@@ -27,7 +27,9 @@ Please provide:
 
 I'll analyze this information and work with you to create a comprehensive plan.
 
-Tip: You can also invoke this command with a ticket file directly: `/create_plan thoughts/allison/tickets/eng_1234.md`
+Tip1: For better results make sure to run the /research command before the /create_plan command. 
+
+Tip2: You can also invoke this command with a ticket file directly: `/create_plan thoughts/allison/tickets/eng_1234.md`
 For deeper analysis, try: `/create_plan think deeply about thoughts/allison/tickets/eng_1234.md`
 ```
 
