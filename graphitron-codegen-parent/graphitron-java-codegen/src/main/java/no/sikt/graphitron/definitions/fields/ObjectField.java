@@ -12,8 +12,10 @@ import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphql.directives.DirectiveHelpers.getDirectiveArgumentEnum;
+import static no.sikt.graphql.directives.DirectiveHelpers.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
+import static no.sikt.graphql.directives.GenerationDirectiveParam.DIRECTION;
+import static no.sikt.graphql.directives.GenerationDirectiveParam.INDEX;
 
 /**
  * Represents the default field type, which in addition to the generic field functionality also provides join operation data.
@@ -28,6 +30,8 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
     private final LinkedHashSet<String> lookupKeys;
     private final MutationType mutationType;
     private final boolean hasLookupKey;
+    private final String defaultOrderIndex;
+    private final String defaultOrderDirection;
     public final static List<String> RESERVED_PAGINATION_NAMES = List.of(
             GraphQLReservedName.PAGINATION_FIRST.getName(),
             GraphQLReservedName.PAGINATION_AFTER.getName(),
@@ -46,6 +50,13 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
         mutationType = field.hasDirective(MUTATION.getName())
                 ? MutationType.valueOf(getDirectiveArgumentEnum(field, MUTATION, GenerationDirectiveParam.TYPE))
                 : null;
+        if (field.hasDirective(DEFAULT_ORDER.getName())) {
+            defaultOrderIndex = getDirectiveArgumentString(field, DEFAULT_ORDER, INDEX);
+            defaultOrderDirection = getOptionalDirectiveArgumentEnum(field, DEFAULT_ORDER, DIRECTION).orElse("ASC");
+        } else {
+            defaultOrderIndex = null;
+            defaultOrderDirection = null;
+        }
         lookupKeys = nonReservedArguments.stream().filter(ArgumentField::isLookupKey).map(AbstractField::getName).collect(Collectors.toCollection(LinkedHashSet::new));
         hasLookupKey = !lookupKeys.isEmpty();
         argumentsByName = arguments.stream().collect(Collectors.toMap(AbstractField::getName, Function.identity(), (x, y) -> y, LinkedHashMap::new));
@@ -211,6 +222,20 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
 
     public Optional<ArgumentField> getOrderField() {
         return Optional.ofNullable(orderField);
+    }
+
+    /**
+     * @return The index name specified in @defaultOrder directive, if present.
+     */
+    public Optional<String> getDefaultOrderIndex() {
+        return Optional.ofNullable(defaultOrderIndex);
+    }
+
+    /**
+     * @return The sort direction specified in @defaultOrder directive (ASC or DESC). Defaults to ASC.
+     */
+    public String getDefaultOrderDirection() {
+        return defaultOrderDirection;
     }
 
     @Override
