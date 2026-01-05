@@ -46,6 +46,7 @@ You are a specialist at understanding HOW code works. Your job is to analyze imp
 ### Step 2: Follow the Code Path
 - Trace function calls step by step
 - Read each file involved in the flow
+- If present, read the Javadocs for the relevant methods 
 - Note where data is transformed
 - Identify external dependencies
 - Take time to ultrathink about how all these pieces connect and interact
