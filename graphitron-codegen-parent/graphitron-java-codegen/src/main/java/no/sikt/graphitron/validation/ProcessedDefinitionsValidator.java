@@ -96,6 +96,7 @@ public class ProcessedDefinitionsValidator {
         validateNodeId();
         validateNodeIdReferenceInJooqRecordInput();
         validateSplitQueryFieldsInJavaRecords();
+        validateWrapperTypesWithPreviousTable();
 
         logWarnings();
         throwIfErrors();
@@ -1514,5 +1515,28 @@ public class ProcessedDefinitionsValidator {
                         addErrorMessage(errorMessageStart + " is paginated. This is not supported.");
                     }
                 });
+    }
+
+    private void validateWrapperTypesWithPreviousTable() {
+        schema.getObjects()
+                .values()
+                .stream()
+                .filter(it -> schema.isObjectWithPreviousTableObject(it.getName()))
+                .map(AbstractObjectDefinition::getFields)
+                .flatMap(Collection::stream)
+                .filter(AbstractField::isIterableWrapped)
+                .filter(schema::isObject)
+                .filter(it -> !it.hasFieldReferences())
+                .filter(it -> !it.isResolver())
+                .filter(it -> Optional.ofNullable(schema.getObject(it).getTable())
+                        .map(t -> schema.getPreviousTableObjectForField(it).getTable().equals(t))
+                        .orElse(true)
+                )
+                .forEach(f ->
+                            addErrorMessage(
+                                    "Field %s returns a list of wrapper type '%s' (a type wrapping a subset of the table fields)," +
+                                            " which is not supported. Change the field to return a single '%s' to fix.",
+                                    f.formatPath(), f.getTypeName(), f.getTypeName(), f.getTypeName())
+                );
     }
 }
