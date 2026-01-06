@@ -1,0 +1,15 @@
+type Query {
+  query: Customer
+}
+
+type Customer @table {
+  nameWrapper: NameWrapper
+}
+
+type NameWrapper {
+  name: [CustomerName]
+}
+
+type CustomerName {
+  firstName: String @field(name: "FIRST_NAME")
+}
