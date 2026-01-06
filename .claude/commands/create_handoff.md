@@ -22,7 +22,7 @@ Use the following information to understand how to create your document:
 - Without ticket: `2025-01-08_13-55-22_create-context-compaction.md`
 
 ### 2. Handoff writing.
-using the above conventions, write your document. use the defined filepath, and the following YAML frontmatter pattern. Use the metadata gathered in step 1, Structure the document with YAML frontmatter followed by content:
+Using the above conventions, write your document. Use the defined filepath, and the following YAML frontmatter pattern. Use the metadata gathered in step 1, structure the document with YAML frontmatter followed by content:
 
 Use the following template structure:
 ```markdown
