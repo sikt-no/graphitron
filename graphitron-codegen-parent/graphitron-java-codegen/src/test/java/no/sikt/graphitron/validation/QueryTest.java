@@ -220,4 +220,35 @@ public class QueryTest extends ValidationTest {
     void errorUnionWithOneSubtype() {
         getProcessedSchema("errorUnionWithOneSubtype", Set.of(ERROR));
     }
+
+    @Test
+    @DisplayName("Circular reference between wrapper types without @table should report the cycle")
+    void circularReferenceWithoutTable() {
+        assertErrorsContain("circularReferenceWithoutTable",
+                "Circular reference detected without @table directive: WrapperA -> WrapperB -> WrapperA. Add a @table directive to one of these types to break the cycle.");
+    }
+
+    @Test
+    @DisplayName("Listed wrapper type in table type should throw error")
+    void listedWrapperType() {
+        assertErrorsContain("listedWrapperType",
+                "Field 'Customer.name' returns a list of wrapper type 'CustomerName' (a type wrapping a subset of the table fields), " +
+                        "which is not supported. Change the field to return a single 'CustomerName' to fix.");
+    }
+
+    @Test
+    @DisplayName("Listed wrapper type (with table directive) in table type should throw error")
+    void listedWrapperTypeWithTable() {
+        assertErrorsContain("listedWrapperTypeWithTable",
+                "Field 'Customer.name' returns a list of wrapper type 'CustomerName' (a type wrapping a subset of the table fields), " +
+                        "which is not supported. Change the field to return a single 'CustomerName' to fix.");
+    }
+
+    @Test
+    @DisplayName("Nested listed wrapper type in table type should throw error")
+    void nestedListedWrapperType() {
+        assertErrorsContain("nestedListedWrapperType",
+                "Field 'NameWrapper.name' returns a list of wrapper type 'CustomerName' (a type wrapping a subset of the table fields), " +
+                        "which is not supported. Change the field to return a single 'CustomerName' to fix.");
+    }
 }

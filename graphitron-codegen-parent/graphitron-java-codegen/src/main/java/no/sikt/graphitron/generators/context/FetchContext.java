@@ -288,7 +288,7 @@ public class FetchContext {
         return getReferenceObject() == null || getReferenceObject()
                 .getFields()
                 .stream()
-                .anyMatch(it -> !it.invokesSubquery() || processedSchema.isRecordType(it) && processedSchema.getRecordType(it).hasTable() && !processedSchema.getRecordType(it).getTable().equals(getTargetTable()));
+                .anyMatch(it -> !processedSchema.invokesSubquery(it, getTargetTable()));
     }
 
     public boolean hasPreviousContext() {

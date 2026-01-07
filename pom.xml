@@ -38,8 +38,8 @@
         <version.org.junit>6.0.1</version.org.junit>
         <version.ch.qos.logback>1.5.20</version.ch.qos.logback>
 
-        <version.postgresql>42.7.7</version.postgresql>
-        <version.testcontainers.postgresql>1.21.3</version.testcontainers.postgresql>
+        <version.postgresql>42.7.8</version.postgresql>
+        <version.testcontainers.postgresql>1.21.4</version.testcontainers.postgresql>
     </properties>
 
     <dependencyManagement>
@@ -94,7 +94,7 @@
             <dependency>
                 <groupId>com.apollographql.federation</groupId>
                 <artifactId>federation-graphql-java-support</artifactId>
-                <version>5.4.0</version>
+                <version>5.5.0</version>
             </dependency>
 
             <dependency>
@@ -170,7 +170,7 @@
             <dependency>
                 <groupId>com.approvaltests</groupId>
                 <artifactId>approvaltests</artifactId>
-                <version>26.0.0</version>
+                <version>26.1.0</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -331,7 +331,7 @@
                 <plugin>
                     <groupId>org.sonatype.central</groupId>
                     <artifactId>central-publishing-maven-plugin</artifactId>
-                    <version>0.8.0</version>
+                    <version>0.9.0</version>
                 </plugin>
             </plugins>
         </pluginManagement>

@@ -959,6 +959,13 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return The closest table on or above this field. Assumes only one table can be associated with the object.
+     */
+    public RecordObjectSpecification<?> getPreviousTableObjectForField(GenerationField field) {
+        return objectWithPreviousTable.get(field.getContainerTypeName());
+    }
+
+    /**
     * @return Returns whether the object has a table on or above it.
     * */
     public boolean hasTableObjectForObject(RecordObjectSpecification<?> object) {
@@ -978,6 +985,45 @@ public class ProcessedSchema {
 
     public boolean isReferenceResolverField(ObjectField field) {
         return field.isResolver() && isObjectOrConnectionNodeWithPreviousTableObject(field.getContainerTypeName());
+    }
+
+    /**
+     * Determines whether the field requires a correlated subquery in the generated database query.
+     * <p>
+     * A correlated subquery is needed when resolving the field requires joining to a different table
+     * or fetching data that cannot be selected directly from the current table context.
+     * <p>
+     * Returns {@code true} when any of the following conditions are met:
+     * <ul>
+     *   <li>The field has explicit references via {@code @references} directive</li>
+     *   <li>The field's type maps to a different table than the current table (implicit reference)</li>
+     *   <li>The field is a node ID reference field</li>
+     *   <li>The field is a root query field with iterable-wrapped output and no parent table context</li>
+     * </ul>
+     * <p>
+     *
+     * @param field the field to check for subquery requirement
+     * @param currentTable the table context from which the field is being resolved
+     * @return {@code true} if resolving this field requires a correlated subquery, {@code false} otherwise
+     */
+    public boolean invokesSubquery(GenerationField field, JOOQMapping currentTable) {
+        if (field.isResolver() || isExceptionOrExceptionUnion(field)) {
+            return false;
+        }
+
+        var targetTableFromFieldType = Optional.ofNullable(getRecordType(field)).map(RecordObjectSpecification::getTable);
+
+        boolean implicitReferenceFromFieldType = targetTableFromFieldType
+                .map(t -> !t.getTable().equals(currentTable))
+                .orElse(false);
+
+        // Field reference
+        if (field.hasFieldReferences() || implicitReferenceFromFieldType || isNodeIdReferenceField(field)) {
+            return true;
+        }
+
+        // Root query with wrapped, listed output
+        return Optional.ofNullable(getPreviousTableObjectForField(field)).isEmpty() && field.isIterableWrapped();
     }
 
     public boolean returnsList(ObjectField field) {

@@ -1,0 +1,11 @@
+type Query {
+  query: Customer
+}
+
+type Customer @table {
+  name: [CustomerName]
+}
+
+type CustomerName {
+  firstName: String @field(name: "FIRST_NAME")
+}
