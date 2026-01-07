@@ -23,6 +23,3 @@ echo "Current Date/Time (TZ): $DATETIME_TZ"
 [ -n "$GIT_BRANCH" ] && echo "Current Branch Name: $GIT_BRANCH"
 [ -n "$REPO_NAME" ] && echo "Repository Name: $REPO_NAME"
 echo "Timestamp For Filename: $FILENAME_TS"
-[ -n "$THOUGHTS_STATUS" ] && {
-  echo "$THOUGHTS_STATUS"
-}

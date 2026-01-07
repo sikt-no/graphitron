@@ -74,7 +74,7 @@ Then wait for the user's research query.
     - Answer the user's specific questions with concrete evidence
 
 5. **Gather metadata for the research document:**
-    - Run the `.claude/Scripts/spec_metadata.sh` script to generate all relevant metadata
+    - Run the `.claude/scripts/spec_metadata.sh` script to generate all relevant metadata
     - Filename: `thoughts/shared/research/YYYY-MM-DD-ENG-XXXX-description.md`
         - Format: `YYYY-MM-DD-ENG-XXXX-description.md` where:
             - YYYY-MM-DD is today's date
