@@ -14,7 +14,6 @@
     <properties>
         <outputDirectory>${project.build.directory}/generated-sources</outputDirectory>
         <schemaDirectory>${project.basedir}/src/main/resources/graphql</schemaDirectory>
-        <directivesDirectory>${project.build.directory}/graphitron/schema</directivesDirectory>
         <generatedCodePackage>no.sikt.graphitron.example.generated</generatedCodePackage>
         <generatedJooqPackage>${generatedCodePackage}.jooq</generatedJooqPackage>
         <generatedGraphitronPackage>${generatedCodePackage}.graphitron</generatedGraphitronPackage>
@@ -51,32 +50,12 @@
     <build>
         <plugins>
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>unpack-graphitron-directives-schema</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>unpack-dependencies</goal>
-                        </goals>
-                        <configuration>
-                            <includeArtifactIds>graphitron-common</includeArtifactIds>
-                            <outputDirectory>${directivesDirectory}</outputDirectory>
-                            <includes>directives.graphqls</includes>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <plugin>
                 <groupId>no.sikt</groupId>
                 <artifactId>graphitron-maven-plugin</artifactId>
                 <version>${revision}${changelist}</version>
                 <configuration>
                     <schemaRootDirectories>
                         <directory>${project.basedir}/src/main/resources/graphql</directory>
-                        <directory>${directivesDirectory}</directory>
                     </schemaRootDirectories>
                 </configuration>
                 <executions>
