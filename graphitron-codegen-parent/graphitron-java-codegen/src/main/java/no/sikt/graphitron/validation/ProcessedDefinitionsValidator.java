@@ -16,6 +16,7 @@ import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
 import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.mappings.ReflectionHelpers;
 import no.sikt.graphql.directives.GenerationDirectiveParam;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -97,6 +98,7 @@ public class ProcessedDefinitionsValidator {
         validateNodeIdReferenceInJooqRecordInput();
         validateSplitQueryFieldsInJavaRecords();
         validateWrapperTypesWithPreviousTable();
+        validateJavaRecordFieldMappings();
 
         logWarnings();
         throwIfErrors();
@@ -137,16 +139,16 @@ public class ProcessedDefinitionsValidator {
                                 .filter(col -> tableFields.stream().noneMatch(it -> it.equalsIgnoreCase(col)))
                                 .forEach(col -> addErrorMessage(
                                         " Key column '%s' in node ID for type '%s' does not exist in table '%s'",
-                                                col,
-                                                objectDefinition.getName(),
-                                                objectDefinition.getTable().getName())
+                                        col,
+                                        objectDefinition.getName(),
+                                        objectDefinition.getTable().getName())
                                 );
 
                         if (getPrimaryOrUniqueKeyMatchingIdFields(objectDefinition).isEmpty()) {
                             addErrorMessage(
                                     "Key columns in node ID for type '%s' does not match a PK/UK for table '%s'",
-                                            objectDefinition.getName(),
-                                            objectDefinition.getTable().getName());
+                                    objectDefinition.getName(),
+                                    objectDefinition.getTable().getName());
                         }
                     }
                     if (!objectDefinition.implementsInterface(NODE_TYPE.getName())) {
@@ -1052,11 +1054,11 @@ public class ProcessedDefinitionsValidator {
         }
 
         // If we make it here, no valid type could be identified.
-        var levenshtein = new LevenshteinDistance(12); // Limit for better performance, but these names are probably not that long anyway. Higher values are converted to -1.
-        var distances = schema.getAllValidFieldTypeNames().stream().collect(Collectors.toMap(Function.identity(), it -> levenshtein.apply(typeName, it)));
-        var distanceThreshold = distances.values().stream().filter(it -> it > -1).min(Integer::compare).orElse(0); // Could potentially allow a wider match by picking a higher number.
-
-        return Map.of(typeName, distances.entrySet().stream().filter(it -> -1 < it.getValue() && it.getValue() <= distanceThreshold).map(it -> it.getKey() + " - " + it.getValue()).collect(Collectors.joining(", ")));
+        var similarTypes = findSimilarStringsWithDistance(typeName, schema.getAllValidFieldTypeNames().stream(), 12);
+        var formatted = similarTypes.entrySet().stream()
+                .map(e -> e.getKey() + " - " + e.getValue())
+                .collect(Collectors.joining(", "));
+        return Map.of(typeName, formatted);
     }
 
     private void checkPaginationSpecs(List<ObjectField> fields) {
@@ -1196,13 +1198,13 @@ public class ProcessedDefinitionsValidator {
         if (!inputField.isIterableWrapped() && payloadContainsIterableField) {
             addWarningMessage(
                     "Mutation %s with Input %s is not defined as a list while Payload type %s contains " +
-                                    "a list",
-                            objectField.getName(), inputField.getTypeName(), objectField.getTypeName());
+                            "a list",
+                    objectField.getName(), inputField.getTypeName(), objectField.getTypeName());
         } else if (inputField.isIterableWrapped() && !payloadContainsIterableField) {
             addWarningMessage(
                     "Mutation %s with Input %s is defined as a list while Payload type %s does not " +
-                                    "contain a list",
-                            objectField.getName(), inputField.getTypeName(), objectField.getTypeName());
+                            "contain a list",
+                    objectField.getName(), inputField.getTypeName(), objectField.getTypeName());
         }
     }
 
@@ -1406,10 +1408,10 @@ public class ProcessedDefinitionsValidator {
         if (!actualFields.containsAll(requiredFields)) {
             var missingFields = requiredFields.stream().filter(it -> !actualFields.contains(it)).collect(Collectors.joining(", "));
             addWarningMessage(
-                message,
-                recordInput.getTypeName(),
-                schema.getInputType(recordInput).getTable().getMappingName(),
-                missingFields
+                    message,
+                    recordInput.getTypeName(),
+                    schema.getInputType(recordInput).getTable().getMappingName(),
+                    missingFields
             );
         }
     }
@@ -1538,5 +1540,132 @@ public class ProcessedDefinitionsValidator {
                                             " which is not supported. Change the field to return a single '%s' to fix.",
                                     f.formatPath(), f.getTypeName(), f.getTypeName(), f.getTypeName())
                 );
+    }
+
+    /**
+     * Validates that all fields in types with @record directive can be mapped
+     * to methods in the referenced Java record class.
+     * - Input types: validates setter methods (setXxx)
+     * - Output types: validates getter methods (getXxx)
+     */
+    private void validateJavaRecordFieldMappings() {
+        schema.getInputTypes().values().stream()
+                .filter(RecordObjectDefinition::hasJavaRecordReference)
+                .forEach(type -> validateJavaRecordMethods(type, type.getRecordReference(), true));
+
+        schema.getRecordTypes().values().stream()
+                .filter(type -> !schema.isInputType(type.getName()))
+                .filter(RecordObjectSpecification::hasJavaRecordReference)
+                .forEach(type -> validateJavaRecordMethods(
+                        (RecordObjectDefinition<?, ?>) type,
+                        type.getRecordReference(),
+                        false));
+    }
+
+    private void validateJavaRecordMethods(RecordObjectDefinition<?, ?> type, Class<?> recordClass, boolean isInput) {
+        if (recordClass == null) return;
+
+        for (var field : type.getFields()) {
+            if (field.isExplicitlyNotGenerated() || field.isResolver()) {
+                continue;
+            }
+
+            // Flatten nested types without @record/@table
+            var flattenedType = getFlattenedNestedType(field, isInput);
+            if (flattenedType.isPresent()) {
+                validateJavaRecordMethods(flattenedType.get(), recordClass, isInput);
+                continue;
+            }
+
+            if (shouldSkipFieldValidation(field, isInput)) {
+                continue;
+            }
+
+            validateFieldHasMethod(field, type, recordClass, isInput);
+        }
+    }
+
+    private Optional<RecordObjectDefinition<?, ?>> getFlattenedNestedType(GenerationField field, boolean isInput) {
+        var nested = isInput
+                ? schema.getInputType(field)
+                : schema.getObject(field.getTypeName());
+
+        if (nested != null && !nested.hasJavaRecordReference() && !nested.hasTable()) {
+            return Optional.of(nested);
+        }
+        return Optional.empty();
+    }
+
+    private boolean shouldSkipFieldValidation(GenerationField field, boolean isInput) {
+        return isInput ? schema.isInputType(field) : schema.isObject(field);
+    }
+
+    private void validateFieldHasMethod(GenerationField field, RecordObjectDefinition<?, ?> type,
+                                        Class<?> recordClass, boolean isInput) {
+        if (!(field instanceof GenerationSourceField<?> sourceField)) {
+            return;
+        }
+
+        var mapping = sourceField.getJavaRecordMethodMapping(isInput);
+        var methodName = isInput ? mapping.asSet() : mapping.asGet();
+
+        if (ReflectionHelpers.classHasMethod(recordClass, methodName)) {
+            return;
+        }
+
+        var typeKind = isInput ? "input" : "type";
+        var methodType = isInput ? "setter" : "getter";
+        var suggestion = findSimilarMethods(recordClass, methodName, isInput);
+
+        var message = suggestion.isEmpty()
+                ? "Cannot map field '%s' in %s '%s' to %s in Java record '%s'. Expected method: %s"
+                : "Cannot map field '%s' in %s '%s' to %s in Java record '%s'. Expected method: %s. Did you mean: %s?";
+
+        if (suggestion.isEmpty()) {
+            addErrorMessage(message, field.getName(), typeKind, type.getName(), methodType, recordClass.getSimpleName(), methodName);
+        } else {
+            addErrorMessage(message, field.getName(), typeKind, type.getName(), methodType, recordClass.getSimpleName(), methodName, suggestion.get());
+        }
+    }
+
+    private Optional<String> findSimilarMethods(Class<?> recordClass, String expectedMethod, boolean isInput) {
+        var prefix = isInput ? "set" : "get";
+        var candidates = Arrays.stream(recordClass.getMethods())
+                .map(Method::getName)
+                .filter(name -> name.startsWith(prefix));
+
+        var similarMethods = findSimilarStringsWithDistance(expectedMethod, candidates, 3);
+        if (similarMethods.isEmpty()) {
+            return Optional.empty();
+        }
+
+        var fieldNames = similarMethods.keySet().stream()
+                .map(methodName -> uncapitalize(methodName.substring(prefix.length())))
+                .collect(Collectors.joining(", "));
+        return Optional.of(fieldNames);
+    }
+
+    /**
+     * Finds strings similar to the target using Levenshtein distance, including the distance values.
+     * @param target The string to match against
+     * @param candidates Stream of candidate strings
+     * @param maxDistance Maximum allowed distance for suggestions
+     * @return Map of similar strings to their Levenshtein distance within the minimum distance threshold (up to maxDistance)
+     */
+    private static Map<String, Integer> findSimilarStringsWithDistance(String target, Stream<String> candidates, int maxDistance) {
+        var levenshtein = new LevenshteinDistance(12);
+
+        var distances = candidates.collect(Collectors.toMap(
+                Function.identity(),
+                candidate -> levenshtein.apply(target, candidate)));
+
+        var distanceThreshold = distances.values().stream()
+                .filter(it -> it > -1 && it <= maxDistance)
+                .min(Integer::compare)
+                .orElse(0);
+
+        return distances.entrySet().stream()
+                .filter(it -> it.getValue() > -1 && it.getValue() <= distanceThreshold)
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 }

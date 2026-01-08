@@ -1,0 +1,15 @@
+type Query {
+    test(in: OuterInput): ID @notGenerated
+}
+
+# Outer record references inner record via testCustomerInnerRecord field
+input OuterInput @record(record: {className: "no.sikt.graphitron.codereferences.records.MapperCustomerJavaRecord"}) {
+    name: String
+    testCustomerInnerRecord: InnerInput
+}
+
+# Inner record has an invalid field that should be detected
+input InnerInput @record(record: {className: "no.sikt.graphitron.codereferences.records.MapperCustomerInnerJavaRecord"}) {
+    someInt: Int
+    invalidField: String
+}

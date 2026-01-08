@@ -1,0 +1,12 @@
+type Query {
+    test(in: TestInput): ID @notGenerated
+}
+
+input TestInput @record(record: {className: "no.sikt.graphitron.codereferences.records.CustomerJavaRecord"}) {
+    someID: ID
+    nested: NestedInput
+}
+
+input NestedInput {
+    invalidNestedField: String
+}

@@ -174,6 +174,20 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return mappingForRecordFieldOverride;
     }
 
+    /**
+     * Get the method mapping for Java record field access.
+     * @param mapsJavaRecord true for types with @record directive (uses raw @field name), false otherwise (uses toCamelCase)
+     * @return The appropriate MethodMapping for getter/setter generation
+     */
+    public MethodMapping getJavaRecordMethodMapping(boolean mapsJavaRecord) {
+        if (mapsJavaRecord) {
+            return getJavaName().isEmpty()
+                    ? getMappingFromFieldOverride()
+                    : new MethodMapping(getJavaName());
+        }
+        return getMappingForRecordFieldOverride();
+    }
+
     @Override
     public String getFieldRecordMappingName() {
         return mappingForRecordFieldOverride.getName();
