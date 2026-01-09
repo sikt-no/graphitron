@@ -1,0 +1,8 @@
+mutation {
+    updateFilmNamesWrapped(in: [{filmId: "RmlsbToyMg", title: "SPACE"}, {filmId: "RmlsbToyMw", title: "STAR"}]) {
+        films {
+            id
+            title
+        }
+    }
+}

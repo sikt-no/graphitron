@@ -11,8 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_INPUT_TABLE;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Mutation queries - Queries for updating with JDBC batching and then fetching data")
 public class FetchQueryTest extends GeneratorTest {
@@ -38,7 +37,17 @@ public class FetchQueryTest extends GeneratorTest {
                 "CustomerTable::new",
                 "new Outer(_iv_it)",
                 ".fetchOne(_iv_it -> _iv_it.into(Outer.class))",
-                " DSL.val(_mi_inRecordList.get(_iv_it).getCustomerId())"
+                " DSL.val(_mi_inRecordList.get(_iv_it).getCustomerId())",
+                ".select(mutationForMutation_outer(_mi_inRecordList)).fetch" // Assert no outer from clause
+        );
+    }
+
+    @Test
+    @DisplayName("Nested output without table, with error field")
+    void nestedOutputWithErrorField() {
+        assertGeneratedContentContains("nestedOutputWithErrorField",
+                Set.of(ERROR),
+                ".select(mutationForMutation_outer(_mi_inRecordList)).fetch" // Assert no outer from clause
         );
     }
 
