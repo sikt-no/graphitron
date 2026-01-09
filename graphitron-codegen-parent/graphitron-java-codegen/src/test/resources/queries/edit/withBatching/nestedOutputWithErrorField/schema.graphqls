@@ -1,0 +1,13 @@
+type Mutation {
+    mutation(in: [CustomerInputTable!]!): Outer @mutation(typeName: UPDATE)
+}
+
+type Outer {
+    customers: [CustomerTable!]!
+    errors: [UpdateError!]
+}
+
+type UpdateError implements Error {
+    path: [String]
+    message: String
+}
