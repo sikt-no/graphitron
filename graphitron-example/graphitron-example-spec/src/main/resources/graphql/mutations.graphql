@@ -7,6 +7,7 @@ type Mutation {
     # TODO: This case fails if the inputs are not in a record. Technically, we have the table in Film, and that should suffice to resolve this.
     updateFilmName(in: FilmNameInput): Film @mutation(typeName: UPDATE)
     updateFilmNames(in: [FilmNameInput]): [Film] @mutation(typeName: UPDATE)
+    updateFilmNamesWrapped(in: [FilmNameInput!]!): UpdateFilmNamesWrappedResult @mutation(typeName: UPDATE)
     updateCityName(in: CityNameInput): City @mutation(typeName: UPDATE)
     updateTitleAndLanguageForFilm(in: [FilmWithRefInput]): [Film] @mutation(typeName: UPDATE)
 
@@ -21,6 +22,11 @@ type Mutation {
     deleteCategoriesWrapped(in: [CategoryInput!]!): DeleteCategoriesResult @mutation(typeName: DELETE)
     deleteCategoryByPkAndName(in: CategoryPkAndNameInput!): ID @nodeId(typeName: "Category") @mutation(typeName: DELETE)
     deleteCategoriesByPkAndName(in: [CategoryPkAndNameInput!]!): [ID] @nodeId(typeName: "Category") @mutation(typeName: DELETE)
+}
+
+type UpdateFilmNamesWrappedResult {
+    films: [Film!]!
+    errors: [DummyError!]
 }
 
 input FilmNameInput @table(name: "FILM") {
@@ -58,7 +64,7 @@ input CategoryPkAndNameInput @table(name: "CATEGORY") {
 
 type DeleteCategoriesResult {
     categories: [DeletedCategory]
-    errors: [DeleteCategoryDummyError]
+    errors: [DummyError]
 }
 
 type DeletedCategory @table(name: "Category"){
@@ -66,7 +72,7 @@ type DeletedCategory @table(name: "Category"){
     categoryId: Int! @field(name: "CATEGORY_ID")
 }
 
-type DeleteCategoryDummyError implements Error @error(handlers: []) {
+type DummyError implements Error @error(handlers: []) {
     path: [String!]!
     message: String!
 }

@@ -288,6 +288,7 @@ public class FetchContext {
         return getReferenceObject() == null || getReferenceObject()
                 .getFields()
                 .stream()
+                .filter(it -> !processedSchema.isExceptionOrExceptionUnion(it))
                 .anyMatch(it -> !processedSchema.invokesSubquery(it, getTargetTable()));
     }
 

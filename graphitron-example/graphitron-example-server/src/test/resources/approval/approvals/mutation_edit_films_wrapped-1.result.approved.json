@@ -1,0 +1,16 @@
+{
+    "data": {
+        "updateFilmNamesWrapped": {
+            "films": [
+                {
+                    "id": "RmlsbToyMg",
+                    "title": "SPACE"
+                },
+                {
+                    "id": "RmlsbToyMw",
+                    "title": "STAR"
+                }
+            ]
+        }
+    }
+}
