@@ -120,6 +120,10 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @SuppressWarnings("unused")
     private CodeGenerationThresholds codeGenerationThresholds;
 
+    @Parameter(property = "generate.validateOverlappingInputFields", defaultValue = "true")
+    @SuppressWarnings("unused")
+    private boolean validateOverlappingInputFields;
+
     @Override
     public void execute() throws MojoExecutionException {
         GeneratorConfig.loadProperties(this);
@@ -239,5 +243,10 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Override
     public Set<String> getExternalReferenceImports() {
         return externalReferenceImports;
+    }
+
+    @Override
+    public boolean validateOverlappingInputFields() {
+        return validateOverlappingInputFields;
     }
 }

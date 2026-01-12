@@ -33,6 +33,7 @@ import java.util.Optional;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
+import static no.sikt.graphitron.configuration.GeneratorConfig.validateOverlappingInputFields;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
@@ -334,33 +335,15 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .build();
     }
 
-    /**
-     * Represents information about how to extract a column value from an input field.
-     * For nodeId fields, this includes the node type and index in the composite key.
-     * For regular fields, this is just the getter call.
-     */
-    private record ColumnFieldMapping(
-            InputField field,
-            boolean isNodeId,
-            String nodeTypeId,         // Only set for nodeId fields
-            int columnIndex,           // Index in the unpacked array for nodeId fields
-            String unpackedVarName,    // Variable name for unpacked nodeId values
-            String columnName          // The actual column name being mapped
-    ) {
-        static ColumnFieldMapping forRegularField(InputField field, String columnName) {
-            return new ColumnFieldMapping(field, false, null, -1, null, columnName);
-        }
-
-        static ColumnFieldMapping forNodeIdField(InputField field, String nodeTypeId, int columnIndex, String unpackedVarName, String columnName) {
-            return new ColumnFieldMapping(field, true, nodeTypeId, columnIndex, unpackedVarName, columnName);
-        }
-    }
-
     private CodeBlock validateInputs(InputParser parser) {
+        if (!validateOverlappingInputFields()) {
+            return CodeBlock.empty();
+        }
+
         var code = CodeBlock.builder();
 
         for (InputField inputRecord : parser.getJOOQRecords().values()) {
-            var columnsToFieldMappings = new LinkedHashMap<String, List<ColumnFieldMapping>>();
+            var tableColumnToInputFieldMappings = new LinkedHashMap<String, List<ColumnFieldMapping>>();
             var type = processedSchema.getInputType(inputRecord);
             var inputVarName = inputPrefix(uncapitalize(inputRecord.getName()));
             var isListed = inputRecord.isIterableWrapped();
@@ -382,19 +365,19 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                     }
 
                     for (int i = 0; i < columns.size(); i++) {
-                        columnsToFieldMappings
+                        tableColumnToInputFieldMappings
                                 .computeIfAbsent(columns.get(i), k -> new ArrayList<>())
                                 .add(ColumnFieldMapping.forNodeIdField(recordField, nodeType.getTypeId(), i, unpackedVarName, columns.get(i)));
                     }
                 } else {
                     String jooqColumn = recordField.getUpperCaseName();
-                    columnsToFieldMappings
+                    tableColumnToInputFieldMappings
                             .computeIfAbsent(jooqColumn, k -> new ArrayList<>())
                             .add(ColumnFieldMapping.forRegularField(recordField, jooqColumn));
                 }
             }
 
-            var overlappingColumns = columnsToFieldMappings.entrySet().stream()
+            var overlappingColumns = tableColumnToInputFieldMappings.entrySet().stream()
                     .filter(e -> e.getValue().size() > 1)
                     .toList();
 
@@ -409,7 +392,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
             var nodeIdFieldsToUnpack = overlappingColumns.stream()
                     .flatMap(e -> e.getValue().stream())
                     .filter(ColumnFieldMapping::isNodeId)
-                    .map(m -> m.field)
+                    .map(ColumnFieldMapping::field)
                     .distinct()
                     .toList();
 
@@ -438,7 +421,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                     if (i > 0) {
                         args.add(",\n");
                     }
-                    args.add("$S, $L", mapping.field.getName(), getValueExtractionCode(mapping, itemVarName, type));
+                    args.add("$S, $L", mapping.field().getName(), getValueExtractionCode(mapping, itemVarName, type));
                 }
 
                 code.addStatement("$T.assertSameColumnValues(\n$L)",
@@ -458,17 +441,17 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         if (mapping.isNodeId()) {
             // For nodeId fields, get the value from the unpacked array
             return CodeBlock.of("$N != null ? $N.getFieldValue($L.$L, $N[$L]) : null",
-                    mapping.unpackedVarName,
+                    mapping.unpackedVarName(),
                     VAR_NODE_STRATEGY,
                     FormatCodeBlocks.staticTableInstanceBlock(type.getTable().getName()),
-                    mapping.columnName,
-                    mapping.unpackedVarName,
-                    mapping.columnIndex);
+                    mapping.columnName(),
+                    mapping.unpackedVarName(),
+                    mapping.columnIndex());
         } else {
             // For regular fields, just get the value directly
             return CodeBlock.of("$N.$L()",
                     inputVarName,
-                    mapping.field.getMappingFromSchemaName().asGet());
+                    mapping.field().getMappingFromSchemaName().asGet());
         }
     }
 

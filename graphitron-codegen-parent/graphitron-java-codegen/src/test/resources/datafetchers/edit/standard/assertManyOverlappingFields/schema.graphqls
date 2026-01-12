@@ -9,9 +9,9 @@ input FilmActorInput @table(name: "film_actor"){
 }
 
 type FilmActor implements Node @table(name: "film_actor") @node {
-    id: ID!
+    id: ID! @nodeId
 }
 
 type Film implements Node @table(name: "film") @node {
-    id: ID!
+    id: ID! @nodeId
 }
