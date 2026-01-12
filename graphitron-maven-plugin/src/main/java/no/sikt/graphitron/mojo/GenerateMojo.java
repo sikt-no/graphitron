@@ -10,7 +10,6 @@ import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.generate.Generator;
 import no.sikt.graphitron.generate.GraphQLGenerator;
 import no.sikt.graphitron.validation.ValidationHandler;
-import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -27,7 +26,7 @@ import static org.apache.maven.plugins.annotations.LifecyclePhase.GENERATE_SOURC
  * Mojo for a single run of the code generation.
  */
 @Mojo(name = "generate", defaultPhase = GENERATE_SOURCES)
-public class GenerateMojo extends AbstractMojo implements Generator {
+public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     /**
      * The Maven project.
      */
@@ -47,22 +46,10 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     private String outputPackage;
 
     /**
-     * The comma-separated locations of the schema files to use for code generation.
-     */
-    @Parameter(property = "generate.schemaFiles", defaultValue = "${project.basedir}/target/generated-resources/schema.graphql", required = true)
-    private Set<String> schemaFiles;
-
-    /**
      * The comma-separated locations of the schema files to provide to the user.
      */
     @Parameter(property = "generate.userSchemaFiles")
     private Set<String> userSchemaFiles;
-
-    /**
-     * The output folder for jOOQ generated code.
-     */
-    @Parameter(property = "generate.jooqGeneratedPackage")
-    private String jooqGeneratedPackage;
 
     /**
      * External reference elements that can be used in code generation.
@@ -101,10 +88,6 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @SuppressWarnings("unused")
     private int maxAllowedPageSize;
 
-    @Parameter(property = "generate.makeNodeStrategy", defaultValue = "false")
-    @SuppressWarnings("unused")
-    private boolean makeNodeStrategy;
-
     @Parameter(property = "generate.useJdbcBatchingForDeletes", defaultValue = "true")
     @SuppressWarnings("unused")
     private boolean useJdbcBatchingForDeletes;
@@ -112,10 +95,6 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Parameter(property = "generate.useJdbcBatchingForInserts", defaultValue = "true")
     @SuppressWarnings("unused")
     private boolean useJdbcBatchingForInserts;
-
-    @Parameter(property = "generate.experimental_requireTypeIdOnNode", defaultValue = "false")
-    @SuppressWarnings("unused")
-    private boolean experimental_requireTypeIdOnNode;
 
     @Parameter(property = "generate.codeGenerationThresholds")
     @SuppressWarnings("unused")
@@ -163,21 +142,11 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     }
 
     @Override
-    public Set<String> getSchemaFiles() {
-        return schemaFiles;
-    }
-
-    @Override
     public Set<String> getUserSchemaFiles() {
         if (userSchemaFiles == null || userSchemaFiles.isEmpty()) {
-            return schemaFiles;
+            return getSchemaFiles();
         }
         return userSchemaFiles;
-    }
-
-    @Override
-    public String getJooqGeneratedPackage() {
-        return jooqGeneratedPackage;
     }
 
     @Override
@@ -198,10 +167,6 @@ public class GenerateMojo extends AbstractMojo implements Generator {
         this.outputPackage = outputPackage;
     }
 
-    public void setSchemaFiles(Set<String> schemaFiles) {
-        this.schemaFiles = schemaFiles;
-    }
-
     @Override
     public List<? extends ExternalReference> getExternalReferences() {
         return externalReferences;
@@ -210,11 +175,6 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Override
     public List<GlobalTransform> getGlobalTransforms() {
         return globalRecordTransforms;
-    }
-
-    @Override
-    public boolean makeNodeStrategy() {
-        return makeNodeStrategy;
     }
 
     @Override
@@ -230,15 +190,6 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Override
     public CodeGenerationThresholds getCodeGenerationThresholds() {
         return codeGenerationThresholds;
-    }
-
-    @Override
-    public boolean requireTypeIdOnNode() {
-        return experimental_requireTypeIdOnNode;
-    }
-
-    public void setJooqGeneratedPackage(String jooqGeneratedPackage) {
-        this.jooqGeneratedPackage = jooqGeneratedPackage;
     }
 
     @Override

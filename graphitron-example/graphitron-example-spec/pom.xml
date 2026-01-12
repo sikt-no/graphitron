@@ -53,7 +53,14 @@
                 <groupId>no.sikt</groupId>
                 <artifactId>graphitron-maven-plugin</artifactId>
                 <version>${revision}${changelist}</version>
+                <extensions>true</extensions>
                 <configuration>
+                    <!-- Shared configuration used by both generate and validate goals -->
+                    <schemaFiles>
+                        <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/generator-schema.graphql</schemaFile>
+                    </schemaFiles>
+                    <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
+                    <makeNodeStrategy>true</makeNodeStrategy>
                     <schemaRootDirectories>
                         <directory>${project.basedir}/src/main/resources/graphql</directory>
                     </schemaRootDirectories>
@@ -88,10 +95,7 @@
                             <goal>generate</goal>
                         </goals>
                         <configuration>
-                            <schemaFiles>
-                                <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/generator-schema.graphql</schemaFile>
-                            </schemaFiles>
-                            <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
+                            <!-- schemaFiles, jooqGeneratedPackage, makeNodeStrategy inherited from plugin-level config -->
                             <maxAllowedPageSize>1000</maxAllowedPageSize>
                             <recordValidation>
                                 <enabled>true</enabled>
@@ -104,7 +108,6 @@
                             <userSchemaFiles>
                                 <schemaFile>schema.graphql</schemaFile>
                             </userSchemaFiles>
-                            <makeNodeStrategy>true</makeNodeStrategy>
                             <scalars>
                                 <class>
                                     <fullyQualifiedClassName>no.sikt.graphitron.example.service.ConsumerProvidedScalars</fullyQualifiedClassName>
@@ -114,21 +117,9 @@
                             <useJdbcBatchingForInserts>false</useJdbcBatchingForInserts>
                         </configuration>
                     </execution>
-                    <execution>
-                        <id>default-cli</id>
-                        <!-- The @Execute annotation on ValidateMojo forks lifecycle to generate-resources first -->
-                        <phase>validate</phase>
-                        <goals>
-                            <goal>validate</goal>
-                        </goals>
-                        <configuration>
-                            <schemaFiles>
-                                <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/generator-schema.graphql</schemaFile>
-                            </schemaFiles>
-                            <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
-                            <makeNodeStrategy>true</makeNodeStrategy>
-                        </configuration>
-                    </execution>
+                    <!-- Validate goal runs automatically via lifecycle extension when <extensions>true</extensions> is set.
+                         Configuration is inherited from plugin-level config above.
+                         To run manually: mvn graphitron:validate -->
                 </executions>
                 <dependencies>
                     <dependency>
