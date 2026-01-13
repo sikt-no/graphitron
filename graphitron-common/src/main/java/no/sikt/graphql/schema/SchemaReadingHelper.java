@@ -52,19 +52,12 @@ public class SchemaReadingHelper {
      * Tries to read content from classpath first, then falls back to filesystem
      */
     private static String readContent(String path) {
+        // Normalize path for classloader (no leading slash)
+        String normalizedPath = path.startsWith("/") ? path.substring(1) : path;
 
-        // Try classpath as-is
-        String content = readFromClasspath(path);
+        String content = readFromClasspath(normalizedPath);
         if (content != null) {
             return content;
-        }
-
-        // Try with leading slash if not present
-        if (!path.startsWith("/")) {
-            content = readFromClasspath("/" + path);
-            if (content != null) {
-                return content;
-            }
         }
 
         try {
@@ -79,10 +72,13 @@ public class SchemaReadingHelper {
     }
 
     /**
-     * Read content from classpath resource, returns null if not found
+     * Read content from classpath resource using the context classloader.
+     * This ensures resources are found correctly in frameworks like Quarkus dev mode
+     * where the application's resources may be in a different classloader than this library.
      */
     private static String readFromClasspath(String resourcePath) {
-        try (InputStream is = SchemaReadingHelper.class.getResourceAsStream(resourcePath)) {
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        try (InputStream is = classLoader.getResourceAsStream(resourcePath)) {
             if (is == null) {
                 return null;
             }
