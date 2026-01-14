@@ -41,7 +41,6 @@ public class FetchContext {
     private final String graphPath;
     private final int recCounter;
     private final KeyWrapper resolverKey;
-    private boolean shouldUseOptional;
     private boolean shouldUseEnhancedNullOnAllNullCheck = false;
     private final boolean hasApplicableTable;
     private final ProcessedSchema processedSchema;
@@ -72,7 +71,6 @@ public class FetchContext {
             String pastGraphPath,
             int recCounter,
             FetchContext previousContext,
-            boolean shouldUseOptional,
             boolean addAllJoinsToJoinSet,
             boolean useTableWithoutAliasInFirstStep
     ) {
@@ -108,7 +106,6 @@ public class FetchContext {
         graphPath = pastGraphPath;
 
         this.previousContext = previousContext;
-        this.shouldUseOptional = shouldUseOptional;
         this.resolverKey = findKeyForResolverField(referenceObjectField, processedSchema);
 
         hasApplicableTable = previousTable != null || referenceTable != null;
@@ -164,7 +161,6 @@ public class FetchContext {
                 "",
                 0,
                 null,
-                referenceObjectField.getOrderField().isEmpty(), //do not use optional in combination with orderBy
                 addAllJoinsToJoinSet,
                 useTableWithoutAliasInFirstStep
         );
@@ -185,10 +181,14 @@ public class FetchContext {
     }
 
     /**
-     * @return The path to this context in the schema itself. Used to correctly check selection sets.
+     * @return The path to the schema field in this context. Used to correctly check selection sets.
      */
-    public String getGraphPath() {
-        return graphPath;
+    public String getGraphPath(GenerationField field) {
+        String graphPathForField = graphPath;
+        if (processedSchema.isScalar(field)) {
+            graphPathForField += (graphPath.isEmpty() ? "" : "/") + field.getName();
+        }
+        return graphPathForField;
     }
 
     /**
@@ -296,15 +296,6 @@ public class FetchContext {
         return previousContext != null;
     }
 
-    public boolean getShouldUseOptional() {
-        return shouldUseOptional;
-    }
-
-    public FetchContext withShouldUseOptional(boolean shouldUseOptional) {
-        this.shouldUseOptional = shouldUseOptional;
-        return this;
-    }
-
     /**
      * @return Should this layer apply an expanded null check?
      */
@@ -329,7 +320,7 @@ public class FetchContext {
         var previousGraphPath = graphPath;
 
         if (!referenceObjectField.isResolver() && processedSchema.isObject(referenceObjectField)) {
-            previousGraphPath += referenceObjectField.getName() + "/";
+            previousGraphPath += (previousGraphPath.isEmpty() ? "" : "/") + referenceObjectField.getName();
             var refTable = processedSchema.getObject(referenceObjectField).getTable();
 
             if ((refTable == null || refTable.equals(getReferenceTable())) && !currentJoinSequence.isEmpty()) {
@@ -351,7 +342,6 @@ public class FetchContext {
                 previousGraphPath,
                 recCounter + 1,
                 this,
-                shouldUseOptional,
                 addAllJoinsToJoinSet,
                 false);
     }
@@ -368,7 +358,6 @@ public class FetchContext {
                 graphPath,
                 recCounter + 1,
                 this,
-                shouldUseOptional,
                 addAllJoinsToJoinSet,
                 false);
     }

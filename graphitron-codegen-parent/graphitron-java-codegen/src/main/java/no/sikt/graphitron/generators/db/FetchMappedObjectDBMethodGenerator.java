@@ -1,9 +1,7 @@
 package no.sikt.graphitron.generators.db;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
@@ -15,12 +13,11 @@ import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
+import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsEnabled;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.inferFieldTypeName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
@@ -73,10 +70,11 @@ public class FetchMappedObjectDBMethodGenerator extends NestedFetchDBMethodGener
         // For record types that are NOT reference resolvers, extract the row mapping into a helper method
         var isReferenceResolverField = processedSchema.isReferenceResolverField(target);
         var parser = new InputParser(target, processedSchema);
-        var methodInputs = parser.getMethodInputNames(true, false, true).stream();
-        var allInputs = GeneratorConfig.shouldMakeNodeStrategy() ? Stream.concat(Stream.of(VAR_NODE_STRATEGY), methodInputs) : methodInputs;
+        var methodInputs = parser.getMethodInputNames(true, false, true);
+        if (optionalSelectIsEnabled()) methodInputs.add(VAR_SELECT);
+        if (shouldMakeNodeStrategy()) methodInputs.add(0, VAR_NODE_STRATEGY);
         var selectBlockToUse = processedSchema.isRecordType(target) && !isReferenceResolverField
-                ? CodeBlock.of("$L($L)", generateHelperMethodName(target), allInputs.collect(Collectors.joining(", ")))
+                ? CodeBlock.of("$L($L)", generateHelperMethodName(target), methodInputs.stream().map(CodeBlock::of).collect(CodeBlock.joining(", ")))
                 : selectRowBlock;
         var selectBlock = createSelectBlock(target, context, actualRefTable, selectBlockToUse);
 

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.generate;
 
 import no.sikt.graphitron.configuration.CodeGenerationThresholds;
+import no.sikt.graphitron.configuration.OptionalSelect;
 import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
@@ -38,4 +39,6 @@ public interface Generator {
     CodeGenerationThresholds getCodeGenerationThresholds();
 
     boolean requireTypeIdOnNode();
+
+    OptionalSelect getOptionalSelect();
 }
