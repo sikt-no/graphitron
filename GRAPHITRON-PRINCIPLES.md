@@ -1,0 +1,113 @@
+# Graphitron: Design Principles
+
+## Context: Building for Decades
+
+Graphitron is being developed as part of modernizing Norway’s national Student Information System. This system has been in continuous production for approximately 30 years. It has survived the rise and fall of many technologies: client-server architectures, CORBA, SOAP, REST, and countless frameworks that were once considered essential.
+
+We expect to be in business for at least 30 more years.
+
+This context shapes everything about how we build Graphitron. We’re not optimizing for the fastest path to production or the most fashionable architecture. We’re optimizing for a system that will still be maintainable, adaptable, and comprehensible decades from now—likely by people who haven’t been born yet.
+
+The principles below reflect this long-term thinking.
+
+-----
+
+## Principle 1: The Database Is Your Ally
+
+Relational databases have been around for 50 years. They’ve proven remarkably durable—not because the industry lacks innovation, but because they solve fundamental problems well.
+
+A properly designed database does more than store data:
+
+- **It enforces integrity.** Constraints, foreign keys, and transactions ensure data stays consistent even when applications have bugs.
+- **It controls access.** Row-level security can enforce who sees what, independent of application code.
+- **It survives application rewrites.** The database often outlives the applications built on top of it.
+
+Many modern architectures treat the database as a dumb storage layer—something to be abstracted away or hidden behind services. We take the opposite view: **the database is a partner in keeping data safe and correct.**
+
+Graphitron is designed to work with your database, not around it. It generates code that respects database constraints, leverages database capabilities, and assumes the database is a trustworthy component of your system.
+
+This isn’t about a specific database product. It’s about recognizing that decades of engineering have gone into making databases reliable, and that reliability is worth using.
+
+-----
+
+## Principle 2: Separate Business Logic from API Code
+
+An API is a way to expose capabilities. It is not the place to define those capabilities.
+
+This distinction matters because:
+
+**APIs change faster than business logic.** The rules for how student enrollment works are relatively stable. The preferred way to expose those rules to clients changes every few years. SOAP gave way to REST gave way to GraphQL. Something else will come next.
+
+**Multiple APIs may expose the same logic.** A mobile app, a web application, a batch integration, and an administrative tool may all need access to the same underlying capabilities—but through different interfaces optimized for their needs.
+
+**API code is hard to test in isolation.** Business rules mixed into API handlers become difficult to verify without spinning up the full API infrastructure.
+
+Graphitron enforces this separation by design. It generates the mechanical parts of API implementation—the data fetching, the response formatting, the query optimization—but expects business logic to live elsewhere. When you need to apply business rules, you provide them through explicit extension points, not by modifying generated code.
+
+The goal is that your business logic remains portable. If GraphQL falls out of favor in ten years, your core logic shouldn’t need to change. Only the API layer—which is generated anyway—needs replacement.
+
+-----
+
+## Principle 3: The API Is a Means, Not an End
+
+It’s easy to fall into the trap of treating the API as the product. It isn’t. **Solving business needs is the product.** The API is one tool for doing that.
+
+This has practical implications:
+
+**Design from needs, not from data.** The question isn’t “how do we expose our database tables?” It’s “what do users need to accomplish, and what data access patterns support that?” These questions lead to different API designs.
+
+**Expect multiple paths to the same data.** A student record might be accessed through a search interface, a direct lookup, a batch export, or a real-time notification. Each path exists because it serves a different need. The underlying data is the same; the access patterns differ.
+
+**Optimize for the consumer.** An API exists to serve its clients. If the API is elegant but clients struggle to use it effectively, the API has failed. Pragmatic APIs that solve real problems beat theoretically pure APIs that don’t.
+
+Graphitron supports this by making it straightforward to expose the same underlying data through multiple query patterns. You’re not locked into a single way of accessing data just because that’s how the generator works.
+
+-----
+
+## Principle 4: Stability Through Simplicity
+
+Complex systems fail in complex ways. Simple systems fail in understandable ways.
+
+For a system that needs to run for decades, understandable failures are far more valuable than sophisticated features. When something breaks at 2 AM ten years from now, the person debugging it needs to be able to comprehend what the code does and why.
+
+This drives several choices in Graphitron:
+
+**Generate readable code.** The output should be code that a developer can read, understand, and debug without special tools. If you need to understand what’s happening, you can read the generated source.
+
+**Minimize runtime dependencies.** Generated code shouldn’t require a complex runtime framework. Fewer moving parts means fewer things that can break, fewer things that need updates, and fewer things that might become unmaintained.
+
+**Prefer explicit over implicit.** When the mapping between API and database is visible in the schema annotations, future maintainers can understand the relationship. Magic that “just works” becomes mystery that “just broke” when context is lost.
+
+**Fail at build time.** Problems discovered during code generation are far cheaper than problems discovered in production. Graphitron validates mappings before generating code, catching misconfigurations early.
+
+-----
+
+## Principle 5: Technology Choices Are Temporary
+
+We’ve chosen GraphQL as our API technology. We believe it’s a good choice today. We don’t believe it’s the final choice.
+
+Looking back 30 years, the technologies that seemed permanent turned out to be temporary. Looking forward 30 years, we should assume the same. The specific technologies we use today are implementation details, not permanent commitments.
+
+Graphitron is built with this impermanence in mind:
+
+**The database schema is more durable than the API schema.** Tables and columns tend to outlive the APIs built on them. Graphitron treats the database as the stable foundation.
+
+**Business logic should be independent of API technology.** Rules about how the system behaves shouldn’t be entangled with how those behaviors are exposed.
+
+**Generated code can be regenerated.** When technology changes, regenerating the API layer should be straightforward. The investment is in the mappings and the business logic, not in hand-written API code.
+
+This isn’t about predicting what comes next. It’s about structuring the system so that whatever comes next can be accommodated without rewriting everything.
+
+-----
+
+## Summary
+
+These principles share a common theme: **respect for time.**
+
+Respect for the past—building on proven foundations like relational databases rather than chasing novelty.
+
+Respect for the present—solving real business needs rather than building elegant abstractions.
+
+Respect for the future—making choices that future maintainers will be able to understand and adapt.
+
+Graphitron is a tool for building systems that last. The technical details matter, but they matter in service of this larger goal: creating software that continues to serve its purpose long after the people who built it have moved on.
