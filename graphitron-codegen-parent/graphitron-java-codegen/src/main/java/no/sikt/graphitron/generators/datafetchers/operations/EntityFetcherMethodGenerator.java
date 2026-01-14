@@ -9,6 +9,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
@@ -38,20 +39,17 @@ public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator {
         var cases = CodeBlock.builder();
         var entities = processedSchema.getEntities().values();
         for (var entity : entities) {
-            var fetchBlock = GeneratorConfig.shouldMakeNodeStrategy() ?
-                    CodeBlock.of(
-                            "$T.$L($N, $N, $N)",
-                            getQueryClassName(asQueryClass(entity.getName())),
-                            asEntityQueryMethodName(entity.getName()),
-                            VAR_CONTEXT,
-                            VAR_NODE_STRATEGY,
-                            VAR_ITERATOR)
-                    : CodeBlock.of(
-                    "$T.$L($N, $N)",
+            var params = new ArrayList<String>();
+            params.add(VAR_CONTEXT);
+            if (GeneratorConfig.shouldMakeNodeStrategy()) params.add(VAR_NODE_STRATEGY);
+            params.add(VAR_ITERATOR);
+            if (GeneratorConfig.optionalSelectIsEnabled()) params.add(VAR_SELECT);
+
+            var fetchBlock = CodeBlock.of(
+                    "$T.$L($L)",
                     getQueryClassName(asQueryClass(entity.getName())),
                     asEntityQueryMethodName(entity.getName()),
-                    VAR_CONTEXT,
-                    VAR_ITERATOR);
+                    params.stream().map(CodeBlock::of).collect(CodeBlock.joining(", ")));
             cases
                     .add("case $S: ", entity.getName())
                     .add(returnWrap(CodeBlock.of("($T) $L",
@@ -70,7 +68,9 @@ public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator {
                         FEDERATION_REPRESENTATIONS_ARGUMENT.getName(),
                         VAR_ITERATOR
                 )
-                .declare(VAR_CONTEXT, "new $T($N)$L", ENVIRONMENT_HANDLER.className, VAR_ENV, asMethodCall(METHOD_CONTEXT_NAME))
+                .declare(VAR_ENV_HELPER, "new $T($N)", ENVIRONMENT_HANDLER.className, VAR_ENV)
+                .declare(VAR_CONTEXT, "$N$L", VAR_ENV_HELPER, asMethodCall(METHOD_CONTEXT_NAME))
+                .declareIf(GeneratorConfig.optionalSelectIsEnabled(), VAR_SELECT, "$N.getSelect()", VAR_ENV_HELPER)
                 .beginControlFlow("switch (($T) $N.get($S))", STRING.className, VAR_ITERATOR, TYPE_NAME.getName())
                 .addCode(cases.build())
                 .addCode("default: $L", returnWrap("null"))

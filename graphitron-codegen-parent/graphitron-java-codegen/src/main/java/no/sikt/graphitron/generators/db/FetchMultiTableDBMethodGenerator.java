@@ -1,6 +1,5 @@
 package no.sikt.graphitron.generators.db;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
@@ -16,7 +15,6 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jooq.Field;
-import org.jooq.SelectConditionStep;
 import org.jooq.SelectLimitPercentStep;
 import org.jooq.SelectSeekStepN;
 
@@ -24,6 +22,8 @@ import javax.lang.model.element.Modifier;
 import java.util.*;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
+import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsEnabled;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
@@ -87,11 +87,16 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
             sortFieldQueryMethodCalls.add(getSortFieldsMethodName(target, implementation));
             String mappedVariableName = joinStepPrefix(typeName);
             mappedQueryVariables.put(typeName, mappedVariableName);
+
+            var input = new ArrayList<String>();
+            if (shouldMakeNodeStrategy()) input.add(VAR_NODE_STRATEGY);
+            if (optionalSelectIsEnabled()) input.add(VAR_SELECT);
+
             mappedDeclarationBlock.declare(
                     mappedVariableName,
                     "$N($L)",
                     getMappedMethodName(target, implementation),
-                    CodeBlock.ofIf(GeneratorConfig.shouldMakeNodeStrategy(), VAR_NODE_STRATEGY)
+                    String.join(", ", input)
             );
 
             joins.add("\n.leftJoin($N)\n.on($N.field($S, $T.class).eq($N.field($S, $T.class)))",
@@ -312,7 +317,8 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                         getReturnTypeForMappedConnectionMethod(implementation.getGraphClassName())
                         : getReturnTypeForMappedMethod(implementation.getGraphClassName()))
                 .addCode(getMappedMethodCode(target, implementation, mappedContext))
-                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY)
+                .addParameterIf(shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY)
+                .addParameterIf(optionalSelectIsEnabled(), SELECTION_SET.className, VAR_SELECT)
                 .build();
     }
 

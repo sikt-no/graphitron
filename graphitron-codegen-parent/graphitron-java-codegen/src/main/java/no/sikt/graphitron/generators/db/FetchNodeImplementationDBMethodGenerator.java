@@ -1,6 +1,5 @@
 package no.sikt.graphitron.generators.db;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
@@ -17,9 +16,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
+import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsEnabled;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asNodeQueryName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
@@ -64,13 +63,14 @@ public class FetchNodeImplementationDBMethodGenerator extends NestedFetchDBMetho
         var querySource = context.renderQuerySource(implementationTableObject);
 
         var parser = new InputParser(virtualReference, processedSchema);
-        var methodInputs = parser.getMethodInputNames(true, false, true).stream();
-        var allInputs = GeneratorConfig.shouldMakeNodeStrategy() ? Stream.concat(Stream.of(VAR_NODE_STRATEGY), methodInputs) : methodInputs;
-        var selectBlock = CodeBlock.of("$L($L)", generateHelperMethodName(virtualReference), allInputs.collect(Collectors.joining(", ")));
+        var methodInputs = parser.getMethodInputNames(true, false, true);
+        if (shouldMakeNodeStrategy()) methodInputs.add(0, VAR_NODE_STRATEGY);
+        if (optionalSelectIsEnabled()) methodInputs.add(VAR_SELECT);
+        var selectBlock = CodeBlock.of("$L($L)", generateHelperMethodName(virtualReference), String.join(", ", methodInputs));
 
         CodeBlock id;
         CodeBlock whereCondition;
-        if (GeneratorConfig.shouldMakeNodeStrategy()) {
+        if (shouldMakeNodeStrategy()) {
             id = CodeBlock.of("$L,\n$L", createNodeIdBlock(localObject, context.getTargetAlias()), selectBlock);
             whereCondition = hasIdOrIdsBlock(CodeBlock.of(argumentName), localObject, context.getTargetAlias(), CodeBlock.empty(), true);
         } else {

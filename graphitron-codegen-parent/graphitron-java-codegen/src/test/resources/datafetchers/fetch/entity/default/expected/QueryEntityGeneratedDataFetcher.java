@@ -15,7 +15,8 @@ import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 public class QueryEntityGeneratedDataFetcher {
     public static DataFetcher<List<_Entity>> entityFetcher() {
         return _iv_env -> ((List<Map<String, Object>>) _iv_env.getArgument("representations")).stream().map(_iv_it -> {
-            var _iv_ctx = new EnvironmentHandler(_iv_env).getCtx();
+            var _iv_envHelper = new EnvironmentHandler(_iv_env);
+            var _iv_ctx = _iv_envHelper.getCtx();
             switch ((String) _iv_it.get("__typename")) {
                 case "Customer": return (_Entity) ResolverHelpers.transformDTO(CustomerDBQueries.customerAsEntity(_iv_ctx, _iv_it), Customer.class);
                 default: return null;

@@ -1,0 +1,11 @@
+type Query {
+  query: Customer
+}
+
+type Customer @table {
+  address: Address! @reference(path: [{table: "ADDRESS"}])
+}
+
+type Address @table {
+  cityId: Int @field(name: "CITY_ID") @reference(path: {table: "CITY"})
+}

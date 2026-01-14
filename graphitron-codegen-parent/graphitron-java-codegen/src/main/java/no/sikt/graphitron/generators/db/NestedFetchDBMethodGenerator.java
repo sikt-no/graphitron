@@ -22,14 +22,14 @@ import java.util.stream.Collectors;
 
 import static javax.lang.model.element.Modifier.PRIVATE;
 import static javax.lang.model.element.Modifier.STATIC;
+import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsEnabled;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.interfaceQueryName;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_STRATEGY;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.prefixName;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_STRATEGY;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECT_FIELD;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -224,6 +224,7 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
         return methodBuilder
                 .addCode(returnWrap(selectRowBlock))
                 .addParameters(parser.getContextParameterSpecs())
+                .addParameterIf(optionalSelectIsEnabled(), SELECTION_SET.className, VAR_SELECT)
                 .build();
     }
 
@@ -259,6 +260,8 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
             parameters.addAll(tableMethodInputs);
         }
         parameters.addAll(new InputParser(methodState != null ? methodState.rootField : field, processedSchema).getContextFieldNames());
+        if (optionalSelectIsEnabled()) parameters.add(VAR_SELECT);
+
         return CodeBlock.of("$L($L)", helperMethodName, String.join(", ", parameters));
     }
 
@@ -335,7 +338,8 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
                         .addCode(declareAllServiceClassesInAliasSet(usedAliases))
                         .addCodeIf(!usedAliases.isEmpty(),createAliasDeclarations(usedAliases))
                         .addCode(returnWrap(selectRowBlock))
-                        .addParameters(new InputParser(methodState.rootField, processedSchema).getContextParameterSpecs());
+                        .addParameters(new InputParser(methodState.rootField, processedSchema).getContextParameterSpecs())
+                        .addParameterIf(optionalSelectIsEnabled(), SELECTION_SET.className, VAR_SELECT);
 
                 return Optional.of(methodBuilder.build());
             } else {
