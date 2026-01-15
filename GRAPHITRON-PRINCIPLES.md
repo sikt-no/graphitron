@@ -127,6 +127,27 @@ This isn’t about predicting what comes next. It’s about structuring the syst
 
 -----
 
+## Principle 7: Be Deliberate About Dependencies
+
+Every dependency is a commitment. You’re trusting that someone else’s code will continue to work, continue to be maintained, and continue to align with your needs—potentially for decades.
+
+For a long-lived system, every dependency deserves scrutiny:
+
+- What problem does it solve?
+- Has it been maintained for years, or is it new and unproven?
+- Does it follow standards, or invent its own paradigms?
+- What happens if it disappears?
+
+**Bet on longevity.** A library maintained for fifteen years is more likely to be maintained for another fifteen than something released last year. Boring is good. Boring means predictable.
+
+**Bet on standards.** SQL outlives ORMs. HTTP outlives web frameworks. Dependencies that follow standards can be replaced by other implementations of the same standard. Dependencies that invent paradigms lock you in.
+
+**Distinguish foundational from peripheral.** Some dependencies are utilities at the edges—these should be few and contained. Others are foundational bets that shape your architecture—these should be chosen carefully and then embraced fully. The mistake is treating them the same.
+
+Foundational dependencies aren’t risks to minimize; they’re partnerships to invest in. Once you’ve chosen them, use them directly. Let their patterns become your patterns. The alternative—wrapping foundational dependencies in abstraction layers—produces enormous cost for little benefit.
+
+-----
+
 ## Summary
 
 These principles share a common theme: **respect for time.**
