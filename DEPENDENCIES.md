@@ -16,6 +16,10 @@ We use the commercial license, which includes rights to the source code. If jOOQ
 
 **How we use it.** We embrace jOOQ fully. Its types and patterns permeate our generated code. We’re not wrapping it; we’re building on it.
 
+**Where you write code.** When using Graphitron, custom logic builds on the code jOOQ generates from your database schema. You write methods that return jOOQ types—mostly `Condition` methods for filtering, sometimes `Field` methods for calculated values—and map these into the GraphQL schema.
+
+This means jOOQ isn’t just an implementation detail of Graphitron. It’s the abstraction layer where your team works. Familiarity with jOOQ’s DSL is essential for extending and customizing what Graphitron generates.
+
 ## GraphQL-Java
 
 **What it is.** GraphQL-Java is the reference implementation of GraphQL for the Java ecosystem. It parses GraphQL schemas, executes queries, and provides the runtime infrastructure for GraphQL servers.
@@ -24,13 +28,14 @@ We use the commercial license, which includes rights to the source code. If jOOQ
 
 It’s fully open source and has been the standard Java implementation since GraphQL gained adoption.
 
-**How we use it.** We use GraphQL-Java directly without abstraction layers. Graphitron generates code that plugs into GraphQL-Java’s DataFetcher and TypeResolver interfaces.
+**How we use it.** Graphitron generates code that plugs into GraphQL-Java’s DataFetcher and TypeResolver interfaces. You won’t typically write GraphQL-Java code directly—Graphitron handles that.
 
 ## Why These Matter
 
-These dependencies aren’t hidden implementation details you can ignore. Understanding them helps you understand Graphitron:
+These dependencies shape your experience with Graphitron differently:
 
-- The generated code uses jOOQ’s DSL to build queries. Reading it requires basic familiarity with jOOQ.
-- The generated code implements GraphQL-Java interfaces. Debugging it benefits from understanding how GraphQL-Java executes queries.
+**jOOQ is where you work.** Custom logic is written using jOOQ’s DSL. You’ll write Conditions, work with generated table classes, and think in terms of jOOQ’s model. Familiarity with jOOQ is essential.
+
+**GraphQL-Java is under the hood.** You won’t write GraphQL-Java code directly, but if you want to understand what Graphitron generates—or debug it—knowing how GraphQL-Java executes queries helps.
 
 We document these dependencies explicitly because they’re foundational. They’re the bet we’ve made.
