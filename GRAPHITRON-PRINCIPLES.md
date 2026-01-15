@@ -95,7 +95,7 @@ Graphitron supports this by making it straightforward to expose the same underly
 
 Complex systems fail in complex ways. Simple systems fail in understandable ways.
 
-For a system that needs to run for decades, understandable failures are far more valuable than sophisticated features. When something breaks at 2 AM ten years from now, the person debugging it needs to be able to comprehend what the code does and why.
+For a system that needs to run for decades, understandable failures are far more valuable than sophisticated features. When something breaks ten years from now, the person debugging it needs to be able to comprehend what the code does and why.
 
 This drives several choices in Graphitron:
 
