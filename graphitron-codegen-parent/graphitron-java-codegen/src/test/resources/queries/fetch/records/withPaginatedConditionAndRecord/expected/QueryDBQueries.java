@@ -36,12 +36,6 @@ public class QueryDBQueries {
                 .map(_iv_it -> new ImmutablePair<>(_iv_it.value1(), _iv_it.value2()));
     }
 
-    private static SelectField<CustomerTable> customerForQuery_customerTable(
-            CustomerRecord _mi_inRecord) {
-        var _a_customer = CUSTOMER.as("customer_2168032777");
-        return DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new));
-    }
-
     public static Integer countCustomerForQuery(DSLContext _iv_ctx, CustomerRecord _mi_inRecord) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         return _iv_ctx
@@ -49,5 +43,11 @@ public class QueryDBQueries {
                 .from(_a_customer)
                 .where(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_a_customer, _mi_inRecord))
                 .fetchOne(0, Integer.class);
+    }
+
+    private static SelectField<CustomerTable> customerForQuery_customerTable(
+            CustomerRecord _mi_inRecord) {
+        var _a_customer = CUSTOMER.as("customer_2168032777");
+        return DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new));
     }
 }
