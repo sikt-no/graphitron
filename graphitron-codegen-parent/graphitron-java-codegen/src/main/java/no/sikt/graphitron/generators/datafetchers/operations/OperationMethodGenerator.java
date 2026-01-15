@@ -343,7 +343,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         var code = CodeBlock.builder();
 
         for (InputField inputRecord : parser.getJOOQRecords().values()) {
-            var tableColumnToInputFieldMappings = new LinkedHashMap<String, List<ColumnFieldMapping>>();
+            var tableColumnToInputFieldMappings = new LinkedHashMap<String, List<FieldToColumnRecord>>();
             var type = processedSchema.getInputType(inputRecord);
             var inputVarName = inputPrefix(uncapitalize(inputRecord.getName()));
             var isListed = inputRecord.isIterableWrapped();
@@ -367,13 +367,13 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                     for (int i = 0; i < columns.size(); i++) {
                         tableColumnToInputFieldMappings
                                 .computeIfAbsent(columns.get(i), k -> new ArrayList<>())
-                                .add(ColumnFieldMapping.forNodeIdField(recordField, nodeType.getTypeId(), i, unpackedVarName, columns.get(i)));
+                                .add(FieldToColumnRecord.forNodeIdField(recordField, nodeType.getTypeId(), i, unpackedVarName, columns.get(i)));
                     }
                 } else {
                     String jooqColumn = recordField.getUpperCaseName();
                     tableColumnToInputFieldMappings
                             .computeIfAbsent(jooqColumn, k -> new ArrayList<>())
-                            .add(ColumnFieldMapping.forRegularField(recordField, jooqColumn));
+                            .add(FieldToColumnRecord.forRegularField(recordField, jooqColumn));
                 }
             }
 
@@ -391,8 +391,8 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
             var nodeIdFieldsToUnpack = overlappingColumns.stream()
                     .flatMap(e -> e.getValue().stream())
-                    .filter(ColumnFieldMapping::isNodeId)
-                    .map(ColumnFieldMapping::field)
+                    .filter(FieldToColumnRecord::isNodeId)
+                    .map(FieldToColumnRecord::field)
                     .distinct()
                     .toList();
 
@@ -437,7 +437,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         return code.build();
     }
 
-    private CodeBlock getValueExtractionCode(ColumnFieldMapping mapping, String inputVarName, InputDefinition type) {
+    private CodeBlock getValueExtractionCode(FieldToColumnRecord mapping, String inputVarName, InputDefinition type) {
         if (mapping.isNodeId()) {
             // For nodeId fields, get the value from the unpacked array
             return CodeBlock.of("$N != null ? $N.getFieldValue($L.$L, $N[$L]) : null",

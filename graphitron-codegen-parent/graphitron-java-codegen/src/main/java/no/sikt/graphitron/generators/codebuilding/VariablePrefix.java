@@ -58,8 +58,7 @@ public class VariablePrefix {
             ALIAS = "a",
             CONTEXT_FIELD = "cf",
             SEPARATOR = "_",
-            UNPACKED = "unpacked",
-            VALUE = "val";
+            UNPACKED = "up";
 
     /**
      * @return This name formatted as an internal variable to avoid namespace collisions.
@@ -164,10 +163,6 @@ public class VariablePrefix {
      */
     public static String unpackedPrefix(String name) { return prefixName(UNPACKED, name); }
 
-    /**
-     * @return This name formatted as a value variable to avoid namespace collisions.
-     */
-    public static String valuePrefix(String name) { return prefixName(VALUE, name); }
 
     /**
      * @return This name prefixed with the provided prefix.
