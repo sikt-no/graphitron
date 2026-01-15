@@ -30,7 +30,34 @@ This isn’t about a specific database product. It’s about recognizing that de
 
 -----
 
-## Principle 2: Separate Business Logic from API Code
+## Principle 2: Data Modeling Is a Collaborative Act
+
+Data modeling is not a technical specialty that developers do in isolation. It’s a conversation about what the system should be able to represent—and that conversation requires the people who understand the business.
+
+Domain experts know things developers can’t know on their own:
+
+- What entities matter to the business
+- How those entities relate to each other
+- What questions the business needs to answer
+- What rules govern the data
+
+Developers know things domain experts can’t know on their own:
+
+- How to represent those concepts in a database
+- What trade-offs different representations involve
+- How the structure affects performance and maintainability
+
+Neither group has the complete picture. Good data models emerge from collaboration.
+
+We’ve found that involving domain experts directly in database and API schema design works well. There’s a learning curve—reading an entity-relationship diagram or a GraphQL schema takes some practice. But data modeling isn’t black magic. It’s not even very technical. It’s fundamentally about naming things and describing relationships.
+
+Business people understand their data. They work with it daily. A finance manager knows what a transaction is, what an account is, how they relate. They can tell you the rules. What they can’t do is translate that knowledge into a schema without help—and what developers can’t do is invent that knowledge without asking.
+
+The alternative—developers guessing at business requirements, or working from incomplete specifications—produces schemas that don’t quite fit. Those mismatches compound over time.
+
+-----
+
+## Principle 3: Separate Business Logic from API Code
 
 An API is a way to expose capabilities. It is not the place to define those capabilities.
 
@@ -48,7 +75,7 @@ The goal is that your business logic remains portable. If GraphQL falls out of f
 
 -----
 
-## Principle 3: The API Is a Means, Not an End
+## Principle 4: The API Is a Means, Not an End
 
 It’s easy to fall into the trap of treating the API as the product. It isn’t. **Solving business needs is the product.** The API is one tool for doing that.
 
@@ -64,7 +91,7 @@ Graphitron supports this by making it straightforward to expose the same underly
 
 -----
 
-## Principle 4: Stability Through Simplicity
+## Principle 5: Stability Through Simplicity
 
 Complex systems fail in complex ways. Simple systems fail in understandable ways.
 
@@ -82,7 +109,7 @@ This drives several choices in Graphitron:
 
 -----
 
-## Principle 5: Technology Choices Are Temporary
+## Principle 6: Technology Choices Are Temporary
 
 We’ve chosen GraphQL as our API technology. We believe it’s a good choice today. We don’t believe it’s the final choice.
 
