@@ -28,11 +28,23 @@ graphitron/
 ```
 
 ## Documentation
+
+### Core Guides
+- **Code Generation Patterns**: [/docs/CODE-GENERATION-PATTERNS.md](/docs/CODE-GENERATION-PATTERNS.md) - **START HERE** - Understanding what code gets generated and when
+- **Graphitron Principles**: [/docs/GRAPHITRON-PRINCIPLES.md](/docs/GRAPHITRON-PRINCIPLES.md) - Design philosophy and long-term thinking
+- **Vision and Goals**: [/docs/VISION-AND-GOAL.md](/docs/VISION-AND-GOAL.md) - What Graphitron is and isn't
+
+### Technical Documentation
 - **Main README**: [/README.md](/README.md) - Project overview and getting started
 - **Example README**: [/graphitron-example/README.md](/graphitron-example/README.md) - Sakila example implementation
 - **Schema Transform README**: [/graphitron-schema-transform/README.md](/graphitron-schema-transform/README.md) - Schema transformation features
-- **Java Codegen README**: [/graphitron-codegen-parent/graphitron-java-codegen/README.md](/graphitron-codegen-parent/graphitron-java-codegen/README.md)
+- **Java Codegen README**: [/graphitron-codegen-parent/graphitron-java-codegen/README.md](/graphitron-codegen-parent/graphitron-java-codegen/README.md) - Complete directive reference
 - **JavaPoet README**: [/graphitron-codegen-parent/graphitron-javapoet/README.md](/graphitron-codegen-parent/graphitron-javapoet/README.md)
+
+### Architecture (GEPs)
+- **GEP-001.1: Mental Model**: [/geps/GEP-001.1 Graphitron Mental Model.md](/geps/GEP-001.1%20Graphitron%20Mental%20Model.md) - Conceptual foundation
+- **GEP-002: Parse-and-Validate**: [/geps/GEP-002 Parse-and-Validate Architecture.md](/geps/GEP-002%20Parse-and-Validate%20Architecture.md)
+- **GEP-003: Selection-Set-Driven Query Generation**: [/geps/GEP-003 Selection-Set-Driven Query Generation.md](/geps/GEP-003%20Selection-Set-Driven%20Query%20Generation.md)
 
 ## Key Architecture
 
