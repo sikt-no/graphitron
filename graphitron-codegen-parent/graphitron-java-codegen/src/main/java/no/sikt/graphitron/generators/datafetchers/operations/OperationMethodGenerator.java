@@ -3,18 +3,22 @@ package no.sikt.graphitron.generators.datafetchers.operations;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.ArgumentField;
+import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
+import no.sikt.graphitron.definitions.objects.InputDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
+import no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
+import no.sikt.graphitron.generators.context.NodeIdReferenceHelpers;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
@@ -22,11 +26,14 @@ import no.sikt.graphql.GraphitronContext;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
+import static no.sikt.graphitron.configuration.GeneratorConfig.validateOverlappingInputFields;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
@@ -35,7 +42,9 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodNameForField;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.FUNCTION;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * This class generates the data fetchers for default fetch or mutation queries with potential arguments or pagination.
@@ -60,6 +69,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .addCode(extractParams(target))
                 .addCode(declareContextArgs(target))
                 .addCode(transformInputs(target, parser))
+                .addCode(validateInputs(parser))
                 .addCode(declareAllServiceClasses(target.getName()))
                 .addCodeIf(!isMutationReturningData && localObject.getName().equals(SCHEMA_MUTATION.getName()),
                         () -> getMethodCall(target, parser, true))
@@ -323,6 +333,126 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .addIf(recordValidationEnabled(), "\n")
                 .addStatementIf(recordValidationEnabled(), asMethodCall(VAR_TRANSFORMER, METHOD_VALIDATE_NAME))
                 .build();
+    }
+
+    private CodeBlock validateInputs(InputParser parser) {
+        if (!validateOverlappingInputFields()) {
+            return CodeBlock.empty();
+        }
+
+        var code = CodeBlock.builder();
+
+        for (InputField inputRecord : parser.getJOOQRecords().values()) {
+            var tableColumnToInputFieldMappings = new LinkedHashMap<String, List<FieldToColumnRecord>>();
+            var type = processedSchema.getInputType(inputRecord);
+            var inputVarName = inputPrefix(uncapitalize(inputRecord.getName()));
+            var isListed = inputRecord.isIterableWrapped();
+            var itemVarName = isListed ? namedIteratorPrefix(inputRecord.getName()) : inputVarName;
+
+            var targetTable = type.getTable().getName();
+            for (InputField recordField : type.getFields()) {
+                if (processedSchema.isNodeIdField(recordField)) {
+                    var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(recordField);
+                    var unpackedVarName = VariablePrefix.unpackedPrefix(recordField.getName());
+
+                    LinkedList<String> columns;
+                    if (!nodeType.getTable().getName().equalsIgnoreCase(targetTable)) {
+                        var foreignKey = NodeIdReferenceHelpers.getForeignKeyForNodeIdReference(recordField, processedSchema)
+                                .orElseThrow(() -> new RuntimeException("Cannot find foreign key for nodeId field " + recordField.getName() + " in " + type.getName()));
+                        columns = FormatCodeBlocks.getReferenceNodeIdFields(targetTable, nodeType, foreignKey);
+                    } else {
+                        columns = processedSchema.getKeyColumnsForNodeType(nodeType).orElseGet(LinkedList::new);
+                    }
+
+                    for (int i = 0; i < columns.size(); i++) {
+                        tableColumnToInputFieldMappings
+                                .computeIfAbsent(columns.get(i), k -> new ArrayList<>())
+                                .add(FieldToColumnRecord.forNodeIdField(recordField, nodeType.getTypeId(), i, unpackedVarName, columns.get(i)));
+                    }
+                } else {
+                    String jooqColumn = recordField.getUpperCaseName();
+                    tableColumnToInputFieldMappings
+                            .computeIfAbsent(jooqColumn, k -> new ArrayList<>())
+                            .add(FieldToColumnRecord.forRegularField(recordField, jooqColumn));
+                }
+            }
+
+            var overlappingColumns = tableColumnToInputFieldMappings.entrySet().stream()
+                    .filter(e -> e.getValue().size() > 1)
+                    .toList();
+
+            if (overlappingColumns.isEmpty()) {
+                continue;
+            }
+
+            if (isListed) {
+                code.beginControlFlow("for (var $L : $N)", itemVarName, inputVarName);
+            }
+
+            var nodeIdFieldsToUnpack = overlappingColumns.stream()
+                    .flatMap(e -> e.getValue().stream())
+                    .filter(FieldToColumnRecord::isNodeId)
+                    .map(FieldToColumnRecord::field)
+                    .distinct()
+                    .toList();
+
+            for (InputField nodeIdField : nodeIdFieldsToUnpack) {
+                var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(nodeIdField);
+                var unpackedVarName = unpackedPrefix(nodeIdField.getName());
+
+                code.addStatement("var $N = $N.$L() != null ? $N.unpackIdValues($S, $N.$L(), $L) : null",
+                        unpackedVarName,
+                        itemVarName,
+                        nodeIdField.getMappingFromSchemaName().asGet(),
+                        VAR_NODE_STRATEGY,
+                        nodeType.getTypeId(),
+                        itemVarName,
+                        nodeIdField.getMappingFromSchemaName().asGet(),
+                        FormatCodeBlocks.nodeIdColumnsBlock(nodeType));
+            }
+
+            for (var entry : overlappingColumns) {
+                var mappings = entry.getValue();
+
+                // Build varargs call with alternating field names and value extraction expressions
+                var args = CodeBlock.builder();
+                for (int i = 0; i < mappings.size(); i++) {
+                    var mapping = mappings.get(i);
+                    if (i > 0) {
+                        args.add(",\n");
+                    }
+                    args.add("$S, $L", mapping.field().getName(), getValueExtractionCode(mapping, itemVarName, type));
+                }
+
+                code.addStatement("$T.assertSameColumnValues(\n$L)",
+                        RESOLVER_HELPERS.className,
+                        args.build());
+            }
+
+            if (isListed) {
+                code.endControlFlow();
+            }
+        }
+
+        return code.build();
+    }
+
+    private CodeBlock getValueExtractionCode(FieldToColumnRecord mapping, String inputVarName, InputDefinition type) {
+        if (mapping.isNodeId()) {
+            // For nodeId fields, get the value from the unpacked array
+            return CodeBlock.of("$N != null ? $N.getFieldValue($L.$L, $N[$L]) : null",
+                    mapping.unpackedVarName(),
+                    VAR_NODE_STRATEGY,
+                    FormatCodeBlocks.staticTableInstanceBlock(type.getTable().getName()),
+                    mapping.columnName(),
+                    mapping.unpackedVarName(),
+                    mapping.columnIndex());
+        } else {
+            // For regular fields, just get the value directly
+            return CodeBlock.of("$N.$L()",
+                    inputVarName,
+                    mapping.field().getMappingFromSchemaName().asGet());
+        }
     }
 
     private CodeBlock declareRecords(MapperContext context, int recursion) {
