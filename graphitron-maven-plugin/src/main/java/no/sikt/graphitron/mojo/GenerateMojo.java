@@ -9,6 +9,7 @@ import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
 import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.generate.Generator;
 import no.sikt.graphitron.generate.GraphQLGenerator;
+import no.sikt.graphitron.validation.ValidationHandler;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -122,12 +123,16 @@ public class GenerateMojo extends AbstractMojo implements Generator {
 
     @Override
     public void execute() throws MojoExecutionException {
-        GeneratorConfig.loadProperties(this);
-
-        getGraphqlCodegenCustomTypeMapping();
-
-        GraphQLGenerator.generate();
-        project.addCompileSourceRoot(getOutputPath());
+        try {
+            GeneratorConfig.loadProperties(this);
+            getGraphqlCodegenCustomTypeMapping();
+            GraphQLGenerator.generate();
+            project.addCompileSourceRoot(getOutputPath());
+        } catch (Exception e) {
+            // Log warnings for visibility before throwing
+            ValidationHandler.logWarnings();
+            throw new MojoExecutionException("\n" + e.getMessage(), e);
+        }
     }
 
     private Map<String, String> getGraphqlCodegenCustomTypeMapping() {
