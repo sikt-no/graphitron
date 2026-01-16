@@ -1,0 +1,42 @@
+{
+    "data": {
+        "customers": {
+            "nodes": [
+                {
+                    "id": "Q3VzdG9tZXI6MQ",
+                    "usernames": [
+                        "user1",
+                        "user2"
+                    ],
+                    "pastAddressIds": [
+                        2,
+                        3
+                    ]
+                },
+                {
+                    "id": "Q3VzdG9tZXI6Mg",
+                    "usernames": [
+                        
+                    ],
+                    "pastAddressIds": [
+                        
+                    ]
+                },
+                {
+                    "id": "Q3VzdG9tZXI6Mw",
+                    "usernames": [
+                        "MyUsername"
+                    ],
+                    "pastAddressIds": [
+                        4
+                    ]
+                },
+                {
+                    "id": "Q3VzdG9tZXI6NA",
+                    "usernames": null,
+                    "pastAddressIds": null
+                }
+            ]
+        }
+    }
+}
