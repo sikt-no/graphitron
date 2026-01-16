@@ -112,6 +112,7 @@
                             </scalars>
                             <useJdbcBatchingForDeletes>false</useJdbcBatchingForDeletes>
                             <useJdbcBatchingForInserts>false</useJdbcBatchingForInserts>
+                            <optionalSelect><onSubqueryReferences>true</onSubqueryReferences></optionalSelect>
                         </configuration>
                     </execution>
                 </executions>

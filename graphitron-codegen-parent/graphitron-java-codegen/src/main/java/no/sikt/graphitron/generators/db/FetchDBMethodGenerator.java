@@ -2,8 +2,8 @@ package no.sikt.graphitron.generators.db;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.*;
-import no.sikt.graphitron.definitions.helpers.InputCondition;
 import no.sikt.graphitron.definitions.helpers.InputComponents;
+import no.sikt.graphitron.definitions.helpers.InputCondition;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
@@ -35,7 +35,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
-import static no.sikt.graphitron.configuration.GeneratorConfig.useOptionalSelects;
+import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsEnabled;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyRowTypeName;
@@ -197,13 +197,15 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .addIf(isConnection, this::createSeekAndLimitBlock)
                 .build();
 
-        if (!isMultiset) {
-            return wrapInField(contents);
+        if (field.isResolver()) {
+            return isMultiset ? wrapInMultiset(contents) : wrapInField(contents);
         }
 
-        return field.isResolver()
-                ? wrapInMultiset(contents)
-                : wrapInMultisetWithMapping(contents, shouldHaveOrderByToken);
+        contents = isMultiset ? wrapInMultisetWithMapping(contents, shouldHaveOrderByToken) : wrapInField(contents);
+
+        return optionalSelectIsEnabled()
+                ? wrapSelectIfRequested(context.getGraphPath(field), indentIfMultiline(contents))
+                : contents;
     }
 
     /**
@@ -579,15 +581,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             );
         }
 
-        var content = CodeBlock.of(
+        return CodeBlock.of(
                 "$L.$N$L",
                 renderedSource,
                 field.getUpperCaseName(),
                 overrideEnum ? CodeBlock.empty() : toJOOQEnumConverter(field.getTypeName(), processedSchema)
         );
-
-
-        return context.getShouldUseOptional() && useOptionalSelects() ? (CodeBlock.of("$N.optional($S, $L)", VAR_SELECT, context.getGraphPath() + field.getName(), content)) : content;
     }
 
     private CodeBlock generateGetForID(MethodMapping mapping, JOOQMapping table) {
@@ -623,7 +622,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var code = new ArrayList<CodeBlock>();
         for (var fieldObject : union) {
             var objectField = new VirtualSourceField(processedSchema.getObject(fieldObject), fieldObject);
-            code.add(generateSelectRow(context.nextContext(objectField).withShouldUseOptional(false)));
+            code.add(generateSelectRow(context.nextContext(objectField)));
         }
         return CodeBlock.join(code, ",\n");
     }

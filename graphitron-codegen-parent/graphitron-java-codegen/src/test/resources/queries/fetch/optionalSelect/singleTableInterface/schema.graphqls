@@ -1,0 +1,21 @@
+type Query {
+  query: AddressByDistrict
+}
+
+interface AddressByDistrict @table(name: "ADDRESS") @discriminate(on: "DISTRICT"){
+  postalCode: String @field(name: "POSTAL_CODE")
+}
+
+type AddressInDistrictOne implements AddressByDistrict @table(name: "ADDRESS") @discriminator(value: "ONE") {
+  postalCode: String @field(name: "POSTAL_CODE")
+}
+
+type AddressInDistrictTwo implements AddressByDistrict @table(name: "ADDRESS") @discriminator(value: "TWO") {
+  postalCode: String @field(name: "POSTAL_CODE")
+  customer: Customer
+}
+
+
+type Customer @table {
+  id: ID!
+}
