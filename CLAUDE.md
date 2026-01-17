@@ -30,7 +30,8 @@ graphitron/
 ## Documentation
 
 ### Core Guides
-- **Code Generation Patterns**: [/docs/CODE-GENERATION-PATTERNS.md](/docs/CODE-GENERATION-PATTERNS.md) - **START HERE** - Understanding what code gets generated and when
+- **What Graphitron Generates**: [/docs/WHAT-GRAPHITRON-GENERATES.md](/docs/WHAT-GRAPHITRON-GENERATES.md) - **START HERE** - Vocabulary and taxonomy of generated code
+- **Code Generation Patterns**: [/docs/CODE-GENERATION-PATTERNS.md](/docs/CODE-GENERATION-PATTERNS.md) - When and why different patterns are used
 - **Graphitron Principles**: [/docs/GRAPHITRON-PRINCIPLES.md](/docs/GRAPHITRON-PRINCIPLES.md) - Design philosophy and long-term thinking
 - **Vision and Goals**: [/docs/VISION-AND-GOAL.md](/docs/VISION-AND-GOAL.md) - What Graphitron is and isn't
 
