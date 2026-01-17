@@ -1,19 +1,19 @@
 # Graphitron Code Generation Patterns
 
 > **Quick Navigation:**
-> [Overview](#overview) • [Quick Reference](#quick-reference) • [Two Worlds](#the-two-worlds-jooq-land-vs-java-land) • [N+1 Rule](#the-n1-rule) • [Query Patterns](#query-patterns-detailed) • [Code Generation Strategies](#code-generation-strategies-detailed) • [Decision Framework](#decision-framework) • [Common Patterns](#common-patterns) • [Anti-Patterns](#anti-patterns-to-avoid)
+> [Overview](#overview) • [Quick Reference](#quick-reference) • [Two Worlds](#the-two-worlds-jooq-land-vs-java-land) • [N+1 Rule](#the-n1-rule) • [Query Patterns](#query-patterns-detailed) • [What Graphitron Generates](#what-graphitron-generates) • [Decision Framework](#decision-framework) • [Common Patterns](#common-patterns) • [Anti-Patterns](#anti-patterns-to-avoid)
 
 ---
 
 ## Overview
 
-Graphitron generates GraphQL DataFetchers by tying your schema to jOOQ database tables. Understanding code generation requires grasping three core concepts:
+Graphitron generates jOOQ-based query code from your GraphQL schema. Understanding code generation requires grasping three core concepts:
 
-**The Two Worlds:** Graphitron operates in either **jOOQ-land** (type-safe database queries) or **Java-land** (custom service methods). The goal is to stay in jOOQ-land as much as possible because it generates optimized SQL with selection-set-driven column selection and built-in N+1 prevention. Use Java-land sparingly as an escape hatch, and return to jOOQ-land via **re-entry** as quickly as possible.
+**The Two Worlds:** Graphitron operates in either **jOOQ-land** (generating SQL queries via jOOQ QueryParts) or **Java-land** (custom service methods). The goal is to stay in jOOQ-land as much as possible because it generates optimized SQL with selection-set-driven column selection and built-in N+1 prevention. Use Java-land sparingly as an escape hatch, and return to jOOQ-land via **re-entry** as quickly as possible.
 
 **The N+1 Rule:** Fields on the root Query/Mutation type execute once and can do any work. Nested fields execute N times (once per parent) and must either extract data already fetched by the parent (trivial) or use DataLoader batching (`@splitQuery`). This constraint shapes all code generation decisions.
 
-**Schema Structure Drives Generation:** Where you place a field (root vs nested), what it returns (list vs Connection), and which directives you use (`@table`, `@splitQuery`, `@service`, `@condition`) determines what code Graphitron generates. Most of the time, the default inline approach works. Use `@splitQuery` only for large collections or conditional fetching needs.
+**Queries vs QueryParts:** Graphitron generates `<Type>Queries` classes that contain methods which either **execute complete SQL queries** (root fields and `@splitQuery`) or **generate jOOQ QueryParts** (inline nested fields). Most of the time, the default inline approach works. Use `@splitQuery` only for large collections or conditional fetching needs.
 
 ---
 
@@ -29,7 +29,7 @@ Graphitron generates GraphQL DataFetchers by tying your schema to jOOQ database 
 | **Fetch small reference data** | Return list directly | [List Pattern](#list-pattern) |
 | **Add conditional WHERE clauses** | `@condition` directive | [Conditional Filtering](#pattern-conditional-filtering-with-condition) |
 | **Calculate derived fields** | `@externalField` directive | [Calculated Fields](#pattern-calculated-field-with-externalfield) |
-| **Break up large nested queries** | `@splitQuery` on field | [Split Query](#split-query-dataloader-batching) |
+| **Break up large nested queries** | `@splitQuery` on field | [Split Query Strategy](#split-query-dataloader-batching) |
 | **Call custom Java logic** | `@service` directive (use sparingly) | [Service Call](#service-call-escape-hatch) |
 | **Return to DB after service** | Include re-entry fields | [Re-entry](#re-entry-return-to-jooq-land) |
 
@@ -38,17 +38,17 @@ Graphitron generates GraphQL DataFetchers by tying your schema to jOOQ database 
 | Directive | Purpose | Generated Code Effect |
 |-----------|---------|------------------------|
 | `@table` | Link type to jOOQ table | Enables jOOQ query generation for this type |
-| `@reference` | Declare FK relationship | Inline join/multiset OR split query (if with `@splitQuery`) |
-| `@splitQuery` | Force separate batched query | DataLoader-backed query instead of inline |
-| `@service` | Call custom Java method | Escape to Java-land, call your code |
-| `@condition` | Add WHERE clauses | Includes jOOQ `Condition` in query |
-| `@externalField` | Calculated field | Includes jOOQ `Field<T>` in SELECT |
+| `@reference` | Declare FK relationship | Inline QueryPart (multiset/row) OR separate query (if `@splitQuery`) |
+| `@splitQuery` | Force separate batched query | Generates `fieldNameLoader()` method with DataLoader batching |
+| `@service` | Call custom Java method | Escapes SQL generation, calls your service |
+| `@condition` | Add WHERE clauses | Returns jOOQ `Condition` QueryPart |
+| `@externalField` | Calculated field | Returns jOOQ `Field<T>` QueryPart |
 | `@field` | Map field to column/property | Changes field name mapping |
 | `@lookupKey` | Lookup by key(s) | Fetch by PK/unique key, ordered results |
 | `@orderBy` | Enable sorting | Order by indexed columns |
 | `@node` | Global ID support | Relay node interface implementation |
 | `@discriminate` | Single-table inheritance | Type resolution via discriminator column |
-| `@notGenerated` | Skip generation | You provide DataFetcher manually |
+| `@notGenerated` | Skip generation | You provide custom implementation |
 
 ### Query Pattern Selection Guide
 
@@ -59,6 +59,18 @@ Graphitron generates GraphQL DataFetchers by tying your schema to jOOQ database 
 | Text/relevance search | **Search** | `TypeConnection` | Paginated, `@search` arg |
 | Small reference data | **List** | `[Type]` | Simple fetch, use sparingly |
 
+### What Gets Generated
+
+| Schema Element | Class | Method | Executes SQL? | Purpose |
+|----------------|-------|--------|---------------|---------|
+| Root field `Query.user` | `QueryQueries` | `user(env)` | ✅ Yes | Complete query execution |
+| Root field `Mutation.createUser` | `MutationQueries` | `createUser(env)` | ✅ Yes | Complete mutation execution |
+| `@splitQuery` field `User.orders` | `UserQueries` | `ordersLoader(env)` | ✅ Yes (batched) | Separate batched query |
+| Inline field `User.address` | `UserQueries` | `buildAddressRow(field)` | ❌ No | QueryPart (composes into parent) |
+| `@condition` | User class | `isActive(table)` | ❌ No | Returns `Condition` QueryPart |
+| `@externalField` | User class | `fullName(table)` | ❌ No | Returns `Field<T>` QueryPart |
+| `@service` | User service | `recommendations(user)` | ❌ No | Escapes SQL generation |
+
 ### Inline vs Split Query Decision
 
 | Factor | Inline (Default) | Split (`@splitQuery`) |
@@ -67,6 +79,7 @@ Graphitron generates GraphQL DataFetchers by tying your schema to jOOQ database 
 | **Data size** | Small nested collections | Large nested collections |
 | **Fetch frequency** | Always needed | Conditionally requested |
 | **Round trips** | Single query | Additional round-trip |
+| **Method signature** | Helper returning QueryPart | `fieldNameLoader()` returning Map |
 | **When to use** | Default choice | Only when needed |
 
 **Default to inline. Use `@splitQuery` when:**
@@ -78,17 +91,22 @@ Graphitron generates GraphQL DataFetchers by tying your schema to jOOQ database 
 
 ## The Two Worlds: jOOQ-Land vs Java-Land
 
-### jOOQ-Land (The Goal)
+### jOOQ-Land (Query and QueryPart Generation)
 
-**What:** Source is jOOQ `Record` objects from database queries
+**What:** Graphitron generates jOOQ queries and QueryParts that compose into SQL
 **Why stay here:** Type-safe, efficient, validated at build time
 
 **Characteristics:**
 - Graphitron generates optimized SQL queries
 - Selection sets drive column selection (no over-fetching)
-- Nested data uses `multiset()` and `row()` (no N+1 queries)
+- Nested data uses `multiset()` and `row()` QueryParts (no N+1 queries)
 - Everything validated against your database schema
 - Compile-time errors if tables/columns don't exist
+
+**What gets generated:**
+- `<Type>Queries` classes with query execution methods
+- QueryPart helper methods for inline nested data
+- References to external QueryParts (`@condition`, `@externalField`)
 
 **How to stay in jOOQ-land:**
 - Use `@table` on types to tie them to jOOQ tables
@@ -96,15 +114,15 @@ Graphitron generates GraphQL DataFetchers by tying your schema to jOOQ database 
 - Use `@condition` for filtering logic (returns jOOQ `Condition`)
 - Use `@externalField` for calculated fields (returns jOOQ `Field<T>`)
 
-### Java-Land (The Escape Hatch)
+### Java-Land (No SQL Generation)
 
-**What:** Source is Java objects (POJOs/records) from service methods
+**What:** Custom Java code, not generating SQL
 **Why use sparingly:** Leaves type-safety, risks N+1, limited build-time validation
 
 **Characteristics:**
 - You've called a `@service` method with custom Java code
 - Graphitron extracts properties from Java objects
-- No automatic database query generation
+- No automatic SQL query generation
 - To query the database again, you need **re-entry** back to jOOQ-land
 
 **When to use Java-land:**
@@ -136,6 +154,7 @@ This fundamental constraint shapes all code generation:
    - Properties from Java objects after `@service`
 
 2. **DataLoader batching** - Use `@splitQuery` for separate batched query
+   - Generates `fieldNameLoader()` method
    - Additional round-trip to database
    - Batches requests across all parents
    - Only executes if field is selected
@@ -284,24 +303,184 @@ type Query {
 
 ---
 
+## What Graphitron Generates
+
+### `<Type>Queries` Classes
+
+Graphitron generates one `Queries` class per GraphQL type. Each class contains methods that either execute complete SQL queries or generate jOOQ QueryParts.
+
+**Naming convention:**
+- `QueryQueries` - For fields on the `Query` type
+- `MutationQueries` - For fields on the `Mutation` type
+- `UserQueries` - For fields on the `User` type
+- `OrderQueries` - For fields on the `Order` type
+
+**Method types:**
+
+1. **Query execution methods** - `fieldName(env)`
+   - For root Query/Mutation fields
+   - Executes complete SQL query
+   - Called once per request
+
+2. **Loader methods** - `fieldNameLoader(env)`
+   - For `@splitQuery` fields
+   - Executes batched SQL query via DataLoader
+   - Returns `Map<ID, Result>`
+
+3. **QueryPart helper methods** - `buildFieldNameMultiset(field)`, `buildFieldNameRow(field)`
+   - For inline nested relationships
+   - Returns jOOQ QueryParts (`Field<?>`)
+   - Composes into parent query
+
+**Example structure:**
+
+```java
+public class UserQueries {
+    // Extracts DSLContext from GraphitronContext
+    private DSLContext getCtx(DataFetchingEnvironment env) {
+        GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
+        return ctx.getDslContext(env);
+    }
+
+    // Root field: Query.user(id: ID!)
+    // Executes complete SQL query
+    public UserRecord user(DataFetchingEnvironment env) {
+        var ctx = getCtx(env);
+        var id = env.getArgument("id");
+        var selection = env.getSelectionSet();
+
+        return ctx.select(buildColumns(selection))
+            .from(USERS)
+            .where(USERS.ID.eq(id))
+            .fetchOne();
+    }
+
+    // @splitQuery field: User.orders @splitQuery
+    // Executes batched SQL query via DataLoader
+    public Map<Integer, Result<OrdersRecord>> ordersLoader(DataFetchingEnvironment env) {
+        var ctx = getCtx(env);
+        var userIds = (List<Integer>) env.getSource();  // Batched user IDs
+        var selection = env.getSelectionSet();
+
+        return ctx.select(buildOrderColumns(selection))
+            .from(ORDERS)
+            .where(ORDERS.USER_ID.in(userIds))
+            .fetch()
+            .intoGroups(ORDERS.USER_ID);
+    }
+
+    // Inline field: User.address (default)
+    // Returns QueryPart that composes into parent query
+    private Field<?> buildAddressRow(SelectedField field) {
+        var selection = field.getSelectionSet();
+        return row(
+            select(buildAddressColumns(selection))
+            .from(ADDRESS)
+            .where(ADDRESS.ID.eq(USERS.ADDRESS_ID))
+        );
+    }
+
+    // Inline field: User.posts (default)
+    // Returns QueryPart that composes into parent query
+    private Field<?> buildPostsMultiset(SelectedField field) {
+        var selection = field.getSelectionSet();
+        return multiset(
+            select(buildPostColumns(selection))
+            .from(POSTS)
+            .where(POSTS.USER_ID.eq(USERS.ID))
+        );
+    }
+
+    // Helper: Build column list based on selection
+    private List<Field<?>> buildColumns(SelectionSet selection) {
+        var columns = new ArrayList<Field<?>>();
+
+        if (selection.contains("id")) columns.add(USERS.ID);
+        if (selection.contains("name")) columns.add(USERS.NAME);
+        if (selection.contains("address")) {
+            columns.add(buildAddressRow(selection.getField("address")));
+        }
+        if (selection.contains("posts")) {
+            columns.add(buildPostsMultiset(selection.getField("posts")));
+        }
+
+        return columns;
+    }
+}
+```
+
+### RuntimeWiring
+
+DataFetchers exist only as lambdas in the RuntimeWiring:
+
+```java
+RuntimeWiring.newRuntimeWiring()
+    .type("Query", builder -> builder
+        .dataFetcher("user", env -> userQueries.user(env))
+        .dataFetcher("users", env -> queryQueries.users(env))
+    )
+    .type("User", builder -> builder
+        // @splitQuery - calls loader method
+        .dataFetcher("orders", env -> userQueries.ordersLoader(env))
+        // Inline - trivial extraction from parent result
+        .dataFetcher("address", env -> ((UsersRecord) env.getSource()).get("address"))
+        .dataFetcher("posts", env -> ((UsersRecord) env.getSource()).get("posts"))
+    )
+    .build();
+```
+
+**Key insight:** DataFetcher is just the wiring. The valuable code is in the `Queries` classes.
+
+---
+
 ## Code Generation Strategies (Detailed)
 
-Code generation strategies describe *what kind of code* Graphitron produces. This is the mechanical implementation.
+### Inline QueryPart Composition (Default)
 
-### Inline jOOQ (Default)
-
-**What:** Nested data fetched in parent query using `multiset()` or `row()`
+**What:** Nested data fetched in parent query using `multiset()` or `row()` QueryParts
 **When:** Default for relationships without `@splitQuery`
-**Extraction:** Child DataFetcher just extracts the nested data (trivial, no I/O)
+**Generated:** Helper methods returning `Field<?>` QueryParts
 
 ```graphql
 type User @table(name: "USERS") {
   id: ID!
   name: String!
-  # Default: inline multiset in parent query
-  orders: [Order!]! @reference(path: [{key: "FK_ORDERS_USER"}])
-  # Default: inline row in parent query
+  # Default: inline row QueryPart in parent query
   address: Address @reference(path: [{key: "FK_USERS_ADDRESS"}])
+  # Default: inline multiset QueryPart in parent query
+  orders: [Order!]! @reference(path: [{key: "FK_ORDERS_USER"}])
+}
+```
+
+**Generated code:**
+
+```java
+public class UserQueries {
+    // Root query method
+    public Result<UsersRecord> users(DataFetchingEnvironment env) {
+        var ctx = getCtx(env);
+        return ctx.select(buildColumns(env.getSelectionSet()))
+            .from(USERS)
+            .fetch();
+    }
+
+    // QueryPart helper for address (many-to-one)
+    private Field<?> buildAddressRow(SelectedField field) {
+        return row(
+            select(/* address columns */)
+            .from(ADDRESS)
+            .where(ADDRESS.ID.eq(USERS.ADDRESS_ID))
+        );
+    }
+
+    // QueryPart helper for orders (one-to-many)
+    private Field<?> buildOrdersMultiset(SelectedField field) {
+        return multiset(
+            select(/* order columns */)
+            .from(ORDERS)
+            .where(ORDERS.USER_ID.eq(USERS.ID))
+        );
+    }
 }
 ```
 
@@ -310,14 +489,14 @@ type User @table(name: "USERS") {
 SELECT
   users.id,
   users.name,
-  -- One-to-many: multiset
-  (SELECT json_agg(orders.*)
-   FROM orders
-   WHERE orders.user_id = users.id) as orders,
-  -- Many-to-one: row
+  -- Many-to-one: row QueryPart
   (SELECT row(address.*)
    FROM address
-   WHERE address.id = users.address_id) as address
+   WHERE address.id = users.address_id) as address,
+  -- One-to-many: multiset QueryPart
+  (SELECT json_agg(orders.*)
+   FROM orders
+   WHERE orders.user_id = users.id) as orders
 FROM users
 ```
 
@@ -336,7 +515,7 @@ FROM users
 
 **What:** Separate batched query using DataLoader
 **When:** `@splitQuery` directive on field
-**Why:** Break up complex queries, conditional fetching, large nested collections
+**Generated:** `fieldNameLoader(env)` method returning `Map<ID, Result>`
 
 ```graphql
 type User @table(name: "USERS") {
@@ -349,10 +528,35 @@ type User @table(name: "USERS") {
 }
 ```
 
-**Generated behavior:**
+**Generated code:**
+
+```java
+public class UserQueries {
+    // Loader method for @splitQuery field
+    public Map<Integer, Result<OrdersRecord>> ordersLoader(DataFetchingEnvironment env) {
+        var ctx = getCtx(env);
+        var userIds = (List<Integer>) env.getSource();  // Batched from DataLoader
+
+        return ctx.select(buildOrderColumns(env.getSelectionSet()))
+            .from(ORDERS)
+            .where(ORDERS.USER_ID.in(userIds))
+            .fetch()
+            .intoGroups(ORDERS.USER_ID);  // Map: userId -> orders
+    }
+}
+```
+
+**RuntimeWiring:**
+```java
+.type("User", builder -> builder
+    .dataFetcher("orders", createDataLoader(userQueries::ordersLoader))
+)
+```
+
+**Behavior:**
 1. Parent query fetches Users with their PKs
-2. Child DataFetcher extracts PKs from all parents
-3. DataLoader queues PKs, then batches them
+2. DataLoader collects PKs from all parents
+3. Calls `ordersLoader()` with batched PKs
 4. Single batched query: `SELECT * FROM orders WHERE user_id IN (?, ?, ?, ...)`
 5. Results mapped back to each parent by FK
 
@@ -382,7 +586,7 @@ type User @table(name: "USERS") {
 
 **What:** Call custom Java method, leave jOOQ-land
 **When:** `@service` directive on field
-**Why:** Custom logic, external APIs, complex calculations
+**Generated:** Calls user-provided service method
 
 ```graphql
 type User @table(name: "USERS") {
@@ -399,11 +603,32 @@ type Recommendation {  # No @table - this is a Java record
 }
 ```
 
-**Generated behavior:**
-1. Calls your service method with parent record
-2. Service returns Java objects (POJOs/records)
-3. Child fields extract from Java objects (Java-land)
-4. Re-entry fields trigger new database queries (back to jOOQ-land)
+**User-provided service:**
+
+```java
+public class RecommendationService {
+    public List<RecommendationResult> forUser(UsersRecord user) {
+        // Custom recommendation logic (ML, external service, etc.)
+        var recommendations = getRecommendations(user.getId());
+
+        return recommendations.stream().map(rec -> {
+            var productRecord = new ProductsRecord();
+            productRecord.setId(rec.getProductId());  // Set PK for re-entry
+            return new RecommendationResult(
+                rec.getScore(),
+                rec.getReason(),
+                productRecord
+            );
+        }).toList();
+    }
+}
+
+public record RecommendationResult(
+    float score,
+    String reason,
+    ProductsRecord productRecord  // jOOQ TableRecord with PK set for re-entry
+) {}
+```
 
 **Trade-offs:**
 - ✅ Full flexibility for custom logic
@@ -433,6 +658,87 @@ type Recommendation {  # No @table - this is a Java record
 
 ---
 
+### QueryPart Extensions (@condition and @externalField)
+
+**What:** User-provided methods that return jOOQ QueryParts
+**When:** `@condition` or `@externalField` directives
+**Generated:** Generated code references these methods
+
+#### @condition - WHERE clause QueryParts
+
+Returns `Condition` QueryPart for filtering:
+
+```graphql
+type User @table(name: "USERS") {
+  activePosts: [Post!]!
+    @reference(path: [{
+      table: "POSTS",
+      key: "FK_POSTS_USER",
+      condition: {className: "Conditions", method: "isActive"}
+    }])
+}
+```
+
+```java
+public class Conditions {
+    public static Condition isActive(Posts post) {
+        return post.STATUS.eq("ACTIVE")
+            .and(post.DELETED_AT.isNull());
+    }
+}
+```
+
+**Generated code uses it:**
+```java
+private Field<?> buildActivePostsMultiset(SelectedField field) {
+    return multiset(
+        select(/* columns */)
+        .from(POSTS)
+        .where(POSTS.USER_ID.eq(USERS.ID))
+        .and(Conditions.isActive(POSTS))  // Adds condition QueryPart
+    );
+}
+```
+
+#### @externalField - Calculated field QueryParts
+
+Returns `Field<T>` QueryPart for calculated columns:
+
+```graphql
+type User @table(name: "USERS") {
+  firstName: String!
+  lastName: String!
+  fullName: String! @externalField
+}
+```
+
+```java
+public class UserFields {
+    public static Field<String> fullName(Users users) {
+        return DSL.concat(users.FIRST_NAME, DSL.val(" "), users.LAST_NAME);
+    }
+}
+```
+
+**Generated code uses it:**
+```java
+private List<Field<?>> buildColumns(SelectionSet selection) {
+    var columns = new ArrayList<Field<?>>();
+
+    if (selection.contains("firstName")) columns.add(USERS.FIRST_NAME);
+    if (selection.contains("lastName")) columns.add(USERS.LAST_NAME);
+    if (selection.contains("fullName")) {
+        columns.add(UserFields.fullName(USERS));  // Adds calculated field QueryPart
+    }
+
+    return columns;
+}
+```
+
+**Key advantage:** Stays in jOOQ-land, generates SQL, type-safe.
+
+---
+
 ### Re-entry (Return to jOOQ-Land)
 
 **What:** From Java object back to database query
@@ -458,27 +764,11 @@ type Product @table(name: "PRODUCTS") {
 ```
 
 ```java
-// Service returns this
 public record RecommendationResult(
     float score,
     String reason,
     ProductsRecord productRecord  // jOOQ TableRecord - only PK populated
 ) {}
-
-public class RecommendationService {
-    public List<RecommendationResult> forUser(UsersRecord user) {
-        // Your recommendation logic
-        var results = new ArrayList<RecommendationResult>();
-
-        for (Product p : getRecommendedProducts(user)) {
-            var productRecord = new ProductsRecord();
-            productRecord.setId(p.getId());  // Set PK for re-entry
-            results.add(new RecommendationResult(p.score, p.reason, productRecord));
-        }
-
-        return results;
-    }
-}
 ```
 
 **Graphitron behavior:**
@@ -516,26 +806,6 @@ public record RecommendationResult(
 
 ---
 
-### Trivial Extraction
-
-**What:** Pull value from parent result, no I/O
-**When:** Data already fetched by parent DataFetcher
-**Marker:** Implements GraphQL-Java's `TrivialDataFetcher` interface
-
-**Examples:**
-- Direct column mapping from jOOQ Record
-- Nested `multiset()` or `row()` from inline relationships
-- Properties from Java objects after `@service`
-
-**Why it matters:**
-- Safe to call N times (no performance impact)
-- No database query
-- Instant extraction
-
-**This is what makes the default inline approach efficient:** The parent query fetches everything, child DataFetchers just extract.
-
----
-
 ## Schema Location Effects
 
 Where you put a field in your schema determines what gets generated.
@@ -544,31 +814,24 @@ Where you put a field in your schema determines what gets generated.
 
 **Called:** Once per request
 **Can do:** Any database work
-**Patterns available:** Lookup, Filter, Search, List
+**Generated:** Query execution method in `<Type>Queries` class
 
 ```graphql
 type Query {
-  # Lookup pattern
+  # Generates QueryQueries.user(env)
   user(id: ID! @lookupKey): User
 
-  # Filter pattern
+  # Generates QueryQueries.users(env)
   users(filter: UserFilter, first: Int, after: String): UserConnection!
-
-  # Search pattern
-  searchUsers(query: String! @search, first: Int): UserConnection!
-
-  # List pattern
-  countries: [Country!]!
 }
 
 type Mutation {
+  # Generates MutationQueries.createUser(env)
   createUser(input: CreateUserInput!): User!
-  updateUser(id: ID!, input: UpdateUserInput!): User!
-  deleteUser(id: ID!): Boolean!
 }
 ```
 
-**Generated:** Full DataFetcher with database query, no N+1 concerns.
+**Generated:** Full query execution method, no N+1 concerns.
 
 ---
 
@@ -576,26 +839,25 @@ type Mutation {
 
 **Called:** N times (once per parent)
 **Must be:** Trivial OR DataLoader-backed
-**Default:** Inline (trivial extraction of nested data)
-**Opt-in:** Split query (DataLoader batching)
+**Default:** Inline QueryPart (trivial extraction)
+**Opt-in:** Loader method (`@splitQuery`)
 
 ```graphql
 type User @table(name: "USERS") {
-  # Trivial: extract column from parent Record
+  # Trivial: extract column
   id: ID!
   name: String!
-  email: String! @field(name: "EMAIL_ADDRESS")
 
-  # Trivial: extract nested multiset from parent query
-  orders: [Order!]! @reference(path: [{key: "FK_ORDERS_USER"}])
-
-  # Trivial: extract nested row from parent query
+  # Trivial: extract inline row QueryPart
   address: Address @reference(path: [{key: "FK_USERS_ADDRESS"}])
 
-  # DataLoader: separate batched query
-  activityLog: [Activity!]! @splitQuery @reference(...)
+  # Trivial: extract inline multiset QueryPart
+  posts: [Post!]! @reference(path: [{key: "FK_POSTS_USER"}])
 
-  # Service: escape hatch (risk N+1)
+  # DataLoader: generates ordersLoader() method
+  orders: [Order!]! @splitQuery @reference(...)
+
+  # Service: calls user service (risk N+1)
   recommendations: [Recommendation!]! @service(...)
 }
 ```
@@ -618,7 +880,7 @@ type UserConnection {
 ```
 
 **Note on `totalCount`:**
-- Generates separate `SELECT COUNT(*)` query
+- Generates separate `SELECT COUNT(*)` query in `Queries` class
 - Only executes if field is selected in query
 - Uses same WHERE conditions as main query
 - This is acceptable because it's conditional
@@ -632,10 +894,10 @@ When designing your schema, ask these questions in order:
 ### 1. Where am I in the schema?
 
 - **Root (Query/Mutation)?**
-  ✅ You can do any work. Choose appropriate query pattern.
+  ✅ You can do any work. Generates query execution method.
 
 - **Nested field?**
-  ⚠️ Default to inline. Use `@splitQuery` only if needed.
+  ⚠️ Default to inline QueryPart. Use `@splitQuery` loader only if needed.
 
 ### 2. What query pattern fits the use case?
 
@@ -681,16 +943,19 @@ Include re-entry fields in your Java record:
 
 ```graphql
 type Query {
-  # Filter pattern for browsing
+  # Filter pattern - generates QueryQueries.users(env)
   users(filter: UserFilter, first: Int = 100, after: String): UserConnection!
 
-  # Lookup pattern for specific record
+  # Lookup pattern - generates QueryQueries.user(env)
   user(id: ID! @lookupKey): User
 }
 
 type Mutation {
+  # Generates MutationQueries.createUser(env)
   createUser(input: CreateUserInput!): User! @mutation(typeName: INSERT)
+  # Generates MutationQueries.updateUser(env)
   updateUser(id: ID!, input: UpdateUserInput!): User! @mutation(typeName: UPDATE)
+  # Generates MutationQueries.deleteUser(env)
   deleteUser(id: ID!): Boolean! @mutation(typeName: DELETE)
 }
 
@@ -709,9 +974,9 @@ type User @table(name: "USERS") {
 type User @table(name: "USERS") {
   id: ID!
   name: String!
-  # Many-to-one: inline row
+  # Many-to-one: UserQueries.buildAddressRow() returns row QueryPart
   address: Address @reference(path: [{key: "FK_USERS_ADDRESS"}])
-  # One-to-many: inline multiset
+  # One-to-many: UserQueries.buildOrdersMultiset() returns multiset QueryPart
   orders: [Order!]! @reference(path: [{key: "FK_ORDERS_USER"}])
 }
 
@@ -728,7 +993,7 @@ type Order @table(name: "ORDERS") {
 }
 ```
 
-All nested data fetched in one query using `multiset()` and `row()`. Child DataFetchers trivially extract.
+All nested data fetched in one query using QueryParts. Child fields trivially extract.
 
 ---
 
@@ -738,16 +1003,16 @@ All nested data fetched in one query using `multiset()` and `row()`. Child DataF
 type User @table(name: "USERS") {
   id: ID!
   name: String!
-  # Small, frequently needed: keep inline
+  # Small, frequently needed: keep inline QueryPart
   address: Address @reference(path: [{key: "FK_USERS_ADDRESS"}])
-  # Large, often not requested: split
+  # Large, often not requested: generates UserQueries.activityLogLoader()
   activityLog: [Activity!]!
     @splitQuery
     @reference(path: [{key: "FK_ACTIVITY_USER"}])
 }
 ```
 
-Separate DataLoader-backed query, only executes if field selected.
+Separate loader method with DataLoader batching, only executes if field selected.
 
 ---
 
@@ -784,7 +1049,7 @@ public class Conditions {
 }
 ```
 
-Stays in jOOQ-land, adds WHERE clause to generated SQL.
+Stays in jOOQ-land, generates QueryParts, adds WHERE clauses to generated SQL.
 
 ---
 
@@ -813,7 +1078,7 @@ public class UserFields {
 }
 ```
 
-Stays in jOOQ-land, adds calculated column to SELECT.
+Stays in jOOQ-land, generates QueryParts, adds calculated columns to SELECT.
 
 ---
 
@@ -823,7 +1088,7 @@ Stays in jOOQ-land, adds calculated column to SELECT.
 type User @table(name: "USERS") {
   id: ID!
   name: String!
-  # Escape to Java-land for recommendation logic
+  # Calls RecommendationService.forUser()
   recommendations: [Recommendation!]!
     @service(service: {className: "RecService", method: "forUser"})
 }
@@ -831,7 +1096,7 @@ type User @table(name: "USERS") {
 type Recommendation {
   score: Float!
   reason: String!
-  # Re-entry back to jOOQ-land
+  # Re-entry: generates ProductQueries loader
   product: Product!
 }
 
@@ -867,7 +1132,7 @@ public class RecService {
 }
 ```
 
-Escapes to Java-land, then re-enters jOOQ-land via TableRecord. Product fields use normal jOOQ generation.
+Escapes to Java-land, then re-enters jOOQ-land via TableRecord. Product fields use normal QueryPart generation.
 
 ---
 
@@ -878,15 +1143,15 @@ Escapes to Java-land, then re-enters jOOQ-land via TableRecord. Product fields u
 **Problem:** Overusing `@service` defeats Graphitron's value proposition.
 
 **Why it's bad:**
-- Leaves type-safe jOOQ-land
-- Loses automatic query generation
+- Leaves type-safe jOOQ QueryPart generation
+- Loses automatic SQL generation
 - Risks N+1 queries
 - More code to maintain
 
 **What to do instead:**
-- Use `@condition` for filtering (stays in jOOQ-land)
-- Use `@externalField` for calculated fields (stays in jOOQ-land)
-- Use jOOQ DSL for complex queries
+- Use `@condition` for filtering (returns Condition QueryPart)
+- Use `@externalField` for calculated fields (returns Field<T> QueryPart)
+- Use jOOQ DSL directly in generated Queries classes
 - Only use `@service` when truly necessary
 
 ---
@@ -897,12 +1162,12 @@ Escapes to Java-land, then re-enters jOOQ-land via TableRecord. Product fields u
 
 **Why it's bad:**
 - Additional round-trips for every field
-- More complex to debug
-- Defeats default inline efficiency
+- More loader methods to maintain
+- Defeats default inline QueryPart efficiency
 - Usually slower than single query
 
 **What to do instead:**
-- Default to inline
+- Default to inline QueryParts
 - Only split when you have a specific reason:
   - Large collections bloating parent query
   - Conditional fetching needs
@@ -917,7 +1182,7 @@ Escapes to Java-land, then re-enters jOOQ-land via TableRecord. Product fields u
 ```graphql
 # DON'T DO THIS
 type User @table(name: "USERS") {
-  orders: [Order!]! @service(...)  # ⚠️ Called N times!
+  orders: [Order!]! @service(...)  # ⚠️ Service called N times!
 }
 ```
 
@@ -928,26 +1193,26 @@ type User @table(name: "USERS") {
 
 **What to do instead:**
 - Move `@service` to root Query field (called once)
-- Or use `@splitQuery` with `@reference` (batched)
+- Or use `@splitQuery` with `@reference` (generates loader method)
 - Or accept N+1 for rarely-called operations
 
 ---
 
 ### ❌ Fighting the framework
 
-**Problem:** Constantly using `@notGenerated` and writing manual DataFetchers.
+**Problem:** Constantly using `@notGenerated` and writing manual code.
 
 **Why it's bad:**
 - You're not using Graphitron's strengths
-- Writing code Graphitron should generate
+- Writing query code Graphitron should generate
 - Probably using the wrong tool
 
 **What to do instead:**
 - Learn the declarative patterns (`@condition`, `@externalField`, `@reference`)
-- Embrace jOOQ-land, minimize Java-land
+- Embrace jOOQ QueryPart generation, minimize Java-land
 - If most of your API is manual code, consider a different framework
 
-**Remember:** Graphitron excels at generating jOOQ queries from declarative schemas. If your domain doesn't fit that model, that's okay—but Graphitron may not be the right choice.
+**Remember:** Graphitron excels at generating jOOQ queries and QueryParts from declarative schemas. If your domain doesn't fit that model, that's okay—but Graphitron may not be the right choice.
 
 ---
 
@@ -978,14 +1243,14 @@ type Query {
 
 ### Core Model
 
-- **Two Worlds:** jOOQ-land (type-safe, efficient) vs Java-land (flexible, risky)
+- **Two Worlds:** jOOQ-land (QueryPart generation, type-safe) vs Java-land (@service, flexible but risky)
 - **Goal:** Stay in jOOQ-land as much as possible
 - **Escape & Return:** Use `@service` sparingly, re-enter via TableRecord or Node ID
 
 ### N+1 Rule
 
-- **Root:** Can do any work
-- **Non-root:** Trivial or DataLoader-backed
+- **Root:** Can do any work, generates query execution methods
+- **Non-root:** Trivial extraction or DataLoader-backed loader methods
 
 ### Query Patterns
 
@@ -994,25 +1259,30 @@ type Query {
 - **Search:** Text search - `*Connection` + `@search`
 - **List:** Small reference data - use sparingly
 
-### Code Generation Strategies
+### What Graphitron Generates
 
-- **Inline jOOQ:** Default, single query, trivial extraction
-- **Split Query:** DataLoader batching, `@splitQuery` when needed
-- **Service Call:** Escape hatch, use sparingly
-- **Re-entry:** Return to jOOQ-land via TableRecord or Node ID
-- **Trivial Extraction:** No I/O, safe for N times
+- **`<Type>Queries` classes** - One per GraphQL type
+- **Query execution methods** - `fieldName(env)` for root fields
+- **Loader methods** - `fieldNameLoader(env)` for @splitQuery fields
+- **QueryPart helpers** - `buildFieldNameMultiset/Row()` for inline fields
+- **RuntimeWiring** - Lambdas that wire fields to methods
+
+### Queries vs QueryParts
+
+- **Queries:** Execute complete SQL (root/@splitQuery methods)
+- **QueryParts:** Compose into queries (inline helpers, @condition, @externalField)
 
 ### Decision Framework
 
-1. **Where in schema?** Root vs nested
+1. **Where in schema?** Root vs nested determines method type
 2. **What query pattern?** Lookup, Filter, Search, List
-3. **Inline or split?** Default inline, split when needed
-4. **Need custom logic?** Prefer `@condition` / `@externalField`, minimize `@service`
+3. **Inline or split?** Default inline QueryPart, split to loader only when needed
+4. **Need custom logic?** Prefer `@condition`/`@externalField` QueryParts, minimize `@service`
 5. **Using @service?** Plan re-entry before leaving jOOQ-land
 
 ### Key Principle
 
-**Default to the simplest approach that works.** Inline relationships, simple queries, staying in jOOQ-land. Only add complexity (`@splitQuery`, `@service`) when you have a specific need.
+**Default to the simplest approach that works.** Inline QueryParts, simple queries, staying in jOOQ-land. Only add complexity (loader methods, `@service`) when you have a specific need.
 
 ---
 
