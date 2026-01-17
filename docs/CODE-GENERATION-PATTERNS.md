@@ -1,19 +1,21 @@
 # Graphitron Code Generation Patterns
 
 > **Quick Navigation:**
-> [Overview](#overview) • [Quick Reference](#quick-reference) • [Two Worlds](#the-two-worlds-jooq-land-vs-java-land) • [N+1 Rule](#the-n1-rule) • [Query Patterns](#query-patterns-detailed) • [What Graphitron Generates](#what-graphitron-generates) • [Decision Framework](#decision-framework) • [Common Patterns](#common-patterns) • [Anti-Patterns](#anti-patterns-to-avoid)
+> [Overview](#overview) • [Quick Reference](#quick-reference) • [Implicit Behaviors](#️-critical-implicit-behaviors) • [Two Worlds](#the-two-worlds-jooq-land-vs-java-land) • [N+1 Rule](#the-n1-rule) • [Query Patterns](#query-patterns-detailed) • [What Graphitron Generates](#what-graphitron-generates) • [Decision Framework](#decision-framework) • [Common Patterns](#common-patterns) • [QueryPart Taxonomy](#querypart-taxonomy-complete) • [Anti-Patterns](#anti-patterns-to-avoid)
 
 ---
 
 ## Overview
 
-Graphitron generates jOOQ-based query code from your GraphQL schema. Understanding code generation requires grasping three core concepts:
+Graphitron generates jOOQ-based query code from your GraphQL schema. Understanding code generation requires grasping four core concepts:
 
 **The Two Worlds:** Graphitron operates in either **jOOQ-land** (generating SQL queries via jOOQ QueryParts) or **Java-land** (custom service methods). The goal is to stay in jOOQ-land as much as possible because it generates optimized SQL with selection-set-driven column selection and built-in N+1 prevention. Use Java-land sparingly as an escape hatch, and return to jOOQ-land via **re-entry** as quickly as possible.
 
 **The N+1 Rule:** Fields on the root Query/Mutation type execute once and can do any work. Nested fields execute N times (once per parent) and must either extract data already fetched by the parent (trivial) or use DataLoader batching (`@splitQuery`). This constraint shapes all code generation decisions.
 
 **Queries vs QueryParts:** Graphitron generates `<Type>Queries` classes that contain methods which either **execute complete SQL queries** (root fields and `@splitQuery`) or **generate jOOQ QueryParts** (inline nested fields). Most of the time, the default inline approach works. Use `@splitQuery` only for large collections or conditional fetching needs.
+
+**Implicit Behaviors:** Graphitron has several implicit behaviors that trigger code generation without explicit directives. Most critical: **fields with GraphQL arguments automatically become split queries** (loader methods), because you can't inline a QueryPart that needs different arguments for each parent. Always check the [Implicit Behaviors](#️-critical-implicit-behaviors) section to understand what gets generated automatically.
 
 ---
 
@@ -38,16 +40,18 @@ Graphitron generates jOOQ-based query code from your GraphQL schema. Understandi
 | Directive | Purpose | Generated Code Effect |
 |-----------|---------|------------------------|
 | `@table` | Link type to jOOQ table | Enables jOOQ query generation for this type |
-| `@reference` | Declare FK relationship | Inline QueryPart (multiset/row) OR separate query (if `@splitQuery`) |
+| `@reference` | Declare FK relationship | Inline QueryPart (multiset/row) OR separate query (if `@splitQuery` or has args) |
 | `@splitQuery` | Force separate batched query | Generates `fieldNameLoader()` method with DataLoader batching |
 | `@service` | Call custom Java method | Escapes SQL generation, calls your service |
-| `@condition` | Add WHERE clauses | Returns jOOQ `Condition` QueryPart |
+| `@condition` | Add WHERE clauses | Returns jOOQ `Condition` QueryPart, added to query WHERE |
+| `@tableMethod` | Transform Table QueryPart | Returns jOOQ `Table<R>` QueryPart (views, lateral joins, etc.) |
 | `@externalField` | Calculated field | Returns jOOQ `Field<T>` QueryPart |
 | `@field` | Map field to column/property | Changes field name mapping |
 | `@lookupKey` | Lookup by key(s) | Fetch by PK/unique key, ordered results |
 | `@orderBy` | Enable sorting | Order by indexed columns |
 | `@node` | Global ID support | Relay node interface implementation |
 | `@discriminate` | Single-table inheritance | Type resolution via discriminator column |
+| `@record` | Input as Java record | Input type maps to Java record, transformer to jOOQ |
 | `@notGenerated` | Skip generation | You provide custom implementation |
 
 ### Query Pattern Selection Guide
@@ -86,6 +90,33 @@ Graphitron generates jOOQ-based query code from your GraphQL schema. Understandi
 - Nested collections are large and would bloat parent query
 - Nested data is rarely requested (conditional fetching)
 - Parent query is becoming too complex
+
+### ⚠️ Critical Implicit Behaviors
+
+Graphitron has several **implicit behaviors** that trigger code generation without explicit directives:
+
+| Pattern | Trigger | What Gets Generated | Why |
+|---------|---------|---------------------|-----|
+| **Implicit split query** | Field has GraphQL arguments (except on root Query/Mutation) | Loader method (`fieldNameLoader()`), even without `@splitQuery` | Can't inline a QueryPart that needs different arguments for each parent |
+| **Multi-table interface** | Interface implemented by types with different `@table` | Type resolver based on record type | Each implementation has different backing table |
+| **Single-table interface** | Interface with `@discriminate` on implementations | Type resolver checking discriminator column | All implementations share same table, differentiated by column value |
+| **TableRecord re-entry** | Java record contains jOOQ `TableRecord` component | Loader extracts PK, batches query | Service returned Java object, need to fetch full record from DB |
+| **Node ID re-entry** | Field returns `Node` type, receives global ID | Decoder + type routing + DataLoader batching | Relay global ID must be decoded to type + PK, then fetch |
+| **Direct column mapping** | Field name matches column name on `@table` type | Direct `TABLE.COLUMN` Field QueryPart | Default behavior when no `@field` specified |
+| **Renamed column** | Field name differs from column, has `@field(name: ...)` | `TABLE.OTHER_NAME.as("fieldName")` | Explicit mapping to different column |
+| **Mutation RETURNING** | PostgreSQL dialect, mutation returns object | `INSERT ... RETURNING *` | Database supports RETURNING clause |
+| **totalCount** | Field named `totalCount` on `*Connection` type | Separate `SELECT COUNT(*)` query | Pagination needs total count |
+| **Enum mapping** | GraphQL enum type on `@table` field | Maps to DB string/int | Automatic enum conversion |
+
+**Example of implicit split query:**
+```graphql
+type User @table(name: "USERS") {
+  # ⚠️ Implicit @splitQuery! Has arguments, automatically becomes loader method
+  posts(status: String): [Post!]! @reference(path: [{key: "FK_POSTS_USER"}])
+}
+```
+
+Generated: `UserQueries.postsLoader(env)` - not an inline QueryPart, because each parent may need different `status` filter.
 
 ---
 
@@ -658,11 +689,13 @@ public record RecommendationResult(
 
 ---
 
-### QueryPart Extensions (@condition and @externalField)
+### QueryPart Extensions (@condition, @externalField, and @tableMethod)
 
 **What:** User-provided methods that return jOOQ QueryParts
-**When:** `@condition` or `@externalField` directives
+**When:** `@condition`, `@externalField`, or `@tableMethod` directives
 **Generated:** Generated code references these methods
+
+These directives let you extend generated queries while staying in jOOQ-land, maintaining type-safety and SQL generation.
 
 #### @condition - WHERE clause QueryParts
 
@@ -735,7 +768,66 @@ private List<Field<?>> buildColumns(SelectionSet selection) {
 }
 ```
 
-**Key advantage:** Stays in jOOQ-land, generates SQL, type-safe.
+#### @tableMethod - Table QueryPart Transformation
+
+Returns `Table<R>` QueryPart for transforming the table itself (different from `@condition` which adds WHERE clauses):
+
+```graphql
+type Query {
+  customer(status: String): Customer
+    @tableMethod(tableMethodReference: {
+      className: "CustomerTableMethod",
+      method: "customerTable"
+    })
+}
+
+type Customer @table(name: "CUSTOMERS") {
+  id: ID!
+  name: String!
+}
+```
+
+```java
+public class CustomerTableMethod {
+    // Transforms the base CUSTOMERS table
+    public static CustomersTable customerTable(CustomersTable table, String status) {
+        if ("ACTIVE".equals(status)) {
+            // Return a view, lateral join, or filtered table
+            return ACTIVE_CUSTOMERS.as(table.getName());
+        }
+        return table;
+    }
+}
+```
+
+**Generated code uses it:**
+```java
+public CustomerRecord customer(DataFetchingEnvironment env) {
+    var ctx = getCtx(env);
+    var status = env.getArgument("status");
+
+    // Get base table, then transform it
+    var table = CUSTOMERS;
+    table = CustomerTableMethod.customerTable(table, status);
+
+    return ctx.select(buildColumns(env.getSelectionSet()))
+        .from(table)  // Uses transformed table
+        .fetchOne();
+}
+```
+
+**Use cases:**
+- Multi-tenancy (switching base table based on tenant)
+- Soft deletes (use view that filters deleted records)
+- Row-level security
+- Complex table transformations
+- Lateral joins
+
+**Key difference from @condition:**
+- `@condition` → Adds to WHERE clause (`Condition` QueryPart)
+- `@tableMethod` → Transforms FROM clause (`Table<R>` QueryPart)
+
+**Key advantage:** Stays in jOOQ-land, generates SQL, type-safe, transforms at table level.
 
 ---
 
@@ -1136,6 +1228,230 @@ Escapes to Java-land, then re-enters jOOQ-land via TableRecord. Product fields u
 
 ---
 
+### Pattern: Polymorphism - Single-table interface
+
+**What:** Multiple GraphQL types backed by same database table, discriminated by column value
+
+```graphql
+interface Animal @table(name: "ANIMALS") {
+  id: ID!
+  name: String!
+}
+
+type Dog implements Animal @discriminate(discriminatorValue: "DOG") {
+  id: ID!
+  name: String!
+  breed: String!
+}
+
+type Cat implements Animal @discriminate(discriminatorValue: "CAT") {
+  id: ID!
+  name: String!
+  indoor: Boolean!
+}
+
+type Query {
+  animals: [Animal!]!
+}
+```
+
+**Generated:**
+- Type resolver checks `ANIMALS.TYPE` column to determine concrete type
+- Single table query, type resolution happens in Java
+
+**Use case:** Different subtypes in same table (discriminator pattern)
+
+---
+
+### Pattern: Polymorphism - Multi-table interface
+
+**What:** Multiple GraphQL types backed by different database tables
+
+```graphql
+interface Node {
+  id: ID!
+}
+
+type User implements Node @table(name: "USERS") {
+  id: ID!
+  name: String!
+}
+
+type Order implements Node @table(name: "ORDERS") {
+  id: ID!
+  total: Float!
+}
+
+union SearchResult = User | Order | Product
+```
+
+**Generated:**
+- Type resolver based on source record type (which jOOQ table)
+- Different backing tables for each implementation
+
+**Use case:** Relay Node interface, union types, heterogeneous results
+
+---
+
+### Pattern: Multi-hop references
+
+**What:** Navigate through multiple foreign keys in one field
+
+```graphql
+type User @table(name: "USERS") {
+  # Direct reference
+  address: Address @reference(path: [{key: "FK_USER_ADDRESS"}])
+
+  # Multi-hop reference: User -> Address -> Country
+  country: Country @reference(path: [
+    {key: "FK_USER_ADDRESS"},
+    {key: "FK_ADDRESS_COUNTRY"}
+  ])
+}
+```
+
+**Generated:**
+- Inline: Nested joins in QueryPart
+- Split query: Multi-hop navigation in loader
+
+**Use case:** Navigate related entities without intermediate fields
+
+---
+
+### Pattern: Through tables (junction tables)
+
+**What:** Navigate many-to-many relationships via junction table
+
+```graphql
+type User @table(name: "USERS") {
+  # Navigate through USER_ROLES junction table
+  roles: [Role!]! @reference(path: [
+    {table: "USER_ROLES", key: "FK_USER_ROLES_USER"},
+    {key: "FK_USER_ROLES_ROLE"}
+  ])
+}
+
+type Role @table(name: "ROLES") {
+  id: ID!
+  name: String!
+}
+```
+
+**Generated:**
+- Inline: JOIN through junction table
+- Split query: Multi-step navigation via junction
+
+**Use case:** Many-to-many relationships
+
+---
+
+### Pattern: Self-references
+
+**What:** Recursive relationships within same table
+
+```graphql
+type User @table(name: "USERS") {
+  # Forward reference
+  manager: User @reference(path: [{key: "FK_USER_MANAGER"}])
+
+  # Backward reference (reverse FK)
+  subordinates: [User!]! @reference(path: [{
+    key: "FK_USER_MANAGER",
+    backwards: true
+  }])
+}
+```
+
+**Generated:**
+- Properly aliased table references to avoid naming collisions
+- Forward: `WHERE manager_id = current_user.id`
+- Backward: `WHERE id = current_user.manager_id` (reversed)
+
+**Use case:** Organizational hierarchies, threaded comments, tree structures
+
+---
+
+### Pattern: Batched mutations
+
+**What:** Bulk insert/update/delete operations
+
+```graphql
+type Mutation {
+  createUsers(inputs: [CreateUserInput!]!): [User!]!
+  updateUsers(updates: [UpdateUserInput!]!): [User!]!
+}
+
+input CreateUserInput @table(name: "USERS") {
+  name: String!
+  email: String!
+}
+```
+
+**Generated:**
+- Uses jOOQ batch API
+- Single round-trip for multiple records
+- Can return created/updated records using RETURNING clause
+
+**Use case:** Bulk data imports, batch updates
+
+---
+
+### Pattern: Input types - Java records vs jOOQ records
+
+**Java record input (with transformer):**
+```graphql
+input UserInput @record {
+  name: String!
+  email: String!
+}
+
+type Mutation {
+  createUser(input: UserInput!): User!
+}
+```
+
+**Generated:** Maps to Java record, transformer converts to jOOQ Record
+
+**jOOQ record input (direct):**
+```graphql
+input UserInput @table(name: "USERS") {
+  name: String! @field(name: "USER_NAME")
+  email: String!
+}
+```
+
+**Generated:** Maps directly to jOOQ `TableRecord`, no transformation needed
+
+**When to use:**
+- `@record`: When input doesn't match table structure (DTOs, complex inputs)
+- `@table`: When input maps 1:1 to database table (simple CRUD)
+
+---
+
+### Pattern: Field aliases - Multiple fields to same relationship
+
+**What:** Multiple GraphQL fields using same foreign key with different filters
+
+```graphql
+type User @table(name: "USERS") {
+  # Same FK, different conditions
+  recentOrders: [Order!]! @reference(path: [{
+    key: "FK_ORDER_USER",
+    condition: {className: "Conditions", method: "isRecent"}
+  }])
+
+  allOrders: [Order!]! @reference(path: [{key: "FK_ORDER_USER"}])
+}
+```
+
+**Generated:**
+- Properly aliased in SQL to avoid naming collisions
+- Each field has its own QueryPart with different conditions
+
+**Use case:** Different views of same relationship (active/inactive, recent/all, etc.)
+
+---
+
 ## Anti-Patterns to Avoid
 
 ### ❌ Excessive @service usage
@@ -1239,6 +1555,132 @@ type Query {
 
 ---
 
+## QueryPart Taxonomy (Complete)
+
+Understanding the types of jOOQ QueryParts helps you understand what Graphitron generates.
+
+### Field QueryParts
+
+Used in SELECT clauses:
+
+| Pattern | jOOQ Type | Purpose | When Generated |
+|---------|-----------|---------|----------------|
+| **Column reference** | `Field<T>` | Direct column | Default for fields on `@table` type |
+| **Calculated field** | `Field<T>` | SQL expression | `@externalField` directive |
+| **Nested multiset** | `Field<Result<R>>` | One-to-many inline | List field, inline (not `@splitQuery`) |
+| **Nested row** | `Field<Record>` | Many-to-one inline | Singular field, inline (not `@splitQuery`) |
+| **Aggregate** | `Field<T>` | COUNT, SUM, etc. | `totalCount`, aggregate fields |
+
+**Example:**
+```java
+// Column reference
+Field<String> nameField = USERS.NAME;
+
+// Calculated field
+Field<String> fullNameField = UserFields.fullName(USERS);
+
+// Nested multiset (one-to-many)
+Field<Result<OrdersRecord>> ordersField = multiset(
+    select().from(ORDERS).where(ORDERS.USER_ID.eq(USERS.ID))
+);
+
+// Nested row (many-to-one)
+Field<Record> addressField = row(
+    select().from(ADDRESS).where(ADDRESS.ID.eq(USERS.ADDRESS_ID))
+);
+
+// Aggregate
+Field<Integer> countField = count();
+```
+
+### Condition QueryParts
+
+Used in WHERE clauses:
+
+| Pattern | Purpose | When Generated |
+|---------|---------|----------------|
+| **User condition** | Filter nested query | `@condition` directive |
+| **Argument condition** | Filter by argument | Field with filter arguments |
+| **Lookup condition** | By PK/unique key | `@lookupKey` directive |
+
+**Example:**
+```java
+// User condition
+Condition activeCondition = Conditions.isActive(POSTS);
+
+// Argument condition
+Condition statusFilter = USERS.STATUS.eq(status);
+
+// Lookup condition
+Condition pkLookup = USERS.ID.in(ids);
+```
+
+### Table QueryParts
+
+Used in FROM clauses:
+
+| Pattern | Purpose | When Generated |
+|---------|---------|----------------|
+| **Base table** | FROM clause | Default from `@table` |
+| **Aliased table** | Avoid naming collision | Multiple refs to same table |
+| **Transformed table** | View, lateral join, etc. | `@tableMethod` directive |
+
+**Example:**
+```java
+// Base table
+Table<UsersRecord> baseTable = USERS;
+
+// Aliased table
+Table<UsersRecord> aliasedTable = USERS.as("managers");
+
+// Transformed table
+Table<CustomersRecord> transformedTable = CustomerTableMethod.customerTable(CUSTOMERS, status);
+```
+
+### Complete Queries
+
+Methods that execute SQL:
+
+| Pattern | Executes | When Generated |
+|---------|----------|----------------|
+| **Root query** | `SELECT ... FROM ... WHERE ...` | Query/Mutation field |
+| **Split query** | Batched `SELECT ... WHERE pk IN (?)` | `@splitQuery` or field with args |
+| **Mutation** | `INSERT/UPDATE/DELETE` | Mutation field |
+| **Count query** | `SELECT COUNT(*)` | `totalCount` field |
+| **Node lookup** | `SELECT ... WHERE pk = ?` | Node interface resolution |
+
+**Example:**
+```java
+// Root query
+public Result<UsersRecord> users(DataFetchingEnvironment env) {
+    return ctx.select().from(USERS).where(conditions).fetch();
+}
+
+// Split query (loader)
+public Map<Integer, Result<OrdersRecord>> ordersLoader(DataFetchingEnvironment env) {
+    var userIds = (List<Integer>) env.getSource();
+    return ctx.select().from(ORDERS)
+        .where(ORDERS.USER_ID.in(userIds))
+        .fetch()
+        .intoGroups(ORDERS.USER_ID);
+}
+
+// Mutation
+public UsersRecord createUser(DataFetchingEnvironment env) {
+    return ctx.insertInto(USERS)
+        .set(record)
+        .returning()
+        .fetchOne();
+}
+
+// Count query
+public Integer totalCount(DataFetchingEnvironment env) {
+    return ctx.selectCount().from(USERS).where(conditions).fetchOne(0, int.class);
+}
+```
+
+---
+
 ## Summary
 
 ### Core Model
@@ -1252,6 +1694,16 @@ type Query {
 - **Root:** Can do any work, generates query execution methods
 - **Non-root:** Trivial extraction or DataLoader-backed loader methods
 
+### Critical Implicit Behaviors
+
+- **Fields with arguments** → Automatic split query (loader method), even without `@splitQuery`
+- **Multi-table interface** → Type resolver based on record type
+- **Single-table interface** → Type resolver checks discriminator column
+- **TableRecord in Java object** → Automatic re-entry loader
+- **Node global ID** → Automatic decoder + batching
+- **totalCount field** → Separate COUNT(*) query
+- See [Implicit Behaviors](#️-critical-implicit-behaviors) for complete list
+
 ### Query Patterns
 
 - **Lookup:** Fetch by known key(s) - `@lookupKey`
@@ -1263,26 +1715,34 @@ type Query {
 
 - **`<Type>Queries` classes** - One per GraphQL type
 - **Query execution methods** - `fieldName(env)` for root fields
-- **Loader methods** - `fieldNameLoader(env)` for @splitQuery fields
+- **Loader methods** - `fieldNameLoader(env)` for @splitQuery fields or fields with args
 - **QueryPart helpers** - `buildFieldNameMultiset/Row()` for inline fields
 - **RuntimeWiring** - Lambdas that wire fields to methods
 
 ### Queries vs QueryParts
 
 - **Queries:** Execute complete SQL (root/@splitQuery methods)
-- **QueryParts:** Compose into queries (inline helpers, @condition, @externalField)
+- **QueryParts:** Compose into queries (inline helpers, @condition, @externalField, @tableMethod)
+
+### QueryPart Types
+
+- **Field QueryParts:** Column, calculated, multiset, row, aggregate
+- **Condition QueryParts:** User condition, argument filter, lookup
+- **Table QueryParts:** Base table, aliased, transformed
+- **Complete Queries:** Root, split, mutation, count, node lookup
+- See [QueryPart Taxonomy](#querypart-taxonomy-complete) for details
 
 ### Decision Framework
 
 1. **Where in schema?** Root vs nested determines method type
 2. **What query pattern?** Lookup, Filter, Search, List
-3. **Inline or split?** Default inline QueryPart, split to loader only when needed
-4. **Need custom logic?** Prefer `@condition`/`@externalField` QueryParts, minimize `@service`
+3. **Inline or split?** Default inline QueryPart, split to loader only when needed (or has arguments)
+4. **Need custom logic?** Prefer `@condition`/`@externalField`/`@tableMethod` QueryParts, minimize `@service`
 5. **Using @service?** Plan re-entry before leaving jOOQ-land
 
 ### Key Principle
 
-**Default to the simplest approach that works.** Inline QueryParts, simple queries, staying in jOOQ-land. Only add complexity (loader methods, `@service`) when you have a specific need.
+**Default to the simplest approach that works.** Inline QueryParts, simple queries, staying in jOOQ-land. Only add complexity (loader methods, `@service`) when you have a specific need. **Be aware of implicit behaviors** that automatically trigger split queries or other code generation patterns.
 
 ---
 
