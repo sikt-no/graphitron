@@ -18,11 +18,13 @@ This folder contains documentation about Graphitron's design, philosophy, and ho
 
 4. **[What Graphitron Generates](WHAT-GRAPHITRON-GENERATES.md)** - Vocabulary and taxonomy of generated code. Explains the classes, naming conventions, and patterns you'll see in generated output.
 
-5. **[Code Generation Triggers](CODE-GENERATION-TRIGGERS.md)** - Reference for what schema patterns trigger what code generation. Use this when you need to know "if I write X in my schema, what will Graphitron generate?"
+5. **[Query Taxonomy](QUERY-TAXONOMY.md)** - Vocabulary for discussing Queries (methods that execute SQL) and QueryParts (methods that build SQL fragments).
+
+6. **[Code Generation Triggers](CODE-GENERATION-TRIGGERS.md)** - Reference for what schema patterns trigger what code generation. Use this when you need to know "if I write X in my schema, what will Graphitron generate?"
 
 ## Security
 
-6. **[Security](SECURITY.md)** - Graphitron's security model and why we chose database-level security enforcement.
+7. **[Security](SECURITY.md)** - Graphitron's security model and why we chose database-level security enforcement.
 
 ## Document Summary
 
@@ -31,7 +33,8 @@ This folder contains documentation about Graphitron's design, philosophy, and ho
 | [Vision and Goal](VISION-AND-GOAL.md) | Problem statement and design approach | First, to understand the "why" |
 | [Graphitron Principles](GRAPHITRON-PRINCIPLES.md) | Design philosophy and long-term thinking | To understand architectural decisions |
 | [Dependencies](DEPENDENCIES.md) | Why jOOQ and GraphQL-Java | When evaluating Graphitron or learning to extend it |
-| [What Graphitron Generates](WHAT-GRAPHITRON-GENERATES.md) | Generated code vocabulary | When learning the codebase or debugging |
+| [What Graphitron Generates](WHAT-GRAPHITRON-GENERATES.md) | Generated class structure | When learning the codebase or debugging |
+| [Query Taxonomy](QUERY-TAXONOMY.md) | Queries and QueryParts vocabulary | When discussing query generation features |
 | [Code Generation Triggers](CODE-GENERATION-TRIGGERS.md) | Schema → generated code reference | When writing schemas or troubleshooting |
 | [Security](SECURITY.md) | Security model explanation | When designing access control |
 
