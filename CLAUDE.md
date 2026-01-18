@@ -29,28 +29,30 @@ graphitron/
 
 ## Documentation
 
-### Core Guides
-- **Code Generation Triggers**: [/docs/CODE-GENERATION-TRIGGERS.md](/docs/CODE-GENERATION-TRIGGERS.md) - **START HERE** - What schema patterns trigger what code generation
-- **Graphitron Principles**: [/docs/GRAPHITRON-PRINCIPLES.md](/docs/GRAPHITRON-PRINCIPLES.md) - Design philosophy and long-term thinking
-- **Vision and Goals**: [/docs/VISION-AND-GOAL.md](/docs/VISION-AND-GOAL.md) - What Graphitron is and isn't
-- **Dependencies**: [/docs/DEPENDENCIES.md](/docs/DEPENDENCIES.md) - Dependency management principles
-- **Security**: [/docs/SECURITY.md](/docs/SECURITY.md) - Security policy
+### Conceptual Documentation (Start Here)
+The `/docs` folder contains conceptual guides explaining Graphitron's design, philosophy, and how it works:
+- **Documentation Guide**: [/docs/README.md](/docs/README.md) - **START HERE** - Navigation and reading order for all documentation
+- **Vision and Goal**: [/docs/VISION-AND-GOAL.md](/docs/VISION-AND-GOAL.md) - What problem Graphitron solves and how it approaches the solution
+- **Graphitron Principles**: [/docs/GRAPHITRON-PRINCIPLES.md](/docs/GRAPHITRON-PRINCIPLES.md) - Design philosophy and long-term thinking that shapes architectural decisions
+- **Dependencies**: [/docs/DEPENDENCIES.md](/docs/DEPENDENCIES.md) - Why we chose jOOQ and GraphQL-Java as foundational dependencies
+- **What Graphitron Generates**: [/docs/WHAT-GRAPHITRON-GENERATES.md](/docs/WHAT-GRAPHITRON-GENERATES.md) - Vocabulary and taxonomy of generated code (classes, naming conventions, patterns)
+- **Query Taxonomy**: [/docs/QUERY-TAXONOMY.md](/docs/QUERY-TAXONOMY.md) - Vocabulary for discussing Queries (SQL execution methods) and QueryParts (SQL fragment builders)
+- **Code Generation Triggers**: [/docs/CODE-GENERATION-TRIGGERS.md](/docs/CODE-GENERATION-TRIGGERS.md) - Quick reference: what schema patterns trigger what code generation
+- **Security**: [/docs/SECURITY.md](/docs/SECURITY.md) - Security model and database-level enforcement approach
 
-### Technical Documentation
+### Technical Reference Documentation
 - **Main README**: [/README.md](/README.md) - Project overview and getting started
-- **Example README**: [/graphitron-example/README.md](/graphitron-example/README.md) - Sakila example implementation
-- **Schema Transform README**: [/graphitron-schema-transform/README.md](/graphitron-schema-transform/README.md) - Schema transformation features
-- **Java Codegen README**: [/graphitron-codegen-parent/graphitron-java-codegen/README.md](/graphitron-codegen-parent/graphitron-java-codegen/README.md) - Complete directive reference
-- **JavaPoet README**: [/graphitron-codegen-parent/graphitron-javapoet/README.md](/graphitron-codegen-parent/graphitron-javapoet/README.md)
+- **Java Codegen README**: [/graphitron-codegen-parent/graphitron-java-codegen/README.md](/graphitron-codegen-parent/graphitron-java-codegen/README.md) - Complete directive reference with detailed examples (1500+ lines)
+- **Schema Transform README**: [/graphitron-schema-transform/README.md](/graphitron-schema-transform/README.md) - Schema transformation features (feature flags, Federation, Relay)
+- **Common Module README**: [/graphitron-common/README.md](/graphitron-common/README.md) - Exception handling framework and shared utilities
+- **Example README**: [/graphitron-example/README.md](/graphitron-example/README.md) - Sakila example implementation with quickstart guide
+- **JavaPoet README**: [/graphitron-codegen-parent/graphitron-javapoet/README.md](/graphitron-codegen-parent/graphitron-javapoet/README.md) - About the JavaPoet fork
 
-### Architecture & Future Direction (GEPs)
-- **GEP-001.1: Mental Model**: [/geps/GEP-001.1 Graphitron Mental Model.md](/geps/GEP-001.1%20Graphitron%20Mental%20Model.md) - Conceptual foundation
-- **GEP-002: Parse-and-Validate**: [/geps/GEP-002 Parse-and-Validate Architecture.md](/geps/GEP-002%20Parse-and-Validate%20Architecture.md)
-- **GEP-003: Selection-Set-Driven Query Generation**: [/geps/GEP-003 Selection-Set-Driven Query Generation.md](/geps/GEP-003%20Selection-Set-Driven%20Query%20Generation.md)
-- **What Graphitron Generates**: [/geps/WHAT-GRAPHITRON-GENERATES.md](/geps/WHAT-GRAPHITRON-GENERATES.md) - Vocabulary and taxonomy of generated code
-- **Code Generation Triggers**: [/geps/CODE-GENERATION-TRIGGERS.md](/geps/CODE-GENERATION-TRIGGERS.md) - Reference for what schema patterns trigger what
-- **Code Generation Patterns**: [/geps/CODE-GENERATION-PATTERNS.md](/geps/CODE-GENERATION-PATTERNS.md) - Patterns and best practices
-- **Complete Taxonomy**: [/geps/COMPLETE-TAXONOMY.md](/geps/COMPLETE-TAXONOMY.md) - Comprehensive analysis from test cases
+### Future Direction (GEPs - Proposals, Not Current Reality)
+The `/geps` folder contains proposals and future ideas. These documents describe potential future directions, not the current implementation:
+- **GEP-001.1: Mental Model**: [/geps/GEP-001.1 Graphitron Mental Model.md](/geps/GEP-001.1%20Graphitron%20Mental%20Model.md) - Proposed conceptual foundation
+- **GEP-002: Parse-and-Validate**: [/geps/GEP-002 Parse-and-Validate Architecture.md](/geps/GEP-002%20Parse-and-Validate%20Architecture.md) - Proposed architecture
+- **GEP-003: Selection-Set-Driven Query Generation**: [/geps/GEP-003 Selection-Set-Driven Query Generation.md](/geps/GEP-003%20Selection-Set-Driven%20Query%20Generation.md) - Proposed query optimization
 
 ## Key Architecture
 
