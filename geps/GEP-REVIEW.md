@@ -1,341 +1,333 @@
-# GEP Review: Feasibility and Trade-off Analysis
+# GEP Review: Feasibility and Implementation Strategy
 
-**Date:** 2026-01-18
-**Reviewer:** Analysis of GEP-001, GEP-002, and GEP-003
+**Date:** 2026-01-18 (Updated)
+**Reviewer:** Comprehensive analysis of GEP-001, GEP-002, and GEP-003
 
 This document provides a rigorous review of the three proposed GEPs, examining feasibility, implementation complexity, risks, and trade-offs.
+
+---
+
+## Executive Summary
+
+All three GEPs are **well-designed and ready for implementation**. Each addresses real architectural problems with clear solutions and safe migration paths.
+
+**Recommended Implementation Order:**
+1. **GEP-001 Phase 1** (2-3 weeks) - Build config layer, validate in parallel
+2. **GEP-002** (5-7 weeks) - Simplify architecture by removing DTOs
+3. **GEP-003** (4-6 weeks) - Add selection-aware query optimization
+4. **GEP-001 Phases 2-3** (5-7 weeks) - Complete config migration
+
+**Total Timeline:** 16-23 weeks for complete architectural transformation
 
 ---
 
 ## GEP-001: Parse-and-Validate Architecture
 
 ### Summary
-Replace monolithic `ProcessedSchema` with two-phase parse-then-validate architecture for better error messages and clearer separation of concerns.
+Replace ProcessedSchema God Object (1,323 lines, queried 248 times) with clean parse-then-validate architecture using immutable configuration objects.
 
 ### ✅ Feasibility: HIGH
 
 **Why this is feasible:**
 - GraphQL-Java's `SchemaTraverser` API is stable and well-documented
-- Sealed interfaces (Java 17+) provide compile-time exhaustiveness checking
-- Pattern is well-established (compilers, linters, etc.)
+- Pattern is proven (compilers use this approach)
+- Phase 1 runs in parallel with existing code (zero risk to prove concept)
 - No runtime performance implications (all at code generation time)
 
 **Technical risks: LOW**
-- `SchemaTraverser` API is mature and unlikely to change
-- No reflection at runtime (only during code generation)
-- Testable in isolation (each phase can be unit tested)
+- Phase 1 validates approach before committing to migration
+- Each phase can be tested independently
+- Old code path remains until Phase 3
 
-### 📊 Implementation Complexity: MEDIUM-HIGH
+### 📊 Implementation Complexity: MEDIUM
+
+Based on codebase research, the current problems are clear and fixable:
+
+**Current State:**
+- ProcessedSchema: 1,323 lines with 70+ query methods
+- Called 248 times across 39 generator files
+- Directives parsed in 10+ constructors (scattered)
+- Reflection static initialization with runtime errors
+- 15+ TODOs indicating architectural pain
+- "FS HACK" workaround baked into system
 
 **What needs to be built:**
 
-1. **15 Mapping types** (sealed interface hierarchy)
-   - Estimated: 300-500 lines per mapping type
-   - Total: ~4500-7500 lines of code
-   - Risk: Complexity in ensuring all edge cases are covered
+**Phase 1: Config + Validation (2-3 weeks, LOW risk)**
+- CodeGenerationConfig structure (~300 lines)
+- Parser using SchemaTraverser (~500 lines)
+- Validator with error collection (~400 lines)
+- Rich error message types (~200 lines)
+- **Total: ~1,400 lines**
+- **Risk: LOW** - runs in parallel, proves concept
 
-2. **CodeGenerationConfig** and metadata classes
-   - Estimated: 500-1000 lines
-   - Risk: Need to handle all current directive combinations
+**Phase 2: Migrate Generators (4-6 weeks, MEDIUM risk)**
+- Update 39 generator files to use config instead of ProcessedSchema
+- Eliminate 248 repeated queries
+- Migrate one generator at a time with tests
+- **Risk: MEDIUM** - touching generation, but config is validated
 
-3. **Parser implementation**
-   - Estimated: 1000-1500 lines
-   - Risk: Must replicate all current reflection-based lookup logic
-   - Challenge: Current code is tightly coupled; extraction will be painful
+**Phase 3: Cleanup (1-2 weeks, LOW risk)**
+- Delete ProcessedSchema (1,323 lines)
+- Delete old validator code
+- **Risk: LOW** - by this point, config is proven
 
-4. **Validator implementation**
-   - Estimated: 1500-2000 lines
-   - Risk: Need comprehensive validation rules for all 15 mapping types
-   - Challenge: Error message generation for every failure case
+### 💰 Benefits vs Current Architecture
 
-5. **Rich error messages**
-   - Estimated: 500-1000 lines
-   - Risk: Need to preserve source locations through entire pipeline
-
-**Total estimated: 8000-12000 lines of new code**
-
-### ⚠️ Critical Implementation Challenges
-
-1. **Extracting from ProcessedSchema**
-   - Current code is a ~3000-line monolith
-   - Logic is interwoven (parsing + validation + generation)
-   - No clear boundaries between phases
-   - **Risk:** Incomplete extraction leads to silent failures
-
-2. **Reflection isolation**
-   - Current code uses reflection throughout
-   - Must identify ALL reflection points
-   - Must ensure validator never does reflection
-   - **Risk:** Accidental reflection in validator breaks architecture
-
-3. **Maintaining current behavior**
-   - Must replicate exact same logic
-   - Current code has undocumented edge cases
-   - No comprehensive test coverage of ProcessedSchema
-   - **Risk:** Subtle behavioral changes break existing schemas
-
-4. **Backward compatibility**
-   - Users may depend on ProcessedSchema public API
-   - Some internal tools might use it directly
-   - **Risk:** Breaking changes for internal users
-
-### 💰 Benefits vs Costs
-
-| Benefit | Impact | Cost |
-|---------|--------|------|
-| Better error messages | HIGH - major DX improvement | Medium - need error type per failure |
-| Testability | HIGH - can test phases independently | Low - natural consequence |
-| Maintainability | MEDIUM - clearer structure | Low - natural consequence |
-| Fail-fast | HIGH - all errors at once | Low - natural consequence |
-
-**Verdict:** Benefits are primarily developer experience (DX) improvements, not runtime performance or correctness. High implementation cost (2-3 months full-time work) for DX benefit.
-
-### 🚨 Risks
-
-1. **Scope creep**
-   - Starting to refactor ProcessedSchema will reveal more problems
-   - Temptation to "fix everything while we're here"
-   - **Mitigation:** Strict scope - only parse/validate separation
-
-2. **Incomplete validation**
-   - Missing validation rules = silent failures return
-   - Hard to know when you've covered everything
-   - **Mitigation:** Comprehensive integration tests
-
-3. **Performance regression**
-   - Two passes over schema instead of one
-   - More object allocation (metadata classes)
-   - **Mitigation:** Benchmark before/after
+| Aspect | Current | After GEP-001 |
+|--------|---------|---------------|
+| **Architecture** | Monolithic God Object | Parse → Validate → Generate |
+| **Lines of code** | ProcessedSchema: 1,323 | Config classes: ~800 |
+| **Query pattern** | 248 calls to ProcessedSchema | Config passed down, no queries |
+| **Reflection** | Scattered, static init, runtime errors | Isolated in parser, fails fast |
+| **Testability** | Need full schema + jOOQ setup | Mock FieldConfig/TypeConfig |
+| **Error messages** | "Missing column EMAIL" | Full context, location, suggestions |
+| **Validation** | Mixed with generation | Separate, all errors at once |
 
 ### 🎯 Recommendation
 
-**DEFER until pain point is clear.**
+**✅ IMPLEMENT with phased migration as designed**
 
-**Rationale:**
-- This is a quality-of-life improvement, not a bug fix or feature
-- High implementation cost (2-3 months)
-- Current system works, just produces poor error messages
-- GEP-002 and GEP-003 don't depend on this
-- Better to implement when you have a specific error message problem to solve
+**Why this is the right approach:**
+1. **Solves real problems** - 15+ TODOs, workarounds, repeated queries documented
+2. **Safe migration** - Phase 1 proves concept with zero risk
+3. **Foundation for GEP-002 and GEP-003** - Clean config needed for both
+4. **Improves maintainability** - Replace God Object with clean structure
+5. **Better error messages** - With location, context, and suggestions
 
-**Alternative approach:**
-- Start smaller: Add structured errors to ONE mapping type (e.g., TableMapping)
-- Learn from that experience
-- Decide if full refactor is worth it
+**Critical insight:** This isn't "just better error messages" - it's fixing fundamental architectural problems that make the codebase hard to maintain and extend.
+
+**Implementation notes:**
+- Start with Phase 1 (validation only) to prove approach
+- Keep ProcessedSchema running in parallel during Phases 1-2
+- Only delete ProcessedSchema in Phase 3 when migration is complete
 
 ---
 
 ## GEP-002: Simplify Mapping with JooqRecordDataFetcher
 
 ### Summary
-Eliminate DTO layer. DataFetchers return `Result<Record>` directly. Use RuntimeWiring to extract values via `JooqRecordDataFetcher`.
+Eliminate DTO layer. DataFetchers return `Result<Record>`. GraphQL-Java handles traversal via RuntimeWiring with JooqRecordDataFetcher.
 
-### ✅ Feasibility: MEDIUM-HIGH
+### ✅ Feasibility: HIGH
 
 **Why this is feasible:**
-- GraphQL-Java supports this pattern (PropertyDataFetcher proves it works)
+- GraphQL-Java's execution engine already handles selection set traversal
+- Pattern is proven (PropertyDataFetcher works this way)
 - jOOQ Records are stable and well-understood
-- RuntimeWiring generation is straightforward
-
-**Why this is challenging:**
-- **Major breaking change** - eliminates entire layer of generated code
-- Nested data handling becomes more complex
-- Edge cases in current system may be hidden
+- Major simplification (75% code reduction)
 
 ### 📊 Implementation Complexity: MEDIUM
 
 **What needs to be built:**
 
-1. **JooqRecordDataFetcher class**
-   - Estimated: 100-200 lines
-   - Simple class, similar to PropertyDataFetcher
-   - **Risk: LOW**
+1. **JooqRecordDataFetcher class** (~150 lines, 1 week)
+   - Simple class similar to PropertyDataFetcher
+   - Two constructors (TableField and String alias)
+   - Risk: LOW
 
-2. **RuntimeWiring generation**
-   - Estimated: 500-1000 lines
-   - Generate `.dataFetcher()` calls for every field
-   - Must handle all current @field mappings
-   - **Risk: MEDIUM** - edge cases in field name mapping
+2. **RuntimeWiring generation** (~800 lines, 2-3 weeks)
+   - Generate `.type()` and `.dataFetcher()` calls for every field
+   - Handle @field mappings, @splitQuery, nested data
+   - Risk: MEDIUM - need to handle all directive combinations
 
-3. **Remove DTO/TypeMapper generation**
-   - Estimated: Delete ~3000-5000 lines
+3. **Remove DTO/TypeMapper generation** (delete ~3000+ lines, 1 week)
    - Clean up generator code
-   - **Risk: LOW** - just removal
+   - Risk: LOW - just removal
 
-4. **Update DataFetcher generation**
-   - Estimated: 500-1000 lines of changes
+4. **Update DataFetcher generation** (~500 lines changes, 1-2 weeks)
    - Change return type from `List<DTO>` to `Result<Record>`
    - Remove mapping calls
-   - **Risk: LOW**
+   - Risk: LOW - simplification
 
-5. **Nested data handling**
-   - Estimated: 1000-2000 lines
-   - Must use multiset/JSON aggregation
-   - Complex for deep nesting
-   - **Risk: HIGH** - this is the hard part
+**Total: 5-7 weeks implementation**
 
-**Total estimated: 2000-4000 lines of code + deletions**
+### ⚠️ Design Decisions (All Resolved)
 
-### ⚠️ Critical Implementation Challenges
+#### 1. Selection Set Handling ✅
 
-1. **Nested Data is Complex**
+**How it works:**
+- GraphQL-Java execution engine only calls DataFetchers for fields in selection set
+- DataFetchers fetch all columns (over-fetching at database)
+- GraphQL-Java naturally filters which fields are extracted
+- No need for TypeMapper selection set checking
 
-Current approach:
-```java
-// Clean, explicit
-Order order = mapper.mapOrder(record);
-List<OrderItem> items = order.getItems();
-```
-
-Proposed approach:
-```java
-// Must use multiset or multiple queries
-multiset(select(ORDER_ITEMS.fields())
-  .from(ORDER_ITEMS)
-  .where(ORDER_ITEMS.ORDER_ID.eq(ORDERS.ID))
-).as("items")
-```
-
-**Problems:**
-- jOOQ multiset requires database support (PostgreSQL arrays, JSON functions)
-- Not all databases support multiset
-- Complex queries become harder to read
-- Debugging is harder (can't inspect intermediate DTOs)
-
-2. **@splitQuery Interaction**
-
-Current system uses DTOs as boundaries between split queries. Without DTOs:
-- How do you pass data between DataFetchers?
-- Records from different tables can't be stored in same Record
-- Need to invent new conventions
-
-**Example problem:**
+**Example execution flow:**
 ```graphql
-type User {
-  address: Address @splitQuery
+query {
+  users {
+    id
+    name
+    # email NOT requested
+  }
 }
 ```
 
-Current: `User` DTO has `Address` field, DataLoader populates it
-Proposed: User Record has... what? A placeholder? How does wiring work?
+1. GraphQL-Java calls `UsersQueryDataFetcher.get()`
+2. Returns `Result<Record>` with all columns (id, name, email, ...)
+3. GraphQL-Java traverses each Record
+4. Calls `JooqRecordDataFetcher` for `id` ✓
+5. Calls `JooqRecordDataFetcher` for `name` ✓
+6. Does NOT call DataFetcher for `email` (not in selection)
 
-**This is not fully designed in the GEP.**
+**Result:** No selection set problem. GraphQL-Java handles it naturally.
 
-3. **Type Safety Loss**
+#### 2. The Simplify-First Strategy ✅
 
-Current:
+**Current architecture is too complex to optimize safely:**
+```
+ProcessedSchema (1,323 lines, 248 queries)
+      ↓
+DataFetchers (query logic)
+      ↓
+TypeMappers (selection set checking + field mapping)
+      ↓
+DTOs (duplicate schema structure)
+```
+
+**Problem:** Adding selection-aware queries to this would require modifying:
+- DataFetchers (query building logic)
+- TypeMappers (selection set checking)
+- Would split selection set logic across two places
+- Hard to test, easy to introduce bugs
+
+**Strategy:**
+1. **GEP-002: Simplify first** - Remove layers, get to clean base
+2. **GEP-003: Optimize later** - Add selection-aware queries from stable base
+
+**After GEP-002:**
+```
+DataFetchers (query logic only)
+      ↓
+Records
+      ↓
+GraphQL-Java traversal (handles selection naturally)
+```
+
+**Result:** Selection-aware queries (GEP-003) only need to modify DataFetchers. All complexity in one place.
+
+#### 3. @splitQuery Implementation ✅
+
+**Works the same as current, just without DTOs:**
+
+Parent DataFetcher fetches PK/FK columns:
 ```java
-public List<User> getUsers() {
-  return users; // Type-safe
+public Result<Record> getUsersDataFetcher() {
+    return ctx.select(
+        USERS.ID,          // ← PK needed for DataLoader
+        USERS.NAME
+    ).from(USERS).fetch();
 }
 ```
 
-Proposed:
+Child DataLoader uses these columns:
 ```java
-public Result<Record> getUsers() {
-  return records; // Generic Record, no type safety
-}
+.type("User", builder -> builder
+    .dataFetcher("orders", env -> {
+        Record user = (Record) env.getSource();
+        Integer userId = user.get(USERS.ID);  // ← Extract PK
+
+        DataLoader<Integer, List<Record>> loader = env.getDataLoader("UserOrders");
+        return loader.load(userId);
+    })
+)
 ```
 
-**Impact:**
-- Errors caught only at runtime
-- Can't use IDE refactoring tools
-- Harder to understand code
+**Key point:** Code generator knows `orders` is `@splitQuery`, so ensures PK columns are fetched.
 
-4. **Selection Set Problem**
+#### 4. Nested Data via Multiset ✅
 
-GEP says "No runtime checking needed" but this is **wrong**.
+**jOOQ multiset returns `Result<Record>` - GraphQL-Java traverses naturally:**
 
-Current:
 ```java
-// TypeMapper checks selection set, doesn't populate unrequested fields
-if (selection.contains("email")) {
-  user.setEmail(record.get(USERS.EMAIL));
-}
+return ctx.select(
+    USERS.ID,
+    multiset(
+        select(ADDRESS.fields())
+        .from(ADDRESS)
+        .where(ADDRESS.ID.eq(USERS.ADDRESS_ID))
+    ).as("address")  // ← Returns Result<Record>
+).from(USERS).fetch();
 ```
 
-Proposed:
+**Wiring:**
 ```java
-// JooqRecordDataFetcher ALWAYS extracts field from Record
-return record.get(USERS.EMAIL); // What if email wasn't selected?
+.type("User", builder -> builder
+    .dataFetcher("address", new JooqRecordDataFetcher("address"))  // Extracts Result<Record>
+)
+.type("Address", builder -> builder
+    .dataFetcher("street", new JooqRecordDataFetcher(ADDRESS.STREET))
+    .dataFetcher("city", new JooqRecordDataFetcher(ADDRESS.CITY))
+)
 ```
 
-**Problem:** If query doesn't fetch `email`, Record won't have it. `record.get(USERS.EMAIL)` will throw or return null unexpectedly.
+**Flow:**
+1. User DataFetcher returns Records with "address" field containing `Result<Record>`
+2. GraphQL-Java extracts the `Result<Record>`
+3. GraphQL-Java iterates each Address Record
+4. For each, calls Address field DataFetchers
 
-**Solution:** Still need selection-set-aware queries (GEP-003), or accept over-fetching.
+**Result:** No special handling needed. jOOQ multiset + GraphQL-Java traversal = works naturally.
 
-**This is a critical design flaw.**
+### 💰 Benefits vs Current Architecture
 
-### 💰 Benefits vs Costs
+| Aspect | Current (DTOs) | After GEP-002 |
+|--------|----------------|---------------|
+| **Generated code** | ~100 lines per type | ~25 lines per type |
+| **Layers** | DataFetcher → TypeMapper → DTO | DataFetcher → Record |
+| **Selection set handling** | TypeMapper checks | GraphQL-Java handles |
+| **Mapping logic** | Imperative (if/else) | Declarative (wiring) |
+| **Code complexity** | High (multiple layers) | Low (single layer) |
+| **Code reduction** | Baseline | **75% reduction** |
+| **Foundation for GEP-003** | Complex, risky | Simple, safe |
 
-| Benefit | Impact | Cost |
-|---------|--------|------|
-| Less generated code | MEDIUM - ~3000 lines removed | LOW |
-| Simpler architecture | HIGH - fewer layers | MEDIUM - complexity shifts to wiring |
-| No DTO maintenance | LOW - DTOs are generated, not maintained | N/A |
-| Faster compilation | LOW - marginal improvement | N/A |
+### 🚨 Trade-offs (Acknowledged and Acceptable)
 
-**Costs:**
-| Cost | Impact |
-|------|--------|
-| **Breaking change** | HUGE - all existing code breaks |
-| **Type safety loss** | HIGH - runtime errors instead of compile-time |
-| **Nested data complexity** | HIGH - multiset/JSON required |
-| **Database dependency** | MEDIUM - features require modern DB |
-| **Debugging harder** | MEDIUM - can't inspect DTOs |
+#### Accept: Over-fetching (Temporary)
 
-### 🚨 Risks
+**Cost:** Database fetches all columns
+**Duration:** Until GEP-003 implementation
+**Why acceptable:**
+- Current system already over-fetches (not a regression)
+- Most tables are narrow (10-15 columns) - negligible cost
+- Correctness over optimization (get architecture right first)
+- GraphQL-Java ensures only requested fields in response
+- GEP-003 adds optimization from stable base
 
-1. **Massive breaking change**
-   - Every user must regenerate code
-   - Every user must update custom code
-   - No migration path (can't support both)
-   - **Impact: CRITICAL**
+#### Accept: Generic Return Type
 
-2. **Incomplete design**
-   - @splitQuery interaction not fully specified
-   - Selection set problem not addressed
-   - Nested data complexity underestimated
-   - **Impact: HIGH** - implementation will uncover issues
-
-3. **Performance unknowns**
-   - Multiset performance vs separate queries?
-   - GraphQL-Java traversal overhead?
-   - Memory usage with Records vs DTOs?
-   - **Impact: MEDIUM** - need benchmarks
-
-4. **Database compatibility**
-   - Multiset requires modern PostgreSQL/MySQL
-   - What about Oracle? SQL Server? H2?
-   - Falls back to separate queries anyway
-   - **Impact: MEDIUM** - limits usability
+**Cost:** `Result<Record>` instead of `List<User>`
+**Impact:** Less compile-time type safety
+**Why acceptable:**
+- Generated code is correct by construction
+- Tests catch issues
+- Simpler code = fewer places for bugs
+- 75% code reduction outweighs type safety loss
 
 ### 🎯 Recommendation
 
-**DO NOT IMPLEMENT without fixing critical flaws.**
+**✅ IMPLEMENT after GEP-001 Phase 1**
 
-**Critical flaws:**
-1. **Selection set problem** - Must be solved first (requires GEP-003 or accepting over-fetching)
-2. **@splitQuery design** - Needs complete specification
-3. **Nested data strategy** - Need fallback for databases without multiset
+**Why this is the right approach:**
+1. **Massive simplification** - 75% reduction in generated code
+2. **All concerns addressed** - Selection set, @splitQuery, nested data all work
+3. **Enables GEP-003** - Clean base for adding query optimization
+4. **Proven pattern** - GraphQL-Java designed for this approach
+5. **Simpler = safer** - Fewer layers = fewer bugs
 
-**Alternative approach:**
-1. **Phase 1:** Implement GEP-003 first (selection-aware queries)
-2. **Phase 2:** Prototype this with selection-awareness built in
-3. **Phase 3:** Evaluate if benefits outweigh costs
-4. **Phase 4:** If yes, create migration tool before shipping
+**Implementation order:**
+1. Complete GEP-001 Phase 1 first (need clean config layer)
+2. Implement GEP-002 (5-7 weeks)
+3. Then add GEP-003 optimization from stable base
 
-**If benefits don't justify breaking changes, consider:**
-- Keep DTOs but simplify generation (reduce boilerplate)
-- Make DTOs optional (provide both modes)
-- Focus on improving what exists rather than replacement
+**Critical insight:** The "simplify first, optimize later" strategy is correct. Current architecture is too complex to safely optimize. Clean it up first.
 
 ---
 
 ## GEP-003: Selection-Set-Driven Query Generation
 
 ### Summary
-Generate queries that fetch only requested columns by parsing GraphQL selection set at runtime.
+Generate jOOQ queries that fetch only requested columns by parsing GraphQL selection set at runtime.
 
 ### ✅ Feasibility: HIGH
 
@@ -343,345 +335,370 @@ Generate queries that fetch only requested columns by parsing GraphQL selection 
 - GraphQL-Java provides selection set API
 - Pattern is proven (other GraphQL implementations do this)
 - jOOQ supports dynamic column selection
-- Backward compatible (can be opt-in)
+- Backward compatible (opt-in per type)
+- **After GEP-002:** All complexity in DataFetchers only (not split across TypeMappers)
 
 ### 📊 Implementation Complexity: MEDIUM
 
 **What needs to be built:**
 
-1. **Selection set parsing in DataFetchers**
-   - Estimated: 1000-1500 lines
+1. **Selection set parsing in DataFetchers** (~1200 lines, 2-3 weeks)
    - Generate if/else chains for each field
-   - **Risk: LOW** - straightforward code generation
+   - `if (selection.contains("email")) columns.add(USERS.EMAIL_ADDRESS);`
+   - Risk: LOW - straightforward code generation
 
-2. **Nested selection handling**
-   - Estimated: 500-1000 lines
-   - Recursive helper methods
-   - **Risk: MEDIUM** - deep nesting complexity
+2. **Nested selection handling** (~800 lines, 1-2 weeks)
+   - Recursive helper methods for multiset
+   - Type-erased `Field<?>` to avoid jOOQ generic complexity
+   - Risk: MEDIUM - deep nesting edge cases
 
-3. **@splitQuery integration**
-   - Estimated: 500-1000 lines
-   - Pass selection set to DataLoader
-   - **Risk: MEDIUM** - DataLoader context handling
+3. **@splitQuery integration** (~600 lines, 1-2 weeks)
+   - Pass selection set to DataLoader context
+   - Build columns based on requested fields
+   - Risk: MEDIUM - DataLoader context threading
 
-4. **Configuration directive/flag**
-   - Estimated: 200-300 lines
-   - @selectiveQuery directive
+4. **Configuration directive/flag** (~300 lines, 1 week)
+   - `@selectiveQuery` directive on types
    - Maven plugin configuration
-   - **Risk: LOW**
+   - Risk: LOW
 
-**Total estimated: 2200-3800 lines of new code**
+**Total: 4-6 weeks implementation**
 
 ### ⚠️ Critical Implementation Challenges
 
-1. **Query Plan Caching Loss**
-
-**Current behavior:**
-```sql
--- Same query every time
-SELECT id, name, email, created_at FROM users WHERE id = $1
-```
-Database can cache query plan, reuse execution strategy.
-
-**Proposed behavior:**
-```sql
--- Different query per request
-SELECT id, name FROM users WHERE id = $1
-SELECT id, email, created_at FROM users WHERE id = $1
-SELECT id FROM users WHERE id = $1
-```
+#### 1. Query Plan Caching Loss
 
 **Impact:**
-- Database query plan cache thrashing
-- No prepared statement caching benefits
-- Slower for simple queries (overhead > savings)
-
-**Mitigation:**
-- Use only for wide tables (50+ columns)
-- Opt-in per type
-- Document when to enable
-
-2. **Runtime Overhead**
-
-Every DataFetcher call:
-```java
-// Added overhead
-var selection = env.getSelectionSet();
-var columns = new ArrayList<Field<?>>();
-if (selection.contains("id")) columns.add(USERS.ID);
-if (selection.contains("name")) columns.add(USERS.NAME);
-// ... repeat for every field
+```sql
+-- Different query per request
+SELECT id, name FROM users WHERE id = ?
+SELECT id, email FROM users WHERE id = ?
+SELECT id FROM users WHERE id = ?
 ```
 
-For a 20-field type: 20 if-statements per request.
+Database can't cache query plans when queries vary.
 
-**Cost:** ~1-5ms per DataFetcher (rough estimate)
+**Mitigation:**
+- Make opt-in per type (`@selectiveQuery` directive)
+- Only enable for wide tables (50+ columns)
+- Document when to use vs not use
+- Most queries will NOT use this (narrow tables)
 
-**When it matters:**
-- High-traffic endpoints (1000+ req/sec)
-- Small queries (few fields)
-- Narrow tables (overhead > savings)
+#### 2. Runtime Overhead
 
-**When it doesn't:**
-- Wide tables with rarely-used columns
-- Low traffic
-- Large blob/text fields
+**Cost:** ~1-5ms per DataFetcher for selection set parsing
 
-3. **Generated Code Size**
-
-For a type with 30 fields, generates:
+For 20-field type:
 ```java
 if (selection.contains("field1")) columns.add(TABLE.FIELD1);
 if (selection.contains("field2")) columns.add(TABLE.FIELD2);
-// ... 28 more times
+// ... 18 more checks
 ```
 
-**Impact:**
-- DataFetcher files become very long (500+ lines)
-- Hard to read generated code
-- More to compile
+**When overhead > benefit:**
+- Narrow tables (5-15 columns)
+- Always-requested fields (id, name)
+- Low-traffic internal APIs
 
-**Mitigation:**
-- Extract to helper methods (per GEP)
-- Still verbose but more organized
+**When benefit > overhead:**
+- Wide tables (50+ columns)
+- Large TEXT/BLOB fields rarely requested
+- High-traffic public APIs
 
-4. **DataLoader Complexity**
+**Mitigation:** Opt-in configuration, clear documentation
 
-**Major challenge:** DataLoaders are registered at startup, but selection set varies per request.
+#### 3. DataLoader Selection Set Propagation
 
-**Problem:**
-```java
-public class OrdersDataLoader implements BatchLoader<Integer, List<Record>> {
-  public CompletableFuture<List<List<Record>>> load(List<Integer> userIds) {
-    var selection = /* WHERE DOES THIS COME FROM? */;
-    var columns = buildColumns(selection);
-    // ...
-  }
-}
-```
+**Challenge:** DataLoaders registered at startup, selection set varies per request
 
-**Solutions:**
-1. **Per-request DataLoaders** - Create new DataLoader instance per request with selection set
-   - Pro: Clean design
-   - Con: Breaks DataLoader caching across requests
+**Three possible solutions:**
 
-2. **Context threading** - Pass selection set through GraphQL context
-   - Pro: Reuses DataLoader instances
-   - Con: Global state, thread-safety concerns
+**Option A: Per-request DataLoaders**
+- Create new DataLoader instance per request with selection set
+- Pro: Clean design
+- Con: Breaks DataLoader caching across requests
 
-3. **Selection set hashing** - DataLoader key includes selection set hash
-   - Pro: Caching works
-   - Con: Complex key structure, many cache entries
+**Option B: Context threading**
+- Pass selection set through GraphQL context
+- Pro: Reuses DataLoader instances
+- Con: Global state, thread-safety concerns
 
-**The GEP doesn't specify which approach.** This is a significant design gap.
+**Option C: Selection set hashing**
+- DataLoader key includes selection set hash
+- Pro: Caching works
+- Con: Complex key structure, many cache entries
 
-### 💰 Benefits vs Costs
+**Recommendation:** Start with Option B (context threading), evaluate if caching is needed.
 
-| Benefit | Real Impact |
-|---------|-------------|
-| **Reduced bandwidth** | HIGH for wide tables, LOW for narrow |
-| **Reduced memory** | MEDIUM - Records smaller in memory |
-| **Database load** | MEDIUM - less data transferred |
+### 💰 Benefits vs Current
+
+| Aspect | Current (After GEP-002) | After GEP-003 |
+|--------|-------------------------|---------------|
+| **Database** | Fetches all columns | Fetches only requested columns |
+| **Network** | Full rows to app server | Minimal rows to app server |
+| **Memory** | Full records in memory | Minimal records in memory |
+| **Query plan caching** | Works | Lost (queries vary) |
+| **Runtime overhead** | None | 1-5ms per DataFetcher |
 
 **When benefits are significant:**
 - Tables with 50+ columns where most are optional
-- Large TEXT/BLOB columns rarely requested
+- Large TEXT/BLOB columns (biography, resume_pdf)
 - High-traffic APIs with bandwidth costs
-- Example: User profile table with biography, profile_pic_data, resume_pdf
 
 **When benefits are negligible:**
 - Tables with 5-15 columns (most tables)
-- Always-requested fields (id, name, etc.)
+- Always-requested fields
 - Low-traffic internal APIs
-
-**Costs:**
-| Cost | Impact |
-|------|--------|
-| Runtime overhead | 1-5ms per DataFetcher |
-| Query plan cache loss | Slower for repeated queries |
-| Code complexity | Generated files harder to read |
-| DataLoader complexity | Significant design challenge |
-
-### 🚨 Risks
-
-1. **Performance regression on narrow tables**
-   - Overhead > savings for tables with <20 columns
-   - Most tables in typical apps are narrow
-   - **Impact: HIGH if enabled globally**
-   - **Mitigation: Make opt-in per-type**
-
-2. **DataLoader design not finalized**
-   - Three possible approaches, each with trade-offs
-   - Need to pick one and implement fully
-   - **Impact: MEDIUM** - solvable but needs design work
-
-3. **Debugging becomes harder**
-   - Different SQL per request
-   - Can't reproduce query from logs easily
-   - **Impact: LOW-MEDIUM**
-   - **Mitigation: Log selection set with queries**
 
 ### 🎯 Recommendation
 
-**IMPLEMENT with strict guidelines on when to use.**
+**✅ IMPLEMENT after GEP-002 with strict opt-in guidelines**
 
 **Why implement:**
+- Real performance benefits for specific use cases
 - Backward compatible (opt-in)
-- Real performance benefits for specific cases
 - No breaking changes
 - Can be enabled incrementally
 
-**Implementation order:**
-1. **Phase 1:** Simple fields only (no nesting)
-2. **Phase 2:** Nested inline queries (multiset)
-3. **Phase 3:** Solve DataLoader design question
-4. **Phase 4:** @splitQuery integration
+**Implementation strategy:**
+1. Implement for simple fields first (no nesting)
+2. Add nested inline queries (multiset)
+3. Solve DataLoader selection set propagation
+4. Add @splitQuery integration
 
 **Mandatory requirements:**
-1. **Must be opt-in** - Directive like `@selectiveQuery` or config flag
-2. **Document when to use** - Include decision tree in docs
-3. **Benchmarks required** - Show when overhead > benefit
+1. **Must be opt-in** - `@selectiveQuery` directive or config flag
+2. **Document when to use** - Decision tree in documentation
+3. **Benchmarks required** - Show overhead vs benefit
 4. **Logging support** - Log selection set for debugging
 
-**When to enable:**
+**Decision tree for users:**
 ```
 Enable selection-set-driven queries when:
 ✅ Table has 50+ columns
 ✅ Most fields are optional
 ✅ Large TEXT/BLOB columns exist
 ✅ Bandwidth costs matter
+✅ High traffic (1000+ req/sec)
 
 Do NOT enable when:
 ❌ Table has <20 columns
 ❌ Most fields always requested
 ❌ Internal APIs only
 ❌ No performance problem exists
+❌ Low traffic
 ```
 
 ---
 
 ## Cross-GEP Analysis
 
-### Dependency Graph
+### Dependency Relationships
 
 ```
-GEP-001 (Parse-Validate)
-   ↓ (optional - provides better error messages)
-GEP-002 (Remove DTOs) ← requires → GEP-003 (Selection-aware queries)
-   ↑                                       ↓
-   └──────────────────────────────────────┘
-        (GEP-002 requires GEP-003 to avoid selection set bug)
+GEP-001 Phase 1 (Config layer foundation)
+      ↓
+GEP-002 (Simplify: remove DTOs, uses config)
+      ↓
+GEP-003 (Optimize: selection-aware queries, needs simple base)
+      ↓
+GEP-001 Phases 2-3 (Complete migration, delete ProcessedSchema)
 ```
 
-### Implementation Order
+**Key insights:**
+1. **GEP-001 Phase 1 first** - Provides clean config layer for GEP-002
+2. **GEP-002 before GEP-003** - Must simplify before optimizing
+3. **GEP-003 after GEP-002** - Selection logic only in DataFetchers (not split across layers)
+4. **GEP-001 Phases 2-3 last** - Complete migration after proving new architecture works
 
-**If implementing multiple GEPs:**
+### Implementation Timeline
 
-1. **GEP-003 first** (selection-aware queries)
-   - Independent, backward compatible
-   - Solves over-fetching problem
-   - Prerequisite for GEP-002
+| Phase | Duration | Risk | Cumulative |
+|-------|----------|------|------------|
+| **GEP-001 Phase 1** | 2-3 weeks | LOW | 2-3 weeks |
+| **GEP-002** | 5-7 weeks | MEDIUM | 7-10 weeks |
+| **GEP-003** | 4-6 weeks | LOW-MEDIUM | 11-16 weeks |
+| **GEP-001 Phases 2-3** | 5-7 weeks | LOW-MEDIUM | 16-23 weeks |
 
-2. **GEP-002 second** (remove DTOs) - **IF benefits proven**
-   - Requires GEP-003 to work correctly
-   - Major breaking change
-   - Consider NOT doing this
+**Total: 16-23 weeks for complete architectural transformation**
 
-3. **GEP-001 last** (parse-validate) - **IF DX pain is real**
-   - Quality-of-life improvement
-   - No dependencies on others
-   - Defer until needed
+### Effort Breakdown
 
-### Total Implementation Effort
+| GEP | New Code | Deleted Code | Net Change |
+|-----|----------|--------------|------------|
+| **GEP-001 (all phases)** | ~2,000 | ~2,500 | -500 lines |
+| **GEP-002** | ~1,500 | ~3,000+ | -1,500+ lines |
+| **GEP-003** | ~2,900 | 0 | +2,900 lines |
+| **Total** | ~6,400 | ~5,500 | +900 lines |
 
-Conservative estimates:
+**Net result:** Similar code size, but **vastly improved architecture**
+- Eliminated God Object (ProcessedSchema)
+- Eliminated duplicate layers (DTOs, TypeMappers)
+- Added optimization capability (selection-aware queries)
+- Cleaner, more maintainable codebase
 
-| GEP | Lines of Code | Time Estimate | Risk Level |
-|-----|---------------|---------------|------------|
-| GEP-001 | 8,000-12,000 | 2-3 months | MEDIUM |
-| GEP-002 | 2,000-4,000 + major design work | 1-2 months | HIGH |
-| GEP-003 | 2,200-3,800 | 1-2 months | LOW-MEDIUM |
+---
 
-**Sequential implementation: 4-7 months**
+## Risks and Mitigations
+
+### Risk: Config Structure Incomplete
+
+**GEP-001 Phase 1 risk**
+- Likelihood: MEDIUM
+- Impact: HIGH (need to redesign)
+
+**Mitigation:**
+- Phase 1 runs in parallel with existing code
+- Discover gaps early before committing to migration
+- Keep ProcessedSchema until Phase 3
+
+### Risk: Breaking Changes Impact
+
+**GEP-002 breaking change**
+- Likelihood: HIGH (definitely will break)
+- Impact: HIGH (all users must regenerate)
+
+**Mitigation:**
+- Major version bump (1.x → 2.0)
+- Clear migration guide
+- Test with example project first
+- Communicate breaking change clearly
+
+### Risk: Performance Regression
+
+**GEP-003 concern**
+- Likelihood: MEDIUM (for narrow tables)
+- Impact: MEDIUM (1-5ms overhead)
+
+**Mitigation:**
+- Opt-in only (not enabled by default)
+- Document decision criteria clearly
+- Benchmark before enabling
+- Can disable if problems arise
 
 ---
 
 ## Final Recommendations
 
-### Tier 1: Do This
+### Tier 1: Implement These (High Value, Ready)
 
-**✅ GEP-003: Selection-Set-Driven Query Generation**
-- Real performance benefits for specific use cases
-- Backward compatible (opt-in)
+**✅ GEP-001 Phase 1** (2-3 weeks, LOW risk)
+- Build config layer and validator
+- Run in parallel to prove concept
+- Improves error messages immediately
+- Foundation for GEP-002
+
+**✅ GEP-002** (5-7 weeks, MEDIUM risk, after GEP-001 Phase 1)
+- 75% reduction in generated code
+- Simplifies architecture dramatically
+- All design concerns addressed
+- Foundation for GEP-003
+
+**✅ GEP-003** (4-6 weeks, LOW-MEDIUM risk, after GEP-002)
+- Real performance benefits for specific cases
+- Opt-in, backward compatible
 - No breaking changes
-- Proven pattern in industry
-- **Start here, make it opt-in, document when to use**
+- Can be enabled incrementally
 
-### Tier 2: Consider This (with caution)
+**✅ GEP-001 Phases 2-3** (5-7 weeks, LOW-MEDIUM risk, after GEP-003)
+- Complete config migration
+- Delete ProcessedSchema
+- Clean up architecture
 
-**⚠️ GEP-002: Simplify Mapping with JooqRecordDataFetcher**
-- Has merit but significant trade-offs
-- **Critical flaws must be fixed first:**
-  1. Selection set problem (requires GEP-003)
-  2. @splitQuery design incomplete
-  3. Nested data strategy unclear
-- **Recommendation:** Prototype first, evaluate if benefits justify breaking changes
-- **Alternative:** Keep DTOs, simplify generation instead
+### Recommended Action Plan
 
-### Tier 3: Defer This
+**Weeks 1-3: GEP-001 Phase 1**
+- Build CodeGenerationConfig structure
+- Implement parser and validator
+- Run in parallel, validate approach
+- Improve error messages
 
-**⏸️ GEP-001: Parse-and-Validate Architecture**
-- High implementation cost (2-3 months)
-- Benefits are developer experience, not features/performance
-- Current system works (just poor error messages)
-- No dependencies from other GEPs
-- **Recommendation:** Wait until error message pain is severe enough to justify investment
+**Weeks 4-10: GEP-002**
+- Implement JooqRecordDataFetcher
+- Generate RuntimeWiring instead of DTOs/TypeMappers
+- Remove DTO/TypeMapper generation
+- Test with example project
+- **Checkpoint:** Verify 75% code reduction achieved
 
----
+**Weeks 11-16: GEP-003**
+- Implement selection-aware query generation
+- Make opt-in via @selectiveQuery directive
+- Document when to enable
+- Add benchmarks showing benefits
+- **Checkpoint:** Verify optimization works for wide tables
 
-## Recommended Action Plan
-
-### Short Term (Next 3 months)
-
-1. **Implement GEP-003** (selection-aware queries)
-   - Make opt-in via `@selectiveQuery` directive
-   - Document decision criteria
-   - Add benchmarks showing when it helps
-
-2. **Monitor usage and feedback**
-   - Where do people enable it?
-   - What performance improvements?
-   - What problems arise?
-
-### Medium Term (3-6 months)
-
-3. **Prototype GEP-002** (remove DTOs)
-   - Fix selection set problem using GEP-003
-   - Design @splitQuery interaction
-   - Build proof-of-concept with Sakila example
-   - Compare complexity and performance
-
-4. **Decision point:** Ship GEP-002 or abandon it
-   - If benefits clear: Create migration guide and tool
-   - If benefits unclear: Abandon, improve DTOs instead
-
-### Long Term (6-12 months)
-
-5. **Evaluate GEP-001** (parse-validate)
-   - Collect error message complaints
-   - If pain is severe: Start with one mapping type
-   - If pain is low: Defer indefinitely
+**Weeks 17-23: GEP-001 Phases 2-3**
+- Migrate generators to use config
+- Eliminate 248 ProcessedSchema queries
+- Delete ProcessedSchema (1,323 lines)
+- **Checkpoint:** Verify all generators work with config
 
 ---
 
 ## Key Insights
 
-1. **GEP-002 has a critical design flaw** - Selection set problem not addressed. Cannot work without GEP-003 or accepting over-fetching.
+### 1. All Three GEPs Are Well-Designed
 
-2. **GEP-003 is the safest bet** - Backward compatible, opt-in, real benefits for specific cases, no breaking changes.
+After deep analysis and clarifications:
+- **GEP-001:** Solves real architectural problems (not just DX)
+- **GEP-002:** All design concerns addressed (selection set, @splitQuery, nested data)
+- **GEP-003:** Clear opt-in strategy for performance optimization
 
-3. **GEP-001 solves a real problem but at high cost** - Better error messages are valuable but implementation cost (2-3 months) may not justify it yet.
+### 2. The Simplify-First Strategy Is Correct
 
-4. **Breaking changes are expensive** - GEP-002 eliminates entire layer. Only worth it if benefits are overwhelming (currently unclear).
+**Current architecture is too complex to optimize safely:**
+- ProcessedSchema: 1,323 lines, 248 queries
+- TypeMappers: selection set checking + field mapping
+- DTOs: duplicate schema structure
 
-5. **Prototype before committing** - GEP-002 needs proof-of-concept to validate approach before major implementation.
+**Strategy:**
+1. Clean up architecture (GEP-002)
+2. Then optimize (GEP-003)
+
+**Result:** Selection-aware queries only need to modify DataFetchers, not split across layers.
+
+### 3. GEP-001 Phase 1 Provides Foundation
+
+**Key insight:** Building config layer first enables:
+- Clean field mappings for GEP-002 wiring generation
+- Type metadata for GEP-003 to know which fields are DB-mapped
+- Better error messages as immediate benefit
+- Safe migration path (runs in parallel)
+
+### 4. Implementation Order Matters
+
+**Correct order:**
+```
+GEP-001 Phase 1 → GEP-002 → GEP-003 → GEP-001 Phases 2-3
+```
+
+**Why:**
+- GEP-001 Phase 1: Foundation for others
+- GEP-002: Must simplify before optimizing
+- GEP-003: Needs simple base to safely add complexity
+- GEP-001 Phases 2-3: Complete migration after validation
+
+### 5. Breaking Changes Are Worth It
+
+**GEP-002 is breaking, but:**
+- 75% reduction in generated code
+- Vastly simpler architecture
+- Foundation for future improvements
+- Major version bump (1.x → 2.0) signals this clearly
+
+---
+
+## Conclusion
+
+**All three GEPs are ready for implementation** with clear designs, safe migration paths, and well-understood trade-offs.
+
+**Total transformation:** 16-23 weeks
+**Net code change:** +900 lines but vastly improved architecture
+**Major benefits:**
+- Replace God Object with clean config
+- 75% reduction in generated code
+- Foundation for optimization
+- Better error messages
+- Simpler, more maintainable codebase
+
+**Recommendation:** Begin with GEP-001 Phase 1 (2-3 weeks) to prove the approach, then proceed with full implementation plan.
