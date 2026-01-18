@@ -14,12 +14,12 @@ GraphQL Schema + @directives
 │       ↓                                                     │
 │  Wiring.java              (connects fetchers to schema)     │
 │       ↓                                                     │
-│  <Type>GeneratedDataFetcher  (one per GraphQL type)         │
+│  {Type}GeneratedDataFetcher  (one per GraphQL type)         │
 │       ↓                                                     │
-│  <Type>DBQueries             (SQL query builders)           │
+│  {Type}DBQueries             (SQL query builders)           │
 │       ↓                                                     │
 │  RecordTransformer           (jOOQ ↔ DTO conversion)        │
-│  <Type>TypeMapper            (field-level mapping)          │
+│  {Type}TypeMapper            (field-level mapping)          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -27,10 +27,10 @@ Graphitron generates these main artifacts:
 
 1. **Graphitron.java** - Main entry point for your application
 2. **Wiring.java** - RuntimeWiring connecting GraphQL fields to Java methods
-3. **\<Type\>GeneratedDataFetcher.java** - DataFetcher implementations per GraphQL type
-4. **\<Type\>DBQueries.java** - jOOQ query builders per GraphQL type
+3. **{Type}GeneratedDataFetcher.java** - DataFetcher implementations per GraphQL type
+4. **{Type}DBQueries.java** - jOOQ query builders per GraphQL type
 5. **RecordTransformer.java** - Converts between jOOQ Records and DTOs
-6. **\<Type\>TypeMapper.java** - Maps individual fields between records and DTOs
+6. **{Type}TypeMapper.java** - Maps individual fields between records and DTOs
 7. **DTOs** - Java classes matching GraphQL types
 8. **TypeRegistry.java** - Loads GraphQL schema from classpath
 
@@ -83,7 +83,7 @@ public class Wiring {
 
 ### DataFetchers
 
-**\<Type\>GeneratedDataFetcher.java** - One class per GraphQL type with fields that need fetching:
+**{Type}GeneratedDataFetcher.java** - One class per GraphQL type with fields that need fetching:
 
 ```java
 public class QueryGeneratedDataFetcher {
@@ -120,7 +120,7 @@ public class MutationGeneratedDataFetcher {
 
 ### Database Query Builders
 
-**\<Type\>DBQueries.java** - One class per GraphQL type containing jOOQ query logic:
+**{Type}DBQueries.java** - One class per GraphQL type containing jOOQ query logic:
 
 ```java
 public class QueryDBQueries {
@@ -193,7 +193,7 @@ public class RecordTransformer extends AbstractTransformer {
 }
 ```
 
-**\<Type\>TypeMapper.java** - Field-level mapping with selection-set awareness:
+**{Type}TypeMapper.java** - Field-level mapping with selection-set awareness:
 
 ```java
 public class CustomerTypeMapper {
