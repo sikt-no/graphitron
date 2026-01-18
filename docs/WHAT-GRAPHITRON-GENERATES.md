@@ -65,21 +65,21 @@ DataFetchers handle the "orchestration" - they know what needs to happen but del
 
 One class per GraphQL type containing jOOQ query logic. These are where SQL gets built. Query builders are responsible for:
 
-- **Constructing jOOQ queries** based on what fields were requested
+- **Constructing jOOQ queries** for the type's fields
 - **Handling relationships** through joins or correlated subqueries
 - **Applying filters** from GraphQL arguments
 - **Batching** for fields that use the DataLoader pattern
 
-Query builders receive the GraphQL selection set and build only the SQL needed to satisfy the request - no over-fetching.
+Currently, query builders select all columns for a type regardless of which fields were requested in the GraphQL query.
 
 ### Transformers and Mappers
 
 Convert data between representations:
 
 - **RecordTransformer** - Coordinates conversion between jOOQ Records and GraphQL DTOs
-- **{Type}TypeMapper** - Handles field-level mapping for a specific type, respecting the selection set
+- **{Type}TypeMapper** - Handles field-level mapping for a specific type, checking the selection set before populating each field
 
-These components ensure that only requested fields are mapped, maintaining the selection-set-driven approach throughout the stack.
+Mappers only populate fields that were requested in the GraphQL query, avoiding unnecessary object construction for unrequested nested types.
 
 ### DTOs
 
@@ -89,14 +89,14 @@ Plain Java classes matching GraphQL types. Used as the return type from resolver
 
 ## Key Concepts
 
-### Selection-Set-Driven Processing
+### Selection Set Awareness
 
-The core principle: only fetch and process what the GraphQL query actually requested.
+The GraphQL selection set (which fields were requested) flows through the generated code:
 
-This flows through every layer:
-1. **Query builders** select only requested columns
-2. **Mappers** populate only requested fields
-3. **No over-fetching** at any layer
+- **Query builders** receive the selection set but currently select all columns
+- **Mappers** check the selection set and only populate requested fields
+
+This means the database returns all columns, but only requested fields are mapped into the response objects.
 
 ### Inline vs Split Queries
 
@@ -137,7 +137,7 @@ This also avoids N+1 queries but with two round-trips instead of one.
 | **DataFetcher** | Handles a GraphQL field request, orchestrates data retrieval |
 | **DBQueries** | Builds jOOQ queries for a GraphQL type |
 | **RecordTransformer** | Coordinates record-to-DTO conversion |
-| **TypeMapper** | Maps fields for a specific type |
+| **TypeMapper** | Maps fields for a specific type, checking selection set |
 | **Selection set** | The fields requested in a GraphQL query |
 | **Inline query** | Fetches related data via correlated subquery |
 | **Split query** | Fetches related data via separate batched query |
