@@ -11,8 +11,8 @@ This table shows what generates what. Look up your schema pattern to see what ge
 | Schema Pattern | Trigger | Generated Code | Method Type |
 |----------------|---------|----------------|-------------|
 | **Schema Location** |
-| Field on `Query` type | Schema location | `QueryDBQueries.fieldName(...)` | Query execution method |
-| Field on `Mutation` type | Schema location | `MutationDBQueries.fieldName(...)` | Query execution method |
+| Field on `Query` type | Schema location | `QueryDBQueries.<field>ForQuery(...)` | Query execution method |
+| Field on `Mutation` type | Schema location | `MutationDBQueries.<field>ForMutation(...)` | Query execution method |
 | Field on object type (no args, no directives) | Schema location + `@reference` | `<Type>DBQueries.fieldNameForType(...)` | QueryPart helper |
 | **Directives** |
 | `@table` on type | Directive | Enables QueryPart generation for this type | - |
@@ -66,15 +66,15 @@ Where a field appears in your schema determines what gets generated:
 
 ```graphql
 type Query {
-  # Generates: QueryDBQueries.user(...)
+  # Generates: QueryDBQueries.userForQuery(...)
   user(id: ID!): User
 
-  # Generates: QueryDBQueries.users(...)
+  # Generates: QueryDBQueries.usersForQuery(...)
   users(first: Int, after: String): UserConnection!
 }
 
 type Mutation {
-  # Generates: MutationDBQueries.createUser(...)
+  # Generates: MutationDBQueries.createUserForMutation(...)
   createUser(input: CreateUserInput!): User!
 }
 ```
