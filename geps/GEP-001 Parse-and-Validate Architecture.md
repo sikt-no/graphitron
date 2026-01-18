@@ -1,4 +1,4 @@
-# GEP-002: Parse-and-Validate Architecture
+# GEP-001: Parse-and-Validate Architecture
 
 **Status:** Draft
 **Version:** 2.0
@@ -31,7 +31,7 @@ if (result.hasErrors()) {
     throw new SchemaValidationException(result.getErrors());
 }
 
-// Phase 3: Generate (feeds GEP-002)
+// Phase 3: Generate (feeds GEP-002 and GEP-003)
 new CodeGenerator(schema, config).generate();
 ```
 
@@ -237,5 +237,5 @@ Missing column EMAIL in table USER
 -----
 
 **See also:**
-- GEP-001: Graphitron Mental Model
+- GEP-002: Simplify Mapping with JooqRecordDataFetcher
 - GEP-003: Selection-Set-Driven Query Generation
