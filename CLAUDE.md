@@ -51,7 +51,8 @@ The `/docs` folder contains conceptual guides explaining Graphitron's design, ph
 ### Future Direction (GEPs - Proposals, Not Current Reality)
 The `/geps` folder contains proposals and future ideas. These documents describe potential future directions, not the current implementation:
 - **GEP-001: Parse-and-Validate**: [/geps/GEP-001 Parse-and-Validate Architecture.md](/geps/GEP-001%20Parse-and-Validate%20Architecture.md) - Proposed architecture for validation
-- **GEP-002: Selection-Set-Driven Query Generation**: [/geps/GEP-002 Selection-Set-Driven Query Generation.md](/geps/GEP-002%20Selection-Set-Driven%20Query%20Generation.md) - Proposed query optimization
+- **GEP-002: Simplify Mapping with JooqRecordDataFetcher**: [/geps/GEP-002 Simplify Mapping with JooqRecordDataFetcher.md](/geps/GEP-002%20Simplify%20Mapping%20with%20JooqRecordDataFetcher.md) - Phase out DTOs, return Records directly
+- **GEP-003: Selection-Set-Driven Query Generation**: [/geps/GEP-003 Selection-Set-Driven Query Generation.md](/geps/GEP-003%20Selection-Set-Driven%20Query%20Generation.md) - Proposed query optimization to eliminate over-fetching
 
 ## Key Architecture
 
