@@ -602,6 +602,6 @@ Understanding jOOQ QueryPart types:
 **See also:**
 - [What Graphitron Generates](WHAT-GRAPHITRON-GENERATES.md) - Vocabulary and taxonomy of generated code
 - [graphitron-java-codegen README](../graphitron-codegen-parent/graphitron-java-codegen/README.md) - Complete directive reference
-- [Graphitron Mental Model](../geps/GEP-001.1%20Graphitron%20Mental%20Model.md) - Conceptual foundation
-- [Graphitron Principles](GRAPHITRON-PRINCIPLES.md) - Design philosophy
-- [Vision and Goals](VISION-AND-GOAL.md) - What Graphitron is and isn't
+- [Graphitron Mental Model](GEP-001.1%20Graphitron%20Mental%20Model.md) - Conceptual foundation
+- [Graphitron Principles](../docs/GRAPHITRON-PRINCIPLES.md) - Design philosophy
+- [Vision and Goals](../docs/VISION-AND-GOAL.md) - What Graphitron is and isn't

@@ -402,5 +402,5 @@ query {
 
 **See also:**
 - [Code Generation Triggers](CODE-GENERATION-TRIGGERS.md) - What schema patterns trigger what code generation
-- [Graphitron Mental Model](../geps/GEP-001.1%20Graphitron%20Mental%20Model.md) - Conceptual foundation
+- [Graphitron Mental Model](GEP-001.1%20Graphitron%20Mental%20Model.md) - Conceptual foundation
 - [graphitron-java-codegen README](../graphitron-codegen-parent/graphitron-java-codegen/README.md) - Complete directive reference

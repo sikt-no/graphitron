@@ -681,4 +681,4 @@ Java record with `TableRecord` | Re-entry loader
 **See also:**
 - [What Graphitron Generates](WHAT-GRAPHITRON-GENERATES.md) - Vocabulary and concepts
 - [graphitron-java-codegen README](../graphitron-codegen-parent/graphitron-java-codegen/README.md) - Complete directive reference
-- [Graphitron Principles](GRAPHITRON-PRINCIPLES.md) - Design philosophy
+- [Graphitron Principles](../docs/GRAPHITRON-PRINCIPLES.md) - Design philosophy
