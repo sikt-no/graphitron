@@ -30,6 +30,7 @@ graphitron/
 ## Documentation
 
 ### Core Guides
+- **Code Generation Triggers**: [/docs/CODE-GENERATION-TRIGGERS.md](/docs/CODE-GENERATION-TRIGGERS.md) - **START HERE** - What schema patterns trigger what code generation
 - **Graphitron Principles**: [/docs/GRAPHITRON-PRINCIPLES.md](/docs/GRAPHITRON-PRINCIPLES.md) - Design philosophy and long-term thinking
 - **Vision and Goals**: [/docs/VISION-AND-GOAL.md](/docs/VISION-AND-GOAL.md) - What Graphitron is and isn't
 - **Dependencies**: [/docs/DEPENDENCIES.md](/docs/DEPENDENCIES.md) - Dependency management principles
