@@ -50,9 +50,8 @@ The `/docs` folder contains conceptual guides explaining Graphitron's design, ph
 
 ### Future Direction (GEPs - Proposals, Not Current Reality)
 The `/geps` folder contains proposals and future ideas. These documents describe potential future directions, not the current implementation:
-- **GEP-001.1: Mental Model**: [/geps/GEP-001.1 Graphitron Mental Model.md](/geps/GEP-001.1%20Graphitron%20Mental%20Model.md) - Proposed conceptual foundation
-- **GEP-002: Parse-and-Validate**: [/geps/GEP-002 Parse-and-Validate Architecture.md](/geps/GEP-002%20Parse-and-Validate%20Architecture.md) - Proposed architecture
-- **GEP-003: Selection-Set-Driven Query Generation**: [/geps/GEP-003 Selection-Set-Driven Query Generation.md](/geps/GEP-003%20Selection-Set-Driven%20Query%20Generation.md) - Proposed query optimization
+- **GEP-001: Parse-and-Validate**: [/geps/GEP-001 Parse-and-Validate Architecture.md](/geps/GEP-001%20Parse-and-Validate%20Architecture.md) - Proposed architecture for validation
+- **GEP-002: Selection-Set-Driven Query Generation**: [/geps/GEP-002 Selection-Set-Driven Query Generation.md](/geps/GEP-002%20Selection-Set-Driven%20Query%20Generation.md) - Proposed query optimization
 
 ## Key Architecture
 
