@@ -293,6 +293,74 @@ public class ExceptionStrategyImpl extends SchemaBasedErrorStrategy {
 }
 ```
 
+## GraphitronContext - Runtime Extension Point
+
+`GraphitronContext` is the primary extension point for customizing Graphitron's runtime behavior without modifying generated code.
+
+### Interface
+
+**Location:** `graphitron-common/src/main/java/no/sikt/graphql/GraphitronContext.java`
+
+```java
+public interface GraphitronContext {
+    DSLContext getDslContext(DataFetchingEnvironment env);
+    <T> T getContextArgument(DataFetchingEnvironment env, String name);
+    String getDataLoaderName(DataFetchingEnvironment env);
+}
+```
+
+### Methods
+
+#### getDslContext(DataFetchingEnvironment env)
+- **Purpose**: Provide the jOOQ `DSLContext` for each GraphQL field resolution
+- **Called by**: Every generated DataFetcher before executing queries
+- **Use cases**:
+  - Multi-tenancy with database-level isolation
+  - Per-request transaction management
+  - Custom connection pooling strategies
+  - Setting session variables for Row-Level Security (RLS)
+
+#### getContextArgument(DataFetchingEnvironment env, String name)
+- **Purpose**: Extract values from GraphQL context to pass to service methods and conditions
+- **Use cases**:
+  - Pass user ID or tenant ID to `@condition` filters
+  - Extract security context for business logic
+  - Access request-scoped configuration
+
+#### getDataLoaderName(DataFetchingEnvironment env)
+- **Purpose**: Provide DataLoader registry key for batching
+- **Use cases**: Custom DataLoader naming strategies
+
+### Usage
+
+Applications provide an implementation of `GraphitronContext` at startup:
+
+```java
+@Override
+protected ExecutionInput buildExecutionInput(ExecutionInput.Builder builder) {
+    GraphitronContext context = new MyCustomGraphitronContext(dataSource);
+    return builder.graphQLContext(Map.of("graphitronContext", context)).build();
+}
+```
+
+Generated DataFetchers retrieve it per-request:
+
+```java
+GraphitronContext graphitronContext = env.getGraphQlContext().get("graphitronContext");
+DSLContext ctx = graphitronContext.getDslContext(env);
+```
+
+### Extension Mechanisms
+
+GraphitronContext works alongside other extension points:
+
+- **jOOQ ExecuteListener**: Intercept and modify queries before execution (add filters, log SQL, collect metrics)
+- **Database Row-Level Security**: Enforce security at database level using session variables
+
+For detailed usage examples and multi-tenancy patterns, see [Runtime Extension Points](../docs/RUNTIME-EXTENSION-POINTS.md).
+
+---
+
 ## Other Components
 
 ### GraphQL Helpers
