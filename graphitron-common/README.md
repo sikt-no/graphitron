@@ -329,7 +329,9 @@ public interface GraphitronContext {
 
 #### getDataLoaderName(DataFetchingEnvironment env)
 - **Purpose**: Provide DataLoader registry key for batching
-- **Use cases**: Custom DataLoader naming strategies
+- **Critical for multi-tenancy**: DataLoaders cache results, so different tenants must not share DataLoader instances to prevent cache leakage
+- **Default behavior**: Returns `"{fieldName}For{typeName}"` (e.g., `"filmsForActor"`)
+- **Multi-tenant override**: Must scope names per-tenant (e.g., `"filmsForActor-tenant123"`) to ensure isolated caching
 
 ### Usage
 

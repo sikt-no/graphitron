@@ -195,6 +195,44 @@ public <T> T getContextArgument(DataFetchingEnvironment env, String name) {
 
 This allows passing security context (user ID, tenant ID) to queries without exposing them as GraphQL arguments.
 
+### DataLoader Names and Multi-Tenancy
+
+GraphitronContext provides `getDataLoaderName()` to control how DataLoaders are named. **This is critical for multi-tenancy security.**
+
+**The Problem:** DataLoaders cache results to batch database queries. If different tenants share the same DataLoader instance, tenant A could see cached data from tenant B.
+
+**The Solution:** Scope DataLoader names per-tenant.
+
+**Default implementation (single-tenant):**
+```java
+@Override
+public String getDataLoaderName(DataFetchingEnvironment env) {
+    return String.format("%sFor%s",
+        capitalize(env.getField().getName()),
+        env.getExecutionStepInfo().getObjectType().getName());
+    // Returns: "filmsForActor"
+}
+```
+
+**Multi-tenant implementation:**
+```java
+@Override
+public String getDataLoaderName(DataFetchingEnvironment env) {
+    String tenantId = env.getGraphQlContext().get("tenantId");
+    String baseName = String.format("%sFor%s",
+        capitalize(env.getField().getName()),
+        env.getExecutionStepInfo().getObjectType().getName());
+
+    // Scope DataLoader per tenant
+    return baseName + "-" + tenantId;
+    // Returns: "filmsForActor-tenant123"
+}
+```
+
+**Result:** Each tenant gets isolated DataLoader instances. No cache leakage between tenants.
+
+**Important:** If you use multi-tenancy with GraphitronContext, you **must** also override `getDataLoaderName()` to prevent cache leakage.
+
 ---
 
 ## Extension Point 2: jOOQ ExecuteListener
