@@ -1,0 +1,11 @@
+type Query {
+  query: Address
+}
+
+type Address @table {
+  customers: Customer
+}
+
+type Customer @table(name: "CUSTOMER") {
+  name: String @externalField
+}

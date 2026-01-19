@@ -34,7 +34,8 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsEnabled;
+import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectOnExternalFieldsIsEnabled;
+import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectOnSubqueriesIsEnabled;
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
@@ -203,7 +204,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         contents = isMultiset ? wrapInMultisetWithMapping(contents, shouldHaveOrderByToken) : wrapInField(contents);
 
-        return optionalSelectIsEnabled()
+        return optionalSelectOnSubqueriesIsEnabled()
                 ? wrapSelectIfRequested(context.getGraphPath(field), indentIfMultiline(contents))
                 : contents;
     }
@@ -283,11 +284,15 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 throw new IllegalArgumentException("No table found for field " + field.getName());
             }
 
-            innerRowCode = CodeBlock.of(
+            var externalFieldCode = CodeBlock.of(
                     "$L.$L($L)",
                     getImportReferenceOfValidExtensionMethod(field, table.getName()),
                     field.getName(),
                     context.getTargetAlias());
+
+            innerRowCode = optionalSelectOnExternalFieldsIsEnabled()
+                    ? wrapSelectIfRequested(context.getGraphPath(field), externalFieldCode)
+                    : externalFieldCode;
         } else if (processedSchema.invokesSubquery(field, context.getTargetTable())) {
             var fieldContext = context.nextContext(field);
             fieldSource = fieldContext.renderQuerySource(getLocalTable()).toString();
