@@ -108,6 +108,7 @@
                             <outputPackage>${generatedGraphitronPackage}</outputPackage>
                             <externalReferenceImports>
                                 <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
+                                <externalReferenceImport>no.sikt.graphitron.example.service.CustomerExternalFields</externalReferenceImport>
                             </externalReferenceImports>
                             <userSchemaFiles>
                                 <schemaFile>schema.graphql</schemaFile>
@@ -119,7 +120,10 @@
                             </scalars>
                             <useJdbcBatchingForDeletes>false</useJdbcBatchingForDeletes>
                             <useJdbcBatchingForInserts>false</useJdbcBatchingForInserts>
-                            <optionalSelect><onSubqueryReferences>true</onSubqueryReferences></optionalSelect>
+                            <optionalSelect>
+                                <onSubqueryReferences>true</onSubqueryReferences>
+                                <onExternalFields>true</onExternalFields>
+                            </optionalSelect>
                         </configuration>
                     </execution>
                 </executions>

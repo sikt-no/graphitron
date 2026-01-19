@@ -33,4 +33,5 @@ public interface Validator {
     List<? extends ExternalReference> getExternalReferences();
 
     Set<String> getExternalReferenceImports();
+
 }

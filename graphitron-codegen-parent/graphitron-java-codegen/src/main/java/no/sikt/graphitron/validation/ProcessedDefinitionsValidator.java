@@ -1470,7 +1470,7 @@ public class ProcessedDefinitionsValidator {
                                     .toList();
 
                             if (methods.isEmpty()) {
-                                addErrorMessage("No method found for field " + field.getName() + "in type " + typeName);
+                                addErrorMessage("No method found for field " + field.getName() + " in type " + typeName);
                                 return;
                             }
 
