@@ -22,9 +22,11 @@ This means jOOQ isn’t just an implementation detail of Graphitron. It’s the 
 
 **Why we chose it.** GraphQL-Java implements an open specification governed by the GraphQL Foundation, not a single company. Multiple implementations exist across languages. We’re betting on the standard as much as the library.
 
-It’s fully open source and has been the standard Java implementation since GraphQL gained adoption.
+**Licensing.** It’s fully open source and has been the standard Java implementation since GraphQL gained adoption.
 
 **How we use it.** Graphitron generates code that plugs into GraphQL-Java’s DataFetcher and TypeResolver interfaces. You won’t typically write GraphQL-Java code directly—Graphitron handles that.
+
+**Where you write code.** If you use the @notGenerated directive then you'll be dealing with graphql-java directly. This is very rarely useful.
 
 ## Why These Matter
 
