@@ -15,13 +15,6 @@ type FilmListEdge {
     node: FilmList
 }
 
-type PageInfo {
-    hasPreviousPage: Boolean!
-    hasNextPage: Boolean!
-    startCursor: String
-    endCursor: String
-}
-
 type FilmList @table(name: "FILM_LIST") {
     title: String
     description: String

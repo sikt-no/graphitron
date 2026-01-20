@@ -100,6 +100,7 @@ public class ProcessedDefinitionsValidator {
         validateWrapperTypesWithPreviousTable();
         validateJavaRecordFieldMappings();
         validatePaginatedFieldsHaveOrdering();
+        validateDefaultOrderNotOnInterfaceOrUnion();
 
         logWarnings();
         throwIfErrors();
@@ -1671,8 +1672,13 @@ public class ProcessedDefinitionsValidator {
     }
 
     /**
-     * Validates that paginated fields on tables without primary keys have either @defaultOrder or @orderBy.
+     * Validates that paginated fields on tables without primary keys have stable ordering.
      * Without ordering, cursor-based pagination produces unstable results.
+     * <p>
+     * For tables without primary keys, we need one of:
+     * - @defaultOrder directive (provides fallback ordering)
+     * - non-nullable @orderBy (user must always provide ordering)
+     * - both @orderBy and @defaultOrder (nullable orderBy with fallback)
      */
     private void validatePaginatedFieldsHaveOrdering() {
         allFields.stream()
@@ -1686,18 +1692,58 @@ public class ProcessedDefinitionsValidator {
                     var recordType = schema.getRecordType(field);
                     var tableName = recordType.getTable().getMappingName();
                     if (!tableHasPrimaryKey(tableName)) {
-                        var hasOrderBy = field.getOrderField().isPresent();
                         var hasDefaultOrder = field.getDefaultOrderIndex().isPresent();
-                        if (!hasOrderBy && !hasDefaultOrder) {
-                            addErrorMessage(
-                                    "Paginated field '%s' in type '%s' requires @defaultOrder or @orderBy directive because table '%s' has no primary key. " +
-                                            "Without ordering, cursor-based pagination produces unstable results.",
-                                    field.getName(),
-                                    field.getContainerTypeName(),
-                                    tableName
-                            );
+                        var orderByField = field.getOrderField();
+                        var hasNonNullableOrderBy = orderByField.isPresent() && orderByField.get().isNonNullable();
+
+                        if (!hasDefaultOrder && !hasNonNullableOrderBy) {
+                            if (orderByField.isPresent()) {
+                                // Has nullable @orderBy but no @defaultOrder
+                                addErrorMessage(
+                                        "Paginated field '%s' in type '%s' has nullable @%s but no @%s directive. " +
+                                                "Table '%s' has no primary key, so either make the orderBy argument non-nullable (orderBy: ...!) " +
+                                                "or add @%s to provide fallback ordering when orderBy is not provided.",
+                                        field.getName(),
+                                        field.getContainerTypeName(),
+                                        ORDER_BY.getName(),
+                                        DEFAULT_ORDER.getName(),
+                                        tableName,
+                                        DEFAULT_ORDER.getName()
+                                );
+                            } else {
+                                // No @orderBy and no @defaultOrder
+                                addErrorMessage(
+                                        "Paginated field '%s' in type '%s' requires @%s or @%s directive. " +
+                                                "Table '%s' has no primary key, so without ordering, cursor-based pagination produces unstable results.",
+                                        field.getName(),
+                                        field.getContainerTypeName(),
+                                        DEFAULT_ORDER.getName(),
+                                        ORDER_BY.getName(),
+                                        tableName
+                                );
+                            }
                         }
                     }
                 });
+    }
+
+    /**
+     * Validates that @defaultOrder directive is not used on fields returning interface or union types.
+     * This feature is not yet supported for interface/union queries.
+     */
+    private void validateDefaultOrderNotOnInterfaceOrUnion() {
+        allFields.stream()
+                .filter(field -> field.getDefaultOrderIndex().isPresent())
+                .filter(field -> schema.isInterface(field) || schema.isUnion(field))
+                .forEach(field -> addErrorMessage(
+                        "@%s directive on field '%s' in type '%s' is not supported because the field returns %s type '%s'. " +
+                                "@%s is not yet supported for interface or union queries.",
+                        DEFAULT_ORDER.getName(),
+                        field.getName(),
+                        field.getContainerTypeName(),
+                        schema.isInterface(field) ? "interface" : "union",
+                        field.getTypeName(),
+                        DEFAULT_ORDER.getName()
+                ));
     }
 }
