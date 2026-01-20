@@ -57,6 +57,11 @@
                     <schemaRootDirectories>
                         <directory>${project.basedir}/src/main/resources/graphql</directory>
                     </schemaRootDirectories>
+                    <schemaFiles>
+                        <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/generator-schema.graphql</schemaFile>
+                    </schemaFiles>
+                    <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
+                    <makeNodeStrategy>true</makeNodeStrategy>
                 </configuration>
                 <executions>
                     <execution>
@@ -88,10 +93,6 @@
                             <goal>generate</goal>
                         </goals>
                         <configuration>
-                            <schemaFiles>
-                                <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/generator-schema.graphql</schemaFile>
-                            </schemaFiles>
-                            <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
                             <maxAllowedPageSize>1000</maxAllowedPageSize>
                             <recordValidation>
                                 <enabled>true</enabled>
@@ -104,7 +105,6 @@
                             <userSchemaFiles>
                                 <schemaFile>schema.graphql</schemaFile>
                             </userSchemaFiles>
-                            <makeNodeStrategy>true</makeNodeStrategy>
                             <scalars>
                                 <class>
                                     <fullyQualifiedClassName>no.sikt.graphitron.example.service.ConsumerProvidedScalars</fullyQualifiedClassName>
@@ -112,21 +112,6 @@
                             </scalars>
                             <useJdbcBatchingForDeletes>false</useJdbcBatchingForDeletes>
                             <useJdbcBatchingForInserts>false</useJdbcBatchingForInserts>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>default-cli</id>
-                        <!-- The @Execute annotation on ValidateMojo forks lifecycle to generate-resources first -->
-                        <phase>validate</phase>
-                        <goals>
-                            <goal>validate</goal>
-                        </goals>
-                        <configuration>
-                            <schemaFiles>
-                                <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/generator-schema.graphql</schemaFile>
-                            </schemaFiles>
-                            <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
-                            <makeNodeStrategy>true</makeNodeStrategy>
                         </configuration>
                     </execution>
                 </executions>
