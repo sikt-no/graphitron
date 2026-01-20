@@ -140,7 +140,7 @@ directive @index(name: String) on ENUM_VALUE
 """
 Specifies the default sort order for this field when no @orderBy input is provided.
 Uses a database index for consistent, efficient sorting.
-If @orderBy is also present and the user provides an orderBy value, that takes precedence.
+If @orderBy input is also present and the user provides an orderBy value, that takes precedence.
 """
 directive @defaultOrder(
   """Name of the database index to use for sorting"""

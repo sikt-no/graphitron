@@ -1,7 +1,8 @@
 type Query {
     # FILM_LIST is a view without primary key
-    # With non-nullable @orderBy (orderBy!), this should pass validation because user must always provide ordering
-    filmLists(first: Int, after: String, orderBy: FilmListOrderByInput! @orderBy): FilmListConnection
+    # With nullable @orderBy but no @defaultOrder, this should fail validation
+    # because when user doesn't provide orderBy, there's no fallback ordering
+    filmLists(first: Int, after: String, orderBy: FilmListOrderByInput @orderBy): FilmListConnection
 }
 
 type FilmListConnection {
@@ -26,7 +27,6 @@ input FilmListOrderByInput {
 }
 
 enum FilmListOrderByField {
-    # Note: idx_title exists on FILM table, not FILM_LIST view - but validation only checks directive presence
     TITLE @index(name: "idx_title")
 }
 
