@@ -1,6 +1,6 @@
 # What Graphitron Generates
 
-This document describes the vocabulary and taxonomy of generated code. For what triggers code generation, see [Code Generation Triggers](CODE-GENERATION-TRIGGERS.md).
+This document describes the vocabulary and taxonomy of generated code.
 
 ---
 
@@ -146,6 +146,5 @@ This also avoids N+1 queries but with two round-trips instead of one.
 ---
 
 **See also:**
-- [Code Generation Triggers](CODE-GENERATION-TRIGGERS.md) - What schema patterns trigger what code
 - [graphitron-java-codegen README](../graphitron-codegen-parent/graphitron-java-codegen/README.md) - Complete directive reference
 - [Graphitron Principles](GRAPHITRON-PRINCIPLES.md) - Design philosophy

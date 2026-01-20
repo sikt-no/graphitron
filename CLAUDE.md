@@ -37,7 +37,6 @@ The `/docs` folder contains conceptual guides explaining Graphitron's design, ph
 - **Dependencies**: [/docs/DEPENDENCIES.md](/docs/DEPENDENCIES.md) - Why we chose jOOQ and GraphQL-Java as foundational dependencies
 - **What Graphitron Generates**: [/docs/WHAT-GRAPHITRON-GENERATES.md](/docs/WHAT-GRAPHITRON-GENERATES.md) - Vocabulary and taxonomy of generated code (classes, naming conventions, patterns)
 - **Query Taxonomy**: [/docs/QUERY-TAXONOMY.md](/docs/QUERY-TAXONOMY.md) - Vocabulary for discussing Queries (SQL execution methods) and QueryParts (SQL fragment builders)
-- **Code Generation Triggers**: [/docs/CODE-GENERATION-TRIGGERS.md](/docs/CODE-GENERATION-TRIGGERS.md) - Quick reference: what schema patterns trigger what code generation
 - **Security**: [/docs/SECURITY.md](/docs/SECURITY.md) - Security model and database-level enforcement approach
 
 ### Technical Reference Documentation

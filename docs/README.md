@@ -20,11 +20,9 @@ This folder contains documentation about Graphitron's design, philosophy, and ho
 
 5. **[Query Taxonomy](QUERY-TAXONOMY.md)** - Vocabulary for discussing Queries (methods that execute SQL) and QueryParts (methods that build SQL fragments).
 
-6. **[Code Generation Triggers](CODE-GENERATION-TRIGGERS.md)** - Reference for what schema patterns trigger what code generation. Use this when you need to know "if I write X in my schema, what will Graphitron generate?"
-
 ## Security
 
-7. **[Security](SECURITY.md)** - Graphitron's security model and why we chose database-level security enforcement.
+6. **[Security](SECURITY.md)** - Graphitron's security model and why we chose database-level security enforcement.
 
 ## Document Summary
 
@@ -35,7 +33,6 @@ This folder contains documentation about Graphitron's design, philosophy, and ho
 | [Dependencies](DEPENDENCIES.md) | Why jOOQ and GraphQL-Java | When evaluating Graphitron or learning to extend it |
 | [What Graphitron Generates](WHAT-GRAPHITRON-GENERATES.md) | Generated class structure | When learning the codebase or debugging |
 | [Query Taxonomy](QUERY-TAXONOMY.md) | Queries and QueryParts vocabulary | When discussing query generation features |
-| [Code Generation Triggers](CODE-GENERATION-TRIGGERS.md) | Schema → generated code reference | When writing schemas or troubleshooting |
 | [Security](SECURITY.md) | Security model explanation | When designing access control |
 
 ## Other Documentation

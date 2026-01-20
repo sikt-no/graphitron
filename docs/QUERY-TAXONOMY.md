@@ -228,5 +228,4 @@ Loader Query (separate execution)
 
 **See also:**
 - [What Graphitron Generates](WHAT-GRAPHITRON-GENERATES.md) - Generated class structure
-- [Code Generation Triggers](CODE-GENERATION-TRIGGERS.md) - What schema patterns trigger what
 - [graphitron-java-codegen README](../graphitron-codegen-parent/graphitron-java-codegen/README.md) - Directive reference
