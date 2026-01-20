@@ -18,6 +18,7 @@ public class VariableNames {
             VAR_PATH_HERE = internalPrefix("pathHere"),
             VAR_ARGS = internalPrefix("args"),
             VAR_ENV = internalPrefix("env"),
+            VAR_ENV_HELPER = internalPrefix("envHelper"),
             VAR_SELECT = internalPrefix("select"),
             VAR_VALIDATION_ERRORS = internalPrefix("validationErrors"),
             VAR_PATHS_FOR_PROPERTIES = internalPrefix("pathsForProperties"),
