@@ -33,8 +33,8 @@ public abstract class AbstractGraphitronMojo extends AbstractMojo {
     /**
      * Whether type ID is required on Node types.
      */
-    @Parameter(property = "graphitron.requireTypeIdOnNode", defaultValue = "false")
-    protected boolean requireTypeIdOnNode;
+    @Parameter(property = "generate.experimental_requireTypeIdOnNode", defaultValue = "false")
+    protected boolean experimental_requireTypeIdOnNode;
 
     public Set<String> getSchemaFiles() {
         return schemaFiles;
@@ -57,6 +57,6 @@ public abstract class AbstractGraphitronMojo extends AbstractMojo {
     }
 
     public boolean requireTypeIdOnNode() {
-        return requireTypeIdOnNode;
+        return experimental_requireTypeIdOnNode;
     }
 }
