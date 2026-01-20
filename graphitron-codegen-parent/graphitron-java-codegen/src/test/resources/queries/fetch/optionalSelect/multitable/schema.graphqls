@@ -1,0 +1,18 @@
+type Query {
+  payments: Payment
+}
+
+union Payment = PaymentTypeOne | PaymentTypeTwo
+
+type PaymentTypeOne @table(name: "PAYMENT_P2007_01") {
+  amount: Int
+}
+
+type PaymentTypeTwo @table(name: "PAYMENT_P2007_02") {
+  amount: Int
+  rental: Rental
+}
+
+type Rental @table {
+  id: ID!
+}

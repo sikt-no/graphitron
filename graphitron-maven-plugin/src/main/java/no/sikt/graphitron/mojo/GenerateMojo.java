@@ -2,6 +2,7 @@ package no.sikt.graphitron.mojo;
 
 import no.sikt.graphitron.configuration.CodeGenerationThresholds;
 import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.configuration.OptionalSelect;
 import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.configuration.externalreferences.ExternalMojoClassReference;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
@@ -100,6 +101,10 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @SuppressWarnings("unused")
     private CodeGenerationThresholds codeGenerationThresholds;
 
+    @Parameter(property = "generate.optionalSelect")
+    @SuppressWarnings("unused")
+    private OptionalSelect optionalSelect;
+
     @Override
     public void execute() throws MojoExecutionException {
         try {
@@ -195,5 +200,10 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @Override
     public Set<String> getExternalReferenceImports() {
         return externalReferenceImports;
+    }
+
+    @Override
+    public OptionalSelect getOptionalSelect() {
+        return optionalSelect;
     }
 }

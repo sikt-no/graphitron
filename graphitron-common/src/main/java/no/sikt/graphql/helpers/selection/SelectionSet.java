@@ -3,10 +3,12 @@ package no.sikt.graphql.helpers.selection;
 import graphql.schema.DataFetchingFieldSelectionSet;
 import graphql.schema.SelectedField;
 import org.jooq.Field;
+import org.jooq.SelectField;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static org.jooq.impl.DSL.inline;
@@ -49,6 +51,10 @@ public class SelectionSet {
 
     public <T> Field<T> optional(String path, Field<T> field) {
         return contains(path) ? field : noField(inline((T) null));
+    }
+
+    public <T> SelectField<T> ifRequested(String path, Supplier<SelectField<T>> fieldSupplier) {
+        return contains(path) ? fieldSupplier.get() : noField(inline((T) null));
     }
 
     public boolean contains(String path) {

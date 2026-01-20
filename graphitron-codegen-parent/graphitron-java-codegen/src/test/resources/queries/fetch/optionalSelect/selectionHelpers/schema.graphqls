@@ -1,0 +1,16 @@
+type Query {
+    query: Customer
+}
+
+type Customer @table {
+    name: String! @field(name: "FIRST_NAME")
+    address: Address
+}
+
+type Address @table {
+    city: City
+}
+
+type City @table {
+    id: ID!
+}

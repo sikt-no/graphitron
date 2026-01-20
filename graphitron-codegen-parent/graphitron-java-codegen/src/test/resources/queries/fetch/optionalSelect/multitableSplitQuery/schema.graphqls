@@ -1,0 +1,22 @@
+type Query {
+  query: Customer
+}
+
+union Payment = PaymentTypeOne | PaymentTypeTwo
+
+type Customer @table {
+  payments: Payment @splitQuery
+}
+
+type PaymentTypeOne @table(name: "PAYMENT_P2007_01") {
+  amount: Int
+}
+
+type PaymentTypeTwo @table(name: "PAYMENT_P2007_02") {
+  amount: Int
+  rental: Rental
+}
+
+type Rental @table {
+  id: ID!
+}

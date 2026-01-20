@@ -43,7 +43,6 @@ public class GeneratorConfig {
     private static boolean requireTypeIdOnNode = false;
 
     private static int maxAllowedPageSize;
-    private final static boolean USE_OPTIONAL_SELECTS = false;
 
     private static ExternalReferences externalReferences;
     private static Set<String> externalReferenceImports;
@@ -52,6 +51,8 @@ public class GeneratorConfig {
     private static RecordValidation recordValidation;
 
     private static CodeGenerationThresholds codeGenerationThresholds;
+
+    private static OptionalSelect optionalSelect = new OptionalSelect();
 
     /**
      * Set the generator properties from code. Intended for tests.
@@ -115,6 +116,7 @@ public class GeneratorConfig {
         alwaysUsePrimaryKeyInSplitQueries = true;
         codeGenerationThresholds = mojo.getCodeGenerationThresholds();
         requireTypeIdOnNode = mojo.requireTypeIdOnNode();
+        optionalSelect = mojo.getOptionalSelect();
     }
 
     /**
@@ -282,10 +284,6 @@ public class GeneratorConfig {
         return maxAllowedPageSize;
     }
 
-    public static boolean useOptionalSelects() {
-        return USE_OPTIONAL_SELECTS;
-    }
-
     public static CodeGenerationThresholds getCodeGenerationThresholds() {
         return codeGenerationThresholds;
     }
@@ -300,5 +298,14 @@ public class GeneratorConfig {
 
     public static void setRequireTypeIdOnNode(boolean require) {
         requireTypeIdOnNode = require;
+    }
+
+    public static void setUseOptionalSelects(boolean enable) {
+        optionalSelect.setOnExternalFields(enable);
+        optionalSelect.setOnSubqueryReferences(enable);
+    }
+
+    public static boolean optionalSelectIsEnabled() {
+        return optionalSelect.onSubqueryReferences() || optionalSelect.onExternalFields();
     }
 }
