@@ -1,0 +1,11 @@
+type Query {
+    query(in: FilmInput): ID @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Film implements Node @node @table {
+    id: ID!
+}
+
+input FilmInput @record(record: {className: "no.sikt.graphitron.codereferences.records.FilmJavaRecord"}) {
+    sequel: ID @field(name: "film") @reference(path: [{table: "FILM"}]) @nodeId(typeName: "Film")
+}
