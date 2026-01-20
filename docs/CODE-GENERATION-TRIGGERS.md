@@ -31,7 +31,7 @@ This table shows what generates what. Look up your schema pattern to see what ge
 | `@discriminate` on interface/union | Directive | Specifies discriminator column | Type resolver config |
 | `@discriminator` on type | Directive | Specifies discriminator value for type | Type resolver |
 | `@record` on type | Directive | Java record + transformer to jOOQ | Input mapping |
-| `@mutation` on field | Directive | INSERT/UPDATE/DELETE query | Mutation method |
+| `@mutation` on field | Directive | INSERT/UPDATE/DELETE/UPSERT query | Mutation method |
 | `@notGenerated` on field | Directive | Skip generation (user implements) | - |
 | **Implicit Behaviors** |
 | Field has GraphQL arguments (except root) | **Implicit** | DataLoader via `DataFetcherHelper` | Loader method |
