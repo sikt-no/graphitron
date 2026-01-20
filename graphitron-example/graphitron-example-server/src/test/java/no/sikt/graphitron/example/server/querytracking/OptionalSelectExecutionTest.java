@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class OptionalSelectExecutionTest extends QueryTrackingTestBase {
 
     @Test
-    @DisplayName("Subquery references are only selected when the corresponding field is requested")
+    @DisplayName("Subquery references are NOT selected when the corresponding field is NOT requested")
     void subqueryReferenceIsSkippedWhenNotRequested() {
         executeQuery("""
                 {
@@ -59,7 +59,7 @@ public class OptionalSelectExecutionTest extends QueryTrackingTestBase {
     }
 
     @Test
-    @DisplayName("Subquery references after a splitQuery field should be skipped when not requested")
+    @DisplayName("Subquery references after a splitQuery field are NOT selected when NOT requested")
     void subqueryReferenceAfterSplitQueryFieldIsSkippedWhenNotRequested() {
         executeQuery("""
                     {
