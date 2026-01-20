@@ -1764,3 +1764,4 @@ GRANT ALL ON SCHEMA public TO PUBLIC;
 -- PostgreSQL database dump complete
 --
 
+ALTER TABLE customer ADD COLUMN IF NOT EXISTS usernames TEXT[];

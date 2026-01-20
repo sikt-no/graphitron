@@ -286,7 +286,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     getImportReferenceOfValidExtensionMethod(field, table.getName()),
                     field.getName(),
                     context.getTargetAlias());
-        } else if (processedSchema.invokesSubquery(field, getLocalTable())) {
+        } else if (processedSchema.invokesSubquery(field, context.getTargetTable())) {
             var fieldContext = context.nextContext(field);
             fieldSource = fieldContext.renderQuerySource(getLocalTable()).toString();
             innerRowCode = generateCorrelatedSubquery(field, fieldContext);
@@ -579,13 +579,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             );
         }
 
-        var content = CodeBlock.of(
-                "$L.$N$L",
-                renderedSource,
-                field.getUpperCaseName(),
-                overrideEnum ? CodeBlock.empty() : toJOOQEnumConverter(field.getTypeName(), processedSchema)
-        );
+        var convertArrayFieldToList = field.isIterableWrapped()
+                && getFieldType(context.getTargetTable().getName(), field.getUpperCaseName()).map(Class::isArray).orElse(false);
 
+        var content = CodeBlock.builder()
+                .add("$L.$N", renderedSource, field.getUpperCaseName())
+                .addIf(!overrideEnum, toJOOQEnumConverter(field.getTypeName(), processedSchema))
+                .addIf(convertArrayFieldToList, arrayToListConverter())
+                .build();
 
         return context.getShouldUseOptional() && useOptionalSelects() ? (CodeBlock.of("$N.optional($S, $L)", VAR_SELECT, context.getGraphPath() + field.getName(), content)) : content;
     }

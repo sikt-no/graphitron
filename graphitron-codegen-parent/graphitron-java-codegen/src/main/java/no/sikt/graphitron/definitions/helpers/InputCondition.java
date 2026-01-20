@@ -1,12 +1,14 @@
 package no.sikt.graphitron.definitions.helpers;
 
 import no.sikt.graphitron.definitions.fields.InputField;
+import no.sikt.graphitron.mappings.JavaPoetClassName;
 
 import java.util.LinkedHashSet;
 
 
 public class InputCondition extends InputComponent {
     private final Boolean isOverriddenByAncestors;
+    private final boolean isArray;
 
     private InputCondition(
             InputField input,
@@ -20,6 +22,8 @@ public class InputCondition extends InputComponent {
             Boolean isWrappedInList) {
         super(input, sourceInput, startName, namePath, nullChecks, pastWasIterable, isWrappedInList, hasRecord);
         this.isOverriddenByAncestors = isOverriddenByAncestors;
+        this.isArray = input.isIterableWrapped() // This will not cover all array fields, but good enough for now
+                && (JavaPoetClassName.INTEGER.className.equals(input.getTypeClass()) || JavaPoetClassName.STRING.className.equals(input.getTypeClass()));
         inferAdditionalChecks(input);
     }
 
@@ -37,7 +41,9 @@ public class InputCondition extends InputComponent {
             this.nullChecks.add(name + " != null");
         }
 
-        if (input.isIterableWrapped()) {
+        if (isArray && hasRecord()) {
+            this.nullChecks.add(name + ".length > 0");
+        } else if (input.isIterableWrapped()) {
             this.nullChecks.add(name + ".size() > 0");
         }
     }
