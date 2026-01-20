@@ -38,4 +38,4 @@ These dependencies shape your experience with Graphitron differently:
 
 **GraphQL-Java is under the hood.** You won’t write GraphQL-Java code directly, but if you want to understand what Graphitron generates—or debug it—knowing how GraphQL-Java executes queries helps.
 
-We document these dependencies explicitly because they’re foundational. They’re the bet we’ve made.
+We document these dependencies explicitly because they’re foundational.
