@@ -92,6 +92,13 @@ public class OutputTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Containing array scalar field")
+    void arrayScalarField() {
+        assertGeneratedContentContains("arrayScalarField",
+                "row(_a_customer.USERNAMES.convertFrom(Functions.nullOnAllNull(_iv_it -> List.of(_iv_it)))).mapping(Functions.nullOnAllNull(Customer::");
+    }
+
+    @Test
     @DisplayName("Field annotated with @externalField should use method extended on field's jooq table")
     void externalField() {
         assertGeneratedContentContains("externalField",

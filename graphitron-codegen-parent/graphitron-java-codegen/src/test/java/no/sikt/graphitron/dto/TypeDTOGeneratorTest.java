@@ -31,6 +31,13 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
     }
 
     @Test
+    @DisplayName("Type with array table field")
+    void arrayTableField() {
+        assertGeneratedContentContains("arrayTableField",
+                "List<String> usernames");
+    }
+
+    @Test
     @DisplayName("Type with multiple fields")
     void multipleFields() {
         assertGeneratedContentMatches("multipleFields");
