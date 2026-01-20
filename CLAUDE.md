@@ -28,11 +28,25 @@ graphitron/
 ```
 
 ## Documentation
+
+### Conceptual Documentation (Start Here)
+The `/docs` folder contains conceptual guides explaining Graphitron's design, philosophy, and how it works:
+- **Documentation Guide**: [/docs/README.md](/docs/README.md) - **START HERE** - Navigation and reading order for all documentation
+- **Vision and Goal**: [/docs/VISION-AND-GOAL.md](/docs/VISION-AND-GOAL.md) - What problem Graphitron solves and how it approaches the solution
+- **Graphitron Principles**: [/docs/GRAPHITRON-PRINCIPLES.md](/docs/GRAPHITRON-PRINCIPLES.md) - Design philosophy and long-term thinking that shapes architectural decisions
+- **Dependencies**: [/docs/DEPENDENCIES.md](/docs/DEPENDENCIES.md) - Why we chose jOOQ and GraphQL-Java as foundational dependencies
+- **What Graphitron Generates**: [/docs/WHAT-GRAPHITRON-GENERATES.md](/docs/WHAT-GRAPHITRON-GENERATES.md) - Vocabulary and taxonomy of generated code (classes, naming conventions, patterns)
+- **Query Taxonomy**: [/docs/QUERY-TAXONOMY.md](/docs/QUERY-TAXONOMY.md) - Vocabulary for discussing Queries (SQL execution methods) and QueryParts (SQL fragment builders)
+- **Code Generation Triggers**: [/docs/CODE-GENERATION-TRIGGERS.md](/docs/CODE-GENERATION-TRIGGERS.md) - Quick reference: what schema patterns trigger what code generation
+- **Security**: [/docs/SECURITY.md](/docs/SECURITY.md) - Security model and database-level enforcement approach
+
+### Technical Reference Documentation
 - **Main README**: [/README.md](/README.md) - Project overview and getting started
-- **Example README**: [/graphitron-example/README.md](/graphitron-example/README.md) - Sakila example implementation
-- **Schema Transform README**: [/graphitron-schema-transform/README.md](/graphitron-schema-transform/README.md) - Schema transformation features
-- **Java Codegen README**: [/graphitron-codegen-parent/graphitron-java-codegen/README.md](/graphitron-codegen-parent/graphitron-java-codegen/README.md)
-- **JavaPoet README**: [/graphitron-codegen-parent/graphitron-javapoet/README.md](/graphitron-codegen-parent/graphitron-javapoet/README.md)
+- **Example README**: [/graphitron-example/README.md](/graphitron-example/README.md) - Sakila example implementation with quickstart guide
+- **Schema Transform README**: [/graphitron-schema-transform/README.md](/graphitron-schema-transform/README.md) - Schema transformation features (feature flags, Federation, Relay)
+- **Java Codegen README**: [/graphitron-codegen-parent/graphitron-java-codegen/README.md](/graphitron-codegen-parent/graphitron-java-codegen/README.md) - Complete directive reference with detailed examples (1500+ lines)
+- **Common Module README**: [/graphitron-common/README.md](/graphitron-common/README.md) - Exception handling framework and shared utilities
+- **JavaPoet README**: [/graphitron-codegen-parent/graphitron-javapoet/README.md](/graphitron-codegen-parent/graphitron-javapoet/README.md) - About the JavaPoet fork
 
 ## Key Architecture
 
