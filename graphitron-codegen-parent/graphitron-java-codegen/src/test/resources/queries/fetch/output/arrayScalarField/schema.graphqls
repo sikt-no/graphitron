@@ -1,0 +1,7 @@
+type Query {
+  query: Customer
+}
+
+type Customer @table {
+  usernames: [String]
+}
