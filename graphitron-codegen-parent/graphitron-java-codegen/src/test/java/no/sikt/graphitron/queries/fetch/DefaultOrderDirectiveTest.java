@@ -42,9 +42,9 @@ public class DefaultOrderDirectiveTest extends GeneratorTest {
     @DisplayName("Paginated query with default order")
     void paginatedWithDefaultOrder() {
         assertGeneratedContentContains("paginated",
-                "getSortFields(_a_customer, \"IDX_LAST_NAME\", \"ASC\")",
+                "_iv_orderFields = QueryHelper.getSortFields(_a_customer, \"IDX_LAST_NAME\", \"ASC\")",
                 ".orderBy(_iv_orderFields)",
-                "QueryHelper.getOrderByToken"
+                "QueryHelper.getOrderByToken(_a_customer, _iv_orderFields)"
         );
     }
 

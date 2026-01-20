@@ -1,0 +1,13 @@
+[
+  {
+    "_comment": "orderBy provided - should use TITLE DESC instead of defaultOrder (idx_title ASC)",
+    "orderBy": {
+      "orderByField": "TITLE",
+      "direction": "DESC"
+    }
+  },
+  {
+    "_comment": "orderBy null - should fallback to defaultOrder (idx_title ASC)",
+    "orderBy": null
+  }
+]

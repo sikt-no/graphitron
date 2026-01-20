@@ -1,0 +1,19 @@
+# Tests that @orderBy takes precedence over @defaultOrder when orderBy input is provided
+# The filmsWithDefaultOrder query has @defaultOrder(index: "idx_title") but when orderBy
+# is explicitly provided, it should use the provided orderBy instead
+query DefaultOrderWithOrderBy ($orderBy: FilmsOrderByInput) {
+    filmsWithDefaultOrder(first: 3, orderBy: $orderBy) {
+        edges {
+            cursor
+            node {
+                id
+                title
+            }
+        }
+        pageInfo {
+            startCursor
+            endCursor
+            hasNextPage
+        }
+    }
+}
