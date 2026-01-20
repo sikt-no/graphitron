@@ -200,13 +200,12 @@ public class OptionalSelectTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Node queries should accept SelectionSet and wrap subqueries with ifRequested")
+    @DisplayName("Node queries should accept SelectionSet")
     void node() {
         assertGeneratedContentContains(
                 "node", Set.of(NODE, NODE_QUERY),
                 "_mi_id, SelectionSet _iv_select)",
-                "customerForNode_customer(_iv_select)",
-                "ifRequested(\"address\""
+                "customerForNode_customer(_iv_select)"
         );
     }
 

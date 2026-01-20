@@ -18,10 +18,10 @@ import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 /**
  * Generator that creates the data fetching methods for interface implementations, e.g. queries used by the node resolver.
  */
-public class NodeHelperDBMethodGenerator extends NestedFetchDBMethodGenerator {
+public class NodeSelectHelperDBMethodGenerator extends NestedFetchDBMethodGenerator {
     private final Set<ObjectField> objectFieldsReturningNode;
 
-    public NodeHelperDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema, Set<ObjectField> objectFieldsReturningNode) {
+    public NodeSelectHelperDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema, Set<ObjectField> objectFieldsReturningNode) {
         super(localObject, processedSchema);
         this.objectFieldsReturningNode = objectFieldsReturningNode;
     }

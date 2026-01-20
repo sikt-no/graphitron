@@ -9,10 +9,7 @@ import java.util.Map;
 import java.util.Set;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
-import org.jooq.Functions;
 import org.jooq.Record2;
-import org.jooq.SelectField;
-import org.jooq.impl.DSL;
 
 public class CustomerDBQueries {
     public static Map<String, Customer> customerForNode(DSLContext _iv_ctx, Set<String> _mi_id, SelectionSet _iv_select) {
@@ -25,10 +22,5 @@ public class CustomerDBQueries {
                 .from(_a_customer)
                 .where(_a_customer.hasIds(_mi_id))
                 .fetchMap(Record2::value1, Record2::value2);
-    }
-
-    private static SelectField<Customer> customerForNode_customer() {
-        var _a_customer = CUSTOMER.as("customer_2168032777");
-        return DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(Customer::new));
     }
 }
