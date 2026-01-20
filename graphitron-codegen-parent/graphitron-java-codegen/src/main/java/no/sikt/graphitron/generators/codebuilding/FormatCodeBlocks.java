@@ -436,6 +436,14 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return CodeBlock that wraps the provided CodeBlock in a call to SelectionSet#ifRequested.
+     */
+    @NotNull
+    public static CodeBlock wrapSelectIfRequested(String path, CodeBlock code) {
+        return CodeBlock.of("$N.ifRequested($S, () -> $L)", VAR_SELECT, path, indentIfMultiline(code));
+    }
+
+    /**
      * @return CodeBlock that wraps the provided CodeBlock in a jOOQ inline.
      */
     @NotNull

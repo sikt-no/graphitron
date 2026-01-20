@@ -16,11 +16,11 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.util.ArrayList;
 import java.util.List;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsEnabled;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asEntityQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getObjectMapTypeName;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_INPUT_MAP;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_RESULT;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.getFieldType;
 
@@ -57,6 +57,7 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
 
         return getDefaultSpecBuilder(asEntityQueryMethodName(targetType.getName()), mapType)
                 .addParameter(mapType, VAR_INPUT_MAP)
+                .addParameterIf(optionalSelectIsEnabled(), SELECTION_SET.className, VAR_SELECT)
                 .addCode(createAliasDeclarations(context.getAliasSet()))
                 .declare(VAR_RESULT, code.build())
                 .addCode(

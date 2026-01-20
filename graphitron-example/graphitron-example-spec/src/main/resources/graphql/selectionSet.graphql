@@ -1,0 +1,15 @@
+extend type Query {
+    customerForSelectionSetTest: [CustomerForSelectionSetTest!] @asConnection
+}
+
+# Do NOT change the order of any fields in this type as the generated SQL query is checked in OptionalSelectExecutionTest
+type CustomerForSelectionSetTest @table(name: "CUSTOMER"){
+    customerId: Int! @field(name: "CUSTOMER_ID")
+    address: Address!
+    addressId: Int! @field(name: "ADDRESS_ID")
+    cityId: Int @field(name: "CITY_ID") @reference(path: [{table: "ADDRESS"}, {table: "CITY"}])
+}
+
+extend type Store {
+    customerForSelectionSetTest: [CustomerForSelectionSetTest!] @asConnection
+}
