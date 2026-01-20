@@ -8,11 +8,7 @@ Graphitron is built on two foundational dependencies. These aren’t incidental 
 
 **Why we chose it.** jOOQ has been actively maintained since 2009. It solves a fundamental problem—type-safe database access—in a way that aligns with our philosophy: embrace SQL rather than replace it. The generated code is readable and debuggable. When something goes wrong, you can see exactly what SQL is being built.
 
-**Licensing.** jOOQ uses dual licensing. The open source edition supports open source databases (PostgreSQL, MySQL, SQLite, and others). Commercial databases require a commercial license.
-
-Graphitron works with either edition. If you’re using PostgreSQL or another supported open source database, you can use Graphitron with jOOQ’s open source version at no cost.
-
-We use the commercial license, which includes rights to the source code. If jOOQ’s maintainers disappeared tomorrow, we could continue.
+**Licensing.** jOOQ uses dual licensing. The open source edition supports recent versions of open source databases (PostgreSQL, MySQL, SQLite, and others). If you use old versions or commercial databases you'll need to purchase a license.
 
 **How we use it.** We embrace jOOQ fully. Its types and patterns permeate our generated code. We’re not wrapping it; we’re building on it.
 
