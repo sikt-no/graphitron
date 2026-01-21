@@ -7,7 +7,7 @@ import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
-import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.generators.context.MethodInputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
@@ -58,7 +58,7 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
             return MethodSpec.methodBuilder(target.getName()).build();
         }
 
-        var parser = new InputParser(target, processedSchema);
+        var parser = new MethodInputParser(target, processedSchema);
         var spec = getDefaultSpecBuilder(asQueryMethodName(target.getName(), getLocalObject().getName()), TypeName.INT)
                 .addParameters(parser.getMethodParameterSpecs(true, false, false));
 

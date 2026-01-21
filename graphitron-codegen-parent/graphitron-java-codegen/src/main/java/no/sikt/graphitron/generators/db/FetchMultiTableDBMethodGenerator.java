@@ -8,7 +8,7 @@ import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
-import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.generators.context.MethodInputParser;
 import no.sikt.graphitron.javapoet.*;
 import no.sikt.graphql.helpers.query.AfterTokenWithTypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -53,7 +53,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        var inputParser = new InputParser(target, processedSchema);
+        var inputParser = new MethodInputParser(target, processedSchema);
 
         var unionOrInterfaceDefinition = processedSchema.isUnion(target) ? processedSchema.getUnion(target) : processedSchema.getInterface(target);
 
@@ -266,7 +266,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
     public List<MethodSpec> generateWithSubselectMethods(ObjectField target) {
         var mainMethod = generate(target);
-        var methodInputs = new InputParser(target, processedSchema).getMethodParameterSpecs(false, false, true);
+        var methodInputs = new MethodInputParser(target, processedSchema).getMethodParameterSpecs(false, false, true);
         var unionOrInterfaceDefinition = processedSchema.isUnion(target)
                 ? processedSchema.getUnion(target)
                 : processedSchema.getInterface(target);

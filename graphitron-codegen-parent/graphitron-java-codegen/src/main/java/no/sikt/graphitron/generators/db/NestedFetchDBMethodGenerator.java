@@ -9,7 +9,7 @@ import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
-import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.generators.context.MethodInputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterSpec;
@@ -194,7 +194,7 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
                     .returns(ParameterizedTypeName.get(SELECT_FIELD.className, returnType));
 
             // Parameters: root adds full input params (for non-split queries), nested adds only table method inputs
-            var parser = new InputParser(isRootHelper ? target : methodState.rootField, processedSchema);
+            var parser = new MethodInputParser(isRootHelper ? target : methodState.rootField, processedSchema);
             if (isRootHelper && !processedSchema.isReferenceResolverField(target)) {
                 methodBuilder.addParameters(parser.getMethodParameterSpecs(true, false, false));
             } else if (!isRootHelper) {
@@ -242,7 +242,7 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
 
         var tableMethodInputs = collectTableMethodInputNames(methodState.rootFetchContext.getAliasSet());
         parameters.addAll(tableMethodInputs);
-        parameters.addAll(new InputParser(methodState.rootField, processedSchema).getContextFieldNames());
+        parameters.addAll(new MethodInputParser(methodState.rootField, processedSchema).getContextFieldNames());
         if (optionalSelectIsEnabled()) parameters.add(VAR_SELECT);
 
         return CodeBlock.of("$L($L)", helperMethodName, String.join(", ", parameters));

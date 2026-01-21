@@ -6,7 +6,7 @@ import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
-import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.generators.context.MethodInputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.directives.GenerationDirective;
@@ -68,7 +68,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
         // For record types that are NOT reference resolvers, extract the row mapping into a helper method
         var isReferenceResolverField = processedSchema.isReferenceResolverField(target);
-        var parser = new InputParser(target, processedSchema);
+        var parser = new MethodInputParser(target, processedSchema);
         var methodInputs = parser.getMethodInputNames(true, false, true);
         if (optionalSelectIsEnabled()) methodInputs.add(VAR_SELECT);
         if (shouldMakeNodeStrategy()) methodInputs.add(0, VAR_NODE_STRATEGY);

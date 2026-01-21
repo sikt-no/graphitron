@@ -3,7 +3,7 @@ package no.sikt.graphitron.definitions.mapping;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
-import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.generators.context.MethodInputParser;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
@@ -18,7 +18,7 @@ public class AliasWrapper {
     public AliasWrapper(Alias alias, GenerationField referenceObjectField, boolean isTargetTable, ProcessedSchema processedSchema) {
         this.alias = alias;
         this.tableMethod = referenceObjectField.hasTableMethodDirective() && isTargetTable ? referenceObjectField.getExternalMethod() : null;
-        this.inputNames = new InputParser((ObjectField) referenceObjectField, processedSchema).getMethodInputNames(false, false, true);
+        this.inputNames = new MethodInputParser((ObjectField) referenceObjectField, processedSchema).getMethodInputNames(false, false, true);
         this.referenceObjectField = referenceObjectField;
     }
 

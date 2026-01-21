@@ -2,21 +2,23 @@ package no.sikt.graphitron.generators.db;
 
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
+import no.sikt.graphitron.definitions.helpers.InputComponent;
 import no.sikt.graphitron.definitions.helpers.InputComponents;
-import no.sikt.graphitron.definitions.helpers.InputSetValue;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
+import no.sikt.graphitron.generators.context.DatabaseOperationInputParser;
 import no.sikt.graphitron.generators.context.FetchContext;
-import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.generators.context.MethodInputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.definitions.fields.containedtypes.MutationType.DELETE;
 import static no.sikt.graphitron.definitions.fields.containedtypes.MutationType.INSERT;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
@@ -64,7 +66,8 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException(String.format("Cannot infer target table for mutation %s.", target.formatPath())));
 
-        var parser = new InputParser(target, processedSchema);
+        var methodInputParser = new MethodInputParser(target, processedSchema);
+        var parsedDatabaseOperationInput = DatabaseOperationInputParser.parse(processedSchema, target);
 
         var contextForData = new FetchContext(
                 processedSchema,
@@ -76,13 +79,14 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
         CodeBlock selectBlock = processedSchema.isScalar(dataTarget) ? generateForField(dataTarget, contextForData) : generateSelectRow(contextForData);
         var code = CodeBlock.builder()
                 .add(createAliasDeclarations(contextForData.getAliasSet()))
-                .addIf(target.getMutationType().equals(DELETE), () -> getDeletePartOfQuery(targetTable.getName(), target))
-                .addIf(target.getMutationType().equals(INSERT), () -> getInsertPartOfQuery(targetTable.getName(), target))
+                .addIf(target.getMutationType().equals(DELETE), () -> getDeletePartOfQuery(targetTable.getName()))
+                .addIf(target.getMutationType().equals(INSERT), () -> getInsertPartOfQuery(targetTable.getName(), target, parsedDatabaseOperationInput))
+                .addIf(!target.getMutationType().equals(INSERT), () -> formatWhereConditions(target, parsedDatabaseOperationInput))
                 .add("\n.returningResult($L)\n", indentIfMultiline(selectBlock))
                 .add(setFetch(dataTarget));
 
         return getDefaultSpecBuilder(asQueryMethodName(target.getName(), getLocalObject().getName()), wrapListIf(returnType, dataTarget.isIterableWrapped()))
-                .addParameters(parser.getMethodParameterSpecs(true, false, false))
+                .addParameters(methodInputParser.getMethodParameterSpecs(true, false, false))
                 .addParameter(SELECTION_SET.className, VAR_SELECT)
                 .addCode(code.build())
                 .build();
@@ -93,22 +97,21 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
         return null;
     }
 
-    private CodeBlock getDeletePartOfQuery(String targetTable, ObjectField target) {
+    private CodeBlock getDeletePartOfQuery(String targetTable) {
         return CodeBlock.builder()
                 .add("return $N", VAR_CONTEXT)
                 .add(".deleteFrom($N)", targetTable)
                 .indent()
                 .indent()
-                .add("\n$L", formatWhereContentsForDeleteMutation(target))
                 .build();
     }
 
-    private CodeBlock getInsertPartOfQuery(String targetTable, ObjectField target) {
-        var inputConditions = getInputComponents(target);
+    private CodeBlock getInsertPartOfQuery(String targetTable, ObjectField target, InputComponents parsedInputComponents) {
         var setValueMap = new LinkedHashMap<CodeBlock, CodeBlock>();
-        var setValues = !inputConditions.independentSetValues().isEmpty()
-                ? inputConditions.independentSetValues()
-                : inputConditions.setValueTuple().setValues();
+        var setValues = !parsedInputComponents.independentSetValues().isEmpty()
+                ? parsedInputComponents.independentSetValues()
+                : parsedInputComponents.tuples().stream().findFirst().orElseThrow().components()
+                .stream().filter(InputComponent::isSetValueInput).toList();
 
         var recordInput = target.getArguments().stream()
                 .filter(processedSchema::hasJOOQRecord).findFirst()
@@ -155,7 +158,6 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
             }
         }
 
-
         var valuesContent = indentIfMultiline(CodeBlock.join(setValueMap.values(), ",\n"));
 
         if (recordInput.isIterableWrapped())  {
@@ -177,9 +179,9 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .build();
     }
 
-    protected CodeBlock formatWhereContentsForDeleteMutation(ObjectField target) {
+    protected CodeBlock formatWhereConditions(ObjectField target, InputComponents inputComponents) {
         var context = new FetchContext(processedSchema, target, getLocalObject(), false, true);
-        return formatJooqConditions(new ArrayList<>(getInputConditions(context, target)));
+        return CodeBlock.of("\n$L", formatJooqConditions(new ArrayList<>(getInputConditionCodeblocks(context, inputComponents))));
     }
 
     private CodeBlock setFetch(ObjectField referenceField) {
@@ -187,63 +189,6 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
         var resType = refObject == null ? referenceField.getTypeClass() : refObject.getGraphClassName();
         return CodeBlock.statementOf(".fetch$1L($2N -> $2N.into($3T.class))",
                 referenceField.isIterableWrapped() ? "" : "One", VAR_ITERATOR, resType);
-    }
-
-    private InputComponents getInputComponents(ObjectField referenceField) {
-        /*
-         * Currently only used for INSERT mutations, where all input is set values.
-         * This method will need more complex logic for UPDATE and UPSERT, as they will also have input conditions
-         * */
-        var setValues = new ArrayList<InputSetValue>();
-        var pathNameForIterableFields = new ArrayList<String>();
-
-        var inputBuffer = referenceField
-                .getNonReservedArguments()
-                .stream()
-                .map(it -> new InputSetValue(
-                                it,
-                                inputPrefix(inferFieldNamingConvention(it)),
-                                processedSchema.hasRecord(it)
-                        )
-                )
-                .collect(Collectors.toCollection(LinkedList::new));
-
-        while (!inputBuffer.isEmpty()) {
-            recursionCheck(inputBuffer.size());
-            var inputSetValue = inputBuffer.poll();
-            var inputField = inputSetValue.getInput();
-
-            if (processedSchema.isInputType(inputField)) {
-                inputBuffer.addAll(
-                        0,
-                        processedSchema.getInputType(inputField)
-                                .getFields()
-                                .stream()
-                                .map(inputSetValue::iterate)
-                                .toList()
-                );
-                if (inputField.isIterableWrapped()) {
-                    pathNameForIterableFields.add(inputSetValue.getNameWithPathString());
-                }
-            } else {
-                setValues.add(inputSetValue.applyTo(inputField));
-            }
-        }
-        var setValueTuple = pathNameForIterableFields
-                .stream()
-                .findFirst()
-                .map(s -> new InputComponents.SetValueTuple(
-                        s, setValues
-                        .stream()
-                        .filter(condition -> condition.getNamePath().startsWith(s))
-                        .collect(Collectors.toList())))
-                .orElse(null);
-
-        Optional.ofNullable(setValueTuple).map(InputComponents.SetValueTuple::setValues)
-                .orElse(List.of())
-                .forEach(setValues::remove);
-
-        return new InputComponents(List.of(), List.of(), setValues, setValueTuple, Map.of());
     }
 
     @Override
