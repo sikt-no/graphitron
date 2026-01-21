@@ -1,5 +1,0 @@
-scalar UnrecognizedScalar
-
-type Query {
-  query(createdDate: UnrecognizedScalar! @field(name: "CREATE_DATE")): CustomerTable
-}
