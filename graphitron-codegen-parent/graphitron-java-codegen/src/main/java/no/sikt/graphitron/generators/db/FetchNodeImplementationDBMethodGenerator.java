@@ -12,7 +12,6 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -34,7 +33,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 /**
  * Generator that creates the data fetching methods for interface implementations, e.g. queries used by the node resolver.
  */
-public class FetchNodeImplementationDBMethodGenerator extends NestedFetchDBMethodGenerator {
+public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGenerator {
     private final Set<ObjectField> objectFieldsReturningNode;
 
     public FetchNodeImplementationDBMethodGenerator(
@@ -107,26 +106,11 @@ public class FetchNodeImplementationDBMethodGenerator extends NestedFetchDBMetho
 
     @Override
     public List<MethodSpec> generateAll() {
-        var fields = objectFieldsReturningNode
+        return objectFieldsReturningNode
                 .stream()
                 .filter(entry -> getLocalObject().implementsInterface(NODE_TYPE.getName()))
                 .sorted(Comparator.comparing(AbstractField::getName))
-                .toList();
-
-        var mainMethods = fields.stream()
                 .map(this::generate)
                 .toList();
-
-        var topLevelFields = fields
-                .stream()
-                .map(it -> new VirtualSourceField(getLocalObject(), it.getTypeName()))
-                .toList();
-
-        var helperMethods = generateHelperMethods(topLevelFields);
-
-        var allMethods = new ArrayList<MethodSpec>();
-        allMethods.addAll(mainMethods);
-        allMethods.addAll(helperMethods);
-        return allMethods;
     }
 }

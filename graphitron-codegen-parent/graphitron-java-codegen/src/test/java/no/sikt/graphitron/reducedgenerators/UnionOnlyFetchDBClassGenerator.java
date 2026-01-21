@@ -3,6 +3,7 @@ package no.sikt.graphitron.reducedgenerators;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.generators.db.FetchMappedObjectDBMethodGenerator;
 import no.sikt.graphitron.generators.db.FetchMultiTableDBMethodGenerator;
+import no.sikt.graphitron.generators.db.HelperDBMethodGenerator;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -20,7 +21,8 @@ public class UnionOnlyFetchDBClassGenerator extends DBClassGenerator {
                 target.getName(),
                 List.of(
                         new FetchMultiTableDBMethodGenerator(target, processedSchema),
-                        new FetchMappedObjectDBMethodGenerator(target, processedSchema)
+                        new FetchMappedObjectDBMethodGenerator(target, processedSchema),
+                        new HelperDBMethodGenerator(target, processedSchema)
                 )
         ).build();
     }

@@ -80,6 +80,11 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                 .build();
     }
 
+    @Override
+    protected CodeBlock getHelperMethodCallForNestedField(ObjectField field, FetchContext context) {
+        return null;
+    }
+
     private @NotNull HashMap<String, Set<String>> getFieldsOverriddenByType(InterfaceDefinition targetInterface, Set<ObjectDefinition> implementations) {
         HashMap<String, Set<String>> overriddenFields = new HashMap<>();
 

@@ -88,6 +88,11 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .build();
     }
 
+    @Override
+    protected CodeBlock getHelperMethodCallForNestedField(ObjectField field, FetchContext context) {
+        return null;
+    }
+
     private CodeBlock getDeletePartOfQuery(String targetTable, ObjectField target) {
         return CodeBlock.builder()
                 .add("return $N", VAR_CONTEXT)

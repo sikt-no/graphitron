@@ -73,7 +73,9 @@ public class DBClassGenerator extends AbstractSchemaClassGenerator<ObjectDefinit
                         new FetchSingleTableInterfaceDBMethodGenerator(target, processedSchema),
                         new BatchUpdateDBMethodGenerator(target, processedSchema),
                         new UpdateWithReturningDBMethodGenerator(target, processedSchema),
-                        new EntityDBFetcherMethodGenerator(target, processedSchema)
+                        new EntityDBFetcherMethodGenerator(target, processedSchema),
+                        new HelperDBMethodGenerator(target, processedSchema),
+                        new NodeHelperDBMethodGenerator(target, processedSchema, objectFieldsReturningNode)
                 )
         ).build();
         warnOrCrashIfMethodsExceedsBounds(typeSpec);
