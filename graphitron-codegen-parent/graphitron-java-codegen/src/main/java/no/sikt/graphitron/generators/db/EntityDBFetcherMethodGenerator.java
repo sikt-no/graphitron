@@ -74,6 +74,11 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
                 ).build();
     }
 
+    @Override
+    protected CodeBlock getHelperMethodCallForNestedField(ObjectField field, FetchContext context) {
+        return null;
+    }
+
     /**
      * @return Formatted CodeBlock for the where-statement and surrounding code. Applies conditions and joins.
      */

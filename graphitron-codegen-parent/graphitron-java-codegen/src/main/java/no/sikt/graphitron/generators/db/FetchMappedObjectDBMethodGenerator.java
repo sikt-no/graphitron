@@ -12,7 +12,6 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -29,7 +28,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIE
 /**
  * Generator that creates the default data fetching methods
  */
-public class FetchMappedObjectDBMethodGenerator extends NestedFetchDBMethodGenerator {
+public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
     public FetchMappedObjectDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -186,7 +185,7 @@ public class FetchMappedObjectDBMethodGenerator extends NestedFetchDBMethodGener
 
     @Override
     public List<MethodSpec> generateAll() {
-        var fields = getLocalObject()
+        return getLocalObject()
                 .getFields()
                 .stream()
                 .filter(it -> !processedSchema.isInterface(it) && !processedSchema.isUnion(it))
@@ -196,19 +195,8 @@ public class FetchMappedObjectDBMethodGenerator extends NestedFetchDBMethodGener
                 .filter(it -> !it.hasServiceReference())
                 .filter(it -> !processedSchema.isDeleteMutationWithReturning(it))
                 .filter(it -> !processedSchema.isInsertMutationWithReturning(it))
-                .toList();
-        var mainMethods = fields
-                .stream()
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .toList();
-
-        var topLevelFields = fields.stream().filter(processedSchema::isRecordType).toList();
-
-        var helperMethods = generateHelperMethods(topLevelFields);
-        var allMethods = new ArrayList<MethodSpec>();
-        allMethods.addAll(mainMethods);
-        allMethods.addAll(helperMethods);
-        return allMethods;
     }
 }
