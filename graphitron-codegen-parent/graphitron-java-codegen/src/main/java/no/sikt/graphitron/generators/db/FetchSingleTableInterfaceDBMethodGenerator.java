@@ -10,7 +10,7 @@ import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
-import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.generators.context.MethodInputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -47,7 +47,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        var parser = new InputParser(target, processedSchema);
+        var parser = new MethodInputParser(target, processedSchema);
 
         var interfaceDefinition = processedSchema.getInterface(target);
         var implementations = processedSchema.getImplementationsForInterface(interfaceDefinition);

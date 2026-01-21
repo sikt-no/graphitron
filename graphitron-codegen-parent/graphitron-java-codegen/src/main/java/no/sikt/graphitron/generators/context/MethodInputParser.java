@@ -28,9 +28,10 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * A helper class for handling input type data for services and mutations.
+ * Parses inputs for Java method signature generation (parameter specs and input names).
  * Order of fields is as follows: Basic non-reserved fields -> ordering field -> pagination fields -> context fields
  */
-public class InputParser {
+public class MethodInputParser {
     private final static List<ParameterSpec> FORWARD_PAGINATION_SPECS = List.of(
             ParameterSpec.of(INTEGER.className, VAR_PAGE_SIZE),
             ParameterSpec.of(STRING.className, inputPrefix(GraphQLReservedName.PAGINATION_AFTER.getName()))
@@ -44,7 +45,7 @@ public class InputParser {
     private final ProcessedSchema schema;
     private final boolean hasForwardPagination, isEntities;
 
-    public InputParser(ObjectField target, ProcessedSchema schema) {
+    public MethodInputParser(ObjectField target, ProcessedSchema schema) {
         this.schema = schema;
         this.hasForwardPagination = target.hasForwardPagination();
         this.isEntities = target.isRootField() && target.getName().equals(FEDERATION_ENTITIES_FIELD.getName()) && schema.isFederationImported();

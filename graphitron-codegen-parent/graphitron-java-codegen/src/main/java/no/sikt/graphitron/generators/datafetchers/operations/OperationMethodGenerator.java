@@ -17,7 +17,7 @@ import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
-import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.generators.context.MethodInputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.generators.context.NodeIdReferenceHelpers;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -62,7 +62,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
     @Override
     public MethodSpec generate(ObjectField target) {
         var isMutationReturningData = processedSchema.isDeleteMutationWithReturning(target) || processedSchema.isInsertMutationWithReturning(target);
-        var parser = new InputParser(target, processedSchema);
+        var parser = new MethodInputParser(target, processedSchema);
         var methodCall = getMethodCall(target, parser, false); // Note, do this before declaring services.
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
         var builder = getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(getReturnTypeName(target))));
@@ -81,7 +81,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .build();
     }
 
-    protected CodeBlock getMethodCall(ObjectField target, InputParser parser, boolean isMutatingMethod) {
+    protected CodeBlock getMethodCall(ObjectField target, MethodInputParser parser, boolean isMutatingMethod) {
         var isService = target.hasServiceReference();
         var hasLookup = !isService && LookupHelpers.lookupExists(target, processedSchema);
 
@@ -127,7 +127,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         );
     }
 
-    private CodeBlock callQueryBlock(ObjectField target, String objectToCall, String method, InputParser parser, CodeBlock queryFunction) {
+    private CodeBlock callQueryBlock(ObjectField target, String objectToCall, String method, MethodInputParser parser, CodeBlock queryFunction) {
         boolean mapResolverKeyToRow = !localObject.isOperationRoot() && target.hasServiceReference() && target.getExternalMethod().isMethodUsingRowResolverKey();
         var innerCode = CodeBlock
                 .builder()
@@ -149,7 +149,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .build();
     }
 
-    private CodeBlock callQueryBlockInner(ObjectField target, String objectToCall, String method, InputParser parser, CodeBlock queryFunction) {
+    private CodeBlock callQueryBlockInner(ObjectField target, String objectToCall, String method, MethodInputParser parser, CodeBlock queryFunction) {
         if (processedSchema.isDeleteMutationWithReturning(target) || processedSchema.isInsertMutationWithReturning(target)) {
             return !processedSchema.inferDataTargetForMutation(target).map(target::equals).orElse(false) ?
                     CodeBlock.of("$L,\n$L", queryFunction, wrapMutationOutputFunction(target)) :  queryFunction;
@@ -319,7 +319,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
     /**
      * @return CodeBlock for declaring the transformer class and calling it on each record input.
      */
-    private CodeBlock transformInputs(ObjectField field, InputParser parser) {
+    private CodeBlock transformInputs(ObjectField field, MethodInputParser parser) {
         if (!parser.hasRecords()) {
             if (field.hasServiceReference()) {
                 return declareTransform();
@@ -353,7 +353,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .build();
     }
 
-    private CodeBlock validateInputs(InputParser parser) {
+    private CodeBlock validateInputs(MethodInputParser parser) {
         if (!validateOverlappingInputFields()) {
             return CodeBlock.empty();
         }

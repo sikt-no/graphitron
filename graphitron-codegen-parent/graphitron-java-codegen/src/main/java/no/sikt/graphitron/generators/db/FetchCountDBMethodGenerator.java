@@ -7,7 +7,7 @@ import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
-import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.generators.context.MethodInputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.directives.GenerationDirective;
@@ -47,7 +47,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
      */
     @Override
     public MethodSpec generate(ObjectField target) {
-        var parser = new InputParser(target, processedSchema);
+        var parser = new MethodInputParser(target, processedSchema);
         if (processedSchema.isMultiTableInterface(target.getTypeName()) || processedSchema.isUnion(target.getTypeName())) {
             return getSpecBuilder(target, parser)
                     .addCode(getCodeForMultitableCountMethod(target))
@@ -141,7 +141,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     @NotNull
-    private MethodSpec.Builder getSpecBuilder(ObjectField referenceField, InputParser parser) {
+    private MethodSpec.Builder getSpecBuilder(ObjectField referenceField, MethodInputParser parser) {
         return getDefaultSpecBuilder(
                 asCountMethodName(referenceField.getName(), getLocalObject().getName()),
                 isRoot ? INTEGER.className : wrapMap(getKeyTableRecordTypeName(referenceField, processedSchema), INTEGER.className)

@@ -14,7 +14,7 @@ import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.objects.*;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
 import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
-import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.generators.context.MethodInputParser;
 import no.sikt.graphitron.mappings.ReflectionHelpers;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphql.directives.GenerationDirectiveParam;
@@ -377,7 +377,7 @@ public class ProcessedDefinitionsValidator {
         var usages = mutation.getFields().stream()
                 .filter(ObjectField::hasMutationType)
                 .flatMap(objectField -> {
-                    var inputs = new InputParser(objectField, schema).getJOOQRecords().values();
+                    var inputs = new MethodInputParser(objectField, schema).getJOOQRecords().values();
                     return inputs.stream()
                             .map(schema::getInputType)
                             .filter(it -> it != null && it.getName().equals(jooqRecordInput.getName()))
@@ -1252,7 +1252,7 @@ public class ProcessedDefinitionsValidator {
                 .forEach(it -> addErrorMessage("Mutation '%s' is set to generate, but has neither a service nor mutation type set.", it.getName()));
         mutations
                 .stream()
-                .filter(it -> it.hasMutationType() && !new InputParser(it, schema).hasJOOQRecords())
+                .filter(it -> it.hasMutationType() && !new MethodInputParser(it, schema).hasJOOQRecords())
                 .forEach(it -> addErrorMessage("Mutations must have at least one table attached when generating resolvers with queries. Mutation '%s' has no tables attached.", it.getName()));
     }
 
@@ -1270,7 +1270,7 @@ public class ProcessedDefinitionsValidator {
                 .forEach(target -> {
                     validateRecordRequiredFields(target);
                     validateMutationWithReturning(target);
-                    new InputParser(target, schema).getJOOQRecords().values().forEach(inputField -> checkMutationIOFields(inputField, target));
+                    new MethodInputParser(target, schema).getJOOQRecords().values().forEach(inputField -> checkMutationIOFields(inputField, target));
                 });
     }
 
@@ -1344,7 +1344,7 @@ public class ProcessedDefinitionsValidator {
         if(!schema.isObject(objectField))
             return;
 
-        var objectFieldErrors = new InputParser(objectField, schema).getAllErrors();
+        var objectFieldErrors = new MethodInputParser(objectField, schema).getAllErrors();
         var payloadContainsIterableField = objectField.isIterableWrapped() ||
                 schema.getObject(objectField)
                         .getFields()
@@ -1368,7 +1368,7 @@ public class ProcessedDefinitionsValidator {
     private void validateRecordRequiredFields(ObjectField target) {
         var mutationType = target.getMutationType();
         if (mutationType.equals(MutationType.INSERT) || mutationType.equals(MutationType.UPSERT)) {
-            var recordInputs = new InputParser(target, schema).getJOOQRecords().values();
+            var recordInputs = new MethodInputParser(target, schema).getJOOQRecords().values();
             if (recordInputs.isEmpty()) {
                 addErrorMessage("Mutation "
                         + target.getName()
@@ -1395,7 +1395,7 @@ public class ProcessedDefinitionsValidator {
         }
 
         /* Validate input */
-        var recordInputs = new InputParser(field, schema).getJOOQRecords().values(); // TODO: support non-jOOQ record inputs
+        var recordInputs = new MethodInputParser(field, schema).getJOOQRecords().values(); // TODO: support non-jOOQ record inputs
         if (recordInputs.isEmpty()) {
             addErrorMessage("Field %s is a generated %s mutation, but does not link any input to tables.", field.formatPath(), field.getMutationType());
             return;
