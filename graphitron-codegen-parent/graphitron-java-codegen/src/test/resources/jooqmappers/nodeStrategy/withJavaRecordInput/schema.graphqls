@@ -1,3 +1,0 @@
-type Query {
-  query(in: DummyInputRecord): CustomerNode @service(service: {name: "DUMMY_SERVICE"})
-}
