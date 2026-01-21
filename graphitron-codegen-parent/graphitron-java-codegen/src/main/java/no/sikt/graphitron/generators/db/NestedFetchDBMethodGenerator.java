@@ -24,13 +24,10 @@ import static javax.lang.model.element.Modifier.PRIVATE;
 import static javax.lang.model.element.Modifier.STATIC;
 import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsEnabled;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.interfaceQueryName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.prefixName;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
-import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * Abstract base class for generators that create nested helper methods for database query generation.
@@ -72,9 +69,8 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * @see FetchMappedObjectDBMethodGenerator
  */
 public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerator {
-    // Global state (persists across all generation)
-    final GlobalMethodRegistry methodRegistry = new GlobalMethodRegistry();
-    private static final Map<Pattern, Pattern> aliasPatternCache = new HashMap<>();
+    private final Map<String, Integer> methodDefinitionCounters = new HashMap<>();
+    private final Map<Pattern, Pattern> aliasPatternCache = new HashMap<>();
 
     // Per-method state (set for each top-level field)
     MethodGenerationState methodState = null;
@@ -82,28 +78,11 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
     // Per-helper state (set for each helper being generated)
     HelperGenerationContext helperContext = null;
 
-
     /**
      * Container pattern detection only applies at depth 0.
      * At this depth, we're processing the root helper method's direct fields.
      */
     static final int CONTAINER_PATTERN_DEPTH = 0;
-
-    /**
-     * Global registry for tracking unique method definitions across all generated code.
-     * Persists for the lifetime of the generator (never cleared).
-     */
-    static class GlobalMethodRegistry {
-        // TODO: Note, does not need to be global, can just prefix with the source field/type.
-        //  We already do this, for example queryForQuery, so we already can not duplicate across multiple queries.
-        private final Map<String, Integer> methodDefinitionCounters = new HashMap<>();
-
-        String makeUniqueSuffix(String baseName) {
-            var counter = methodDefinitionCounters.getOrDefault(baseName, 0);
-            methodDefinitionCounters.put(baseName, counter + 1);
-            return counter == 0 ? "" : "_" + counter;
-        }
-    }
 
     /**
      * State for a single top-level method and all its nested helpers.
@@ -146,120 +125,124 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
         super(localObject, processedSchema);
     }
 
-    ArrayList<MethodSpec> generateHelperMethods(List<? extends ObjectField> topLevelFields) {
-        var helperMethods = new ArrayList<MethodSpec>();
+    @Override
+    public MethodSpec generate(ObjectField field) {
+        // Create per-method state for this top-level field
+        var rootContext = new FetchContext(processedSchema, field, getLocalObject(), false);
+        methodState = new MethodGenerationState(field, rootContext);
 
-        for (var field : topLevelFields) {
-            // Create per-method state for this top-level field and all its nested helpers
-            var rootContext = new FetchContext(processedSchema, field, getLocalObject(), false);
-            methodState = new MethodGenerationState(field, rootContext);
+        var method = generateHelperMethod(field);
 
-            helperMethods.add(generateHelperMethod(field));
-            helperMethods.addAll(generateNestedHelperMethods(field));
-
-            // Clear per-method state before moving to next field
-            methodState = null;
-        }
-        return helperMethods;
+        // Clear per-method state before moving to next field
+        methodState = null;
+        return method;
     }
 
-    String generateHelperMethodName(ObjectField target) {
-        // Generate method name like: queryForQuery_outer
-        // Pattern: [callingMethod]_[returnType]
-        var returnTypeName = processedSchema.getRecordType(target).getName();
+    public List<MethodSpec> generateNested(ObjectField field) {
+        // Create per-method state for this top-level field and all its nested helpers
+        var rootContext = new FetchContext(processedSchema, field, getLocalObject(), false);
+        methodState = new MethodGenerationState(field, rootContext);
+        var parentHelperName = generateHelperMethodName(field);
 
-        if (target instanceof VirtualSourceField && processedSchema.isInterface(target.getContainerTypeName())) {
-            return generateNestedMethodName(interfaceQueryName(returnTypeName, target.getContainerTypeName()), returnTypeName);
-        }
-        return generateNestedMethodName(asQueryMethodName(target.getName(), localObject.getName()), returnTypeName);
-    }
-
-    /**
-     * Generates a method name.
-     * Format: [parentHelperMethodName]_[fieldName]
-     * Example: queryForQuery_customer_storeInfo_staff
-     */
-    String generateNestedMethodName(String parentHelperMethodName, String fieldName) {
-        return parentHelperMethodName + "_" + uncapitalize(fieldName);
-    }
-
-    MethodSpec generateHelperMethod(ObjectField target) {
-        methodState.parentField = target;
-
-        var helperMethodName = generateHelperMethodName(target);
-        // Create per-helper context (depth 0 for root-level helpers)
-        var previousHelperContext = helperContext;
-        helperContext = new HelperGenerationContext(helperMethodName, 0);
-
-        // Use the shared root context and navigate from there
-        // This maintains consistent alias names while allowing us to filter later
-        var context = methodState.rootFetchContext;
-        var refContext = target.isResolver() ? context.nextContext(target) : context;
-
-        var returnType = processedSchema.getRecordType(target).getGraphClassName();
-        var selectRowBlock = generateSelectRow(refContext);
-
-        var methodBuilder = MethodSpec.methodBuilder(helperMethodName)
-                .addModifiers(PRIVATE, STATIC)
-                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY)
-                .returns(ParameterizedTypeName.get(SELECT_FIELD.className, returnType));
-
-        // Add input parameters from the original method only for non-split queries
-        // Split query helper methods don't need input parameters as WHERE clauses are applied at the main level
-        var parser = new InputParser(target, processedSchema);
-        if (!processedSchema.isReferenceResolverField(target)) {
-            methodBuilder.addParameters(parser.getMethodParameterSpecs(true, false, false));
-        }
-
-        var allAliases = refContext.getAliasSet();
-        var usedAliases = filterToUsedAliasesOnly(allAliases, selectRowBlock);
-
-        methodBuilder
-                .addCode(declareAllServiceClassesInAliasSet(usedAliases)) // Declare service classes for aliases with table methods
-                .addCodeIf(!usedAliases.isEmpty(), () -> createAliasDeclarations(usedAliases)); // Declare only the aliases actually used in this helper
-
-        methodState.parentField = null;
-        helperContext = previousHelperContext;
-
-        return methodBuilder
-                .addCode(returnWrap(selectRowBlock))
-                .addParameters(parser.getContextParameterSpecs())
-                .addParameterIf(optionalSelectIsEnabled(), SELECTION_SET.className, VAR_SELECT)
-                .build();
-    }
-
-    List<MethodSpec> generateNestedHelperMethods(ObjectField parentField) {
-        var parentHelperName = generateHelperMethodName(parentField);
         // For resolver fields (like splitQuery), we need to navigate to get the correct context
         // For non-resolver fields, rootFetchContext already represents the correct context
         var context = methodState.rootFetchContext;
-        var parentContext = parentField.isResolver() ? context.nextContext(parentField) : context;
+        var parentContext = field.isResolver() ? context.nextContext(field) : context;
         // Start at depth 0 (root helper method level)
-        return generateNestedHelperMethods(parentField, parentHelperName, parentContext, new HashSet<>(), 0);
+        var helperMethods = generateNestedHelperMethods(field, parentHelperName, parentContext, new HashSet<>(), 0);
+
+        // Clear per-method state before moving to next field
+        methodState = null;
+        return helperMethods;
+    }
+
+    MethodSpec generateHelperMethod(ObjectField target) {
+        return generateHelperMethod(null, target, null, 0).orElseThrow();
+    }
+
+    private Optional<MethodSpec> generateHelperMethod(String methodName, ObjectField target, FetchContext parentContext, int depth) {
+        var isRootHelper = depth == 0;
+
+        if (isRootHelper) {
+            methodState.parentField = target;
+        }
+
+        var nestedRecordType = processedSchema.getRecordType(target);
+        if (!isRootHelper && !shouldGenerateHelperMethod(target, nestedRecordType)) {
+            return Optional.empty();
+        }
+
+        // Method naming: root uses generateHelperMethodName(), nested uses passed-in name with depth prefix
+        var helperMethodName = isRootHelper ? generateHelperMethodName(target) : methodName;
+        var finalMethodName = isRootHelper ? helperMethodName : prefixName(String.valueOf(depth), helperMethodName);
+
+        var previousHelperContext = helperContext;
+        helperContext = new HelperGenerationContext(helperMethodName, depth);
+
+        try {
+            // Context: root uses rootFetchContext (with optional nextContext for resolvers), nested uses parentContext.nextContext()
+            var context = isRootHelper
+                    ? (target.isResolver() ? methodState.rootFetchContext.nextContext(target) : methodState.rootFetchContext)
+                    : parentContext.nextContext(target);
+
+            var returnType = nestedRecordType.getGraphClassName();
+            var selectRowBlock = generateSelectRow(context);
+
+            var methodBuilder = MethodSpec.methodBuilder(finalMethodName)
+                    .addModifiers(PRIVATE, STATIC)
+                    .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY)
+                    .returns(ParameterizedTypeName.get(SELECT_FIELD.className, returnType));
+
+            // Parameters: root adds full input params (for non-split queries), nested adds only table method inputs
+            var parser = new InputParser(isRootHelper ? target : methodState.rootField, processedSchema);
+            if (isRootHelper && !processedSchema.isReferenceResolverField(target)) {
+                methodBuilder.addParameters(parser.getMethodParameterSpecs(true, false, false));
+            } else if (!isRootHelper) {
+                var allAliases = context.getAliasSet();
+                var usedAliases = filterToUsedAliasesOnly(allAliases, selectRowBlock);
+                var tableMethodInputs = collectTableMethodInputNames(usedAliases);
+                methodBuilder.addParameters(addTableMethodInputParameters(tableMethodInputs, methodState.rootField));
+            }
+
+            var allAliases = context.getAliasSet();
+            var usedAliases = filterToUsedAliasesOnly(allAliases, selectRowBlock);
+
+            methodBuilder
+                    .addCode(declareAllServiceClassesInAliasSet(usedAliases))
+                    .addCodeIf(!usedAliases.isEmpty(), () -> createAliasDeclarations(usedAliases))
+                    .addCode(returnWrap(selectRowBlock))
+                    .addParameters(parser.getContextParameterSpecs())
+                    .addParameterIf(optionalSelectIsEnabled(), SELECTION_SET.className, VAR_SELECT);
+
+            return Optional.of(methodBuilder.build());
+        } finally {
+            if (isRootHelper) {
+                methodState.parentField = null;
+            }
+            helperContext = previousHelperContext;
+        }
     }
 
     @Override
     protected CodeBlock getHelperMethodCallForNestedField(ObjectField field, FetchContext context) {
-        String helperMethodName;
-        if (helperContext != null) {
-            // When calling from within a helper at depth N, the nested helper is at depth N+1
-            var nestedDepth = helperContext.depth + 1;
-            var baseName = generateNestedMethodName(helperContext.helperMethodName,  field instanceof VirtualSourceField ? field.getContainerTypeName() : field.getName());
-            helperMethodName = prefixName(String.valueOf(nestedDepth), helperContext.getNextCallName(baseName));
-        } else {
-            helperMethodName = generateHelperMethodName(field);
+        // Root-level case: delegate to base class implementation
+        if (helperContext == null) {
+            return super.getHelperMethodCallForNestedField(field, context);
         }
+
+        // Nested case: when calling from within a helper at depth N, the nested helper is at depth N+1
+        var nestedDepth = helperContext.depth + 1;
+        var baseName = generateNestedMethodName(helperContext.helperMethodName, field instanceof VirtualSourceField ? field.getContainerTypeName() : field.getName());
+        var helperMethodName = prefixName(String.valueOf(nestedDepth), helperContext.getNextCallName(baseName));
 
         var parameters = new ArrayList<String>();
         if (GeneratorConfig.shouldMakeNodeStrategy()) {
             parameters.add(VAR_NODE_STRATEGY);
         }
 
-        if (methodState != null && methodState.rootFetchContext != null) {
-            var tableMethodInputs = collectTableMethodInputNames(methodState.rootFetchContext.getAliasSet());
-            parameters.addAll(tableMethodInputs);
-        }
-        parameters.addAll(new InputParser(methodState != null ? methodState.rootField : field, processedSchema).getContextFieldNames());
+        var tableMethodInputs = collectTableMethodInputNames(methodState.rootFetchContext.getAliasSet());
+        parameters.addAll(tableMethodInputs);
+        parameters.addAll(new InputParser(methodState.rootField, processedSchema).getContextFieldNames());
         if (optionalSelectIsEnabled()) parameters.add(VAR_SELECT);
 
         return CodeBlock.of("$L($L)", helperMethodName, String.join(", ", parameters));
@@ -288,7 +271,7 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
             }
 
             // Check if this field should skip helper generation but continue traversing to children
-            if (shouldSkipHelperAndTraverse(objectField, recordType, nestedRecordType, depth)) {
+            if (shouldSkipHelperAndTraverse(objectField, recordType, nestedRecordType, depth, methodState.rootField.getArguments().stream().anyMatch(processedSchema::hasInputJOOQRecord))) {
                 nestedMethods.addAll(generateNestedHelperMethods(objectField, parentHelperMethodName, parentContext.nextContext(objectField), siblingVisitedTypes, depth));
                 continue;
             }
@@ -299,8 +282,8 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
             // Depth is included to prevent collisions between staff.store (depth 2) and staff_store (depth 1)
             var baseName = generateNestedMethodName(parentHelperMethodName, objectField.getName());
             // Ensure uniqueness by appending counter if base name already used
-            var helperMethodName = baseName + methodRegistry.makeUniqueSuffix(prefixName(String.valueOf(depth + 1), baseName));
-            var nestedHelperMethod = generateNestedHelperMethodWithParentName(helperMethodName, objectField, parentContext, depth + 1);
+            var helperMethodName = baseName + makeUniqueSuffix(prefixName(String.valueOf(depth + 1), baseName));
+            var nestedHelperMethod = generateHelperMethod(helperMethodName, objectField, parentContext, depth + 1);
 
             nestedHelperMethod.ifPresent(method -> {
                 nestedMethods.add(method);
@@ -311,55 +294,16 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
         return nestedMethods;
     }
 
-    private Optional<MethodSpec> generateNestedHelperMethodWithParentName(String methodName, ObjectField nestedField, FetchContext parentContext, int depth) {
-        var returnType = processedSchema.getRecordType(nestedField).getGraphClassName();
-        var nestedRecordType = processedSchema.getRecordType(nestedField);
-        var context = parentContext.nextContext(nestedField);
-
-        // Create per-helper context with current depth
-        var previousHelperContext = helperContext;
-        helperContext = new HelperGenerationContext(methodName, depth);
-
-        try {
-            var methodBuilder = MethodSpec.methodBuilder(prefixName(String.valueOf(depth), methodName))
-                    .addModifiers(PRIVATE, STATIC)
-                    .returns(ParameterizedTypeName.get(SELECT_FIELD.className, returnType))
-                    .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY);
-
-            if (shouldGenerateHelperMethod(nestedField, nestedRecordType)) {
-                var selectRowBlock = generateSelectRow(context);
-
-                var allAliases = context.getAliasSet();
-                var usedAliases = filterToUsedAliasesOnly(allAliases, selectRowBlock);
-
-                var tableMethodInputs = collectTableMethodInputNames(usedAliases);
-                methodBuilder
-                        .addParameters(addTableMethodInputParameters(tableMethodInputs, methodState.rootField))
-                        .addCode(declareAllServiceClassesInAliasSet(usedAliases))
-                        .addCodeIf(!usedAliases.isEmpty(),createAliasDeclarations(usedAliases))
-                        .addCode(returnWrap(selectRowBlock))
-                        .addParameters(new InputParser(methodState.rootField, processedSchema).getContextParameterSpecs())
-                        .addParameterIf(optionalSelectIsEnabled(), SELECTION_SET.className, VAR_SELECT);
-
-                return Optional.of(methodBuilder.build());
-            } else {
-                // Field doesn't need a helper (wrapper types, error types, etc.)
-                return Optional.empty();
-            }
-        } finally {
-            helperContext = previousHelperContext;
-        }
+    private String makeUniqueSuffix(String baseName) {
+        var counter = methodDefinitionCounters.getOrDefault(baseName, 0);
+        methodDefinitionCounters.put(baseName, counter + 1);
+        return counter == 0 ? "" : "_" + counter;
     }
 
     private boolean shouldSkipField(ObjectField field) {
         return field.isExplicitlyNotGenerated() ||
                 !processedSchema.isRecordType(field) ||
                 processedSchema.isUnion(field);
-    }
-
-    private boolean rootFieldHasInputTableArguments() {
-        return methodState.rootField.getArguments().stream()
-                .anyMatch(processedSchema::hasInputJOOQRecord);
     }
 
     /**
@@ -381,17 +325,19 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
      * @param parentType The parent type containing this field
      * @param nestedType The type this field references
      * @param depth Current recursion depth (0 = root helper level)
+     * @param rootFieldHasInputTableArguments Whether the root field has input table arguments
      * @return true if helper should be skipped and children should be traversed, false otherwise
      */
     private boolean shouldSkipHelperAndTraverse(ObjectField field, RecordObjectSpecification<?> parentType,
-                                                RecordObjectSpecification<?> nestedType, int depth) {
+                                                RecordObjectSpecification<?> nestedType, int depth,
+                                                boolean rootFieldHasInputTableArguments) {
         // Input parameter container at root (depth 0)
         if (depth == CONTAINER_PATTERN_DEPTH &&
                 !parentType.hasTable() &&
                 !field.isIterableWrapped() &&
                 !field.hasFieldReferences() &&
                 nestedType != null && nestedType.hasTable() &&
-                rootFieldHasInputTableArguments()) {
+                rootFieldHasInputTableArguments) {
             return true;
         }
 

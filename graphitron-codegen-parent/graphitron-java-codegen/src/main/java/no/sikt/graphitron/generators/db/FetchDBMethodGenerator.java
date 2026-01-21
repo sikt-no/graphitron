@@ -40,8 +40,7 @@ import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyRowTypeName;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
@@ -49,6 +48,7 @@ import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getSo
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * Abstract generator for various database fetching methods.
@@ -209,11 +209,24 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     /**
-     * Override this method to provide a helper method call for nested record type fields.
-     * Return null to use inline generation.
+     * Generates a helper method call for nested record type fields.
+     * This base implementation generates the root-level helper method call.
+     *
+     * @param field The field to generate the helper method call for
+     * @param context The fetch context (unused in base implementation)
+     * @return CodeBlock containing the helper method call, or null to use inline generation
      */
     protected CodeBlock getHelperMethodCallForNestedField(ObjectField field, FetchContext context) {
-        return null;
+        var helperMethodName = generateHelperMethodName(field);
+
+        var parameters = new ArrayList<String>();
+        if (GeneratorConfig.shouldMakeNodeStrategy()) {
+            parameters.add(VAR_NODE_STRATEGY);
+        }
+        parameters.addAll(new InputParser(field, processedSchema).getContextFieldNames());
+        if (optionalSelectIsEnabled()) parameters.add(VAR_SELECT);
+
+        return CodeBlock.of("$L($L)", helperMethodName, String.join(", ", parameters));
     }
 
     private CodeBlock wrapInMultisetWithMapping(CodeBlock contents, boolean hasOrderByToken) {
@@ -1191,5 +1204,25 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         } else {
             return wrapMap(STRING.className, wrapListIf(type, referenceField.hasForwardPagination()));
         }
+    }
+
+    protected String generateHelperMethodName(ObjectField target) {
+        // Generate method name like: queryForQuery_outer
+        // Pattern: [callingMethod]_[returnType]
+        var returnTypeName = processedSchema.getRecordType(target).getName();
+
+        if (target instanceof VirtualSourceField && processedSchema.isInterface(target.getContainerTypeName())) {
+            return generateNestedMethodName(interfaceQueryName(returnTypeName, target.getContainerTypeName()), returnTypeName);
+        }
+        return generateNestedMethodName(asQueryMethodName(target.getName(), localObject.getName()), returnTypeName);
+    }
+
+    /**
+     * Generates a method name.
+     * Format: [parentHelperMethodName]_[fieldName]
+     * Example: queryForQuery_customer_storeInfo_staff
+     */
+    protected String generateNestedMethodName(String parentHelperMethodName, String fieldName) {
+        return parentHelperMethodName + "_" + uncapitalize(fieldName);
     }
 }

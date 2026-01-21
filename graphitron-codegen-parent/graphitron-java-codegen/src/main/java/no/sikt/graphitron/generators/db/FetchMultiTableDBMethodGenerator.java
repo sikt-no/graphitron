@@ -65,6 +65,11 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .build();
     }
 
+    @Override
+    protected CodeBlock getHelperMethodCallForNestedField(ObjectField field, FetchContext context) {
+        return null;
+    }
+
     private CodeBlock getCode(ObjectField target, LinkedHashSet<ObjectDefinition> implementations, List<String> inputs) {
         List<String> sortFieldQueryMethodCalls = new ArrayList<>();
         LinkedHashMap<String, String> mappedQueryVariables = new LinkedHashMap<>();
