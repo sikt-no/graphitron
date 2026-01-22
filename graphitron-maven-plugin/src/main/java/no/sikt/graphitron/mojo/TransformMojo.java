@@ -15,7 +15,6 @@ import org.apache.maven.project.MavenProject;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -93,9 +92,8 @@ public class TransformMojo extends AbstractMojo {
     @Override
     public void execute() throws MojoExecutionException {
         var actualTarget = project.getBasedir().toPath().resolve(TARGET_PATH);
-        var schemaFiles = new ArrayList<>(SchemaReader.findSchemaFilesRecursivelyInDirectory(schemaRootDirectories));
-        schemaFiles.add("/directives.graphqls"); // Auto-include built-in directives from classpath
-        var descriptionSuffixForFeatures = SchemaReader.createDescriptionSuffixForFeatureMap(schemaRootDirectories, descriptionSuffixFilename);
+        var schemaFiles = SchemaTransformHelper.collectSchemaFiles(schemaRootDirectories);
+        var descriptionSuffixForFeatures = SchemaTransformHelper.createDescriptionSuffixMap(schemaRootDirectories, descriptionSuffixFilename);
         var outputDirectory = actualTarget.toString();
         var config = new TransformConfig(schemaFiles, directivesToRemove, descriptionSuffixForFeatures, addFeatureFlags, removeGeneratorDirectives, expandConnections);
         var transformer = new SchemaTransformer(config);

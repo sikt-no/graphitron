@@ -6,6 +6,12 @@ public class OutputSchema {
     private String fileName;
     private Set<String> flags;
 
+    /**
+     * Per-output override for removing federation definitions.
+     * If null, uses the global setting.
+     */
+    private Boolean removeFederationDefinitions;
+
     public OutputSchema() {}
 
     public OutputSchema(String fileName) {
@@ -17,11 +23,33 @@ public class OutputSchema {
         this.flags = flags;
     }
 
+    public OutputSchema(String fileName, Set<String> flags, Boolean removeFederationDefinitions) {
+        this.fileName = fileName;
+        this.flags = flags;
+        this.removeFederationDefinitions = removeFederationDefinitions;
+    }
+
     public String fileName() {
         return fileName;
     }
 
     public Set<String> flags() {
         return flags != null ? flags : Set.of();
+    }
+
+    /**
+     * Returns whether federation definitions should be removed for this output.
+     * @param globalDefault the global setting to use if no per-output override is set
+     * @return true if federation definitions should be removed
+     */
+    public boolean shouldRemoveFederationDefinitions(boolean globalDefault) {
+        return removeFederationDefinitions != null ? removeFederationDefinitions : globalDefault;
+    }
+
+    /**
+     * Returns the per-output override for removing federation definitions, or null if not set.
+     */
+    public Boolean getRemoveFederationDefinitions() {
+        return removeFederationDefinitions;
     }
 }

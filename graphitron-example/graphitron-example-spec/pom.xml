@@ -72,40 +72,26 @@
                         </goals>
                     </execution>
                     <execution>
-                        <id>transform-graphql-schema</id>
+                        <id>generate-all</id>
                         <phase>generate-sources</phase>
                         <goals>
-                            <goal>transform</goal>
+                            <goal>generate-all</goal>
                         </goals>
                         <configuration>
-                            <outputSchema>schema.graphql</outputSchema>
+                            <!-- Transform settings -->
+                            <schemaRootDirectories>
+                                <directory>${project.basedir}/src/main/resources/graphql</directory>
+                            </schemaRootDirectories>
                             <removeFederationDefinitions>true</removeFederationDefinitions>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>make-generator-schema</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>transform</goal>
-                        </goals>
-                        <configuration>
-                            <outputSchema>generator-schema.graphql</outputSchema>
-                            <removeGeneratorDirectives>false</removeGeneratorDirectives>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>generate-java</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>generate</goal>
-                        </goals>
-                        <configuration>
+
+                            <!-- Generate settings -->
+                            <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
+                            <outputPackage>${generatedGraphitronPackage}</outputPackage>
                             <maxAllowedPageSize>1000</maxAllowedPageSize>
                             <recordValidation>
                                 <enabled>true</enabled>
                                 <schemaErrorType>InvalidInput</schemaErrorType>
                             </recordValidation>
-                            <outputPackage>${generatedGraphitronPackage}</outputPackage>
                             <externalReferenceImports>
                                 <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
                             </externalReferenceImports>
