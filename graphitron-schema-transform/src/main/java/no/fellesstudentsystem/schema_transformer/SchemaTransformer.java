@@ -124,7 +124,13 @@ public class SchemaTransformer {
     }
 
     public static GraphQLSchema reloadSchema(GraphQLSchema s, boolean removeFederationDefinitions) {
-        var parsedSchema = assembleSchema(new SchemaParser().parse(writeSchemaToString(s, removeFederationDefinitions)));
+        var registry = new SchemaParser().parse(writeSchemaToString(s, removeFederationDefinitions));
+        // Always use assembleSchemaWithoutFederation when reloading:
+        // - When removeFederationDefinitions=true: federation types are removed from the SDL,
+        //   but @link may still be present, so Federation.transform() would fail
+        // - When removeFederationDefinitions=false: federation types are already in the SDL,
+        //   so we don't need to add them again via Federation.transform()
+        var parsedSchema = assembleSchemaWithoutFederation(registry);
         return parsedSchema.transform(builder -> {
             var excludedTypeNames = Set.of(SCHEMA_QUERY.getName(), SCHEMA_MUTATION.getName(), SCHEMA_SUBSCRIPTION.getName());
             Set<GraphQLType> additionalTypes = parsedSchema
@@ -136,5 +142,17 @@ public class SchemaTransformer {
             builder.clearAdditionalTypes();
             builder.additionalTypes(additionalTypes);
         });
+    }
+
+    private static GraphQLSchema assembleSchemaWithoutFederation(TypeDefinitionRegistry typeDefinitionRegistry) {
+        var runtimeWiring = EchoingWiringFactory.newEchoingWiring(wiring -> {
+            Map<String, ScalarTypeDefinition> scalars = typeDefinitionRegistry.scalars();
+            scalars.forEach((name, v) -> {
+                if (!ScalarInfo.isGraphqlSpecifiedScalar(name)) {
+                    wiring.scalar(fakeScalar(name));
+                }
+            });
+        });
+        return new SchemaGenerator().makeExecutableSchema(typeDefinitionRegistry, runtimeWiring);
     }
 }

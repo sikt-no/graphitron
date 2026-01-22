@@ -41,13 +41,20 @@ To use, add the following to your Maven configuration:
                 <goal>transform</goal>
             </goals>
             <configuration>
-                <outputSchema>schema.graphql</outputSchema>
-                <!-- other transform parameters -->
+                <transform>
+                    <schemaRootDirectories>
+                        <directory>src/main/resources/graphql</directory>
+                    </schemaRootDirectories>
+                    <outputSchema>schema.graphql</outputSchema>
+                    <!-- other transform parameters -->
+                </transform>
             </configuration>
         </execution>
     </executions>
 </plugin>
 ```
+
+> **Note**: All transform parameters are nested under the `<transform>` element.
 
 ## Plugin Configuration Parameters
 
@@ -154,26 +161,31 @@ The maven plugin offers flexible schema generation through configurable outputs:
 
 ```xml
 <configuration>
-  <addFeatureFlags>true</addFeatureFlags>
-  <outputSchemas>
-    <schema>
-      <fileName>f0.graphql</fileName>
-      <flags/>
-    </schema>
-    <schema>
-      <fileName>f1.graphql</fileName>
-      <flags>
-        <flag>f1</flag>
-      </flags>
-    </schema>
-    <schema>
-      <fileName>f2</fileName>
-      <flags>
-        <flag>f1</flag>
-        <flag>f2</flag>
-      </flags>
-    </schema>
-  </outputSchemas>
+  <transform>
+    <schemaRootDirectories>
+      <directory>src/main/resources/graphql</directory>
+    </schemaRootDirectories>
+    <addFeatureFlags>true</addFeatureFlags>
+    <outputSchemas>
+      <schema>
+        <fileName>f0.graphql</fileName>
+        <flags/>
+      </schema>
+      <schema>
+        <fileName>f1.graphql</fileName>
+        <flags>
+          <flag>f1</flag>
+        </flags>
+      </schema>
+      <schema>
+        <fileName>f2.graphql</fileName>
+        <flags>
+          <flag>f1</flag>
+          <flag>f2</flag>
+        </flags>
+      </schema>
+    </outputSchemas>
+  </transform>
 </configuration>
 ```
 
@@ -189,21 +201,34 @@ You can create separate Maven execution blocks to generate different types of sc
 <executions>
   <execution>
     <id>transform-graphql-schema</id>
+    <goals><goal>transform</goal></goals>
     <configuration>
-      <addFeatureFlags>true</addFeatureFlags>
-      <outputSchema>schema.graphql</outputSchema>
+      <transform>
+        <schemaRootDirectories>
+          <directory>src/main/resources/graphql</directory>
+        </schemaRootDirectories>
+        <addFeatureFlags>true</addFeatureFlags>
+        <outputSchema>schema.graphql</outputSchema>
+      </transform>
     </configuration>
   </execution>
   <execution>
     <id>transform-graphql-schema-generator</id>
+    <goals><goal>transform</goal></goals>
     <configuration>
-      <makeApolloFederation>true</makeApolloFederation>
-      <removeGeneratorDirectives>false</removeGeneratorDirectives>
-      <outputSchema>generator-schema.graphql</outputSchema>
+      <transform>
+        <schemaRootDirectories>
+          <directory>src/main/resources/graphql</directory>
+        </schemaRootDirectories>
+        <removeGeneratorDirectives>false</removeGeneratorDirectives>
+        <outputSchema>generator-schema.graphql</outputSchema>
+      </transform>
     </configuration>
   </execution>
 </executions>
 ```
+
+> **Tip**: For most use cases, the `generate-all` goal is simpler as it handles both transformation and code generation in a single execution. See the main [README](../README.md) for details.
 
 ### Apollo Federation Support
 

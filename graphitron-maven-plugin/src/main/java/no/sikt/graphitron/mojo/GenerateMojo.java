@@ -1,21 +1,13 @@
 package no.sikt.graphitron.mojo;
 
-import no.sikt.graphitron.configuration.CodeGenerationThresholds;
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.configuration.OptionalSelect;
-import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.configuration.externalreferences.ExternalMojoClassReference;
-import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
 import no.sikt.graphitron.definitions.helpers.ScalarUtils;
-import no.sikt.graphitron.generate.Generator;
 import no.sikt.graphitron.generate.GraphQLGenerator;
 import no.sikt.graphitron.validation.ValidationHandler;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
-import org.apache.maven.plugins.annotations.Parameter;
-import org.apache.maven.project.MavenProject;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -26,74 +18,16 @@ import static org.apache.maven.plugins.annotations.LifecyclePhase.GENERATE_SOURC
  * Mojo for a single run of the code generation.
  */
 @Mojo(name = "generate", defaultPhase = GENERATE_SOURCES)
-public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
-    /**
-     * The Maven project.
-     */
-    @Parameter(property = "project", required = true, readonly = true)
-    private MavenProject project;
+public class GenerateMojo extends AbstractGenerateMojo {
 
-    /**
-     * The location where the code should be exported to.
-     */
-    @Parameter(property = "graphitron.outputPath", defaultValue = "${project.build.directory}/generated-sources")
-    private String outputPath;
-
-    /**
-     * The package where the code should be exported to.
-     */
-    @Parameter(property = "graphitron.outputPackage", defaultValue = "no.sikt.graphql")
-    private String outputPackage;
-
-    /**
-     * The comma-separated locations of the schema files to provide to the user.
-     */
-    @Parameter(property = "graphitron.userSchemaFiles")
-    private Set<String> userSchemaFiles;
-
-
-    /**
-     * Extra scalars that can be used in code generation. In addition to the default scalars provided by the graphql
-     * Java and <a href="https://github.com/graphql-java/graphql-java-extended-scalars"> Extended Scalars</a> libraries
-     */
-    @Parameter(property = "graphitron.scalars")
-    @SuppressWarnings("unused")
-    private List<ExternalMojoClassReference> scalars;
-
-    /**
-     * Transforms that apply to all records, or a subset of records.
-     */
-    @Parameter(property = "graphitron.globalRecordTransforms")
-    @SuppressWarnings("unused")
-    private List<GlobalTransform> globalRecordTransforms;
-
-    @Parameter(property = "graphitron.recordValidation")
-    @SuppressWarnings("unused")
-    private RecordValidation recordValidation;
-
-    @Parameter(property = "graphitron.maxAllowedPageSize", defaultValue = "1000")
-    @SuppressWarnings("unused")
-    private int maxAllowedPageSize;
-
-    @Parameter(property = "graphitron.useJdbcBatchingForDeletes", defaultValue = "true")
-    @SuppressWarnings("unused")
-    private boolean useJdbcBatchingForDeletes;
-
-    @Parameter(property = "graphitron.useJdbcBatchingForInserts", defaultValue = "true")
-    @SuppressWarnings("unused")
-    private boolean useJdbcBatchingForInserts;
-
-    @Parameter(property = "graphitron.codeGenerationThresholds")
-    @SuppressWarnings("unused")
-    private CodeGenerationThresholds codeGenerationThresholds;
-
-    @Parameter(property = "generate.optionalSelect")
-    @SuppressWarnings("unused")
-    private OptionalSelect optionalSelect;
-
-    @Parameter(property = "generate.validateOverlappingInputFields", defaultValue = "true")
-    @SuppressWarnings("unused")
-    private boolean validateOverlappingInputFields;
+    @Override
+    public Set<String> getUserSchemaFiles() {
+        if (userSchemaFiles == null || userSchemaFiles.isEmpty()) {
+            //default to schemaFiles
+            return schemaFiles;
+        }
+        return userSchemaFiles;
+    }
 
     @Override
     public void execute() throws MojoExecutionException {
@@ -114,81 +48,5 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
                 .map(ExternalMojoClassReference::classReference)
                 .collect(Collectors.toSet());
         return ScalarUtils.initialize(userConfiguredScalarClasses).getScalarTypeNameMapping();
-    }
-
-    @Override
-    public String getOutputPath() {
-        return outputPath;
-    }
-
-    @Override
-    public String getOutputPackage() {
-        return outputPackage;
-    }
-
-    @Override
-    public String getApiPackageName() {
-        return outputPackage + ".api";
-    }
-
-    @Override
-    public String getModelPackageName() {
-        return outputPackage + ".model";
-    }
-
-    @Override
-    public Set<String> getUserSchemaFiles() {
-        if (userSchemaFiles == null || userSchemaFiles.isEmpty()) {
-            return schemaFiles;
-        }
-        return userSchemaFiles;
-    }
-
-    @Override
-    public RecordValidation getRecordValidation() {
-        return recordValidation;
-    }
-
-    @Override
-    public int getMaxAllowedPageSize() {
-        return maxAllowedPageSize;
-    }
-
-    public void setOutputPath(String outputPath) {
-        this.outputPath = outputPath;
-    }
-
-    public void setOutputPackage(String outputPackage) {
-        this.outputPackage = outputPackage;
-    }
-
-    @Override
-    public List<GlobalTransform> getGlobalTransforms() {
-        return globalRecordTransforms;
-    }
-
-    @Override
-    public boolean useJdbcBatchingForDeletes() {
-        return useJdbcBatchingForDeletes;
-    }
-
-    @Override
-    public boolean useJdbcBatchingForInserts() {
-        return useJdbcBatchingForInserts;
-    }
-
-    @Override
-    public CodeGenerationThresholds getCodeGenerationThresholds() {
-        return codeGenerationThresholds;
-    }
-
-    @Override
-    public OptionalSelect getOptionalSelect() {
-        return optionalSelect;
-    }
-
-    @Override
-    public boolean validateOverlappingInputFields() {
-        return validateOverlappingInputFields;
     }
 }
