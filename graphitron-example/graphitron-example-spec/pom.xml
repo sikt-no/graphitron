@@ -53,66 +53,33 @@
                 <groupId>no.sikt</groupId>
                 <artifactId>graphitron-maven-plugin</artifactId>
                 <version>${revision}${changelist}</version>
-                <configuration>
-                    <schemaRootDirectories>
-                        <directory>${project.basedir}/src/main/resources/graphql</directory>
-                    </schemaRootDirectories>
-                    <schemaFiles>
-                        <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/generator-schema.graphql</schemaFile>
-                    </schemaFiles>
-                    <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
-                    <makeNodeStrategy>true</makeNodeStrategy>
-                    <externalReferenceImports>
-                        <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
-                        <externalReferenceImport>no.sikt.graphitron.example.service.CustomerExternalFields</externalReferenceImport>
-                    </externalReferenceImports>
-                </configuration>
                 <executions>
                     <execution>
-                        <id>validate-schema</id>
-                        <phase>validate</phase>
-                        <goals>
-                            <goal>validate</goal>
-                        </goals>
-                    </execution>
-                    <execution>
-                        <id>transform-graphql-schema</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>transform</goal>
-                        </goals>
-                        <configuration>
-                            <outputSchema>schema.graphql</outputSchema>
-                            <removeFederationDefinitions>true</removeFederationDefinitions>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>make-generator-schema</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>transform</goal>
-                        </goals>
-                        <configuration>
-                            <outputSchema>generator-schema.graphql</outputSchema>
-                            <removeGeneratorDirectives>false</removeGeneratorDirectives>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>generate-java</id>
+                        <id>generate</id>
                         <phase>generate-sources</phase>
                         <goals>
                             <goal>generate</goal>
                         </goals>
                         <configuration>
+                            <transform>
+                                <schemaRootDirectories>
+                                    <directory>${project.basedir}/src/main/resources/graphql</directory>
+                                </schemaRootDirectories>
+                                <removeFederationDefinitions>true</removeFederationDefinitions>
+                            </transform>
+
+                            <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
+                            <outputPackage>${generatedGraphitronPackage}</outputPackage>
                             <maxAllowedPageSize>1000</maxAllowedPageSize>
                             <recordValidation>
                                 <enabled>true</enabled>
                                 <schemaErrorType>InvalidInput</schemaErrorType>
                             </recordValidation>
-                            <outputPackage>${generatedGraphitronPackage}</outputPackage>
-                            <userSchemaFiles>
-                                <schemaFile>schema.graphql</schemaFile>
-                            </userSchemaFiles>
+                            <externalReferenceImports>
+                                <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
+                                <externalReferenceImport>no.sikt.graphitron.example.service.CustomerExternalFields</externalReferenceImport>
+                            </externalReferenceImports>
+                            <makeNodeStrategy>true</makeNodeStrategy>
                             <scalars>
                                 <class>
                                     <fullyQualifiedClassName>no.sikt.graphitron.example.service.ConsumerProvidedScalars</fullyQualifiedClassName>
