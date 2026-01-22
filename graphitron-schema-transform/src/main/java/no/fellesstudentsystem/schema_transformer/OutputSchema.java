@@ -15,7 +15,8 @@ public class OutputSchema {
     public OutputSchema() {}
 
     public OutputSchema(String fileName) {
-        this(fileName, Set.of());
+        this.fileName = fileName;
+        this.flags = null; // null means include all features
     }
 
     public OutputSchema(String fileName, Set<String> flags) {
@@ -51,5 +52,14 @@ public class OutputSchema {
      */
     public Boolean getRemoveFederationDefinitions() {
         return removeFederationDefinitions;
+    }
+
+    /**
+     * Returns whether to skip feature filtering and include all content.
+     * This is inferred from flags: if flags is not specified (null), all features are included.
+     * If flags is specified (even if empty), feature filtering is applied.
+     */
+    public boolean includeAllFeatures() {
+        return flags == null;
     }
 }

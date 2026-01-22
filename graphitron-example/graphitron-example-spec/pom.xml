@@ -53,24 +53,7 @@
                 <groupId>no.sikt</groupId>
                 <artifactId>graphitron-maven-plugin</artifactId>
                 <version>${revision}${changelist}</version>
-                <configuration>
-                    <schemaRootDirectories>
-                        <directory>${project.basedir}/src/main/resources/graphql</directory>
-                    </schemaRootDirectories>
-                    <schemaFiles>
-                        <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/generator-schema.graphql</schemaFile>
-                    </schemaFiles>
-                    <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
-                    <makeNodeStrategy>true</makeNodeStrategy>
-                </configuration>
                 <executions>
-                    <execution>
-                        <id>validate-schema</id>
-                        <phase>validate</phase>
-                        <goals>
-                            <goal>validate</goal>
-                        </goals>
-                    </execution>
                     <execution>
                         <id>generate-all</id>
                         <phase>generate-sources</phase>
@@ -95,10 +78,10 @@
                             <externalReferenceImports>
                                 <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
                             </externalReferenceImports>
+                            <makeNodeStrategy>true</makeNodeStrategy>
                             <userSchemaFiles>
                                 <schemaFile>schema.graphql</schemaFile>
-                            </userSchemaFiles>
-                            <scalars>
+                            </userSchemaFiles>                            <scalars>
                                 <class>
                                     <fullyQualifiedClassName>no.sikt.graphitron.example.service.ConsumerProvidedScalars</fullyQualifiedClassName>
                                 </class>
