@@ -19,11 +19,11 @@ Yet most API implementations require writing code by hand to bridge these two sc
 Building a data API typically involves:
 
 1. Define your database schema (tables, columns, relationships)
-1. Define your API schema (types, fields, queries)
-1. Write code that fetches data from the database when the API is called
-1. Handle nested data efficiently (avoid redundant queries)
-1. Only fetch what’s actually requested (avoid over-fetching)
-1. Keep everything in sync as schemas evolve
+2. Define your API schema (types, fields, queries)
+3. Write code that fetches data from the database when the API is called
+4. Handle nested data efficiently (avoid redundant queries)
+5. Only fetch what’s actually requested (avoid over-fetching)
+6. Keep everything in sync as schemas evolve
 
 Steps 3-6 are where most of the work happens—and most of the bugs. The code is often repetitive, error-prone, and tedious to maintain. When the database schema changes, the API code must change. When the API schema changes, the fetching logic must change.
 
@@ -89,10 +89,10 @@ Misconfigurations are caught at build time, not runtime. Error messages include 
 ## Goals
 
 1. **Eliminate boilerplate.** Developers should spend time on schema design and business logic, not on repetitive data-fetching code.
-1. **Guarantee correctness.** Generated code should be correct by construction. Type mismatches, missing columns, and invalid relationships should be caught at build time.
-1. **Match hand-written performance.** Generated code should be at least as efficient as what a skilled developer would write manually.
-1. **Stay out of the way.** When you need custom behavior, Graphitron should make it easy to add without fighting the framework.
-1. **Evolve with schemas.** When database or API schemas change, regenerating code should be the only step needed (assuming the mapping is still valid).
+2. **Guarantee correctness.** Generated code should be correct by construction. Type mismatches between the GraphQL Schema and the database, references to non-existing columns, and invalid relationships should be caught at build time.
+3. **Match hand-written performance.** Generated code should be at least as efficient as what a skilled developer would write manually.
+4. **Stay out of the way.** When you need custom behavior, Graphitron should make it easy to add without fighting the framework.
+5. **Evolve with schemas.** When database or API schemas change, regenerating code should be the only step needed (assuming the mapping is still valid).
 
 ## In short
 
