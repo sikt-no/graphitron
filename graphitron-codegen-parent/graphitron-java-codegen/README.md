@@ -92,8 +92,15 @@ can be passed to most of these methods.
 Here are a few examples of how one can retrieve schema-related code for further use:
 
 ```java
-// Get the schema with all wiring included. 
+// Get the schema with all wiring included.
 GraphQLSchema schema = Graphitron.getSchema(nodeIdStrategy);
+```
+
+```java
+// Get the schema with Apollo Federation support. Use this to wire _service and _entities resolvers.
+var registry = Graphitron.getTypeRegistry();
+var wiringBuilder = Graphitron.getRuntimeWiringBuilder(nodeIdStrategy);
+GraphQLSchema schema = Graphitron.getFederatedSchema(registry, wiringBuilder, nodeIdStrategy);
 ```
 
 ```java
