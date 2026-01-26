@@ -4,6 +4,10 @@ type Mutation {
     insertFilmWrapped(in: FilmCreateInput!): FilmWrapper @mutation(typeName: INSERT)
     insertFilmsWrapped(in: [FilmCreateInput!]!): FilmsWrapper @mutation(typeName: INSERT)
 
+    # Test mutations for column validation - FilmActor has composite key (ACTOR_ID, FILM_ID)
+    insertFilmActor(in: FilmActorValidationInput!): FilmActor @mutation(typeName: INSERT)
+    insertFilmActors(in: [FilmActorValidationInput!]!): [FilmActor] @mutation(typeName: INSERT)
+
     # TODO: This case fails if the inputs are not in a record. Technically, we have the table in Film, and that should suffice to resolve this.
     updateFilmName(in: FilmNameInput): Film @mutation(typeName: UPDATE)
     updateFilmNames(in: [FilmNameInput]): [Film] @mutation(typeName: UPDATE)
@@ -83,4 +87,11 @@ type FilmWrapper {
 
 type FilmsWrapper {
     films: [Film]
+}
+
+# Test input for column validation - id maps to ACTOR_ID and FILM_ID via composite key,
+# actorId explicitly maps to ACTOR_ID via foreign key, creating an overlap that should be validated
+input FilmActorValidationInput @table(name: "FILM_ACTOR") {
+    id: ID! @nodeId(typeName: "FilmActor")
+    actorId: ID @nodeId(typeName: "Actor") @reference(path: {key: "FILM_ACTOR__FILM_ACTOR_ACTOR_ID_FKEY"})
 }
