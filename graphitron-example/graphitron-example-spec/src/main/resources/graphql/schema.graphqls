@@ -260,6 +260,10 @@ input CustomerJavaRecordInput @record(record: {className: "no.sikt.graphitron.ex
     firstName: String @field(name: "FIRST_NAME", javaName: "firstName")
 }
 
+type Actor implements Node @node @table(name: "ACTOR") {
+    id: ID! @nodeId
+}
+
 type FilmActor implements Node @node @table(name: "FILM_ACTOR") {
     id: ID! @nodeId
 }

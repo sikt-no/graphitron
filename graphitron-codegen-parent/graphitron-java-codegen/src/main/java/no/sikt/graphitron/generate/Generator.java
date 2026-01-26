@@ -40,5 +40,7 @@ public interface Generator {
 
     boolean requireTypeIdOnNode();
 
+    boolean validateOverlappingInputFields();
+
     OptionalSelect getOptionalSelect();
 }
