@@ -286,6 +286,13 @@ public class TableReflection {
         return Optional.ofNullable(TABLES_BY_JAVA_FIELD_NAME.get(name));
     }
 
+    /**
+     * @return Set of all table names in the jOOQ generated code.
+     */
+    public static Set<String> getTableNames() {
+        return TABLES_BY_JAVA_FIELD_NAME.keySet();
+    }
+
     public static Optional<ForeignKey<?, ?>> getForeignKey(String name) {
         return Optional.ofNullable(FOREIGN_KEYS_BY_JAVA_FIELD_NAME.get(name));
     }
