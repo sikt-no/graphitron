@@ -8,7 +8,7 @@ Two declarative schemas often describe the same thing.
 
 **Your API schema** declares what data clients can request: types, fields, queries. It’s a formal description of your data capabilities.
 
-When both schemas represent the same conceptual domain—which they usually do—there’s significant overlap. A `users` table with `id`, `name`, and `email` columns maps naturally to a `User` type with `id`, `name`, and `email` fields.
+When both schemas represent the same conceptual domain—which they usually do—there’s significant overlap. A `users` table with `name` and `email` columns maps naturally to a `User` type with `name`, and `email` fields.
 
 Yet most API implementations require writing code by hand to bridge these two schemas. Developers manually translate between the API’s view of data and the database’s view of data, even when the translation is straightforward.
 
