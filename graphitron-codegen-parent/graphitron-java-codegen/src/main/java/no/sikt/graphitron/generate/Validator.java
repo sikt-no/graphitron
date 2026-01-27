@@ -1,5 +1,8 @@
 package no.sikt.graphitron.generate;
 
+import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
+
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -26,4 +29,8 @@ public interface Validator {
      * @return Whether type ID is required on Node types (affects validation rules)
      */
     boolean requireTypeIdOnNode();
+
+    List<? extends ExternalReference> getExternalReferences();
+
+    Set<String> getExternalReferenceImports();
 }

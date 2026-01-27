@@ -1,8 +1,11 @@
 package no.sikt.graphitron.mojo;
 
+import no.sikt.graphitron.configuration.externalreferences.ExternalMojoClassReference;
+import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugins.annotations.Parameter;
 
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -36,6 +39,22 @@ public abstract class AbstractGraphitronMojo extends AbstractMojo {
     @Parameter(property = "generate.experimental_requireTypeIdOnNode", defaultValue = "false")
     protected boolean experimental_requireTypeIdOnNode;
 
+    /**
+     * External reference elements that can be used in code generation.
+     */
+    @Parameter(property = "graphitron.externalReferences")
+    @SuppressWarnings("unused")
+    private List<ExternalMojoClassReference> externalReferences;
+
+
+    /**
+     * External reference elements that can be used in code generation.
+     */
+    @Parameter(property = "graphitron.externalReferenceImports")
+    @SuppressWarnings("unused")
+    private Set<String> externalReferenceImports;
+
+
     public Set<String> getSchemaFiles() {
         return schemaFiles;
     }
@@ -58,5 +77,13 @@ public abstract class AbstractGraphitronMojo extends AbstractMojo {
 
     public boolean requireTypeIdOnNode() {
         return experimental_requireTypeIdOnNode;
+    }
+
+    public List<? extends ExternalReference> getExternalReferences() {
+        return externalReferences;
+    }
+
+    public Set<String> getExternalReferenceImports() {
+        return externalReferenceImports;
     }
 }
