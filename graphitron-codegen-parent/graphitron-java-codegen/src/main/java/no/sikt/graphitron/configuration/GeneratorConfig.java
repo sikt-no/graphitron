@@ -5,6 +5,7 @@ import no.sikt.graphitron.configuration.externalreferences.ExternalReferences;
 import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
 import no.sikt.graphitron.generate.Generator;
+import no.sikt.graphitron.generate.Introspector;
 import no.sikt.graphitron.generate.Validator;
 
 import java.io.File;
@@ -156,6 +157,31 @@ public class GeneratorConfig {
         globalTransforms = List.of();
         recordValidation = new RecordValidation();
         codeGenerationThresholds = new CodeGenerationThresholds();
+    }
+
+    /**
+     * Load configuration from an Introspector instance.
+     * Only sets jOOQ package configuration needed for introspection.
+     */
+    public static void loadIntrospectorProperties(Introspector introspector) {
+        generatedJooqPackage = introspector.getJooqGeneratedPackage();
+
+        // Set placeholder values for unused configuration
+        outputDirectory = "";
+        outputPackage = "";
+        generatorSchemaFiles = Set.of();
+        userSchema = Set.of();
+        externalReferences = new ExternalReferences(List.of());
+        externalReferenceImports = Set.of();
+        globalTransforms = List.of();
+        recordValidation = null;
+        maxAllowedPageSize = 1000;
+        makeNodeStrategy = false;
+        useJdbcBatchingForDeletes = true;
+        useJdbcBatchingForInserts = true;
+        codeGenerationThresholds = null;
+        requireTypeIdOnNode = false;
+        validateOverlappingInputFields = false;
     }
 
     /**
