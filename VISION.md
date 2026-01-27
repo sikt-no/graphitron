@@ -34,7 +34,7 @@ Graphitron eliminates this manual work by generating the implementation from a d
 You provide:
 
 - Your database schema (which you already have)
-- Your API schema (which you need to define anyway)
+- Your GraphQL API schema (which you need to define anyway)
 - Annotations on the API schema that map types to tables, fields to columns
 
 Graphitron generates:
