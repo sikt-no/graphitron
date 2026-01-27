@@ -36,7 +36,7 @@ public abstract class AbstractGraphitronMojo extends AbstractMojo {
     /**
      * Whether type ID is required on Node types.
      */
-    @Parameter(property = "generate.experimental_requireTypeIdOnNode", defaultValue = "false")
+    @Parameter(property = "graphitron.experimental_requireTypeIdOnNode", defaultValue = "false")
     protected boolean experimental_requireTypeIdOnNode;
 
     /**
