@@ -4,7 +4,7 @@ schemas to underlying database models. Graphitron creates complete or partial da
 using Java and [jOOQ](https://www.jooq.org/).
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc (see here for instructions on how to rerun doctoc https://github.com/thlorenz/doctoc) TO UPDATE -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 **Table of Contents**
 
 - [Features](#features)
@@ -20,14 +20,14 @@ using Java and [jOOQ](https://www.jooq.org/).
     - [Code references](#code-references)
 - [Directives](#directives)
   - [Common directives](#common-directives)
-    - [splitQuery directive](#splitquery-directive)
-    - [notGenerated directive](#notgenerated-directive)
-    - [field directive](#field-directive)
+    - [Split database queries with @splitQuery](#split-database-queries-with-splitquery)
+    - [Skip DataFetcher generation with @notGenerated](#skip-datafetcher-generation-with-notgenerated)
+    - [Map fields to table columns with @field](#map-fields-to-table-columns-with-field)
   - [Tables, joins and records](#tables-joins-and-records)
-    - [table directive](#table-directive)
-    - [reference directive](#reference-directive)
-    - [multitableReference directive](#multitablereference-directive)
-  - [Query conditions](#query-conditions)
+    - [Link types to database tables with @table](#link-types-to-database-tables-with-table)
+    - [Define table join paths with @reference](#define-table-join-paths-with-reference)
+    - [Define table join paths for multitable types with @multitableReference](#define-table-join-paths-for-multitable-types-with-multitablereference)
+  - [Custom query conditions with @condition](#custom-query-conditions-with-condition)
     - [Example: Setup](#example-setup)
     - [Example: No _override_ on input parameter](#example-no-_override_-on-input-parameter)
     - [Example: No _override_ on field with input parameters](#example-no-_override_-on-field-with-input-parameters)
@@ -40,9 +40,9 @@ using Java and [jOOQ](https://www.jooq.org/).
     - [Example: Condition using nested record configurations](#example-condition-using-nested-record-configurations)
     - [Example: Schema with listed input types and condition set _on_ listed input field](#example-schema-with-listed-input-types-and-condition-set-_on_-listed-input-field)
     - [Example: Schema with listed input types and condition set on input field _inside_ a list input](#example-schema-with-listed-input-types-and-condition-set-on-input-field-_inside_-a-list-input)
-  - [Enums](#enums)
-  - [Differences between mutations and queries](#differences-between-mutations-and-queries)
-  - [Services](#services)
+  - [Map enums with @enum](#map-enums-with-enum)
+  - [Generate mutations with @mutation](#generate-mutations-with-mutation)
+  - [Custom database operations with @service](#custom-database-operations-with-service)
     - [Resolving splitQuery fields after services](#resolving-splitquery-fields-after-services)
       - [Services returning jOOQ records](#services-returning-jooq-records)
       - [Services returning Java records](#services-returning-java-records)
@@ -50,24 +50,25 @@ using Java and [jOOQ](https://www.jooq.org/).
     - [Input types with Java records](#input-types-with-java-records)
     - [Context variables](#context-variables)
     - [Response mapping](#response-mapping)
-  - [Table method](#table-method)
-  - [Error handling](#error-handling)
-  - [External field](#external-field)
+  - [Custom table resolution with @tableMethod](#custom-table-resolution-with-tablemethod)
+  - [Exception handling with @error](#exception-handling-with-error)
+  - [Custom field logic with @externalField](#custom-field-logic-with-externalfield)
     - [Example](#example)
-  - [Interface queries](#interface-queries)
-    - [Single table interfaces](#single-table-interfaces)
-    - [Multi table interfaces](#multi-table-interfaces)
-  - [Multitable Unions](#multitable-unions)
-    - [Query conditions](#query-conditions-1)
-  - [Other directives](#other-directives)
-    - [lookupKey directive](#lookupkey-directive)
-    - [orderBy directive](#orderby-directive)
+  - [Polymorphic queries (unions and interfaces)](#polymorphic-queries-unions-and-interfaces)
+    - [Single table interface](#single-table-interface)
+    - [Multitable interface](#multitable-interface)
+    - [Multitable union](#multitable-union)
+    - [Query conditions for polymorphic multitable types](#query-conditions-for-polymorphic-multitable-types)
+  - [Batch lookups with @lookupKey](#batch-lookups-with-lookupkey)
+  - [Sort results with @orderBy input](#sort-results-with-orderby-input)
+  - [Default sorting with @defaultOrder](#default-sorting-with-defaultorder)
 - [Special interfaces](#special-interfaces)
   - [Node](#node)
   - [Error](#error)
 - [Global node identification](#global-node-identification)
-  - [node directive](#node-directive)
-  - [nodeId directive](#nodeid-directive)
+  - [Global object identification with @node](#global-object-identification-with-node)
+  - [Globally unique IDs with @nodeId](#globally-unique-ids-with-nodeid)
+    - [Implicit typeName](#implicit-typename)
     - [Referencing another type's ID](#referencing-another-types-id)
 - [Graphitron integration tests](#graphitron-integration-tests)
 
@@ -231,7 +232,7 @@ Example of extending/customizing certain classes:
 ## Directives
 > Note that several of the code examples below use unaliased jOOQ tables for readability, while the code Graphitron generates only uses aliased tables.
 ### Common directives
-#### splitQuery directive
+#### Split database queries with @splitQuery
 Applying this to a type reference denotes a split in the generated jOOQ query.
 This means that we want a new, explicit data fetcher for the annotated field.
 Fields in the Query and Mutation types, as well as fields with arguments, do not require this directive as
@@ -251,7 +252,7 @@ type OtherType {
 ```
 The actual code generated by Graphitron will be discussed in the next sections.
 
-#### notGenerated directive
+#### Skip DataFetcher generation with @notGenerated
 Set this on any query or mutation field that Graphitron would usually generate a new data fetcher for in order to
 cancel of it.
 Since graphql still requires the data fetchers to resolve the fields,
@@ -272,12 +273,12 @@ type OtherType {
 }
 ```
 
-#### field directive
+#### Map fields to table columns with @field
 By default, Graphitron assumes each field not annotated with the **notGenerated** or **splitQuery** directives to have a name
 equal to the column it corresponds to in the jOOQ table or service record. 
 Specifying the _name_-parameter in the **field** directive overrides this behaviour.
 This directive applies to regular type fields, input type fields, arguments and enum values.
-For determining which table the field name should be taken from, see the [table](#table-directive) and [reference](#reference-directive) directives.
+For determining which table the field name should be taken from, see the [table](#link-types-to-database-tables-with-table) and [reference](#define-table-join-paths-with-reference) directives.
 
 
 ```graphql
@@ -320,7 +321,7 @@ type SomeType @table { … }
 ```
 
 ### Tables, joins and records
-#### table directive
+#### Link types to database tables with @table
 The **table** directive links the object, interface or input type to a jOOQ table and record. Any **field**-directives within
 this type will use this table as the source for the field mapping. This targets jOOQ generated classes, so
 the _name_ parameter must match the table name in jOOQ if it differs from the database. The _name_ parameter is optional,
@@ -329,7 +330,7 @@ and does not need to be specified if the type name already equals the table name
 In the example below the generator would apply an implicit path join on the key between the two tables when building the subquery for the reference.
 Note that this can only work if there is only one foreign key between the tables. For example, given tables from the
 schema example below, the result will be `TABLE_A.table_b()`. If more than one key exists, a more complex configuration
-is required, see [reference](#reference-directive).
+is required, see [reference](#define-table-join-paths-with-reference).
 
 _Schema_:
 ```graphql
@@ -355,12 +356,12 @@ select(
 If a table type contains other types that do not set their own tables, the previous table type is used instead.
 This also applies to enum types.
 
-#### reference directive
+#### Define table join paths with @reference
 There are, of course, many cases where the connection between two tables is more complex.
 In such cases, Graphitron requires some extra parameters to make the right connections.
 This is done through the **reference** directive, which contains the following parameters:
 
-* _references_ - This parameter contains an ordered list of reference elements that is used to compose the path from
+* _path_ - This parameter contains an ordered list of reference elements that is used to compose the path from
 the table of this type to the table corresponding to the type of the field.
 * _reference element_:
   * _table_ - This defaults to the table of the type that is referenced by the field the directive is set on.
@@ -465,7 +466,7 @@ select(select.optional("title", payment_rental_inventory_film.TITLE))
 .join(payment_rental_inventory_film)
 ```
 
-#### multitableReference directive
+#### Define table join paths for multitable types with @multitableReference
 
 The **multitableReference** directive specifies type-specific reference paths for fields that return multitable union or interface types.
 This directive defines the reference path from the source table to target table for each type.
@@ -490,7 +491,7 @@ type Payment @table {
 - Only applies to multitable unions/interfaces
 - If routes are omitted for some types, Graphitron will attempt to infer the reference path
 
-### Query conditions
+### Custom query conditions with @condition
 To either apply additional conditions or override the conditions added by default, use the **condition** directive.
 It can be applied to both input parameters and data fetcher fields, and the scope of the condition will match the element it is put on.
 It provides the following parameter options:
@@ -673,7 +674,7 @@ are allowed inside a Java record definition, they must always be on "leaf" input
 Additionally, jOOQ records can, of course, not contain Java records. 
 
 This pattern is required when using nested input types that use lists of the inner input types.
-Note the extra parameter for the [**field**](#field-directive) directive since we are using Java records in fetch queries.
+Note the extra parameter for the [**field**](#map-fields-to-table-columns-with-field) directive since we are using Java records in fetch queries.
 
 _Schema_:
 ```graphql
@@ -781,8 +782,8 @@ _Resulting_code_:
 )
 ```
 
-### Enums
-Enums can be mapped in two ways. The **field** directive is already covered [here](#field-directive).
+### Map enums with @enum
+Enums can be mapped in two ways. The **field** directive is already covered [here](#map-fields-to-table-columns-with-field).
 An alternative method is to set up a Java enum instead through a jOOQ converter. These can be referenced
 using the **enum** directive, by pointing to the appropriate [entry](#code-references).
 
@@ -794,12 +795,12 @@ enum SomeEnum @enum(enumReference: {name: "THE_ENUM_REFERENCE"}) {
 }
 ```
 
-### Differences between mutations and queries
+### Generate mutations with @mutation
 Mutations have some limitations when generated through Graphitron, as mutations can potentially take many inputs which may be related to multiple tables.
 Automatic generation of the entire data fetcher is currently only viable for simple cases where one input type representing one type of jOOQ record is handled.
 This limitation may be removed in the future for mutations other than delete mutations.
 
-Use the **mutationType** directive and the accompanying _typeName_ parameter to denote a mutation that should be fully
+Use the **@mutation** directive and the accompanying _typeName_ parameter to denote a mutation that should be fully
 generated. To specify which table should be affected, the **table** directive is used just like for the usual types used
 for queries. Unlike for queries, the directive is always required on input types in order for Graphitron to know which records should be mutated.
 As usual, **field** may also be applied to adjust the mapping of individual fields.
@@ -829,11 +830,12 @@ If all required fields for an insert or upsert operation are not set in the inpu
 In the future this may change to an exception instead, as an incomplete set of required fields will result in a data fetcher
 that compiles, but will always fail when executed.
 
-Note that mutations need either the **mutationType** or the **service** directive set, but not both, in order to be generated.
+Note that mutations need either the **@mutation** or the **@service** directive set, but not both, in order to be generated.
 
-> **Important:** The output from generated update and insert mutations is currently incorrect. The mutation output is being fetched and filtered based on the input fields rather than returning the actual mutated record(s).
+> **Important:** The output from generated update and insert mutations are currently incorrect when using JDBC batching.
+> The mutation output is being fetched and filtered based on the input fields rather than returning the actual mutated record(s). To enable improved queries with returning clauses, disable JDBC batching by setting `useJdbcBatchingForInserts` and/or `useJdbcBatchingForDeletes` to `false` in the [query generation settings](#query-generation-settings).
 
-### Services
+### Custom database operations with @service
 The **service** directive allows for full customization of any database operations while still generating data fetchers.
 The directive points to a class [entry](#code-references) in the POM XML.
 The method name is either specified through the directive or is assumed to be the same as the field name.
@@ -1086,8 +1088,8 @@ public class ReturnB {
 }
 ```
 
-### Table method
-The **tableMethod** directive allows a field to use a jOOQ table returned from a custom Java method.
+### Custom table resolution with @tableMethod
+The **@tableMethod** directive allows a field to use a jOOQ table returned from a custom Java method.
 
 For example, you can annotate a field in your schema with the **tableMethod** directive, referencing a method like [AddressTableMethod](https://github.com/sikt-no/graphitron/blob/main/graphitron-example/graphitron-example-service/src/main/java/no/sikt/graphitron/example/service/AddressTableMethod.java):
 ```graphql
@@ -1096,9 +1098,9 @@ type Query {
 }
 ```
 
-### Error handling
+### Exception handling with @error
 Graphitron allows for simple error handling. In the schema a type is an error type if it implements
-the _Error_ interface and has the **error** directive set. Unions of such types are also considered error types.
+the _Error_ interface and has the **@error** directive set. Unions of such types are also considered error types.
 
 The **error** directive serves to map specific Java exceptions to GraphQL errors. This directive is applied to error types 
 in the schema and accepts a list of handlers with parameters, specifying how various exceptions should be mapped.
@@ -1132,8 +1134,8 @@ In this instance, certain exceptions are mapped to be handled as _MyError_. The 
 - `matches` - Can be used to specify a string that the exception message must contain in order to be handled.
 - `description` - A description of the error to be returned to the user. If not provided, the exception message will be used instead.
 
-### External field
-The **externalField** directive indicates that the annotated field is
+### Custom field logic with @externalField
+The **@externalField** directive indicates that the annotated field is
 retrieved using a static extension method implemented in Java.
 This is typically used when the field's value requires custom logic implemented in Java.
 
@@ -1168,8 +1170,8 @@ public static Field<Boolean> isEnglish(Film film) {
 ```
 The static extension method is required to have the table class it's extending as a parameter, which is `Film` in this example.
 It also needs to return the generic type `Field`, with the actual type within matching the scalar type from the schema.
-In this example you see that the scalar type in the schema is `String`, which means that the generic type needs to look
-like this `Field<String>`.
+In this example you see that the scalar type in the schema is `Boolean`, which means that the generic type needs to look
+like this `Field<Boolean>`.
 
 The file containing this method needs to be discoverable for Graphitron.
 You need to provide the path for the file within the tag `externalReferenceImports` in your `pom.xml`:
@@ -1194,14 +1196,14 @@ public class QueryDBQueries {
 
 Note that jOOQ records do not have space for extra fields, and any usage of external fields where such fields must be stored in a jOOQ record will fail.
 
-### Interface queries
-Graphitron supports generating queries for two types of interfaces.
+### Polymorphic queries (unions and interfaces)
+Graphitron supports generating queries for interfaces and unions, allowing polymorphic return types.
 
-#### Single table interfaces
+#### Single table interface
 Single table interfaces are interfaces where every implementation is in the same table, and the type of the interface is determined by a discriminator column. 
 Graphitron supports generating queries for this type of interface on the Query-type.
 
-In order to define a single table interface and its types, the **discriminate** and **discriminator** directives are used, in addition to the [**table**](#table-directive) directive.
+In order to define a single table interface and its types, the **discriminate** and **discriminator** directives are used, in addition to the [**table**](#link-types-to-database-tables-with-table) directive.
 
 For an interface to be considered a single table interface, both the **table** and **discriminate** directives must be set:
 ```graphql
@@ -1232,15 +1234,15 @@ type Query {
 }
 ```
 
-Queries with input and [query conditions](#Query-conditions) are also supported.
+Queries with input and [query conditions](#custom-query-conditions-with-condition) are also supported.
 
 - Types implementing multiple single table interfaces are supported if they have the same discriminator value for all interfaces
 - The discriminator column must return a string type
 - Every reference field in the interface must have the same configuration in every implementing type
 - Other reference fields sharing the same name must also have the same configuration across the implementing types
 
-#### Multi table interfaces
-Multi table interfaces are interfaces where the implementations are spread across tables, and a row's type is determined by
+#### Multitable interface
+Multitable interfaces are interfaces where the implementations are spread across tables, and a row's type is determined by
 its table. Graphitron supports generating queries for this type of interface on the Query-type.
 
 No special directives are required on the interface definition. Any directives on fields in the interface will be ignored, and should instead be placed on the fields in the implementing type.
@@ -1251,7 +1253,7 @@ interface Titled {
 }
 ```
 
-For every implementing type, the [**table**](#table-directive) directive is required.
+For every implementing type, the [**table**](#link-types-to-database-tables-with-table) directive is required.
 
 ```graphql
 type Film implements Titled @table(name: "FILM") {
@@ -1274,8 +1276,8 @@ type Query {
 }
 ```
 
-### Multitable Unions
-Graphitron supports Union queries on the Query type. All the union's subtypes need to have the [**table**](#table-directive) directive set.
+#### Multitable union
+Graphitron supports union queries on the Query type. All the union's subtypes need to have the [**table**](#link-types-to-database-tables-with-table) directive set.
 
 _Schema setup:_
 ```graphql
@@ -1299,9 +1301,9 @@ type Query {
 }
 ```
 
-#### Query conditions
+#### Query conditions for polymorphic multitable types
 
-[Conditions](#Query-conditions) on queries returning multi table interfaces are also supported. 
+[Conditions](#custom-query-conditions-with-condition) on queries returning multitable interfaces or unions are also supported. 
 Since the table is passed as a parameter to the condition method and each implementing type has a different table, 
 a unique method for each implementation is necessary.
 These methods must all share the same method signature, except for the first table parameter.
@@ -1319,8 +1321,7 @@ class TitledCondition {
 }
 ```
 
-### Other directives
-#### lookupKey directive
+### Batch lookups with @lookupKey
 Lookup is a special case of fetching data, which can be generated using the **lookupKey**-directive.
 For each element that is requested, either an object or null will be returned, and they will be the same order as in the request.
 In order to determine which inputs should identify such an element, keys have to be set explicitly in the schema.
@@ -1384,7 +1385,7 @@ input InNestedKey {
 }
 ```
 
-#### orderBy directive
+### Sort results with @orderBy input
 Incorporating the **orderBy** functionality in your GraphQL schema allow API users to sort query results based on specific fields.
 
 _Step 1: Define Order Input Types_
@@ -1444,6 +1445,23 @@ type Query {
 }
 ```
 
+### Default sorting with @defaultOrder
+The **@defaultOrder** directive specifies the default sort order for a field when no `@orderBy` input is provided.
+It uses a database index for consistent, efficient sorting.
+
+**Parameters:**
+* _index_ - Name of the database index to use for sorting (required)
+* _direction_ - Sort direction: `ASC` or `DESC` (default: `ASC`)
+
+If an `@orderBy` input is also present on the field and the user provides an orderBy value, the user's value takes precedence over the default.
+
+**Example:**
+```graphql
+type Query {
+    films(orderBy: FilmOrder @orderBy, first: Int = 100, after: String): FilmConnection @defaultOrder(index: "IDX_TITLE", direction: ASC)
+}
+```
+
 ## Special interfaces
 Currently, Graphitron reserves two interface names for special purposes, namely _Node_ and _Error_.
 
@@ -1487,10 +1505,10 @@ Pass it to the runtime wiring:
 Graphitron.getRuntimeWiring(nodeIdStrategy);
 ```
 
-### node directive
+### Global object identification with @node
 The **node** directive marks a type as globally identifiable by its ID, following your custom node ID strategy. To use this directive, the type must:
 
-- Have the [table](#table-directive) directive.
+- Have the [table](#link-types-to-database-tables-with-table) directive.
 - Implement the [Node](#node) interface.
 
 The **node** directive supports two parameters for ID configuration:
@@ -1524,8 +1542,8 @@ Graphitron will instead pass these arguments:
 nodeIdStrategy.createId("C", CUSTOMER.CUSTOMER_ID)
 ```
 
-### nodeId directive
-> **Note:** This directive is not currently supported when combined with [services](#services).
+### Globally unique IDs with @nodeId
+> **Note:** This directive is not currently supported when combined with [services](#custom-database-operations-with-service).
 
 The **nodeId** directive must be placed on all node ID fields to indicate that they represent globally unique IDs, according to your node ID strategy.
 
@@ -1533,7 +1551,7 @@ The directive accepts one parameter:
 
 - `typeName` — The name of the node type the ID refers to.
   - The type name is case-sensitive.
-  - The provided type must have the [**node**](#node-directive) directive.
+  - The provided type must have the [**node**](#global-object-identification-with-node) directive.
 
 #### Implicit typeName
 The typeName parameter of the nodeId directive is optional. If omitted, Graphitron will try to deduce the node type like this:
@@ -1542,7 +1560,7 @@ The typeName parameter of the nodeId directive is optional. If omitted, Graphitr
 
 #### Referencing another type's ID
 It is possible to reference another type's node ID by specifying the `typeName` parameter.
-The _typeName_ implies a reference to another table, so this is often combined with the [reference](#reference-directive) directive.
+The _typeName_ implies a reference to another table, so this is often combined with the [reference](#define-table-join-paths-with-reference) directive.
 
 For example, if you have a `Customer` type that has a field referring to an `Address` ID:
 
