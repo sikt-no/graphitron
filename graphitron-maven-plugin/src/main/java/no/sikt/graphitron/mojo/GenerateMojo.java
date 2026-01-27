@@ -5,7 +5,6 @@ import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.OptionalSelect;
 import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.configuration.externalreferences.ExternalMojoClassReference;
-import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
 import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.generate.Generator;
@@ -52,12 +51,6 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @Parameter(property = "graphitron.userSchemaFiles")
     private Set<String> userSchemaFiles;
 
-    /**
-     * External reference elements that can be used in code generation.
-     */
-    @Parameter(property = "graphitron.externalReferences")
-    @SuppressWarnings("unused")
-    private List<ExternalMojoClassReference> externalReferences;
 
     /**
      * Extra scalars that can be used in code generation. In addition to the default scalars provided by the graphql
@@ -66,13 +59,6 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @Parameter(property = "graphitron.scalars")
     @SuppressWarnings("unused")
     private List<ExternalMojoClassReference> scalars;
-
-    /**
-     * External reference elements that can be used in code generation.
-     */
-    @Parameter(property = "graphitron.externalReferenceImports")
-    @SuppressWarnings("unused")
-    private Set<String> externalReferenceImports;
 
     /**
      * Transforms that apply to all records, or a subset of records.
@@ -177,11 +163,6 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     }
 
     @Override
-    public List<? extends ExternalReference> getExternalReferences() {
-        return externalReferences;
-    }
-
-    @Override
     public List<GlobalTransform> getGlobalTransforms() {
         return globalRecordTransforms;
     }
@@ -199,11 +180,6 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @Override
     public CodeGenerationThresholds getCodeGenerationThresholds() {
         return codeGenerationThresholds;
-    }
-
-    @Override
-    public Set<String> getExternalReferenceImports() {
-        return externalReferenceImports;
     }
 
     @Override

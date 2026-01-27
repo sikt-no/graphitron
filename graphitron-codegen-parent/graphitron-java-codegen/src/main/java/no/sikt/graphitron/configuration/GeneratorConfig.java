@@ -141,6 +141,9 @@ public class GeneratorConfig {
         makeNodeStrategy = validator.makeNodeStrategy();
         requireTypeIdOnNode = validator.requireTypeIdOnNode();
 
+        externalReferences = new ExternalReferences(validator.getExternalReferences());
+        externalReferenceImports = validator.getExternalReferenceImports();
+
         // Set defaults for unused fields to prevent NPEs
         // Note: These packages are needed by ProcessedSchema during construction,
         // even though code generation won't actually use them.
@@ -149,8 +152,6 @@ public class GeneratorConfig {
         generatedSchemaResolversPackage = "validation.unused.api";
         generatedSchemaModelsPackage = "validation.unused.model";
         maxAllowedPageSize = 1000;
-        externalReferences = new ExternalReferences(List.of());
-        externalReferenceImports = Set.of();
         globalTransforms = List.of();
         recordValidation = new RecordValidation();
         codeGenerationThresholds = new CodeGenerationThresholds();
