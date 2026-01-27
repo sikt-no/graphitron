@@ -11,16 +11,18 @@ import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 public record ClassWiringContainer(WiringContainer wiring, ClassName containerClass) {
-    public CodeBlock toCode() {
+    public CodeBlock toCode(boolean includeNode) {
         if (wiring.isFetcher()) {
             CodeBlock methodCall;
 
-            if (GeneratorConfig.shouldMakeNodeStrategy()) {
+            if (includeNode && GeneratorConfig.shouldMakeNodeStrategy()) {
                 methodCall = CodeBlock.of("$T.$L($N)", containerClass, wiring.methodName(), VAR_NODE_STRATEGY);
-            } else {
+            } else if (includeNode) {
                 methodCall = wiring.schemaField().equals(uncapitalize(NODE_TYPE.getName()))
                              ? CodeBlock.of("$T.$L($N)", containerClass, wiring.methodName(), VAR_NODE_HANDLER)
                              : asMethodCall(containerClass, wiring.methodName());
+            } else {
+                methodCall = asMethodCall(containerClass, wiring.methodName());
             }
             return CodeBlock.of(".dataFetcher($S, $L)", wiring.schemaField(), methodCall);
         }
