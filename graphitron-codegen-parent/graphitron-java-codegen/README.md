@@ -14,6 +14,9 @@ using Java and [jOOQ](https://www.jooq.org/).
   - [Goals](#goals)
   - [Configuration](#configuration)
     - [General settings](#general-settings)
+    - [Global node identification settings](#global-node-identification-settings)
+    - [Validation settings](#validation-settings)
+    - [Query generation settings](#query-generation-settings)
     - [Code references](#code-references)
 - [Directives](#directives)
   - [Common directives](#common-directives)
@@ -47,6 +50,7 @@ using Java and [jOOQ](https://www.jooq.org/).
     - [Input types with Java records](#input-types-with-java-records)
     - [Context variables](#context-variables)
     - [Response mapping](#response-mapping)
+  - [Table method](#table-method)
   - [Error handling](#error-handling)
   - [External field](#external-field)
     - [Example](#example)
@@ -129,14 +133,18 @@ The options are the same for both goals.
 * `outputPackage` - The package path of the generated code.
 * `schemaFiles` - Set of schema files which should be used for the generation process.
 * `userSchemaFiles` - Set of schema files to provide to the user.
-* `generatedSchemaCodePackage` - The location of the graphql-codegen generated classes.
 * `jooqGeneratedPackage` - The location of the jOOQ generated code.
 * `externalReferences` - See [Code references](#code-references).
 * `externalReferenceImports` - See [Code references](#code-references).
 * `globalRecordTransforms` - See [Code references](#code-references).
-* `extensions` -  See [Code references](#code-references).
 * `maxAllowedPageSize` - The maximum number of items that can be returned from "Cursor Connections Specification" based data fetchers. And thus also the database query limit.
 * `scalars` - Extra scalars that can be used in code generation and that will be added automatically to the wiring. Reflection is used to find all the scalar definitions of the provided class(es).
+
+#### Global node identification settings
+* `makeNodeStrategy` - Enables support for global node identification in generated code. See [Global node identification](#global-node-identification).
+* `experimental_requireTypeIdOnNode` - Experimental flag that requires the `typeId` parameter on the **node** directive. This flag will be removed, but can temporarily be used to ensure all node types have a defined type ID.
+
+#### Validation settings
 * `recordValidation` - Controls whether generated mutations should include validation of JOOQ records through the Jakarta Bean Validation specification.
   * `enabled` - Flag indicating if Graphitron should generate record validation code
   * `schemaErrorType` - Name of the schema error to be returned in case of validation violations and IllegalArgumentExceptions.
@@ -144,6 +152,19 @@ The options are the same for both goals.
     _AbortExecutionExceptions_ to be thrown, leading to top-level GraphQL errors.
     Also, if the given error is not present in the schema as a returnable error for a specific mutation,
     validation violations and IllegalArgumentExceptions on this mutation will cause top-level GraphQL errors.
+* `codeGenerationThresholds` - Thresholds for code generation warnings and limits. If enabled, errors or warnings will appear if a generated jOOQ query exceed the thresholds.
+  * `upperBoundLinesOfCode` - Warning threshold for generated method line count.
+  * `crashPointLinesOfCode` - Hard limit for generated method line count; exceeding this causes a build failure.
+  * `upperBoundNestingDepth` - Warning threshold for nesting depth of correlated subqueries.
+  * `crashPointNestingDepth` - Hard limit for nesting depth; exceeding this causes a build failure.
+* `validateOverlappingInputFields` - Validates that input fields mapping to the same jOOQ column have consistent values at runtime.
+
+#### Query generation settings
+* `optionalSelect` - Controls optional select behavior for fields, which can improve performance by skipping unrequested fields.
+  * `onSubqueryReferences` - Enable optional selects for subquery references.
+  * `onExternalFields` - Enable optional selects for external fields.
+* `useJdbcBatchingForDeletes` - Enables JDBC batching for delete operations in generated mutations. Enabled by default. If disabled, improved delete query with returning clause will be generated.
+* `useJdbcBatchingForInserts` - Enables JDBC batching for insert operations in generated mutations. Enabled by default. If disabled, improved insert query with returning clause will be generated.
 
 See the [pom.xml](https://github.com/sikt-no/graphitron/blob/main/graphitron-example/graphitron-example-spec/pom.xml)
 of _graphitron-example-spec_ for an example on how to configure these settings.

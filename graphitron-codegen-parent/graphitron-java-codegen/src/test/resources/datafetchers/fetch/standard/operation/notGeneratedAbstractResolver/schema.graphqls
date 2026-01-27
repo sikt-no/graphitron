@@ -1,4 +1,0 @@
-type Query {
-  query1: DummyType
-  query2: DummyType @notGenerated
-}

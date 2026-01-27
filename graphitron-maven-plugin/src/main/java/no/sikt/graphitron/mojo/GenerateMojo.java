@@ -10,7 +10,7 @@ import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
 import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.generate.Generator;
 import no.sikt.graphitron.generate.GraphQLGenerator;
-import org.apache.maven.plugin.AbstractMojo;
+import no.sikt.graphitron.validation.ValidationHandler;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -27,7 +27,7 @@ import static org.apache.maven.plugins.annotations.LifecyclePhase.GENERATE_SOURC
  * Mojo for a single run of the code generation.
  */
 @Mojo(name = "generate", defaultPhase = GENERATE_SOURCES)
-public class GenerateMojo extends AbstractMojo implements Generator {
+public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     /**
      * The Maven project.
      */
@@ -37,37 +37,25 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     /**
      * The location where the code should be exported to.
      */
-    @Parameter(property = "generate.outputPath", defaultValue = "${project.build.directory}/generated-sources")
+    @Parameter(property = "graphitron.outputPath", defaultValue = "${project.build.directory}/generated-sources")
     private String outputPath;
 
     /**
      * The package where the code should be exported to.
      */
-    @Parameter(property = "generate.outputPackage", defaultValue = "no.sikt.graphql")
+    @Parameter(property = "graphitron.outputPackage", defaultValue = "no.sikt.graphql")
     private String outputPackage;
-
-    /**
-     * The comma-separated locations of the schema files to use for code generation.
-     */
-    @Parameter(property = "generate.schemaFiles", defaultValue = "${project.basedir}/target/generated-resources/schema.graphql", required = true)
-    private Set<String> schemaFiles;
 
     /**
      * The comma-separated locations of the schema files to provide to the user.
      */
-    @Parameter(property = "generate.userSchemaFiles")
+    @Parameter(property = "graphitron.userSchemaFiles")
     private Set<String> userSchemaFiles;
-
-    /**
-     * The output folder for jOOQ generated code.
-     */
-    @Parameter(property = "generate.jooqGeneratedPackage")
-    private String jooqGeneratedPackage;
 
     /**
      * External reference elements that can be used in code generation.
      */
-    @Parameter(property = "generate.externalReferences")
+    @Parameter(property = "graphitron.externalReferences")
     @SuppressWarnings("unused")
     private List<ExternalMojoClassReference> externalReferences;
 
@@ -75,49 +63,41 @@ public class GenerateMojo extends AbstractMojo implements Generator {
      * Extra scalars that can be used in code generation. In addition to the default scalars provided by the graphql
      * Java and <a href="https://github.com/graphql-java/graphql-java-extended-scalars"> Extended Scalars</a> libraries
      */
-    @Parameter(property = "generate.scalars")
+    @Parameter(property = "graphitron.scalars")
     @SuppressWarnings("unused")
     private List<ExternalMojoClassReference> scalars;
 
     /**
      * External reference elements that can be used in code generation.
      */
-    @Parameter(property = "generate.externalReferenceImports")
+    @Parameter(property = "graphitron.externalReferenceImports")
     @SuppressWarnings("unused")
     private Set<String> externalReferenceImports;
 
     /**
      * Transforms that apply to all records, or a subset of records.
      */
-    @Parameter(property = "generate.globalRecordTransforms")
+    @Parameter(property = "graphitron.globalRecordTransforms")
     @SuppressWarnings("unused")
     private List<GlobalTransform> globalRecordTransforms;
 
-    @Parameter(property = "generate.recordValidation")
+    @Parameter(property = "graphitron.recordValidation")
     @SuppressWarnings("unused")
     private RecordValidation recordValidation;
 
-    @Parameter(property = "generate.maxAllowedPageSize", defaultValue = "1000")
+    @Parameter(property = "graphitron.maxAllowedPageSize", defaultValue = "1000")
     @SuppressWarnings("unused")
     private int maxAllowedPageSize;
 
-    @Parameter(property = "generate.makeNodeStrategy", defaultValue = "false")
-    @SuppressWarnings("unused")
-    private boolean makeNodeStrategy;
-
-    @Parameter(property = "generate.useJdbcBatchingForDeletes", defaultValue = "true")
+    @Parameter(property = "graphitron.useJdbcBatchingForDeletes", defaultValue = "true")
     @SuppressWarnings("unused")
     private boolean useJdbcBatchingForDeletes;
 
-    @Parameter(property = "generate.useJdbcBatchingForInserts", defaultValue = "true")
+    @Parameter(property = "graphitron.useJdbcBatchingForInserts", defaultValue = "true")
     @SuppressWarnings("unused")
     private boolean useJdbcBatchingForInserts;
 
-    @Parameter(property = "generate.experimental_requireTypeIdOnNode", defaultValue = "false")
-    @SuppressWarnings("unused")
-    private boolean experimental_requireTypeIdOnNode;
-
-    @Parameter(property = "generate.codeGenerationThresholds")
+    @Parameter(property = "graphitron.codeGenerationThresholds")
     @SuppressWarnings("unused")
     private CodeGenerationThresholds codeGenerationThresholds;
 
@@ -125,14 +105,22 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @SuppressWarnings("unused")
     private OptionalSelect optionalSelect;
 
+    @Parameter(property = "generate.validateOverlappingInputFields", defaultValue = "true")
+    @SuppressWarnings("unused")
+    private boolean validateOverlappingInputFields;
+
     @Override
     public void execute() throws MojoExecutionException {
-        GeneratorConfig.loadProperties(this);
-
-        getGraphqlCodegenCustomTypeMapping();
-
-        GraphQLGenerator.generate();
-        project.addCompileSourceRoot(getOutputPath());
+        try {
+            GeneratorConfig.loadProperties(this);
+            getGraphqlCodegenCustomTypeMapping();
+            GraphQLGenerator.generate();
+            project.addCompileSourceRoot(getOutputPath());
+        } catch (Exception e) {
+            // Log warnings for visibility before throwing
+            ValidationHandler.logWarnings();
+            throw new MojoExecutionException("\n" + e.getMessage(), e);
+        }
     }
 
     private Map<String, String> getGraphqlCodegenCustomTypeMapping() {
@@ -163,21 +151,11 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     }
 
     @Override
-    public Set<String> getSchemaFiles() {
-        return schemaFiles;
-    }
-
-    @Override
     public Set<String> getUserSchemaFiles() {
         if (userSchemaFiles == null || userSchemaFiles.isEmpty()) {
             return schemaFiles;
         }
         return userSchemaFiles;
-    }
-
-    @Override
-    public String getJooqGeneratedPackage() {
-        return jooqGeneratedPackage;
     }
 
     @Override
@@ -198,10 +176,6 @@ public class GenerateMojo extends AbstractMojo implements Generator {
         this.outputPackage = outputPackage;
     }
 
-    public void setSchemaFiles(Set<String> schemaFiles) {
-        this.schemaFiles = schemaFiles;
-    }
-
     @Override
     public List<? extends ExternalReference> getExternalReferences() {
         return externalReferences;
@@ -210,11 +184,6 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Override
     public List<GlobalTransform> getGlobalTransforms() {
         return globalRecordTransforms;
-    }
-
-    @Override
-    public boolean makeNodeStrategy() {
-        return makeNodeStrategy;
     }
 
     @Override
@@ -233,15 +202,6 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     }
 
     @Override
-    public boolean requireTypeIdOnNode() {
-        return experimental_requireTypeIdOnNode;
-    }
-
-    public void setJooqGeneratedPackage(String jooqGeneratedPackage) {
-        this.jooqGeneratedPackage = jooqGeneratedPackage;
-    }
-
-    @Override
     public Set<String> getExternalReferenceImports() {
         return externalReferenceImports;
     }
@@ -249,5 +209,10 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Override
     public OptionalSelect getOptionalSelect() {
         return optionalSelect;
+    }
+
+    @Override
+    public boolean validateOverlappingInputFields() {
+        return validateOverlappingInputFields;
     }
 }
