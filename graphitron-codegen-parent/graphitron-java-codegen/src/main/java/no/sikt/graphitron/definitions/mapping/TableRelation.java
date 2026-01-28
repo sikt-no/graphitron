@@ -2,7 +2,7 @@ package no.sikt.graphitron.definitions.mapping;
 
 import no.sikt.graphitron.generators.context.JoinListSequence;
 
-import static no.sikt.graphitron.mappings.TableReflection.inferRelationType;
+import static no.sikt.graphitron.mappings.TableReflection.inferRelationTypeBetweenTableJavaFieldNames;
 
 public class TableRelation {
     private final JOOQMapping from, toTable, key;
@@ -19,7 +19,7 @@ public class TableRelation {
 
         // For cases where relations exist both ways, we need a way to know which one is intended.
         relationType = from != null && toTable != null
-                ? inferRelationType(from.getMappingName(), toTable.getMappingName(), key)
+                ? inferRelationTypeBetweenTableJavaFieldNames(from.getMappingName(), toTable.getMappingName(), key)
                 : TableRelationType.NONE;
     }
 

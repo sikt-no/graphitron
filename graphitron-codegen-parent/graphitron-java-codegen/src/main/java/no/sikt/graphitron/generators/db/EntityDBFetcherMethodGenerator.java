@@ -22,7 +22,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.asEntityQuer
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getObjectMapTypeName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
-import static no.sikt.graphitron.mappings.TableReflection.getFieldType;
+import static no.sikt.graphitron.mappings.TableReflection.getFieldTypeFromTableJavaFieldName;
 
 /**
  * This class generates the queries needed to resolve entities.
@@ -125,7 +125,7 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
                     "$L$L.eq(($T) ",
                     field.getUpperCaseName(),
                     toJOOQEnumConverter(field.getTypeName(), processedSchema),
-                    getFieldType(context.getTargetTable().getName(), field.getUpperCaseName()).map(ClassName::get).orElse(STRING.className)
+                    getFieldTypeFromTableJavaFieldName(context.getTargetTable().getName(), field.getUpperCaseName()).map(ClassName::get).orElse(STRING.className)
             );
         }
         conditionCode.add("$N.get($S))", VAR_INPUT_MAP, key);

@@ -30,8 +30,8 @@ import java.util.stream.Stream;
 import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForDeletes;
 import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForInserts;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
-import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldNamesForKey;
-import static no.sikt.graphitron.mappings.TableReflection.getPrimaryKeyForTable;
+import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldNamesForKeyInTableJavaFieldName;
+import static no.sikt.graphitron.mappings.TableReflection.getPrimaryKeyForTableJavaFieldName;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -484,8 +484,8 @@ public class ProcessedSchema {
             return Optional.of(type.getKeyColumns());
         }
 
-        return getPrimaryKeyForTable(type.getTable().getName())
-                .map(f -> new LinkedList<>(getJavaFieldNamesForKey(type.getTable().getName(), f)));
+        return getPrimaryKeyForTableJavaFieldName(type.getTable().getName())
+                .map(f -> new LinkedList<>(getJavaFieldNamesForKeyInTableJavaFieldName(type.getTable().getName(), f)));
     }
 
     /**

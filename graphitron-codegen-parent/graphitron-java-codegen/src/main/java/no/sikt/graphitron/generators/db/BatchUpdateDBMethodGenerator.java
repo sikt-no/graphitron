@@ -137,8 +137,8 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
 
     private List<String> getNodeIdKeyColumnNames(List<String> keyColumns, String tableName) {
         if (keyColumns.isEmpty()) {
-            return TableReflection.getPrimaryKeyForTable(tableName)
-                    .map(it -> TableReflection.getJavaFieldNamesForKey(tableName, it))
+            return TableReflection.getPrimaryKeyForTableJavaFieldName(tableName)
+                    .map(it -> TableReflection.getJavaFieldNamesForKeyInTableJavaFieldName(tableName, it))
                     .orElse(Collections.emptyList());
         } else  {
             return keyColumns;

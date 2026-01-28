@@ -22,8 +22,8 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldName;
-import static no.sikt.graphitron.mappings.TableReflection.getRequiredFields;
+import static no.sikt.graphitron.mappings.TableReflection.javaFieldNameForJooqFieldNameInTableJavaFieldName;
+import static no.sikt.graphitron.mappings.TableReflection.getRequiredFieldsForTableJavaFieldName;
 import static no.sikt.graphql.directives.DirectiveHelpers.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.NAME;
@@ -61,7 +61,7 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         } else {
             classReference = null;
         }
-        requiredInputs = hasTable() ? getRequiredFields(getTable().getMappingName()).stream().map(String::toUpperCase).collect(Collectors.toCollection(LinkedHashSet::new)) : new LinkedHashSet<>();
+        requiredInputs = hasTable() ? getRequiredFieldsForTableJavaFieldName(getTable().getMappingName()).stream().map(String::toUpperCase).collect(Collectors.toCollection(LinkedHashSet::new)) : new LinkedHashSet<>();
         inputsSortedByNullability = sortInputsByNullability();
         hasKeys = objectDefinition.hasDirective(FEDERATION_KEY.getName());
         keys = hasKeys ? new EntityKeySet(getRepeatableDirectiveArgumentString(objectDefinition, FEDERATION_KEY.getName(), FEDERATION_KEY_ARGUMENT.getName())) : null;
@@ -72,7 +72,7 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         typeId = typeIdParameter.orElse(hasTable() ? getName() : null);
         keyColumns = getOptionalDirectiveArgumentStringList(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.KEY_COLUMNS)
                 .stream()
-                .map(columnName -> getJavaFieldName(getTable().getName(), columnName).orElse(columnName))
+                .map(columnName -> javaFieldNameForJooqFieldNameInTableJavaFieldName(getTable().getName(), columnName).orElse(columnName))
                 .collect(Collectors.toCollection(LinkedList::new));
     }
 
@@ -87,7 +87,7 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
      */
     protected boolean isNonNullable(GenerationField field) {
         if (field.isID() && hasTable()) {
-            var idFields = TableReflection.getRequiredFields(getTable().getMappingName()).stream()
+            var idFields = TableReflection.getRequiredFieldsForTableJavaFieldName(getTable().getMappingName()).stream()
                     .map(String::toUpperCase)
                     .collect(Collectors.toList());
             if (!idFields.isEmpty()) {

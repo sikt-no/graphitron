@@ -95,7 +95,7 @@ public class DBClassGenerator extends AbstractSchemaClassGenerator<ObjectDefinit
     }
 
     protected Set<Class<?>> getStaticImports() {
-        return new HashSet<>(TableReflection.getClassFromSchemas("Tables"));
+        return new HashSet<>(TableReflection.getClassFromAllJooqSchemaPackages("Tables"));
     }
 
     @Override

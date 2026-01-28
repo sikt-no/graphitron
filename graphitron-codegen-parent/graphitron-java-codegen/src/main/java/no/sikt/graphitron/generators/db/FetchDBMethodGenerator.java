@@ -163,7 +163,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected CodeBlock generateCorrelatedSubquery(GenerationField field, FetchContext context) {
         var isConnection = ((ObjectField) field).hasForwardPagination();
         var isMultiset = field.isIterableWrapped() || isConnection;
-        var orderByFieldsBlock = field.isResolver() && tableHasPrimaryKey(context.getTargetTableName())
+        var orderByFieldsBlock = field.isResolver() && tableJavaFieldNameHasPrimaryKey(context.getTargetTableName())
                 ? CodeBlock.of(VAR_ORDER_FIELDS)
                 : createOrderFieldsBlock((ObjectField) field, context.getTargetAlias(), context.getTargetTableName());
         var shouldBeOrdered = isMultiset && !orderByFieldsBlock.isEmpty();
@@ -315,7 +315,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var imports = GeneratorConfig.getExternalReferenceImports();
 
         Optional<String> reference = imports.stream()
-                .filter(it -> getMethodFromReference(it, tableName, field.getName()).isPresent())
+                .filter(it -> getMethodFromReferenceClassForTableJavaFieldName(it, tableName, field.getName()).isPresent())
                 .findFirst();
 
         if (reference.isEmpty()) {
@@ -595,7 +595,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         var convertArrayFieldToList = field.isIterableWrapped()
-                && getFieldType(context.getTargetTable().getName(), field.getUpperCaseName()).map(Class::isArray).orElse(false);
+                && getFieldTypeFromTableJavaFieldName(context.getTargetTable().getName(), field.getUpperCaseName()).map(Class::isArray).orElse(false);
 
         return CodeBlock.builder()
                 .add("$L.$N", renderedSource, field.getUpperCaseName())
@@ -606,9 +606,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     private CodeBlock generateGetForID(MethodMapping mapping, JOOQMapping table) {
         if (table != null) { // This may become superfluous if nodeId becomes the only way of handling IDs. This is just temporary insurance that the right thing gets picked.
-            var method = searchTableForMethodWithName(table.getMappingName(), mapping.getName())
-                    .or(() -> searchTableForMethodWithName(table.getMappingName(), mapping.asGet()))
-                    .or(() -> searchTableForMethodWithName(table.getMappingName(), mapping.asCamelGet()));
+            var method = searchTableJavaFieldNameForMethodName(table.getMappingName(), mapping.getName())
+                    .or(() -> searchTableJavaFieldNameForMethodName(table.getMappingName(), mapping.asGet()))
+                    .or(() -> searchTableJavaFieldNameForMethodName(table.getMappingName(), mapping.asCamelGet()));
             if (method.isPresent()) {
                 return CodeBlock.of(".$L()", method.get());
             }
@@ -619,10 +619,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     private CodeBlock generateHasForID(MethodMapping mapping, JOOQMapping table, CodeBlock content, boolean isIterable) {
         if (table != null) { // This may become superfluous if nodeId becomes the only way of handling IDs. This is just temporary insurance that the right thing gets picked.
             var suffix = isIterable ? "s" : "";
-            if (searchTableForMethodWithName(table.getMappingName(), mapping.asHas() + suffix).isPresent()) {
+            if (searchTableJavaFieldNameForMethodName(table.getMappingName(), mapping.asHas() + suffix).isPresent()) {
                 return mapping.asHasCall(content, isIterable);
             }
-            if (searchTableForMethodWithName(table.getMappingName(), mapping.asCamelHas() + suffix).isPresent()) {
+            if (searchTableJavaFieldNameForMethodName(table.getMappingName(), mapping.asCamelHas() + suffix).isPresent()) {
                 return mapping.asCamelHasCall(content, isIterable);
             }
         }
@@ -860,12 +860,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 } else {
                     tupleVariableBlocks.add(
                             isNullableAndNotVirtual
-                                    ? ofTernary(argumentSelect, val(unpacked), makeTupleBlock(field, context, condition.hasRecord(), fieldTypeIsCLOB(lastTable.getName(), field.getUpperCaseName())))
+                                    ? ofTernary(argumentSelect, val(unpacked), makeTupleBlock(field, context, condition.hasRecord(), jooqFieldInTableJavaFieldNameIsClob(lastTable.getName(), field.getUpperCaseName())))
                                     : val(unpacked)
                     );
                 }
 
-                tupleFieldBlocks.add(makeTupleBlock(field, context, condition.hasRecord(), fieldTypeIsCLOB(lastTable.getName(), field.getUpperCaseName())));
+                tupleFieldBlocks.add(makeTupleBlock(field, context, condition.hasRecord(), jooqFieldInTableJavaFieldNameIsClob(lastTable.getName(), field.getUpperCaseName())));
                 selectedConditions.add(condition);
             }
 
@@ -996,7 +996,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                         && !processedSchema.isInsertMutationWithReturning(referenceField);
 
                 var innerFields = isMutationWithJDBCBatching ?
-                        getPrimaryKeyForTable(processedSchema.getRecordType(inputField).getTable().getName())
+                        getPrimaryKeyForTableJavaFieldName(processedSchema.getRecordType(inputField).getTable().getName())
                                 .map(it -> it.getFields().stream().map(col -> new VirtualInputField(col.getName(), inputField.getContainerTypeName())).toList())
                                 .orElse(List.of())
                         : processedSchema.getInputType(inputField).getFields();
@@ -1102,7 +1102,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected CodeBlock createOrderFieldsBlock(ObjectField referenceField, String actualRefTable, String tableName) {
         var orderByField = referenceField.getOrderField();
         var defaultOrderIndex = referenceField.getDefaultOrderIndex();
-        var hasPrimaryKey = tableHasPrimaryKey(tableName);
+        var hasPrimaryKey = tableJavaFieldNameHasPrimaryKey(tableName);
 
         // No sorting possible if no orderBy, no defaultOrder, and no primary key
         if (orderByField.isEmpty() && defaultOrderIndex.isEmpty() && !hasPrimaryKey) {
@@ -1112,7 +1112,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         // Determine default order fields (defaultOrder takes precedence over primary key)
         CodeBlock defaultOrderByFields = defaultOrderIndex.map( index -> {
             ValidationHandler.isTrue(
-                    TableReflection.tableHasIndex(tableName, defaultOrderIndex.get()),
+                    TableReflection.tableForTableJavaFieldNameHasIndex(tableName, defaultOrderIndex.get()),
                     "Table '%s' has no index '%s' specified in @defaultOrder for field '%s'",
                     tableName, defaultOrderIndex.get(), referenceField.getName()
             );
@@ -1144,7 +1144,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .stream()
                 .collect(Collectors.toMap(AbstractField::getName, FetchDBMethodGenerator::getIndexName));
 
-        orderByFieldToDBIndexName.forEach((orderByField, indexName) -> ValidationHandler.isTrue(TableReflection.tableHasIndex(targetTableName, indexName),
+        orderByFieldToDBIndexName.forEach((orderByField, indexName) -> ValidationHandler.isTrue(TableReflection.tableForTableJavaFieldNameHasIndex(targetTableName, indexName),
                 "Table '%S' has no index '%S' necessary for sorting by '%s'", targetTableName, indexName, orderByField));
 
         var sortFieldMapEntries = orderByFieldToDBIndexName.entrySet()

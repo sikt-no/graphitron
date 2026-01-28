@@ -53,19 +53,19 @@ public class JOOQMapping extends MethodMapping implements JoinElement {
 
     public static JOOQMapping fromKey(String keyName) {
         var upperName = keyName.toUpperCase();
-        var sourceTable = getKeySourceTable(upperName);
-        var targetTable = getKeyTargetTable(upperName);
+        var sourceTable = getFkSourceTableForFkJavaFieldName(upperName);
+        var targetTable = getFkTargetTableForFkJavaFieldName(upperName);
 
         return new JOOQMapping(
                 upperName,
-                sourceTable.map(it -> searchTableForKeyMethodName(it, upperName).orElse("")).orElse(""),
+                sourceTable.map(it -> searchTableFieldNameForPathMethodNameGivenFkJavaFieldName(it, upperName).orElse("")).orElse(""),
                 targetTable.map(JOOQMapping::fromTable).orElse(null)
         );
     }
 
     public JOOQMapping getInverseKey() {
-        var sourceTable = getKeySourceTable(name).map(JOOQMapping::fromTable).orElse(null);
-        var targetTable = getKeyTargetTable(name).map(JOOQMapping::fromTable).orElse(null);
+        var sourceTable = getFkSourceTableForFkJavaFieldName(name).map(JOOQMapping::fromTable).orElse(null);
+        var targetTable = getFkTargetTableForFkJavaFieldName(name).map(JOOQMapping::fromTable).orElse(null);
 
         if (sourceTable == null || targetTable == null) {
             return null;
@@ -75,7 +75,7 @@ public class JOOQMapping extends MethodMapping implements JoinElement {
 
         return new JOOQMapping(
                 name,
-                searchTableForKeyMethodName(isReverse ? sourceTable.getName() : targetTable.getName(), name).orElse(""),
+                searchTableFieldNameForPathMethodNameGivenFkJavaFieldName(isReverse ? sourceTable.getName() : targetTable.getName(), name).orElse(""),
                 (isReverse ? targetTable : sourceTable)
         );
     }
@@ -104,13 +104,13 @@ public class JOOQMapping extends MethodMapping implements JoinElement {
 
     public Class<?> getTableClass() {
         // FIXME: Dersom skjema refererer til en tabell som ikke finnes burde vi stoppe genereringen (FSP-538)
-        return TableReflection.getTableClass(name)
+        return TableReflection.getTableClassGivenTableJavaFieldName(name)
                 .orElse(Object.class);
     }
 
     public Class<?> getRecordClass() {
         // FIXME: Dersom skjema refererer til en tabell som ikke finnes burde vi stoppe genereringen (FSP-538)
-        return TableReflection.getRecordClass(name)
+        return TableReflection.getRecordClassGivenTableJavaFieldName(name)
                 .orElse(Object.class);
     }
 }

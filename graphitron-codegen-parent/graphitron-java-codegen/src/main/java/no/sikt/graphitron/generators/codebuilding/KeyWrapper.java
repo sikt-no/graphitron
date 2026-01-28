@@ -126,7 +126,7 @@ public record KeyWrapper(Key<?> key) {
         if (previousTable == null) {
             var targetTable = processedSchema.getRecordType(field).getTable().getName();
 
-            return getPrimaryKeyForTable(targetTable)
+            return getPrimaryKeyForTableJavaFieldName(targetTable)
                     .orElseThrow(() -> {
                         addErrorMessage("Code generation failed for %s.%s as the table %s must have a primary key in order to be referenced from a service."
                         , field.getContainerTypeName(), field.getName(), targetTable);
@@ -137,7 +137,7 @@ public record KeyWrapper(Key<?> key) {
         var tableFromFieldType = processedSchema.isRecordType(field) ? processedSchema.getRecordType(field).getTable() : null;
 
         String foreignKeyName;
-        var primaryKeyOptional = getPrimaryKeyForTable(previousTable.getName());
+        var primaryKeyOptional = getPrimaryKeyForTableJavaFieldName(previousTable.getName());
 
         if (GeneratorConfig.alwaysUsePrimaryKeyInSplitQueries() || processedSchema.isMultiTableField(field)) {
             return primaryKeyOptional
@@ -152,7 +152,7 @@ public record KeyWrapper(Key<?> key) {
             throw new RuntimeException("Cannot resolve reference for scalar field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'.");
         } else if (field.hasFieldReferences()) {
             var firstRef = field.getFieldReferences().stream().findFirst().get();
-            Optional<String> implicitKey = firstRef.hasTable() ? findImplicitKey(previousTable.getName(), firstRef.getTable().getName()) : Optional.empty();
+            Optional<String> implicitKey = firstRef.hasTable() ? findImplicitKeyGivenTableJavaFieldNames(previousTable.getName(), firstRef.getTable().getName()) : Optional.empty();
 
             if (firstRef.hasKey()) {
                 foreignKeyName = firstRef.getKey().getName();
@@ -173,7 +173,7 @@ public record KeyWrapper(Key<?> key) {
                         });
             }
         } else {
-            foreignKeyName = findImplicitKey(previousTable.getName(), (tableFromFieldType != null ? tableFromFieldType : previousTable).getName())
+            foreignKeyName = findImplicitKeyGivenTableJavaFieldNames(previousTable.getName(), (tableFromFieldType != null ? tableFromFieldType : previousTable).getName())
                     .orElseThrow(() -> {
                         addErrorMessage("Cannot find implicit key for field '%s' in type '%s'.",
                                 field.getName(), field.getContainerTypeName());
@@ -181,7 +181,7 @@ public record KeyWrapper(Key<?> key) {
                     });
         }
 
-        var foreignKey = getForeignKey(foreignKeyName)
+        var foreignKey = getFkByFkJavaFieldName(foreignKeyName)
                 .orElseThrow(() -> {
                    addErrorMessage("Cannot find key with name %s", foreignKeyName);
                    return ValidationHandler.getException();

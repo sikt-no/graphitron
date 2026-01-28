@@ -136,7 +136,7 @@ public class ProcessedDefinitionsValidator {
                         addErrorMessage("Type %s has the %s directive, but is missing the %s directive.",
                                 objectDefinition.getName(), NODE.getName(), TABLE.getName());
                     } else {
-                        var tableFields = getJavaFieldNamesForTable(objectDefinition.getTable().getName());
+                        var tableFields = getJavaFieldNamesForTableJavaFieldName(objectDefinition.getTable().getName());
                         objectDefinition.getKeyColumns().stream()
                                 .filter(col -> tableFields.stream().noneMatch(it -> it.equalsIgnoreCase(col)))
                                 .forEach(col -> addErrorMessage(
@@ -177,8 +177,8 @@ public class ProcessedDefinitionsValidator {
 
     private Optional<? extends UniqueKey<?>> getPrimaryOrUniqueKeyMatchingIdFields(ObjectDefinition target) {
         return !target.hasCustomKeyColumns() ?
-                getPrimaryKeyForTable(target.getTable().getName())
-                : getPrimaryOrUniqueKeyMatchingFields(target.getTable().getName(), target.getKeyColumns());
+                getPrimaryKeyForTableJavaFieldName(target.getTable().getName())
+                : getPrimaryOrUniqueKeyMatchingColumnNamesForTableJavaFieldName(target.getTable().getName(), target.getKeyColumns());
     }
 
     private void validateNodeId() {
@@ -277,7 +277,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(it -> schema.isRecordType(it.getName()))
                 .map(it -> schema.getRecordType(it.getName()))
                 .filter(it -> it.getFields().stream().anyMatch(FieldSpecification::hasNodeID))
-                .filter(it -> it.hasTable() && getTable(it.getTable().getName()).isPresent()) // No need to continue validation here if table does not exist. Table names is validated in validateTablesAndKeys
+                .filter(it -> it.hasTable() && getTableForTableJavaFieldName(it.getTable().getName()).isPresent()) // No need to continue validation here if table does not exist. Table names is validated in validateTablesAndKeys
                 .forEach(jooqRecordInput ->
                         jooqRecordInput.getFields()
                                 .stream()
@@ -330,7 +330,7 @@ public class ProcessedDefinitionsValidator {
                                     }
 
                                     if (isUsedInUpdateMutation(jooqRecordInput)) {
-                                        getPrimaryKeyForTable(jooqRecordInput.getTable().getName())
+                                        getPrimaryKeyForTableJavaFieldName(jooqRecordInput.getTable().getName())
                                                 .map(Key::getFields)
                                                 .filter(it -> it.stream().anyMatch(pkF -> foreignKey.getFields().stream().anyMatch(pkF::equals)))
                                                 .stream().findFirst()
@@ -374,7 +374,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(RecordObjectSpecification::hasTable)
                 .map(RecordObjectSpecification::getTable)
                 .map(JOOQMapping::getMappingName)
-                .filter(it -> !tableExists(it))
+                .filter(it -> !tableJavaFieldNameExists(it))
                 .forEach(it -> addErrorMessage("No table with name \"%s\" found.", it));
 
         var allReferences = recordTypes
@@ -390,7 +390,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(FieldReference::hasTable)
                 .map(FieldReference::getTable)
                 .map(JOOQMapping::getMappingName)
-                .filter(it -> !tableExists(it))
+                .filter(it -> !tableJavaFieldNameExists(it))
                 .forEach(it -> addErrorMessage("No table with name \"%s\" found.", it));
 
         allReferences
@@ -398,7 +398,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(FieldReference::hasKey)
                 .map(FieldReference::getKey)
                 .map(JOOQMapping::getMappingName)
-                .filter(it -> !keyExists(it))
+                .filter(it -> !fkJavaFieldNameExists(it))
                 .forEach(it -> addErrorMessage("No key with name \"%s\" found.", it));
 
         recordTypes
@@ -434,11 +434,11 @@ public class ProcessedDefinitionsValidator {
             } else if (fieldReference.hasKey()) {
                 String nextTable;
                 String keyName = fieldReference.getKey().getName();
-                var keyTarget = getKeyTargetTable(keyName).orElse("");
+                var keyTarget = getFkTargetTableForFkJavaFieldName(keyName).orElse("");
                 if (!keyTarget.equals(sourceTable)) {
                     nextTable = keyTarget;
                 } else {
-                    nextTable = getKeySourceTable(keyName).orElse("");
+                    nextTable = getFkSourceTableForFkJavaFieldName(keyName).orElse("");
                 }
                 if (nextTable.equals(targetTable)) {
                     return;
@@ -465,7 +465,7 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void addErrorMessageAndThrowIfNoImplicitPath(GenerationField field, String leftTable, String rightTable) {
-        var possibleKeys = getNumberOfForeignKeysBetweenTables(leftTable, rightTable);
+        var possibleKeys = getNumberOfForeignKeysBetweenTablesGivenTableJavaFieldNames(leftTable, rightTable);
         if (possibleKeys == 1) return;
 
         var isMultitableField = field instanceof VirtualSourceField;
@@ -512,14 +512,14 @@ public class ProcessedDefinitionsValidator {
         getUsedTablesWithRequiredMethods()
                 .entrySet()
                 .stream()
-                .filter(it -> tableOrKeyExists(it.getKey()))
+                .filter(it -> tableOrFkJavaFieldNameExists(it.getKey()))
                 .forEach(entry -> {
                     var tableName = entry.getKey();
-                    var allFieldNames = getJavaFieldNamesForTable(tableName);
+                    var allFieldNames = getJavaFieldNamesForTableJavaFieldName(tableName);
                     var nonFieldElements = entry.getValue().stream().filter(it -> !allFieldNames.contains(it)).toList();
                     var missingElements = nonFieldElements
                             .stream()
-                            .filter(it -> searchTableForMethodWithName(tableName, it).isEmpty())
+                            .filter(it -> searchTableJavaFieldNameForMethodName(tableName, it).isEmpty())
                             .toList();
 
                     if (!missingElements.isEmpty()) {
@@ -658,7 +658,7 @@ public class ProcessedDefinitionsValidator {
                 var nextTable = reference.hasTable()
                         ? reference.getTable().getMappingName()
                         : (schema.isRecordType(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable);
-                var reverseKeyFound = searchTableForMethodWithName(nextTable, key.getMappingName()).isPresent(); // In joins the key can also be used in reverse.
+                var reverseKeyFound = searchTableJavaFieldNameForMethodName(nextTable, key.getMappingName()).isPresent(); // In joins the key can also be used in reverse.
                 requiredJOOQTypesAndMethods
                         .computeIfAbsent(reverseKeyFound ? nextTable : lastTable, (k) -> new HashSet<>())
                         .add(key.getMappingName());
@@ -776,7 +776,7 @@ public class ProcessedDefinitionsValidator {
                     }
 
                     if (!interfaceDefinition.isMultiTableInterface()) { // Single table interface with discriminator
-                        Optional<?> discriminatorField = getField(
+                        Optional<?> discriminatorField = getJooqFieldFromTableJavaFieldName(
                                 interfaceDefinition.getTable().getName(),
                                 interfaceDefinition.getDiscriminatorFieldName()
                         );
@@ -786,7 +786,7 @@ public class ProcessedDefinitionsValidator {
                                                     "does not exist in table '%s'.",
                                             name, interfaceDefinition.getDiscriminatorFieldName(), interfaceDefinition.getTable().getName()));
                         } else {
-                            Optional<Class<?>> fieldType = getFieldType(
+                            Optional<Class<?>> fieldType = getFieldTypeFromTableJavaFieldName(
                                     interfaceDefinition.getTable().getName(),
                                     interfaceDefinition.getDiscriminatorFieldName()
                             );
@@ -931,7 +931,7 @@ public class ProcessedDefinitionsValidator {
                                             if (!implementation.hasTable()) {
                                                 addErrorMessage("Interface '%s' is returned in field '%s', but type '%s' " +
                                                         "implementing '%s' does not have table set. This is not supported.", name, field.getName(), implementation.getName(), name);
-                                            } else if (!tableHasPrimaryKey(implementation.getTable().getName())) {
+                                            } else if (!tableJavaFieldNameHasPrimaryKey(implementation.getTable().getName())) {
                                                 addErrorMessage("Interface '%s' is returned in field '%s', but implementing type '%s' " +
                                                         "has table '%s' which does not have a primary key. This is not supported.", name, field.getName(), implementation.getName(), implementation.getTable().getName());
                                             }
@@ -1315,13 +1315,13 @@ public class ProcessedDefinitionsValidator {
                 );
             }
 
-            var keys = getPrimaryAndUniqueKeysForTable(targetTable.getName());
+            var keys = getPrimaryAndUniqueKeysForTableJavaFieldName(targetTable.getName());
             var nonNullableInputFields = inputType.getFields().stream()
                     .filter(AbstractField::isNonNullable)
                     .toList();
 
             for (var key : keys) {
-                var keyFields = getJavaFieldNamesForKey(targetTable.getName(), key);
+                var keyFields = getJavaFieldNamesForKeyInTableJavaFieldName(targetTable.getName(), key);
                 var keyFieldToInputFieldMatches = keyFields.stream()
                         .collect(Collectors.toMap(
                                 kf -> kf,
@@ -1385,10 +1385,10 @@ public class ProcessedDefinitionsValidator {
         var inputObject = schema.getInputType(recordInput);
         var tableName = inputObject.getTable().getMappingName();
 
-        var requiredDBFields = getRequiredFields(tableName)
+        var requiredDBFields = getRequiredFieldsForTableJavaFieldName(tableName)
                 .stream()
                 .map(String::toUpperCase)
-                .filter(it -> !tableFieldHasDefaultValue(tableName, it)) // No need to complain when it has a default set. Note that this does not work for views.
+                .filter(it -> !jooqFieldNameForTableJavaFieldNameHasDefaultValue(tableName, it)) // No need to complain when it has a default set. Note that this does not work for views.
                 .collect(Collectors.toList());
         var recordFieldNames =
                 inputObject.getFields()
@@ -1465,7 +1465,7 @@ public class ProcessedDefinitionsValidator {
 
                             Set<String> referenceImports = GeneratorConfig.getExternalReferenceImports();
                             List<Method> methods = referenceImports.stream()
-                                    .map(it -> getMethodFromReference(it, table.getName(), field.getName()))
+                                    .map(it -> getMethodFromReferenceClassForTableJavaFieldName(it, table.getName(), field.getName()))
                                     .flatMap(Optional::stream)
                                     .toList();
 
@@ -1691,7 +1691,7 @@ public class ProcessedDefinitionsValidator {
                 .forEach(field -> {
                     var recordType = schema.getRecordType(field);
                     var tableName = recordType.getTable().getMappingName();
-                    if (!tableHasPrimaryKey(tableName)) {
+                    if (!tableJavaFieldNameHasPrimaryKey(tableName)) {
                         var hasDefaultOrder = field.getDefaultOrderIndex().isPresent();
                         var orderByField = field.getOrderField();
                         var hasNonNullableOrderBy = orderByField.isPresent() && orderByField.get().isNonNullable();
