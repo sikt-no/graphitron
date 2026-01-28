@@ -1,5 +1,5 @@
 type Mutation {
-    mutation(in: VacationDestinationInput!): ID! @mutation(typeName: DELETE)
+    mutation(in: VacationDestinationInput!): Int! @field(name: "DESTINATION_ID") @mutation(typeName: DELETE)
 }
 
 input VacationDestinationInput @table(name: "VACATION_DESTINATION") {

@@ -7,10 +7,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.ReferencedEntry.DUMMY_CONDITION;
-import static no.sikt.graphitron.common.configuration.ReferencedEntry.RESOLVER_MUTATION_SERVICE;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_TYPE;
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.*;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Schema validation - Unknown and unresolvable values")
 public class UnknownTest extends ValidationTest {
@@ -21,7 +19,7 @@ public class UnknownTest extends ValidationTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(DUMMY_CONDITION, RESOLVER_MUTATION_SERVICE);
+        return makeReferences(DUMMY_CONDITION, RESOLVER_MUTATION_SERVICE, DUMMY_SERVICE, JAVA_RECORD_CUSTOMER);
     }
 
     @Test
@@ -132,8 +130,33 @@ public class UnknownTest extends ValidationTest {
     @Test
     @DisplayName("Field that can not be connected to anything in a table")
     void field() {
-        getProcessedSchema("field");
-        assertWarningsContain("No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'");
+        assertErrorsContain("field",
+                "No field with name 'WRONG' found in table 'CUSTOMER' which is required by 'Customer.wrong'."
+        );
+    }
+
+    @Test
+    @DisplayName("Field that can not be connected to a field in implicit table provided through input")
+    void fieldWithImplicitTableFromInput() {
+        assertErrorsContain("fieldWithImplicitTableFromInput", Set.of(CUSTOMER_NODE_INPUT_TABLE),
+                "No field with name 'WRONG' found in table 'CUSTOMER' which is required by 'Query.query'."
+        );
+    }
+
+    @Test
+    @DisplayName("Wrapped field that can not be connected to a field in implicit table provided through input")
+    void wrappedFieldWithImplicitTableFromInput() {
+        assertErrorsContain("wrappedFieldWithImplicitTableFromInput", Set.of(CUSTOMER_NODE_INPUT_TABLE),
+                "No field with name 'WRONG' found in table 'CUSTOMER' which is required by 'CustomerNoTable.wrong'."
+        );
+    }
+
+    @Test
+    @DisplayName("Mutation with conflicting input and output tables validates output against output table")
+    void fieldInMutationWithConflictingTable() {
+        assertErrorsContain("fieldInMutationWithConflictingTable", Set.of(CUSTOMER_NODE_INPUT_TABLE),
+                "No field with name 'WRONG' found in table 'ADDRESS' which is required by 'Address.wrong'."
+        );
     }
 
     @Test
@@ -146,12 +169,12 @@ public class UnknownTest extends ValidationTest {
     @Test
     @DisplayName("Input field that can not be connected to anything in a table")
     void argument() {
-        getProcessedSchema("argument", Set.of(CUSTOMER_TABLE));
-        assertWarningsContain("No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'");
+        assertErrorsContain("argument", Set.of(CUSTOMER_TABLE),
+                "No field with name 'WRONG' found in table 'CUSTOMER'"
+        );
     }
 
     @Test
-    @Disabled("Does not ignore fields that are not generated.")
     @DisplayName("Field that can not be connected to anything in a table but is not generated")
     void unknownNotGeneratedField() {
         getProcessedSchema("unknownNotGeneratedField");
@@ -182,12 +205,13 @@ public class UnknownTest extends ValidationTest {
     @Test
     @DisplayName("Wrapped field that can not be connected to anything in a table")
     void fieldWrapped() {
-        getProcessedSchema("fieldWrapped");
-        assertWarningsContain("No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'");
+        assertErrorsContain("fieldWrapped",
+                "No field with name 'WRONG' found in table 'CUSTOMER'"
+        );
     }
 
     @Test
-    @DisplayName("Input field that can not be connected to  a table but covered by an overriding condition")
+    @DisplayName("Input field that can not be connected to a table but covered by an overriding condition")
     void argumentWithOverrideCondition() {
         getProcessedSchema("argumentWithOverrideCondition", CUSTOMER_TABLE);
         assertNoWarnings();
@@ -196,8 +220,9 @@ public class UnknownTest extends ValidationTest {
     @Test
     @DisplayName("Input field that can not be connected to a table with a non-overriding condition")
     void argumentWithCondition() {
-        getProcessedSchema("argumentWithCondition", CUSTOMER_TABLE);
-        assertWarningsContain("No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'");
+        assertErrorsContain("argumentWithCondition", Set.of(CUSTOMER_TABLE),
+                "No field with name 'WRONG' found in table 'CUSTOMER'"
+        );
     }
 
     @Test
@@ -210,8 +235,9 @@ public class UnknownTest extends ValidationTest {
     @Test
     @DisplayName("Input field that can not be connected to a table with a surrounding non-overriding condition")
     void argumentWithFieldCondition() {
-        getProcessedSchema("argumentWithFieldCondition", CUSTOMER_TABLE);
-        assertWarningsContain("No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'");
+        assertErrorsContain("argumentWithFieldCondition", Set.of(CUSTOMER_TABLE),
+                "No field with name 'WRONG' found in table 'CUSTOMER'"
+        );
     }
 
     @Test
@@ -224,8 +250,9 @@ public class UnknownTest extends ValidationTest {
     @Test
     @DisplayName("Input type field that can not be connected to a table with a surrounding non-overriding condition")
     void argumentWithTypeCondition() {
-        getProcessedSchema("argumentWithTypeCondition", CUSTOMER_TABLE);
-        assertWarningsContain("No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'");
+        assertErrorsContain("argumentWithTypeCondition", Set.of(CUSTOMER_TABLE),
+                "No field with name 'WRONG' found in table 'CUSTOMER'"
+        );
     }
 
     @Test
@@ -238,5 +265,33 @@ public class UnknownTest extends ValidationTest {
     @DisplayName("Service method that can not be found")
     void undefinedServiceMethod() {
         assertErrorsContain("undefinedServiceMethod", "Service reference with name 'class no.sikt.graphitron.codereferences.services.ResolverMutationService' does not contain a method named 'UNDEFINED'.");
+    }
+
+    @Test
+    @DisplayName("Fields returning wrapper types should not cause errors about missing field/method")
+    void wrapperType() {
+        getProcessedSchema("wrapperTypeWithTable");
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("External fields should not cause errors about missing field/method for table")
+    void externalField() {
+        getProcessedSchema("externalField");
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("jOOQ record service should not incorrectly validate that Java record input fields exist on customer table")
+    void javaRecordInputJooqRecordOutput() {
+        getProcessedSchema("javaRecordInputJooqRecordOutput", Set.of(CUSTOMER_TABLE));
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("Service field on table type returning Java record should not validate record fields against table")
+    void tableObjectWithServiceField() {
+        getProcessedSchema("tableObjectWithServiceField", Set.of(CUSTOMER_TABLE));
+        assertNoWarnings();
     }
 }

@@ -84,7 +84,7 @@ type UpdateCustomerEmail @record(record: {className: "no.sikt.graphitron.example
 }
 
 type CustomerEmail @table(name: "CUSTOMER") {
-  customerId: Int
+  customerId: Int @field(name: "CUSTOMER_ID")
   email: String
 }
 

@@ -21,6 +21,10 @@ public class MapperFetchService {
         return null;
     }
 
+    public CustomerJavaRecord fetchCustomerDetails() {
+        return null;
+    }
+
     public List<CityRecord> cityQuery() {
         return null;
     }
