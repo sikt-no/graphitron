@@ -132,6 +132,8 @@ Additionally, the _watch_ goal can be used locally to watch GraphQL files
 for changes, and regenerate code without having to re-run generation manually each time.
 The _watch_ feature is incomplete and currently has low utility.
 
+The _validate_ goal can be used to validate GraphQL schemas without generating code.
+
 ### Configuration
 In order to find the schema files and any custom methods, Graphitron also provides some configuration options.
 The options are the same for both goals.
@@ -211,22 +213,6 @@ Example of applying a global transform in the POM:
     <scope>ALL_MUTATIONS</scope> <!-- Only ALL_MUTATIONS is supported right now. -->
   </element>
 </globalRecordTransforms>
-```
-
-Example of extending/customizing certain classes:
-
-```xml
-  <!-- The elements should contain fully-qualified class names -->
-<extensions>
-  <element>
-    <extendedClass>no.sikt.graphitron.validation.ProcessedDefinitionsValidator</extendedClass>
-    <extensionClass>no.sikt.graphitron.validation.FSProcessedDefinitionsValidator</extensionClass>
-  </element>
-  <element>
-    <extendedClass>no.sikt.graphitron.definitions.objects.InputDefinition</extendedClass>
-    <extensionClass>no.sikt.graphitron.definitions.objects.FSInputDefinition</extensionClass>
-  </element>
-</extensions>
 ```
 
 ## Directives
@@ -315,7 +301,7 @@ type Query {
   query(argument: SomeInput): SomeType
 }
 
-input SomeInput @record(record: {name: "SOME_RECORD"}) {
+input SomeInput @record(record: {className: "some.path.SomeRecord"}) {
   value: String @field(name: "ACTUAL_VALUE_NAME", javaName: "ACTUAL_JAVA_RECORD_FIELD_NAME")
 }
 
@@ -390,7 +376,7 @@ The following examples will assume that this configuration is set so that Graphi
 
 For the first example we will apply this simple condition method on tables that _do_ have a direct connection.
 ```java
-class CustomerCondition {
+class CustomerConditions {
     static org.jooq.Condition addressJoin(Customer customer, Address address) { … }
 }
 ```
@@ -400,13 +386,13 @@ The method returns a jOOQ condition, which will be added to the where conditions
 _Schema_:
 ```graphql
 type Customer @table {
-  addresses: [Address!]! @splitQuery @reference(path: [{condition : {className: "CustomerCondition", method: "addressJoin"}}])
+  addresses: [Address!]! @splitQuery @reference(path: [{condition : {className: "some.path.CustomerConditions", method: "addressJoin"}}])
 }
 ```
 
 _Generated result_:
 ```java
-.where(some.path.CustomerCondition.addressJoin(CUSTOMER, CUSTOMER.address()))
+.where(some.path.CustomerConditions.addressJoin(CUSTOMER, CUSTOMER.address()))
 ```
 
 The condition is thus an additional constraint applied on both tables.
@@ -417,7 +403,7 @@ the generated result would follow a pattern like the code below.
 ```java
 .from(CUSTOMER)
 .join(ADDRESS)
-.on(some.path.CustomerCondition.addressJoin(CUSTOMER, ADDRESS))
+.on(some.path.CustomerConditions.addressJoin(CUSTOMER, ADDRESS))
 ```
 
 Providing only a key will yield the same result. Note that in this example the key and the reference directive itself
@@ -528,13 +514,13 @@ The method must have the table and the input parameter type as parameters.
 
 _Schema_:
 ```graphql
-cityNames: [String!] @field(name: "CITY") @condition(condition: {className: "CityCondition", method: "cityMethod"})
+cityNames: [String!] @field(name: "CITY") @condition(condition: {className: "some.path.CityConditions", method: "cityMethod"})
 ```
 
 _Resulting code_:
 ```java
 .where(cityNames != null && cityNames.size() > 0 ? CITY.CITY.in(cityNames) : noCondition())
-.and(some.path.CityCondition.cityMethod(CITY, cityNames))
+.and(some.path.CityConditions.cityMethod(CITY, cityNames))
 ```
 
 #### Example: No _override_ on field with input parameters
@@ -546,14 +532,14 @@ _Schema_:
 cities(
     countryId: String! @field(name: "COUNTRY_ID"),
     cityNames: [String!] @field(name: "CITY")
-): [City] @condition(condition: {className: "CityCondition", method: "cityMethod"})
+): [City] @condition(condition: {className: "some.path.CityConditions", method: "cityMethod"})
 ```
 
 _Resulting code_:
 ```java
 .where(CITY.COUNTRY_ID.eq(countryId))
 .and(cityNames != null && cityNames.size() > 0 ? CITY.CITY.in(cityNames) : noCondition())
-.and(some.path.CityCondition.cityMethod(CITY, countryId, cityNames))
+.and(some.path.CityConditions.cityMethod(CITY, countryId, cityNames))
 ```
 
 #### Example: Both field and parameters
@@ -565,12 +551,12 @@ The method must have the table and the input parameter type as parameters.
 
 _Schema_:
 ```graphql
-cityNames: [String!] @field(name: "CITY") @condition(condition: {className: "CityCondition", method: "cityMethod"}, override: true)
+cityNames: [String!] @field(name: "CITY") @condition(condition: {className: "some.path.CityConditions", method: "cityMethod"}, override: true)
 ```
 
 _Resulting code_:
 ```java
-.where(some.path.CityCondition.cityMethod(CITY, cityNames))
+.where(some.path.CityConditions.cityMethod(CITY, cityNames))
 ```
 
 #### Example: With _override_ on field with input parameters
@@ -582,12 +568,12 @@ _Schema_:
 cities(
     countryId: String! @field(name: "COUNTRY_ID"),
     cityNames: [String!] @field(name: "CITY")
-): [City] @condition(condition: {className: "CityCondition", method: "cityMethodAllElements"}, override: true)
+): [City] @condition(condition: {className: "some.path.CityConditions", method: "cityMethodAllElements"}, override: true)
 ```
 
 _Resulting code_:
 ```java
-.where(some.path.CityCondition.cityMethodAllElements(CITY, countryId, cityNames))
+.where(some.path.CityConditions.cityMethodAllElements(CITY, countryId, cityNames))
 ```
 
 #### Example: With _override_ on both field and parameters
@@ -599,14 +585,14 @@ _Schema_:
 ```graphql
 cities(
     countryId: String! @field(name: "COUNTRY_ID"),
-    cityNames: [String!] @field(name: "CITY") @condition(condition: {className: "CityCondition", method: "cityMethod"}, override: true)
-): [City] @condition(condition: {className: "CityCondition", method: "cityMethodAllElements"}, override: true)
+    cityNames: [String!] @field(name: "CITY") @condition(condition: {className: "some.path.CityConditions", method: "cityMethod"}, override: true)
+): [City] @condition(condition: {className: "some.path.CityConditions", method: "cityMethodAllElements"}, override: true)
 ```
 
 _Resulting code_:
 ```java
-.where(some.path.CityCondition.cityMethod(CITY, cityNames))
-.and(some.path.CityCondition.cityMethodAllElements(CITY, countryId, cityNames))
+.where(some.path.CityConditions.cityMethod(CITY, cityNames))
+.and(some.path.CityConditions.cityMethodAllElements(CITY, countryId, cityNames))
 ```
 
 #### Example: Conditions on input type fields
@@ -617,8 +603,7 @@ The default conditions will still be generated for the inner levels of a nested 
 _Schema_:
 ```graphql
 type Query {
-  query(
-    staff: StaffInput! @condition(condition: {name: "STAFF_CONDITION", method: "staff"})
+  query(staff: StaffInput! @condition(condition: {className: "some.path.StaffConditions", method: "staff"})
   ) : [Staff]
 }
 
@@ -628,13 +613,13 @@ input StaffInput {
 }
 
 input ContactInfoInput {
-  name: NameInput! @condition(condition: {name: "STAFF_CONDITION", method: "name"}, override: true)
-  jobEmail: EmailInput! @condition(condition: {name: "STAFF_CONDITION", method: "email"})
+  name: NameInput! @condition(condition: {className: "some.path.StaffConditions", method: "name"}, override: true)
+  jobEmail: EmailInput! @condition(condition: {className: "some.path.StaffConditions", method: "email"})
 }
 
 input NameInput {
-  firstname: String! @field(name: "FIRST_NAME") @condition(condition: {name: "STAFF_CONDITION", method: "firstname"})
-  lastname: String! @field(name: "LAST_NAME") @condition(condition: {name: "STAFF_CONDITION", method: "lastname"})
+  firstname: String! @field(name: "FIRST_NAME") @condition(condition: {className: "some.path.StaffConditions", method: "firstname"})
+  lastname: String! @field(name: "LAST_NAME") @condition(condition: {className: "some.path.StaffConditions", method: "lastname"})
 }
 
 input EmailInput {
@@ -644,13 +629,13 @@ input EmailInput {
 
 _Resulting code_:
 ```java
-.where(some.path.StaffCondition.firstname(STAFF, staff.getInfo().getName().getFirstname()))
-.and(some.path.StaffCondition.lastname(STAFF, staff.getInfo().getName().getLastname()))
+.where(some.path.StaffConditions.firstname(STAFF, staff.getInfo().getName().getFirstname()))
+.and(some.path.StaffConditions.lastname(STAFF, staff.getInfo().getName().getLastname()))
 .and(STAFF.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()))
 .and(STAFF.ACTIVE.eq(staff.getActive()))
-.and(some.path.StaffCondition.staff(STAFF, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname(), staff.getInfo().getJobEmail().getEmail(), staff.getActive()))
-.and(some.path.StaffCondition.name(STAFF, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname()))
-.and(some.path.StaffCondition.email(STAFF, staff.getInfo().getJobEmail().getEmail()))
+.and(some.path.StaffConditions.staff(STAFF, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname(), staff.getInfo().getJobEmail().getEmail(), staff.getActive()))
+.and(some.path.StaffConditions.name(STAFF, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname()))
+.and(some.path.StaffConditions.email(STAFF, staff.getInfo().getJobEmail().getEmail()))
 ```
 
 #### Example: Condition using flat record configuration
@@ -662,7 +647,7 @@ _Schema_:
 ```graphql
 cities(
     cityInput: CityInput!
-): [City] @condition(condition: {className: "CityCondition", method: "cityMethodAllElements"}, override: true)
+): [City] @condition(condition: {className: "some.path.CityConditions", method: "cityMethodAllElements"}, override: true)
 
 input CityInput @table(name: "CITY") {
     countryId: String! @field(name: "COUNTRY_ID")
@@ -682,18 +667,18 @@ _Schema_:
 ```graphql
 cities(
     cityInput: CityInput1!
-): [City] @condition(condition: {className: "CityCondition", method: "cityMethodAllElements"}, override: true)
+): [City] @condition(condition: {className: "some.path.CityConditions", method: "cityMethodAllElements"}, override: true)
 
 # Can not skip record here even if we only want one of the other input types in our condition.
-input CityInput1 @record(record: {name: "LAYER_1_RECORD"}) {
+input CityInput1 @record(record: {className: "some.path.Layer1Record"}) {
     # A condition can also be placed here, but this may be redundant given the condition above in this case.
-    cityNames: [String!] @field(name: "CITY", javaName: "javaCityNamesField") @condition(condition: {className: "CityCondition", method: "cityMethod"}, override: true)
+    cityNames: [String!] @field(name: "CITY", javaName: "javaCityNamesField") @condition(condition: {className: "some.path.CityConditions", method: "cityMethod"}, override: true)
     countryId: String! @field(name: "COUNTRY_ID", javaName: "javaCountryField")
     city2: [CityInput2]
     city3: [CityInput3]
 }
 
-input CityInput2 @record(record: {name: "LAYER_2_RECORD"}) {
+input CityInput2 @record(record: {className: "some.path.Layer2Record"}) {
     countryId: String! @field(name: "COUNTRY_ID", javaName: "javaCountryField2")
 }
 
@@ -704,8 +689,8 @@ input CityInput3 @table(name: "CITY") {
 
 _Resulting code_:
 ```java
-.where(some.path.CityCondition.cityMethodAllElements(CITY, cityInputRecord))
-.and(some.path.CityCondition.cityMethod(CITY, cityInputRecord.getCityNames()))
+.where(some.path.CityConditions.cityMethodAllElements(CITY, cityInputRecord))
+.and(some.path.CityConditions.cityMethod(CITY, cityInputRecord.getCityNames()))
 ```
 
 #### Example: Schema with listed input types and condition set _on_ listed input field
@@ -718,16 +703,16 @@ will then be passed this list of input types and further checks on this list wil
 ```graphql
 type Query {
   query(
-    inputs1: [Input1] @condition(condition: {name: "RECORD_FETCH_STAFF_CONDITION", method: "input1"}, override: true)
+    inputs1: [Input1] @condition(condition: {className: "some.path.RecordStaffConditions", method: "input1"}, override: true)
   ) : [Staff]
 }
 
-input Input1 @record(record: {name: "JAVA_RECORD_STAFF_INPUT1"}) {
+input Input1 @record(record: {className: "some.path.JavaRecordStaffInput1"}) {
   names: [NameInput]
   active: Boolean
 }
 
-input NameInput @record(record: {name: "JAVA_RECORD_STAFF_NAME"}) {
+input NameInput @record(record: {className: "some.path.JavaRecordStaffName"}) {
   firstname: String! @field(name: "FIRST_NAME")
   lastname: String! @field(name: "LAST_NAME")
 }
@@ -735,7 +720,7 @@ input NameInput @record(record: {name: "JAVA_RECORD_STAFF_NAME"}) {
 
 _Resulting_code_:
 ```java
-.where(some.path.RecordStaffCondition.input1(STAFF, inputs1RecordList))
+.where(some.path.RecordStaffConditions.input1(STAFF, inputs1RecordList))
 ```
 
 #### Example: Schema with listed input types and condition set on input field _inside_ a list input
@@ -753,20 +738,20 @@ type Query {
   ) : [Staff]
 }
 
-input Input3 @record(record: {name: "JAVA_RECORD_STAFF_INPUT3"}) {
+input Input3 @record(record: {className: "some.path.JavaRecordStaffInput3"}) {
   inputs2: [Input2]
 }
 
-input Input2 @record(record: {name: "JAVA_RECORD_STAFF_INPUT2"}) {
-  input1: Input1 @condition(condition: {name: "STAFF_CONDITION", method: "input1"}, override: true)
+input Input2 @record(record: {className: "some.path.JavaRecordStaffInput2"}) {
+  input1: Input1 @condition(condition: {className: "some.path.StaffConditions", method: "input1"}, override: true)
 }
 
-input Input1 @record(record: {name: "JAVA_RECORD_STAFF_INPUT1"}) {
+input Input1 @record(record: {className: "some.path.JavaRecordStaffInput1"}) {
   names: [NameInput]
   active: Boolean
 }
 
-input NameInput @record(record: {name: "JAVA_RECORD_STAFF_NAME"}) {
+input NameInput @record(record: {className: "some.path.JavaRecordStaffName"}) {
   firstname: String! @field(name: "FIRST_NAME")
   lastname: String! @field(name: "LAST_NAME")
 }
@@ -778,7 +763,7 @@ _Resulting_code_:
        input3Record.getInputs2() != null && input3Record.getInputs2().size() > 0 ?
        DSL.row(DSL.trueCondition()).in(
                input3Record.getInputs2().stream().map(internal_it_ ->
-                       DSL.row(some.path.StaffCondition.input1(STAFF, internal_it_.getInput1()))
+                       DSL.row(some.path.StaffConditions.input1(STAFF, internal_it_.getInput1()))
                ).toList()
        ) : DSL.noCondition()
 )
@@ -790,7 +775,7 @@ An alternative method is to set up a Java enum instead through a jOOQ converter.
 using the **enum** directive, by pointing to the appropriate [entry](#code-references).
 
 ```graphql
-enum SomeEnum @enum(enumReference: {name: "THE_ENUM_REFERENCE"}) {
+enum SomeEnum @enum(enumReference: {className: "some.path.SomeEnumConverter"}) {
   E0
   E1
   E2
@@ -850,21 +835,21 @@ such as [CustomerService](https://github.com/sikt-no/graphitron/blob/main/graphi
 _Schema:_
 ```graphql
 type Query {
-  getCustomer: Customer! @service(service: {name: "SERVICE_CUSTOMER"})
+  getCustomer: Customer! @service(service: {className: "some.path.CustomerService"})
 
   fetchCustomer(
     id: ID!
-  ): Customer! @service(service: {name: "SERVICE_CUSTOMER", method: "getCustomer"}) # Example of a case where the method name does not match the field name.
+  ): Customer! @service(service: {className: "some.path.CustomerService", method: "getCustomer"}) # Example of a case where the method name does not match the field name.
 }
 
 type Mutation {
   editCustomer1(
     editInput: EditCustomerInput!
-  ): Customer! @service(service: {name: "SERVICE_CUSTOMER"}) # Returning just an ID is allowed as well.
+  ): Customer! @service(service: {className: "some.path.CustomerService"}) # Returning just an ID is allowed as well.
 
   editCustomer2(
     editInput: EditCustomerInput!
-  ): Customer! @service(service: {name: "SERVICE_CUSTOMER", method: "editCustomerAndRespond"}) # Example of a case where the method name does not match the field name.
+  ): Customer! @service(service: {className: "some.path.CustomerService", method: "editCustomerAndRespond"}) # Example of a case where the method name does not match the field name.
 }
 
 input EditCustomerInput @table(name: "CUSTOMER") { # @table specifies the jOOQ table/record to use as input to the service.
@@ -884,7 +869,7 @@ Currently, only primary keys of the previous object are used when resolving a **
 _Schema:_
 ```graphql
 type Query {
-  customerService: Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
+  customerService: Customer @service(service: {className: "some.path.CustomerService", method: "customer"})
 }
 
 type Customer @table {
@@ -922,7 +907,7 @@ The following example will illustrate this limitation.
 
 _Schema_:
 ```graphql
-edit(someInput: InputA!): ID! @service(service: {name: "SERVICE_REFERENCE"}) # Assumes method name is the same as field.
+edit(someInput: InputA!): ID! @service(service: {className: "some.path.SomeService"}) # Assumes method name is the same as field.
 
 input InputA @table {
   b: InputB
@@ -944,9 +929,9 @@ and may contain JOOQ-records.
 
 _Schema:_
 ```graphql
-customer(editInput: EditCustomerInput!): ID! @service(service: {name: "SERVICE_CUSTOMER"})
+customer(editInput: EditCustomerInput!): ID! @service(service: {className: "some.path.CustomerService"})
 
-input EditCustomerInput @record(record: {name: "JAVA_RECORD_CUSTOMER"}) { # @record specifies the Java record to use. Setting @table here would not do anything.
+input EditCustomerInput @record(record: {className: "some.path.JavaCustomerRecord"}) { # @record specifies the Java record to use. Setting @table here would not do anything.
   id: ID! # We need a method with the name "setId" in the record class.
   first: String @field(name: "FIRST_NAME") # We need a method with the name "setFirstName" in the record class. Overridden by @field.
 }
@@ -969,7 +954,7 @@ Note that context arguments are always placed at the end of the method arguments
 
 _Schema:_
 ```graphql
-customer(name: String): Customer @service(service: {name: "SERVICE_CUSTOMER"}, contextArguments: "someCtxField")
+customer(name: String): Customer @service(service: {className: "some.path.CustomerService"}, contextArguments: "someCtxField")
 ```
 
 _Required service code_:
@@ -991,10 +976,10 @@ _Schema:_
 type Mutation {
   editCustomerWithResponse(
     id: ID!
-  ): EditCustomerResponse! @service(service: {name: "SERVICE_CUSTOMER", method: "editCustomerAndRespond"})
+  ): EditCustomerResponse! @service(service: {className: "some.path.CustomerService", method: "editCustomerAndRespond"})
 }
 
-type EditCustomerResponse @record(record: {name: "JAVA_RECORD_CUSTOMER"}) {
+type EditCustomerResponse @record(record: {className: "some.path.JavaCustomerRecord"}) {
   id: ID! # We need a method with the name "getId" in the record class.
   first: String @field(name: "FIRST_NAME") # We need a method with the name "getFirstName" in the record class. Overridden by @field.
   customer: Customer # Some node type.
@@ -1023,15 +1008,15 @@ that are used in the service.
 _Schema:_
 ```graphql
 type Query {
-  getCustomer(id: ID!): CustomerWrapper! @service(service: {name: "SERVICE_CUSTOMER"})
-  getCustomerPaginated(id: ID!, first: Int = 100, after: String): CustomerWrapperConnection! @service(service: {name: "SERVICE_CUSTOMER"})
+  getCustomer(id: ID!): CustomerWrapper! @service(service: {className: "some.path.CustomerService"})
+  getCustomerPaginated(id: ID!, first: Int = 100, after: String): CustomerWrapperConnection! @service(service: {className: "some.path.CustomerService"})
 }
 
 type CustomerWrapperConnection { … }
 
 type CustomerWrapperConnectionEdge { … }
 
-type CustomerWrapper @record(record: {name: "JAVA_RECORD_CUSTOMER_WRAPPER"}) {
+type CustomerWrapper @record(record: {className: "some.path.JavaCustomerWrapper"}) {
   id: ID! # We need a method with the name "getId" in the record class.
   first: String @field(name: "FIRST_NAME") # We need a method with the name "getFirstName" in the record class. Overridden by @field.
   customer: Customer # Some node type.
@@ -1062,13 +1047,13 @@ Such a setup can also be applied to input types.
 
 _Schema_:
 ```graphql
-something(id: ID!): ReturnA! @service(service: {name: "SOMETHING_SERVICE"}) # Query or mutation.
+something(id: ID!): ReturnA! @service(service: {className: "some.path.SomethingService"}) # Query or mutation.
 
-type ReturnA @record(record: {name: "RECORD_A"}) {
+type ReturnA @record(record: {className: "some.path.ReturnA"}) {
   returnB: ReturnB
 }
 
-type ReturnB @record(record: {name: "RECORD_B"}) {
+type ReturnB @record(record: {className: "some.path.ReturnB"}) {
   someData: String @field(name: "INTERESTING_DATA")
 }
 ```
@@ -1097,7 +1082,7 @@ The **@tableMethod** directive allows a field to use a jOOQ table returned from 
 For example, you can annotate a field in your schema with the **tableMethod** directive, referencing a method like [AddressTableMethod](https://github.com/sikt-no/graphitron/blob/main/graphitron-example/graphitron-example-service/src/main/java/no/sikt/graphitron/example/service/AddressTableMethod.java):
 ```graphql
 type Query {
-    address: Address @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"})
+    address: Address @tableMethod(tableMethodReference: {className: "some.path.AddressTableMethod", method: "addressTableMethod"})
 }
 ```
 
@@ -1313,12 +1298,12 @@ These methods must all share the same method signature, except for the first tab
 
 ```graphql
 type Query {
-  titled(prefix: String): [Titled] @condition(condition: {className: "TitledCondition", method: "titledMethod"})
+  titled(prefix: String): [Titled] @condition(condition: {className: "some.path.TitledConditions", method: "titledMethod"})
 }
 ```
 
 ```java
-class TitledCondition {
+class TitledConditions {
   static Condition titledMethod(Film film, String prefix) {…}
   static Condition titledMethod(Book book, String prefix) {…}
 }
