@@ -22,7 +22,7 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.inferFie
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.javapoet.CodeBlock.empty;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
-import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
+import static no.sikt.graphitron.mappings.TableReflection.tableJavaFieldNameHasPrimaryKey;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
 
 /**
@@ -149,7 +149,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .addIf(!lookupExists, "$1L -> $1N.value1().valuesRow(), ", VAR_RECORD_ITERATOR);
 
         if (processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(referenceField.getContainerTypeName()) && referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()) {
-            if (referenceField.hasForwardPagination() && (referenceField.getOrderField().isPresent() || tableHasPrimaryKey(refObject.getTable().getName()))) {
+            if (referenceField.hasForwardPagination() && (referenceField.getOrderField().isPresent() || tableJavaFieldNameHasPrimaryKey(refObject.getTable().getName()))) {
                 return code.addStatement("$1L -> $1N.value2().map($2T::value2))", VAR_RECORD_ITERATOR, RECORD2.className).build();
             }
 

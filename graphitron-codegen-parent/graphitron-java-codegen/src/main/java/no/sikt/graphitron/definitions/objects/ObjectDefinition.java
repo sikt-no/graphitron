@@ -4,17 +4,13 @@ import graphql.language.ObjectTypeDefinition;
 import graphql.language.TypeName;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
-import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphql.directives.GenerationDirective;
-import no.sikt.graphql.directives.GenerationDirectiveParam;
 
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldName;
 import static no.sikt.graphql.directives.DirectiveHelpers.*;
-import static no.sikt.graphql.directives.GenerationDirective.NODE;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.VALUE;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;

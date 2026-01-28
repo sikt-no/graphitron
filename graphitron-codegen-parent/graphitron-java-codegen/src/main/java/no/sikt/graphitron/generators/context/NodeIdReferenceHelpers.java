@@ -10,7 +10,7 @@ import org.jooq.ForeignKey;
 import java.util.Optional;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.referenceNodeIdColumnsBlock;
-import static no.sikt.graphitron.mappings.TableReflection.findImplicitKey;
+import static no.sikt.graphitron.mappings.TableReflection.findImplicitKeyGivenTableJavaFieldNames;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 
 public class NodeIdReferenceHelpers {
@@ -24,11 +24,11 @@ public class NodeIdReferenceHelpers {
         if (!previousTable.equals(targetTable)) {
             return target.getFieldReferences().stream()
                     .findFirst()
-                    .map(fRef -> fRef.hasKey() ? fRef.getKey().getName() : findImplicitKey(previousTable, fRef.getTable().getName()).orElse(null))
+                    .map(fRef -> fRef.hasKey() ? fRef.getKey().getName() : findImplicitKeyGivenTableJavaFieldNames(previousTable, fRef.getTable().getName()).orElse(null))
                     .stream()
                     .findFirst()
-                    .or(() -> findImplicitKey(previousTable, targetTable))
-                    .flatMap(TableReflection::getForeignKey);
+                    .or(() -> findImplicitKeyGivenTableJavaFieldNames(previousTable, targetTable))
+                    .flatMap(TableReflection::getFkByFkJavaFieldName);
         }
         return Optional.empty();
     }

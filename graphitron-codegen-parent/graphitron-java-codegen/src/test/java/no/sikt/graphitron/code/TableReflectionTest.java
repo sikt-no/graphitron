@@ -7,8 +7,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.setProperties;
-import static no.sikt.graphitron.mappings.TableReflection.searchTableForKeyMethodName;
-import static no.sikt.graphitron.mappings.TableReflection.searchTableForMethodWithName;
+import static no.sikt.graphitron.mappings.TableReflection.searchTableFieldNameForPathMethodNameGivenFkJavaFieldName;
+import static no.sikt.graphitron.mappings.TableReflection.searchTableJavaFieldNameForMethodName;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DisplayName("Reflection - Use reflection on jOOQ code")
@@ -26,27 +26,27 @@ public class TableReflectionTest {
     @Test
     @DisplayName("Can find a method name for a key that exists")
     public void findMethodForExistingKey() {
-        assertThat(searchTableForKeyMethodName("CUSTOMER", "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY")).hasValue("address");
+        assertThat(searchTableFieldNameForPathMethodNameGivenFkJavaFieldName("CUSTOMER", "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY")).hasValue("address");
     }
 
 
     @Test
     @DisplayName("Finds no method if table is provided when key is expected or key does not exist")
     public void findNothingForNotKeys() {
-        assertThat(searchTableForKeyMethodName("RENTAL", "INVENTORY")).isEmpty();
-        assertThat(searchTableForKeyMethodName("RENTAL", "NONEXISTENT")).isEmpty();
+        assertThat(searchTableFieldNameForPathMethodNameGivenFkJavaFieldName("RENTAL", "INVENTORY")).isEmpty();
+        assertThat(searchTableFieldNameForPathMethodNameGivenFkJavaFieldName("RENTAL", "NONEXISTENT")).isEmpty();
     }
 
     @Test
     @DisplayName("Can find a method name for a key or table that exists")
     public void findMethodForExistingKeyOrTable() {
-        assertThat(searchTableForMethodWithName("CUSTOMER", "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY")).hasValue("address");
-        assertThat(searchTableForMethodWithName("RENTAL", "inventory")).hasValue("inventory");
+        assertThat(searchTableJavaFieldNameForMethodName("CUSTOMER", "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY")).hasValue("address");
+        assertThat(searchTableJavaFieldNameForMethodName("RENTAL", "inventory")).hasValue("inventory");
     }
 
     @Test
     @DisplayName("Finds no method if provided value does not exist")
     public void findNothingForInvalidName() {
-        assertThat(searchTableForMethodWithName("RENTAL", "NONEXISTENT")).isEmpty();
+        assertThat(searchTableJavaFieldNameForMethodName("RENTAL", "NONEXISTENT")).isEmpty();
     }
 }

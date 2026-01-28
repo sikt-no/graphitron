@@ -688,7 +688,7 @@ public class FormatCodeBlocks {
     }
 
     public static CodeBlock getSelectKeyColumn(Key<?> key, String tableName, String aliasVariableName) {
-        return getJavaFieldNamesForKey(tableName, key)
+        return getJavaFieldNamesForKeyInTableJavaFieldName(tableName, key)
                 .stream()
                 .map(it -> CodeBlock.of("$N.$L", aliasVariableName, it))
                 .collect(CodeBlock.joining(", "));
@@ -760,7 +760,7 @@ public class FormatCodeBlocks {
         var sourceTable = targetNodeType.getTable().getName();
 
         var targetNodeIdFields = targetNodeType.hasCustomKeyColumns() ? targetNodeType.getKeyColumns()
-                : getPrimaryKeyForTable(sourceTable)
+                : getPrimaryKeyForTableJavaFieldName(sourceTable)
                 .orElseThrow(() -> new IllegalArgumentException("Cannot find primary key for table " + sourceTable)) // This should be validated and never thrown
                 .getFields()
                 .stream()
@@ -772,12 +772,12 @@ public class FormatCodeBlocks {
                         .filter(fieldName -> fieldName.equalsIgnoreCase(it)).findFirst()
                         .orElseThrow(() -> new IllegalArgumentException("Node ID field " + it + " is not found in foreign key " + fk.getName() + "'s fields."))) // Should never be thrown
                 .map(mapping::get)
-                .map(it -> getJavaFieldName(targetTable, it.getName()).orElseThrow())
+                .map(it -> javaFieldNameForJooqFieldNameInTableJavaFieldName(targetTable, it.getName()).orElseThrow())
                 .collect(Collectors.toCollection(LinkedList::new));
     }
 
     public static CodeBlock staticTableInstanceBlock(String tableName) {
-        var tableClass = getTable(tableName)
+        var tableClass = getTableForTableJavaFieldName(tableName)
                 .orElseThrow(() -> new RuntimeException("Unknown table " + tableName))
                 .getClass();
         return CodeBlock.of("$T.$N", tableClass, tableName);

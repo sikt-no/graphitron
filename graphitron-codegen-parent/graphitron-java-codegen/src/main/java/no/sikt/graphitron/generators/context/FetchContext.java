@@ -484,7 +484,7 @@ public class FetchContext {
 
         var keyToUse = fRef.hasKey() || fRef.hasTableCondition()
                 ? fRef.getKey()
-                : findImplicitKey(previous.getMappingName(), targetOrPrevious.getMappingName()).map(JOOQMapping::fromKey).orElse(null);
+                : findImplicitKeyGivenTableJavaFieldNames(previous.getMappingName(), targetOrPrevious.getMappingName()).map(JOOQMapping::fromKey).orElse(null);
 
         if (keyToUse != null && !keyToUse.getTable().equals(target)) {
             keyToUse = keyToUse.getInverseKey();
@@ -495,12 +495,12 @@ public class FetchContext {
                 var joinElement = getJoinElement(previous.getCodeName() + "_" + getReferenceObjectField().getName(), JoinListSequence.of(previous));
                 newSequence.add(joinElement);
 
-                var primaryKey = getTable(previous.getName()).map(Table::getPrimaryKey).stream().findFirst()
+                var primaryKey = getTableForTableJavaFieldName(previous.getName()).map(Table::getPrimaryKey).stream().findFirst()
                         .orElseThrow(() ->
                                 new IllegalArgumentException(String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table without a foreign key.",
                                         referenceObjectField.getContainerTypeName(), referenceObjectField.getName(), previous.getName())));
 
-                for (var fieldName : getJavaFieldNamesForKey(previous.getName(), primaryKey)) {
+                for (var fieldName : getJavaFieldNamesForKeyInTableJavaFieldName(previous.getName(), primaryKey)) {
                     this.conditionList.add(CodeBlock.of("$L.$L.eq($L.$L)", previousContext.getCurrentJoinSequence().getLast().getMappingName(), fieldName, joinElement.getMappingName(), fieldName));
                 }
             }
@@ -579,8 +579,8 @@ public class FetchContext {
         // Infer based on the key provided.
         if (referenceKey != null) {
             var keyName = referenceKey.getMappingName();
-            var sourceTable = getKeySourceTable(keyName).map(JOOQMapping::fromTable).orElse(null);
-            var targetTable = getKeyTargetTable(keyName).map(JOOQMapping::fromTable).orElse(null);
+            var sourceTable = getFkSourceTableForFkJavaFieldName(keyName).map(JOOQMapping::fromTable).orElse(null);
+            var targetTable = getFkTargetTableForFkJavaFieldName(keyName).map(JOOQMapping::fromTable).orElse(null);
 
             // Self reference key.
             if (Objects.equals(sourceTable, targetTable) && Objects.equals(sourceTable, previousTable) && hasSelfRelation(previousTable.getMappingName())) {

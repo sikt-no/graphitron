@@ -27,7 +27,7 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getForeignKeyForNodeIdReference;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
-import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldName;
+import static no.sikt.graphitron.mappings.TableReflection.javaFieldNameForJooqFieldNameInTableJavaFieldName;
 
 /**
  * Generator that creates the default data mutation methods.
@@ -129,7 +129,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 }
 
                 for (String keyColumn : keyColumns) {
-                    var field = tableFieldCodeBlock(targetTable, getJavaFieldName(targetTable, keyColumn).orElseThrow());
+                    var field = tableFieldCodeBlock(targetTable, javaFieldNameForJooqFieldNameInTableJavaFieldName(targetTable, keyColumn).orElseThrow());
                     var setValue = val(
                             CodeBlock.of("$N.$L()",
                                 recordInput.isIterableWrapped() ? VAR_ITERATOR : recordInputVariableName,

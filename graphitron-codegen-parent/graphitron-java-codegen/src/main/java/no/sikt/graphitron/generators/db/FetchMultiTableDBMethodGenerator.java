@@ -30,8 +30,8 @@ import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.db.FetchSingleTableInterfaceDBMethodGenerator.TOKEN;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECT_JOIN_STEP;
-import static no.sikt.graphitron.mappings.TableReflection.getPrimaryKeyForTable;
-import static no.sikt.graphitron.mappings.TableReflection.getTableClass;
+import static no.sikt.graphitron.mappings.TableReflection.getPrimaryKeyForTableJavaFieldName;
+import static no.sikt.graphitron.mappings.TableReflection.getTableClassGivenTableJavaFieldName;
 import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAndThrow;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
@@ -301,7 +301,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                     .flatMap(it -> it.getAliasSet().stream().findFirst())
                     .ifPresent(startAlias ->
                             methodBuilder.addParameter(
-                                    getTableClass(startAlias.getAlias().getTable().getName()).orElseThrow(),
+                                    getTableClassGivenTableJavaFieldName(startAlias.getAlias().getTable().getName()).orElseThrow(),
                                     aliasPrefix(startAlias.getAlias().getMappingName())
                             )
                     );
@@ -411,7 +411,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     private static CodeBlock getPrimaryKeyFields(String tableName, String alias) {
         var code = CodeBlock.builder();
 
-        getPrimaryKeyForTable(tableName)
+        getPrimaryKeyForTableJavaFieldName(tableName)
                 .map(pk -> pk
                         .getFields()
                         .stream().map(Field::getName)
