@@ -7,7 +7,7 @@ import no.sikt.graphitron.definitions.objects.ExceptionDefinition;
 import no.sikt.graphitron.definitions.objects.SchemaDefinition;
 import no.sikt.graphitron.generators.abstractions.AbstractSchemaClassGenerator;
 import no.sikt.graphitron.generators.abstractions.MethodGenerator;
-import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.generators.context.MethodInputParser;
 import no.sikt.graphitron.javapoet.*;
 import no.sikt.graphql.schema.ProcessedSchema;
 
@@ -136,7 +136,7 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
         private boolean genericMappingIsCreatedForField = false;
 
         OperationProcessor(ObjectField field) {
-            this.errors = new InputParser(field, processedSchema).getAllErrors();
+            this.errors = new MethodInputParser(field, processedSchema).getAllErrors();
             this.operationName = field.getName();
         }
 
