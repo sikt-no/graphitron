@@ -11,17 +11,10 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ITERA
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 public class InputComponent {
-
-    public enum InputRole {
-        FILTER,
-        SET_VALUE
-    }
-
     protected final InputField input, sourceInput;
     protected final String namePath, startName;
     protected final LinkedHashSet<String> nullChecks;
-    protected final boolean pastWasIterable, hasRecord, isWrappedInList, isOverriddenByAncestors, isArray;
-    protected final InputRole role;
+    protected final boolean pastWasIterable, hasRecord, isWrappedInList, isOverriddenByAncestors, isArray, isFilter;
 
     private InputComponent(
             InputField input,
@@ -32,7 +25,7 @@ public class InputComponent {
             boolean pastWasIterable,
             boolean isWrappedInList,
             boolean hasRecord,
-            InputRole role,
+            boolean isFilter,
             boolean isOverriddenByAncestors) {
         this.input = input;
         this.sourceInput = sourceInput;
@@ -42,7 +35,7 @@ public class InputComponent {
         this.pastWasIterable = pastWasIterable;
         this.isWrappedInList = isWrappedInList;
         this.hasRecord = hasRecord;
-        this.role = role;
+        this.isFilter = isFilter;
         this.isOverriddenByAncestors = isOverriddenByAncestors;
         this.isArray = input.isIterableWrapped()
                 && (JavaPoetClassName.INTEGER.className.equals(input.getTypeClass())
@@ -52,12 +45,12 @@ public class InputComponent {
 
     public InputComponent(InputField input, String startName, boolean hasRecord, boolean isOverriddenByAncestors, boolean isFilter) {
         this(input, input, startName, "", new LinkedHashSet<>(), false, false, hasRecord,
-                isFilter ? InputRole.FILTER : InputRole.SET_VALUE, isOverriddenByAncestors);
+                isFilter, isOverriddenByAncestors);
     }
 
     private void inferAdditionalChecks(InputField input) {
         var name = getNameWithPathString();
-        if (role == InputRole.FILTER) {
+        if (isFilterInput()) {
             if (!pastWasIterable && input.isNullable()) {
                 nullChecks.add(name + " != null");
             }
@@ -119,7 +112,7 @@ public class InputComponent {
                 pastWasIterable || getInput().isIterableWrapped(),
                 isWrappedInList || getInput().isIterableWrapped(),
                 hasRecord,
-                asFilter ? InputRole.FILTER : InputRole.SET_VALUE,
+                asFilter,
                 isFilterOverriddenByAncestors);
     }
 
@@ -140,10 +133,10 @@ public class InputComponent {
     }
 
     public boolean isSetValueInput() {
-        return role.equals(InputRole.SET_VALUE);
+        return !isFilter;
     }
 
     public boolean isFilterInput() {
-        return role.equals(InputRole.FILTER);
+        return isFilter;
     }
 }
