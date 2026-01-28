@@ -1,4 +1,4 @@
 type Customer implements Node @node(typeId: "Customer") @table {
   id: ID!
-  name: String
+  name: String @field(name: "FIRST_NAME")
 }

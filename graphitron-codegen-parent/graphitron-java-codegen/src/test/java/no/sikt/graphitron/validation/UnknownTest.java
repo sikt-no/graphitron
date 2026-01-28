@@ -132,8 +132,9 @@ public class UnknownTest extends ValidationTest {
     @Test
     @DisplayName("Field that can not be connected to anything in a table")
     void field() {
-        getProcessedSchema("field");
-        assertWarningsContain("No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'");
+        assertErrorsContain("field",
+                "No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'"
+        );
     }
 
     @Test
@@ -146,8 +147,9 @@ public class UnknownTest extends ValidationTest {
     @Test
     @DisplayName("Input field that can not be connected to anything in a table")
     void argument() {
-        getProcessedSchema("argument", Set.of(CUSTOMER_TABLE));
-        assertWarningsContain("No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'");
+        assertErrorsContain("argument", Set.of(CUSTOMER_TABLE),
+                "No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'"
+        );
     }
 
     @Test
@@ -182,8 +184,9 @@ public class UnknownTest extends ValidationTest {
     @Test
     @DisplayName("Wrapped field that can not be connected to anything in a table")
     void fieldWrapped() {
-        getProcessedSchema("fieldWrapped");
-        assertWarningsContain("No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'");
+        assertErrorsContain("fieldWrapped",
+                "No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'"
+        );
     }
 
     @Test
@@ -196,8 +199,9 @@ public class UnknownTest extends ValidationTest {
     @Test
     @DisplayName("Input field that can not be connected to a table with a non-overriding condition")
     void argumentWithCondition() {
-        getProcessedSchema("argumentWithCondition", CUSTOMER_TABLE);
-        assertWarningsContain("No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'");
+        assertErrorsContain("argumentWithCondition", Set.of(CUSTOMER_TABLE),
+                "No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'"
+        );
     }
 
     @Test
@@ -210,8 +214,9 @@ public class UnknownTest extends ValidationTest {
     @Test
     @DisplayName("Input field that can not be connected to a table with a surrounding non-overriding condition")
     void argumentWithFieldCondition() {
-        getProcessedSchema("argumentWithFieldCondition", CUSTOMER_TABLE);
-        assertWarningsContain("No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'");
+        assertErrorsContain("argumentWithFieldCondition", Set.of(CUSTOMER_TABLE),
+                "No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'"
+        );
     }
 
     @Test
@@ -224,8 +229,9 @@ public class UnknownTest extends ValidationTest {
     @Test
     @DisplayName("Input type field that can not be connected to a table with a surrounding non-overriding condition")
     void argumentWithTypeCondition() {
-        getProcessedSchema("argumentWithTypeCondition", CUSTOMER_TABLE);
-        assertWarningsContain("No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'");
+        assertErrorsContain("argumentWithTypeCondition", Set.of(CUSTOMER_TABLE),
+                "No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'"
+        );
     }
 
     @Test

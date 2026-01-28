@@ -1,5 +1,8 @@
 package no.sikt.graphitron.validation;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -13,6 +16,16 @@ public class NodeIdOutputTest extends ValidationTest {
     @Override
     protected String getSubpath() {
         return super.getSubpath() + "nodeId/output";
+    }
+
+    @BeforeAll
+    static void setUp() {
+        GeneratorConfig.setNodeStrategy(true);
+    }
+
+    @AfterAll
+    static void tearDown() {
+        GeneratorConfig.setNodeStrategy(false);
     }
 
     @Test
