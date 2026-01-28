@@ -24,8 +24,14 @@ public class TestConfiguration {
             EXPECTED_OUTPUT_NAME = "expected";
 
     @NotNull
+    public static ProcessedSchema getProcessedSchema(Set<String> components, boolean validate, boolean checkTypes) {
+        return getProcessedSchema(null, components, validate, checkTypes);
+    }
+
+    @NotNull
     public static ProcessedSchema getProcessedSchema(String schemaPath, Set<String> components, boolean validate, boolean checkTypes) {
-        var files = Stream.concat(Stream.of(SRC_DIRECTIVES, schemaPath + "/" + COMMON_TEST_SCHEMA_NAME), components.stream()).collect(Collectors.toSet());
+        var pathFiles = schemaPath != null ? Stream.of(SRC_DIRECTIVES, schemaPath + "/" + COMMON_TEST_SCHEMA_NAME) : Stream.of(SRC_DIRECTIVES);
+        var files = Stream.concat(pathFiles, components.stream()).collect(Collectors.toSet());
         GeneratorConfig.setGeneratorSchemaFiles(files);
         GeneratorConfig.setUserSchemaFiles(files);
 

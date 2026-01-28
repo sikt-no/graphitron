@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_STRATEGY;
 
 @DisplayName("Wiring - Generation of the method returning a runtime wiring builder")
 public class WiringBuilderTest extends GeneratorTest {
@@ -44,7 +45,7 @@ public class WiringBuilderTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Node data fetcher generator exists")
+    @DisplayName("Node data fetcher generator exists when using node strategy")
     void nodeStrategy() {
         GeneratorConfig.setNodeStrategy(true);
         assertGeneratedContentContains(
@@ -56,9 +57,17 @@ public class WiringBuilderTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Node strategy is not used when enabled but no Node interface exists")
+    void nodeStrategyWithoutNode() {
+        GeneratorConfig.setNodeStrategy(true);
+        resultDoesNotContain(Set.of(CUSTOMER_QUERY, CUSTOMER), "NodeIdStrategy", VAR_NODE_STRATEGY);
+        GeneratorConfig.setNodeStrategy(false);
+    }
+
+    @Test
     @DisplayName("No fetchers are generated")
     void noFetchers() {
-        assertGeneratedContentContains("noFetchers", ".newRuntimeWiring();return wiring;");
+        assertGeneratedContentContains(".newRuntimeWiring();return wiring;");
     }
 
     @Test
