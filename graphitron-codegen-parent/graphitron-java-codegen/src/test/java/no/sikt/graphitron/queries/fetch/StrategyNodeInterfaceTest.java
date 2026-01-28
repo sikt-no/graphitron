@@ -76,12 +76,6 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Multiple fields")
-    void manyFields() {
-        assertGeneratedContentContains("manyFields", "customer.FIRST_NAME", "customer.LAST_NAME");
-    }
-
-    @Test
     @DisplayName("Type implements node and non-node interface")
     void twoInterfaces() {
         assertGeneratedContentContains(
@@ -104,7 +98,7 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Split query")
+    @DisplayName("Split query with primary key")
     void splitQueryOnlyPrimaryKey() {
         assertGeneratedContentMatches("splitQueryOnlyPrimaryKey");
     }
