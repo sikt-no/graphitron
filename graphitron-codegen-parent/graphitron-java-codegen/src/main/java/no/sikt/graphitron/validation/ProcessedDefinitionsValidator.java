@@ -1691,7 +1691,7 @@ public class ProcessedDefinitionsValidator {
                 .forEach(field -> {
                     var recordType = schema.getRecordType(field);
                     var tableName = recordType.getTable().getMappingName();
-                    if (!tableHasPrimaryKey(tableName)) {
+                    if (!tableJavaFieldNameHasPrimaryKey(tableName)) {
                         var hasDefaultOrder = field.getDefaultOrderIndex().isPresent();
                         var orderByField = field.getOrderField();
                         var hasNonNullableOrderBy = orderByField.isPresent() && orderByField.get().isNonNullable();

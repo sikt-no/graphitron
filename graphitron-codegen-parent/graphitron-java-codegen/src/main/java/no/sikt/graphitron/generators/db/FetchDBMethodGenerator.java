@@ -595,7 +595,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         var convertArrayFieldToList = field.isIterableWrapped()
-                && getFieldType(context.getTargetTable().getName(), field.getUpperCaseName()).map(Class::isArray).orElse(false);
+                && getFieldTypeFromTableJavaFieldName(context.getTargetTable().getName(), field.getUpperCaseName()).map(Class::isArray).orElse(false);
 
         return CodeBlock.builder()
                 .add("$L.$N", renderedSource, field.getUpperCaseName())
@@ -1112,7 +1112,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         // Determine default order fields (defaultOrder takes precedence over primary key)
         CodeBlock defaultOrderByFields = defaultOrderIndex.map( index -> {
             ValidationHandler.isTrue(
-                    TableReflection.tableHasIndex(tableName, defaultOrderIndex.get()),
+                    TableReflection.tableForTableJavaFieldNameHasIndex(tableName, defaultOrderIndex.get()),
                     "Table '%s' has no index '%s' specified in @defaultOrder for field '%s'",
                     tableName, defaultOrderIndex.get(), referenceField.getName()
             );
