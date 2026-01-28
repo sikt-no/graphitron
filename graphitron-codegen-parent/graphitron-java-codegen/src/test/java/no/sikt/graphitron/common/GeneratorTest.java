@@ -75,6 +75,10 @@ public abstract class GeneratorTest {
         return GraphQLGenerator.generateAsStrings(makeGenerators(getProcessedSchema(schemaParentFolder, extraComponents)));
     }
 
+    protected Map<String, List<String>> generateFiles(Set<SchemaComponent> components) {
+        return GraphQLGenerator.generateAsStrings(makeGenerators(getProcessedSchema(components)));
+    }
+
     public static void assertGeneratedContentMatches(String expectedOutputFolder, Map<String, List<String>> generatedFiles) {
         var path = Paths.get(expectedOutputFolder + "/" + EXPECTED_OUTPUT_NAME);
         if (!Files.exists(path)) {
@@ -208,7 +212,18 @@ public abstract class GeneratorTest {
     }
 
     public ProcessedSchema getProcessedSchema(String schemaParentFolder, Set<SchemaComponent> extraComponents) {
+        if (!Files.exists(Paths.get(sourceTestPath + schemaParentFolder + "/" + COMMON_TEST_SCHEMA_NAME))) {
+            return getProcessedSchema(extraComponents);
+        }
         return TestConfiguration.getProcessedSchema(sourceTestPath + schemaParentFolder, mergeComponentsAndSetConfig(extraComponents), validateSchema(), checkProcessedSchemaDefault);
+    }
+
+    public ProcessedSchema getProcessedSchema(SchemaComponent... extraComponents) {
+        return getProcessedSchema(Set.of(extraComponents));
+    }
+
+    public ProcessedSchema getProcessedSchema(Set<SchemaComponent> extraComponents) {
+        return TestConfiguration.getProcessedSchema(mergeComponentsAndSetConfig(extraComponents), validateSchema(), checkProcessedSchemaDefault);
     }
 
     protected Set<String> mergeComponentsAndSetConfig(Set<SchemaComponent> extraComponents) {
@@ -266,6 +281,10 @@ public abstract class GeneratorTest {
         assertGeneratedContentContains(resourceRootFolder, Set.of(), expected);
     }
 
+    protected void assertGeneratedContentContains(Set<SchemaComponent> components, String... expected) {
+        contains(generateFiles(components), expected);
+    }
+
 
     // Avoid using these three methods if possible, they have worse performance than the ones above.
     protected static void doesNotContain(Map<String, List<String>> generatedFiles, String... expected) {
@@ -295,6 +314,10 @@ public abstract class GeneratorTest {
 
     protected void resultDoesNotContain(String resourceRootFolder, String... expected) {
         resultDoesNotContain(resourceRootFolder, Set.of(), expected);
+    }
+
+    protected void resultDoesNotContain(Set<SchemaComponent> extraComponents, String... expected) {
+        doesNotContain(generateFiles(extraComponents), expected);
     }
 
 
