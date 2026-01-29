@@ -7,7 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.setProperties;
-import static no.sikt.graphitron.mappings.TableReflection.searchTableForKeyMethodName;
+import static no.sikt.graphitron.mappings.TableReflection.searchTableForKeyMethodNameGivenJavaFieldNames;
 import static no.sikt.graphitron.mappings.TableReflection.searchTableForMethodWithName;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -26,15 +26,15 @@ public class TableReflectionTest {
     @Test
     @DisplayName("Can find a method name for a key that exists")
     public void findMethodForExistingKey() {
-        assertThat(searchTableForKeyMethodName("CUSTOMER", "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY")).hasValue("address");
+        assertThat(searchTableForKeyMethodNameGivenJavaFieldNames("CUSTOMER", "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY")).hasValue("address");
     }
 
 
     @Test
     @DisplayName("Finds no method if table is provided when key is expected or key does not exist")
     public void findNothingForNotKeys() {
-        assertThat(searchTableForKeyMethodName("RENTAL", "INVENTORY")).isEmpty();
-        assertThat(searchTableForKeyMethodName("RENTAL", "NONEXISTENT")).isEmpty();
+        assertThat(searchTableForKeyMethodNameGivenJavaFieldNames("RENTAL", "INVENTORY")).isEmpty();
+        assertThat(searchTableForKeyMethodNameGivenJavaFieldNames("RENTAL", "NONEXISTENT")).isEmpty();
     }
 
     @Test
