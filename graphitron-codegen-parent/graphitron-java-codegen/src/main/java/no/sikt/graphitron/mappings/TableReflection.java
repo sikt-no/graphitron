@@ -174,7 +174,6 @@ public class TableReflection {
         return getForeignKey(keyName)
                 .map(Key::getTable)
                 .map(Named::getName)
-                .map(String::toUpperCase)
                 .flatMap(TableReflection::getTableJavaFieldNameByTableName);
     }
 
