@@ -4,7 +4,7 @@ import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.SchemaDefinition;
 import no.sikt.graphitron.generators.abstractions.AbstractSchemaClassGenerator;
 import no.sikt.graphitron.generators.abstractions.MethodGenerator;
-import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.generators.context.MethodInputParser;
 import no.sikt.graphitron.javapoet.*;
 import no.sikt.graphql.schema.ProcessedSchema;
 
@@ -63,7 +63,7 @@ public class ExceptionStrategyConfigurationGenerator extends AbstractSchemaClass
                 .concat(queryType != null ? queryType.getFields().stream() : Stream.of(), mutationType != null ? mutationType.getFields().stream() : Stream.of())
                 .sorted(Comparator.comparing(ObjectField::getName))
                 .map(field -> {
-                    var ctx = new InputParser(field, processedSchema);
+                    var ctx = new MethodInputParser(field, processedSchema);
                     var payloadBlockBuilder = CodeBlock.builder();
 
                     if (ctx.getValidationErrorException().isPresent()) {
@@ -119,7 +119,7 @@ public class ExceptionStrategyConfigurationGenerator extends AbstractSchemaClass
         return codeBlock.build();
     }
 
-    private CodeBlock createPayloadForFieldBlock(ObjectField field, InputParser ctx) {
+    private CodeBlock createPayloadForFieldBlock(ObjectField field, MethodInputParser ctx) {
         var errorBlocks = ctx
                 .getAllErrors()
                 .stream()

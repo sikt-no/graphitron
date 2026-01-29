@@ -5,11 +5,29 @@ import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Holds categorized input components parsed from field arguments.
+ * Supports both conditions (for WHERE clauses) and set values (for INSERT/UPDATE).
+ */
 public record InputComponents(
-        List<InputCondition> independentConditions, List<ConditionTuple> conditionTuples,
-        List<InputSetValue> independentSetValues, SetValueTuple setValueTuple,
-        Map<GenerationField, List<InputCondition>> declaredConditionsByField
+        List<InputComponent> independentComponents,
+        List<InputTuple> tuples,
+        Map<GenerationField, List<InputComponent>> declaredConditionsByField
 ) {
-    public record ConditionTuple(String path, List<InputCondition> conditions) {}
-    public record SetValueTuple(String path, List<InputSetValue> setValues) {}
+    public List<InputComponent> independentFilterConditions() {
+        return independentComponents.stream()
+                .filter(InputComponent::isFilterInput)
+                .toList();
+    }
+
+    public List<InputComponent> independentSetValues() {
+        return independentComponents.stream()
+                .filter(InputComponent::isSetValueInput)
+                .toList();
+    }
+
+    /**
+     * Tuple for grouping list-wrapped input components by their path.
+     */
+    public record InputTuple(String path, List<InputComponent> components) {}
 }
