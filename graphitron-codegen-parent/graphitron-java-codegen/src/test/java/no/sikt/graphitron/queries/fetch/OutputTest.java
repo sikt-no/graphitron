@@ -418,4 +418,14 @@ public class OutputTest extends GeneratorTest {
                 "pguser.getId()",
                 ".from(_a_pguser)");
     }
+
+    @Test
+    @DisplayName("Correct table and paths used for table with \"_\" suffix in java field name")
+    void tableWithSameNameAsSchema() {
+        assertGeneratedContentContains("tableWithSameNameAsSchema",
+                "_a_public = PUBLIC_.as",
+                "_a_public.vacation().as",
+                "_a_public.DUMMY_COLUMN,"
+        );
+    }
 }

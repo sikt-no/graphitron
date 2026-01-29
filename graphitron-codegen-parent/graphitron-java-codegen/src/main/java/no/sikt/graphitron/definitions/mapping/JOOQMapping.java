@@ -47,25 +47,27 @@ public class JOOQMapping extends MethodMapping implements JoinElement {
     }
 
     public static JOOQMapping fromTable(String tableName) {
+        var maybeCorrectedJavaTableName = TableReflection.getTableJavaFieldNameByTableName(tableName)
+                .orElse(tableName);
         var codeNameUpper = toCamelCase(tableName);
-        return new JOOQMapping(tableName.toUpperCase(), StringUtils.uncapitalize(codeNameUpper));
+        return new JOOQMapping(maybeCorrectedJavaTableName, StringUtils.uncapitalize(codeNameUpper));
     }
 
     public static JOOQMapping fromKey(String keyName) {
         var upperName = keyName.toUpperCase();
-        var sourceTable = getKeySourceTable(upperName);
-        var targetTable = getKeyTargetTable(upperName);
+        var sourceTable = getKeySourceTableJavaName(upperName);
+        var targetTable = getKeyTargetTableJavaName(upperName);
 
         return new JOOQMapping(
                 upperName,
-                sourceTable.map(it -> searchTableForKeyMethodName(it, upperName).orElse("")).orElse(""),
+                sourceTable.map(it -> searchTableForKeyMethodNameGivenJavaFieldNames(it, upperName).orElse("")).orElse(""),
                 targetTable.map(JOOQMapping::fromTable).orElse(null)
         );
     }
 
     public JOOQMapping getInverseKey() {
-        var sourceTable = getKeySourceTable(name).map(JOOQMapping::fromTable).orElse(null);
-        var targetTable = getKeyTargetTable(name).map(JOOQMapping::fromTable).orElse(null);
+        var sourceTable = getKeySourceTableJavaName(name).map(JOOQMapping::fromTable).orElse(null);
+        var targetTable = getKeyTargetTableJavaName(name).map(JOOQMapping::fromTable).orElse(null);
 
         if (sourceTable == null || targetTable == null) {
             return null;
@@ -75,7 +77,7 @@ public class JOOQMapping extends MethodMapping implements JoinElement {
 
         return new JOOQMapping(
                 name,
-                searchTableForKeyMethodName(isReverse ? sourceTable.getName() : targetTable.getName(), name).orElse(""),
+                searchTableForKeyMethodNameGivenJavaFieldNames(isReverse ? sourceTable.getName() : targetTable.getName(), name).orElse(""),
                 (isReverse ? targetTable : sourceTable)
         );
     }

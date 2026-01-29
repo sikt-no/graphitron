@@ -47,8 +47,8 @@ public class TableReflection {
     * @return an Optional list of foreign keys between leftTable and rightTable
     * */
     public static Optional<List<? extends ForeignKey<?, ?>>> getForeignKeysBetweenTables(String leftTableName, String rightTableName) {
-        var leftTable = getTable(leftTableName).orElse(null);
-        var rightTable = getTable(rightTableName).orElse(null);
+        var leftTable = getTableByJavaFieldName(leftTableName).orElse(null);
+        var rightTable = getTableByJavaFieldName(rightTableName).orElse(null);
         if (leftTable == null || rightTable == null) {
             return Optional.empty();
         }
@@ -71,11 +71,11 @@ public class TableReflection {
      * @return The kind of relation that is present between these tables.
      */
     public static TableRelationType inferRelationType(String leftTableName, String rightTableName, JOOQMapping preferredKey) {
-        var leftTable = getTable(leftTableName);
+        var leftTable = getTableByJavaFieldName(leftTableName);
         if (leftTable.isEmpty()) {
             return TableRelationType.NONE;
         }
-        var rightTable = getTable(rightTableName);
+        var rightTable = getTableByJavaFieldName(rightTableName);
         if (rightTable.isEmpty()) {
             return TableRelationType.NONE;
         }
@@ -159,15 +159,23 @@ public class TableReflection {
     /**
      * @return Which table does this key point to?
      */
-    public static Optional<String> getKeyTargetTable(String keyName) {
-        return getForeignKey(keyName).map(it -> it.getKey().getTable().getName().toUpperCase());
+    public static Optional<String> getKeyTargetTableJavaName(String keyName) {
+        return getForeignKey(keyName)
+                .map(ForeignKey::getKey)
+                .map(Key::getTable)
+                .map(Named::getName)
+                .flatMap(TableReflection::getTableJavaFieldNameByTableName);
     }
 
     /**
      * @return Which table does this key belong to?
      */
-    public static Optional<String> getKeySourceTable(String keyName) {
-        return getForeignKey(keyName).map(it -> it.getTable().getName().toUpperCase());
+    public static Optional<String> getKeySourceTableJavaName(String keyName) {
+        return getForeignKey(keyName)
+                .map(Key::getTable)
+                .map(Named::getName)
+                .map(String::toUpperCase)
+                .flatMap(TableReflection::getTableJavaFieldNameByTableName);
     }
 
     public static Optional<Map<TableField<?, ?>, TableField<?, ?>>> getKeyFields(JOOQMapping key) {
@@ -196,7 +204,7 @@ public class TableReflection {
      * @return Set of the names for all the fields that are set as required in the jOOQ table.
      */
     public static Set<String> getRequiredFields(String tableName) {
-        return getTable(tableName)
+        return getTableByJavaFieldName(tableName)
                 .map(table -> table.fieldStream()
                         .filter(field -> !field.getDataType().nullable())
                         .map(Field::getName)
@@ -208,7 +216,7 @@ public class TableReflection {
      * @return Is this field nullable in the jOOQ table?.
      */
     public static Optional<Boolean> fieldIsNullable(String tableName, String fieldName) {
-        return getTable(tableName)
+        return getTableByJavaFieldName(tableName)
                 .map(table -> table
                         .fieldStream()
                         .filter(it -> it.getName().equalsIgnoreCase(fieldName))
@@ -219,7 +227,7 @@ public class TableReflection {
      * @return Does this field have a default value in this jOOQ table? Does not work for views.
      */
     public static boolean tableFieldHasDefaultValue(String tableName, String fieldName) {
-        return getTable(tableName)
+        return getTableByJavaFieldName(tableName)
                 .flatMap(value -> Arrays.stream(value.fields()).filter(it -> it.getName().equalsIgnoreCase(fieldName)).findFirst())
                 .map(it -> it.getDataType().defaulted()) // This does not work for views.
                 .orElse(false);
@@ -237,7 +245,7 @@ public class TableReflection {
     }
 
     public static Optional<Index> getIndex(String tableName, String indexName) {
-        return getTable(tableName)
+        return getTableByJavaFieldName(tableName)
                 .flatMap(table -> table.getIndexes().stream()
                         .filter(index -> index.getName().equalsIgnoreCase(indexName))
                         .findFirst());
@@ -250,7 +258,7 @@ public class TableReflection {
      * @return The name of a method that matches the provided name if it exists.
      */
     public static Optional<String> searchTableForMethodWithName(String tableName, String name) {
-        return searchTableForKeyMethodName(tableName, name)
+        return searchTableForKeyMethodNameGivenJavaFieldNames(tableName, name)
                 .or(() -> getMethodName(tableName, name));
     }
 
@@ -262,17 +270,17 @@ public class TableReflection {
 
     @NotNull
     private static Optional<Method> getMethod(String tableName, String name) {
-        return getTable(tableName)
+        return getTableByJavaFieldName(tableName)
                 .flatMap(table -> Arrays.stream(table.getClass().getMethods()).filter(it -> name.equals(it.getName())).findFirst());
     }
 
     /**
      * Search this jOOQ table for a path method that matches the provided key name.
-     * @param tableName Name of the jOOQ Table
+     * @param tableName Java field name of the jOOQ Table
      * @param keyName   Name of the jOOQ ForeignKey
      * @return The name of a path method on the table that matches the provided key
      */
-    public static Optional<String> searchTableForKeyMethodName(String tableName, String keyName) {
+    public static Optional<String> searchTableForKeyMethodNameGivenJavaFieldNames(String tableName, String keyName) {
         var keys = PATH_BY_TABLE_AND_KEY.get(tableName);
         if (keys != null) {
             var name = keys.get(keyName);
@@ -282,8 +290,15 @@ public class TableReflection {
         return Optional.empty();
     }
 
-    public static Optional<Table<?>> getTable(String name) {
+    public static Optional<Table<?>> getTableByJavaFieldName(String name) {
         return Optional.ofNullable(TABLES_BY_JAVA_FIELD_NAME.get(name));
+    }
+
+    public static Optional<String> getTableJavaFieldNameByTableName(String name){
+        return TABLE_NAME_TO_JAVA_FIELD_NAME.entrySet().stream()
+                .filter(it -> it.getKey().equalsIgnoreCase(name))
+                .map(Map.Entry::getValue)
+                .findFirst();
     }
 
     public static Optional<ForeignKey<?, ?>> getForeignKey(String name) {
@@ -294,7 +309,7 @@ public class TableReflection {
      * @return Set of field names for this table.
      */
     public static Set<String> getJavaFieldNamesForTable(String tableName) {
-        return getTable(tableName)
+        return getTableByJavaFieldName(tableName)
                 .map(table -> Arrays.stream(table.getClass().getFields())
                         .map(TableReflection::getJavaFieldName)
                         .collect(Collectors.toSet()))
@@ -389,7 +404,7 @@ public class TableReflection {
     }
 
     public static Optional<Field<?>> getField(String tableName, String name) {
-        return getTable(tableName)
+        return getTableByJavaFieldName(tableName)
                 .flatMap(table -> Arrays.stream(table.fields())
                         .filter(field -> field.getName().equalsIgnoreCase(name))
                         .findFirst()
@@ -453,11 +468,11 @@ public class TableReflection {
     }
 
     public static Optional<Class<?>> getTableClass(String name) {
-        return getTable(name).map(Object::getClass);
+        return getTableByJavaFieldName(name).map(Object::getClass);
     }
 
     public static Optional<Class<?>> getRecordClass(String name) {
-        return getTable(name).map(Table::getRecordType);
+        return getTableByJavaFieldName(name).map(Table::getRecordType);
     }
 
     public static boolean tableHasPrimaryKey(String tableName) {
@@ -465,11 +480,11 @@ public class TableReflection {
     }
 
     public static Optional<? extends UniqueKey<?>> getPrimaryKeyForTable(String tableName) {
-        return getTable(tableName).map(Table::getPrimaryKey).stream().findFirst();
+        return getTableByJavaFieldName(tableName).map(Table::getPrimaryKey).stream().findFirst();
     }
 
     public static Optional<List<? extends UniqueKey<?>>> getUniqueKeysForTable(String tableName) {
-        return getTable(tableName).map(Table::getUniqueKeys);
+        return getTableByJavaFieldName(tableName).map(Table::getUniqueKeys);
     }
 
     public static Set<? extends UniqueKey<?>> getPrimaryAndUniqueKeysForTable(String tableName) {
@@ -480,7 +495,7 @@ public class TableReflection {
     }
 
     public static Optional<? extends UniqueKey<?>> getPrimaryOrUniqueKeyMatchingFields(String table, List<String> fields) {
-        return getTable(table)
+        return getTableByJavaFieldName(table)
                 .flatMap(value ->
                         Stream.concat(value.getUniqueKeys().stream(), Stream.of(value.getPrimaryKey()))
                                 .filter(key -> key.getFields().size() == fields.size()

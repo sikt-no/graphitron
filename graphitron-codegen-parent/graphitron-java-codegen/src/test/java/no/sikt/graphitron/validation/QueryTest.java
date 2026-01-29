@@ -251,4 +251,11 @@ public class QueryTest extends ValidationTest {
                 "Field 'NameWrapper.name' returns a list of wrapper type 'CustomerName' (a type wrapping a subset of the table fields), " +
                         "which is not supported. Change the field to return a single 'CustomerName' to fix.");
     }
+
+    @Test
+    @DisplayName("Validation should not fail for tables with \"_\" suffix in java field name")
+    void tableWithSameNameAsSchema() {
+        getProcessedSchema("tableWithSameNameAsSchema");
+        assertNoWarnings();
+    }
 }

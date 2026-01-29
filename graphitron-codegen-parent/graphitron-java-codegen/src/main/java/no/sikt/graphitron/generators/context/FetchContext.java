@@ -495,7 +495,7 @@ public class FetchContext {
                 var joinElement = getJoinElement(previous.getCodeName() + "_" + getReferenceObjectField().getName(), JoinListSequence.of(previous));
                 newSequence.add(joinElement);
 
-                var primaryKey = getTable(previous.getName()).map(Table::getPrimaryKey).stream().findFirst()
+                var primaryKey = getTableByJavaFieldName(previous.getName()).map(Table::getPrimaryKey).stream().findFirst()
                         .orElseThrow(() ->
                                 new IllegalArgumentException(String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table without a foreign key.",
                                         referenceObjectField.getContainerTypeName(), referenceObjectField.getName(), previous.getName())));
@@ -579,8 +579,8 @@ public class FetchContext {
         // Infer based on the key provided.
         if (referenceKey != null) {
             var keyName = referenceKey.getMappingName();
-            var sourceTable = getKeySourceTable(keyName).map(JOOQMapping::fromTable).orElse(null);
-            var targetTable = getKeyTargetTable(keyName).map(JOOQMapping::fromTable).orElse(null);
+            var sourceTable = getKeySourceTableJavaName(keyName).map(JOOQMapping::fromTable).orElse(null);
+            var targetTable = getKeyTargetTableJavaName(keyName).map(JOOQMapping::fromTable).orElse(null);
 
             // Self reference key.
             if (Objects.equals(sourceTable, targetTable) && Objects.equals(sourceTable, previousTable) && hasSelfRelation(previousTable.getMappingName())) {

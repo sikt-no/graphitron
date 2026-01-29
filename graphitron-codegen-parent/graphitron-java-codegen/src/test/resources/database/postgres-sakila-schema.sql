@@ -1765,3 +1765,12 @@ GRANT ALL ON SCHEMA public TO PUBLIC;
 --
 
 ALTER TABLE customer ADD COLUMN IF NOT EXISTS usernames TEXT[];
+
+CREATE TABLE public (
+                       dummy_column character varying(1),
+                       vacation_id bigint
+
+);
+
+ALTER TABLE ONLY public
+    ADD CONSTRAINT public_vacation_fkey FOREIGN KEY (vacation_id) REFERENCES vacation(vacation_id);

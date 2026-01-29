@@ -277,7 +277,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(it -> schema.isRecordType(it.getName()))
                 .map(it -> schema.getRecordType(it.getName()))
                 .filter(it -> it.getFields().stream().anyMatch(FieldSpecification::hasNodeID))
-                .filter(it -> it.hasTable() && getTable(it.getTable().getName()).isPresent()) // No need to continue validation here if table does not exist. Table names is validated in validateTablesAndKeys
+                .filter(it -> it.hasTable() && getTableByJavaFieldName(it.getTable().getName()).isPresent()) // No need to continue validation here if table does not exist. Table names is validated in validateTablesAndKeys
                 .forEach(jooqRecordInput ->
                         jooqRecordInput.getFields()
                                 .stream()
@@ -434,11 +434,11 @@ public class ProcessedDefinitionsValidator {
             } else if (fieldReference.hasKey()) {
                 String nextTable;
                 String keyName = fieldReference.getKey().getName();
-                var keyTarget = getKeyTargetTable(keyName).orElse("");
+                var keyTarget = getKeyTargetTableJavaName(keyName).orElse("");
                 if (!keyTarget.equals(sourceTable)) {
                     nextTable = keyTarget;
                 } else {
-                    nextTable = getKeySourceTable(keyName).orElse("");
+                    nextTable = getKeySourceTableJavaName(keyName).orElse("");
                 }
                 if (nextTable.equals(targetTable)) {
                     return;

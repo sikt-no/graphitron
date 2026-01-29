@@ -1,0 +1,13 @@
+type Query {
+  query: Public
+}
+
+
+type Public @table(name: "PUBLIC") { # Java field name for table is "PUBLIC_"
+  dummyColumn: String @field(name: "DUMMY_COLUMN")
+  vacation: Vacation
+}
+
+type Vacation @table {
+  vacationId: Int @field(name: "VACATION_ID")
+}

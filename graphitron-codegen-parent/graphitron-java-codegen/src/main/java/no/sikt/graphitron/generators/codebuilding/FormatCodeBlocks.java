@@ -777,7 +777,7 @@ public class FormatCodeBlocks {
     }
 
     public static CodeBlock staticTableInstanceBlock(String tableName) {
-        var tableClass = getTable(tableName)
+        var tableClass = getTableByJavaFieldName(tableName)
                 .orElseThrow(() -> new RuntimeException("Unknown table " + tableName))
                 .getClass();
         return CodeBlock.of("$T.$N", tableClass, tableName);
