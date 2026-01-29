@@ -7,8 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.ReferencedEntry.DUMMY_CONDITION;
-import static no.sikt.graphitron.common.configuration.ReferencedEntry.RESOLVER_MUTATION_SERVICE;
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.*;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_TYPE;
 
@@ -21,7 +20,7 @@ public class UnknownTest extends ValidationTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(DUMMY_CONDITION, RESOLVER_MUTATION_SERVICE);
+        return makeReferences(DUMMY_CONDITION, RESOLVER_MUTATION_SERVICE, DUMMY_SERVICE, JAVA_RECORD_CUSTOMER);
     }
 
     @Test
@@ -133,7 +132,15 @@ public class UnknownTest extends ValidationTest {
     @DisplayName("Field that can not be connected to anything in a table")
     void field() {
         assertErrorsContain("field",
-                "No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER'"
+                "No field(s) or method(s) with name(s) 'WRONG' found in table 'CUSTOMER' which required by 'Customer.wrong'."
+        );
+    }
+
+    @Test
+    @DisplayName("All fields should be listed when multiple fields reference the same unknown field")
+    void multipleFieldsReferencingUnknownField() {
+        assertErrorsContain("multipleFieldsReferencingUnknownField",
+                "which required by 'Customer.wrong2', 'Customer.wrong'."
         );
     }
 

@@ -258,4 +258,25 @@ public class QueryTest extends ValidationTest {
         getProcessedSchema("tableWithSameNameAsSchema");
         assertNoWarnings();
     }
+
+    @Test
+    @DisplayName("Fields returning wrapper types should not cause errors about missing field/method")
+    void wrapperType() {
+        getProcessedSchema("wrapperTypeWithTable");
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("External fields should not cause errors about missing field/method for table")
+    void externalField() {
+        getProcessedSchema("externalField");
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("jOOQ record service should not incorrectly validate that Java record input fields exist on customer table")
+    void javaRecordInputJooqRecordOutput() {
+        getProcessedSchema("javaRecordInputJooqRecordOutput", Set.of(CUSTOMER_TABLE));
+        assertNoWarnings();
+    }
 }
