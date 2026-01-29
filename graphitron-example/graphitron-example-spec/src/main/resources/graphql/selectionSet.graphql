@@ -8,6 +8,7 @@ type CustomerForSelectionSetTest @table(name: "CUSTOMER"){
     address: Address!
     addressId: Int! @field(name: "ADDRESS_ID")
     cityId: Int @field(name: "CITY_ID") @reference(path: [{table: "ADDRESS"}, {table: "CITY"}])
+    nameFormatted: String @externalField
 }
 
 extend type Store {
