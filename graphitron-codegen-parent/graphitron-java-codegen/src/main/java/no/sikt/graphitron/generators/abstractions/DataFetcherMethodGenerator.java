@@ -36,7 +36,7 @@ abstract public class DataFetcherMethodGenerator extends AbstractSchemaMethodGen
         return super
                 .getDefaultSpecBuilder(methodName, returnType)
                 .addModifiers(Modifier.STATIC)
-                .addParameterIf(processedSchema.nodeExists() && GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY);
+                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY);
     }
 
     protected CodeBlock extractParams(ObjectField target) {

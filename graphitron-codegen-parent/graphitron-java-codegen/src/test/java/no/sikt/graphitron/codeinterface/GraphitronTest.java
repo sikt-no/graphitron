@@ -66,7 +66,7 @@ public class GraphitronTest extends GeneratorTest {
         try {
             GeneratorConfig.setNodeStrategy(true);
             assertGeneratedContentContains(
-                    "federation", Set.of(FEDERATION_QUERY),
+                    "federation", Set.of(FEDERATION_QUERY, NODE),
                     """
                     public static GraphQLSchema getFederatedSchema(TypeDefinitionRegistry registry, RuntimeWiring.Builder wiringBuilder, NodeIdStrategy _iv_nodeIdStrategy) {
                         return FederationHelper.buildFederatedSchema(registry, wiringBuilder, EntityTypeResolver.entityTypeResolver(), QueryEntityGeneratedDataFetcher.entityFetcher(_iv_nodeIdStrategy));

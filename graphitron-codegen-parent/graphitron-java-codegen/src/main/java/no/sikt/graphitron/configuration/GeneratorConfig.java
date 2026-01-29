@@ -37,6 +37,7 @@ public class GeneratorConfig {
             generatedJooqPackage;
 
     private static boolean makeNodeStrategy = false;
+    private static boolean nodeExists = false;
     private static boolean alwaysUsePrimaryKeyInSplitQueries = true;
     private static boolean useJdbcBatchingForDeletes = true;
     private static boolean useJdbcBatchingForInserts = true;
@@ -227,11 +228,15 @@ public class GeneratorConfig {
     }
 
     public static boolean shouldMakeNodeStrategy() {
-        return makeNodeStrategy;
+        return makeNodeStrategy && nodeExists;
     }
 
     public static void setNodeStrategy(boolean shouldUseNodeStrategy) {
         makeNodeStrategy = shouldUseNodeStrategy;
+    }
+
+    public static void setNodeExists(boolean exists) {
+        nodeExists = exists;
     }
 
     public static boolean alwaysUsePrimaryKeyInSplitQueries() {

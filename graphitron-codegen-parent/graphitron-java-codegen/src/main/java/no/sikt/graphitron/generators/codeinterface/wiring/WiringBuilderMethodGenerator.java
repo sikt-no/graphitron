@@ -98,7 +98,7 @@ public class WiringBuilderMethodGenerator extends SimpleMethodGenerator {
                                 indentIfMultiline(
                                         CodeBlock.join(
                                                 newTypeWiring(k),
-                                                indentIfMultiline(v.stream().map(c -> c.toCode(includeNode)).collect(CodeBlock.joining("\n")))
+                                                indentIfMultiline(v.stream().map(ClassWiringContainer::toCode).collect(CodeBlock.joining("\n")))
                                         )
                                 )
                         )
