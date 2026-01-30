@@ -6,6 +6,7 @@ import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generate.Introspector;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphitron.mojo.lsp.LspConfig;
+import no.sikt.graphitron.mojo.lsp.LspConfig.FieldConfig;
 import no.sikt.graphitron.mojo.lsp.LspConfig.TableConfig;
 import no.sikt.graphitron.mojo.lsp.LspConfig.TableDefinition;
 import no.sikt.graphitron.mojo.lsp.LspConfig.TableReference;
@@ -69,12 +70,13 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
 
         for (var tableName : tableNames) {
             var references = buildReferences(tableName);
+            var fields = buildFields(tableName);
             var tableConfig = new TableConfig(
                     tableName,
                     "",
                     new TableDefinition("/tables/" + tableName, 1, 1),
                     references,
-                    List.of() // Empty functions array
+                    fields
             );
             tables.add(tableConfig);
         }
@@ -118,6 +120,25 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
         }
 
         return references;
+    }
+
+    private List<FieldConfig> buildFields(String tableName) {
+        var fields = new ArrayList<FieldConfig>();
+        var table = TableReflection.getTable(tableName).orElse(null);
+        if (table == null) {
+            return fields;
+        }
+
+        for (var field : table.fields()) {
+            var fieldConfig = new FieldConfig(
+                    field.getName(),
+                    field.getDataType().getTypeName(),
+                    field.getDataType().nullable()
+            );
+            fields.add(fieldConfig);
+        }
+
+        return fields;
     }
 
     private String getKeyFieldName(ForeignKey<?, ?> fk) {

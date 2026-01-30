@@ -18,7 +18,16 @@ public record LspConfig(
         String description,
         TableDefinition definition,
         List<TableReference> references,
-        List<String> functions
+        List<FieldConfig> fields
+    ) {}
+
+    /**
+     * Configuration for a table field/column.
+     */
+    public record FieldConfig(
+        @JsonProperty("field_name") String fieldName,
+        @JsonProperty("field_type") String fieldType,
+        boolean nullable
     ) {}
 
     /**
