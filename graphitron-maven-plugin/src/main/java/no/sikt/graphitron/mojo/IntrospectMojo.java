@@ -3,6 +3,7 @@ package no.sikt.graphitron.mojo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.generate.Introspector;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphitron.mojo.lsp.LspConfig;
@@ -25,6 +26,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Mojo for generating LSP configuration from jOOQ introspection.
@@ -47,6 +51,9 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .enable(SerializationFeature.INDENT_OUTPUT);
 
+    // Mapping from Java class canonical name to GraphQL type name (inverted from ScalarUtils)
+    private Map<String, String> javaToGraphQLTypeMapping;
+
     @Override
     public void execute() throws MojoExecutionException {
         try {
@@ -54,6 +61,7 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
             ValidationHandler.resetWarningMessages();
             GeneratorConfig.loadIntrospectorProperties(this);
 
+            initializeTypeMapping();
             var config = buildLspConfig();
             writeConfig(config);
 
@@ -62,6 +70,25 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
             ValidationHandler.logWarnings();
             throw new MojoExecutionException("\n" + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Initialize the Java class to GraphQL type mapping by inverting the ScalarUtils mapping.
+     * ScalarUtils maps GraphQL type name -> Java class name, we need the reverse.
+     */
+    private void initializeTypeMapping() {
+        ScalarUtils.initialize(Set.of());
+        var graphqlToJavaMapping = ScalarUtils.getInstance().getScalarTypeNameMapping();
+
+        // Invert the mapping: Java class name -> GraphQL type name
+        // Note: Multiple GraphQL types might map to the same Java type (e.g., ID and String both map to java.lang.String)
+        // We prefer the base type (String over ID) by processing in order
+        javaToGraphQLTypeMapping = graphqlToJavaMapping.entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getValue,
+                        Map.Entry::getKey,
+                        (existing, replacement) -> existing // Keep first occurrence
+                ));
     }
 
     private LspConfig buildLspConfig() {
@@ -132,13 +159,22 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
         for (var field : table.fields()) {
             var fieldConfig = new FieldConfig(
                     field.getName(),
-                    field.getDataType().getTypeName(),
+                    getGraphQLTypeName(field.getDataType().getType()),
                     field.getDataType().nullable()
             );
             fields.add(fieldConfig);
         }
 
         return fields;
+    }
+
+    /**
+     * Convert a Java class to its corresponding GraphQL type name.
+     * Falls back to the simple class name if no mapping is found.
+     */
+    private String getGraphQLTypeName(Class<?> javaType) {
+        var canonicalName = javaType.getCanonicalName();
+        return javaToGraphQLTypeMapping.getOrDefault(canonicalName, javaType.getSimpleName());
     }
 
     private String getKeyFieldName(ForeignKey<?, ?> fk) {
