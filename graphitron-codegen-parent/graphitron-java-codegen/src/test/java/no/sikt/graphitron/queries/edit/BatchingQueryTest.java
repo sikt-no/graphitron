@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_INPUT_TABLE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
 
 @DisplayName("Mutation queries - Queries for updating data with JDBC batching")
 public class BatchingQueryTest extends GeneratorTest {
@@ -46,7 +47,7 @@ public class BatchingQueryTest extends GeneratorTest {
     @Test
     @DisplayName("Update") // This is default for no particular reason, could have been any of the types.
     void defaultCase() {
-        assertGeneratedContentMatches("default");
+        assertGeneratedContentMatches("default", NODE);
     }
 
     @Test
@@ -70,7 +71,7 @@ public class BatchingQueryTest extends GeneratorTest {
     @Test
     @DisplayName("Upsert with node id")
     void upsertNodeId() {
-        assertGeneratedContentContains("upsertNodeId",
+        assertGeneratedContentContains("upsertNodeId", Set.of(NODE),
                 "_mi_inRecord.changed(VACATION_DESTINATION.DESTINATION_ID, true);",
                 "inRecord.changed(VACATION_DESTINATION.COUNTRY_NAME, true);",
                 ".batchMerge(_mi_inRecord)"
@@ -80,7 +81,7 @@ public class BatchingQueryTest extends GeneratorTest {
     @Test
     @DisplayName("Upsert with implicit node id")
     void upsertImplicitNodeId() {
-        assertGeneratedContentContains("upsertNodeIdWithImplicitTypeName",
+        assertGeneratedContentContains("upsertNodeIdWithImplicitTypeName", Set.of(NODE),
                 "inRecord.changed(VACATION_DESTINATION.DESTINATION_ID, true);",
                 "inRecord.changed(VACATION_DESTINATION.COUNTRY_NAME, true);",
                 ".batchMerge(_mi_inRecord)"
@@ -90,7 +91,7 @@ public class BatchingQueryTest extends GeneratorTest {
     @Test
     @DisplayName("Upsert with node id being an iterable")
     void upsertNodeIdIterable() {
-        assertGeneratedContentContains("upsertNodeIdIterable",
+        assertGeneratedContentContains("upsertNodeIdIterable", Set.of(NODE),
                 "inRecordList.forEach(_iv_it -> {",
                 "it.changed(VACATION_DESTINATION.DESTINATION_ID, true);",
                 "it.changed(VACATION_DESTINATION.COUNTRY_NAME, true);",
@@ -101,7 +102,7 @@ public class BatchingQueryTest extends GeneratorTest {
     @Test
     @DisplayName("Upsert with node id having custom key columns")
     void upsertNodeIdCustomKeyColumns() {
-        assertGeneratedContentContains("upsertNodeIdCustomKeyColumns",
+        assertGeneratedContentContains("upsertNodeIdCustomKeyColumns", Set.of(NODE),
                 "inRecord.changed(VACATION_DESTINATION.KEY_COLUMN1, true);",
                 "inRecord.changed(VACATION_DESTINATION.KEY_COLUMN2, true);",
                 ".batchMerge(_mi_inRecord)"
@@ -124,7 +125,7 @@ public class BatchingQueryTest extends GeneratorTest {
     @Test
     @DisplayName("Double record mutation")
     void twoRecords() {
-        assertGeneratedContentMatches("twoRecords");
+        assertGeneratedContentMatches("twoRecords", NODE);
     }
 
     @Test

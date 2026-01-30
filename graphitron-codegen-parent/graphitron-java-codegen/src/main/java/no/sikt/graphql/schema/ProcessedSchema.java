@@ -125,6 +125,7 @@ public class ProcessedSchema {
                 .collect(Collectors.toMap(ObjectSpecification::getName, Function.identity()));
 
         nodeExists = interfaces.containsKey(NODE_TYPE.getName());
+        GeneratorConfig.setNodeExists(nodeExists);
 
         connectionObjects = objectTypes
                 .stream()
