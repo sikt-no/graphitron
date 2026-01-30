@@ -13,16 +13,15 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.ReferencedEntry.JAVA_RECORD_CUSTOMER;
-import static no.sikt.graphitron.common.configuration.ReferencedEntry.MAPPER_FETCH_SERVICE;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.*;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_STRATEGY;
 
 @DisplayName("Mappers - Node strategy is not used when Node interface is absent")
 public class MapperNodeIdWithoutNodeTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
-        return "jooqmappers/nodeStrategy";
+        return "javamappers/nodeStrategy/toRecord";
     }
 
     @Override
@@ -36,14 +35,14 @@ public class MapperNodeIdWithoutNodeTest extends GeneratorTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(JAVA_RECORD_CUSTOMER, MAPPER_FETCH_SERVICE);
+        return makeReferences(DUMMY_SERVICE);
     }
 
     @Test
     @DisplayName("Node strategy is not used in mapper when enabled but no Node interface exists")
     void nodeStrategyWithoutNodeInMapper() {
         GeneratorConfig.setNodeStrategy(true);
-        resultDoesNotContain(Set.of(CUSTOMER_TABLE), "NodeIdStrategy", VAR_NODE_STRATEGY);
+        resultDoesNotContain("nodeIdWithoutNode", Set.of(DUMMY_INPUT_RECORD), "NodeIdStrategy", VAR_NODE_STRATEGY);
         GeneratorConfig.setNodeStrategy(false);
     }
 }
