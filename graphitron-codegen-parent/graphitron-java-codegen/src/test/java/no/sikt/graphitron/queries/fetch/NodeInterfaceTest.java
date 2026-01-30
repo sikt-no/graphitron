@@ -41,12 +41,6 @@ public class NodeInterfaceTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Multiple fields")
-    void manyFields() {
-        assertGeneratedContentContains("manyFields", "customer.FIRST_NAME", "customer.LAST_NAME");
-    }
-
-    @Test
     @DisplayName("Type implements node and non-node interface")
     void twoInterfaces() {
         assertGeneratedContentContains(
@@ -69,18 +63,5 @@ public class NodeInterfaceTest extends GeneratorTest {
     @DisplayName("Type implements interface without table set but no queries use the interface")
     void withoutTableAndQuery() {
         assertDoesNotThrow(() -> generateFiles("withoutTableAndQuery"));
-    }
-
-    @Test
-    @DisplayName("Node type that has nested list references and thus generates multiple layers of helper methods")
-    void nestedLists() {
-        assertGeneratedContentContains("nestedLists",
-                ".select(_a_customer.getId(), customerForNode_customer())",
-                "customerForNode_customer() {",
-                "DSL.multiset(DSL.select(_1_customerForNode_customer_addresses())",
-                "_1_customerForNode_customer_addresses() {",
-                "DSL.multiset(DSL.select(_2_customerForNode_customer_addresses_stores())",
-                "_2_customerForNode_customer_addresses_stores() {"
-        );
     }
 }

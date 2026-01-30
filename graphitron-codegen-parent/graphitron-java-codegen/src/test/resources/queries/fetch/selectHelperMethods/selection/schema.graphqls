@@ -1,0 +1,8 @@
+type Customer implements Node @table {
+  name: String! @field(name: "FIRST_NAME")
+  address: Address
+}
+
+type Address @table {
+  id: ID!
+}

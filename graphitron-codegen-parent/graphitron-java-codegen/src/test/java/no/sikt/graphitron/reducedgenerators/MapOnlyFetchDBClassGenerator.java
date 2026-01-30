@@ -1,6 +1,6 @@
 package no.sikt.graphitron.reducedgenerators;
 
-import no.sikt.graphitron.generators.db.HelperDBMethodGenerator;
+import no.sikt.graphitron.generators.db.SelectHelperDBMethodGenerator;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
@@ -20,7 +20,7 @@ public class MapOnlyFetchDBClassGenerator extends DBClassGenerator {
                 target.getName(),
                 List.of(
                         new FetchMappedObjectDBMethodGenerator(target, processedSchema),
-                        new HelperDBMethodGenerator(target, processedSchema)
+                        new SelectHelperDBMethodGenerator(target, processedSchema)
                 )
         ).build();
     }

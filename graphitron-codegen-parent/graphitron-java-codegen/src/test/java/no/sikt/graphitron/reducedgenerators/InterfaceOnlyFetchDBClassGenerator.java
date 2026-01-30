@@ -19,8 +19,7 @@ public class InterfaceOnlyFetchDBClassGenerator extends DBClassGenerator {
                 List.of(
                         new FetchNodeImplementationDBMethodGenerator(target, processedSchema, objectFieldsReturningNode),
                         new FetchMultiTableDBMethodGenerator(target, processedSchema),
-                        new FetchSingleTableInterfaceDBMethodGenerator(target, processedSchema),
-                        new NodeHelperDBMethodGenerator(target, processedSchema, objectFieldsReturningNode)
+                        new FetchSingleTableInterfaceDBMethodGenerator(target, processedSchema)
                 )
         ).build();
     }
