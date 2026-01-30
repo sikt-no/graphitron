@@ -239,6 +239,10 @@ type Payment @table {
 #    customer: CustomerRecord @splitQuery @service(service: {className: "no.sikt.graphitron.example.service.CustomerService"}) # kommentert ut pga bug i mapper
 }
 
+type Example @table(name: "CUSTOMER") {
+    a: String @field(name: "first_name")
+}
+
 input StaffInput {
     username: String
     isManager: Boolean @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions", method: "isManagerOfAStore"}, override: true)
