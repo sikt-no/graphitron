@@ -18,11 +18,10 @@
 package no.sikt.graphitron.javapoet;
 
 import com.google.testing.compile.CompilationRule;
+import org.jspecify.annotations.Nullable;
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
 
-import javax.annotation.Nullable;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
