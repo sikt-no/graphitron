@@ -26,7 +26,7 @@ The `graphitron-example-server` is a Quarkus application that runs a GraphQL ser
 
 - Docker - for running the Postgres database
 - [Mise](https://mise.jdx.dev/) - for task management (Recommended)
-  - Alternatively, you can use maven directly with java 17
+  - Alternatively, you can use maven directly with java
 
 
 ## Quickstart
