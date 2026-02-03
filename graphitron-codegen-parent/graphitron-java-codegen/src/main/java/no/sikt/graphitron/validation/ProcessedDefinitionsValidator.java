@@ -566,13 +566,13 @@ public class ProcessedDefinitionsValidator {
             }
 
             var hasCondition = field.hasOverridingCondition();
-            if (field.hasNonReservedInputFields() && field.isGeneratedWithResolver()) {
+            if (field.hasNonReservedInputFields() && field.isGeneratedWithResolver() && !schema.isInterface(field)) {
                 var targetTable = schema.hasTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable;
                 flattenInputFields(targetTable, field.getNonReservedArguments(), field.hasOverridingCondition(), new HashSet<>())
                         .forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
             }
 
-            if (lastTableIsNonNull) {
+            if (lastTableIsNonNull && !field.isResolver()) {
                 flatFields.computeIfAbsent(lastTable, k -> new ArrayList<>()).add(new FieldWithOverrideStatus(field, hasCondition));
             }
         }
