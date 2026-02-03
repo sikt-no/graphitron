@@ -23,7 +23,7 @@
     </modules>
 
     <properties>
-        <revision>7</revision>
+        <revision>8</revision>
         <changelist>-SNAPSHOT</changelist>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
