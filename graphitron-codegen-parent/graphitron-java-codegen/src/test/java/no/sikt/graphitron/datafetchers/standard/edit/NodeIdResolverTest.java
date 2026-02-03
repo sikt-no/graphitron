@@ -39,7 +39,7 @@ public class NodeIdResolverTest extends GeneratorTest {
     @DisplayName("A mutation that uses nodeIdStrategy")
     void nodeIdStrategyWithBatching() {
         assertGeneratedContentContains(
-                "withBatching/nodeId", Set.of(CUSTOMER_INPUT_TABLE),
+                "withBatching/nodeId", Set.of(CUSTOMER_INPUT_TABLE, NODE),
                 ".mutationForMutation(_iv_transform.getCtx(), _iv_nodeIdStrategy, _mi_inRecord)",
                 ".mutationForMutation(_iv_ctx, _iv_nodeIdStrategy, _mi_inRecord, _iv_selectionSet)"
         );
@@ -100,7 +100,7 @@ public class NodeIdResolverTest extends GeneratorTest {
     void nodeIdStrategyInDeleteMutation() {
         GeneratorConfig.setUseJdbcBatchingForDeletes(false);
         assertGeneratedContentContains(
-                "withReturning/withNodeIdStrategy", Set.of(CUSTOMER_INPUT_TABLE),
+                "withReturning/withNodeIdStrategy", Set.of(CUSTOMER_INPUT_TABLE, NODE),
                 ".mutationForMutation(_iv_ctx, _iv_nodeIdStrategy, _mi_inRecord, _iv_selectionSet)"
         );
         GeneratorConfig.setUseJdbcBatchingForDeletes(true);

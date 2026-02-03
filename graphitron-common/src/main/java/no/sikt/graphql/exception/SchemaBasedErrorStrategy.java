@@ -45,32 +45,47 @@ public abstract class SchemaBasedErrorStrategy {
     public Optional<CompletableFuture<Object>> handleException(DataFetchingEnvironment environment, Throwable thrownException) {
         String operationName = environment.getFieldDefinition().getName();
 
+        // Unwrap CompletionException from async operations
+        Throwable exception = unwrapCompletionException(thrownException);
+
         // Check if this exception type is configured for handling
         for (var entry : configuration.getFieldsForException().entrySet()) {
             Class<? extends Throwable> exceptionType = entry.getKey();
-            if (exceptionType.isInstance(thrownException) &&
+            if (exceptionType.isInstance(exception) &&
                     entry.getValue().contains(operationName)) {
 
                 // Delegate to specific handler based on exception type
-                if (thrownException instanceof ValidationViolationGraphQLException) {
+                if (exception instanceof ValidationViolationGraphQLException) {
                     return handleValidationException(
-                            (ValidationViolationGraphQLException) thrownException,
+                            (ValidationViolationGraphQLException) exception,
                             operationName);
-                } else if (thrownException instanceof IllegalArgumentException) {
+                } else if (exception instanceof IllegalArgumentException) {
                     return handleIllegalArgumentException(
-                            (IllegalArgumentException) thrownException,
+                            (IllegalArgumentException) exception,
                             operationName,
                             environment.getExecutionStepInfo().getPath());
-                } else if (thrownException instanceof DataAccessException) {
+                } else if (exception instanceof DataAccessException) {
                     return handleDataAccessException(
-                            (DataAccessException) thrownException,
+                            (DataAccessException) exception,
                             operationName);
                 } else {
-                    return handleBusinessLogicException(thrownException, operationName);
+                    return handleBusinessLogicException(exception, operationName);
                 }
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Unwraps CompletionException from async operations.
+     * If the exception is a CompletionException with a cause, returns the cause.
+     * Otherwise, returns the exception itself.
+     */
+    private Throwable unwrapCompletionException(Throwable throwable) {
+        if (throwable instanceof java.util.concurrent.CompletionException && throwable.getCause() != null) {
+            return throwable.getCause();
+        }
+        return throwable;
     }
 
     /**

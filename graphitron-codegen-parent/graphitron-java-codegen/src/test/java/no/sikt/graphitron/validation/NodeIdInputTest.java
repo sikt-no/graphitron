@@ -6,6 +6,7 @@ import org.junit.jupiter.api.*;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_NODE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
 
 @DisplayName("Node directive input validation - Checks run when building the schema for types with node directive")
 public class NodeIdInputTest extends ValidationTest {
@@ -115,7 +116,7 @@ public class NodeIdInputTest extends ValidationTest {
     @DisplayName("Foreign key does not reference the same key used for the target node type")
     void foreignKeyReferencesWrongKey() {
         assertErrorsContain(
-                () -> getProcessedSchema("foreignKeyReferencesWrongKey"),
+                () -> getProcessedSchema("foreignKeyReferencesWrongKey", Set.of(NODE)),
                 "Node ID field 'actorId' in jOOQ record input 'FilmActorFilter' uses foreign key " +
                         "'film_actor_actor_id_last_name_fkey' which does not reference the same primary/unique key used " +
                         "for type 'Actor's node ID. This is not supported."
@@ -138,7 +139,7 @@ public class NodeIdInputTest extends ValidationTest {
     @DisplayName("Update when the foreign key overlaps with the primary key of the jOOQ record table should not be allowed")
     void foreignKeyOverlapsPrimaryKeyUpdateMutation() {
         assertErrorsContain(
-                () -> getProcessedSchema("fkOverlapsPk/updateMutation"),
+                () -> getProcessedSchema("fkOverlapsPk/updateMutation", Set.of(NODE)),
                 "Foreign key used for node ID field 'filmId' in jOOQ record input 'FilmActorInput' overlaps with the primary key of the jOOQ record table. This is not supported for update/upsert mutations ."
         );
     }

@@ -18,6 +18,7 @@ import java.util.Set;
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.JAVA_RECORD_CUSTOMER;
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.MAPPER_FETCH_SERVICE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_NODE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
 
 @DisplayName("Mappers with node strategy (temporary test class)")
 public class MapperNodeStrategyTest extends GeneratorTest {
@@ -69,7 +70,7 @@ public class MapperNodeStrategyTest extends GeneratorTest {
     @Test
     @DisplayName("Custom node ID field to graph with node strategy (temporary test)")
     void toGraphCustomNodeId() {
-        assertGeneratedContentContains("toGraph/toGraphCustomNodeId",
+        assertGeneratedContentContains("toGraph/toGraphCustomNodeId", Set.of(NODE),
                 "customerNode.setId(_iv_nodeIdStrategy.createId(_nit_customerRecord, \"C\", Customer.CUSTOMER.CUSTOMER_ID))"
         );
     }
@@ -118,7 +119,7 @@ public class MapperNodeStrategyTest extends GeneratorTest {
     @DisplayName("Wrapper field containing listed Java record with splitQuery field")
     void listedFieldWithJavaRecord() {
         assertGeneratedContentContains(
-                "toGraph/splitQueryInNestedJavaRecord",
+                "toGraph/splitQueryInNestedJavaRecord", Set.of(NODE),
                 "customerJavaRecordToGraphType(_mi_payloadRecord, _iv_nodeIdStrategy, _iv_pathHere + \"customerJavaRecords\")"
         );
     }
