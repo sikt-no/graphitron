@@ -2,28 +2,52 @@
   {
     "representations": [
       {
-        "__typename": "Staff",
-        "id": "U3RhZmY6MQ=="
+        "__typename": "FederatedStaff",
+        "email": "Mike.Hillyer@sakilastaff.com",
+        "username": "Mike"
       }
     ]
   },
   {
     "representations": [
       {
-        "__typename": "Staff",
-        "id": "U3RhZmY6MQ=="
+        "__typename": "FederatedStaff",
+        "email": "Mike.Hillyer@sakilastaff.com",
+        "username": "Mike"
       },
       {
-        "__typename": "Staff",
-        "id": "U3RhZmY6Mg=="
+        "__typename": "FederatedStaff",
+        "email": "Jon.Stephens@sakilastaff.com",
+        "username": "Jon"
       }
     ]
   },
   {
     "representations": [
       {
-        "__typename": "Address",
-        "id": "QWRkcmVzczox"
+        "__typename": "FederatedAddress",
+        "id": "RmVkZXJhdGVkQWRkcmVzczox"
+      }
+    ]
+  },
+  {
+    "representations": [
+      {
+        "__typename": "FederatedCustomer",
+        "id": "RmVkZXJhdGVkQ3VzdG9tZXI6OA=="
+      },
+      {
+        "__typename": "FederatedCustomer",
+        "firstName": "DOROTHY",
+        "lastName": "TAYLOR"
+      }
+    ]
+  },
+  {
+    "representations": [
+      {
+        "__typename": "FederatedFilm",
+        "id": "RmVkZXJhdGVkRmlsbTo0"
       }
     ]
   }

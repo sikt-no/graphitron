@@ -338,6 +338,10 @@ public abstract class GeneratorTest {
         assertThat(generateFiles(schemaFolder, extraComponents).keySet()).isEmpty();
     }
 
+    protected void assertNothingGenerated(Set<SchemaComponent> extraComponents) {
+        assertThat(generateFiles(extraComponents).keySet()).isEmpty();
+    }
+
     @BeforeEach
     public void setup() {
         // Reset ValidationHandler state before each test to prevent cross-test contamination

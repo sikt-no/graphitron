@@ -15,7 +15,7 @@ import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 @DisplayName("Query outputs - Union types")
 public class UnionTest extends GeneratorTest {
 
-    // Disable validation until GGG-104
+    // Disable validation until GG-104
     @Override
     protected boolean validateSchema() {
         return false;

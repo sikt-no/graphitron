@@ -17,14 +17,13 @@ import static no.sikt.graphitron.configuration.GeneratorConfig.getRecordValidati
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.iterableWrapType;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_PAGE_SIZE;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.contextFieldPrefix;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.INTEGER;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
-import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_TYPE;
-import static no.sikt.graphql.naming.GraphQLReservedName.PAGINATION_AFTER;
+import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -43,11 +42,12 @@ public class InputParser {
     private final List<ObjectField> allErrors;
     private final ExceptionDefinition validationErrorException;
     private final ProcessedSchema schema;
-    private final boolean hasForwardPagination;
+    private final boolean hasForwardPagination, isEntities;
 
     public InputParser(ObjectField target, ProcessedSchema schema) {
         this.schema = schema;
         this.hasForwardPagination = target.hasForwardPagination();
+        this.isEntities = target.isRootField() && target.getName().equals(FEDERATION_ENTITIES_FIELD.getName()) && schema.isFederationImported();
         methodInputs = parseInputs(target.getNonReservedArguments(), schema);
         orderField = target.getOrderField().map(it -> parseInputs(List.of(it), schema)).orElse(Map.of());
         recordInputs = methodInputs
@@ -88,6 +88,10 @@ public class InputParser {
         var inputs = new LinkedHashMap<String, InputField>();
 
         for (var in : specInputs) {
+            if (isEntities && in.getName().equals(FEDERATION_REPRESENTATIONS_ARGUMENT.getName())) {
+                return Map.of(uncapitalize(FEDERATION_REPRESENTATIONS_ARGUMENT.getName()), in);
+            }
+
             var inType = schema.getInputType(in);
             if (inType == null) {
                 inputs.put(uncapitalize(in.getName()), in);
@@ -205,7 +209,13 @@ public class InputParser {
         return inputs
                 .entrySet()
                 .stream()
-                .map((it) -> ParameterSpec.of(iterableWrapType(it.getValue(), true, schema), inputPrefix(it.getKey())))
+                .map((it) ->
+                        ParameterSpec.of(
+                                isEntities && it.getValue().getName().equals(FEDERATION_REPRESENTATIONS_ARGUMENT.getName())
+                                        ? wrapList(getObjectMapTypeName())
+                                        : iterableWrapType(it.getValue(), true, schema), inputPrefix(it.getKey())
+                        )
+                )
                 .toList();
     }
 

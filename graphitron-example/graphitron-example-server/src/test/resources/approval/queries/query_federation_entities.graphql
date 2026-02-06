@@ -1,18 +1,29 @@
 query FederationEntities($representations: [_Any!]!) {
     _entities(representations: $representations) {
-        ... on Staff {
+        ... on FederatedStaff {
             id
             email
             username
         }
-        ... on Address {
+        ... on FederatedAddress {
             id
             addressLine1
-            phone
             zip
-            stores {
+            city {
                 id
             }
+        }
+        ... on FederatedCustomer {
+            id
+            firstName
+            lastName
+            email
+            address {
+                id
+            }
+        }
+        ... on FederatedFilm {
+            id
         }
     }
 }

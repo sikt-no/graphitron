@@ -3,7 +3,6 @@ package no.sikt.graphitron.queries.fetch;
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.reducedgenerators.EntityFetchOnlyDBClassGenerator;
 import no.sikt.graphitron.reducedgenerators.InterfaceOnlyFetchDBClassGenerator;
 import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -28,7 +27,6 @@ public class OptionalSelectTest extends GeneratorTest {
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         return List.of(
                 new MapOnlyFetchDBClassGenerator(schema),
-                new EntityFetchOnlyDBClassGenerator(schema),
                 new InterfaceOnlyFetchDBClassGenerator(schema)
         );
     }
@@ -146,16 +144,8 @@ public class OptionalSelectTest extends GeneratorTest {
     void entityQuery() {
         assertGeneratedContentContains(
                 "entity", Set.of(FEDERATION_QUERY),
-                "_iv_inputMap, SelectionSet _iv_select)",
-                """
-                _a_customer.getId(),
-                _iv_select.ifRequested("address", () ->
-                    DSL.field(
-                        DSL.select(QueryHelper.objectRow("id", _a_customer_2168032777_address.getId()))
-                        .from(_a_customer_2168032777_address)
-                    )
-                )
-                """
+                "representations, SelectionSet _iv_select)",
+                "_a_customer.getId(),_iv_select.ifRequested(\"address\", () -> DSL.field(DSL.select(DSL.row("
         );
     }
 

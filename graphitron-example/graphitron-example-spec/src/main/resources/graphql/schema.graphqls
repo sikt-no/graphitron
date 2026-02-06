@@ -111,7 +111,7 @@ type CustomerName {
     lastName: String! @field(name: "LAST_NAME")
 }
 
-type Address implements Node @node @table @key(fields: "id", resolvable: true) {
+type Address implements Node @node @table {
     id: ID! @nodeId
     addressLine1: String! @field(name: "ADDRESS_")
     addressLine2: String @field(name: "ADDRESS2")
@@ -246,7 +246,7 @@ input StaffInput {
     withAddressIdInCity300: Int @field(name: "ADDRESS_ID") @reference(path: [{key: "STAFF__STAFF_ADDRESS_ID_FKEY"}]) @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions"})
 }
 
-type Staff implements Node @node @table(name: "STAFF") @key(fields: "id", resolvable: true) {
+type Staff implements Node @node @table(name: "STAFF") {
     id: ID! @nodeId
     email: String
     username: String

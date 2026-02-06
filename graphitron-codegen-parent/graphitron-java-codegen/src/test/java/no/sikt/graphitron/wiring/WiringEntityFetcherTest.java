@@ -4,7 +4,7 @@ import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
-import no.sikt.graphitron.generators.datafetchers.operations.EntityFetcherClassGenerator;
+import no.sikt.graphitron.generators.datafetchers.operations.OperationClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,7 +28,7 @@ public class WiringEntityFetcherTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        var generator = new EntityFetcherClassGenerator(schema);
+        var generator = new OperationClassGenerator(schema);
         return List.of(generator, new WiringClassGenerator(List.of(generator), schema));
     }
 
@@ -37,7 +37,7 @@ public class WiringEntityFetcherTest extends GeneratorTest {
     void defaultCase() {
         assertGeneratedContentContains(
                 "entity",
-                ".newTypeWiring(\"Query\").dataFetcher(\"_entities\", QueryEntityGeneratedDataFetcher.entityFetcher()"
+                ".newTypeWiring(\"Query\").dataFetcher(\"_entities\", QueryGeneratedDataFetcher._entities()"
         );
     }
 }

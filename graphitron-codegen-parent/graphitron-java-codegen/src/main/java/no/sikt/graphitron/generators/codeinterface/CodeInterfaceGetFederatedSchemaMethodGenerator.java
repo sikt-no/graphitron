@@ -2,8 +2,7 @@ package no.sikt.graphitron.generators.codeinterface;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.SimpleMethodGenerator;
-import no.sikt.graphitron.generators.datafetchers.operations.EntityFetcherClassGenerator;
-import no.sikt.graphitron.generators.datafetchers.operations.EntityFetcherMethodGenerator;
+import no.sikt.graphitron.generators.datafetchers.operations.OperationClassGenerator;
 import no.sikt.graphitron.generators.datafetchers.typeresolvers.TypeResolverClassGenerator;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -21,6 +20,7 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_STRATEGY;
 import static no.sikt.graphitron.javapoet.CodeBlock.empty;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITY_UNION;
 
 /**
@@ -42,7 +42,7 @@ public class CodeInterfaceGetFederatedSchemaMethodGenerator extends SimpleMethod
 
     public CodeInterfaceGetFederatedSchemaMethodGenerator(ProcessedSchema processedSchema) {
         this.processedSchema = processedSchema;
-        this.hasEntities = processedSchema.hasEntitiesField();
+        this.hasEntities = processedSchema.federationEntitiesExist();
         this.useNodeStrategy = GeneratorConfig.shouldMakeNodeStrategy();
         this.nodeParam = useNodeStrategy ? VAR_NODE_STRATEGY : VAR_NODE_HANDLER;
         this.nodeParamClass = useNodeStrategy ? NODE_ID_STRATEGY.className : NODE_ID_HANDLER.className;
@@ -76,10 +76,9 @@ public class CodeInterfaceGetFederatedSchemaMethodGenerator extends SimpleMethod
     }
 
     private CodeBlock buildFederatedSchemaWithEntities() {
-        var queryTypeName = processedSchema.getQueryType().getName();
         var entityFetcherClassName = getGeneratedClassName(
-                DEFAULT_SAVE_DIRECTORY_NAME + "." + EntityFetcherClassGenerator.SAVE_DIRECTORY_NAME,
-                queryTypeName + EntityFetcherClassGenerator.CLASS_NAME + FILE_NAME_SUFFIX
+                DEFAULT_SAVE_DIRECTORY_NAME + "." + OperationClassGenerator.SAVE_DIRECTORY_NAME,
+                processedSchema.getQueryType().getName() + FILE_NAME_SUFFIX
         );
         var entityTypeResolverClassName = getGeneratedClassName(
                 DEFAULT_SAVE_DIRECTORY_NAME + "." + TypeResolverClassGenerator.SAVE_DIRECTORY_NAME,
@@ -87,7 +86,7 @@ public class CodeInterfaceGetFederatedSchemaMethodGenerator extends SimpleMethod
         );
         var typeResolverMethodName = asTypeResolverMethodName(FEDERATION_ENTITY_UNION.getName());
 
-        var entityFetcherCall = CodeBlock.of("$T.$L($L)", entityFetcherClassName, EntityFetcherMethodGenerator.METHOD_NAME,
+        var entityFetcherCall = CodeBlock.of("$T.$L($L)", entityFetcherClassName, FEDERATION_ENTITIES_FIELD.getName(),
                 useNodeStrategy ? nodeParam : empty());
 
         return CodeBlock.of(

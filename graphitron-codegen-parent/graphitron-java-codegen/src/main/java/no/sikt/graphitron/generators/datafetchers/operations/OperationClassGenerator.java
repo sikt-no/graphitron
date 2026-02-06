@@ -28,7 +28,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
  * Class generator for any data fetchers classes.
  */
 public class OperationClassGenerator extends DataFetcherClassGenerator<ObjectDefinition> {
-    public final String SAVE_DIRECTORY_NAME = "operations";
+    public static final String SAVE_DIRECTORY_NAME = "operations";
 
     public OperationClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);

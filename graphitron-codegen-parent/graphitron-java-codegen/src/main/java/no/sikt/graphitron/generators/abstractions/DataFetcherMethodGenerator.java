@@ -18,11 +18,13 @@ import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declarePageSize;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getObjectMapTypeName;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
-import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.sourcePrefix;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_STRATEGY;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
+import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
 
 abstract public class DataFetcherMethodGenerator extends AbstractSchemaMethodGenerator<ObjectField, ObjectDefinition> {
     protected final List<WiringContainer> dataFetcherWiring = new ArrayList<>();
@@ -41,6 +43,7 @@ abstract public class DataFetcherMethodGenerator extends AbstractSchemaMethodGen
 
     protected CodeBlock extractParams(ObjectField target) {
         var localObject = getLocalObject();
+        var isEntitiesField = localObject.isOperationRoot() && target.getName().equals(FEDERATION_ENTITIES_FIELD.getName()) && processedSchema.isFederationImported();
         return CodeBlock
                 .builder()
                 .declareIf(
@@ -49,15 +52,21 @@ abstract public class DataFetcherMethodGenerator extends AbstractSchemaMethodGen
                         sourcePrefix(localObject.getName()),
                         () -> asMethodCall(VAR_ENV, METHOD_SOURCE_NAME)
                 )
-                .addAll(target.getArguments().stream().map(this::declareArgument).toList())
+                .addAll(target.getArguments().stream().map(it -> declareArgument(it, isEntitiesField)).toList())
                 .addIf(target.hasForwardPagination(), declarePageSize(target.getFirstDefault()))
                 .build();
     }
 
-    private CodeBlock declareArgument(ArgumentField field) {
+    private CodeBlock declareArgument(ArgumentField field, boolean isEntitiesField) {
         var getBlock = CodeBlock.of("$N.getArgument($S)", VAR_ENV, field.getName());
         var transformBlock = processedSchema.isRecordType(field) ? transformDTOBlock(field, getBlock) : getBlock;
-        return CodeBlock.declare(TypeNameFormat.iterableWrapType(field, false, processedSchema), inputPrefix(field.getName()), transformBlock);
+        return CodeBlock.declare(
+                !isEntitiesField
+                        ? TypeNameFormat.iterableWrapType(field, false, processedSchema)
+                        : wrapList(getObjectMapTypeName()),
+                inputPrefix(field.getName()),
+                transformBlock
+        );
     }
 
     protected CodeBlock transformDTOBlock(GenerationField field, CodeBlock source) {

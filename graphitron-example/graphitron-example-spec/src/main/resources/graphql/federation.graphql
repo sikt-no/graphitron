@@ -1,0 +1,38 @@
+"""
+Type with a compound key.
+"""
+type FederatedStaff implements Node @node @table(name: "STAFF") @key(fields: "email username") {
+    id: ID! @nodeId
+    email: String
+    username: String
+}
+
+"""
+Type with a single ID key that contains a split query.
+"""
+type FederatedAddress implements Node @node @table(name: "ADDRESS") @key(fields: "id") {
+    id: ID! @nodeId
+    addressLine1: String! @field(name: "ADDRESS_")
+    addressLine2: String @field(name: "ADDRESS2")
+    zip: String @field(name: "POSTAL_CODE")
+    city: City! @splitQuery
+}
+
+"""
+Type with two keys.
+"""
+type FederatedCustomer implements Node @node @table(name: "CUSTOMER") @key(fields: "id") @key(fields: "firstName lastName") {
+    id: ID! @nodeId
+    firstName: String! @field(name: "FIRST_NAME")
+    lastName: String! @field(name: "LAST_NAME")
+    email: String
+    address: Address!
+}
+
+"""
+Type with a non-resolvable key. Should not resolve, but currently does, see GG-375.
+"""
+type FederatedFilm implements Node @node @table(name: "FILM") @key(fields: "id", resolvable: false) {
+    id: ID! @nodeId
+    title: String
+}

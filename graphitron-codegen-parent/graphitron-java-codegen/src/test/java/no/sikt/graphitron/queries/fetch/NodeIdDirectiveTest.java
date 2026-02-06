@@ -4,7 +4,6 @@ import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.reducedgenerators.EntityFetchOnlyDBClassGenerator;
 import no.sikt.graphitron.reducedgenerators.InterfaceOnlyFetchDBClassGenerator;
 import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -29,7 +28,7 @@ public class NodeIdDirectiveTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        return List.of(new InterfaceOnlyFetchDBClassGenerator(schema), new MapOnlyFetchDBClassGenerator(schema), new EntityFetchOnlyDBClassGenerator(schema));
+        return List.of(new InterfaceOnlyFetchDBClassGenerator(schema), new MapOnlyFetchDBClassGenerator(schema));
     }
 
     @BeforeAll

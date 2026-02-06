@@ -48,23 +48,8 @@ public class TypeResolverClassGenerator extends AbstractSchemaClassGenerator<Typ
     }
 
     public List<TypeSpec> generateAll() {
-        var interfaces = processedSchema.getInterfaces().values().stream();
-        var unions = processedSchema
-                .getUnions()
-                .values()
-                .stream()
-                .filter(it -> processedSchema.hasEntitiesField() || !it.getName().equals(FEDERATION_ENTITY_UNION.getName()))
-                .toList();
-        // Federation is not available, so neither stream actually finds the union except in our tests. If it becomes available, remove the special cases for entity.
-        if (processedSchema.hasEntitiesField() && unions.stream().noneMatch(it -> it.getName().equals(FEDERATION_ENTITY_UNION.getName()))) {
-            var entity = processedSchema.getUnion(FEDERATION_ENTITY_UNION.getName()); // Adds a null entry for the special case.
-            return Stream
-                    .concat(interfaces, Stream.concat(unions.stream(), Stream.of(entity)))
-                    .map(this::generate)
-                    .toList();
-        }
         return Stream
-                .concat(interfaces, unions.stream())
+                .concat(processedSchema.getInterfaces().values().stream(), processedSchema.getUnions().values().stream())
                 .map(this::generate)
                 .toList();
     }

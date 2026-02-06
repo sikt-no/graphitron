@@ -3,7 +3,7 @@ package no.sikt.graphitron.datafetchers.standard.fetch;
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.datafetchers.operations.EntityFetcherClassGenerator;
+import no.sikt.graphitron.generators.datafetchers.operations.OperationClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,28 +27,18 @@ public class EntityResolverTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        return List.of(new EntityFetcherClassGenerator(schema));
+        return List.of(new OperationClassGenerator(schema));
     }
 
     @Test
     @DisplayName("One entity exists")
     void defaultCase() {
-        assertGeneratedContentMatches("default");
+        assertGeneratedContentContains("default", "List<Map<String, Object>> _mi_representations = _iv_env.getArgument(\"representations\")");
     }
 
-    @Test
+    @Test  // Dummy datafetcher when there are no entities, but _entities is defined. Should not happen in practice.
     @DisplayName("No entities defined in schema")
     void noEntities() {
-        assertGeneratedContentContains("noEntities", ".get(\"__typename\")) {default: return null;}");
-    }
-
-    @Test
-    @DisplayName("Entity queries for two types")
-    void twoTypes() {
-        assertGeneratedContentContains(
-                "twoTypes",
-                "transformDTO(AddressDBQueries.addressAsEntity(",
-                "transformDTO(CustomerDBQueries.customerAsEntity("
-        );
+        assertGeneratedContentContains("noEntities", "return _iv_env -> return null;");
     }
 }

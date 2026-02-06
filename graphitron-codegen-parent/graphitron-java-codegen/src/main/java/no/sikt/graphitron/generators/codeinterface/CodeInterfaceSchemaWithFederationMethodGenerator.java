@@ -15,6 +15,7 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.return
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_HANDLER;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_STRATEGY;
 import static no.sikt.graphitron.javapoet.CodeBlock.empty;
+import static no.sikt.graphitron.javapoet.TypeName.BOOLEAN;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.GRAPHQL_SCHEMA;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_HANDLER;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_STRATEGY;
@@ -38,7 +39,7 @@ public class CodeInterfaceSchemaWithFederationMethodGenerator extends SimpleMeth
 
     public CodeInterfaceSchemaWithFederationMethodGenerator(ProcessedSchema processedSchema) {
         this.includeNode = processedSchema.nodeExists();
-        this.hasEntities = processedSchema.hasEntitiesField();
+        this.hasEntities = processedSchema.federationEntitiesExist();
         this.useNodeStrategy = GeneratorConfig.shouldMakeNodeStrategy();
         this.nodeParam = useNodeStrategy ? VAR_NODE_STRATEGY : VAR_NODE_HANDLER;
         this.nodeParamClass = useNodeStrategy ? NODE_ID_STRATEGY.className : NODE_ID_HANDLER.className;
@@ -52,7 +53,7 @@ public class CodeInterfaceSchemaWithFederationMethodGenerator extends SimpleMeth
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                 .returns(GRAPHQL_SCHEMA.className)
                 .addParameterIf(includeNode, nodeParamClass, nodeParam)
-                .addParameter(boolean.class, VAR_INCLUDE_FEDERATION)
+                .addParameter(BOOLEAN, VAR_INCLUDE_FEDERATION)
                 .beginControlFlow("if (!$N)", VAR_INCLUDE_FEDERATION)
                 .addCode(returnWrap(CodeBlock.of("$L($L)", CodeInterfaceSchemaMethodGenerator.METHOD_NAME, nodeParamCode)))
                 .endControlFlow()

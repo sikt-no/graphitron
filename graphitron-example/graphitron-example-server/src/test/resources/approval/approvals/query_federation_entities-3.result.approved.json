@@ -2,15 +2,12 @@
     "data": {
         "_entities": [
             {
-                "id": "QWRkcmVzczox",
+                "id": "RmVkZXJhdGVkQWRkcmVzczox",
                 "addressLine1": "47 MySakila Drive",
-                "phone": " ",
                 "zip": null,
-                "stores": [
-                    {
-                        "id": "U3RvcmU6MQ"
-                    }
-                ]
+                "city": {
+                    "id": "Q2l0eVR5cGU6MzAw"
+                }
             }
         ]
     }
