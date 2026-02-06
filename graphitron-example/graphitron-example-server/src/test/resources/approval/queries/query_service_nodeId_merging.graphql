@@ -1,0 +1,13 @@
+# Tests that two @nodeId fields merge into a single jOOQ record
+# - customerId "Q3VzdG9tZXI6MQ" = "Customer:1" → sets CUSTOMER_ID=1
+# - inventoryId "SW52ZW50b3J5OjE" = "Inventory:1" → sets INVENTORY_ID=1
+# Both are merged into a single RentalRecord
+{
+    helloWorldWithNodeIdMerging(input: {
+        name: "Test",
+        customerId: "Q3VzdG9tZXI6MQ",
+        inventoryId: "SW52ZW50b3J5OjE"
+    }) {
+        greeting
+    }
+}

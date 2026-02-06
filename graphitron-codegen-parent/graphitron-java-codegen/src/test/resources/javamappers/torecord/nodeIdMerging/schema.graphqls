@@ -1,0 +1,9 @@
+type Query {
+  query(in: RentalInput): ID @service(service: {name: "DUMMY_SERVICE"})
+}
+
+input RentalInput @record(record: {className: "no.sikt.graphitron.codereferences.records.RentalInputJavaRecord"}) {
+  name: String
+  customerId: ID @nodeId(typeName: "CustomerNode") @field(name: "rental")
+  inventoryId: ID @nodeId(typeName: "InventoryNode") @field(name: "rental")
+}

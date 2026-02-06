@@ -1,0 +1,13 @@
+# Tests conflict detection when overlapping @nodeId fields have different values
+# - filmActorId "RmlsbUFjdG9yOjEsMg" = "FilmActor:1,2" → sets ACTOR_ID=1, FILM_ID=2
+# - actorId "QWN0b3I6OTk" = "Actor:99" → tries to set ACTOR_ID=99
+# This should throw an IllegalArgumentException because ACTOR_ID would be set to both 1 and 99
+{
+    helloWorldWithNodeIdConflict(input: {
+        name: "Test",
+        filmActorId: "RmlsbUFjdG9yOjEsMg",
+        actorId: "QWN0b3I6OTk"
+    }) {
+        greeting
+    }
+}

@@ -536,4 +536,16 @@ public class TableReflection {
             return Optional.empty();
         }
     }
+
+    /**
+     * Gets the table name (Java field name) for a jOOQ record class.
+     * @param recordClass The jOOQ record class to find the table for
+     * @return The table name if found, empty otherwise
+     */
+    public static Optional<String> getTableNameForRecordClass(Class<?> recordClass) {
+        return TABLES_BY_JAVA_FIELD_NAME.entrySet().stream()
+                .filter(entry -> entry.getValue().getRecordType().equals(recordClass))
+                .map(Map.Entry::getKey)
+                .findFirst();
+    }
 }

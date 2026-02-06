@@ -61,7 +61,12 @@ public enum ReferencedEntry {
     QUERY_FETCH_PAYMENT_INTERFACE_CONDITION("QUERY_FETCH_PAYMENT_INTERFACE_CONDITION", QueryPaymentInterfaceCondition.class),
     REFERENCE_PG_USER_MAPPING_CONDITION("REFERENCE_PG_USER_MAPPING_CONDITION", PgUserMappingCondition.class),
     CONTEXT_CONDITION("CONTEXT_CONDITION", ContextCondition.class),
-    PAYMENT_CONDITION("PAYMENT_CONDITION", PaymentCondition.class);
+    PAYMENT_CONDITION("PAYMENT_CONDITION", PaymentCondition.class),
+
+    // NodeId to jOOQ record test records.
+    NODEID_INPUT_JAVA_RECORD("NODEID_INPUT_JAVA_RECORD", NodeIdInputJavaRecord.class),
+    RENTAL_INPUT_JAVA_RECORD("RENTAL_INPUT_JAVA_RECORD", RentalInputJavaRecord.class),
+    COMPOSITE_KEY_INPUT_JAVA_RECORD("COMPOSITE_KEY_INPUT_JAVA_RECORD", CompositeKeyInputJavaRecord.class);
 
     private final ExternalReference reference;
 

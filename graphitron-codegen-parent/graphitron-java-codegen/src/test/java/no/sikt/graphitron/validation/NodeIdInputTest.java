@@ -72,7 +72,7 @@ public class NodeIdInputTest extends ValidationTest {
     void withField() {
         assertErrorsContain(
                 () -> getProcessedSchema("withField", Set.of(CUSTOMER_NODE)),
-                "Argument 'id' on a field in type 'Query' has both the 'nodeId' and 'field' directives, which is not supported."
+                "Argument 'id' on a field in type 'Query' has both the 'nodeId' and 'field' directives, which is not supported for non-jOOQ field targets."
         );
     }
 

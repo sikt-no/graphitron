@@ -95,6 +95,7 @@ public class ProcessedDefinitionsValidator {
         validateUnionAndInterfaceSubTypes();
         validateNodeId();
         validateNodeIdReferenceInJooqRecordInput();
+        validateNodeIdTargetColumnsInJavaRecordInputs();
         validateSplitQueryFieldsInJavaRecords();
         validateWrapperTypesWithPreviousTable();
         validateJavaRecordFieldMappings();
@@ -253,12 +254,17 @@ public class ProcessedDefinitionsValidator {
         }
 
         if (field.hasFieldDirective()) {
-            addErrorMessage(
-                    "%s has both the '%s' and '%s' directives, which is not supported.",
-                    capitalize(fieldName),
-                    NODE_ID.getName(),
-                    FIELD.getName()
-            );
+            // Allow @nodeId + @field only in @record input types targeting jOOQ record fields
+            boolean isAllowed = isNodeIdFieldDirectiveAllowedWithFieldDirective(field);
+
+            if (!isAllowed) {
+                addErrorMessage(
+                        "%s has both the '%s' and '%s' directives, which is not supported for non-jOOQ field targets.",
+                        capitalize(fieldName),
+                        NODE_ID.getName(),
+                        FIELD.getName()
+                );
+            }
         }
         if (field.isExternalField()) {
             addErrorMessage(
@@ -268,6 +274,31 @@ public class ProcessedDefinitionsValidator {
                     EXTERNAL_FIELD.getName()
             );
         }
+    }
+
+    /**
+     * Checks if a @nodeId field with @field directive is allowed.
+     * This combination is only permitted when:
+     * 1. The field is in an input type with @record directive (Java record)
+     * 2. The target field (from @field directive) is a jOOQ record type
+     */
+    private boolean isNodeIdFieldDirectiveAllowedWithFieldDirective(GenerationField field) {
+        var containerType = schema.getInputType(field.getContainerTypeName());
+        if (containerType == null || !containerType.hasJavaRecordReference()) {
+            return false;
+        }
+
+        Class<?> javaRecordClass = containerType.getRecordReference();
+        if (javaRecordClass == null) {
+            return false;
+        }
+
+        // Use getJavaRecordMethodMapping(true) to preserve camelCase in field names (e.g. "filmActor"),
+        // unlike getFieldRecordMappingName() which round-trips through uppercase and loses case info.
+        String targetFieldName = field.getJavaRecordMethodMapping(true).getName();
+
+        // Check if the target field type is a jOOQ UpdatableRecord
+        return ReflectionHelpers.isFieldTypeJooqRecord(javaRecordClass, targetFieldName);
     }
 
     private void validateNodeIdReferenceInJooqRecordInput() {
@@ -364,6 +395,79 @@ public class ProcessedDefinitionsValidator {
             return false;
         }
         return usages.stream().anyMatch(mt -> mt == MutationType.UPDATE || mt == MutationType.UPSERT);
+    }
+
+    /**
+     * Validates that for @nodeId fields in @record inputs (Java record inputs),
+     * the target jOOQ record contains all columns that will be populated from the node ID.
+     */
+    private void validateNodeIdTargetColumnsInJavaRecordInputs() {
+        schema.getInputTypes().values().stream()
+                .filter(RecordObjectDefinition::hasJavaRecordReference)
+                .flatMap(input -> input.getFields().stream())
+                .filter(schema::isNodeIdField)
+                .filter(schema::isNodeIdFieldProducingJooqRecord)
+                .forEach(this::validateNodeIdFieldTargetColumns);
+    }
+
+    private void validateNodeIdFieldTargetColumns(GenerationField field) {
+        var containerType = schema.getInputType(field.getContainerTypeName());
+        Class<?> javaRecordClass = containerType.getRecordReference();
+        String targetFieldName = field.getFieldRecordMappingName();
+
+        // Get the target jOOQ record class via reflection
+        var targetJooqClass = ReflectionHelpers.getJooqRecordFieldType(javaRecordClass, targetFieldName);
+        if (targetJooqClass == null) {
+            // This shouldn't happen since isNodeIdFieldProducingJooqRecord already checked this
+            return;
+        }
+
+        // Get the node type's key columns
+        var nodeType = schema.getNodeTypeForNodeIdFieldOrThrow(field);
+        var nodeKeyColumns = schema.getKeyColumnsForNodeType(nodeType);
+        if (nodeKeyColumns.isEmpty()) {
+            addErrorMessage(
+                    "Field '%s' in input '%s' references node type '%s' which has no key columns defined.",
+                    field.getName(),
+                    field.getContainerTypeName(),
+                    nodeType.getName()
+            );
+            return;
+        }
+
+        // Get the target jOOQ record's table name and its columns
+        var targetTableNameOpt = getTableNameForRecordClass(targetJooqClass);
+        if (targetTableNameOpt.isEmpty()) {
+            addErrorMessage(
+                    "Field '%s' in input '%s' targets jOOQ record '%s' but cannot find corresponding table.",
+                    field.getName(),
+                    field.getContainerTypeName(),
+                    targetJooqClass.getSimpleName()
+            );
+            return;
+        }
+
+        var targetTableName = targetTableNameOpt.get();
+        var targetColumnNames = getJavaFieldNamesForTable(targetTableName);
+
+        // Validate each node key column exists in target table
+        for (var nodeColumn : nodeKeyColumns.get()) {
+            boolean columnExists = targetColumnNames.stream()
+                    .anyMatch(col -> col.equalsIgnoreCase(nodeColumn));
+
+            if (!columnExists) {
+                addErrorMessage(
+                        "Field '%s' in input '%s' references node type '%s' with key column '%s', " +
+                                "but target jOOQ record '%s' (table '%s') does not have this column.",
+                        field.getName(),
+                        field.getContainerTypeName(),
+                        nodeType.getName(),
+                        nodeColumn,
+                        targetJooqClass.getSimpleName(),
+                        targetTableName
+                );
+            }
+        }
     }
 
     private void validateTablesAndKeys() {

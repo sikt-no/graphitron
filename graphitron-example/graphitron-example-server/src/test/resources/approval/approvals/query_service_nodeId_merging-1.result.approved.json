@@ -1,0 +1,7 @@
+{
+    "data": {
+        "helloWorldWithNodeIdMerging": {
+            "greeting": "Rental with CUSTOMER_ID 1 and INVENTORY_ID 1!"
+        }
+    }
+}

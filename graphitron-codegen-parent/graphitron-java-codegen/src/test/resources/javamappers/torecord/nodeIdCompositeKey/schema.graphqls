@@ -1,0 +1,8 @@
+type Query {
+  query(in: CompositeKeyInput): ID @service(service: {name: "DUMMY_SERVICE"})
+}
+
+input CompositeKeyInput @record(record: {className: "no.sikt.graphitron.codereferences.records.CompositeKeyInputJavaRecord"}) {
+  name: String
+  filmActor: ID @nodeId(typeName: "FilmActorNode")
+}

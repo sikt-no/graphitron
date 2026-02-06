@@ -2,6 +2,12 @@ extend type Query {
     helloWorldAgain(name: String!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
     helloWorldAgainWithJooqRecordInput(input: CustomerInput!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
     helloWorldAgainWithJavaRecordInput(input: HelloWorldInputObject!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
+    """Query to test @nodeId transformation to jOOQ record in @record input"""
+    helloWorldWithNodeIdToJooqRecord(input: NodeIdToJooqInputObject!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
+    """Query to test merging of two @nodeId fields into one jOOQ record"""
+    helloWorldWithNodeIdMerging(input: NodeIdMergingInputObject!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
+    """Query to test conflict detection when overlapping @nodeId fields have different values"""
+    helloWorldWithNodeIdConflict(input: NodeIdConflictInputObject!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
     helloWorldWithSplitQueryField(addressIds: [String]!): [HelloWorldObject] @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
     helloWorldWithSplitQueryListField: [HelloWorldObject] @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
     helloWorldWithNullResolverKeys: [HelloWorldObject] @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
@@ -37,6 +43,38 @@ type CustomerWrapper {
 input HelloWorldInputObject @record(record: {className: "no.sikt.graphitron.example.service.records.HelloWorldInput"}){
     name: String
     customerId: ID @nodeId(typeName: "Customer")
+}
+
+"""
+Input type for testing @nodeId transformation to jOOQ record.
+The customerId field has @nodeId and @field directives that will transform
+the base64 node ID into a CustomerRecord populated with the unpacked ID.
+"""
+input NodeIdToJooqInputObject @record(record: {className: "no.sikt.graphitron.example.service.records.NodeIdToJooqInput"}){
+    name: String
+    customerId: ID @nodeId(typeName: "Customer") @field(name: "customer")
+}
+
+"""
+Input type for testing merging of multiple @nodeId fields into a single jOOQ record.
+Both customerId and inventoryId map to the same 'rental' field (RentalRecord).
+The RentalRecord will have both CUSTOMER_ID and INVENTORY_ID populated.
+"""
+input NodeIdMergingInputObject @record(record: {className: "no.sikt.graphitron.example.service.records.NodeIdMergingInput"}){
+    name: String
+    customerId: ID @nodeId(typeName: "Customer") @field(name: "rental")
+    inventoryId: ID @nodeId(typeName: "Inventory") @field(name: "rental")
+}
+
+"""
+Input type for testing conflict detection when overlapping @nodeId fields have different values.
+Both filmActorId and actorId write to the ACTOR_ID column of the FilmActorRecord.
+If they encode different actor IDs, a conflict error should be thrown.
+"""
+input NodeIdConflictInputObject @record(record: {className: "no.sikt.graphitron.example.service.records.NodeIdConflictInput"}){
+    name: String
+    filmActorId: ID @nodeId(typeName: "FilmActor") @field(name: "filmActor")
+    actorId: ID @nodeId(typeName: "Actor") @field(name: "filmActor")
 }
 
 input CustomerInput @table(name: "CUSTOMER") {

@@ -1,0 +1,22 @@
+{
+    "errors": [
+        {
+            "message": "Conflicting values for column actor_id: existing=1, new=99",
+            "locations": [
+                {
+                    "line": 6,
+                    "column": 5
+                }
+            ],
+            "path": [
+                "helloWorldWithNodeIdConflict"
+            ],
+            "extensions": {
+                "classification": "DataFetchingException"
+            }
+        }
+    ],
+    "data": {
+        "helloWorldWithNodeIdConflict": null
+    }
+}

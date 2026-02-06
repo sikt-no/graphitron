@@ -1,0 +1,8 @@
+# Tests that @nodeId field in @record input is transformed to jOOQ record
+# The customerId field (base64 node ID "Q3VzdG9tZXI6MQ==" = "Customer:1") should be
+# unpacked into a CustomerRecord with CUSTOMER_ID populated from the node ID value
+{
+    helloWorldWithNodeIdToJooqRecord(input: {name: "Test", customerId: "Q3VzdG9tZXI6MQ=="}) {
+        greeting
+    }
+}
