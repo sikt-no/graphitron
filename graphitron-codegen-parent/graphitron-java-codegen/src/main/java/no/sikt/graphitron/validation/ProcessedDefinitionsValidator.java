@@ -1568,7 +1568,12 @@ public class ProcessedDefinitionsValidator {
         if (recordClass == null) return;
 
         for (var field : type.getFields()) {
-            if (field.isExplicitlyNotGenerated() || field.isResolver()) {
+            if (field.isExplicitlyNotGenerated()) {
+                continue;
+            }
+
+            if (field.isResolver()) {
+                validateFieldHasMethod(field, type, recordClass, isInput);
                 continue;
             }
 
@@ -1608,13 +1613,19 @@ public class ProcessedDefinitionsValidator {
             return;
         }
 
-        var mapping = sourceField.getJavaRecordMethodMapping(isInput);
-        var methodName = isInput ? mapping.asSet() : mapping.asGet();
+        // Check both mapping paths: raw field override (preserves camelCase like "myAddress")
+        // and record field override (normalizes UPPER_CASE like "EMAIL" -> "email").
+        var rawMapping = sourceField.getJavaRecordMethodMapping(true);
+        var normalizedMapping = sourceField.getMappingForRecordFieldOverride();
+        var rawMethodName = isInput ? rawMapping.asSet() : rawMapping.asGet();
+        var normalizedMethodName = isInput ? normalizedMapping.asSet() : normalizedMapping.asGet();
 
-        if (ReflectionHelpers.classHasMethod(recordClass, methodName)) {
+        if (ReflectionHelpers.classHasMethod(recordClass, rawMethodName)
+                || ReflectionHelpers.classHasMethod(recordClass, normalizedMethodName)) {
             return;
         }
 
+        var methodName = rawMethodName;
         var typeKind = isInput ? "input" : "type";
         var methodType = isInput ? "setter" : "getter";
         var suggestion = findSimilarMethods(recordClass, methodName, isInput);
