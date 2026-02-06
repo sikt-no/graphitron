@@ -180,4 +180,27 @@ public class NodeIdInputTest extends ValidationTest {
         assertErrorsContain("javaRecordReference", Set.of(CUSTOMER_NODE),
                 "Node ID field 'countryId' in Java record input 'CustomerInput' has a reference via table(s) which is not supported on Java record inputs.");
     }
+
+    @Test
+    @DisplayName("Error should not be thrown on node ID lookup arguments which are not references")
+    void lookup() {
+        getProcessedSchema("lookup", Set.of(CUSTOMER_NODE));
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("Error should be thrown on reference node ID lookup arguments")
+    void lookupOnImplicitNodeIdReference() {
+        assertErrorsContain("lookupOnImplicitNodeIdReference", Set.of(CUSTOMER_NODE),
+                "Argument/input field 'customerId' on 'Query.query' has lookupKey directive, but is a reference field. Lookup on references is not currently supported."
+        );
+    }
+
+    @Test
+    @DisplayName("Error should be thrown on input arguments with reference node ID fields")
+    void lookupInputTypeWithImplicitNodeIdReference() {
+        assertErrorsContain("lookupInputTypeWithImplicitNodeIdReference", Set.of(CUSTOMER_NODE),
+                "Argument 'input' on 'Query.query' has lookupKey directive, but contains reference field(s): 'LookupInput.customerId'. Lookup on references is not currently supported."
+        );
+    }
 }

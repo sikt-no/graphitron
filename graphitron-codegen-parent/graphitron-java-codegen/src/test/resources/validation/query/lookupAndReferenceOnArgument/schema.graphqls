@@ -1,0 +1,7 @@
+type Query {
+  query(customerId: [Int!]! @field(name: "CUSTOMER_ID") @lookupKey @reference(path: [{table: "CUSTOMER"}])): [Address]
+}
+
+type Address @table {
+  cityId: Int @field(name: "CITY_ID")
+}

@@ -1,0 +1,7 @@
+type Query {
+  query(customerId: [ID!]! @nodeId(typeName: "CustomerNode") @lookupKey): [Address]
+}
+
+type Address @table {
+  cityId: Int @field(name: "CITY_ID")
+}
