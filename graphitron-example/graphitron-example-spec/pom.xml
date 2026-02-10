@@ -62,6 +62,10 @@
                     </schemaFiles>
                     <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
                     <makeNodeStrategy>true</makeNodeStrategy>
+                    <externalReferenceImports>
+                        <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
+                        <externalReferenceImport>no.sikt.graphitron.example.service.CustomerExternalFields</externalReferenceImport>
+                    </externalReferenceImports>
                 </configuration>
                 <executions>
                     <execution>
@@ -106,10 +110,6 @@
                                 <schemaErrorType>InvalidInput</schemaErrorType>
                             </recordValidation>
                             <outputPackage>${generatedGraphitronPackage}</outputPackage>
-                            <externalReferenceImports>
-                                <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
-                                <externalReferenceImport>no.sikt.graphitron.example.service.CustomerExternalFields</externalReferenceImport>
-                            </externalReferenceImports>
                             <userSchemaFiles>
                                 <schemaFile>schema.graphql</schemaFile>
                             </userSchemaFiles>
