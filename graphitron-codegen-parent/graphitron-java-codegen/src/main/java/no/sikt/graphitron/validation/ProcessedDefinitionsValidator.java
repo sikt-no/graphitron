@@ -1537,10 +1537,10 @@ public class ProcessedDefinitionsValidator {
                         .orElse(true)
                 )
                 .forEach(f ->
-                            addErrorMessage(
-                                    "Field %s returns a list of wrapper type '%s' (a type wrapping a subset of the table fields)," +
-                                            " which is not supported. Change the field to return a single '%s' to fix.",
-                                    f.formatPath(), f.getTypeName(), f.getTypeName(), f.getTypeName())
+                        addErrorMessage(
+                                "Field %s returns a list of wrapper type '%s' (a type wrapping a subset of the table fields)," +
+                                        " which is not supported. Change the field to return a single '%s' to fix.",
+                                f.formatPath(), f.getTypeName(), f.getTypeName(), f.getTypeName())
                 );
     }
 
@@ -1572,11 +1572,6 @@ public class ProcessedDefinitionsValidator {
                 continue;
             }
 
-            if (field.isResolver()) {
-                validateFieldHasMethod(field, type, recordClass, isInput);
-                continue;
-            }
-
             // Flatten nested types without @record/@table
             var flattenedType = getFlattenedNestedType(field, isInput);
             if (flattenedType.isPresent()) {
@@ -1604,7 +1599,9 @@ public class ProcessedDefinitionsValidator {
     }
 
     private boolean shouldSkipFieldValidation(GenerationField field, boolean isInput) {
-        return isInput ? schema.isInputType(field) : schema.isObject(field);
+        return isInput
+                ? schema.isInputType(field)
+                : !field.isResolver() && schema.isObject(field);
     }
 
     private void validateFieldHasMethod(GenerationField field, RecordObjectDefinition<?, ?> type,
@@ -1613,19 +1610,12 @@ public class ProcessedDefinitionsValidator {
             return;
         }
 
-        // Check both mapping paths: raw field override (preserves camelCase like "myAddress")
-        // and record field override (normalizes UPPER_CASE like "EMAIL" -> "email").
-        var rawMapping = sourceField.getJavaRecordMethodMapping(true);
-        var normalizedMapping = sourceField.getMappingForRecordFieldOverride();
-        var rawMethodName = isInput ? rawMapping.asSet() : rawMapping.asGet();
-        var normalizedMethodName = isInput ? normalizedMapping.asSet() : normalizedMapping.asGet();
+        var mapping = sourceField.getJavaRecordMethodMapping(true);
+        var methodName = isInput ? mapping.asSet() : mapping.asGet();
 
-        if (ReflectionHelpers.classHasMethod(recordClass, rawMethodName)
-                || ReflectionHelpers.classHasMethod(recordClass, normalizedMethodName)) {
+        if (ReflectionHelpers.classHasMethod(recordClass, methodName)) {
             return;
         }
-
-        var methodName = rawMethodName;
         var typeKind = isInput ? "input" : "type";
         var methodType = isInput ? "setter" : "getter";
         var suggestion = findSimilarMethods(recordClass, methodName, isInput);
@@ -1647,7 +1637,7 @@ public class ProcessedDefinitionsValidator {
                 .map(Method::getName)
                 .filter(name -> name.startsWith(prefix));
 
-        var similarMethods = findSimilarStringsWithDistance(expectedMethod, candidates, 3);
+        var similarMethods = findSimilarStringsWithDistance(expectedMethod, candidates, 12);
         if (similarMethods.isEmpty()) {
             return Optional.empty();
         }

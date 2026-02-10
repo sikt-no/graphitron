@@ -1,0 +1,9 @@
+type Query {
+    test: TestOutput @notGenerated
+}
+
+# @field(name: "EMAIL") without javaName produces getter getEMAIL() which doesn't match getEmail()
+type TestOutput @record(record: {className: "no.sikt.graphitron.codereferences.records.CustomerJavaRecord"}) {
+    someID: ID
+    email: String @field(name: "EMAIL")
+}

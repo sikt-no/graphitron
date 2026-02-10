@@ -5,7 +5,7 @@ type Query {
 # Output type with @record - validates getter methods
 type TestOutput @record(record: {className: "no.sikt.graphitron.codereferences.records.CustomerJavaRecord"}) {
     someID: ID
-    email: String @field(name: "EMAIL")
+    email: String @field(name: "EMAIL", javaName: "email")
     myField: ID @field(name: "OTHER_ID", javaName: "otherID")
     invalidField: String @notGenerated
     wrapper: Wrapper
