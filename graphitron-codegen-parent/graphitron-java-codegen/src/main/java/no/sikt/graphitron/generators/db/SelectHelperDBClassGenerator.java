@@ -6,8 +6,8 @@ import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 
-public class HelperDBClassGenerator extends DBClassGenerator {
-    public HelperDBClassGenerator(ProcessedSchema processedSchema) {
+public class SelectHelperDBClassGenerator extends DBClassGenerator {
+    public SelectHelperDBClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
     }
 
@@ -16,8 +16,8 @@ public class HelperDBClassGenerator extends DBClassGenerator {
         TypeSpec typeSpec = getSpec(
                 target.getName(),
                 List.of(
-                        new HelperDBMethodGenerator(target, processedSchema),
-                        new NodeHelperDBMethodGenerator(target, processedSchema, objectFieldsReturningNode)
+                        new SelectHelperDBMethodGenerator(target, processedSchema),
+                        new NodeSelectHelperDBMethodGenerator(target, processedSchema, objectFieldsReturningNode)
                 )
         ).build();
         warnOrCrashIfMethodsExceedsBounds(typeSpec);

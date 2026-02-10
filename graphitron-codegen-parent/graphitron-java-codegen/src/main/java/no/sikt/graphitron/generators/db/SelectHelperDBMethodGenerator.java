@@ -11,8 +11,8 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
 
-public class HelperDBMethodGenerator extends NestedFetchDBMethodGenerator {
-    public HelperDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
+public class SelectHelperDBMethodGenerator extends NestedFetchDBMethodGenerator {
+    public SelectHelperDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
     }
 

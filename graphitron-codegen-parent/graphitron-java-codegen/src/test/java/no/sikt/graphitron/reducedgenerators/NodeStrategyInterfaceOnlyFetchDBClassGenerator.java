@@ -21,8 +21,8 @@ public class NodeStrategyInterfaceOnlyFetchDBClassGenerator extends DBClassGener
                         new FetchMappedObjectDBMethodGenerator(target, processedSchema),
                         new FetchCountDBMethodGenerator(target, processedSchema),
                         new FetchMultiTableDBMethodGenerator(target, processedSchema),
-                        new HelperDBMethodGenerator(target, processedSchema),
-                        new NodeHelperDBMethodGenerator(target, processedSchema, objectFieldsReturningNode)
+                        new SelectHelperDBMethodGenerator(target, processedSchema),
+                        new NodeSelectHelperDBMethodGenerator(target, processedSchema, objectFieldsReturningNode)
                 )
         ).build();
     }

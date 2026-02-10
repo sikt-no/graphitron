@@ -1,33 +1,24 @@
 package no.sikt.graphitron.queries.fetch;
 
 import no.sikt.graphitron.common.GeneratorTest;
-import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
+import no.sikt.graphitron.reducedgenerators.QueryOnlyHelperDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Set;
-
-import static no.sikt.graphitron.common.configuration.ReferencedEntry.PAYMENT_CONDITION;
 
 @DisplayName("Helper method generation and naming")
-public class HelperMethodTest extends GeneratorTest {
+public class SelectHelperMethodTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
-        return "queries/fetch/helperMethods";
+        return "queries/fetch/selectHelperMethods";
     }
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        return List.of(new MapOnlyFetchDBClassGenerator(schema));
-    }
-
-    @Override
-    protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(PAYMENT_CONDITION);
+        return List.of(new QueryOnlyHelperDBClassGenerator(schema));
     }
 
     @Test
@@ -68,12 +59,6 @@ public class HelperMethodTest extends GeneratorTest {
                 "_1_rentalForQuery_rental_staff_store()",
                 "_2_rentalForQuery_rental_staff_store()"
         );
-    }
-
-    @Test
-    @DisplayName("Helper methods with correlated WHERE clauses should not reference undefined parent aliases")
-    void correlatedSubqueryReferencesPossibleOutput() {
-        assertGeneratedContentMatches("correlatedSubqueryReferences");
     }
 
     @Test

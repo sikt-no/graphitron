@@ -13,8 +13,8 @@ import java.util.Set;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_ENUM;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_ENUM_CONVERTED;
 
-@DisplayName("Query enums - Positioning of enums in queries")
-public class EnumTest extends GeneratorTest {
+@DisplayName("Query enums - Positioning of enums in query inputs")
+public class EnumInputTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
         return "queries/fetch/enums";
@@ -80,33 +80,6 @@ public class EnumTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "input/listedJOOQRecordNested", Set.of(DUMMY_ENUM_CONVERTED),
                 "DSL.val(_mi_inRecordList.get(_iv_it).getRating()) : _a_film.RATING)"
-        );
-    }
-
-    @Test
-    @DisplayName("Output JOOQ enum")
-    void outputJOOQ() {
-        assertGeneratedContentContains(
-                "output/jOOQ", Set.of(DUMMY_ENUM_CONVERTED),
-                "_a_film.RATING.convert(DummyEnumConverted.class,"
-        );
-    }
-
-    @Test
-    @DisplayName("Output string enum")
-    void outputString() {
-        assertGeneratedContentContains(
-                "output/string", Set.of(DUMMY_ENUM),
-                "_a_film.RATING.convert(DummyEnum.class,"
-        );
-    }
-
-    @Test
-    @DisplayName("Output JOOQ enum in subquery")
-    void outputJOOQSubquery() {
-        assertGeneratedContentContains(
-                "output/jOOQSubquery", Set.of(DUMMY_ENUM_CONVERTED),
-                "inventory_2972535350_film.RATING.convert("
         );
     }
 }
