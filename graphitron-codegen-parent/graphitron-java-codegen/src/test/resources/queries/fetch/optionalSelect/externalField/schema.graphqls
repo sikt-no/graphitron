@@ -1,0 +1,7 @@
+type Query {
+    customer: Customer
+}
+
+type Customer @table(name: "CUSTOMER") {
+    name: String @externalField
+}

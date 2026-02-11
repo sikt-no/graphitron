@@ -218,4 +218,22 @@ public class OptionalSelectTest extends GeneratorTest {
                 "_iv_select.ifRequested(\"customer\", () ->"
         );
     }
+
+    @Test
+    @DisplayName("External field should be wrapped with ifRequested when optional select is enabled")
+    void externalField() {
+        assertGeneratedContentContains(
+                "externalField",
+                "_iv_select.ifRequested(\"name\", () -> no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod.name(_a_customer))"
+        );
+    }
+
+    @Test
+    @DisplayName("Nested external field should have correct path")
+    void nestedExternalField() {
+        assertGeneratedContentContains(
+                "nestedExternalField",
+                "ifRequested(\"customers/name\", "
+        );
+    }
 }

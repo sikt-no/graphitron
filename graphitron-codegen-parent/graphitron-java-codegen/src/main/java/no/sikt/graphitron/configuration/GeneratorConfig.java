@@ -321,7 +321,23 @@ public class GeneratorConfig {
         optionalSelect.setOnSubqueryReferences(enable);
     }
 
+    public static void setOptionalSelectOnExternalFields(boolean enable) {
+        optionalSelect.setOnExternalFields(enable);
+    }
+
+    public static void setOptionalSelectOnSubqueries(boolean enable) {
+        optionalSelect.setOnSubqueryReferences(enable);
+    }
+
     public static boolean optionalSelectIsEnabled() {
         return optionalSelect.onSubqueryReferences() || optionalSelect.onExternalFields();
+    }
+
+    public static boolean optionalSelectOnExternalFieldsIsEnabled() {
+        return optionalSelect.onExternalFields();
+    }
+
+    public static boolean optionalSelectOnSubqueriesIsEnabled() {
+        return optionalSelect.onSubqueryReferences();
     }
 }

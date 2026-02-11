@@ -113,4 +113,47 @@ public class OptionalSelectExecutionTest extends QueryTrackingTestBase {
                 .contains("from \"public\".\"address\"")
                 .contains("join \"public\".\"city\"");
     }
+
+    @Test
+    @DisplayName("External fields are NOT selected when the corresponding field is NOT requested")
+    void externalFieldIsSkippedWhenNotRequested() {
+        executeQuery("""
+                {
+                  customerForSelectionSetTest(first: 1) {
+                    nodes {
+                      customerId
+                    }
+                  }
+                }
+            """);
+
+        assertThat(getExecutedQueries()).as("One query should have been executed.")
+                .hasSize(1);
+
+        assertThat(getExecutedQueries().get(0)).as("Query without nameFormatted field should use null placeholder")
+                .doesNotContain("first_name")
+                .doesNotContain("last_name");
+    }
+
+    @Test
+    @DisplayName("External fields are selected when the corresponding field is requested")
+    void externalFieldIsSelectedWhenRequested() {
+        executeQuery("""
+                {
+                  customerForSelectionSetTest(first: 1) {
+                    nodes {
+                      customerId
+                      nameFormatted
+                    }
+                  }
+                }
+            """);
+
+        assertThat(getExecutedQueries()).as("One query should have been executed.")
+                .hasSize(1);
+
+        assertThat(getExecutedQueries().get(0)).as("Query should include external field computation")
+                .contains("first_name")
+                .contains("last_name");
+    }
 }
