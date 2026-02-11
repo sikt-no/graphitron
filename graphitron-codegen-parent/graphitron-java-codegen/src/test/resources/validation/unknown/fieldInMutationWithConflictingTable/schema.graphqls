@@ -1,0 +1,7 @@
+type Mutation {
+  mutation(in: CustomerNodeInputTable!): Address @mutation(typeName: DELETE)
+}
+
+type Address implements Node @node @table {
+  wrong: Int!
+}

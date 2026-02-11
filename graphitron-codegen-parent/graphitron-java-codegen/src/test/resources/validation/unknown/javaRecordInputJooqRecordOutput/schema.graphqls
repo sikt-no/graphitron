@@ -1,0 +1,7 @@
+type Query {
+  customer(input: Input!): CustomerTable @service(service: {className: "no.sikt.graphitron.codereferences.services.JavaRecordInputFetchService"})
+}
+
+input Input @record(record: {className: "no.sikt.graphitron.codereferences.records.CustomerJavaRecord"}) {
+  someID: String
+}

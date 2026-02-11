@@ -7,5 +7,5 @@ input FilmActorInput @table(name: "FILM_ACTOR") {
 }
 
 type Film implements Node @node @table {
-    id: ID!
+    id: ID! @nodeId
 }

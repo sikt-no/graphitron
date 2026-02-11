@@ -1,5 +1,8 @@
 package no.sikt.graphitron.validation;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -13,6 +16,16 @@ public class NodeIdOutputTest extends ValidationTest {
     @Override
     protected String getSubpath() {
         return super.getSubpath() + "nodeId/output";
+    }
+
+    @BeforeAll
+    static void setUp() {
+        GeneratorConfig.setNodeStrategy(true);
+    }
+
+    @AfterAll
+    static void tearDown() {
+        GeneratorConfig.setNodeStrategy(false);
     }
 
     @Test
@@ -115,5 +128,14 @@ public class NodeIdOutputTest extends ValidationTest {
     @DisplayName("Returning ID without type wrapping")
     void noWrapping() {
         getProcessedSchema("noWrapping", Set.of(CUSTOMER_NODE_INPUT_TABLE, CUSTOMER_NODE));
+    }
+
+    @Test
+    @DisplayName("Give richer error message on unknown ID field if NodeIdStrategy is enabled")
+    void unknownIdField() {
+        assertErrorsContain("unknownIdField", Set.of(CUSTOMER_NODE_INPUT_TABLE),
+                "No field with name 'MUTATION' found in table 'CUSTOMER' which may be required by 'Mutation.mutation'. " +
+                        "Add nodeId directive if 'Mutation.mutation' is supposed to be a node ID field."
+                );
     }
 }

@@ -1,0 +1,12 @@
+type Query {
+  customer: Customer
+}
+
+type Customer @table {
+  details: CustomerDetails @splitQuery @service(service: {className: "no.sikt.graphitron.codereferences.services.MapperFetchService", method: "fetchCustomerDetails"})
+}
+
+type CustomerDetails @record(record: {className: "no.sikt.graphitron.codereferences.records.CustomerJavaRecord"}) {
+  someID: String
+  email: String
+}

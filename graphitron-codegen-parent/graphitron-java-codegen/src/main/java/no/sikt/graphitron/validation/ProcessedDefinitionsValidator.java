@@ -21,7 +21,6 @@ import no.sikt.graphql.directives.GenerationDirectiveParam;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.text.similarity.LevenshteinDistance;
-import org.jetbrains.annotations.NotNull;
 import org.jooq.Field;
 import org.jooq.Key;
 import org.jooq.UniqueKey;
@@ -76,7 +75,7 @@ public class ProcessedDefinitionsValidator {
         schema.getObjects().values().forEach(it -> checkPaginationSpecs(it.getFields()));
 
         validateTablesAndKeys();
-        validateRequiredMethodCalls();
+        validateRequiredTableFields();
         validateUnionFieldsTable();
         validateSingleTableInterfaceDefinitions();
         validateInterfacesReturnedInFields();
@@ -101,6 +100,7 @@ public class ProcessedDefinitionsValidator {
         validateJavaRecordFieldMappings();
         validatePaginatedFieldsHaveOrdering();
         validateDefaultOrderNotOnInterfaceOrUnion();
+        validateNoCyclesWithoutTable();
 
         logWarnings();
         throwIfErrors();
@@ -508,99 +508,148 @@ public class ProcessedDefinitionsValidator {
         return null;
     }
 
-    private void validateRequiredMethodCalls() {
-        getUsedTablesWithRequiredMethods()
-                .entrySet()
-                .stream()
-                .filter(it -> tableOrKeyExists(it.getKey()))
-                .forEach(entry -> {
-                    var tableName = entry.getKey();
-                    var allFieldNames = getJavaFieldNamesForTable(tableName);
-                    var nonFieldElements = entry.getValue().stream().filter(it -> !allFieldNames.contains(it)).toList();
-                    var missingElements = nonFieldElements
-                            .stream()
-                            .filter(it -> searchTableForMethodWithName(tableName, it).isEmpty())
-                            .toList();
+    private void validateFieldExists(String tableJavaName, GenerationField field) {
+        if (!tableExists(tableJavaName)) {
+            return;
+        }
+        if (field.isID() && !GeneratorConfig.shouldMakeNodeStrategy()) { // Skip validation for old ID logic
+            return;
+        }
+        if (getJavaFieldName(tableJavaName, field.getUpperCaseName()).isEmpty()) {
+            if (shouldMakeNodeStrategy() && field.isID()) {
+                addErrorMessage("No field with name '%s' found in table '%s' which may be required by %s. " +
+                                "Add %s directive if %s is supposed to be a node ID field.",
+                        field.getUpperCaseName(), tableJavaName, field.formatPath(), NODE_ID.getName(), field.formatPath());
+            } else {
+                addErrorMessage("No field with name '%s' found in table '%s' which is required by %s.",
+                        field.getUpperCaseName(), tableJavaName, field.formatPath());
+            }
+        }
+    }
 
-                    if (!missingElements.isEmpty()) {
-                        addWarningMessage("No field(s) or method(s) with name(s) '%s' found in table '%s'",
-                                missingElements.stream().sorted().collect(Collectors.joining(", ")), tableName);
+    private void validateRequiredTableFields() {
+        // Validate objects with table
+        schema.getObjects().values().stream()
+                .filter(RecordObjectDefinition::hasTable)
+                .toList()
+                .forEach(object -> {
+                    var initialTable = object.getTable();
+                    validateTableFieldsExist(initialTable, object.getFields(), new LinkedHashSet<>());
+                });
+
+        // Validate input objects with table (jOOQ record input)
+        var alreadyValidatedJooqRecordInput = schema.getInputTypes().values().stream()
+                .filter(RecordObjectDefinition::hasTable)
+                .filter(it -> !it.hasJavaRecordReference())
+                .map(input -> {
+                    validateTableFieldsExist(input.getTable(), input.getFields(), false, new LinkedHashSet<>());
+                    return input.getName();
+                })
+                .toList();
+
+        // Validate input on fields returning table object (except already validated jOOQ record input types)
+        allFields.stream()
+                .filter(schema::isObject)
+                .filter(GenerationSourceField::isGenerated)
+                .filter(ObjectField::hasNonReservedInputFields)
+                .filter(it -> schema.getObjectOrConnectionNode(it) != null)
+                .filter(it -> schema.getObjectOrConnectionNode(it).hasTable())
+                .forEach(field -> {
+                    var table = schema.getObjectOrConnectionNode(field).getTable();
+                    var argumentsToValidate = field.getNonReservedArguments().stream()
+                            .filter(it -> !alreadyValidatedJooqRecordInput.contains(it.getTypeName()))
+                            .toList();
+                    validateTableFieldsExist(table, argumentsToValidate, field.hasOverridingCondition(), new LinkedHashSet<>());
+                });
+
+        // Validate fields with implicit table from input jOOQ record
+        allFields.stream()
+                .filter(GenerationSourceField::isGenerated)
+                .filter(it -> !it.hasServiceReference())
+                .filter(it -> schema.findInputTables(it).size() == 1)
+                .filter(it -> schema.getObjectOrConnectionNode(it) == null || !schema.getObjectOrConnectionNode(it).hasTable())
+                .forEach(field -> {
+                    var implicitTableFromInput = schema.findInputTables(field).get(0);
+                    List<ObjectField> fields;
+
+                    if (field.hasMutationType()) {
+                        var dataTargetOptional = schema.inferDataTargetForMutation(field);
+                        if (dataTargetOptional.isEmpty()) {
+                            return; // Skip further validation because this is an invalid mutation
+                        }
+
+                        var dataTarget = dataTargetOptional.get();
+                        if (schema.isObject(dataTarget) && schema.getObject(dataTarget).hasTable()) {
+                            return; // Table types are validated above
+                        }
+                        fields = schema.isScalar(dataTarget) ? List.of(dataTarget) : schema.getObject(dataTarget).getFields();
+                    } else if (schema.isObject(field)) {
+                        fields = schema.getObject(field).getFields();
+                    } else if (schema.isScalar(field)) {
+                        fields = List.of(field);
+                    } else {
+                        return;
                     }
+                    validateTableFieldsExist(implicitTableFromInput, fields, new LinkedHashSet<>());
                 });
     }
 
-    @NotNull
-    private HashMap<String, HashSet<String>> getUsedTablesWithRequiredMethods() {
-        var tableMethodsRequired = new HashMap<String, HashSet<String>>();
-        schema.getObjects().values().stream().filter(it -> it.hasTable() || it.isOperationRoot()).forEach(object -> {
-            var flattenedFields = flattenObjectFields(object.isOperationRoot() ? null : object.getTable().getMappingName(), object.getFields(), new LinkedHashSet<>());
-            unpackReferences(flattenedFields).forEach((key, value) -> tableMethodsRequired.computeIfAbsent(key, k -> new HashSet<>()).addAll(value));
-        });
-        schema.getInputTypes().values().stream().filter(RecordObjectDefinition::hasTable).forEach(input -> {
-            var flattenedFields = flattenInputFields(input.getTable().getMappingName(), input.getFields(), false, new LinkedHashSet<>());
+    private void validateTableFieldsExist(JOOQMapping currentTable, Collection<ObjectField> fields, Set<String> visitedTypes) {
+        for (var field : getFieldsInTableContext(fields, currentTable)) {
+            if (schema.isObject(field)) { // Field wrapper object
+                var object = schema.getObject(field);
 
-            unpackReferences(flattenedFields).forEach((key, value) -> tableMethodsRequired.computeIfAbsent(key, k -> new HashSet<>()).addAll(value));
-        });
-        return tableMethodsRequired;
-    }
-
-    private Map<String, ArrayList<FieldWithOverrideStatus>> flattenObjectFields(String lastTable, Collection<ObjectField> fields, Set<String> visitedTypes) {
-        var flatFields = new HashMap<String, ArrayList<FieldWithOverrideStatus>>();
-        var lastTableIsNonNull = lastTable != null;
-        for (var field : fields) {
-            if (schema.isObject(field) && !schema.isInterface(field) && !schema.isUnion(field)) {
-                var table = lastTableIsNonNull
-                        ? lastTable
-                        : (schema.hasTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : null);
-                var object = schema.getObjectOrConnectionNode(field);
-                if (!object.hasTable()) {
-                    var typeName = object.getName();
-                    if (hasCircularReference(typeName, visitedTypes)) {
-                        continue;
-                    }
-                    // Copy to avoid accumulating types across sibling fields
-                    var newVisited = new LinkedHashSet<>(visitedTypes);
-                    newVisited.add(typeName);
-                    flattenObjectFields(table, object.getFields(), newVisited).forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
+                if (hasCircularReference(object.getName(), visitedTypes)) {
+                    continue;
                 }
-            }
-
-            var hasCondition = field.hasOverridingCondition();
-            if (field.hasNonReservedInputFields() && field.isGeneratedWithResolver()) {
-                var targetTable = schema.hasTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable;
-                flattenInputFields(targetTable, field.getNonReservedArguments(), field.hasOverridingCondition(), new HashSet<>())
-                        .forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
-            }
-
-            if (lastTableIsNonNull) {
-                flatFields.computeIfAbsent(lastTable, k -> new ArrayList<>()).add(new FieldWithOverrideStatus(field, hasCondition));
+                // Copy to avoid accumulating types across sibling fields
+                var newVisited = new LinkedHashSet<>(visitedTypes);
+                newVisited.add(object.getName());
+                validateTableFieldsExist(currentTable, object.getFields(), newVisited);
+            } else if (currentTable != null) {
+                validateFieldExists(currentTable.getMappingName(), field);
             }
         }
-        return flatFields;
     }
 
-    private Map<String, ArrayList<FieldWithOverrideStatus>> flattenInputFields(String lastTable, Collection<? extends InputField> fields, boolean hasOverridingCondition, Set<String> visitedTypes) {
-        var flatFields = new HashMap<String, ArrayList<FieldWithOverrideStatus>>();
-        for (var field : fields) {
+    private void validateTableFieldsExist(JOOQMapping currentTable, Collection<? extends InputField> fields, boolean hasOverridingCondition, Set<String> visitedTypes) {
+        for (var field : getFieldsInTableContext(fields, currentTable)) {
             var hasCondition = hasOverridingCondition || field.hasOverridingCondition();
             if (schema.isInputType(field)) {
-                var object = schema.getInputType(field);
-                if (!object.hasTable()) {
-                    var typeName = object.getName();
+                var inputType = schema.getInputType(field);
+                if (!inputType.hasTable()) {
+                    var typeName = inputType.getName();
                     if (hasCircularReference(typeName, visitedTypes)) {
                         continue;
                     }
                     // Copy to avoid accumulating types across sibling fields
                     var newVisited = new LinkedHashSet<>(visitedTypes);
                     newVisited.add(typeName);
-                    flattenInputFields(lastTable, object.getFields(), hasCondition, newVisited)
-                            .forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
+                    validateTableFieldsExist(currentTable, inputType.getFields(), hasCondition, newVisited);
                 }
-            } else if (field.isGenerated() && !ObjectField.RESERVED_PAGINATION_NAMES.contains(field.getName())) {
-                flatFields.computeIfAbsent(lastTable, k -> new ArrayList<>()).add(new FieldWithOverrideStatus(field, hasCondition));
+            } else if (currentTable != null && !hasCondition) {
+                validateFieldExists(currentTable.getMappingName(), field);
             }
         }
-        return flatFields;
+    }
+
+    private <T extends GenerationField> List<T> getFieldsInTableContext(Collection<T> fieldList, JOOQMapping currentTable) {
+        return fieldList.stream()
+                .filter(GenerationTarget::isGenerated)
+                .filter(it -> !leavesTableContext(it, currentTable))
+                .toList();
+    }
+
+    private boolean leavesTableContext(GenerationField field, JOOQMapping currentTable) {
+        return field.hasFieldReferences()
+                || (schema.isObject(field) && schema.getObject(field).hasTable() && !schema.getObject(field).getTable().equals(currentTable))
+                || schema.isConnectionObject(field)
+                || schema.isMultiTableField(field)
+                || schema.isInterface(field)
+                || schema.isNodeIdField(field)
+                || field.isExternalField()
+                || field.hasServiceReference()
+                || (schema.isInputType(field) && schema.getInputType(field).hasJavaRecordReference());
     }
 
     private boolean hasCircularReference(String typeName, Set<String> visitedTypes) {
@@ -612,67 +661,15 @@ public class ProcessedDefinitionsValidator {
         return false;
     }
 
-    private HashMap<String, HashSet<String>> unpackReferences(Map<String, ArrayList<FieldWithOverrideStatus>> flattenedFields) {
-        var requiredJOOQTypesAndMethods = new HashMap<String, HashSet<String>>();
-        for (var fieldEntry : flattenedFields.entrySet()) {
-            var table = fieldEntry.getKey();
-            var fields = fieldEntry.getValue();
-            for (var fieldWithConditionStatus : fields) {
-                var field = fieldWithConditionStatus.field;
-                var fieldIsTableObject = schema.hasTableObject(field);
-                var lastTable = table;
-                if (field.hasFieldReferences()) {
-                    lastTable = findForReferences(field, lastTable, requiredJOOQTypesAndMethods);
-                } else if (fieldIsTableObject && !(field.isRootField()) && !field.isResolver()) {
-                    requiredJOOQTypesAndMethods
-                            .computeIfAbsent(lastTable, (k) -> new HashSet<>())
-                            .add(schema.getObjectOrConnectionNode(field).getTable().getCodeName());
-                }
-
-                if (fieldIsTableObject) {
-                    lastTable = schema.getObjectOrConnectionNode(field).getTable().getMappingName();
-                }
-
-                var fieldIsDBMapped = !schema.isObject(field) // TODO: If it has a condition on the reference and no other path, it should also be excluded.
-                        && !schema.isInputType(field)
-                        && !schema.isJavaMappedEnum(field)
-                        && !schema.isUnion(field)
-                        && !field.hasOverridingCondition()
-                        && !fieldWithConditionStatus.hasOverrideCondition;
-                if (lastTable != null && fieldIsDBMapped) {
-                    // New set is added anyway to be able to check tables only.
-                    var listToAddTo = requiredJOOQTypesAndMethods.computeIfAbsent(lastTable, (k) -> new HashSet<>());
-                    if (!field.isID()) {
-                        listToAddTo.add(field.getUpperCaseName());
-                    }
-                }
-            }
-        }
-        return requiredJOOQTypesAndMethods;
-    }
-
-    private String findForReferences(GenerationField field, String lastTable, HashMap<String, HashSet<String>> requiredJOOQTypesAndMethods) {
-        for (var reference : field.getFieldReferences()) {
-            if (reference.hasKey() && lastTable != null) {
-                var key = reference.getKey();
-                var nextTable = reference.hasTable()
-                        ? reference.getTable().getMappingName()
-                        : (schema.isRecordType(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable);
-                var reverseKeyFound = searchTableForMethodWithName(nextTable, key.getMappingName()).isPresent(); // In joins the key can also be used in reverse.
-                requiredJOOQTypesAndMethods
-                        .computeIfAbsent(reverseKeyFound ? nextTable : lastTable, (k) -> new HashSet<>())
-                        .add(key.getMappingName());
-            } else if (reference.hasTable() && lastTable != null) {
-                requiredJOOQTypesAndMethods
-                        .computeIfAbsent(lastTable, (k) -> new HashSet<>())
-                        .add(reference.getTable().getCodeName());
-            }
-
-            if (reference.hasTable()) {
-                lastTable = reference.getTable().getMappingName();
-            }
-        }
-        return lastTable;
+    private void validateNoCyclesWithoutTable() {
+        // TODO: Improve validation if cycles in schema
+        // Cycles in table types is validated in table field validation
+        schema.getObjects().values().stream()
+                .filter(it -> !it.hasTable() && !it.isOperationRoot())
+                .forEach(object -> validateTableFieldsExist(null, object.getFields(), new LinkedHashSet<>()));
+        schema.getInputTypes().values().stream()
+                .filter(it -> !it.hasTable())
+                .forEach(input -> validateTableFieldsExist(null, input.getFields(), false, new LinkedHashSet<>()));
     }
 
     private void validateExternalMappingReferences() {
@@ -1415,16 +1412,6 @@ public class ProcessedDefinitionsValidator {
                     schema.getInputType(recordInput).getTable().getMappingName(),
                     missingFields
             );
-        }
-    }
-
-    private final static class FieldWithOverrideStatus {
-        GenerationSourceField<?> field;
-        boolean hasOverrideCondition;
-
-        public FieldWithOverrideStatus(GenerationSourceField<?> field, boolean hasOverrideCondition) {
-            this.field = field;
-            this.hasOverrideCondition = hasOverrideCondition;
         }
     }
 

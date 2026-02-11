@@ -1,5 +1,5 @@
 type Mutation {
-    mutation(in: FilmActorInput): ID @mutation(typeName: INSERT)
+    mutation(in: FilmActorInput): ID @mutation(typeName: INSERT) @nodeId(typeName: "FilmActor")
 }
 
 input FilmActorInput @table(name: "FILM_ACTOR") {
@@ -7,5 +7,9 @@ input FilmActorInput @table(name: "FILM_ACTOR") {
 }
 
 type Film implements Node @node @table {
-    id: ID!
+    id: ID! @nodeId
+}
+
+type FilmActor implements Node @node @table(name: "FILM_ACTOR") {
+    id: ID! @nodeId
 }
