@@ -69,27 +69,7 @@ public class DatabaseOperationInputParser {
      */
     private InputComponents parse() {
         var conditionTracker = new InputConditionTracker(referenceField);
-        var result = traverseInput(createInitialBuffer(), conditionTracker);
-
-        var inputTuples = groupIterableComponents(result.iterablePaths, result.flatComponents);
-        inputTuples.stream()
-                .map(InputComponents.InputTuple::components)
-                .forEach(result.flatComponents::removeAll);
-
-        filterDeclaredConditions(conditionTracker.descendantsByInputFieldsWithCondition, inputTuples);
-
-        return new InputComponents(
-                result.flatComponents,
-                inputTuples,
-                conditionTracker.descendantsByInputFieldsWithCondition);
-    }
-
-    /**
-     * Creates the initial buffer of input components from the reference field's arguments.
-     * Each argument is categorized as either a set value (for mutations) or a condition (for filtering).
-     */
-    private LinkedList<InputComponent> createInitialBuffer() {
-        return referenceField.getNonReservedArguments().stream()
+        var initialBuffer = referenceField.getNonReservedArguments().stream()
                 .map(it ->
                         new InputComponent(
                                 it,
@@ -100,6 +80,20 @@ public class DatabaseOperationInputParser {
                         )
                 )
                 .collect(Collectors.toCollection(LinkedList::new));
+
+        var result = traverseInput(initialBuffer, conditionTracker);
+
+        var inputTuples = groupIterableComponents(result.iterablePaths, result.flatComponents);
+        inputTuples.stream()
+                .map(InputComponents.InputTuple::components)
+                .forEach(result.flatComponents::removeAll);
+
+        filterDeclaredConditions(conditionTracker.conditionFieldToNestedInputMap, inputTuples);
+
+        return new InputComponents(
+                result.flatComponents,
+                inputTuples,
+                conditionTracker.conditionFieldToNestedInputMap);
     }
 
     /**
@@ -124,14 +118,14 @@ public class DatabaseOperationInputParser {
             var isFilterInput = component.isFilterInput();
             var field = component.getInput();
 
-            if (conditionTracker.hasAncestorWithCondition(field)) {
+            if (conditionTracker.hasParentWithDeclaredCondition(field)) {
                 continue;
             }
 
             if (!processedSchema.isInputType(field)) {
                 flatComponents.add(component);
                 if (isFilterInput) {
-                    conditionTracker.maybeRecordDescendantToInputConditionField(component);
+                    conditionTracker.maybeRecordNestedInputToConditionField(component);
                 }
                 continue;
             }
@@ -141,7 +135,7 @@ public class DatabaseOperationInputParser {
             }
 
             if (field.hasCondition() && !processedSchema.hasRecord(field)) {
-                conditionTracker.trackInputConditionField(field);
+                conditionTracker.trackInputWithDeclaredCondition(field);
                 inputBuffer.addFirst(component);
             }
 
@@ -152,7 +146,7 @@ public class DatabaseOperationInputParser {
 
             if (isFilterInput && processedSchema.hasRecord(field)) {
                 flatComponents.add(component);
-                conditionTracker.maybeRecordDescendantToInputConditionField(component);
+                conditionTracker.maybeRecordNestedInputToConditionField(component);
             }
             recursion++;
         }
@@ -270,23 +264,23 @@ public class DatabaseOperationInputParser {
     }
 
     /**
-     * Tracks input fields that have declared conditions and their descendant components.
+     * Tracks input fields that have declared conditions and their nested inputs.
      * Used to properly group conditions by their declaring ancestor field.
      */
     private static class InputConditionTracker {
 
         private final Set<GenerationField> inputFieldsWithDeclaredCondition = new HashSet<>();
 
-        private final LinkedHashMap<GenerationField, List<InputComponent>> descendantsByInputFieldsWithCondition = new LinkedHashMap<>();
+        private final LinkedHashMap<GenerationField, List<InputComponent>> conditionFieldToNestedInputMap = new LinkedHashMap<>();
 
         InputConditionTracker(ObjectField referenceField) {
             if (referenceField.hasCondition()) {
-                descendantsByInputFieldsWithCondition.put(referenceField, new ArrayList<>());
+                conditionFieldToNestedInputMap.put(referenceField, new ArrayList<>());
                 inputFieldsWithDeclaredCondition.add(referenceField);
             }
         }
 
-        boolean hasAncestorWithCondition(InputField field) {
+        boolean hasParentWithDeclaredCondition(InputField field) {
             if (inputFieldsWithDeclaredCondition.contains(field)) {
                 inputFieldsWithDeclaredCondition.remove(field);
                 return true;
@@ -294,14 +288,14 @@ public class DatabaseOperationInputParser {
             return false;
         }
 
-        void trackInputConditionField(InputField field) {
+        void trackInputWithDeclaredCondition(InputField field) {
             inputFieldsWithDeclaredCondition.add(field);
-            descendantsByInputFieldsWithCondition.put(field, new ArrayList<>());
+            conditionFieldToNestedInputMap.put(field, new ArrayList<>());
         }
 
-        void maybeRecordDescendantToInputConditionField(InputComponent component) {
+        void maybeRecordNestedInputToConditionField(InputComponent component) {
             inputFieldsWithDeclaredCondition.forEach(ancestor ->
-                    descendantsByInputFieldsWithCondition.get(ancestor).add(component));
+                    conditionFieldToNestedInputMap.get(ancestor).add(component));
         }
 
 
