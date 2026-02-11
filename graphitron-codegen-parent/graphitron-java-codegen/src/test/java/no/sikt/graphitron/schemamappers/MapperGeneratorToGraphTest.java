@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.*;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 
 @DisplayName("Schema Mappers - Mapper content for mapping fields to graph types")
 public class MapperGeneratorToGraphTest extends GeneratorTest {
@@ -22,7 +23,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(MAPPER_ID_SERVICE, JAVA_RECORD_CUSTOMER, MAPPER_FETCH_SERVICE);
+        return makeReferences(MAPPER_ID_SERVICE, JAVA_RECORD_CUSTOMER, MAPPER_FETCH_SERVICE, RESOLVER_MUTATION_SERVICE);
     }
 
     @Override
@@ -62,6 +63,15 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "listedSplitQueryInNestedJooqRecord",
                 "city.setAddressesKey(DSL.row(_nit_cityRecord.getCityId()));"
+        );
+    }
+
+    @Test
+    @DisplayName("Wrapper type with single @splitQuery field")
+    void singleSplitQueryInWrapper() {
+        assertGeneratedContentContains(
+                "singleSplitQueryInWrapper", Set.of(CUSTOMER_TABLE),
+                "_mo_customerWrapper.setCustomerKey(DSL.row(_mi_customerWrapperRecord.getCustomerId()))"
         );
     }
 
