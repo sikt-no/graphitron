@@ -88,12 +88,10 @@ public class DatabaseOperationInputParser {
                 .map(InputComponents.InputTuple::components)
                 .forEach(result.flatComponents::removeAll);
 
-        filterDeclaredConditions(conditionTracker.conditionFieldToNestedInputMap, inputTuples);
+        var conditionMap = conditionTracker.buildConditionMap(result.flatComponents);
+        filterDeclaredConditions(conditionMap, inputTuples);
 
-        return new InputComponents(
-                result.flatComponents,
-                inputTuples,
-                conditionTracker.conditionFieldToNestedInputMap);
+        return new InputComponents(result.flatComponents, inputTuples, conditionMap);
     }
 
     /**
@@ -118,15 +116,8 @@ public class DatabaseOperationInputParser {
             var isFilterInput = component.isFilterInput();
             var field = component.getInput();
 
-            if (conditionTracker.hasParentWithDeclaredCondition(field)) {
-                continue;
-            }
-
             if (!processedSchema.isInputType(field)) {
                 flatComponents.add(component);
-                if (isFilterInput) {
-                    conditionTracker.maybeRecordNestedInputToConditionField(component);
-                }
                 continue;
             }
 
@@ -135,8 +126,7 @@ public class DatabaseOperationInputParser {
             }
 
             if (field.hasCondition() && !processedSchema.hasRecord(field)) {
-                conditionTracker.trackInputWithDeclaredCondition(field);
-                inputBuffer.addFirst(component);
+                conditionTracker.trackInputWithDeclaredCondition(field, component.getNameWithPathString());
             }
 
             var innerInputComponents = getInnerFieldsForInputType(field).stream()
@@ -146,7 +136,6 @@ public class DatabaseOperationInputParser {
 
             if (isFilterInput && processedSchema.hasRecord(field)) {
                 flatComponents.add(component);
-                conditionTracker.maybeRecordNestedInputToConditionField(component);
             }
             recursion++;
         }
@@ -263,42 +252,27 @@ public class DatabaseOperationInputParser {
     private record TraversalResult(List<String> iterablePaths, List<InputComponent> flatComponents) {
     }
 
-    /**
-     * Tracks input fields that have declared conditions and their nested inputs.
-     * Used to properly group conditions by their declaring ancestor field.
-     */
     private static class InputConditionTracker {
-
-        private final Set<GenerationField> inputFieldsWithDeclaredCondition = new HashSet<>();
-
-        private final LinkedHashMap<GenerationField, List<InputComponent>> conditionFieldToNestedInputMap = new LinkedHashMap<>();
+        private final LinkedHashMap<GenerationField, String> nestedFieldPathsToInputCondition = new LinkedHashMap<>();
 
         InputConditionTracker(ObjectField referenceField) {
             if (referenceField.hasCondition()) {
-                conditionFieldToNestedInputMap.put(referenceField, new ArrayList<>());
-                inputFieldsWithDeclaredCondition.add(referenceField);
+                nestedFieldPathsToInputCondition.put(referenceField, "");
             }
         }
 
-        boolean hasParentWithDeclaredCondition(InputField field) {
-            if (inputFieldsWithDeclaredCondition.contains(field)) {
-                inputFieldsWithDeclaredCondition.remove(field);
-                return true;
-            }
-            return false;
+        void trackInputWithDeclaredCondition(InputField field, String path) {
+            nestedFieldPathsToInputCondition.put(field, path);
         }
 
-        void trackInputWithDeclaredCondition(InputField field) {
-            inputFieldsWithDeclaredCondition.add(field);
-            conditionFieldToNestedInputMap.put(field, new ArrayList<>());
+        LinkedHashMap<GenerationField, List<InputComponent>> buildConditionMap(List<InputComponent> flatComponents) {
+            var result = new LinkedHashMap<GenerationField, List<InputComponent>>();
+            nestedFieldPathsToInputCondition.forEach((field, path) ->
+                    result.put(field, flatComponents.stream()
+                            .filter(c -> c.isFilterInput() && c.getNamePath().startsWith(path))
+                            .toList()));
+            return result;
         }
-
-        void maybeRecordNestedInputToConditionField(InputComponent component) {
-            inputFieldsWithDeclaredCondition.forEach(ancestor ->
-                    conditionFieldToNestedInputMap.get(ancestor).add(component));
-        }
-
-
     }
 
     private InputComponents getParsedInputComponents() {
