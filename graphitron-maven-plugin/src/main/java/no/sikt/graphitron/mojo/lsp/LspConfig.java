@@ -8,7 +8,8 @@ import java.util.List;
  */
 public record LspConfig(
     List<TableConfig> tables,
-    List<TypeConfig> types
+    List<TypeConfig> types,
+    @JsonProperty("external_references") List<ExternalReferenceConfig> externalReferences
 ) {
     /**
      * Configuration for a single database table.
@@ -55,5 +56,14 @@ public record LspConfig(
         String name,
         List<String> aliases,
         String description
+    ) {}
+
+    /**
+     * Configuration for an external reference (service, condition, record, etc.).
+     */
+    public record ExternalReferenceConfig(
+        String name,
+        @JsonProperty("class_name") String className,
+        List<String> methods
     ) {}
 }

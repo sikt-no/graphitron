@@ -35,6 +35,7 @@ class IntrospectMojoTest {
                                 java.util.List.of()
                         )
                 ),
+                java.util.List.of(),
                 java.util.List.of()
         );
 
@@ -53,6 +54,44 @@ class IntrospectMojoTest {
         var parsed = MAPPER.readValue(outputPath.toFile(), LspConfig.class);
         assertThat(parsed.tables()).hasSize(1);
         assertThat(parsed.tables().get(0).tableName()).isEqualTo("FILM");
+    }
+
+    @Test
+    @DisplayName("External references are serialized correctly")
+    void externalReferenceSerialization() throws IOException {
+        // Given: A config with external references
+        var config = new LspConfig(
+                java.util.List.of(),
+                java.util.List.of(),
+                java.util.List.of(
+                        new LspConfig.ExternalReferenceConfig(
+                                "CustomerService",
+                                "no.sikt.example.CustomerService",
+                                java.util.List.of("customer", "createCustomerEmail")
+                        )
+                )
+        );
+
+        // When: Writing to JSON
+        var outputPath = tempDir.resolve("test-external-refs.json");
+        MAPPER.writeValue(outputPath.toFile(), config);
+
+        // Then: JSON contains external_references
+        var content = Files.readString(outputPath);
+        assertThat(content).contains("\"external_references\"");
+        assertThat(content).contains("\"class_name\"");
+        assertThat(content).contains("\"CustomerService\"");
+        assertThat(content).contains("\"no.sikt.example.CustomerService\"");
+        assertThat(content).contains("\"customer\"");
+        assertThat(content).contains("\"createCustomerEmail\"");
+
+        // And: Can be deserialized
+        var parsed = MAPPER.readValue(outputPath.toFile(), LspConfig.class);
+        assertThat(parsed.externalReferences()).hasSize(1);
+        var ref = parsed.externalReferences().get(0);
+        assertThat(ref.name()).isEqualTo("CustomerService");
+        assertThat(ref.className()).isEqualTo("no.sikt.example.CustomerService");
+        assertThat(ref.methods()).containsExactly("customer", "createCustomerEmail");
     }
 
     @Test

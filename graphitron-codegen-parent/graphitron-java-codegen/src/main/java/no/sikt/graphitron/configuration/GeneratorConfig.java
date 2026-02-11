@@ -171,8 +171,8 @@ public class GeneratorConfig {
         outputPackage = "";
         generatorSchemaFiles = Set.of();
         userSchema = Set.of();
-        externalReferences = new ExternalReferences(List.of());
-        externalReferenceImports = Set.of();
+        externalReferences = new ExternalReferences(introspector.getExternalReferences());
+        externalReferenceImports = introspector.getExternalReferenceImports();
         globalTransforms = List.of();
         recordValidation = null;
         maxAllowedPageSize = 1000;

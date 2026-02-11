@@ -3,10 +3,13 @@ package no.sikt.graphitron.mojo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.configuration.externalreferences.ExternalMojoClassReference;
+import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.generate.Introspector;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphitron.mojo.lsp.LspConfig;
+import no.sikt.graphitron.mojo.lsp.LspConfig.ExternalReferenceConfig;
 import no.sikt.graphitron.mojo.lsp.LspConfig.FieldConfig;
 import no.sikt.graphitron.mojo.lsp.LspConfig.TableConfig;
 import no.sikt.graphitron.mojo.lsp.LspConfig.TableDefinition;
@@ -21,13 +24,19 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.jooq.ForeignKey;
 
+import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Modifier;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.jar.JarFile;
 import java.util.stream.Collectors;
 
 /**
@@ -47,6 +56,18 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
      */
     @Parameter(property = "graphitron.introspect.outputFile", defaultValue = "${project.build.directory}/graphitron-lsp-config.json")
     private String outputFile;
+
+    /**
+     * External reference elements that can be used in code generation.
+     */
+    @Parameter(property = "graphitron.externalReferences")
+    private List<ExternalMojoClassReference> externalReferences;
+
+    /**
+     * External reference elements that can be used in code generation.
+     */
+    @Parameter(property = "graphitron.externalReferenceImports")
+    private Set<String> externalReferenceImports;
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .enable(SerializationFeature.INDENT_OUTPUT);
@@ -108,7 +129,7 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
             tables.add(tableConfig);
         }
 
-        return new LspConfig(tables, buildScalarTypes());
+        return new LspConfig(tables, buildScalarTypes(), buildExternalReferences());
     }
 
     private List<TableReference> buildReferences(String tableName) {
@@ -198,10 +219,114 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
         MAPPER.writeValue(path.toFile(), config);
     }
 
-    // Introspector-specific method (jooqGeneratedPackage inherited from AbstractGraphitronMojo)
+    private List<ExternalReferenceConfig> buildExternalReferences() {
+        var result = new ArrayList<ExternalReferenceConfig>();
+
+        // Add explicitly configured external references
+        if (externalReferences != null) {
+            for (var ref : externalReferences) {
+                result.add(buildExternalReferenceConfig(ref.name(), ref.classReference()));
+            }
+        }
+
+        // Scan import packages for classes
+        if (externalReferenceImports != null) {
+            for (var packageName : externalReferenceImports) {
+                for (var clazz : scanPackage(packageName)) {
+                    result.add(buildExternalReferenceConfig(clazz.getSimpleName(), clazz));
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private ExternalReferenceConfig buildExternalReferenceConfig(String name, Class<?> clazz) {
+        var methods = Arrays.stream(clazz.getDeclaredMethods())
+                .filter(m -> Modifier.isPublic(m.getModifiers()))
+                .map(java.lang.reflect.Method::getName)
+                .distinct()
+                .sorted()
+                .toList();
+        return new ExternalReferenceConfig(name, clazz.getCanonicalName(), methods);
+    }
+
+    private List<Class<?>> scanPackage(String packageName) {
+        var path = packageName.replace('.', '/');
+        var classLoader = Thread.currentThread().getContextClassLoader();
+        var classes = new ArrayList<Class<?>>();
+
+        try {
+            Enumeration<URL> resources = classLoader.getResources(path);
+            while (resources.hasMoreElements()) {
+                var resource = resources.nextElement();
+                var protocol = resource.getProtocol();
+
+                if ("file".equals(protocol)) {
+                    var directory = new File(resource.toURI());
+                    scanDirectory(directory, packageName, classes);
+                } else if ("jar".equals(protocol)) {
+                    var jarPath = resource.getPath().substring(5, resource.getPath().indexOf("!"));
+                    scanJar(jarPath, path, packageName, classes);
+                }
+            }
+        } catch (Exception e) {
+            getLog().warn("Failed to scan package " + packageName + ": " + e.getMessage());
+        }
+
+        return classes;
+    }
+
+    private void scanDirectory(File directory, String packageName, List<Class<?>> classes) {
+        var files = directory.listFiles();
+        if (files == null) {
+            return;
+        }
+        for (var file : files) {
+            if (file.isDirectory()) {
+                scanDirectory(file, packageName + "." + file.getName(), classes);
+            } else if (file.isFile() && file.getName().endsWith(".class")) {
+                var className = packageName + "." + file.getName().replace(".class", "");
+                loadClass(className, classes);
+            }
+        }
+    }
+
+    private void scanJar(String jarPath, String packagePath, String packageName, List<Class<?>> classes) throws IOException {
+        try (var jar = new JarFile(jarPath)) {
+            var entries = jar.entries();
+            while (entries.hasMoreElements()) {
+                var entry = entries.nextElement();
+                var entryName = entry.getName();
+                if (entryName.startsWith(packagePath + "/") && entryName.endsWith(".class") && !entryName.contains("$")) {
+                    var relativeName = entryName.substring(packagePath.length() + 1);
+                    var className = packageName + "." + relativeName.replace("/", ".").replace(".class", "");
+                    loadClass(className, classes);
+                }
+            }
+        }
+    }
+
+    private void loadClass(String className, List<Class<?>> classes) {
+        try {
+            classes.add(Class.forName(className, false, Thread.currentThread().getContextClassLoader()));
+        } catch (ClassNotFoundException e) {
+            getLog().warn("Could not load class " + className + ": " + e.getMessage());
+        }
+    }
 
     @Override
     public String getOutputFile() {
         return outputFile;
+    }
+
+    @Override
+    public List<? extends ExternalReference> getExternalReferences() {
+        return externalReferences != null ? externalReferences : List.of();
+    }
+
+    @Override
+    public Set<String> getExternalReferenceImports() {
+        return externalReferenceImports != null ? externalReferenceImports : Set.of();
     }
 }
