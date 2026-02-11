@@ -93,7 +93,7 @@ public class NodeIdOutputTest extends ValidationTest {
     void withField() {
         assertErrorsContain(
                 () -> getProcessedSchema("withField"),
-                "'Customer.id' has both the 'nodeId' and 'field' directives, which is not supported for non-jOOQ field targets."
+                "Field 'Customer.id' has both the 'nodeId' and 'field' directives, which is only supported for node ID fields in Java Record inputs."
         );
     }
 

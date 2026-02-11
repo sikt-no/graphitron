@@ -16,11 +16,23 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 public class NodeIdReferenceHelpers {
 
     public static Optional<ForeignKey<?,?>> getForeignKeyForNodeIdReference(GenerationField target, ProcessedSchema schema) {
-        if (!schema.isNodeIdField(target) || !schema.hasJOOQRecord(target.getContainerTypeName()) || target.getContainerTypeName().equals(SCHEMA_QUERY.getName())) {
+        if (!schema.isNodeIdField(target) || !schema.getRecordType(target.getContainerTypeName()).hasRecordReference() || target.getContainerTypeName().equals(SCHEMA_QUERY.getName())) {
             return Optional.empty();
         }
         var targetTable = schema.getNodeTypeForNodeIdFieldOrThrow(target).getTable().getName();
-        var previousTable = schema.getRecordType(target.getContainerTypeName()).getTable().getName();
+
+        String previousTable;
+        if(schema.hasJOOQRecord(target.getContainerTypeName())) {
+            previousTable = schema.getRecordType(target.getContainerTypeName()).getTable().getName();
+        }else{
+            var optionalPreviousTable = schema.getJooqRecordClassForNodeIdField(target);
+            if(optionalPreviousTable.isPresent()) {
+                previousTable = TableReflection.getTableJavaFieldNameForRecordClass(optionalPreviousTable.get()).orElseThrow();
+            }else{
+                return Optional.empty();
+            }
+        }
+
         if (!previousTable.equals(targetTable)) {
             return target.getFieldReferences().stream()
                     .findFirst()

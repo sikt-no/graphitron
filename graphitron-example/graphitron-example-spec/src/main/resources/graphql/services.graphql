@@ -77,6 +77,7 @@ input NodeIdConflictInputObject @record(record: {className: "no.sikt.graphitron.
     actorId: ID @nodeId(typeName: "Actor") @field(name: "filmActor")
 }
 
+
 input CustomerInput @table(name: "CUSTOMER") {
     id: ID! @nodeId(typeName: "Customer")
     addressId: ID @nodeId(typeName: "Address") @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])

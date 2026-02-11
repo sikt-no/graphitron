@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.DUMMY_RECORD;
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.JAVA_RECORD_CUSTOMER;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_NODE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_NODE_INPUT_TABLE;
 
@@ -19,7 +20,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(DUMMY_RECORD);
+        return makeReferences(DUMMY_RECORD, JAVA_RECORD_CUSTOMER);
     }
 
     @Test

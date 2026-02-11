@@ -542,7 +542,7 @@ public class TableReflection {
      * @param recordClass The jOOQ record class to find the table for
      * @return The table name if found, empty otherwise
      */
-    public static Optional<String> getTableNameForRecordClass(Class<?> recordClass) {
+    public static Optional<String> getTableJavaFieldNameForRecordClass(Class<?> recordClass) {
         return TABLES_BY_JAVA_FIELD_NAME.entrySet().stream()
                 .filter(entry -> entry.getValue().getRecordType().equals(recordClass))
                 .map(Map.Entry::getKey)

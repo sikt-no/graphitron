@@ -64,7 +64,8 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     void multipleNodeIdsMergeIntoSingleRecord() {
         assertGeneratedContentContains("nodeIdMerging", Set.of(CUSTOMER_NODE, INVENTORY_NODE),
                 "RentalRecord _mi_rental = new RentalRecord()",
-                "boolean _mi_rental_hasValue = false"
+                "_iv_nodeIdStrategy.setReferenceId(_mi_rental, nodeIdValue, \"CustomerNode\", Rental.RENTAL.CUSTOMER_ID);",
+                "_iv_nodeIdStrategy.setReferenceId(_mi_rental, nodeIdValue, \"InventoryNode\", Rental.RENTAL.INVENTORY_ID);"
         );
     }
 
@@ -73,7 +74,8 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     void compositeKeyNodeIdCreatesJooqRecord() {
         assertGeneratedContentContains("nodeIdCompositeKey", Set.of(FILM_ACTOR_NODE),
                 "FilmActorRecord _mi_filmActor = new FilmActorRecord()",
-                "_iv_nodeIdStrategy.setReferenceId(_mi_filmActor"
+                "_mo_compositeKeyInputJavaRecord.setFilmActor(_mi_filmActor_hasValue ? _mi_filmActor : null);",
+                "_iv_nodeIdStrategy.setReferenceId(_mi_filmActor, nodeIdValue, \"FilmActorNode\", FilmActor.FILM_ACTOR.ACTOR_ID, FilmActor.FILM_ACTOR.FILM_ID);"
         );
     }
 }

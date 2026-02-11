@@ -4,6 +4,7 @@ import org.jooq.impl.UpdatableRecordImpl;
 
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.Optional;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
@@ -24,15 +25,8 @@ public class ReflectionHelpers {
      * @param fieldName The field name to check (will look for getter method)
      * @return true if the field type is a jOOQ record type
      */
-    public static boolean isFieldTypeJooqRecord(Class<?> recordClass, String fieldName) {
-        String getterName = "get" + capitalize(fieldName);
-        try {
-            Method getter = recordClass.getMethod(getterName);
-            Class<?> returnType = getter.getReturnType();
-            return UpdatableRecordImpl.class.isAssignableFrom(returnType);
-        } catch (NoSuchMethodException e) {
-            return false;
-        }
+    public static boolean hasGetterReturningJooqRecord(Class<?> recordClass, String fieldName) {
+        return getJooqRecordClassReturnedFromFieldGetter(recordClass, fieldName).isPresent();
     }
 
     /**
@@ -42,17 +36,17 @@ public class ReflectionHelpers {
      * @return The jOOQ record class, or null if not a jOOQ record type
      */
     @SuppressWarnings("unchecked")
-    public static Class<? extends UpdatableRecordImpl<?>> getJooqRecordFieldType(Class<?> recordClass, String fieldName) {
+    public static Optional<Class<? extends UpdatableRecordImpl<?>>> getJooqRecordClassReturnedFromFieldGetter(Class<?> recordClass, String fieldName) {
         String getterName = "get" + capitalize(fieldName);
         try {
             Method getter = recordClass.getMethod(getterName);
             Class<?> returnType = getter.getReturnType();
             if (UpdatableRecordImpl.class.isAssignableFrom(returnType)) {
-                return (Class<? extends UpdatableRecordImpl<?>>) returnType;
+                return Optional.of((Class<? extends UpdatableRecordImpl<?>>) returnType);
             }
-            return null;
+            return Optional.empty();
         } catch (NoSuchMethodException e) {
-            return null;
+            return Optional.empty();
         }
     }
 }

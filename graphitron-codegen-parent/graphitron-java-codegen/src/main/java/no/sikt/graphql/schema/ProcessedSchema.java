@@ -912,28 +912,6 @@ public class ProcessedSchema {
         return getNodeTypeForNodeIdField(field).orElseThrow(() -> new RuntimeException("Cannot find node type for node ID field " + field.formatPath()));
     }
 
-    /**
-     * Checks if a @nodeId field is in a Java record input AND targets a jOOQ record field.
-     * Such fields produce jOOQ records instead of Strings.
-     * @param field The field to check
-     * @return true if the field should produce a jOOQ record
-     */
-    public boolean isNodeIdFieldProducingJooqRecord(GenerationField field) {
-        if (!isNodeIdField(field)) {
-            return false;
-        }
-
-        var containerType = getInputType(field.getContainerTypeName());
-        if (containerType == null || !containerType.hasJavaRecordReference()) {
-            return false;
-        }
-
-        // Use getJavaRecordMethodMapping(true) to preserve camelCase in field names (e.g. "filmActor"),
-        // unlike getFieldRecordMappingName() which round-trips through uppercase and loses case info.
-        Class<?> javaRecordClass = containerType.getRecordReference();
-        String targetFieldName = field.getJavaRecordMethodMapping(true).getName();
-        return ReflectionHelpers.isFieldTypeJooqRecord(javaRecordClass, targetFieldName);
-    }
 
     /**
      * Gets the jOOQ record class that a @nodeId field should produce.
@@ -941,16 +919,14 @@ public class ProcessedSchema {
      * @param field The @nodeId field
      * @return The jOOQ record class, or null if the field is not targeting a jOOQ record field
      */
-    public Class<? extends UpdatableRecordImpl<?>> getJooqRecordClassForNodeIdField(GenerationField field) {
-        if (!isNodeIdFieldProducingJooqRecord(field)) {
-            return null;
-        }
-
+    public Optional<Class<? extends UpdatableRecordImpl<?>>> getJooqRecordClassForNodeIdField(GenerationField field) {
+        if (!isNodeIdField(field)) return Optional.empty();
         var containerType = getInputType(field.getContainerTypeName());
+        if (containerType == null || !containerType.hasJavaRecordReference()) return Optional.empty();
+
         Class<?> javaRecordClass = containerType.getRecordReference();
         String targetFieldName = field.getJavaRecordMethodMapping(true).getName();
-
-        return ReflectionHelpers.getJooqRecordFieldType(javaRecordClass, targetFieldName);
+        return ReflectionHelpers.getJooqRecordClassReturnedFromFieldGetter(javaRecordClass, targetFieldName);
     }
 
     /**

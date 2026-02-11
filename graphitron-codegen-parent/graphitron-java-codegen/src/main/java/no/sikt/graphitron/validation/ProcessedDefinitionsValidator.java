@@ -17,6 +17,7 @@ import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.mappings.ReflectionHelpers;
+import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphql.directives.GenerationDirectiveParam;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -24,6 +25,7 @@ import org.apache.commons.text.similarity.LevenshteinDistance;
 import org.jooq.Field;
 import org.jooq.Key;
 import org.jooq.UniqueKey;
+import org.jooq.impl.UpdatableRecordImpl;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
@@ -95,7 +97,7 @@ public class ProcessedDefinitionsValidator {
         validateUnionAndInterfaceSubTypes();
         validateNodeId();
         validateNodeIdReferenceInJooqRecordInput();
-        validateNodeIdTargetColumnsInJavaRecordInputs();
+        validateNodeIdFieldsInJavaRecordInputs();
         validateSplitQueryFieldsInJavaRecords();
         validateWrapperTypesWithPreviousTable();
         validateJavaRecordFieldMappings();
@@ -255,11 +257,11 @@ public class ProcessedDefinitionsValidator {
 
         if (field.hasFieldDirective()) {
             // Allow @nodeId + @field only in @record input types targeting jOOQ record fields
-            boolean isAllowed = isNodeIdFieldDirectiveAllowedWithFieldDirective(field);
+            boolean isAllowed = schema.getJooqRecordClassForNodeIdField(field).isPresent();
 
             if (!isAllowed) {
                 addErrorMessage(
-                        "%s has both the '%s' and '%s' directives, which is not supported for non-jOOQ field targets.",
+                        "%s has both the '%s' and '%s' directives, which is only supported for node ID fields in Java Record inputs.",
                         capitalize(fieldName),
                         NODE_ID.getName(),
                         FIELD.getName()
@@ -276,31 +278,6 @@ public class ProcessedDefinitionsValidator {
         }
     }
 
-    /**
-     * Checks if a @nodeId field with @field directive is allowed.
-     * This combination is only permitted when:
-     * 1. The field is in an input type with @record directive (Java record)
-     * 2. The target field (from @field directive) is a jOOQ record type
-     */
-    private boolean isNodeIdFieldDirectiveAllowedWithFieldDirective(GenerationField field) {
-        var containerType = schema.getInputType(field.getContainerTypeName());
-        if (containerType == null || !containerType.hasJavaRecordReference()) {
-            return false;
-        }
-
-        Class<?> javaRecordClass = containerType.getRecordReference();
-        if (javaRecordClass == null) {
-            return false;
-        }
-
-        // Use getJavaRecordMethodMapping(true) to preserve camelCase in field names (e.g. "filmActor"),
-        // unlike getFieldRecordMappingName() which round-trips through uppercase and loses case info.
-        String targetFieldName = field.getJavaRecordMethodMapping(true).getName();
-
-        // Check if the target field type is a jOOQ UpdatableRecord
-        return ReflectionHelpers.isFieldTypeJooqRecord(javaRecordClass, targetFieldName);
-    }
-
     private void validateNodeIdReferenceInJooqRecordInput() {
         schema.getInputTypes()
                 .values()
@@ -315,64 +292,75 @@ public class ProcessedDefinitionsValidator {
                                 .filter(schema::isNodeIdField)
                                 .filter(it -> schema.getNodeTypeForNodeIdField(it).isPresent()) // This is validated in checkNodeId
                                 .filter(it -> !schema.getNodeTypeForNodeIdFieldOrThrow(it).getTable().equals(jooqRecordInput.getTable()))
-                                .forEach(field -> {
-                                    var foreignKeyOptional = getForeignKeyForNodeIdReference(field, schema);
-
-                                    if (foreignKeyOptional.isEmpty()) {
-                                        addErrorMessage("Cannot find foreign key for node ID field '%s' in jOOQ record input '%s'.",
-                                                field.getName(),
-                                                field.getContainerTypeName());
-                                        return;
-                                    }
-
-                                    var foreignKey = foreignKeyOptional.get();
-
-                                    if (!foreignKey.getTable().getName().equalsIgnoreCase(jooqRecordInput.getTable().getName())) {
-                                        addErrorMessage(
-                                                "Node ID field '%s' in jOOQ record input '%s' references a table with an inverse key which is not supported.",
-                                                field.getName(),
-                                                field.getContainerTypeName()
-                                        );
-                                        return;
-                                    }
-
-                                    var nodeType = schema.getNodeTypeForNodeIdFieldOrThrow(field);
-                                    var firstForeignKeyReferencesTargetTable = foreignKey.getInverseKey().getTable().getName().equalsIgnoreCase(nodeType.getTable().getName());
-
-                                    if (field.getFieldReferences().size() > 1 || (field.hasFieldReferences() && !firstForeignKeyReferencesTargetTable)) {
-                                        addErrorMessage(
-                                                "Node ID field '%s' in jOOQ record input '%s' has a reference via table(s) which is not supported on jOOQ record inputs.",
-                                                field.getName(),
-                                                field.getContainerTypeName()
-                                        );
-                                        return;
-                                    }
-
-                                    var targetKey = getPrimaryOrUniqueKeyMatchingIdFields(nodeType);
-
-                                    if (targetKey.isPresent() && !targetKey.get().equals(foreignKey.getKey())) {
-                                        addErrorMessage(
-                                                "Node ID field '%s' in jOOQ record input '%s' uses foreign key '%s' which does not reference the same primary/unique key used for type '%s's node ID. This is not supported.",
-                                                field.getName(),
-                                                field.getContainerTypeName(),
-                                                foreignKey.getName(),
-                                                nodeType.getName()
-                                        );
-                                    }
-
-                                    if (isUsedInUpdateMutation(jooqRecordInput)) {
-                                        getPrimaryKeyForTable(jooqRecordInput.getTable().getName())
-                                                .map(Key::getFields)
-                                                .filter(it -> it.stream().anyMatch(pkF -> foreignKey.getFields().stream().anyMatch(pkF::equals)))
-                                                .stream().findFirst()
-                                                .ifPresent((a) -> addErrorMessage(
-                                                        "Foreign key used for node ID field '%s' in jOOQ record input '%s' overlaps with the primary key of the jOOQ record table. This is not supported for update/upsert mutations .",
-                                                        field.getName(),
-                                                        field.getContainerTypeName()
-                                                ));
-                                    }
+                                .forEach(it -> {
+                                    validateNodeIdReference(jooqRecordInput.getTable().getName(), it, true);
+                                    getForeignKeyForNodeIdReference(it, schema).ifPresent(foreignKey -> {
+                                        if (isUsedInUpdateMutation(jooqRecordInput)) {
+                                            getPrimaryKeyForTable(jooqRecordInput.getTable().getName())
+                                                    .map(Key::getFields)
+                                                    .filter(pkFields -> pkFields.stream().anyMatch(pkF -> foreignKey.getFields().stream().anyMatch(pkF::equals)))
+                                                    .stream().findFirst()
+                                                    .ifPresent((a) -> addErrorMessage(
+                                                            "Foreign key used for node ID field '%s' in jOOQ record input '%s' overlaps with the primary key of the jOOQ record table. This is not supported for update/upsert mutations.",
+                                                            it.getName(),
+                                                            it.getContainerTypeName()
+                                                    ));
+                                        }
+                                    });
                                 })
                 );
+    }
+
+    private void validateNodeIdReference(String jooqRecordName, GenerationField field, boolean isJooqRecordInput) {
+        var inputKind = isJooqRecordInput ? "jOOQ record input" : "Java record input";
+
+        var foreignKeyOptional = getForeignKeyForNodeIdReference(field, schema);
+        if (foreignKeyOptional.isEmpty()) {
+            addErrorMessage("Cannot find foreign key for node ID field '%s' in %s '%s'.",
+                    field.getName(),
+                    inputKind,
+                    field.getContainerTypeName());
+            return;
+        }
+
+        var foreignKey = foreignKeyOptional.get();
+
+        if (!foreignKey.getTable().getName().equalsIgnoreCase(jooqRecordName)) {
+            addErrorMessage(
+                    "Node ID field '%s' in %s '%s' references a table with an inverse key which is not supported.",
+                    field.getName(),
+                    inputKind,
+                    field.getContainerTypeName()
+            );
+            return;
+        }
+
+        var nodeType = schema.getNodeTypeForNodeIdFieldOrThrow(field);
+        var firstForeignKeyReferencesTargetTable = foreignKey.getInverseKey().getTable().getName().equalsIgnoreCase(nodeType.getTable().getName());
+
+        if (field.getFieldReferences().size() > 1 || (field.hasFieldReferences() && !firstForeignKeyReferencesTargetTable)) {
+            addErrorMessage(
+                    "Node ID field '%s' in %s '%s' has a reference via table(s) which is not supported on %ss.",
+                    field.getName(),
+                    inputKind,
+                    field.getContainerTypeName(),
+                    inputKind
+            );
+            return;
+        }
+
+        var targetKey = getPrimaryOrUniqueKeyMatchingIdFields(nodeType);
+
+        if (targetKey.isPresent() && !targetKey.get().equals(foreignKey.getKey())) {
+            addErrorMessage(
+                    "Node ID field '%s' in %s '%s' uses foreign key '%s' which does not reference the same primary/unique key used for type '%s's node ID. This is not supported.",
+                    field.getName(),
+                    inputKind,
+                    field.getContainerTypeName(),
+                    foreignKey.getName(),
+                    nodeType.getName()
+            );
+        }
     }
 
     private boolean isUsedInUpdateMutation(RecordObjectSpecification<?> jooqRecordInput) {
@@ -397,79 +385,19 @@ public class ProcessedDefinitionsValidator {
         return usages.stream().anyMatch(mt -> mt == MutationType.UPDATE || mt == MutationType.UPSERT);
     }
 
-    /**
-     * Validates that for @nodeId fields in @record inputs (Java record inputs),
-     * the target jOOQ record contains all columns that will be populated from the node ID.
-     */
-    private void validateNodeIdTargetColumnsInJavaRecordInputs() {
+
+    private void validateNodeIdFieldsInJavaRecordInputs() {
         schema.getInputTypes().values().stream()
                 .filter(RecordObjectDefinition::hasJavaRecordReference)
-                .flatMap(input -> input.getFields().stream())
-                .filter(schema::isNodeIdField)
-                .filter(schema::isNodeIdFieldProducingJooqRecord)
-                .forEach(this::validateNodeIdFieldTargetColumns);
+                .flatMap(it -> it.getFields().stream())
+                .filter(GenerationSourceField::hasNodeID)
+                .filter(it -> schema.getNodeTypeForNodeIdField(it).isPresent())
+                .forEach(it -> schema.getJooqRecordClassForNodeIdField(it)
+                        .filter(recordClass -> !schema.getNodeTypeForNodeIdFieldOrThrow(it).getTable().getRecordClass().equals(recordClass))
+                        .ifPresent(recordClass -> validateNodeIdReference(
+                                TableReflection.getTableJavaFieldNameForRecordClass(recordClass).orElseThrow(),
+                                it, false)));
     }
-
-    private void validateNodeIdFieldTargetColumns(GenerationField field) {
-        var containerType = schema.getInputType(field.getContainerTypeName());
-        Class<?> javaRecordClass = containerType.getRecordReference();
-        String targetFieldName = field.getFieldRecordMappingName();
-
-        // Get the target jOOQ record class via reflection
-        var targetJooqClass = ReflectionHelpers.getJooqRecordFieldType(javaRecordClass, targetFieldName);
-        if (targetJooqClass == null) {
-            // This shouldn't happen since isNodeIdFieldProducingJooqRecord already checked this
-            return;
-        }
-
-        // Get the node type's key columns
-        var nodeType = schema.getNodeTypeForNodeIdFieldOrThrow(field);
-        var nodeKeyColumns = schema.getKeyColumnsForNodeType(nodeType);
-        if (nodeKeyColumns.isEmpty()) {
-            addErrorMessage(
-                    "Field '%s' in input '%s' references node type '%s' which has no key columns defined.",
-                    field.getName(),
-                    field.getContainerTypeName(),
-                    nodeType.getName()
-            );
-            return;
-        }
-
-        // Get the target jOOQ record's table name and its columns
-        var targetTableNameOpt = getTableNameForRecordClass(targetJooqClass);
-        if (targetTableNameOpt.isEmpty()) {
-            addErrorMessage(
-                    "Field '%s' in input '%s' targets jOOQ record '%s' but cannot find corresponding table.",
-                    field.getName(),
-                    field.getContainerTypeName(),
-                    targetJooqClass.getSimpleName()
-            );
-            return;
-        }
-
-        var targetTableName = targetTableNameOpt.get();
-        var targetColumnNames = getJavaFieldNamesForTable(targetTableName);
-
-        // Validate each node key column exists in target table
-        for (var nodeColumn : nodeKeyColumns.get()) {
-            boolean columnExists = targetColumnNames.stream()
-                    .anyMatch(col -> col.equalsIgnoreCase(nodeColumn));
-
-            if (!columnExists) {
-                addErrorMessage(
-                        "Field '%s' in input '%s' references node type '%s' with key column '%s', " +
-                                "but target jOOQ record '%s' (table '%s') does not have this column.",
-                        field.getName(),
-                        field.getContainerTypeName(),
-                        nodeType.getName(),
-                        nodeColumn,
-                        targetJooqClass.getSimpleName(),
-                        targetTableName
-                );
-            }
-        }
-    }
-
     private void validateTablesAndKeys() {
         var recordTypes = schema.getRecordTypes();
         recordTypes
