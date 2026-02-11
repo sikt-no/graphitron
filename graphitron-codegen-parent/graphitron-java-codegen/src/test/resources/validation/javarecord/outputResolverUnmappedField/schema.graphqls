@@ -1,0 +1,13 @@
+type Query {
+    test: TestOutput @notGenerated
+}
+
+# Output type with @record - resolver field 'related' has @field with undefined name not in Java record
+type TestOutput @record(record: {className: "no.sikt.graphitron.codereferences.records.CustomerJavaRecord"}) {
+    someID: ID
+    related: Address @field(name: "undefinedField") @splitQuery
+}
+
+type Address @table {
+    addressId: Int @field(name: "ADDRESS_ID")
+}

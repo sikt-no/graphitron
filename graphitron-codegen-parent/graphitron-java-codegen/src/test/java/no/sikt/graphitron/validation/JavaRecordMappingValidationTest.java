@@ -70,4 +70,20 @@ public class JavaRecordMappingValidationTest extends ValidationTest {
                 "Cannot map field 'invalidField' in input 'InnerInput' to setter in Java record 'MapperCustomerInnerJavaRecord'. Expected method: setInvalidField"
         );
     }
+
+    @Test
+    @DisplayName("UPPER_CASE @field name without javaName should throw error (getEMAIL doesn't match getEmail)")
+    void upperCaseFieldNameWithoutJavaName() {
+        assertErrorsContain("outputUpperCaseFieldWithoutJavaName",
+                "Cannot map field 'email' in type 'TestOutput' to getter in Java record 'CustomerJavaRecord'. Expected method: getEMAIL. Did you mean: email?"
+        );
+    }
+
+    @Test
+    @DisplayName("Resolver field with unmapped @field name should throw error")
+    void resolverUnmappedField() {
+        assertErrorsContain("outputResolverUnmappedField",
+                "Cannot map field 'related' in type 'TestOutput' to getter in Java record 'CustomerJavaRecord'. Expected method: getUndefinedField"
+        );
+    }
 }
