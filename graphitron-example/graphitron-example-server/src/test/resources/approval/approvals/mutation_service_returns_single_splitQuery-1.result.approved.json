@@ -1,0 +1,10 @@
+{
+    "data": {
+        "singleCustomerMutation": {
+            "customer": {
+                "id": "Q3VzdG9tZXI6Mw",
+                "email": "LINDA.WILLIAMS@sakilacustomer.org"
+            }
+        }
+    }
+}

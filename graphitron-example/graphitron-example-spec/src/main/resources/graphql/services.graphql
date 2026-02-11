@@ -48,6 +48,13 @@ input CustomerInput @table(name: "CUSTOMER") {
 }
 
 extend type Mutation {
+    singleCustomerMutation
+    : CustomerWrapper @service(
+        service: {
+            className: "no.sikt.graphitron.example.service.CustomerService",
+            method: "customer"
+        }
+    )
     createCustomerEmail
     : CreateCustomerEmailPayload @service(
         service: {
