@@ -55,7 +55,7 @@ public class ValidationHandler {
     /**
      * Throws an exception if any error has previously been reported.
      */
-    public static void throwIfErrors () {
+    public static void throwIfErrors() {
         if (!errorMessages.isEmpty()) {
             throw new InvalidSchemaException("Problems have been found that prevent code generation: \n" + String.join("\n", errorMessages));
         }
