@@ -2,6 +2,7 @@ package no.sikt.graphql.naming;
 
 import com.apollographql.federation.graphqljava.FederationDirectives;
 import com.apollographql.federation.graphqljava._Entity;
+import com.apollographql.federation.graphqljava._FieldSet;
 import com.apollographql.federation.graphqljava._Service;
 
 import static graphql.relay.Relay.NODE;
@@ -56,7 +57,9 @@ public enum GraphQLReservedName {
     FEDERATION_SERVICE_TYPE(_Service.typeName),
     FEDERATION_ENTITIES_FIELD(_Entity.fieldName),
     FEDERATION_ENTITY_UNION(_Entity.typeName),
-    FEDERATION_REPRESENTATIONS_ARGUMENT(_Entity.argumentName);
+    FEDERATION_REPRESENTATIONS_ARGUMENT(_Entity.argumentName),
+    FEDERATION_EXTERNAL(FederationDirectives.externalName),
+    FEDERATION_FIELD_SET(_FieldSet.typeName);
 
     private final String name;
 

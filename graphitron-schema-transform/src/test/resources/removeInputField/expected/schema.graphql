@@ -1,0 +1,9 @@
+directive @D on INPUT_FIELD_DEFINITION
+
+type Query {
+  q(i1: I1): String
+}
+
+input I1 {
+  a: String
+}

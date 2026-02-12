@@ -5,7 +5,7 @@ import graphql.language.UnionTypeDefinition;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.interfaces.TypeResolverTarget;
-import no.sikt.graphitron.definitions.keys.EntityKeySet;
+import no.sikt.graphql.federation.fieldsets.FederationFieldSet;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 
 import java.util.LinkedList;
@@ -74,7 +74,7 @@ public class UnionDefinition extends RecordObjectDefinition<UnionTypeDefinition,
     }
 
     @Override
-    public EntityKeySet getEntityKeys() {
+    public FederationFieldSet getEntityKeys() {
         return null;
     }
 

@@ -1,12 +1,11 @@
 package no.sikt.graphitron.definitions.interfaces;
 
 import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.definitions.keys.EntityKeySet;
+import no.sikt.graphql.federation.fieldsets.FederationFieldSet;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphql.directives.GenerationDirective;
 
 import java.util.LinkedList;
-import java.util.List;
 
 /**
  * Specifies that this Java object represents a GraphQL object.
@@ -71,13 +70,15 @@ public interface RecordObjectSpecification<T extends GenerationField> extends Ob
     /**
      * @return Apollo federation entity keys for this type.
      */
-    EntityKeySet getEntityKeys();
+    FederationFieldSet getEntityKeys();
 
-    public boolean hasNodeDirective();
+    boolean hasNodeDirective();
 
-    public String getTypeId();
+    String getTypeId();
 
-    public boolean hasCustomKeyColumns();
+    boolean hasCustomKeyColumns();
 
-    public LinkedList<String> getKeyColumns();
+    boolean isFederationExternal();
+
+    LinkedList<String> getKeyColumns();
 }
