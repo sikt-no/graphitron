@@ -7,10 +7,7 @@ import no.sikt.graphitron.definitions.helpers.ClassReference;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.ObjectSpecification;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -79,8 +76,7 @@ public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, U ex
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof AbstractObjectDefinition)) return false;
-        AbstractObjectDefinition<?, ?> that = (AbstractObjectDefinition<?, ?>) o;
+        if (!(o instanceof AbstractObjectDefinition<?, ?> that)) return false;
         return Objects.equals(getName(), that.getName());
     }
 

@@ -1,0 +1,18 @@
+directive @D on OBJECT
+
+type Query {
+  t1: T1
+  t2: T2
+  u1: U1
+}
+
+type T1 {
+  f: String
+}
+
+type T2 @D {
+  f: String
+}
+
+union U1 = T2
+union U2 = T1 | T2

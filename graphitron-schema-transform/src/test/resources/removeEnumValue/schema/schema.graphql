@@ -1,0 +1,17 @@
+directive @D on ENUM_VALUE
+
+type Query {
+  e1: E1
+  e2: E2
+}
+
+enum E1 {
+  A
+  B @D
+  C
+}
+
+enum E2 {
+  X @D
+  Y @D
+}

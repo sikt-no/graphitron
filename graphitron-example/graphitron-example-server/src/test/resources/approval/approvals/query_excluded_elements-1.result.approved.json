@@ -1,0 +1,11 @@
+{
+    "data": {
+        "customerLookup": [
+            {
+                "email": "SUSAN.WILSON@sakilacustomer.org",
+                "fakeValidEmail": null,
+                "fakeInvalidEmail": null
+            }
+        ]
+    }
+}

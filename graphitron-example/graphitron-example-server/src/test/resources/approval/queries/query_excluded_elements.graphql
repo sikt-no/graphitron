@@ -1,0 +1,7 @@
+query CustomerWithExcludedFields {
+    customerLookup(customerIds: "Q3VzdG9tZXI6OA") {
+        email,
+        fakeValidEmail,
+        fakeInvalidEmail
+    }
+}

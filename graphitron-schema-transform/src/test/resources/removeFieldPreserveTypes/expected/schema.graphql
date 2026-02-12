@@ -1,0 +1,13 @@
+directive @D on FIELD_DEFINITION
+
+type Query {
+  t1: T1
+}
+
+type T1 {
+  f: String
+}
+
+type T2 {
+  f: String
+}

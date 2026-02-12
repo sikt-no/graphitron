@@ -40,6 +40,11 @@ public class TransformPluginConfiguration {
     private boolean removeFederationDefinitions = false;
 
     /**
+     * Whether to remove all elements that have set directives which indicate that they should be skipped in further processing.
+     */
+    private boolean removeExcludedElements = false;
+
+    /**
      * Whether to expand GraphQL connection types into full GraphQL Cursor Connections Specification-compliant structures.
      */
     private boolean expandConnections = true;
@@ -147,6 +152,14 @@ public class TransformPluginConfiguration {
         this.directivesToRemove = directivesToRemove;
     }
 
+    public boolean isRemoveExcludedElements() {
+        return removeExcludedElements;
+    }
+
+    public void setRemoveExcludedElements(boolean removeExcludedElements) {
+        this.removeExcludedElements = removeExcludedElements;
+    }
+
     /**
      * Creates a {@link TransformConfig} for use by the schema transformer.
      *
@@ -161,6 +174,7 @@ public class TransformPluginConfiguration {
                 descriptionSuffixForFeatures,
                 addFeatureFlags,
                 removeGeneratorDirectives,
+                isRemoveExcludedElements(),
                 expandConnections);
     }
 }

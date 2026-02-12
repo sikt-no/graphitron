@@ -26,6 +26,8 @@ type FederatedCustomer implements Node @node @table(name: "CUSTOMER") @key(field
     firstName: String! @field(name: "FIRST_NAME")
     lastName: String! @field(name: "LAST_NAME")
     email: String
+    externalEmail: String @external
+    requiresEmail: String @requires(fields: "externalEmail")
     address: Address!
 }
 

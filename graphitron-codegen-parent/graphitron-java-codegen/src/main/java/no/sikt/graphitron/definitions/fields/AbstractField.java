@@ -143,6 +143,11 @@ public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer
         return containerType.equals(SCHEMA_QUERY.getName()) || containerType.equals(SCHEMA_MUTATION.getName());
     }
 
+    @Override
+    public boolean isFederationExternal() {
+        return false;
+    }
+
     public String formatGraphQLSchemaType() {
         var typeName = getTypeName();
 

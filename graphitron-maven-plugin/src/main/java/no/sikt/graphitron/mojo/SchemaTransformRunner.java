@@ -94,6 +94,7 @@ public class SchemaTransformRunner {
                 descriptionSuffixForFeatures,
                 false,  // No feature flags for generator schema
                 false,  // Keep generator directives
+                true,  // Always exclude elements that the codegen should not generate.
                 true);
 
         var generatorSchema = new SchemaTransformer(generatorConfig).transformSchema();

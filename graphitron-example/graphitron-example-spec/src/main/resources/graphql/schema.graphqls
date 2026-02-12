@@ -1,6 +1,6 @@
 extend schema
 @link(url: "https://specs.apollo.dev/federation/v2.4",
-    import: ["@key"])
+    import: ["@key", "@external", "@requires"])
 
 scalar BigDecimal
 scalar LocalDateTime
@@ -104,6 +104,9 @@ type Customer implements Node @node @table {
     activeBool: Boolean @field(name: "ACTIVEBOOL") @feature(flags: "experimental")
     storeId: Int @field(name: "STORE_ID") @feature(flags: ["experimental", "preview"])
     pastAddressIds: [Int] @field(name: "PAST_ADDRESS_IDS")
+
+    fakeInvalidEmail: String @notGenerated
+    fakeValidEmail: String @field(name: "EMAIL") @notGenerated
 }
 
 type CustomerName {

@@ -6,7 +6,7 @@ import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.interfaces.TypeResolverTarget;
-import no.sikt.graphitron.definitions.keys.EntityKeySet;
+import no.sikt.graphql.federation.fieldsets.FederationFieldSet;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphql.directives.GenerationDirective;
 
@@ -111,7 +111,7 @@ public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeD
     }
 
     @Override
-    public EntityKeySet getEntityKeys() {
+    public FederationFieldSet getEntityKeys() {
         return null;
     }
 
@@ -142,6 +142,11 @@ public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeD
 
     @Override
     public boolean hasCustomKeyColumns() {
+        return false;
+    }
+
+    @Override
+    public boolean isFederationExternal() {
         return false;
     }
 
