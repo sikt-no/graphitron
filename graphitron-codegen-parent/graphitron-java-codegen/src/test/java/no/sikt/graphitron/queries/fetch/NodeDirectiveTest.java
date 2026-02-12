@@ -4,7 +4,6 @@ import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.reducedgenerators.EntityFetchOnlyDBClassGenerator;
 import no.sikt.graphitron.reducedgenerators.InterfaceOnlyFetchDBClassGenerator;
 import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -31,7 +30,7 @@ public class NodeDirectiveTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        return List.of(new InterfaceOnlyFetchDBClassGenerator(schema), new MapOnlyFetchDBClassGenerator(schema), new EntityFetchOnlyDBClassGenerator(schema));
+        return List.of(new InterfaceOnlyFetchDBClassGenerator(schema), new MapOnlyFetchDBClassGenerator(schema));
     }
 
     @BeforeAll
@@ -146,26 +145,6 @@ public class NodeDirectiveTest extends GeneratorTest {
                 "nodeQuery/customKeyColumns", Set.of(NODE_QUERY),
                 "nodeIdStrategy.createId(\"Customer\", _a_customer.CUSTOMER_ID, _a_customer.EMAIL), customerForNode_customer(_iv_nodeIdStrategy)",
                 ".where(_iv_nodeIdStrategy.hasIds(\"Customer\", _mi_id, _a_customer.CUSTOMER_ID, _a_customer.EMAIL))"
-        );
-    }
-
-    @Test
-    @DisplayName("Default case in entity query")
-    void entity() {
-        assertGeneratedContentContains(
-                "entity/default", Set.of(FEDERATION_QUERY),
-                ".objectRow(\"id\", _iv_nodeIdStrategy.createId(\"Customer\", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())))).",
-                ".where(_iv_nodeIdStrategy.hasId(\"Customer\", (String) _iv_inputMap.get(\"id\"), _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).fetch"
-        );
-    }
-
-    @Test
-    @DisplayName("With custom ID in entity query")
-    void customIdInEntityQuery() {
-        assertGeneratedContentContains(
-                "entity/custom", Set.of(FEDERATION_QUERY),
-                "objectRow(\"id\", _iv_nodeIdStrategy.createId(\"C\", _a_customer.CUSTOMER_ID)",
-                ".where(_iv_nodeIdStrategy.hasId(\"C\", (String) _iv_inputMap.get(\"id\"), _a_customer.CUSTOMER_ID"
         );
     }
 }

@@ -125,7 +125,7 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
                 "multitable", Set.of(CUSTOMER_TABLE),
                 "customertableForQuery(_iv_nodeIdStrategy)",
                 "customertableForQuery(NodeIdStrategy _iv_nodeIdStrategy)",
-                "customertableSortFieldsForQuery()"
+                "customertableSortFieldsForQuery(_iv_nodeIdStrategy)"
         );
     }
 }

@@ -1,0 +1,24 @@
+{
+    "data": {
+        "_entities": [
+            {
+                "id": "RmVkZXJhdGVkQ3VzdG9tZXI6OA",
+                "firstName": "SUSAN",
+                "lastName": "WILSON",
+                "email": "SUSAN.WILSON@sakilacustomer.org",
+                "address": {
+                    "id": "QWRkcmVzczoxMg"
+                }
+            },
+            {
+                "id": "RmVkZXJhdGVkQ3VzdG9tZXI6MTA",
+                "firstName": "DOROTHY",
+                "lastName": "TAYLOR",
+                "email": "DOROTHY.TAYLOR@sakilacustomer.org",
+                "address": {
+                    "id": "QWRkcmVzczoxNA"
+                }
+            }
+        ]
+    }
+}

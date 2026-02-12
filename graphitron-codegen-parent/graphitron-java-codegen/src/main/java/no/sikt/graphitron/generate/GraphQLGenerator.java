@@ -12,7 +12,6 @@ import no.sikt.graphitron.generators.exception.ExceptionStrategyConfigurationGen
 import no.sikt.graphitron.generators.mapping.JavaRecordMapperClassGenerator;
 import no.sikt.graphitron.generators.mapping.RecordMapperClassGenerator;
 import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
-import no.sikt.graphitron.generators.datafetchers.operations.EntityFetcherClassGenerator;
 import no.sikt.graphitron.generators.datafetchers.operations.OperationClassGenerator;
 import no.sikt.graphitron.generators.datafetchers.typeresolvers.TypeResolverClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -68,7 +67,6 @@ public class GraphQLGenerator {
         );
         List<ClassGenerator> dataFetcherGenerators = List.of(
                 new OperationClassGenerator(processedSchema),
-                new EntityFetcherClassGenerator(processedSchema),
                 new TypeResolverClassGenerator(processedSchema)
         );
         return Stream.concat(

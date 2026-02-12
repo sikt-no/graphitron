@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.db;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
@@ -30,13 +31,15 @@ import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.db.FetchSingleTableInterfaceDBMethodGenerator.TOKEN;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECT_JOIN_STEP;
-import static no.sikt.graphitron.mappings.TableReflection.getPrimaryKeyForTable;
-import static no.sikt.graphitron.mappings.TableReflection.getTableClass;
+import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAndThrow;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
 public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
-    public static final String UNION_KEYS_QUERY = internalPrefix("unionKeysQuery");
+    public static final String
+            UNION_KEYS_QUERY = internalPrefix("unionKeysQuery"),
+            VAR_REPRESENTATIONS = inputPrefix(FEDERATION_REPRESENTATIONS_ARGUMENT.getName()),
+            VAR_FILTERED_REPRESENTATIONS = VAR_REPRESENTATIONS + "_filtered";
     public static final String TYPE_FIELD = "$type";
     public static final String DATA_FIELD = "$data";
     public static final String PK_FIELDS = "$pkFields";
@@ -61,7 +64,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         LinkedHashSet<ObjectDefinition> implementations = new LinkedHashSet<>(processedSchema.getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName()));
 
         return getSpecBuilder(target, unionOrInterfaceDefinition.getGraphClassName(), inputParser)
-                .addCode(implementations.isEmpty() ? CodeBlock.of("return null;") : getCode(target, implementations, inputParser.getMethodInputNames(false, false, true)))
+                .addCode(implementations.isEmpty() ? returnWrap("null") : getCode(target, implementations, inputParser.getMethodInputNames(false, false, true)))
                 .build();
     }
 
@@ -147,6 +150,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .addIf(target.isResolver(), () -> CodeBlock.of("\n.from($L)\n", initialContext.renderQuerySource(getLocalTable())))
                 .addIf(target.isResolver(), () -> formatWhereContents(initialContext, resolverKeyParamName, isRoot, target.isResolver()))
                 .add(getFetchCodeBlock(target))
+                .unindent()
                 .build();
     }
 
@@ -176,6 +180,10 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .findFirst()
                 .ifPresent(it -> it.stream().map(AliasWrapper::getAlias).map(Alias::getMappingName).forEach(additionalInputs::add));
 
+        if (shouldMakeNodeStrategy()) {
+            additionalInputs.add(VAR_NODE_STRATEGY);
+        }
+
         if (isConnection) {
             additionalInputs.add(VAR_PAGE_SIZE);
             additionalInputs.add(TOKEN);
@@ -195,12 +203,10 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     private CodeBlock createSelectBlock(Map<String, String> mappedQueryVariables) {
-        return indentIfMultiline(
-                CodeBlock.builder()
-                        .add("\n$N.field($S, $T.class)", UNION_KEYS_QUERY, TYPE_FIELD, STRING.className)
-                        .add(mappedQueryVariables.values().stream().map(it -> CodeBlock.of(",\n$N.field($S)", it, DATA_FIELD)).collect(CodeBlock.joining()))
-                        .build()
-        );
+        return Stream.concat(
+                Stream.of(CodeBlock.of("$N.field($S, $T.class)", UNION_KEYS_QUERY, TYPE_FIELD, STRING.className)),
+                mappedQueryVariables.values().stream().map(it -> CodeBlock.of("$N.field($S)", it, DATA_FIELD))
+        ).collect(CodeBlock.joining(",\n"));
     }
 
     private CodeBlock getFetchCodeBlock(ObjectField target) {
@@ -307,6 +313,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                     );
         }
         return methodBuilder
+                .addParameterIf(shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY)
                 .addParameterIf(target.hasPagination(), Integer.class, VAR_PAGE_SIZE)
                 .addParameterIf(target.hasPagination(), AfterTokenWithTypeName.class, TOKEN)
                 .addParameters(methodInputs)
@@ -352,13 +359,10 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .build();
     }
 
-    private static String getDataFieldNameForImplementation(String typeName) {
-        return String.format("$dataFor%s", typeName);
-    }
-
     private CodeBlock getSortFieldsMethodCode(ObjectDefinition implementation, FetchContext context, ObjectField queryTarget) {
         var targetAlias = context.getTargetAlias();
-        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, false);
+        var isEntities = getLocalObject().isOperationRoot() && queryTarget.getName().equals(FEDERATION_ENTITIES_FIELD.getName()) && processedSchema.isFederationImported();
+        var whereBlock = !isEntities ? formatWhereContents(context, resolverKeyParamName, isRoot, false) : formatEntitiesWhere(context, implementation);
         String implName = implementation.getName();
 
         // When first reference step is a condition reference without key, we need to join explicitly
@@ -369,43 +373,120 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
         boolean returnsList = processedSchema.returnsList(queryTarget);
 
-        var code = CodeBlock.builder()
+        return CodeBlock.builder()
                 // Skip first alias declaration for resolvers - it's already declared in main method and passed to helpers
                 .add(createAliasDeclarations(context.getAliasSet(), queryTarget.isResolver()))
                 .declareIf(returnsList, VAR_ORDER_FIELDS, getPrimaryKeyFieldsWithTableAliasBlock(targetAlias))
+                .declareIf(isEntities, VAR_FILTERED_REPRESENTATIONS, getFilteredEntities(implName))
                 .add("return $T.select(\n", DSL.className)
+                .indent()
+                .indent()
+                .indent()
                 .indent()
                 .add("$T.inline($S).as($S)", DSL.className, implName, TYPE_FIELD)
                 .addIf(returnsList,
                         ",\n$T.rowNumber().over($T.orderBy($L)).as($S)", DSL.className, DSL.className, VAR_ORDER_FIELDS, INNER_ROW_NUM)
                 .add(",\n")
                 .add(getPrimaryKeyFieldsArray(implName, targetAlias, context.getTargetTable().getName()))
-                .add(".as($S))", PK_FIELDS)
-                .add("\n.from($N)\n", context.getSourceAlias())
+                .add(".as($S)", PK_FIELDS)
+                .unindent()
+                .unindent()
+                .add("\n)\n.from($N)\n", context.getSourceAlias())
                 .add(createSelectJoins(context.getJoinSet(), !hasConditionReferenceAsFirstStep))
                 .add(whereBlock)
-                .add(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()));
-
-        if (queryTarget.hasPagination()) {
-            code.add(".$L", whereBlock.isEmpty() ? "where" : "and")
-                    .add("($N == null ? $L : $T.inline($S).greaterOrEqual($N.typeName()))",
-                            TOKEN, noCondition(), DSL.className, implementation.getName(), TOKEN)
-                    .add("\n.and($N != null && $N.matches($S) ? $T.row($L).gt($T.row($N.fields())) : $L)",
-                            TOKEN, TOKEN, implementation.getName(), DSL.className, getPrimaryKeyFieldsWithTableAliasBlock(targetAlias), DSL.className, TOKEN, noCondition());
-        }
-        return code.addIf(returnsList, ".orderBy($L)", VAR_ORDER_FIELDS)
+                .add("\n")
+                .add(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
+                .addIf(
+                        queryTarget.hasPagination(),
+                        ".$1L($2N == null ? $3L : $4T.inline($5S).greaterOrEqual($2N.typeName()))\n" +
+                                ".and($2N != null && $2N.matches($5S) ? $4T.row($6L).gt($4T.row($2N.fields())) : $3L)",
+                        whereBlock.isEmpty() ? "where" : "and",
+                        TOKEN,
+                        noCondition(),
+                        DSL.className,
+                        implementation.getName(),
+                        getPrimaryKeyFieldsWithTableAliasBlock(targetAlias)
+                )
+                .addIf(returnsList, ".orderBy($L)", VAR_ORDER_FIELDS)
                 .addIf(queryTarget.hasPagination(), "\n.limit($N + 1)", VAR_PAGE_SIZE)
                 .addIf(!returnsList, "\n.limit(2)") // So that we get a DataFetchingException on multiple rows, without fetching more than necessary
-                .add(";")
+                .addStatement("")
+                .unindent()
                 .unindent()
                 .build();
     }
 
+    /**
+     * @return Formatted CodeBlock for the where-statement and surrounding code for federation queries.
+     */
+    protected CodeBlock formatEntitiesWhere(FetchContext context, ObjectDefinition implementation) {
+        var type = processedSchema.getObject(context.getReferenceObjectField());
+        var conditionBlocks = new ArrayList<CodeBlock>();
+        for (var k: type.getEntityKeys().getKeys()) {
+            var containedKeys = k.getKeys();
+            var code = CodeBlock.builder();
+            if (containedKeys.size() < 2) {
+                var key = containedKeys.get(0);
+                code.add(getEntitiesConditionCode(context, key, type.getFieldByName(key), implementation));
+            } else {
+                var conditions = new ArrayList<CodeBlock>();
+                for (var key : containedKeys) {
+                    conditions.add(getEntitiesConditionCode(context, key, type.getFieldByName(key), implementation));
+                }
+                code.add("$T.and($L)", DSL.className, indentIfMultiline(CodeBlock.join(conditions, ",\n")));
+            }
+            conditionBlocks.add(code.build());
+            // var nestedKeys = k.getNestedKeys();  # TODO: Support nested keys.
+        }
+        return formatJooqConditions(conditionBlocks, "or");
+    }
+
+    private CodeBlock getFilteredEntities(String implementationName) {
+        return CodeBlock
+                .builder()
+                .add("$N\n", VAR_REPRESENTATIONS)
+                .add(".stream()\n")
+                .add(".filter($T::nonNull)\n", OBJECTS.className)
+                .add(".filter($L -> $S.equals($N.get($S)))\n", VAR_ITERATOR, implementationName, VAR_ITERATOR, TYPE_NAME.getName())
+                .add(collectToList())
+                .build();
+    }
+
+    private CodeBlock getEntitiesConditionCode(FetchContext context, String key, ObjectField field, ObjectDefinition implementation) {
+        var type = field.isID()
+                ? STRING.className
+                : getFieldType(context.getTargetTable().getName(), field.getUpperCaseName()).map(ClassName::get).orElse(STRING.className);
+        var streamBlock = CodeBlock.of(
+                "$N.stream().map($L -> ($T) $N.get($S))",
+                VAR_FILTERED_REPRESENTATIONS,
+                VAR_ITERATOR,
+                type,
+                VAR_ITERATOR,
+                key
+        );
+        if (processedSchema.isNodeIdField(field)) {
+            var code = CodeBlock.of("$L.filter($T::nonNull)$L", streamBlock, OBJECTS.className, collectToList());
+            return hasIdOrIdsBlock(code, implementation, context.getTargetAlias(), CodeBlock.empty(), true);
+        }
+
+        return CodeBlock
+                .builder()
+                .add("$N.", context.getTargetAlias())
+                .addIf(field.isID(), "hasIds(")
+                .addIf(
+                        !field.isID(),
+                        "$L$L.in(",
+                        field.getUpperCaseName(),
+                        toJOOQEnumConverter(field.getTypeName(), processedSchema)
+                )
+                .add(streamBlock)
+                .add(collectToList())
+                .add(")")
+                .build();
+    }
+
     private static CodeBlock getPrimaryKeyFieldsArray(String name, String alias, String tableName) {
-        return CodeBlock.builder()
-                .add("$T.jsonbArray($T.inline($S), ", DSL.className, DSL.className, name)
-                .add(getPrimaryKeyFields(tableName, alias))
-                .add(")").build();
+        return CodeBlock.of("$T.jsonbArray($T.inline($S), $L)", DSL.className, DSL.className, name, getPrimaryKeyFields(tableName, alias));
     }
 
     private static CodeBlock getPrimaryKeyFields(String tableName, String alias) {
@@ -479,7 +560,6 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .getFields()
                 .stream()
                 .filter(processedSchema::isMultiTableField)
-                .filter(it -> !it.getName().equals(FEDERATION_ENTITIES_FIELD.getName()))
                 .filter(it -> !it.getTypeName().equals(NODE_TYPE.getName()))
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())

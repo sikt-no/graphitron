@@ -55,7 +55,7 @@ public class GraphitronTest extends GeneratorTest {
                 """
                 public static GraphQLSchema getFederatedSchema(TypeDefinitionRegistry registry,
                         RuntimeWiring.Builder wiringBuilder) {
-                    return FederationHelper.buildFederatedSchema(registry, wiringBuilder, EntityTypeResolver.entityTypeResolver(), QueryEntityGeneratedDataFetcher.entityFetcher());
+                    return FederationHelper.buildFederatedSchema(registry, wiringBuilder, EntityTypeResolver.entityTypeResolver(), QueryGeneratedDataFetcher._entities());
                 """
         );
     }
@@ -69,7 +69,7 @@ public class GraphitronTest extends GeneratorTest {
                     "federation", Set.of(FEDERATION_QUERY, NODE),
                     """
                     public static GraphQLSchema getFederatedSchema(TypeDefinitionRegistry registry, RuntimeWiring.Builder wiringBuilder, NodeIdStrategy _iv_nodeIdStrategy) {
-                        return FederationHelper.buildFederatedSchema(registry, wiringBuilder, EntityTypeResolver.entityTypeResolver(), QueryEntityGeneratedDataFetcher.entityFetcher(_iv_nodeIdStrategy));
+                        return FederationHelper.buildFederatedSchema(registry, wiringBuilder, EntityTypeResolver.entityTypeResolver(), QueryGeneratedDataFetcher._entities(_iv_nodeIdStrategy));
                     """
             );
         } finally {

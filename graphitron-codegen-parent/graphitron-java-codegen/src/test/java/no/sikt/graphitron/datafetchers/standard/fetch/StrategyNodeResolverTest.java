@@ -4,7 +4,6 @@ import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.datafetchers.operations.EntityFetcherClassGenerator;
 import no.sikt.graphitron.generators.datafetchers.operations.OperationClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.AfterAll;
@@ -48,7 +47,7 @@ public class StrategyNodeResolverTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        return List.of(new OperationClassGenerator(schema), new EntityFetcherClassGenerator(schema));
+        return List.of(new OperationClassGenerator(schema));
     }
 
     @Test
@@ -104,8 +103,8 @@ public class StrategyNodeResolverTest extends GeneratorTest {
     void entity() {
         assertGeneratedContentContains(
                 "entity", Set.of(NODE, FEDERATION_QUERY),
-                "entityFetcher(NodeIdStrategy _iv_nodeIdStrategy)",
-                "customerAsEntity(_iv_ctx, _iv_nodeIdStrategy, _iv_it)"
+                "_entities(NodeIdStrategy _iv_nodeIdStrategy)",
+                "_entitiesForQuery(_iv_ctx, _iv_nodeIdStrategy, _mi_representations"
         );
     }
 

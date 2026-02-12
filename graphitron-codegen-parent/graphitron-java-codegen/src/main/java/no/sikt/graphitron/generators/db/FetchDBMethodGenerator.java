@@ -686,15 +686,15 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 }
             }
         }
-        return formatJooqConditions(conditionList);
+        return formatJooqConditions(conditionList, "and");
     }
 
-    protected static CodeBlock formatJooqConditions(ArrayList<CodeBlock> conditionList) {
+    protected static CodeBlock formatJooqConditions(ArrayList<CodeBlock> conditionList, String chainMethod) {
         var code = CodeBlock.builder();
         var hasWhere = false;
         for (var condition : conditionList) {
             if (condition.isEmpty()) continue;
-            code.add(".$L($L)\n", hasWhere ? "and" : "where", indentIfMultiline(condition));
+            code.add(".$L($L)\n", hasWhere ? chainMethod : "where", indentIfMultiline(condition));
             hasWhere = true;
         }
 

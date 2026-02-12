@@ -55,8 +55,7 @@ public class ProcessedSchema {
     private final no.sikt.graphitron.definitions.objects.SchemaDefinition rootSchemaObject;
     private final List<GenerationField> transformableFields;
     private final List<ObjectDefinition> unreferencedObjects;
-    private final boolean nodeExists;
-    private final boolean federationIsImported;
+    private final boolean nodeExists, federationIsImported, federationEntitiesExist;
 
     // Graphitron-provided special inputs. Should be excluded from certain operations.
     private final Set<String> specialInputs = Set.of("ExternalCodeReference", "ReferenceElement", "ErrorHandler", "ReferencesForType");
@@ -168,6 +167,7 @@ public class ProcessedSchema {
         transformableFields = findTransformableFields();
 
         federationIsImported = LinkDirectiveProcessor.loadFederationImportedDefinitions(typeRegistry) != null;
+        federationEntitiesExist = queryType != null && queryType.hasField(FEDERATION_ENTITIES_FIELD.getName()) && isFederationImported();
     }
 
     private SchemaDefinition createSchemaDefinition() {
@@ -819,17 +819,10 @@ public class ProcessedSchema {
     }
 
     /**
-     * @return Does this schema use the _entities field?
+     * @return Does this schema import federation and have the _entities field?
      */
-    public boolean hasEntitiesField() {
-        return queryType != null && queryType.hasField(FEDERATION_ENTITIES_FIELD.getName());
-    }
-
-    /**
-     * @return The _entities field in the Query type, if it exists.
-     */
-    public ObjectField getEntitiesField() {
-        return queryType.getFieldByName(FEDERATION_ENTITIES_FIELD.getName());
+    public boolean federationEntitiesExist() {
+        return federationEntitiesExist;
     }
 
     /**
