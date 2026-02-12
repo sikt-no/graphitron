@@ -1,0 +1,5 @@
+# Multi-step path: CUSTOMER -> ADDRESS (via key) -> CITY (via table).
+# STORE_ID exists in CUSTOMER but not in CITY, so this should fail.
+type Query {
+  customers(storeId: Int @field(name: "STORE_ID") @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "CITY"}])): CustomerTable
+}

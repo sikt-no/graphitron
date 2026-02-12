@@ -1,0 +1,5 @@
+# Field has @reference and @condition(override: true). The condition overrides column-based
+# filtering, so the field not existing in CATEGORY should not cause an error.
+type Query {
+  customers(wrong: String @reference(path: [{table: "CATEGORY"}]) @condition(condition: {name: "DUMMY_CONDITION"}, override: true)): CustomerTable
+}

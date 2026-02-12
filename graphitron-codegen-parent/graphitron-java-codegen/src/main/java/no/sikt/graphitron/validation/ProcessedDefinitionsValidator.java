@@ -464,6 +464,26 @@ public class ProcessedDefinitionsValidator {
         addErrorMessageAndThrowIfNoImplicitPath(field, sourceTable, targetTable);
     }
 
+    /**
+     * Walk a reference path from a source table and return the final resolved table name.
+     * Returns empty if the path contains a condition-only element (no table metadata available).
+     */
+    private static Optional<String> resolveReferenceTargetTable(List<FieldReference> references, String sourceTable) {
+        var currentTable = sourceTable;
+        for (FieldReference ref : references) {
+            if (ref.hasKey()) {
+                var resolved = resolveKeyOtherTable(ref.getKey().getName(), currentTable);
+                if (resolved.isEmpty()) return Optional.empty();
+                currentTable = resolved.get();
+            } else if (ref.hasTable()) {
+                currentTable = ref.getTable().getMappingName();
+            } else {
+                return Optional.empty();
+            }
+        }
+        return Optional.of(currentTable);
+    }
+
     private void addErrorMessageAndThrowIfNoImplicitPath(GenerationField field, String leftTable, String rightTable) {
         var possibleKeys = getNumberOfForeignKeysBetweenTables(leftTable, rightTable);
         if (possibleKeys == 1) return;
@@ -630,6 +650,14 @@ public class ProcessedDefinitionsValidator {
             } else if (currentTable != null && !hasCondition) {
                 validateFieldExists(currentTable.getMappingName(), field);
             }
+        }
+        // Validate that @field columns exist in @reference tables
+        if (currentTable != null && !hasOverridingCondition) {
+            fields.stream()
+                    .filter(field -> field.isGenerated() && field.hasFieldReferences() && !field.hasNodeID() && !field.hasOverridingCondition())
+                    .forEach(field ->
+                            resolveReferenceTargetTable(field.getFieldReferences(), currentTable.getMappingName())
+                                    .ifPresent(table -> validateFieldExists(table, field)));
         }
     }
 

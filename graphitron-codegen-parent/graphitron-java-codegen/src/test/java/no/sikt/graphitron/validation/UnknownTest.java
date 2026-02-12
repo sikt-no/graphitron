@@ -268,6 +268,45 @@ public class UnknownTest extends ValidationTest {
     }
 
     @Test
+    @DisplayName("Argument @field column does not exist in @reference table")
+    void argumentReferenceFieldNotInTable() {
+        assertErrorsContain("argumentReferenceFieldNotInTable", Set.of(CUSTOMER_TABLE),
+                "No field with name 'STORE_ID' found in table 'CATEGORY'"
+        );
+    }
+
+    @Test
+    @DisplayName("Argument @field column does not exist in table resolved via @reference key")
+    void argumentReferenceKeyFieldNotInTable() {
+        assertErrorsContain("argumentReferenceKeyFieldNotInTable", Set.of(CUSTOMER_TABLE),
+                "No field with name 'STORE_ID' found in table 'ADDRESS'"
+        );
+    }
+
+    @Test
+    @DisplayName("Argument @field column does not exist in final table of multi-step @reference path")
+    void argumentReferenceMultiPathFieldNotInTable() {
+        assertErrorsContain("argumentReferenceMultiPathFieldNotInTable", Set.of(CUSTOMER_TABLE),
+                "No field with name 'STORE_ID' found in table 'CITY'"
+        );
+    }
+
+    @Test
+    @DisplayName("Argument @field column in @reference table is not validated when overriding condition is present")
+    void argumentReferenceWithOverrideCondition() {
+        getProcessedSchema("argumentReferenceWithOverrideCondition", CUSTOMER_TABLE);
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("Input field @field column does not exist in @reference table")
+    void inputFieldReferenceFieldNotInTable() {
+        assertErrorsContain("inputFieldReferenceFieldNotInTable", Set.of(CUSTOMER_TABLE),
+                "No field with name 'STORE_ID' found in table 'CATEGORY'"
+        );
+    }
+
+    @Test
     @DisplayName("Fields returning wrapper types should not cause errors about missing field/method")
     void wrapperType() {
         getProcessedSchema("wrapperTypeWithTable");
