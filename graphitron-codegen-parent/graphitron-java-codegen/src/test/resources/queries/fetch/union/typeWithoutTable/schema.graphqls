@@ -1,0 +1,5 @@
+type Query {
+  someUnion: SomeUnion
+}
+
+union SomeUnion = Customer

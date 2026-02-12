@@ -1,0 +1,9 @@
+type Query {
+  someUnion: SomeUnion
+}
+
+union SomeUnion = Customer | Address
+
+type Address {
+  id: ID
+}
