@@ -66,6 +66,7 @@
                         <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
                         <externalReferenceImport>no.sikt.graphitron.example.service.CustomerExternalFields</externalReferenceImport>
                     </externalReferenceImports>
+                    <includeExternalReferencesForLSP>true</includeExternalReferencesForLSP>
                 </configuration>
                 <executions>
                     <execution>
@@ -125,6 +126,12 @@
                                 <onExternalFields>true</onExternalFields>
                             </optionalSelect>
                         </configuration>
+                    </execution>
+                    <execution>
+                        <id>introspect</id>
+                        <goals>
+                            <goal>introspect</goal>
+                        </goals>
                     </execution>
                 </executions>
                 <dependencies>
