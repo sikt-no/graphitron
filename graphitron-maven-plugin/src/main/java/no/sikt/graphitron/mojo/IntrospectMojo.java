@@ -55,6 +55,12 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
     @Parameter(property = "graphitron.introspect.outputFile", defaultValue = "${project.build.directory}/graphitron-lsp-config.json")
     private String outputFile;
 
+    /**
+     * Whether to include external references in the LSP configuration.
+     */
+    @Parameter(property = "graphitron.introspect.includeExternalReferencesForLSP", defaultValue = "true")
+    private boolean includeExternalReferencesForLSP;
+
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .enable(SerializationFeature.INDENT_OUTPUT);
 
@@ -115,7 +121,7 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
             tables.add(tableConfig);
         }
 
-        return new LspConfig(tables, buildScalarTypes(), buildExternalReferences());
+        return new LspConfig(tables, buildScalarTypes(), includeExternalReferencesForLSP ? buildExternalReferences() : null);
     }
 
     private List<TableReference> buildReferences(String tableName) {
@@ -306,5 +312,10 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
     @Override
     public String getOutputFile() {
         return outputFile;
+    }
+
+    @Override
+    public boolean includeExternalReferencesForLSP() {
+        return includeExternalReferencesForLSP;
     }
 }

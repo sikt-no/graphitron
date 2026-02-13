@@ -1,5 +1,6 @@
 package no.sikt.graphitron.mojo.lsp;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
@@ -9,7 +10,7 @@ import java.util.List;
 public record LspConfig(
     List<TableConfig> tables,
     List<TypeConfig> types,
-    @JsonProperty("external_references") List<ExternalReferenceConfig> externalReferences
+    @JsonProperty("external_references") @JsonInclude(JsonInclude.Include.NON_NULL) List<ExternalReferenceConfig> externalReferences
 ) {
     /**
      * Configuration for a single database table.

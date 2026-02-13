@@ -10,4 +10,9 @@ public interface Introspector extends Validator {
      * @return Output path for the LSP configuration JSON file
      */
     String getOutputFile();
+
+    /**
+     * @return Whether to include external references in the LSP configuration
+     */
+    boolean includeExternalReferencesForLSP();
 }
