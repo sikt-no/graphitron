@@ -3,8 +3,6 @@ package no.sikt.graphitron.mojo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.configuration.externalreferences.ExternalMojoClassReference;
-import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.generate.Introspector;
 import no.sikt.graphitron.mappings.TableReflection;
@@ -56,18 +54,6 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
      */
     @Parameter(property = "graphitron.introspect.outputFile", defaultValue = "${project.build.directory}/graphitron-lsp-config.json")
     private String outputFile;
-
-    /**
-     * External reference elements that can be used in code generation.
-     */
-    @Parameter(property = "graphitron.externalReferences")
-    private List<ExternalMojoClassReference> externalReferences;
-
-    /**
-     * External reference elements that can be used in code generation.
-     */
-    @Parameter(property = "graphitron.externalReferenceImports")
-    private Set<String> externalReferenceImports;
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .enable(SerializationFeature.INDENT_OUTPUT);
@@ -134,7 +120,7 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
 
     private List<TableReference> buildReferences(String tableName) {
         var references = new ArrayList<TableReference>();
-        var table = TableReflection.getTable(tableName).orElse(null);
+        var table = TableReflection.getTableByJavaFieldName(tableName).orElse(null);
         if (table == null) {
             return references;
         }
@@ -154,7 +140,7 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
             if (otherTableName.equals(tableName)) {
                 continue;
             }
-            var otherTable = TableReflection.getTable(otherTableName).orElse(null);
+            var otherTable = TableReflection.getTableByJavaFieldName(otherTableName).orElse(null);
             if (otherTable == null) {
                 continue;
             }
@@ -172,7 +158,7 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
 
     private List<FieldConfig> buildFields(String tableName) {
         var fields = new ArrayList<FieldConfig>();
-        var table = TableReflection.getTable(tableName).orElse(null);
+        var table = TableReflection.getTableByJavaFieldName(tableName).orElse(null);
         if (table == null) {
             return fields;
         }
@@ -223,15 +209,17 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
         var result = new ArrayList<ExternalReferenceConfig>();
 
         // Add explicitly configured external references
-        if (externalReferences != null) {
-            for (var ref : externalReferences) {
+        var refs = getExternalReferences();
+        if (refs != null) {
+            for (var ref : refs) {
                 result.add(buildExternalReferenceConfig(ref.name(), ref.classReference()));
             }
         }
 
         // Scan import packages for classes
-        if (externalReferenceImports != null) {
-            for (var packageName : externalReferenceImports) {
+        var imports = getExternalReferenceImports();
+        if (imports != null) {
+            for (var packageName : imports) {
                 for (var clazz : scanPackage(packageName)) {
                     result.add(buildExternalReferenceConfig(clazz.getSimpleName(), clazz));
                 }
@@ -318,15 +306,5 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
     @Override
     public String getOutputFile() {
         return outputFile;
-    }
-
-    @Override
-    public List<? extends ExternalReference> getExternalReferences() {
-        return externalReferences != null ? externalReferences : List.of();
-    }
-
-    @Override
-    public Set<String> getExternalReferenceImports() {
-        return externalReferenceImports != null ? externalReferenceImports : Set.of();
     }
 }
