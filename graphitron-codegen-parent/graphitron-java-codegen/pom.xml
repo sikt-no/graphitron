@@ -127,14 +127,14 @@
                     </dependency>
                     <dependency>
                         <groupId>org.testcontainers</groupId>
-                        <artifactId>postgresql</artifactId>
+                        <artifactId>testcontainers-postgresql</artifactId>
                         <version>${version.testcontainers.postgresql}</version>
                     </dependency>
-                    <!-- Testcontainers still requires junit4, https://github.com/testcontainers/testcontainers-java/issues/970 -->
+                    <!-- Explicit core testcontainers dependency to override jOOQ parent's dependencyManagement which pins an older version -->
                     <dependency>
-                        <groupId>junit</groupId>
-                        <artifactId>junit</artifactId>
-                        <version>4.13.2</version>
+                        <groupId>org.testcontainers</groupId>
+                        <artifactId>testcontainers</artifactId>
+                        <version>${version.testcontainers.postgresql}</version>
                     </dependency>
                 </dependencies>
             </plugin>
