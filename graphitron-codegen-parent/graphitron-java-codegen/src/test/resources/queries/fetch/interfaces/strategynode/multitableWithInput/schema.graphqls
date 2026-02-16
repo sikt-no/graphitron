@@ -1,0 +1,5 @@
+type Query {
+    query(customerId: Int @field(name: "CUSTOMER_ID")): SomeUnion
+}
+
+union SomeUnion = CustomerTable

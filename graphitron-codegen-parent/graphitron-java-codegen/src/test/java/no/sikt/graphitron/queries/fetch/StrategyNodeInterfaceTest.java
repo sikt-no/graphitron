@@ -128,4 +128,14 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
                 "customertableSortFieldsForQuery(_iv_nodeIdStrategy)"
         );
     }
+
+    @Test
+    @DisplayName("Multitable query with input")
+    void multitableWithInput() {
+        assertGeneratedContentContains(
+                "multitableWithInput", Set.of(CUSTOMER_TABLE),
+                "customertableSortFieldsForQuery(NodeIdStrategy _iv_nodeIdStrategy, Integer _mi_customerId)",
+                "customertableSortFieldsForQuery(_iv_nodeIdStrategy, _mi_customerId)"
+        );
+    }
 }
