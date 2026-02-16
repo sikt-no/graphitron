@@ -350,11 +350,11 @@ public class FormatCodeBlocks {
         var source = isService ? CodeBlock.of("$N", uncapitalize(queryLocation)) : CodeBlock.of("$T", getQueryClassName(queryLocation));
         return CodeBlock.of("($L) -> $L",
                 String.join(", ", inputs),
-                invokeExternalMethod(source, queryMethodName, String.join(", ", params)));
+                invokeExternalMethod(source, queryMethodName, CodeBlock.of(String.join(", ", params))));
     }
 
-    public static CodeBlock invokeExternalMethod(CodeBlock source, String methodName, String parameters) {
-        return CodeBlock.of("$L.$L($L)",source, methodName, String.join(", ", parameters));
+    public static CodeBlock invokeExternalMethod(CodeBlock source, String methodName, CodeBlock parameters) {
+        return CodeBlock.of("$L.$L($L)", source, methodName, parameters);
     }
 
     /**
