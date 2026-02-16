@@ -3,6 +3,7 @@ This is a code generation tool that implements GraphQL schemas by tying
 schemas to underlying database models. Graphitron creates complete or partial data fetcher implementations from GraphQL schemas
 using Java and [jOOQ](https://www.jooq.org/).
 
+<!-- Update README table of contents using doctoc (https://github.com/thlorenz/doctoc)-->
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 **Table of Contents**
@@ -60,6 +61,9 @@ using Java and [jOOQ](https://www.jooq.org/).
     - [Multitable union](#multitable-union)
     - [Query conditions for polymorphic multitable types](#query-conditions-for-polymorphic-multitable-types)
   - [Batch lookups with @lookupKey](#batch-lookups-with-lookupkey)
+    - [Constraints](#constraints)
+    - [Multi-key example](#multi-key-example)
+    - [Valid and invalid patterns](#valid-and-invalid-patterns)
   - [Sort results with @orderBy input](#sort-results-with-orderby-input)
   - [Default sorting with @defaultOrder](#default-sorting-with-defaultorder)
 - [Special interfaces](#special-interfaces)
@@ -1310,12 +1314,44 @@ class TitledConditions {
 ```
 
 ### Batch lookups with @lookupKey
-Lookup is a special case of fetching data, which can be generated using the **lookupKey**-directive.
-For each element that is requested, either an object or null will be returned, and they will be the same order as in the request.
-In order to determine which inputs should identify such an element, keys have to be set explicitly in the schema.
-This is where the **lookupKey**-directive comes in. If at least one key is set with this directive, the query will
-automatically become a lookup. Only arguments for root-level fields or their referenced input types can be keys.
-There are some constraints that must be respected when using this directive:
+
+The `@lookupKey` directive enables batch lookups: you send a list of values and get back a list of results
+in the same order, where each position contains either the matching object or `null` if nothing was found.
+This is useful when you need to fetch multiple objects by some identifying value in a single query.
+
+For example, given this schema:
+
+```graphql
+type Query {
+  filmsByTitle(titles: [String] @lookupKey): [Film] @table(name: "film")
+}
+```
+
+A client could query:
+
+```graphql
+query {
+  filmsByTitle(titles: ["ACADEMY DINOSAUR", "NONEXISTENT FILM", "ACE GOLDFINGER"])
+}
+```
+
+And receive results preserving the input order, with `null` for unmatched keys:
+
+```json
+{
+  "filmsByTitle": [
+    { "title": "ACADEMY DINOSAUR", "releaseYear": 2006 },
+    null,
+    { "title": "ACE GOLDFINGER", "releaseYear": 2006 }
+  ]
+}
+```
+
+If at least one argument is marked with `@lookupKey`, the query automatically becomes a lookup.
+The key values should uniquely identify rows — if multiple rows match the same key, only one is returned.
+Only arguments for root-level fields or their referenced input types can be keys.
+
+#### Constraints
 
 * All keys must be one-dimensional listed types. It does not make sense to invoke this logic for fetching single objects.
 * More than one key may be used at once, but each key must always have the same number of values.
@@ -1324,18 +1360,29 @@ There are some constraints that must be respected when using this directive:
 
 The keys can be wrapped with input types and can be set on input type references, but they must always end up being a one-dimensional list.
 In other words, a list of input types which itself contains a list of keys will not work, and the key values themselves can never be lists.
-See examples below.
+
+#### Multi-key example
+
+You can use multiple keys together. Each key list must have the same length, and values at the same index are correlated:
+
+```graphql
+type Query {
+  staffLookup(firstNames: [String] @lookupKey, lastNames: [String] @lookupKey): [Staff]
+}
+```
+
+#### Valid and invalid patterns
 
 ```graphql
 type Query {
   # These are OK.
-  goodQuery0(argument0: [String] @lookupKey, argument1: String): [SomeType] # Fields without key set will still be used in the query as usual.
-  goodQuery1(argument: [In] @lookupKey): [SomeType] # In these cases key is applied to all fields in input type.
-  goodQuery2(argument: [InKey]): [SomeType]
-  goodQuery3(argument: [InKey] @lookupKey): [SomeType] # Double key does not matter.
+  goodQuery0(argument0: [String] @lookupKey, argument1: String): [SomeType] # Fields without @lookupKey are still used in the query as usual.
+  goodQuery1(argument: [In] @lookupKey): [SomeType] # @lookupKey is applied to all fields in the input type.
+  goodQuery2(argument: [InKey]): [SomeType] # @lookupKey is applied on a field in the input type.
+  goodQuery3(argument: [InKey] @lookupKey): [SomeType] # Redundant @lookupKey does not matter.
   goodQuery4(argument: InList @lookupKey): [SomeType]
   goodQuery5(argument: InKeyList): [SomeType]
-  goodQuery6(argument: InKeyList @lookupKey): [SomeType] # Double key does not matter
+  goodQuery6(argument: InKeyList @lookupKey): [SomeType] # Redundant @lookupKey does not matter.
 
   goodQuery7(argument0: [String] @lookupKey, argument1: [Int] @lookupKey): [SomeType] # Can have as many keys as you want.
   goodQuery8(argument: [InNested] @lookupKey): [SomeType] # Input can be nested. Every field in there will be a key.
