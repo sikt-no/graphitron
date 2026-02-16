@@ -32,7 +32,7 @@
         <version.jakarta>8.0.0</version.jakarta>
         <version.jakarta.validation>3.1.1</version.jakarta.validation>
         <version.org.jooq>3.20.11</version.org.jooq>
-        <version.org.junit>6.0.2</version.org.junit>
+        <version.org.junit>6.0.3</version.org.junit>
         <version.ch.qos.logback>1.5.20</version.ch.qos.logback>
 
         <version.postgresql>42.7.8</version.postgresql>
@@ -167,7 +167,7 @@
             <dependency>
                 <groupId>com.approvaltests</groupId>
                 <artifactId>approvaltests</artifactId>
-                <version>26.7.1</version>
+                <version>27.0.0</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
