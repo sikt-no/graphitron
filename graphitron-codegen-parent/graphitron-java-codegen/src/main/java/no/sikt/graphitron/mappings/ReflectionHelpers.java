@@ -20,16 +20,6 @@ public class ReflectionHelpers {
     }
 
     /**
-     * Checks if a field in a Java record class has a type that extends UpdatableRecordImpl (jOOQ record).
-     * @param recordClass The Java record class to inspect
-     * @param fieldName The field name to check (will look for getter method)
-     * @return true if the field type is a jOOQ record type
-     */
-    public static boolean hasGetterReturningJooqRecord(Class<?> recordClass, String fieldName) {
-        return getJooqRecordClassReturnedFromFieldGetter(recordClass, fieldName).isPresent();
-    }
-
-    /**
      * Gets the jOOQ record class for a field in a Java record class.
      * @param recordClass The Java record class to inspect
      * @param fieldName The field name to get type for

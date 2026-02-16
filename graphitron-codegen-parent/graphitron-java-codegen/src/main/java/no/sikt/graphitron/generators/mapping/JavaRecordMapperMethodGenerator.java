@@ -5,19 +5,22 @@ import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.AbstractMapperMethodGenerator;
 import no.sikt.graphitron.generators.context.MapperContext;
+import no.sikt.graphitron.generators.context.NodeIdReferenceHelpers;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.selectionSetLookup;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.toCamelCase;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.LIST;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.MAPPER_HELPER;
 
 public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
     public JavaRecordMapperMethodGenerator(GenerationField localField, ProcessedSchema processedSchema, boolean toRecord) {
@@ -143,7 +146,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
     private CodeBlock generateNodeIdGroupCode(NodeIdFieldGroup group, MapperContext context) {
         var code = CodeBlock.builder();
         var targetVarName = inputPrefix(group.getTargetFieldName());
-        var hasValueVarName = targetVarName + "_hasValue";
+        var hasValueVarName = targetVarName + "HasValue";
         var jooqRecordClass = group.getJooqRecordClass();
 
         // Detect overlapping columns that need runtime validation
@@ -185,70 +188,87 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             Set<String> overlappingColumns,
             Class<?> jooqRecordClass) {
 
-        var code = CodeBlock.builder();
         var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(field);
-        var columnsBlock = generateNodeIdColumnsBlock(jooqRecordClass, nodeType);
+        var columnsBlock = generateNodeIdColumnsBlock(jooqRecordClass, nodeType, field);
 
         // Get the node ID value from input
         var sourceName = context.getSourceName();
         var inputVar = namedIteratorPrefix(sourceName);
         var getterMapping = new MethodMapping(field.getName());
 
-        code.beginControlFlow("if ($N.contains($N + $S))", VAR_ARGS, VAR_PATH_HERE, field.getName());
-        code.addStatement("var nodeIdValue = $N.$L()", inputVar, getterMapping.asGet());
-
-        code.beginControlFlow("if (nodeIdValue != null)");
+        var code = CodeBlock.builder()
+                .beginControlFlow("if ($N.contains($N + $S))", VAR_ARGS, VAR_PATH_HERE, field.getName())
+                .declare(VAR_NODE_ID_VALUE, asMethodCall(inputVar, getterMapping.asGet()))
+                .beginControlFlow("if ($N != null)", VAR_NODE_ID_VALUE);
 
         // Generate overlap validation if this field writes to any overlapping columns
         if (!overlappingColumns.isEmpty()) {
-            var fieldKeyColumns = getKeyColumnsForNodeType(nodeType);
+            var fieldKeyColumns = getKeyFieldsForSourceNodeTable(nodeType, field, getTableName(jooqRecordClass));
             var hasOverlap = fieldKeyColumns.stream().anyMatch(overlappingColumns::contains);
-            if (hasOverlap) {
-                code.add(generateOverlapValidationCode(field, targetVarName, nodeType, overlappingColumns, jooqRecordClass));
-            }
+            code.addIf(hasOverlap, () -> generateOverlapValidationCode(field, targetVarName, nodeType, overlappingColumns, jooqRecordClass, VAR_NODE_ID_VALUE));
         }
 
-        code.addStatement("$N = true", hasValueVarName);
-        code.addStatement("$N.$L($N, nodeIdValue, $S, $L)",
-            VAR_NODE_STRATEGY,
-            METHOD_SET_RECORD_REFERENCE_ID,
-            targetVarName,
-            nodeType.getTypeId(),
-            columnsBlock
-        );
-
-        code.endControlFlow(); // if nodeIdValue != null
-        code.endControlFlow(); // if args.contains
-        code.add("\n");
-
-        return code.build();
+        return code
+                .addStatement("$N = true", hasValueVarName)
+                .addStatement(
+                        "$N.$L($N, $N, $S, $L)",
+                        VAR_NODE_STRATEGY,
+                        METHOD_SET_RECORD_REFERENCE_ID,
+                        targetVarName,
+                        VAR_NODE_ID_VALUE,
+                        nodeType.getTypeId(),
+                        columnsBlock)
+                .endControlFlow()
+                .endControlFlow()
+                .add("\n")
+                .build();
     }
 
     /**
      * Generates jOOQ column references for a @nodeId field targeting a jOOQ record.
      * The columns are from the node type's key columns, referenced on the target table.
+     *
      * @param jooqRecordClass The target jOOQ record class
-     * @param nodeType The node type definition
+     * @param nodeType        The node type definition
+     * @param field           The nodeId field
      * @return CodeBlock with comma-separated column references like "Table.TABLE.COLUMN1, Table.TABLE.COLUMN2"
      */
-    private CodeBlock generateNodeIdColumnsBlock(Class<?> jooqRecordClass, ObjectDefinition nodeType) {
-        var tableName = TableReflection.getTableJavaFieldNameForRecordClass(jooqRecordClass)
-            .orElseThrow(() -> new RuntimeException("Cannot find table for jOOQ record class: " + jooqRecordClass.getName()));
+    private CodeBlock generateNodeIdColumnsBlock(Class<?> jooqRecordClass, ObjectDefinition nodeType, GenerationField field) {
+        var tableName = getTableName(jooqRecordClass);
         var tableClass = TableReflection.getTableByJavaFieldName(tableName)
             .orElseThrow(() -> new RuntimeException("Unknown table " + tableName))
             .getClass();
 
-        // Get the key columns for this node type
-        List<String> keyColumns = getKeyColumnsForNodeType(nodeType);
-
-        // Generate column references on the target table
+        var keyColumnFields = getKeyFieldsForSourceNodeTable(nodeType, field, tableName);
         List<CodeBlock> columnBlocks = new ArrayList<>();
-        for (String columnName : keyColumns) {
-            var javaFieldName = TableReflection.getJavaFieldName(tableName, columnName)
-                .orElseThrow(() -> new RuntimeException("Column " + columnName + " not found in table " + tableName));
-            columnBlocks.add(CodeBlock.of("$T.$N.$N", tableClass, tableName, javaFieldName));
+        for (var keyColumnField : keyColumnFields) {
+            columnBlocks.add(CodeBlock.of("$T.$N.$N", tableClass, tableName, keyColumnField));
         }
-        return columnBlocks.stream().collect(CodeBlock.joining(", "));
+
+        return CodeBlock.join(columnBlocks, ", ");
+    }
+
+    /**
+     * @param nodeType
+     * @param field
+     * @param tableName
+     * @return Returns the fields that corresponds to the nodeId key columns. For references it returns the source fields.
+     */
+
+    private List<String> getKeyFieldsForSourceNodeTable(ObjectDefinition nodeType, GenerationField field, String tableName) {
+        List<String> keyColumnFields;
+        if (tableName.equals(nodeType.getTable().getName())) {
+            keyColumnFields = getKeyColumnsForNodeType(nodeType)
+                    .stream()
+                    .map(it -> TableReflection.getJavaFieldName(tableName, it)
+                            .orElseThrow(() -> new RuntimeException(String.format("Column %s not found in table %s",it, tableName)))
+                    ).toList();
+        } else {
+            var foreignKey = NodeIdReferenceHelpers.getForeignKeyForNodeIdReference(field, processedSchema)
+                    .orElseThrow(() -> new RuntimeException("Cannot find foreign key for nodeId field " + field.getName() + " in " + nodeType.getName()));
+            keyColumnFields = getReferenceNodeIdFields(tableName, nodeType, foreignKey);
+        }
+        return keyColumnFields;
     }
 
     /**
@@ -281,8 +301,9 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
 
         for (var field : group.getFields()) {
             var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(field);
-            var keyColumns = getKeyColumnsForNodeType(nodeType);
+            var tableName = getTableName(group.getJooqRecordClass());
 
+            var keyColumns = getKeyFieldsForSourceNodeTable(nodeType, field, tableName);
             for (var columnName : keyColumns) {
                 columnToFields.computeIfAbsent(columnName, k -> new ArrayList<>())
                              .add(field);
@@ -311,17 +332,17 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             String targetVarName,
             ObjectDefinition nodeType,
             Set<String> overlappingColumns,
-            Class<?> jooqRecordClass) {
+            Class<?> jooqRecordClass,
+            String nodeIdValue) {
+
+        var tableName =  getTableName(jooqRecordClass);
+        var keyColumns = getKeyFieldsForSourceNodeTable(nodeType, field, tableName);
+        var tableClass = TableReflection.getTableByJavaFieldName(tableName)
+                .orElseThrow(() -> new RuntimeException("Unknown table " + tableName))
+                .getClass();
 
         var code = CodeBlock.builder();
-        var keyColumns = getKeyColumnsForNodeType(nodeType);
 
-        // Get table info for generating column references
-        var tableName = TableReflection.getTableJavaFieldNameForRecordClass(jooqRecordClass)
-            .orElseThrow(() -> new RuntimeException("Cannot find table for jOOQ record class: " + jooqRecordClass.getName()));
-        var tableClass = TableReflection.getTableByJavaFieldName(tableName)
-            .orElseThrow(() -> new RuntimeException("Unknown table " + tableName))
-            .getClass();
 
         // For each key column that overlaps with other fields
         for (int i = 0; i < keyColumns.size(); i++) {
@@ -332,36 +353,27 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
 
             var javaFieldName = TableReflection.getJavaFieldName(tableName, columnName)
                 .orElseThrow(() -> new RuntimeException("Column " + columnName + " not found in table " + tableName));
-            var getterName = "get" + toCamelCase(columnName).substring(0, 1).toUpperCase()
-                + toCamelCase(columnName).substring(1);
 
-            // Check if this column already has a value
-            code.addStatement("var existing_$L = $N.$L()", toCamelCase(columnName), targetVarName, getterName);
-            code.beginControlFlow("if (existing_$L != null)", toCamelCase(columnName));
+            var nameMapping = new MethodMapping(javaFieldName);
 
-            // Unpack the new value to compare
-            code.addStatement("var newValues = $N.unpackIdValues($S, nodeIdValue, $T.$N.$N)",
-                VAR_NODE_STRATEGY,
-                nodeType.getTypeId(),
-                tableClass,
-                tableName,
-                javaFieldName
+            code.addStatement("$T.$L($N, $L, $N, $S, $L, $S, $L)",
+                    MAPPER_HELPER.className,
+                    "validateOverlappingNodeIdColumns",
+                    VAR_NODE_STRATEGY,
+                    nodeIdValue,
+                    targetVarName,
+                    nodeType.getTypeId(),
+                    CodeBlock.of("$T.of($T.$N.$N)", LIST.className, tableClass, tableName, javaFieldName),
+                    columnName,
+                    CodeBlock.of("($1L) -> $1N.$2L()", VAR_ITERATOR, nameMapping.asCamelGet())
             );
-
-            // Compare and throw if different
-            code.beginControlFlow("if (!existing_$L.toString().equals(newValues[$L]))",
-                toCamelCase(columnName), i);
-            code.addStatement("throw new $T($S + existing_$L + $S + newValues[$L])",
-                IllegalArgumentException.class,
-                "Conflicting values for column " + columnName + ": existing=",
-                toCamelCase(columnName),
-                ", new=",
-                i
-            );
-            code.endControlFlow();
-            code.endControlFlow();
         }
 
         return code.build();
+    }
+
+    private static @NonNull String getTableName(Class<?> jooqRecordClass) {
+        return TableReflection.getTableJavaFieldNameForRecordClass(jooqRecordClass)
+                .orElseThrow(() -> new RuntimeException("Cannot find table for jOOQ record class: " + jooqRecordClass.getName()));
     }
 }

@@ -3,6 +3,5 @@ type Query {
 }
 
 input NodeIdInput @record(record: {className: "no.sikt.graphitron.codereferences.records.NodeIdInputJavaRecord"}) {
-  name: String
   customer: ID @nodeId(typeName: "CustomerNode")
 }

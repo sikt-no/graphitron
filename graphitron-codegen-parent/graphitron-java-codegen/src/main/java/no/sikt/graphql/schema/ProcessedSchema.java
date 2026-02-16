@@ -670,7 +670,11 @@ public class ProcessedSchema {
      * @return Does this field point to an input type with a record set in the schema?
      */
     public boolean hasRecord(GenerationField field) {
-        return Optional.ofNullable(getRecordType(field)).map(RecordObjectSpecification::hasRecordReference).orElse(false);
+        return hasRecord(field.getTypeName());
+    }
+
+    public boolean hasRecord(String fieldName){
+        return Optional.ofNullable(getRecordType(fieldName)).map(RecordObjectSpecification::hasRecordReference).orElse(false);
     }
 
     /**

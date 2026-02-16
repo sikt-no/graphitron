@@ -12,6 +12,7 @@ import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphql.directives.DirectiveHelpers;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.directives.GenerationDirectiveParam;

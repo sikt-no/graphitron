@@ -83,22 +83,26 @@ public class NodeIdStrategy {
     }
 
     public void setId(UpdatableRecordImpl<?> record, String id, String typeId, Field<?>... idFields) {
-        setFields(record, id, typeId, idFields);
+        setFields(record, id, typeId, List.of(idFields));
 
         Arrays.stream(idFields)
                 .forEach(field -> record.changed(field, false));
     }
 
     public void setReferenceId(UpdatableRecordImpl<?> record, String id, String typeId, Field<?>... idFields) {
+        setReferenceId(record, id, typeId, List.of(idFields));
+    }
+
+    public void setReferenceId(UpdatableRecordImpl<?> record, String id, String typeId, List<Field<?>> idFields) {
         setFields(record, id, typeId, idFields);
     }
 
-    private void setFields(UpdatableRecordImpl<?> record, String id, String typeId, Field<?>... keyColumnFields) {
-        var values = new String[keyColumnFields.length];
+    private void setFields(UpdatableRecordImpl<?> record, String id, String typeId, List<Field<?>> keyColumnFields) {
+        var values = new String[keyColumnFields.size()];
         if (id != null) {
-            values = unpackIdValues(typeId, id, keyColumnFields);
+            values = unpackIdValues(typeId, id, keyColumnFields.toArray(Field[]::new));
         }
-        record.from(values, keyColumnFields);
+        record.from(values, keyColumnFields.toArray(Field[]::new));
     }
 
     private List<? extends RowN> getRows(String typeId, Field<?>[] fields, Set<String> base64Ids) {

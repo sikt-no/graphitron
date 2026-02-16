@@ -16,19 +16,19 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 public class NodeIdReferenceHelpers {
 
     public static Optional<ForeignKey<?,?>> getForeignKeyForNodeIdReference(GenerationField target, ProcessedSchema schema) {
-        if (!schema.isNodeIdField(target) || !schema.getRecordType(target.getContainerTypeName()).hasRecordReference() || target.getContainerTypeName().equals(SCHEMA_QUERY.getName())) {
+        if (!schema.isNodeIdField(target) || !schema.hasRecord(target.getContainerTypeName()) || target.getContainerTypeName().equals(SCHEMA_QUERY.getName())) {
             return Optional.empty();
         }
         var targetTable = schema.getNodeTypeForNodeIdFieldOrThrow(target).getTable().getName();
 
         String previousTable;
-        if(schema.hasJOOQRecord(target.getContainerTypeName())) {
+        if (schema.hasJOOQRecord(target.getContainerTypeName())) {
             previousTable = schema.getRecordType(target.getContainerTypeName()).getTable().getName();
-        }else{
+        } else {
             var optionalPreviousTable = schema.getJooqRecordClassForNodeIdField(target);
-            if(optionalPreviousTable.isPresent()) {
+            if (optionalPreviousTable.isPresent()) {
                 previousTable = TableReflection.getTableJavaFieldNameForRecordClass(optionalPreviousTable.get()).orElseThrow();
-            }else{
+            } else {
                 return Optional.empty();
             }
         }

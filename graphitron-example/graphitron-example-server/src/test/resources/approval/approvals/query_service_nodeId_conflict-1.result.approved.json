@@ -1,7 +1,7 @@
 {
     "errors": [
         {
-            "message": "Conflicting values for column actor_id: existing=1, new=99",
+            "message": "Conflicting values for column: ACTOR_ID",
             "locations": [
                 {
                     "line": 6,

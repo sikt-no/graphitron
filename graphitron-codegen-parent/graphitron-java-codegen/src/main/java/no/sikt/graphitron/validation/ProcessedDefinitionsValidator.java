@@ -398,6 +398,7 @@ public class ProcessedDefinitionsValidator {
                                 TableReflection.getTableJavaFieldNameForRecordClass(recordClass).orElseThrow(),
                                 it, false)));
     }
+
     private void validateTablesAndKeys() {
         var recordTypes = schema.getRecordTypes();
         recordTypes

@@ -36,8 +36,4 @@ public class NodeIdFieldGroup {
     public List<GenerationField> getFields() {
         return fields;
     }
-
-    public boolean hasMultipleFields() {
-        return fields.size() > 1;
-    }
 }

@@ -66,6 +66,7 @@ public enum ReferencedEntry {
     // NodeId to jOOQ record test records.
     NODEID_INPUT_JAVA_RECORD("NODEID_INPUT_JAVA_RECORD", NodeIdInputJavaRecord.class),
     RENTAL_INPUT_JAVA_RECORD("RENTAL_INPUT_JAVA_RECORD", RentalInputJavaRecord.class),
+    FILM_ACTOR_INPUT_JAVA_RECORD("FILM_ACTOR_INPUT_JAVA_RECORD", FilmActorInputJavaRecord.class),
     COMPOSITE_KEY_INPUT_JAVA_RECORD("COMPOSITE_KEY_INPUT_JAVA_RECORD", CompositeKeyInputJavaRecord.class);
 
     private final ExternalReference reference;

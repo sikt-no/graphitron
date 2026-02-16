@@ -172,4 +172,12 @@ public class NodeIdInputTest extends ValidationTest {
                         "Please specify the node type with the typeName parameter"
         );
     }
+
+
+    @Test
+    @DisplayName("Reference validation for java record inputs.")
+    void referenceValidation() {
+        assertErrorsContain("javaRecordReference", Set.of(CUSTOMER_NODE),
+                "Node ID field 'countryId' in Java record input 'CustomerInput' has a reference via table(s) which is not supported on Java record inputs.");
+    }
 }
