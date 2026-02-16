@@ -36,7 +36,7 @@ public class TableMethodTest extends GeneratorTest {
     void noExtraArguments() {
         assertGeneratedContentContains("noExtraArguments",
                 "customerTableMethod = new CustomerTableMethod()",
-                "customer = _rs_customerTableMethod.customerTable(_a_customer)",
+                "_a_customer = _rs_customerTableMethod.customerTable(CUSTOMER.as(\"customer_2168032777\"))",
                 ".from(_a_customer)"
         );
     }
@@ -46,7 +46,7 @@ public class TableMethodTest extends GeneratorTest {
     void withOneArgument() {
         assertGeneratedContentContains("withOneArgument" ,
                 "customerTableMethod = new CustomerTableMethod()",
-                "customer = _rs_customerTableMethod.customerTable(_a_customer, _mi_first_name)",
+                "_a_customer = _rs_customerTableMethod.customerTable(CUSTOMER.as(\"customer_2168032777\"), _mi_first_name)",
                 ".from(_a_customer)"
         );
     }
@@ -65,7 +65,7 @@ public class TableMethodTest extends GeneratorTest {
     void paginated() {
         assertGeneratedContentContains("paginated", Set.of(CUSTOMER_CONNECTION),
                 """
-                customer = _rs_customerTableMethod.customerTable(_a_customer, _mi_first_name);
+                var _a_customer = _rs_customerTableMethod.customerTable(CUSTOMER.as("customer_2168032777"), _mi_first_name);
                 var _iv_orderFields = _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray());
                 return _iv_ctx
                         .select(
@@ -75,8 +75,7 @@ public class TableMethodTest extends GeneratorTest {
                 """, """
                 private static SelectField<CustomerTable> customerForQuery_customerTable(String _mi_first_name) {
                         var _rs_customerTableMethod = new CustomerTableMethod();
-                        var _a_customer = CUSTOMER.as("customer_2168032777");
-                        _a_customer = _rs_customerTableMethod.customerTable(_a_customer, _mi_first_name);
+                        var _a_customer = _rs_customerTableMethod.customerTable(CUSTOMER.as("customer_2168032777"), _mi_first_name);
                         return DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new));""");
     }
 
@@ -84,8 +83,8 @@ public class TableMethodTest extends GeneratorTest {
     @DisplayName("On splitQuery")
     void splitQuery() {
         assertGeneratedContentContains("splitQuery", Set.of(CUSTOMER_CONNECTION),
-                "customer = _rs_customerTableMethod.customerTable(_a_customer);return _iv_ctx.select",
-                "customer = _rs_customerTableMethod.customerTable(_a_customer);return DSL.row("
+                "_a_customer = _rs_customerTableMethod.customerTable(CUSTOMER.as(\"customer_2168032777\")); return _iv_ctx.select",
+                "_a_customer = _rs_customerTableMethod.customerTable(CUSTOMER.as(\"customer_2168032777\")); return DSL.row("
         );
     }
 
@@ -93,10 +92,8 @@ public class TableMethodTest extends GeneratorTest {
     @DisplayName("With reference")
     void reference() {
         assertGeneratedContentContains("reference",
-                "customer = CUSTOMER.as(",
-                "customer = _rs_customerTableMethod.customerTable(_a_customer, _mi_first_name)",
-                "address_2138977089_staff = _a_customer_2168032777_address.staff().as(",
-                "address_2138977089_staff = _rs_staffTableMethod.staffTable(_a_address_2138977089_staff)"
+                "customer = _rs_customerTableMethod.customerTable(CUSTOMER.as(\"customer_2168032777\"), _mi_first_name)",
+                "address_2138977089_staff = _rs_staffTableMethod.staffTable(_a_customer_2168032777_address.staff().as(\"staff_4083961958\"))"
         );
     }
 
@@ -105,10 +102,10 @@ public class TableMethodTest extends GeneratorTest {
     void withContextArgument() {
         assertGeneratedContentContains("withContextArgument",
                 "Customer customerForQuery(DSLContext _iv_ctx, String _cf_ctxField",
-                "customer = _rs_customerTableMethod.customerTable(_a_customer, _cf_ctxField);" +
+                "customer = _rs_customerTableMethod.customerTable(CUSTOMER.as(\"customer_2168032777\"), _cf_ctxField);" +
                 "return _iv_ctx.",
                 "SelectField<Customer> customerForQuery_customer(String _cf_ctxField) {",
-                "customer = _rs_customerTableMethod.customerTable(_a_customer, _cf_ctxField);" +
+                "customer = _rs_customerTableMethod.customerTable(CUSTOMER.as(\"customer_2168032777\"), _cf_ctxField);" +
                 "return DSL.row(_a_customer."
         );
     }

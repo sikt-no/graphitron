@@ -143,17 +143,23 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         aliasIterator.forEachRemaining(aliasWrapper -> {
             var alias = aliasWrapper.getAlias();
-            codeBuilder.declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getCodeName()));
-            if (aliasWrapper.hasTableMethod()) {
-                codeBuilder.addStatement(
-                        "$N = $L",
+            CodeBlock tableWithAlias = CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getCodeName());
+            if (!aliasWrapper.hasTableMethod()) {
+                codeBuilder.declare(alias.getMappingName(), tableWithAlias);
+            } else {
+                var params = new LinkedList<CodeBlock>();
+                params.add(tableWithAlias);
+                aliasWrapper.getInputNames().stream().map(CodeBlock::of).forEach(params::add);
+
+                codeBuilder.declare(
                         alias.getMappingName(),
                         invokeExternalMethod(
                                 CodeBlock.of("$N", servicePrefix(aliasWrapper.getTableMethod().getClassName().simpleName())),
                                 aliasWrapper.getTableMethod().getMethodName(),
-                                String.join(", ", Stream.concat(Stream.of(alias.getMappingName()), aliasWrapper.getInputNames().stream()).toList())
+                                CodeBlock.join(params, ", ")
                         )
                 );
+
             }
         });
         return codeBuilder.build();

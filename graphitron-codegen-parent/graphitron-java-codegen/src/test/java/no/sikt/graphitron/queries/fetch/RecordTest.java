@@ -169,8 +169,7 @@ public class RecordTest extends GeneratorTest {
     @DisplayName("TableMethod with Java Record")
     void tableMethodWithJavaRecord() {
         assertGeneratedContentContains("javaRecordWithTableMethod",
-                "customer = CUSTOMER.as(\"customer_2168032777\")",
-                "customer = _rs_customerTableMethod.customerTable(_a_customer, _mi_inRecord)"
+                "_a_customer = _rs_customerTableMethod.customerTable(CUSTOMER.as(\"customer_2168032777\"), _mi_inRecord)"
         );
     }
 
@@ -178,8 +177,7 @@ public class RecordTest extends GeneratorTest {
     @DisplayName("TableMethod with jOOQ Record")
     void tableMethodWithJOOQRecord() {
         assertGeneratedContentContains("jOOQRecordWithTableMethod",
-                "customer = CUSTOMER.as(\"customer_2168032777\")",
-                "customer = _rs_customerTableMethod.customerTable(_a_customer, _mi_inRecord)"
+                "customer = _rs_customerTableMethod.customerTable(CUSTOMER.as(\"customer_2168032777\"), _mi_inRecord)"
         );
     }
 }
