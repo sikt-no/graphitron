@@ -21,6 +21,7 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.jooq.ForeignKey;
+import org.jooq.TableField;
 
 import java.io.File;
 import java.io.IOException;
@@ -114,7 +115,7 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
             var tableConfig = new TableConfig(
                     tableName,
                     "",
-                    new TableDefinition("/tables/" + tableName, 1, 1),
+                    new TableDefinition("file:///tables/" + tableName, 1, 1),
                     references,
                     fields
             );
@@ -169,13 +170,21 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
             return fields;
         }
 
-        for (var field : table.fields()) {
-            var fieldConfig = new FieldConfig(
-                    field.getName(),
-                    getGraphQLTypeName(field.getDataType().getType()),
-                    field.getDataType().nullable()
-            );
-            fields.add(fieldConfig);
+        for (var javaField : table.getClass().getFields()) {
+            if (!TableField.class.isAssignableFrom(javaField.getType())) {
+                continue;
+            }
+            try {
+                var tableField = (TableField<?, ?>) javaField.get(table);
+                var fieldConfig = new FieldConfig(
+                        javaField.getName(),
+                        getGraphQLTypeName(tableField.getDataType().getType()),
+                        tableField.getDataType().nullable()
+                );
+                fields.add(fieldConfig);
+            } catch (IllegalAccessException e) {
+                getLog().warn("Could not access field " + javaField.getName() + " on table " + tableName);
+            }
         }
 
         return fields;
@@ -196,13 +205,10 @@ public class IntrospectMojo extends AbstractGraphitronMojo implements Introspect
     }
 
     private List<TypeConfig> buildScalarTypes() {
-        return List.of(
-                new TypeConfig("Int", List.of(), ""),
-                new TypeConfig("Float", List.of(), ""),
-                new TypeConfig("String", List.of(), ""),
-                new TypeConfig("Boolean", List.of(), ""),
-                new TypeConfig("ID", List.of(), "")
-        );
+        var builtinDefinition = new TableDefinition("file:///builtin", 1, 1);
+        return ScalarUtils.getInstance().getScalarTypeNameMapping().keySet().stream()
+                .map(name -> new TypeConfig(name, List.of(), "", builtinDefinition))
+                .toList();
     }
 
     private void writeConfig(LspConfig config) throws IOException {

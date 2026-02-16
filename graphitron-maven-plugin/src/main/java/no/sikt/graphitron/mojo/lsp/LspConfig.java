@@ -56,7 +56,8 @@ public record LspConfig(
     public record TypeConfig(
         String name,
         List<String> aliases,
-        String description
+        String description,
+        TableDefinition definition
     ) {}
 
     /**
