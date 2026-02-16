@@ -61,6 +61,15 @@ public class TableMethodTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Table method argument should be passed to subquery helper even if the alias is not used there'")
+    void withArgumentAndConditionSubquery() {
+        assertGeneratedContentContains("withArgumentAndConditionSubquery",
+                "SelectField<Payment> _1_customerForQuery_customer_payments(String _mi_first_name)",
+                "select(_1_customerForQuery_customer_payments(_mi_first_name)"
+        );
+    }
+
+    @Test
     @DisplayName("With pagination")
     void paginated() {
         assertGeneratedContentContains("paginated", Set.of(CUSTOMER_CONNECTION),

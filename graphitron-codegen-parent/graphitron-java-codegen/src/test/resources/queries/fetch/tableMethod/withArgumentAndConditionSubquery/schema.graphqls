@@ -1,0 +1,12 @@
+type Query {
+    customer(first_name: String): Customer @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.codereferences.services.CustomerTableMethod", method: "customerTable"})
+}
+
+type Customer @table {
+    id: ID
+    payments: [Payment] @reference(path: [{condition: {className: "no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition"}}])
+}
+
+type Payment @table {
+    id: ID
+}

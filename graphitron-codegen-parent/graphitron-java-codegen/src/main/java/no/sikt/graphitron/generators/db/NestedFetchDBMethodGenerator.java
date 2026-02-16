@@ -198,9 +198,7 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
             if (isRootHelper && !processedSchema.isReferenceResolverField(target)) {
                 methodBuilder.addParameters(parser.getMethodParameterSpecs(true, false, false));
             } else if (!isRootHelper) {
-                var allAliases = context.getAliasSet();
-                var usedAliases = filterToUsedAliasesOnly(allAliases, selectRowBlock);
-                var tableMethodInputs = collectTableMethodInputNames(usedAliases);
+                var tableMethodInputs = collectTableMethodInputNames(context.getAliasSet());
                 methodBuilder.addParameters(addTableMethodInputParameters(tableMethodInputs, methodState.rootField));
             }
 
