@@ -24,6 +24,8 @@ public enum SchemaComponent {
 
     CUSTOMER("basic/Customer"),
     CUSTOMER_NODE("basic/CustomerNode", NODE),
+    INVENTORY_NODE("basic/InventoryNode", NODE),
+    FILM_ACTOR_NODE("basic/FilmActorNode", NODE),
     CUSTOMER_QUERY("basic/CustomerQuery"),
     CUSTOMER_NOT_GENERATED("basic/CustomerNotGenerated"),
     CUSTOMER_TABLE("basic/CustomerTable"),

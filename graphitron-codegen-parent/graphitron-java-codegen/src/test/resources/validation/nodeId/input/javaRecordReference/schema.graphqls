@@ -1,0 +1,7 @@
+input CustomerInput @record(record: {className: "no.sikt.graphitron.codereferences.records.CustomerJavaRecord"}) {
+    countryId: ID @nodeId(typeName: "Country") @field(name: "address") @reference(path: [{key: "ADDRESS__ADDRESS_CITY_ID_FKEY"}])
+}
+
+type Country implements Node @node @table {
+    id: ID!
+}

@@ -1,0 +1,7 @@
+type Query {
+  query(in: NodeIdInput): ID @service(service: {name: "DUMMY_SERVICE"})
+}
+
+input NodeIdInput @record(record: {className: "no.sikt.graphitron.codereferences.records.NodeIdInputJavaRecord"}) {
+  customer: ID @nodeId(typeName: "CustomerNode")
+}

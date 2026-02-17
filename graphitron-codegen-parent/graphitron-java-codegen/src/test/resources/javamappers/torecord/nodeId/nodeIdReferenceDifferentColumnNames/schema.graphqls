@@ -1,0 +1,15 @@
+type Query {
+    query(in: FilmInput): ID @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Film implements Node @node @table {
+    id: ID!
+}
+
+type Language implements Node @node(keyColumns: "LANGUAGE_ID") @table {
+    id: ID!
+}
+
+input FilmInput @record(record: {className: "no.sikt.graphitron.codereferences.records.FilmJavaRecord"}) {
+    originalLanguageId: ID @nodeId(typeName: "Language") @reference(path: {key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}) @field(name: "film")
+}

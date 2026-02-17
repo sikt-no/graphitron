@@ -13,6 +13,7 @@ import no.sikt.graphitron.validation.RecordValidator;
 import no.sikt.graphql.NodeIdHandler;
 import no.sikt.graphql.NodeIdStrategy;
 import no.sikt.graphql.exception.*;
+import no.sikt.graphql.helpers.mappers.MapperHelper;
 import no.sikt.graphql.helpers.query.QueryHelper;
 import no.sikt.graphql.helpers.resolvers.DataFetcherHelper;
 import no.sikt.graphql.helpers.resolvers.EnvironmentHandler;
@@ -80,6 +81,7 @@ public enum JavaPoetClassName {
     PAIR(Pair.class),  // Note that this enforces a dependency on org.apache.commons on users.
     PAYLOAD_CREATOR(ExceptionStrategyConfiguration.PayloadCreator.class),
     QUERY_HELPER(QueryHelper.class),
+    MAPPER_HELPER(MapperHelper.class),
     RECORD1(org.jooq.Record1.class),
     RECORD2(org.jooq.Record2.class),
     RECORD3(org.jooq.Record3.class),

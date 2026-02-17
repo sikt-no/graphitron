@@ -72,7 +72,7 @@ public class NodeIdInputTest extends ValidationTest {
     void withField() {
         assertErrorsContain(
                 () -> getProcessedSchema("withField", Set.of(CUSTOMER_NODE)),
-                "Argument 'id' on a field in type 'Query' has both the 'nodeId' and 'field' directives, which is not supported."
+                "Argument 'id' on a field in type 'Query' has both the 'nodeId' and 'field' directives, which is only supported for node ID fields in Java Record inputs."
         );
     }
 
@@ -140,7 +140,7 @@ public class NodeIdInputTest extends ValidationTest {
     void foreignKeyOverlapsPrimaryKeyUpdateMutation() {
         assertErrorsContain(
                 () -> getProcessedSchema("fkOverlapsPk/updateMutation", Set.of(NODE)),
-                "Foreign key used for node ID field 'filmId' in jOOQ record input 'FilmActorInput' overlaps with the primary key of the jOOQ record table. This is not supported for update/upsert mutations ."
+                "Foreign key used for node ID field 'filmId' in jOOQ record input 'FilmActorInput' overlaps with the primary key of the jOOQ record table. This is not supported for update/upsert mutations."
         );
     }
 
@@ -171,5 +171,13 @@ public class NodeIdInputTest extends ValidationTest {
                 "Cannot automatically deduce node type for node ID field 'CustomerFilter.id'. " +
                         "Please specify the node type with the typeName parameter"
         );
+    }
+
+
+    @Test
+    @DisplayName("Reference validation for java record inputs.")
+    void referenceValidation() {
+        assertErrorsContain("javaRecordReference", Set.of(CUSTOMER_NODE),
+                "Node ID field 'countryId' in Java record input 'CustomerInput' has a reference via table(s) which is not supported on Java record inputs.");
     }
 }

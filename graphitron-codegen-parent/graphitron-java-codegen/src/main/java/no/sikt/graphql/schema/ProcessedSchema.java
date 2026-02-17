@@ -17,7 +17,9 @@ import no.sikt.graphitron.definitions.interfaces.ObjectSpecification;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.objects.*;
+import no.sikt.graphitron.mappings.ReflectionHelpers;
 import no.sikt.graphitron.validation.ProcessedDefinitionsValidator;
+import org.jooq.impl.UpdatableRecordImpl;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import org.jetbrains.annotations.NotNull;
@@ -668,7 +670,11 @@ public class ProcessedSchema {
      * @return Does this field point to an input type with a record set in the schema?
      */
     public boolean hasRecord(GenerationField field) {
-        return Optional.ofNullable(getRecordType(field)).map(RecordObjectSpecification::hasRecordReference).orElse(false);
+        return hasRecord(field.getTypeName());
+    }
+
+    public boolean hasRecord(String typeName){
+        return Optional.ofNullable(getRecordType(typeName)).map(RecordObjectSpecification::hasRecordReference).orElse(false);
     }
 
     /**

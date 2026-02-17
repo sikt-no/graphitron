@@ -33,6 +33,8 @@ public class VariableNames {
             VAR_NODE_HANDLER = internalPrefix("nodeIdHandler"),
             VAR_NODE_STRATEGY = internalPrefix("nodeIdStrategy"),
             VAR_NODE_MAP = internalPrefix("TABLE_TO_TYPE"),
+            VAR_NODE_ID_VALUE = internalPrefix("nodeIdValue"),
+            VAR_EXISTING_VALUE =internalPrefix("existing"),
             GRAPHITRON_CONTEXT_NAME = "graphitronContext",
             METHOD_ARGS_NAME = "getArguments",
             METHOD_CONTEXT_NAME = "getCtx",
