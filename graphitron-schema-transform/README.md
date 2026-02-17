@@ -63,6 +63,7 @@ Key configuration parameters include:
 - `outputSchemas`: Configuration for multiple output schemas with different feature flags
 - `removeGeneratorDirectives`: Whether to remove directives used for code generation
 - `expandConnections`: Whether to [expand GraphQL connection types](#Relay-Connection-Expansion)
+- `addKeyDirectiveToNodes`: Whether to add the Apollo Federation `@key` directive to types implementing the Node interface
 
 ## Functionality
 

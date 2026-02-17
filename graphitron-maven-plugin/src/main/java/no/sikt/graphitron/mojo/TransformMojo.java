@@ -90,6 +90,12 @@ public class TransformMojo extends AbstractMojo {
     @Parameter(property = "transform.directivesToRemove")
     private Set<String> directivesToRemove;
 
+    /**
+     * Whether to add the Apollo Federation `@key` directive to types implementing the Node interface
+     */
+    @Parameter(property = "transform.addKeyDirectiveToNodes", defaultValue = "false")
+    private boolean addKeyDirectiveToNodes;
+
     @Override
     public void execute() throws MojoExecutionException {
         var actualTarget = project.getBasedir().toPath().resolve(TARGET_PATH);
@@ -97,7 +103,7 @@ public class TransformMojo extends AbstractMojo {
         schemaFiles.add("/directives.graphqls"); // Auto-include built-in directives from classpath
         var descriptionSuffixForFeatures = SchemaReader.createDescriptionSuffixForFeatureMap(schemaRootDirectories, descriptionSuffixFilename);
         var outputDirectory = actualTarget.toString();
-        var config = new TransformConfig(schemaFiles, directivesToRemove, descriptionSuffixForFeatures, addFeatureFlags, removeGeneratorDirectives, expandConnections);
+        var config = new TransformConfig(schemaFiles, directivesToRemove, descriptionSuffixForFeatures, addFeatureFlags, removeGeneratorDirectives, expandConnections, addKeyDirectiveToNodes);
         var transformer = new SchemaTransformer(config);
         var newSchema = transformer.transformSchema();
         var features = outputSchemas != null && !outputSchemas.isEmpty()
