@@ -177,6 +177,20 @@ public class TableReflection {
                 .flatMap(TableReflection::getTableJavaFieldNameByTableName);
     }
 
+    /**
+     * Given a foreign key and a known source table, resolve the table on the other side of the key.
+     * @param keyName The foreign key name
+     * @param sourceTable The table we're coming from
+     * @return The table on the other side, or empty if unresolvable
+     */
+    public static Optional<String> resolveKeyOtherTable(String keyName, String sourceTable) {
+        var keyTarget = getKeyTargetTableJavaName(keyName);
+        if (keyTarget.isPresent() && !keyTarget.get().equals(sourceTable)) {
+            return keyTarget;
+        }
+        return getKeySourceTableJavaName(keyName);
+    }
+
     public static Optional<Map<TableField<?, ?>, TableField<?, ?>>> getKeyFields(JOOQMapping key) {
         if(key == null || key.getMappingName() == null) {
             return Optional.empty();

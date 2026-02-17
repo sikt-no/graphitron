@@ -1,0 +1,5 @@
+# CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY points from CUSTOMER to ADDRESS.
+# STORE_ID exists in CUSTOMER but not in ADDRESS, so this should fail.
+type Query {
+  customers(storeId: Int @field(name: "STORE_ID") @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])): CustomerTable
+}

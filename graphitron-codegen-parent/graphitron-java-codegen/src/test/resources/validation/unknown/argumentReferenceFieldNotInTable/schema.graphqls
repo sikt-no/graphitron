@@ -1,0 +1,5 @@
+# STORE_ID exists in CUSTOMER (the return type's table) but not in CATEGORY.
+# The @reference directs the column lookup to CATEGORY, where it should fail.
+type Query {
+  customers(storeId: Int @field(name: "STORE_ID") @reference(path: [{table: "CATEGORY"}])): CustomerTable
+}
