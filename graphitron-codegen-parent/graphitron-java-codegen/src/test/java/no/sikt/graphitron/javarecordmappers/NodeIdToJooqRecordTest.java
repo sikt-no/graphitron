@@ -15,9 +15,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.*;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_NODE;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.FILM_ACTOR_NODE;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.INVENTORY_NODE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("@nodeId fields producing jOOQ records in Java record inputs")
 public class NodeIdToJooqRecordTest extends GeneratorTest {
@@ -30,7 +28,7 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     @Override
     protected Set<ExternalReference> getExternalReferences() {
         return makeReferences(DUMMY_SERVICE, NODEID_INPUT_JAVA_RECORD, RENTAL_INPUT_JAVA_RECORD, COMPOSITE_KEY_INPUT_JAVA_RECORD,
-                FILM_ACTOR_INPUT_JAVA_RECORD);
+                FILM_ACTOR_INPUT_JAVA_RECORD, FILM_JAVA_RECORD);
     }
 
     @Override
@@ -56,10 +54,10 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Multiple @nodeId fields merge into single jOOQ record")
+    @DisplayName("Multiple @nodeId reference fields merge into single jOOQ record")
     void nodeIdMerging() {
         assertGeneratedContentContains("nodeIdMerging", Set.of(CUSTOMER_NODE, INVENTORY_NODE),
-                "RentalRecord _mi_rental = new RentalRecord()",
+                "var _mi_rental = new RentalRecord()",
                 "setReferenceId(_mi_rental, _iv_nodeIdValue, \"CustomerNode\", Rental.RENTAL.CUSTOMER_ID)",
                 "setReferenceId(_mi_rental, _iv_nodeIdValue, \"InventoryNode\", Rental.RENTAL.INVENTORY_ID)"
         );
@@ -69,8 +67,8 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     @DisplayName("@nodeId with composite key creates jOOQ record with multiple key columns")
     void nodeIdCompositeKey() {
         assertGeneratedContentContains("nodeIdCompositeKey", Set.of(FILM_ACTOR_NODE),
-                "FilmActorRecord _mi_filmActor = new FilmActorRecord()",
-                "setReferenceId(_mi_filmActor, _iv_nodeIdValue, \"FilmActorNode\", FilmActor.FILM_ACTOR.ACTOR_ID, FilmActor.FILM_ACTOR.FILM_ID)"
+                "var _mi_filmActor = new FilmActorRecord()",
+                "setId(_mi_filmActor, _iv_nodeIdValue, \"FilmActorNode\", FilmActor.FILM_ACTOR.ACTOR_ID, FilmActor.FILM_ACTOR.FILM_ID)"
         );
     }
 
@@ -78,8 +76,17 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     @DisplayName("Reference and non-reference @nodeId fields merge into single jOOQ record with overlapping column")
     void nodeIdOverlappingColumn() {
         assertGeneratedContentContains("nodeIdOverlappingColumn", Set.of(FILM_ACTOR_NODE),
+                "if (_iv_nodeIdValue != null) {",
                 "MapperHelper.validateOverlappingNodeIdColumns(_iv_nodeIdStrategy, _iv_nodeIdValue, _mi_filmActor, \"FilmActorNode\", List.of(FilmActor.FILM_ACTOR.ACTOR_ID), \"ACTOR_ID\", (_iv_it) -> _iv_it.getActorId());"
         );
+    }
+
+
+    @Test
+    @DisplayName("Reference that has different column names in source and target tables")
+    void nodeIdDifferentColumnNames() {
+        assertGeneratedContentContains("nodeIdReferenceDifferentColumnNames", Set.of(NODE),
+                "_iv_nodeIdStrategy.setReferenceId(_mi_film, _iv_nodeIdValue, \"Language\", Film.FILM.ORIGINAL_LANGUAGE_ID);");
     }
 
 }

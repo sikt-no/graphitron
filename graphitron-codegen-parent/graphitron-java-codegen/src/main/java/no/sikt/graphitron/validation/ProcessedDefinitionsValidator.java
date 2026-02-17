@@ -25,7 +25,6 @@ import org.apache.commons.text.similarity.LevenshteinDistance;
 import org.jooq.Field;
 import org.jooq.Key;
 import org.jooq.UniqueKey;
-import org.jooq.impl.UpdatableRecordImpl;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
@@ -40,6 +39,7 @@ import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStr
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getForeignKeyForNodeIdReference;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
+import static no.sikt.graphitron.mappings.ReflectionHelpers.getJooqRecordClassForNodeIdInputField;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphitron.validation.ValidationHandler.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
@@ -257,7 +257,7 @@ public class ProcessedDefinitionsValidator {
 
         if (field.hasFieldDirective()) {
             // Allow @nodeId + @field only in @record input types targeting jOOQ record fields
-            boolean isAllowed = schema.getJooqRecordClassForNodeIdField(field).isPresent();
+            boolean isAllowed = getJooqRecordClassForNodeIdInputField(field, schema).isPresent();
 
             if (!isAllowed) {
                 addErrorMessage(
@@ -293,7 +293,7 @@ public class ProcessedDefinitionsValidator {
                                 .filter(it -> schema.getNodeTypeForNodeIdField(it).isPresent()) // This is validated in checkNodeId
                                 .filter(it -> !schema.getNodeTypeForNodeIdFieldOrThrow(it).getTable().equals(jooqRecordInput.getTable()))
                                 .forEach(it -> {
-                                    validateNodeIdReference(jooqRecordInput.getTable().getName(), it, true);
+                                    validateNodeIdReferenceInRecord(jooqRecordInput.getTable().getName(), it, true);
                                     getForeignKeyForNodeIdReference(it, schema).ifPresent(foreignKey -> {
                                         if (isUsedInUpdateMutation(jooqRecordInput)) {
                                             getPrimaryKeyForTable(jooqRecordInput.getTable().getName())
@@ -311,7 +311,7 @@ public class ProcessedDefinitionsValidator {
                 );
     }
 
-    private void validateNodeIdReference(String jooqRecordName, GenerationField field, boolean isJooqRecordInput) {
+    private void validateNodeIdReferenceInRecord(String jooqRecordName, GenerationField field, boolean isJooqRecordInput) {
         var inputKind = isJooqRecordInput ? "jOOQ record input" : "Java record input";
 
         var foreignKeyOptional = getForeignKeyForNodeIdReference(field, schema);
@@ -392,9 +392,9 @@ public class ProcessedDefinitionsValidator {
                 .flatMap(it -> it.getFields().stream())
                 .filter(GenerationSourceField::hasNodeID)
                 .filter(it -> schema.getNodeTypeForNodeIdField(it).isPresent())
-                .forEach(it -> schema.getJooqRecordClassForNodeIdField(it)
+                .forEach(it -> getJooqRecordClassForNodeIdInputField(it, schema)
                         .filter(recordClass -> !schema.getNodeTypeForNodeIdFieldOrThrow(it).getTable().getRecordClass().equals(recordClass))
-                        .ifPresent(recordClass -> validateNodeIdReference(
+                        .ifPresent(recordClass -> validateNodeIdReferenceInRecord(
                                 TableReflection.getTableJavaFieldNameForRecordClass(recordClass).orElseThrow(),
                                 it, false)));
     }

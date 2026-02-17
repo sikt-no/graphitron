@@ -2,14 +2,17 @@ package no.sikt.graphitron.generators.codebuilding;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
+import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.EnumDefinition;
+import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
@@ -30,6 +33,7 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGener
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArrayList;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
+import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getKeyFieldsForSourceNodeTable;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -735,6 +739,29 @@ public class FormatCodeBlocks {
                     .collect(CodeBlock.joining(", "));
         }
         return getPrimaryKeyFieldsBlock(staticTableInstanceBlock(obj.getTable().getName()));
+    }
+
+    /**
+     * Generates jOOQ column references for a @nodeId field targeting a jOOQ record.
+     * The columns are from the node type's key columns, referenced on the target table.
+     *
+     * @param tableName       The target jOOQ table name
+     * @param nodeType        The node type definition
+     * @param field           The nodeId field
+     * @return CodeBlock with comma-separated column references like "Table.TABLE.COLUMN1, Table.TABLE.COLUMN2"
+     */
+    public static CodeBlock generateNodeIdColumnsBlock(String tableName, ObjectDefinition nodeType, GenerationField field, ProcessedSchema schema) {
+        var tableClass = TableReflection.getTableByJavaFieldName(tableName)
+                .orElseThrow(() -> new RuntimeException("Unknown table " + tableName))
+                .getClass();
+
+        var keyColumnFields = getKeyFieldsForSourceNodeTable(nodeType, field, tableName, schema);
+        List<CodeBlock> columnBlocks = new ArrayList<>();
+        for (var keyColumnField : keyColumnFields) {
+            columnBlocks.add(CodeBlock.of("$T.$N.$N", tableClass, tableName, keyColumnField));
+        }
+
+        return CodeBlock.join(columnBlocks, ", ");
     }
 
     public static CodeBlock referenceNodeIdColumnsBlock(RecordObjectSpecification<?> container, RecordObjectSpecification<?> target, ForeignKey<?,?> fk) {

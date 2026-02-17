@@ -1,5 +1,7 @@
 package no.sikt.graphitron.mappings;
 
+import no.sikt.graphitron.definitions.interfaces.GenerationField;
+import no.sikt.graphql.schema.ProcessedSchema;
 import org.jooq.impl.UpdatableRecordImpl;
 
 import java.lang.reflect.Method;
@@ -38,5 +40,21 @@ public class ReflectionHelpers {
         } catch (NoSuchMethodException e) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * Gets the jOOQ record class that a @nodeId field should produce.
+     * Uses reflection on the Java record class to get the target field's type.
+     * @param field The @nodeId field
+     * @return The jOOQ record class, or null if the field is not targeting a jOOQ record field
+     */
+    public static Optional<Class<? extends UpdatableRecordImpl<?>>> getJooqRecordClassForNodeIdInputField(GenerationField field, ProcessedSchema schema) {
+        if (!schema.isNodeIdField(field)) return Optional.empty();
+        var containerType = schema.getInputType(field.getContainerTypeName());
+        if (containerType == null || !containerType.hasJavaRecordReference()) return Optional.empty();
+
+        Class<?> javaRecordClass = containerType.getRecordReference();
+        String targetFieldName = field.getJavaRecordMethodMapping(true).getName();
+        return ReflectionHelpers.getJooqRecordClassReturnedFromFieldGetter(javaRecordClass, targetFieldName);
     }
 }

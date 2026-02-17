@@ -7,6 +7,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jooq.*;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
+import org.jspecify.annotations.NonNull;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -547,5 +548,10 @@ public class TableReflection {
                 .filter(entry -> entry.getValue().getRecordType().equals(recordClass))
                 .map(Map.Entry::getKey)
                 .findFirst();
+    }
+
+    public static @NonNull String getTableName(Class<?> jooqRecordClass) {
+        return TableReflection.getTableJavaFieldNameForRecordClass(jooqRecordClass)
+                .orElseThrow(() -> new RuntimeException("Cannot find table for jOOQ record class: " + jooqRecordClass.getName()));
     }
 }

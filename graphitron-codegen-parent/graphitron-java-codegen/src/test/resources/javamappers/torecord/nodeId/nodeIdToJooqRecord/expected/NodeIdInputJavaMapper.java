@@ -19,13 +19,13 @@ public class NodeIdInputJavaMapper {
             for (var _nit_nodeIdInput : _mi_nodeIdInput) {
                 if (_nit_nodeIdInput == null) continue;
                 var _mo_nodeIdInputJavaRecord = new NodeIdInputJavaRecord();
-                CustomerRecord _mi_customer = new CustomerRecord();
-                boolean _mi_customerHasValue = false;
+                var _mi_customer = new CustomerRecord();
+                var _mi_customerHasValue = false;
                 if (_iv_args.contains(_iv_pathHere + "customer")) {
                     var _iv_nodeIdValue = _nit_nodeIdInput.getCustomer();
                     if (_iv_nodeIdValue != null) {
                         _mi_customerHasValue = true;
-                        _iv_nodeIdStrategy.setReferenceId(_mi_customer, _iv_nodeIdValue, "CustomerNode", Customer.CUSTOMER.CUSTOMER_ID);
+                        _iv_nodeIdStrategy.setId(_mi_customer, _iv_nodeIdValue, "CustomerNode", Customer.CUSTOMER.CUSTOMER_ID);
                     }
                 }
 

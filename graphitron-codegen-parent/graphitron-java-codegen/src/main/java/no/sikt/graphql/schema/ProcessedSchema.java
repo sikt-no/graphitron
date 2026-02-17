@@ -673,8 +673,8 @@ public class ProcessedSchema {
         return hasRecord(field.getTypeName());
     }
 
-    public boolean hasRecord(String fieldName){
-        return Optional.ofNullable(getRecordType(fieldName)).map(RecordObjectSpecification::hasRecordReference).orElse(false);
+    public boolean hasRecord(String typeName){
+        return Optional.ofNullable(getRecordType(typeName)).map(RecordObjectSpecification::hasRecordReference).orElse(false);
     }
 
     /**
@@ -914,23 +914,6 @@ public class ProcessedSchema {
      */
     public ObjectDefinition getNodeTypeForNodeIdFieldOrThrow(GenerationField field) {
         return getNodeTypeForNodeIdField(field).orElseThrow(() -> new RuntimeException("Cannot find node type for node ID field " + field.formatPath()));
-    }
-
-
-    /**
-     * Gets the jOOQ record class that a @nodeId field should produce.
-     * Uses reflection on the Java record class to get the target field's type.
-     * @param field The @nodeId field
-     * @return The jOOQ record class, or null if the field is not targeting a jOOQ record field
-     */
-    public Optional<Class<? extends UpdatableRecordImpl<?>>> getJooqRecordClassForNodeIdField(GenerationField field) {
-        if (!isNodeIdField(field)) return Optional.empty();
-        var containerType = getInputType(field.getContainerTypeName());
-        if (containerType == null || !containerType.hasJavaRecordReference()) return Optional.empty();
-
-        Class<?> javaRecordClass = containerType.getRecordReference();
-        String targetFieldName = field.getJavaRecordMethodMapping(true).getName();
-        return ReflectionHelpers.getJooqRecordClassReturnedFromFieldGetter(javaRecordClass, targetFieldName);
     }
 
     /**
