@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.mapping;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -210,7 +211,8 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
         if (!overlappingColumns.isEmpty()) {
             var fieldKeyColumns = getKeyFieldsForSourceNodeTable(nodeType, field, getTableName(jooqRecordClass), processedSchema);
             var hasOverlap = fieldKeyColumns.stream().anyMatch(overlappingColumns::contains);
-            code.addIf(hasOverlap, () -> generateOverlapValidationCode(field, targetVarName, nodeType, overlappingColumns, jooqRecordClass));
+            code.addIf(hasOverlap && GeneratorConfig.validateOverlappingInputFields(),
+                    () -> generateOverlapValidationCode(field, targetVarName, nodeType, overlappingColumns, jooqRecordClass));
         }
 
         return code
@@ -282,6 +284,10 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 .getClass();
 
         var code = CodeBlock.builder();
+        var javaNameKeyColumns = keyColumns.stream().map(columnName ->
+                TableReflection.getJavaFieldName(tableName, columnName).orElseThrow(() -> new RuntimeException("Column " + columnName + " not found in table " + tableName))
+        ).map(javaFieldName -> CodeBlock.of("$T.$N.$N", tableClass, tableName, javaFieldName)).collect(CodeBlock.joining(", "));
+
 
 
         // For each key column that overlaps with other fields
@@ -290,21 +296,21 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 continue;
             }
 
-            var javaFieldName = TableReflection.getJavaFieldName(tableName, columnName)
-                    .orElseThrow(() -> new RuntimeException("Column " + columnName + " not found in table " + tableName));
 
+            var javaFieldName =  TableReflection.getJavaFieldName(tableName, columnName)
+                    .orElseThrow(() -> new RuntimeException("Column " + columnName + " not found in table " + tableName));
             var nameMapping = new MethodMapping(javaFieldName);
 
-            code.addStatement("$T.$L($N, $L, $N, $S, $L, $S, $L)",
+            code.addStatement("$T.$L($N, $L, $N, $S, $S, $L, $L)",
                     MAPPER_HELPER.className,
                     "validateOverlappingNodeIdColumns",
                     VAR_NODE_STRATEGY,
                     VAR_NODE_ID_VALUE,
                     targetVarName,
                     nodeType.getTypeId(),
-                    CodeBlock.of("$T.$N.$N", tableClass, tableName, javaFieldName),
                     columnName,
-                    CodeBlock.of("($1L) -> $1N.$2L()", VAR_ITERATOR, nameMapping.asCamelGet())
+                    CodeBlock.of("($1L) -> $1N.$2L()", VAR_ITERATOR, nameMapping.asCamelGet()),
+                    javaNameKeyColumns
 
             );
         }
