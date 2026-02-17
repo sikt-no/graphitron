@@ -77,7 +77,7 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     void nodeIdOverlappingColumn() {
         assertGeneratedContentContains("nodeIdOverlappingColumn", Set.of(FILM_ACTOR_NODE),
                 "if (_iv_nodeIdValue != null) {",
-                "MapperHelper.validateOverlappingNodeIdColumns(_iv_nodeIdStrategy, _iv_nodeIdValue, _mi_filmActor, \"FilmActorNode\", List.of(FilmActor.FILM_ACTOR.ACTOR_ID), \"ACTOR_ID\", (_iv_it) -> _iv_it.getActorId());"
+                "MapperHelper.validateOverlappingNodeIdColumns(_iv_nodeIdStrategy, _iv_nodeIdValue, _mi_filmActor, \"FilmActorNode\", FilmActor.FILM_ACTOR.ACTOR_ID, \"ACTOR_ID\", (_iv_it) -> _iv_it.getActorId());"
         );
     }
 

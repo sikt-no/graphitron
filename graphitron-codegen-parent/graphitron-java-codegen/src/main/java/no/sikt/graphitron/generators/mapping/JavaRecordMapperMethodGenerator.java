@@ -229,10 +229,6 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 .build();
     }
 
-
-
-
-
     /**
      * Detects columns that are written by multiple @nodeId fields in a group.
      * Returns a map of column name -> list of fields that write to it.
@@ -303,12 +299,13 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                     MAPPER_HELPER.className,
                     "validateOverlappingNodeIdColumns",
                     VAR_NODE_STRATEGY,
-                    no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_ID_VALUE,
+                    VAR_NODE_ID_VALUE,
                     targetVarName,
                     nodeType.getTypeId(),
-                    CodeBlock.of("$T.of($T.$N.$N)", LIST.className, tableClass, tableName, javaFieldName),
+                    CodeBlock.of("$T.$N.$N", tableClass, tableName, javaFieldName),
                     columnName,
                     CodeBlock.of("($1L) -> $1N.$2L()", VAR_ITERATOR, nameMapping.asCamelGet())
+
             );
         }
 
