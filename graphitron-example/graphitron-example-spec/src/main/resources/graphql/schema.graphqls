@@ -56,6 +56,19 @@ type Query {
     stores: [Store] @asConnection
 
     experimentalCustomers: [Customer] @asConnection @feature(flags: "experimental")
+
+    filmTest: [FilmTest] @asConnection
+}
+
+type FilmTest @table(name: "FILM") {
+    filmId: String @field(name: "FILM_ID")
+    filmIdAsExternalField: String @externalField
+    filmIdAsExternalFieldWrapped: WrappedExternalField
+    sequel: FilmTest @splitQuery
+}
+
+type WrappedExternalField @table(name: "FILM") {
+    filmIdAsExternalField: String @externalField
 }
 
 type Category implements Node @node @table {

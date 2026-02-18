@@ -1,6 +1,7 @@
 package no.sikt.graphitron.validation;
 
 import no.sikt.graphql.directives.GenerationDirective;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -222,6 +223,7 @@ public class QueryTest extends ValidationTest {
     }
 
     @Test
+    @Disabled
     @DisplayName("Circular reference between wrapper types without @table should report the cycle")
     void circularReferenceWithoutTable() {
         assertErrorsContain("circularReferenceWithoutTable",

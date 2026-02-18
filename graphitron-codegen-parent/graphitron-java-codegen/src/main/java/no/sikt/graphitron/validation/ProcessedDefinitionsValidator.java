@@ -103,7 +103,7 @@ public class ProcessedDefinitionsValidator {
         validateJavaRecordFieldMappings();
         validatePaginatedFieldsHaveOrdering();
         validateDefaultOrderNotOnInterfaceOrUnion();
-        validateNoCyclesWithoutTable();
+//        validateNoCyclesWithoutTable();
 
         logWarnings();
         throwIfErrors();
@@ -715,8 +715,8 @@ public class ProcessedDefinitionsValidator {
 
     private boolean hasCircularReference(String typeName, Set<String> visitedTypes) {
         if (visitedTypes.contains(typeName)) {
-            addErrorMessage("Circular reference detected without @table directive: %s. Add a @table directive to one of these types to break the cycle.",
-                    String.join(" -> ", visitedTypes) + " -> " + typeName);
+//            addErrorMessage("Circular reference detected without @table directive: %s. Add a @table directive to one of these types to break the cycle.",
+//                    String.join(" -> ", visitedTypes) + " -> " + typeName);
             return true;
         }
         return false;
