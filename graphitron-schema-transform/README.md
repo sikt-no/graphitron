@@ -1,14 +1,15 @@
 # Graphitron Schema Transform
 
-Graphitron schema transform is an integrated part of `graphitron-maven-plugin`, 
+Graphitron schema transform is an integrated part of `graphitron-maven-plugin`,
 providing GraphQL schema transformation capabilities.
+
+For complete plugin documentation including all goals and configuration options, see the [Maven Plugin README](../graphitron-maven-plugin/README.md).
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc (https://github.com/thlorenz/doctoc) TO UPDATE -->
 **Table of Contents**
 
 - [Usage](#usage)
-- [Plugin Configuration Parameters](#plugin-configuration-parameters)
 - [Functionality](#functionality)
   - [Feature Flag Transformation](#feature-flag-transformation)
     - [How it Works](#how-it-works)
@@ -26,43 +27,10 @@ providing GraphQL schema transformation capabilities.
 
 ## Usage
 
-The transform functionality is available as the `transform` goal of the maven-plugin.
-To use, add the following to your Maven configuration:
+Schema transformation is available through the `graphitron-maven-plugin`. For most use cases,
+use the `generate` goal with `<transform>` configuration - this handles both transformation and code generation in a single execution.
 
-```xml
-<plugin>
-    <groupId>no.sikt</groupId>
-    <artifactId>graphitron-maven-plugin</artifactId>
-    <version>...</version>
-    <executions>
-        <execution>
-            <id>transform-graphql-schema</id>
-            <goals>
-                <goal>transform</goal>
-            </goals>
-            <configuration>
-                <outputSchema>schema.graphql</outputSchema>
-                <!-- other transform parameters -->
-            </configuration>
-        </execution>
-    </executions>
-</plugin>
-```
-
-## Plugin Configuration Parameters
-
-The schema-transform goal provides a variety of configuration parameters to customize its behavior.
-For full documentation of all available parameters, see the Javadoc in the [TransformMojo.java](../graphitron-maven-plugin/src/main/java/no/sikt/graphitron/mojo/TransformMojo.java) file.
-
-Key configuration parameters include:
-
-- `schemaRootDirectories`: Where to find the GraphQL schema files (required)
-- `removeFederationDefinitions`: Whether to remove [certain Apollo Federation definitions](#removing-federation-definitions) from the schema
-- `addFeatureFlags`: Whether to add [feature flags to the schema based on directory structure](#Feature-Flag-Transformation)
-- `outputSchema`: Name of the output schema file (for single schema output)
-- `outputSchemas`: Configuration for multiple output schemas with different feature flags
-- `removeGeneratorDirectives`: Whether to remove directives used for code generation
-- `expandConnections`: Whether to [expand GraphQL connection types](#Relay-Connection-Expansion)
+For configuration options and examples, see the [Maven Plugin README](../graphitron-maven-plugin/README.md).
 
 ## Functionality
 
@@ -146,64 +114,31 @@ Important notes:
 
 ### Schema Splitting
 
-The maven plugin offers flexible schema generation through configurable outputs:
-
-- You can define multiple schema files using either:
-    - The `outputSchema` parameter for a single output
-    - The `outputSchemas` collection for multiple outputs with different feature flag combinations
+You can generate multiple schema variants with different feature flag combinations using `outputSchemas`:
 
 ```xml
-<configuration>
-  <addFeatureFlags>true</addFeatureFlags>
-  <outputSchemas>
-    <schema>
-      <fileName>f0.graphql</fileName>
-      <flags/>
-    </schema>
-    <schema>
-      <fileName>f1.graphql</fileName>
-      <flags>
-        <flag>f1</flag>
-      </flags>
-    </schema>
-    <schema>
-      <fileName>f2</fileName>
-      <flags>
-        <flag>f1</flag>
-        <flag>f2</flag>
-      </flags>
-    </schema>
-  </outputSchemas>
-</configuration>
+<outputSchemas>
+  <schema>
+    <fileName>schema-stable.graphql</fileName>
+    <flags/>
+  </schema>
+  <schema>
+    <fileName>schema-beta.graphql</fileName>
+    <flags>
+      <flag>beta</flag>
+    </flags>
+  </schema>
+  <schema>
+    <fileName>schema-all.graphql</fileName>
+    <flags>
+      <flag>beta</flag>
+      <flag>experimental</flag>
+    </flags>
+  </schema>
+</outputSchemas>
 ```
 
-Common schema outputs include:
-
-- `generator-schema.graphql`: Used for code generation, retains all Graphitron directives
-- `schema.graphql`: The full schema with all feature flags included
-- `federation-schema.graphql`: Schema prepared for Apollo Federation
-
-You can create separate Maven execution blocks to generate different types of schemas:
-
-```xml
-<executions>
-  <execution>
-    <id>transform-graphql-schema</id>
-    <configuration>
-      <addFeatureFlags>true</addFeatureFlags>
-      <outputSchema>schema.graphql</outputSchema>
-    </configuration>
-  </execution>
-  <execution>
-    <id>transform-graphql-schema-generator</id>
-    <configuration>
-      <makeApolloFederation>true</makeApolloFederation>
-      <removeGeneratorDirectives>false</removeGeneratorDirectives>
-      <outputSchema>generator-schema.graphql</outputSchema>
-    </configuration>
-  </execution>
-</executions>
-```
+For complete configuration examples, see the [Maven Plugin README](../graphitron-maven-plugin/README.md#examples).
 
 ### Apollo Federation Support
 
