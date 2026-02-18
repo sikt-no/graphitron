@@ -62,7 +62,6 @@ using Java and [jOOQ](https://www.jooq.org/).
     - [Query conditions for polymorphic multitable types](#query-conditions-for-polymorphic-multitable-types)
   - [Batch lookups with @lookupKey](#batch-lookups-with-lookupkey)
     - [Constraints](#constraints)
-    - [Multi-key example](#multi-key-example)
     - [Valid and invalid patterns](#valid-and-invalid-patterns)
   - [Sort results with @orderBy input](#sort-results-with-orderby-input)
   - [Default sorting with @defaultOrder](#default-sorting-with-defaultorder)
@@ -1315,7 +1314,7 @@ class TitledConditions {
 
 ### Batch lookups with @lookupKey
 
-The `@lookupKey` directive enables batch lookups: you send a list of values and get back a list of results
+The **lookupKey** directive enables batch lookups: you send a list of values and get back a list of results
 in the same order, where each position contains either the matching object or `null` if nothing was found.
 This is useful when you need to fetch multiple objects by some identifying value in a single query.
 
@@ -1347,7 +1346,7 @@ And receive results preserving the input order, with `null` for unmatched keys:
 }
 ```
 
-If at least one argument is marked with `@lookupKey`, the query automatically becomes a lookup.
+If at least one argument is marked with **lookupKey**, the query automatically becomes a lookup.
 The key values should uniquely identify rows — if multiple rows match the same key, only one is returned.
 Only arguments for root-level fields or their referenced input types can be keys.
 
@@ -1361,8 +1360,6 @@ Only arguments for root-level fields or their referenced input types can be keys
 The keys can be wrapped with input types and can be set on input type references, but they must always end up being a one-dimensional list.
 In other words, a list of input types which itself contains a list of keys will not work, and the key values themselves can never be lists.
 
-#### Multi-key example
-
 You can use multiple keys together. Each key list must have the same length, and values at the same index are correlated:
 
 ```graphql
@@ -1375,48 +1372,40 @@ type Query {
 
 ```graphql
 type Query {
-  # These are OK.
-  goodQuery0(argument0: [String] @lookupKey, argument1: String): [SomeType] # Fields without @lookupKey are still used in the query as usual.
-  goodQuery1(argument: [In] @lookupKey): [SomeType] # @lookupKey is applied to all fields in the input type.
-  goodQuery2(argument: [InKey]): [SomeType] # @lookupKey is applied on a field in the input type.
-  goodQuery3(argument: [InKey] @lookupKey): [SomeType] # Redundant @lookupKey does not matter.
-  goodQuery4(argument: InList @lookupKey): [SomeType]
-  goodQuery5(argument: InKeyList): [SomeType]
-  goodQuery6(argument: InKeyList @lookupKey): [SomeType] # Redundant @lookupKey does not matter.
+  # @lookupKey on a scalar list argument. Other arguments are still used as usual.
+  query0(argument0: [String] @lookupKey, argument1: String): [SomeType]
 
-  goodQuery7(argument0: [String] @lookupKey, argument1: [Int] @lookupKey): [SomeType] # Can have as many keys as you want.
-  goodQuery8(argument: [InNested] @lookupKey): [SomeType] # Input can be nested. Every field in there will be a key.
-  goodQuery9(argument: [InNestedKey]): [SomeType]
+  # @lookupKey on an input type applies to all its fields.
+  query1(argument: [In] @lookupKey): [SomeType]
 
-  # These are not OK.
-  badQuery0(argument: [InList] @lookupKey): [SomeType] # Two layers of lists.
-  badQuery1(argument: [InKeyList]): [SomeType] # Two layers of lists.
+  # @lookupKey can also be placed on individual fields in the input type.
+  query2(argument: [InKey]): [SomeType]
+
+  # Multiple keys are supported.
+  query3(argument0: [String] @lookupKey, argument1: [Int] @lookupKey): [SomeType]
+
+  # Nested input types are supported. Every leaf field becomes a key.
+  query4(argument: [InNested] @lookupKey): [SomeType]
+
+  # Invalid: two layers of lists are not allowed.
+  badQuery(argument: [InList] @lookupKey): [SomeType]
 }
 
 input In {
   field0: String
   field1: Int
-  field2: ID
-}
-
-input InList {
-  field: [String]
 }
 
 input InKey {
   field: String @lookupKey
 }
 
-input InKeyList {
-  field: [String] @lookupKey
+input InList {
+  field: [String]
 }
 
 input InNested {
   field: In
-}
-
-input InNestedKey {
-  field: In @lookupKey # Every field in the input type becomes a key.
 }
 ```
 
