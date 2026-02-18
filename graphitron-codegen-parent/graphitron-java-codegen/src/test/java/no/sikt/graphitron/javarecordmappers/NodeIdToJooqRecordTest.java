@@ -89,4 +89,10 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
                 "_iv_nodeIdStrategy.setReferenceId(_mi_film, _iv_nodeIdValue, \"Language\", Film.FILM.ORIGINAL_LANGUAGE_ID);");
     }
 
+    @Test
+    @DisplayName("Self-referencing nodeID field")
+    void selfReference() {
+        assertGeneratedContentContains("nodeIdSelfReference", Set.of(NODE),
+                "Film.FILM.SEQUEL");
+    }
 }

@@ -1749,7 +1749,7 @@ ALTER TABLE ONLY store
 ALTER TABLE ONLY film
     ADD COLUMN sequel bigint;
 ALTER TABLE ONLY film
-    ADD CONSTRAINT sequel_fkey FOREIGN KEY(film_id) REFERENCES film;
+    ADD CONSTRAINT sequel_fkey FOREIGN KEY(sequel) REFERENCES film(film_id);
 
 --
 -- Name: public; Type: ACL; Schema: -; Owner: postgres

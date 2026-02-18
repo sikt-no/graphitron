@@ -38,16 +38,16 @@ public class NodeIdReferenceHelpers {
             }
         }
 
-        if (!previousTable.equals(targetTable)) {
-            return target.getFieldReferences().stream()
-                    .findFirst()
-                    .map(fRef -> fRef.hasKey() ? fRef.getKey().getName() : findImplicitKey(previousTable, fRef.getTable().getName()).orElse(null))
-                    .stream()
-                    .findFirst()
-                    .or(() -> findImplicitKey(previousTable, targetTable))
-                    .flatMap(TableReflection::getForeignKey);
+        if (previousTable.equals(targetTable) && target.getFieldReferences().isEmpty()) {
+            return Optional.empty();
         }
-        return Optional.empty();
+        return target.getFieldReferences().stream()
+                .findFirst()
+                .map(fRef -> fRef.hasKey() ? fRef.getKey().getName() : findImplicitKey(previousTable, fRef.getTable().getName()).orElse(null))
+                .stream()
+                .findFirst()
+                .or(() -> findImplicitKey(previousTable, targetTable))
+                .flatMap(TableReflection::getForeignKey);
     }
 
     public static CodeBlock getSourceFieldsForForeignKey(GenerationField target, ProcessedSchema schema, CodeBlock targetAlias) {
@@ -63,15 +63,15 @@ public class NodeIdReferenceHelpers {
 
 
     /**
-     * @param nodeType
-     * @param field
-     * @param tableName
+     * @param nodeType      The nodeId's type
+     * @param field         The field with the nodeId directive
+     * @param tableName     The target jOOQ table name.
      * @return Returns the fields that corresponds to the nodeId key columns. For references it returns the source fields.
      */
 
     public static List<String> getKeyFieldsForSourceNodeTable(ObjectDefinition nodeType, GenerationField field, String tableName, ProcessedSchema schema) {
         List<String> keyColumnFields;
-        if (tableName.equals(nodeType.getTable().getName())) {
+        if (tableName.equals(nodeType.getTable().getName()) && field.getFieldReferences().isEmpty()) {
             keyColumnFields = schema.getKeyColumnsForNodeType(nodeType).orElseGet(LinkedList::new)
                     .stream()
                     .map(it -> TableReflection.getJavaFieldName(tableName, it)
