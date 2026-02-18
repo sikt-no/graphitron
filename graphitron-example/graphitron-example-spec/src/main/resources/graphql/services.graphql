@@ -6,6 +6,8 @@ extend type Query {
     helloWorldWithNodeIdToJooqRecord(input: NodeIdToJooqInputObject!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
     """Query to test merging of two @nodeId fields into one jOOQ record"""
     helloWorldWithNodeIdMerging(input: NodeIdMergingInputObject!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
+    """Query to test merging of two listed @nodeId fields into one list of jOOQ records"""
+    helloWorldWithNodeIdListedMerging(input: NodeIdListedMergingInputObject!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
     """Query to test conflict detection when overlapping @nodeId fields have different values"""
     helloWorldWithNodeIdConflict(input: NodeIdConflictInputObject!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
     helloWorldWithSplitQueryField(addressIds: [String]!): [HelloWorldObject] @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
@@ -77,6 +79,16 @@ input NodeIdConflictInputObject @record(record: {className: "no.sikt.graphitron.
     actorId: ID @nodeId(typeName: "Actor") @field(name: "filmActor")
 }
 
+"""
+Input type for testing merging of multiple listed @nodeId fields into a single list of jOOQ records.
+Both customerIds and inventoryIds are lists that map to the same 'rental' field (List<RentalRecord>).
+Each RentalRecord at index i will have CUSTOMER_ID from customerIds[i] and INVENTORY_ID from inventoryIds[i].
+"""
+input NodeIdListedMergingInputObject @record(record: {className: "no.sikt.graphitron.example.service.records.NodeIdListedMergingInput"}){
+    name: String
+    customerIds: [ID!]! @nodeId(typeName: "Customer") @field(name: "rental")
+    inventoryIds: [ID!]! @nodeId(typeName: "Inventory") @field(name: "rental")
+}
 
 input CustomerInput @table(name: "CUSTOMER") {
     id: ID! @nodeId(typeName: "Customer")

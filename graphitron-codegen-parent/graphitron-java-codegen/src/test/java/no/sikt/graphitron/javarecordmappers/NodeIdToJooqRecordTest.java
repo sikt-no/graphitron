@@ -28,7 +28,8 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     @Override
     protected Set<ExternalReference> getExternalReferences() {
         return makeReferences(DUMMY_SERVICE, NODEID_INPUT_JAVA_RECORD, RENTAL_INPUT_JAVA_RECORD, COMPOSITE_KEY_INPUT_JAVA_RECORD,
-                FILM_ACTOR_INPUT_JAVA_RECORD, FILM_JAVA_RECORD);
+                FILM_ACTOR_INPUT_JAVA_RECORD, FILM_JAVA_RECORD, LISTED_NODEID_INPUT_JAVA_RECORD,
+                LISTED_RENTAL_INPUT_JAVA_RECORD, LISTED_AND_SINGULAR_INPUT_JAVA_RECORD);
     }
 
     @Override
@@ -94,5 +95,44 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     void selfReference() {
         assertGeneratedContentContains("nodeIdSelfReference", Set.of(NODE),
                 "Film.FILM.SEQUEL");
+    }
+
+    @Test
+    @DisplayName("Listed nodeID field")
+    void listedNodeId() {
+        assertGeneratedContentContains("listedNodeId", Set.of(CUSTOMER_NODE),
+                "var _mlo_customer = new ArrayList<CustomerRecord>()",
+                "for (int _niit_customer = 0; _niit_customer < _iv_nodeIdValues.size(); _niit_customer++)",
+                "_iv_nodeIdValues.get(_niit_customer)",
+                "setId(_mi_customer, _iv_nodeIdValue, \"CustomerNode\", Customer.CUSTOMER.CUSTOMER_ID)",
+                "_mlo_customer.add(_mi_customerHasValue ? _mi_customer : null)",
+                ".setCustomer(_mlo_customer)"
+        );
+    }
+
+    @Test
+    @DisplayName("Multiple listed @nodeId fields merge into single jOOQ record list")
+    void listedNodeIdMerging() {
+        assertGeneratedContentContains("listedNodeIdMerging", Set.of(CUSTOMER_NODE, INVENTORY_NODE),
+                "new ArrayList<RentalRecord>()",
+                "MapperHelper.validateListedNodeIdLengths(",
+                "setReferenceId(_mi_rental, _iv_nodeIdValue, \"CustomerNode\", Rental.RENTAL.CUSTOMER_ID)",
+                "setReferenceId(_mi_rental, _iv_nodeIdValue, \"InventoryNode\", Rental.RENTAL.INVENTORY_ID)",
+                "_mlo_rental.add(_mi_rentalHasValue ? _mi_rental : null)"
+        );
+    }
+
+    @Test
+    @DisplayName("Mixed listed and singular @nodeId fields in same input type")
+    void listedNodeIdMergingWithSingular() {
+        assertGeneratedContentContains("listedNodeIdMergingWithSingular", Set.of(CUSTOMER_NODE, INVENTORY_NODE),
+                // Listed group (rental)
+                "new ArrayList<RentalRecord>()",
+                "setReferenceId(_mi_rental, _iv_nodeIdValue, \"CustomerNode\", Rental.RENTAL.CUSTOMER_ID)",
+                "setReferenceId(_mi_rental, _iv_nodeIdValue, \"InventoryNode\", Rental.RENTAL.INVENTORY_ID)",
+                // Singular group (customer)
+                "var _mi_customer = new CustomerRecord()",
+                "setId(_mi_customer, _iv_nodeIdValue, \"CustomerNode\", Customer.CUSTOMER.CUSTOMER_ID)"
+        );
     }
 }

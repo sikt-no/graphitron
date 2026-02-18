@@ -5,6 +5,7 @@ import no.sikt.graphitron.example.generated.jooq.tables.records.FilmRecord;
 import no.sikt.graphitron.example.service.records.HelloWorldInput;
 import no.sikt.graphitron.example.service.records.HelloWorldRecord;
 import no.sikt.graphitron.example.service.records.NodeIdConflictInput;
+import no.sikt.graphitron.example.service.records.NodeIdListedMergingInput;
 import no.sikt.graphitron.example.service.records.NodeIdMergingInput;
 import no.sikt.graphitron.example.service.records.NodeIdToJooqInput;
 import org.jooq.DSLContext;
@@ -60,6 +61,24 @@ public class HelloWorldService {
                     rentalRecord.getCustomerId(), rentalRecord.getInventoryId()));
         } else {
             record.setGreeting(String.format("Hello, %s! No rental provided.", input.getName()));
+        }
+        return record;
+    }
+
+    /**
+     * Service method that tests merging of two listed @nodeId fields into one list of jOOQ records.
+     * The input.getRental() returns a List of RentalRecords, each with CUSTOMER_ID and INVENTORY_ID populated.
+     */
+    public HelloWorldRecord helloWorldWithNodeIdListedMerging(NodeIdListedMergingInput input) {
+        var record = new HelloWorldRecord();
+        var rentalRecords = input.getRental();
+        if (rentalRecords != null && !rentalRecords.isEmpty()) {
+            var descriptions = rentalRecords.stream()
+                    .map(r -> String.format("(C:%d,I:%d)", r.getCustomerId(), r.getInventoryId()))
+                    .toList();
+            record.setGreeting(String.format("Rentals: %s", String.join(", ", descriptions)));
+        } else {
+            record.setGreeting(String.format("Hello, %s! No rentals provided.", input.getName()));
         }
         return record;
     }

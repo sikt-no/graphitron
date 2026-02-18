@@ -5,7 +5,9 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.jooq.impl.UpdatableRecordImpl;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -35,6 +37,12 @@ public class ReflectionHelpers {
             Class<?> returnType = getter.getReturnType();
             if (UpdatableRecordImpl.class.isAssignableFrom(returnType)) {
                 return Optional.of((Class<? extends UpdatableRecordImpl<?>>) returnType);
+            }
+            if (List.class.isAssignableFrom(returnType) && getter.getGenericReturnType() instanceof ParameterizedType parameterized) {
+                var typeArg = parameterized.getActualTypeArguments()[0];
+                if (typeArg instanceof Class<?> elementClass && UpdatableRecordImpl.class.isAssignableFrom(elementClass)) {
+                    return Optional.of((Class<? extends UpdatableRecordImpl<?>>) elementClass);
+                }
             }
             return Optional.empty();
         } catch (NoSuchMethodException e) {

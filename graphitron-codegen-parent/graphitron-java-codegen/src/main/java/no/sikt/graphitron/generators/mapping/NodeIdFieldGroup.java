@@ -14,6 +14,7 @@ public class NodeIdFieldGroup {
     private final String targetFieldName;
     private final Class<? extends UpdatableRecordImpl<?>> jooqRecordClass;
     private final List<GenerationField> fields;
+    private boolean isListed;
 
     public NodeIdFieldGroup(String targetFieldName, Class<? extends UpdatableRecordImpl<?>> jooqRecordClass) {
         this.targetFieldName = targetFieldName;
@@ -22,7 +23,18 @@ public class NodeIdFieldGroup {
     }
 
     public void addField(GenerationField field) {
+        if (fields.isEmpty()) {
+            isListed = field.isIterableWrapped();
+        } else if (field.isIterableWrapped() != isListed) {
+            throw new IllegalArgumentException(
+                "Cannot mix listed and singular @nodeId fields targeting the same record field '"
+                + targetFieldName + "'");
+        }
         fields.add(field);
+    }
+
+    public boolean isListed() {
+        return isListed;
     }
 
     public String getTargetFieldName() {

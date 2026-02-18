@@ -1,0 +1,13 @@
+# Tests that two listed @nodeId fields merge into a list of jOOQ records
+# - customerIds ["Customer:1", "Customer:2"] → sets CUSTOMER_ID=1,2
+# - inventoryIds ["Inventory:1", "Inventory:2"] → sets INVENTORY_ID=1,2
+# Both are merged index-wise into a List<RentalRecord>
+{
+    helloWorldWithNodeIdListedMerging(input: {
+        name: "Test",
+        customerIds: ["Q3VzdG9tZXI6MQ", "Q3VzdG9tZXI6Mg"],
+        inventoryIds: ["SW52ZW50b3J5OjE", "SW52ZW50b3J5OjI"]
+    }) {
+        greeting
+    }
+}
