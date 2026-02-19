@@ -103,10 +103,10 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     void listedNodeId() {
         assertGeneratedContentContains("listedNodeId", Set.of(CUSTOMER_NODE),
                 "var _mlo_customer = new ArrayList<CustomerRecord>()",
-                "for (int _niit_customer = 0; _niit_customer < _iv_nodeIdValues.size(); _niit_customer++)",
-                "_iv_nodeIdValues.get(_niit_customer)",
-                "setId(_mi_customer, _iv_nodeIdValue, \"CustomerNode\", Customer.CUSTOMER.CUSTOMER_ID)",
-                "_mlo_customer.add(_mi_customerHasValue ? _mi_customer : null)",
+                "for (int _niit_nodeIdIndex = 0; _niit_nodeIdIndex < _iv_nodeIdListSize; _niit_nodeIdIndex++)",
+                "var _iv_nodeIdValue = _mni_id.get(_niit_nodeIdIndex);",
+                "setId(_mri_customer, _iv_nodeIdValue, \"CustomerNode\", Customer.CUSTOMER.CUSTOMER_ID)",
+                "_mlo_customer.add(_mri_customerHasValue ? _mri_customer : null)",
                 ".setCustomer(_mlo_customer)"
         );
     }
@@ -117,9 +117,9 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
         assertGeneratedContentContains("listedNodeIdMerging", Set.of(CUSTOMER_NODE, INVENTORY_NODE),
                 "new ArrayList<RentalRecord>()",
                 "MapperHelper.validateListedNodeIdLengths(",
-                "setReferenceId(_mi_rental, _iv_nodeIdValue, \"CustomerNode\", Rental.RENTAL.CUSTOMER_ID)",
-                "setReferenceId(_mi_rental, _iv_nodeIdValue, \"InventoryNode\", Rental.RENTAL.INVENTORY_ID)",
-                "_mlo_rental.add(_mi_rentalHasValue ? _mi_rental : null)"
+                "setReferenceId(_mri_rental, _iv_nodeIdValue, \"CustomerNode\", Rental.RENTAL.CUSTOMER_ID)",
+                "setReferenceId(_mri_rental, _iv_nodeIdValue, \"InventoryNode\", Rental.RENTAL.INVENTORY_ID)",
+                "_mlo_rental.add(_mri_rentalHasValue ? _mri_rental : null)"
         );
     }
 
@@ -129,8 +129,8 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
         assertGeneratedContentContains("listedNodeIdOverlappingColumn", Set.of(FILM_ACTOR_NODE),
                 "new ArrayList<FilmActorRecord>()",
                 "MapperHelper.validateListedNodeIdLengths(",
-                "MapperHelper.validateOverlappingNodeIdColumns(_iv_nodeIdStrategy, _iv_nodeIdValue, _mi_filmActor, \"FilmActorNode\", \"ACTOR_ID\", (_iv_it) -> _iv_it.getActorId(), FilmActor.FILM_ACTOR.ACTOR_ID, FilmActor.FILM_ACTOR.FILM_ID);",
-                "MapperHelper.validateOverlappingNodeIdColumns(_iv_nodeIdStrategy, _iv_nodeIdValue, _mi_filmActor, \"Actor\", \"ACTOR_ID\", (_iv_it) -> _iv_it.getActorId(), FilmActor.FILM_ACTOR.ACTOR_ID);"
+                "MapperHelper.validateOverlappingNodeIdColumns(_iv_nodeIdStrategy, _iv_nodeIdValue, _mri_filmActor, \"FilmActorNode\", \"ACTOR_ID\", (_iv_it) -> _iv_it.getActorId(), FilmActor.FILM_ACTOR.ACTOR_ID, FilmActor.FILM_ACTOR.FILM_ID);",
+                "MapperHelper.validateOverlappingNodeIdColumns(_iv_nodeIdStrategy, _iv_nodeIdValue, _mri_filmActor, \"Actor\", \"ACTOR_ID\", (_iv_it) -> _iv_it.getActorId(), FilmActor.FILM_ACTOR.ACTOR_ID);"
         );
     }
 
@@ -140,8 +140,8 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
         assertGeneratedContentContains("listedNodeIdMergingWithSingular", Set.of(CUSTOMER_NODE, INVENTORY_NODE),
                 // Listed group (rental)
                 "new ArrayList<RentalRecord>()",
-                "setReferenceId(_mi_rental, _iv_nodeIdValue, \"CustomerNode\", Rental.RENTAL.CUSTOMER_ID)",
-                "setReferenceId(_mi_rental, _iv_nodeIdValue, \"InventoryNode\", Rental.RENTAL.INVENTORY_ID)",
+                "setReferenceId(_mri_rental, _iv_nodeIdValue, \"CustomerNode\", Rental.RENTAL.CUSTOMER_ID)",
+                "setReferenceId(_mri_rental, _iv_nodeIdValue, \"InventoryNode\", Rental.RENTAL.INVENTORY_ID)",
                 // Singular group (customer)
                 "var _mi_customer = new CustomerRecord()",
                 "setId(_mi_customer, _iv_nodeIdValue, \"CustomerNode\", Customer.CUSTOMER.CUSTOMER_ID)"
