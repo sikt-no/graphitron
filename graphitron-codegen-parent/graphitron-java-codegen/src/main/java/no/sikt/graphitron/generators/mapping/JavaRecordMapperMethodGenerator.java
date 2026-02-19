@@ -27,6 +27,8 @@ import static no.sikt.graphitron.mappings.ReflectionHelpers.getJooqRecordClassFo
 import static no.sikt.graphitron.mappings.TableReflection.getTableName;
 
 public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
+    static final String INDEX_VAR_NAME = namedIndexIteratorPrefix("nodeIdIndex");
+    static final String SIZE_VAR_NAME = internalPrefix("nodeIdListSize");
     public JavaRecordMapperMethodGenerator(GenerationField localField, ProcessedSchema processedSchema, boolean toRecord) {
         super(localField, processedSchema, toRecord);
     }
@@ -189,7 +191,6 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
         var targetFieldName = group.getTargetFieldName();
         var targetVarName = mutationRecordInputPrefix(targetFieldName);
         var listOutputVarName = listedOutputPrefix(targetFieldName);
-        var indexVarName = namedIndexIteratorPrefix("nodeIdIndex");
         var hasValueVarName = targetVarName + "HasValue";
         var jooqRecordClass = group.getJooqRecordClass();
         var outputVar = outputPrefix(context.getTargetName());
@@ -219,16 +220,15 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 .collect(CodeBlock.joining(", "));
         code.addStatement("$T.validateListedNodeIdLengths($L)", MAPPER_HELPER.className, validateArgs);
 
-        var sizeVarName = internalPrefix("nodeIdListSize");
         var sizeExpression = CodeBlock.of("0");
         for (int i = listVarNames.size() - 1; i >= 0; i--) {
             sizeExpression = CodeBlock.of("$N != null ? $N.size() : $L", listVarNames.get(i), listVarNames.get(i), sizeExpression);
         }
         code
-                .declare(sizeVarName, "$L", sizeExpression)
+                .declare(SIZE_VAR_NAME, sizeExpression)
                 .declare(listOutputVarName, "new $T<$T>()", ARRAY_LIST.className, jooqRecordClass)
-                .beginControlFlow("for (int $N = 0; $N < $N; $N++)",
-                        indexVarName, indexVarName, sizeVarName, indexVarName)
+                .beginControlFlow("for (int $1L = 0; $1N < $2N; $1N++)",
+                        INDEX_VAR_NAME, SIZE_VAR_NAME)
                 .declare(targetVarName, "new $T()", jooqRecordClass)
                 .declare(hasValueVarName, "false");
 
@@ -236,7 +236,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             var listVarName = mutationNodeInputPrefix(field.getName());
             code
                     .beginControlFlow("if ($N != null)", listVarName)
-                    .declare(VAR_NODE_ID_VALUE, "$N.get($N)", listVarName, indexVarName)
+                    .declare(VAR_NODE_ID_VALUE, "$N.get($N)", listVarName, INDEX_VAR_NAME)
                     .beginControlFlow("if ($N != null)", VAR_NODE_ID_VALUE)
                     .add(generateNodeIdFieldValueCode(field, targetVarName, hasValueVarName, overlappingColumns.keySet(), jooqRecordClass))
                     .endControlFlow()
