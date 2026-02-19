@@ -91,6 +91,15 @@ public class FormatCodeBlocks {
         return CodeBlock.of("if ($N != null)", name);
     }
 
+    @NotNull
+    public static CodeBlock ifNotNull(String name, CodeBlock codeBlock) {
+        return CodeBlock.builder()
+                .beginControlFlow("if ($N != null)", name)
+                .add(codeBlock)
+                .endControlFlow()
+                .build();
+    }
+
     /**
      * @return CodeBlock that creates an empty List.
      */

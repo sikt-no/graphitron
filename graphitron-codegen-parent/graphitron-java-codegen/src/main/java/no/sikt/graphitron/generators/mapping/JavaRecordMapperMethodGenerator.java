@@ -16,8 +16,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.selectionSetLookup;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getKeyFieldsForSourceNodeTable;
@@ -189,7 +188,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
 
         var fields = group.getFields();
         var targetFieldName = group.getTargetFieldName();
-        var targetVarName = mutationRecordInputPrefix(targetFieldName);
+        var targetVarName = mapperRecordInputPrefix(targetFieldName);
         var listOutputVarName = listedOutputPrefix(targetFieldName);
         var hasValueVarName = targetVarName + "HasValue";
         var jooqRecordClass = group.getJooqRecordClass();
@@ -202,7 +201,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
 
         var listVarNames = new ArrayList<String>();
         for (var field : fields) {
-            var listVarName = mutationNodeInputPrefix(field.getName());
+            var listVarName = mapperNodeInputPrefix(field.getName());
             listVarNames.add(listVarName);
             var getterMapping = new MethodMapping(field.getName());
             code.declare(listVarName,
@@ -218,7 +217,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
         var validateArgs = listVarNames.stream()
                 .map(name -> CodeBlock.of("$N", name))
                 .collect(CodeBlock.joining(", "));
-        code.addStatement("$T.validateListedNodeIdLengths($L)", MAPPER_HELPER.className, validateArgs);
+        code.addStatement("$T.validateListLengths($L)", MAPPER_HELPER.className, validateArgs);
 
         var sizeExpression = CodeBlock.of("0");
         for (int i = listVarNames.size() - 1; i >= 0; i--) {
@@ -233,7 +232,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 .declare(hasValueVarName, "false");
 
         for (var field : fields) {
-            var listVarName = mutationNodeInputPrefix(field.getName());
+            var listVarName = mapperNodeInputPrefix(field.getName());
             code
                     .beginControlFlow("if ($N != null)", listVarName)
                     .declare(VAR_NODE_ID_VALUE, "$N.get($N)", listVarName, INDEX_VAR_NAME)
@@ -275,9 +274,15 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
         return CodeBlock.builder()
                 .beginControlFlow("if ($L)", FormatCodeBlocks.selectionSetLookup(field.getName(), false, true))
                 .declare(VAR_NODE_ID_VALUE, asMethodCall(inputVar, getterMapping.asGet()))
-                .beginControlFlow("if ($N != null)", VAR_NODE_ID_VALUE)
-                .add(generateNodeIdFieldValueCode(field, targetVarName, hasValueVarName, overlappingColumns, jooqRecordClass))
-                .endControlFlow()
+                .add(
+                        ifNotNull(
+                                VAR_NODE_ID_VALUE,
+                                generateNodeIdFieldValueCode(
+                                        field,
+                                        targetVarName,
+                                        hasValueVarName,
+                                        overlappingColumns,
+                                        jooqRecordClass)))
                 .endControlFlow()
                 .add("\n")
                 .build();

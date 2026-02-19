@@ -55,8 +55,8 @@ public class VariablePrefix {
             INSERT_HELPER = "ih",
             NAMED_ITERATOR = "nit",
             NAMED_ITERATOR_INDEX = "niit",
-            MUTATION_NODE_INPUT = "mni",
-            MUTATION_RECORD_INPUT = "mri",
+            MAPPER_NODE_INPUT = "mni",
+            MAPPER_RECORD_INPUT = "mri",
             ALIAS = "a",
             CONTEXT_FIELD = "cf",
             SEPARATOR = "_",
@@ -79,15 +79,15 @@ public class VariablePrefix {
     /**
      * @return This name formatted as a mutation node input variable to avoid namespace collisions.
      */
-    public static String mutationNodeInputPrefix(String name) {
-        return prefixName(MUTATION_NODE_INPUT, name);
+    public static String mapperNodeInputPrefix(String name) {
+        return prefixName(MAPPER_NODE_INPUT, name);
     }
 
     /**
      * @return This name formatted as a mutation record input variable to avoid namespace collisions.
      */
-    public static String mutationRecordInputPrefix(String name) {
-        return prefixName(MUTATION_RECORD_INPUT, name);
+    public static String mapperRecordInputPrefix(String name) {
+        return prefixName(MAPPER_RECORD_INPUT, name);
     }
 
     /**

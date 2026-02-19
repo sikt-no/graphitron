@@ -102,7 +102,10 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     @DisplayName("Listed nodeID field")
     void listedNodeId() {
         assertGeneratedContentContains("listedNodeId", Set.of(CUSTOMER_NODE),
+                "var _mni_id = _iv_args.contains(_iv_pathHere + \"id\") ? _nit_customerInput.getId() : null;",
                 "var _mlo_customer = new ArrayList<CustomerRecord>()",
+                "MapperHelper.validateListLengths(_mni_id)",
+                "var _iv_nodeIdListSize = _mni_id != null ? _mni_id.size() : 0;",
                 "for (int _niit_nodeIdIndex = 0; _niit_nodeIdIndex < _iv_nodeIdListSize; _niit_nodeIdIndex++)",
                 "var _iv_nodeIdValue = _mni_id.get(_niit_nodeIdIndex);",
                 "setId(_mri_customer, _iv_nodeIdValue, \"CustomerNode\", Customer.CUSTOMER.CUSTOMER_ID)",
@@ -115,11 +118,10 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     @DisplayName("Multiple listed @nodeId fields merge into single jOOQ record list")
     void listedNodeIdMerging() {
         assertGeneratedContentContains("listedNodeIdMerging", Set.of(CUSTOMER_NODE, INVENTORY_NODE),
-                "new ArrayList<RentalRecord>()",
-                "MapperHelper.validateListedNodeIdLengths(",
+                "MapperHelper.validateListLengths(_mni_customerId, _mni_inventoryId)",
+                "var _iv_nodeIdListSize = _mni_customerId != null ? _mni_customerId.size() : _mni_inventoryId != null ? _mni_inventoryId.size() : 0;",
                 "setReferenceId(_mri_rental, _iv_nodeIdValue, \"CustomerNode\", Rental.RENTAL.CUSTOMER_ID)",
-                "setReferenceId(_mri_rental, _iv_nodeIdValue, \"InventoryNode\", Rental.RENTAL.INVENTORY_ID)",
-                "_mlo_rental.add(_mri_rentalHasValue ? _mri_rental : null)"
+                "setReferenceId(_mri_rental, _iv_nodeIdValue, \"InventoryNode\", Rental.RENTAL.INVENTORY_ID)"
         );
     }
 
@@ -127,10 +129,8 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     @DisplayName("Listed @nodeId fields with overlapping columns")
     void listedNodeIdOverlappingColumn() {
         assertGeneratedContentContains("listedNodeIdOverlappingColumn", Set.of(FILM_ACTOR_NODE),
-                "new ArrayList<FilmActorRecord>()",
-                "MapperHelper.validateListedNodeIdLengths(",
-                "MapperHelper.validateOverlappingNodeIdColumns(_iv_nodeIdStrategy, _iv_nodeIdValue, _mri_filmActor, \"FilmActorNode\", \"ACTOR_ID\", (_iv_it) -> _iv_it.getActorId(), FilmActor.FILM_ACTOR.ACTOR_ID, FilmActor.FILM_ACTOR.FILM_ID);",
-                "MapperHelper.validateOverlappingNodeIdColumns(_iv_nodeIdStrategy, _iv_nodeIdValue, _mri_filmActor, \"Actor\", \"ACTOR_ID\", (_iv_it) -> _iv_it.getActorId(), FilmActor.FILM_ACTOR.ACTOR_ID);"
+                "validateOverlappingNodeIdColumns(_iv_nodeIdStrategy, _iv_nodeIdValue, _mri_filmActor, \"FilmActorNode\", \"ACTOR_ID\", (_iv_it) -> _iv_it.getActorId(), FilmActor.FILM_ACTOR.ACTOR_ID, FilmActor.FILM_ACTOR.FILM_ID);",
+                "validateOverlappingNodeIdColumns(_iv_nodeIdStrategy, _iv_nodeIdValue, _mri_filmActor, \"Actor\", \"ACTOR_ID\", (_iv_it) -> _iv_it.getActorId(), FilmActor.FILM_ACTOR.ACTOR_ID);"
         );
     }
 
