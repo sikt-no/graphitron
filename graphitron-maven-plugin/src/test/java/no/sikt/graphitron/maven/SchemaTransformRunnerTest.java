@@ -2,7 +2,7 @@ package no.sikt.graphitron.maven;
 
 import no.fellesstudentsystem.schema_transformer.OutputSchema;
 import no.sikt.graphitron.mojo.SchemaTransformRunner;
-import no.sikt.graphitron.mojo.TransformConfiguration;
+import no.sikt.graphitron.mojo.TransformPluginConfiguration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -100,8 +100,8 @@ class SchemaTransformRunnerTest {
         assertThat(result.generatorSchemaPath()).isNull();
     }
 
-    private TransformConfiguration createConfig(Set<String> schemaRootDirectories) {
-        var config = new TransformConfiguration();
+    private TransformPluginConfiguration createConfig(Set<String> schemaRootDirectories) {
+        var config = new TransformPluginConfiguration();
         config.setSchemaRootDirectories(schemaRootDirectories);
         config.setDescriptionSuffixFilename("description-suffix.md");
         config.setRemoveGeneratorDirectives(true);

@@ -38,7 +38,7 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
      * Optional transform configuration. If provided, schema transformation runs before code generation.
      */
     @Parameter
-    private TransformConfiguration transform;
+    private TransformPluginConfiguration transform;
 
     /**
      * The directory where generated code should be written.
@@ -124,7 +124,7 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     }
 
     private void executeWithTransform() throws MojoExecutionException, IOException {
-        validateTransformConfiguration();
+        validateTransformPluginConfiguration();
 
         var transformOutputDir = project.getBasedir().toPath().resolve(TRANSFORM_TARGET_PATH);
 
@@ -154,7 +154,7 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
         project.addCompileSourceRoot(getOutputPath());
     }
 
-    private void validateTransformConfiguration() throws MojoExecutionException {
+    private void validateTransformPluginConfiguration() throws MojoExecutionException {
         if (transform.getSchemaRootDirectories() == null || transform.getSchemaRootDirectories().isEmpty()) {
             throw new MojoExecutionException("schemaRootDirectories is required in transform configuration.");
         }
