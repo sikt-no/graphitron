@@ -16,17 +16,18 @@ import org.jetbrains.annotations.NotNull;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.selectionSetLookup;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getKeyFieldsForSourceNodeTable;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.LIST;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.ARRAY_LIST;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.MAPPER_HELPER;
 import static no.sikt.graphitron.mappings.ReflectionHelpers.getJooqRecordClassForNodeIdInputField;
 import static no.sikt.graphitron.mappings.TableReflection.getTableName;
 
 public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
+    static final String INDEX_VAR_NAME = namedIndexIteratorPrefix("nodeIdIndex");
+    static final String SIZE_VAR_NAME = internalPrefix("nodeIdListSize");
     public JavaRecordMapperMethodGenerator(GenerationField localField, ProcessedSchema processedSchema, boolean toRecord) {
         super(localField, processedSchema, toRecord);
     }
@@ -56,7 +57,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
 
         // Group @nodeId fields targeting jOOQ records
         var nodeIdGroups = groupNodeIdFields(allFields);
-        var regularFields = getNonNodeIdFieldss(allFields, nodeIdGroups);
+        var regularFields = getNonNodeIdFields(allFields, nodeIdGroups);
 
         // Generate code for @nodeId groups first
         for (var group : nodeIdGroups.values()) {
@@ -129,7 +130,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
     /**
      * Returns fields that are NOT part of any @nodeId group (processed normally).
      */
-    private List<? extends GenerationField> getNonNodeIdFieldss(
+    private List<? extends GenerationField> getNonNodeIdFields(
             List<? extends GenerationField> allFields,
             Map<String, NodeIdFieldGroup> groups) {
         Set<GenerationField> groupedFields = groups.values().stream()
@@ -148,6 +149,10 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
      * @return CodeBlock containing the generated code
      */
     private CodeBlock generateNodeIdGroupCode(NodeIdFieldGroup group, MapperContext context) {
+        if (group.isListed()) {
+            return generateListedNodeIdGroupCode(group, context);
+        }
+
         var code = CodeBlock.builder();
         var targetVarName = inputPrefix(group.getTargetFieldName());
         var hasValueVarName = targetVarName + "HasValue";
@@ -175,6 +180,76 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
     }
 
     /**
+     * Generates code for listed @nodeId field groups that produce a List of jOOQ records.
+     * Validates same length at runtime, then iterates with indexed for loop constructing one record per index.
+     */
+    private CodeBlock generateListedNodeIdGroupCode(NodeIdFieldGroup group, MapperContext context) {
+        var overlappingColumns = detectOverlappingColumns(group);
+
+        var fields = group.getFields();
+        var targetFieldName = group.getTargetFieldName();
+        var targetVarName = mapperRecordInputPrefix(targetFieldName);
+        var listOutputVarName = listedOutputPrefix(targetFieldName);
+        var hasValueVarName = targetVarName + "HasValue";
+        var jooqRecordClass = group.getJooqRecordClass();
+        var outputVar = outputPrefix(context.getTargetName());
+        var setterMapping = new MethodMapping(targetFieldName);
+        var sourceName = context.getSourceName();
+        var inputVar = namedIteratorPrefix(sourceName);
+
+        var code = CodeBlock.builder();
+
+        var listVarNames = new ArrayList<String>();
+        for (var field : fields) {
+            var listVarName = mapperNodeInputPrefix(field.getName());
+            listVarNames.add(listVarName);
+            var getterMapping = new MethodMapping(field.getName());
+            code.declare(listVarName,
+                    "$L ? $L : null", FormatCodeBlocks.selectionSetLookup(field.getName(), false, true),
+                    asMethodCall(inputVar, getterMapping.asGet()));
+        }
+
+        var orCondition = listVarNames.stream()
+                .map(name -> CodeBlock.of("$N != null", name))
+                .collect(CodeBlock.joining(" || "));
+        code.beginControlFlow("if ($L)", orCondition);
+
+        var validateArgs = listVarNames.stream()
+                .map(name -> CodeBlock.of("$N", name))
+                .collect(CodeBlock.joining(", "));
+        code.addStatement("$T.validateListLengths($L)", MAPPER_HELPER.className, validateArgs);
+
+        var sizeExpression = CodeBlock.of("0");
+        for (int i = listVarNames.size() - 1; i >= 0; i--) {
+            sizeExpression = CodeBlock.of("$N != null ? $N.size() : $L", listVarNames.get(i), listVarNames.get(i), sizeExpression);
+        }
+        code
+                .declare(SIZE_VAR_NAME, sizeExpression)
+                .declare(listOutputVarName, "new $T<$T>()", ARRAY_LIST.className, jooqRecordClass)
+                .beginControlFlow("for (int $1L = 0; $1N < $2N; $1N++)",
+                        INDEX_VAR_NAME, SIZE_VAR_NAME)
+                .declare(targetVarName, "new $T()", jooqRecordClass)
+                .declare(hasValueVarName, "false");
+
+        for (var field : fields) {
+            var listVarName = mapperNodeInputPrefix(field.getName());
+            code
+                    .beginControlFlow("if ($N != null)", listVarName)
+                    .declare(VAR_NODE_ID_VALUE, "$N.get($N)", listVarName, INDEX_VAR_NAME)
+                    .beginControlFlow("if ($N != null)", VAR_NODE_ID_VALUE)
+                    .add(generateNodeIdFieldValueCode(field, targetVarName, hasValueVarName, overlappingColumns.keySet(), jooqRecordClass))
+                    .endControlFlow()
+                    .endControlFlow();
+        }
+
+        return code
+                .addStatement("$N.add($N ? $N : null)", listOutputVarName, hasValueVarName, targetVarName)
+                .endControlFlow()
+                .addStatement("$N.$L($N)", outputVar, setterMapping.asSet(), listOutputVarName)
+                .endControlFlow().build();
+    }
+
+    /**
      * Generates code for a single @nodeId field within a group.
      * @param field The @nodeId field
      * @param targetVarName The variable name of the target jOOQ record
@@ -192,24 +267,48 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             Set<String> overlappingColumns,
             Class<?> jooqRecordClass) {
 
-        var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(field);
-        var tableName = getTableName(jooqRecordClass);
-        var isReference = !tableName.equals(nodeType.getTable().getName());
-        var columnsBlock = FormatCodeBlocks.generateNodeIdColumnsBlock(tableName, nodeType, field, processedSchema);
-
-        // Get the node ID value from input
         var sourceName = context.getSourceName();
         var inputVar = namedIteratorPrefix(sourceName);
         var getterMapping = new MethodMapping(field.getName());
 
-        var code = CodeBlock.builder()
-                .beginControlFlow("if ($N.contains($N + $S))", VAR_ARGS, VAR_PATH_HERE, field.getName())
+        return CodeBlock.builder()
+                .beginControlFlow("if ($L)", FormatCodeBlocks.selectionSetLookup(field.getName(), false, true))
                 .declare(VAR_NODE_ID_VALUE, asMethodCall(inputVar, getterMapping.asGet()))
-                .beginControlFlow("if ($N != null)", VAR_NODE_ID_VALUE);
+                .add(
+                        ifNotNull(
+                                VAR_NODE_ID_VALUE,
+                                generateNodeIdFieldValueCode(
+                                        field,
+                                        targetVarName,
+                                        hasValueVarName,
+                                        overlappingColumns,
+                                        jooqRecordClass)))
+                .endControlFlow()
+                .add("\n")
+                .build();
+    }
 
-        // Generate overlap validation if this field writes to any overlapping columns
+    /**
+     * Generates the core code for processing a single @nodeId field value:
+     * overlap validation, hasValue flag, and setRecordId call.
+     * Assumes {@code VAR_NODE_ID_VALUE} has already been declared and null-checked by the caller.
+     */
+    private CodeBlock generateNodeIdFieldValueCode(
+            GenerationField field,
+            String targetVarName,
+            String hasValueVarName,
+            Set<String> overlappingColumns,
+            Class<?> jooqRecordClass) {
+
+        var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(field);
+        var tableName = getTableName(jooqRecordClass);
+        var isReference = !tableName.equals(nodeType.getTable().getName()) || field.hasFieldReferences();
+        var columnsBlock = FormatCodeBlocks.generateNodeIdColumnsBlock(tableName, nodeType, field, processedSchema);
+
+        var code = CodeBlock.builder();
+
         if (!overlappingColumns.isEmpty()) {
-            var fieldKeyColumns = getKeyFieldsForSourceNodeTable(nodeType, field, getTableName(jooqRecordClass), processedSchema);
+            var fieldKeyColumns = getKeyFieldsForSourceNodeTable(nodeType, field, tableName, processedSchema);
             var hasOverlap = fieldKeyColumns.stream().anyMatch(overlappingColumns::contains);
             code.addIf(hasOverlap && GeneratorConfig.validateOverlappingInputFields(),
                     () -> generateOverlapValidationCode(field, targetVarName, nodeType, overlappingColumns, jooqRecordClass));
@@ -217,17 +316,10 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
 
         return code
                 .addStatement("$N = true", hasValueVarName)
-                .addStatement(
-                        "$N.$L($N, $N, $S, $L)",
+                .addStatement("$N.$L($N, $N, $S, $L)",
                         VAR_NODE_STRATEGY,
                         isReference ? METHOD_SET_RECORD_REFERENCE_ID : METHOD_SET_RECORD_ID,
-                        targetVarName,
-                        VAR_NODE_ID_VALUE,
-                        nodeType.getTypeId(),
-                        columnsBlock)
-                .endControlFlow()
-                .endControlFlow()
-                .add("\n")
+                        targetVarName, VAR_NODE_ID_VALUE, nodeType.getTypeId(), columnsBlock)
                 .build();
     }
 

@@ -5,9 +5,30 @@ import org.jooq.Field;
 import org.jooq.UpdatableRecord;
 import org.jooq.impl.UpdatableRecordImpl;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
 import java.util.function.Function;
 
 public class MapperHelper {
+
+    /**
+     * Validates that all non-null lists have the same size.
+     * Used for merged listed @nodeId fields targeting the same jOOQ record list.
+     * @param lists The lists to validate
+     * @throws IllegalArgumentException if lists have different sizes
+     */
+    public static void validateListLengths(List<?>... lists) {
+        var nonNullLists = Arrays.stream(lists).filter(Objects::nonNull).toList();
+        nonNullLists.stream()
+                .filter(list -> list.size() != nonNullLists.get(0).size())
+                .findFirst()
+                .ifPresent(list -> {
+                    throw new IllegalArgumentException(
+                            "Listed @nodeId fields targeting the same record must have the same length. " +
+                            "Expected " + nonNullLists.get(0).size() + " but got " + list.size());
+                });
+    }
 
     public static <T extends UpdatableRecord<T>> void validateOverlappingNodeIdColumns(
             NodeIdStrategy nodeIdStrategy,

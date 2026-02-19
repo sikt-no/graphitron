@@ -28,7 +28,9 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     @Override
     protected Set<ExternalReference> getExternalReferences() {
         return makeReferences(DUMMY_SERVICE, NODEID_INPUT_JAVA_RECORD, RENTAL_INPUT_JAVA_RECORD, COMPOSITE_KEY_INPUT_JAVA_RECORD,
-                FILM_ACTOR_INPUT_JAVA_RECORD, FILM_JAVA_RECORD);
+                FILM_ACTOR_INPUT_JAVA_RECORD, FILM_JAVA_RECORD, LISTED_NODEID_INPUT_JAVA_RECORD,
+                LISTED_RENTAL_INPUT_JAVA_RECORD, LISTED_AND_SINGULAR_INPUT_JAVA_RECORD,
+                LISTED_FILM_ACTOR_INPUT_JAVA_RECORD);
     }
 
     @Override
@@ -94,5 +96,55 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     void selfReference() {
         assertGeneratedContentContains("nodeIdSelfReference", Set.of(NODE),
                 "Film.FILM.SEQUEL");
+    }
+
+    @Test
+    @DisplayName("Listed nodeID field")
+    void listedNodeId() {
+        assertGeneratedContentContains("listedNodeId", Set.of(CUSTOMER_NODE),
+                "var _mni_id = _iv_args.contains(_iv_pathHere + \"id\") ? _nit_customerInput.getId() : null;",
+                "var _mlo_customer = new ArrayList<CustomerRecord>()",
+                "MapperHelper.validateListLengths(_mni_id)",
+                "var _iv_nodeIdListSize = _mni_id != null ? _mni_id.size() : 0;",
+                "for (int _niit_nodeIdIndex = 0; _niit_nodeIdIndex < _iv_nodeIdListSize; _niit_nodeIdIndex++)",
+                "var _iv_nodeIdValue = _mni_id.get(_niit_nodeIdIndex);",
+                "setId(_mri_customer, _iv_nodeIdValue, \"CustomerNode\", Customer.CUSTOMER.CUSTOMER_ID)",
+                "_mlo_customer.add(_mri_customerHasValue ? _mri_customer : null)",
+                ".setCustomer(_mlo_customer)"
+        );
+    }
+
+    @Test
+    @DisplayName("Multiple listed @nodeId fields merge into single jOOQ record list")
+    void listedNodeIdMerging() {
+        assertGeneratedContentContains("listedNodeIdMerging", Set.of(CUSTOMER_NODE, INVENTORY_NODE),
+                "MapperHelper.validateListLengths(_mni_customerId, _mni_inventoryId)",
+                "var _iv_nodeIdListSize = _mni_customerId != null ? _mni_customerId.size() : _mni_inventoryId != null ? _mni_inventoryId.size() : 0;",
+                "setReferenceId(_mri_rental, _iv_nodeIdValue, \"CustomerNode\", Rental.RENTAL.CUSTOMER_ID)",
+                "setReferenceId(_mri_rental, _iv_nodeIdValue, \"InventoryNode\", Rental.RENTAL.INVENTORY_ID)"
+        );
+    }
+
+    @Test
+    @DisplayName("Listed @nodeId fields with overlapping columns")
+    void listedNodeIdOverlappingColumn() {
+        assertGeneratedContentContains("listedNodeIdOverlappingColumn", Set.of(FILM_ACTOR_NODE),
+                "validateOverlappingNodeIdColumns(_iv_nodeIdStrategy, _iv_nodeIdValue, _mri_filmActor, \"FilmActorNode\", \"ACTOR_ID\", (_iv_it) -> _iv_it.getActorId(), FilmActor.FILM_ACTOR.ACTOR_ID, FilmActor.FILM_ACTOR.FILM_ID);",
+                "validateOverlappingNodeIdColumns(_iv_nodeIdStrategy, _iv_nodeIdValue, _mri_filmActor, \"Actor\", \"ACTOR_ID\", (_iv_it) -> _iv_it.getActorId(), FilmActor.FILM_ACTOR.ACTOR_ID);"
+        );
+    }
+
+    @Test
+    @DisplayName("Mixed listed and singular @nodeId fields in same input type")
+    void listedNodeIdMergingWithSingular() {
+        assertGeneratedContentContains("listedNodeIdMergingWithSingular", Set.of(CUSTOMER_NODE, INVENTORY_NODE),
+                // Listed group (rental)
+                "new ArrayList<RentalRecord>()",
+                "setReferenceId(_mri_rental, _iv_nodeIdValue, \"CustomerNode\", Rental.RENTAL.CUSTOMER_ID)",
+                "setReferenceId(_mri_rental, _iv_nodeIdValue, \"InventoryNode\", Rental.RENTAL.INVENTORY_ID)",
+                // Singular group (customer)
+                "var _mi_customer = new CustomerRecord()",
+                "setId(_mi_customer, _iv_nodeIdValue, \"CustomerNode\", Customer.CUSTOMER.CUSTOMER_ID)"
+        );
     }
 }
