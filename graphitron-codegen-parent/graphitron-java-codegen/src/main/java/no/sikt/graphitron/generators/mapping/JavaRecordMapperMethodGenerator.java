@@ -212,16 +212,11 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
         var outputVar = outputPrefix(context.getTargetName());
         var setterMapping = new MethodMapping(targetFieldName);
 
-        var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(field);
-        var tableName = getTableName(jooqRecordClass);
-        var isReference = !tableName.equals(nodeType.getTable().getName()) || field.hasFieldReferences();
-        var columnsBlock = FormatCodeBlocks.generateNodeIdColumnsBlock(tableName, nodeType, field, processedSchema);
-
         var sourceName = context.getSourceName();
         var inputVar = namedIteratorPrefix(sourceName);
         var getterMapping = new MethodMapping(field.getName());
 
-        var code = CodeBlock.builder()
+        return CodeBlock.builder()
                 .beginControlFlow("if ($N.contains($N + $S))", VAR_ARGS, VAR_PATH_HERE, field.getName())
                 .declare(internalPrefix("nodeIdValues"), asMethodCall(inputVar, getterMapping.asGet()))
                 .beginControlFlow("if ($N != null)", internalPrefix("nodeIdValues"))
@@ -231,21 +226,8 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 .declare(targetVarName, "new $T()", jooqRecordClass)
                 .declare(hasValueVarName, "false")
                 .declare(VAR_NODE_ID_VALUE, "$N.get($N)", internalPrefix("nodeIdValues"), indexVarName)
-                .beginControlFlow("if ($N != null)", VAR_NODE_ID_VALUE);
-
-        if (!overlappingColumns.isEmpty()) {
-            var fieldKeyColumns = getKeyFieldsForSourceNodeTable(nodeType, field, tableName, processedSchema);
-            var hasOverlap = fieldKeyColumns.stream().anyMatch(overlappingColumns.keySet()::contains);
-            code.addIf(hasOverlap && GeneratorConfig.validateOverlappingInputFields(),
-                    () -> generateOverlapValidationCode(field, targetVarName, nodeType, overlappingColumns.keySet(), jooqRecordClass));
-        }
-
-        return code
-                .addStatement("$N = true", hasValueVarName)
-                .addStatement("$N.$L($N, $N, $S, $L)",
-                        VAR_NODE_STRATEGY,
-                        isReference ? METHOD_SET_RECORD_REFERENCE_ID : METHOD_SET_RECORD_ID,
-                        targetVarName, VAR_NODE_ID_VALUE, nodeType.getTypeId(), columnsBlock)
+                .beginControlFlow("if ($N != null)", VAR_NODE_ID_VALUE)
+                .add(generateNodeIdFieldValueCode(field, targetVarName, hasValueVarName, overlappingColumns.keySet(), jooqRecordClass))
                 .endControlFlow()
                 .addStatement("$N.add($N ? $N : null)", listOutputVarName, hasValueVarName, targetVarName)
                 .endControlFlow()
@@ -315,29 +297,11 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
 
         for (var field : fields) {
             var listVarName = internalPrefix(field.getName());
-            var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(field);
-            var tableName = getTableName(jooqRecordClass);
-            var isReference = !tableName.equals(nodeType.getTable().getName()) || field.hasFieldReferences();
-            var columnsBlock = FormatCodeBlocks.generateNodeIdColumnsBlock(tableName, nodeType, field, processedSchema);
-
             code
                     .beginControlFlow("if ($N != null)", listVarName)
                     .declare(VAR_NODE_ID_VALUE, "$N.get($N)", listVarName, indexVarName)
-                    .beginControlFlow("if ($N != null)", VAR_NODE_ID_VALUE);
-
-            if (!overlappingColumns.isEmpty()) {
-                var fieldKeyColumns = getKeyFieldsForSourceNodeTable(nodeType, field, tableName, processedSchema);
-                var hasOverlap = fieldKeyColumns.stream().anyMatch(overlappingColumns.keySet()::contains);
-                code.addIf(hasOverlap && GeneratorConfig.validateOverlappingInputFields(),
-                        () -> generateOverlapValidationCode(field, targetVarName, nodeType, overlappingColumns.keySet(), jooqRecordClass));
-            }
-
-            code
-                    .addStatement("$N = true", hasValueVarName)
-                    .addStatement("$N.$L($N, $N, $S, $L)",
-                            VAR_NODE_STRATEGY,
-                            isReference ? METHOD_SET_RECORD_REFERENCE_ID : METHOD_SET_RECORD_ID,
-                            targetVarName, VAR_NODE_ID_VALUE, nodeType.getTypeId(), columnsBlock)
+                    .beginControlFlow("if ($N != null)", VAR_NODE_ID_VALUE)
+                    .add(generateNodeIdFieldValueCode(field, targetVarName, hasValueVarName, overlappingColumns.keySet(), jooqRecordClass))
                     .endControlFlow()
                     .endControlFlow();
         }
@@ -367,24 +331,42 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             Set<String> overlappingColumns,
             Class<?> jooqRecordClass) {
 
+        var sourceName = context.getSourceName();
+        var inputVar = namedIteratorPrefix(sourceName);
+        var getterMapping = new MethodMapping(field.getName());
+
+        return CodeBlock.builder()
+                .beginControlFlow("if ($N.contains($N + $S))", VAR_ARGS, VAR_PATH_HERE, field.getName())
+                .declare(VAR_NODE_ID_VALUE, asMethodCall(inputVar, getterMapping.asGet()))
+                .beginControlFlow("if ($N != null)", VAR_NODE_ID_VALUE)
+                .add(generateNodeIdFieldValueCode(field, targetVarName, hasValueVarName, overlappingColumns, jooqRecordClass))
+                .endControlFlow()
+                .endControlFlow()
+                .add("\n")
+                .build();
+    }
+
+    /**
+     * Generates the core code for processing a single @nodeId field value:
+     * overlap validation, hasValue flag, and setRecordId call.
+     * Assumes {@code VAR_NODE_ID_VALUE} has already been declared and null-checked by the caller.
+     */
+    private CodeBlock generateNodeIdFieldValueCode(
+            GenerationField field,
+            String targetVarName,
+            String hasValueVarName,
+            Set<String> overlappingColumns,
+            Class<?> jooqRecordClass) {
+
         var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(field);
         var tableName = getTableName(jooqRecordClass);
         var isReference = !tableName.equals(nodeType.getTable().getName()) || field.hasFieldReferences();
         var columnsBlock = FormatCodeBlocks.generateNodeIdColumnsBlock(tableName, nodeType, field, processedSchema);
 
-        // Get the node ID value from input
-        var sourceName = context.getSourceName();
-        var inputVar = namedIteratorPrefix(sourceName);
-        var getterMapping = new MethodMapping(field.getName());
+        var code = CodeBlock.builder();
 
-        var code = CodeBlock.builder()
-                .beginControlFlow("if ($N.contains($N + $S))", VAR_ARGS, VAR_PATH_HERE, field.getName())
-                .declare(VAR_NODE_ID_VALUE, asMethodCall(inputVar, getterMapping.asGet()))
-                .beginControlFlow("if ($N != null)", VAR_NODE_ID_VALUE);
-
-        // Generate overlap validation if this field writes to any overlapping columns
         if (!overlappingColumns.isEmpty()) {
-            var fieldKeyColumns = getKeyFieldsForSourceNodeTable(nodeType, field, getTableName(jooqRecordClass), processedSchema);
+            var fieldKeyColumns = getKeyFieldsForSourceNodeTable(nodeType, field, tableName, processedSchema);
             var hasOverlap = fieldKeyColumns.stream().anyMatch(overlappingColumns::contains);
             code.addIf(hasOverlap && GeneratorConfig.validateOverlappingInputFields(),
                     () -> generateOverlapValidationCode(field, targetVarName, nodeType, overlappingColumns, jooqRecordClass));
@@ -392,17 +374,10 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
 
         return code
                 .addStatement("$N = true", hasValueVarName)
-                .addStatement(
-                        "$N.$L($N, $N, $S, $L)",
+                .addStatement("$N.$L($N, $N, $S, $L)",
                         VAR_NODE_STRATEGY,
                         isReference ? METHOD_SET_RECORD_REFERENCE_ID : METHOD_SET_RECORD_ID,
-                        targetVarName,
-                        VAR_NODE_ID_VALUE,
-                        nodeType.getTypeId(),
-                        columnsBlock)
-                .endControlFlow()
-                .endControlFlow()
-                .add("\n")
+                        targetVarName, VAR_NODE_ID_VALUE, nodeType.getTypeId(), columnsBlock)
                 .build();
     }
 
