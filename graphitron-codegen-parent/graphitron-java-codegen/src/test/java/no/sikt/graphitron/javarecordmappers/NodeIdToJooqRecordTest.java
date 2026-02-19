@@ -29,7 +29,8 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     protected Set<ExternalReference> getExternalReferences() {
         return makeReferences(DUMMY_SERVICE, NODEID_INPUT_JAVA_RECORD, RENTAL_INPUT_JAVA_RECORD, COMPOSITE_KEY_INPUT_JAVA_RECORD,
                 FILM_ACTOR_INPUT_JAVA_RECORD, FILM_JAVA_RECORD, LISTED_NODEID_INPUT_JAVA_RECORD,
-                LISTED_RENTAL_INPUT_JAVA_RECORD, LISTED_AND_SINGULAR_INPUT_JAVA_RECORD);
+                LISTED_RENTAL_INPUT_JAVA_RECORD, LISTED_AND_SINGULAR_INPUT_JAVA_RECORD,
+                LISTED_FILM_ACTOR_INPUT_JAVA_RECORD);
     }
 
     @Override
@@ -119,6 +120,17 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
                 "setReferenceId(_mi_rental, _iv_nodeIdValue, \"CustomerNode\", Rental.RENTAL.CUSTOMER_ID)",
                 "setReferenceId(_mi_rental, _iv_nodeIdValue, \"InventoryNode\", Rental.RENTAL.INVENTORY_ID)",
                 "_mlo_rental.add(_mi_rentalHasValue ? _mi_rental : null)"
+        );
+    }
+
+    @Test
+    @DisplayName("Listed @nodeId fields with overlapping columns")
+    void listedNodeIdOverlappingColumn() {
+        assertGeneratedContentContains("listedNodeIdOverlappingColumn", Set.of(FILM_ACTOR_NODE),
+                "new ArrayList<FilmActorRecord>()",
+                "MapperHelper.validateListedNodeIdLengths(",
+                "MapperHelper.validateOverlappingNodeIdColumns(_iv_nodeIdStrategy, _iv_nodeIdValue, _mi_filmActor, \"FilmActorNode\", \"ACTOR_ID\", (_iv_it) -> _iv_it.getActorId(), FilmActor.FILM_ACTOR.ACTOR_ID, FilmActor.FILM_ACTOR.FILM_ID);",
+                "MapperHelper.validateOverlappingNodeIdColumns(_iv_nodeIdStrategy, _iv_nodeIdValue, _mi_filmActor, \"Actor\", \"ACTOR_ID\", (_iv_it) -> _iv_it.getActorId(), FilmActor.FILM_ACTOR.ACTOR_ID);"
         );
     }
 

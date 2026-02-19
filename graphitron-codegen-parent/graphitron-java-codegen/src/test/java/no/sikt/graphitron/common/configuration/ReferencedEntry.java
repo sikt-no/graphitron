@@ -71,7 +71,8 @@ public enum ReferencedEntry {
     FILM_JAVA_RECORD("FILM_JAVA_RECORD", FilmJavaRecord.class),
     LISTED_NODEID_INPUT_JAVA_RECORD("LISTED_NODEID_INPUT_JAVA_RECORD", ListedNodeIdInputJavaRecord.class),
     LISTED_RENTAL_INPUT_JAVA_RECORD("LISTED_RENTAL_INPUT_JAVA_RECORD", ListedRentalInputJavaRecord.class),
-    LISTED_AND_SINGULAR_INPUT_JAVA_RECORD("LISTED_AND_SINGULAR_INPUT_JAVA_RECORD", ListedAndSingularInputJavaRecord.class);
+    LISTED_AND_SINGULAR_INPUT_JAVA_RECORD("LISTED_AND_SINGULAR_INPUT_JAVA_RECORD", ListedAndSingularInputJavaRecord.class),
+    LISTED_FILM_ACTOR_INPUT_JAVA_RECORD("LISTED_FILM_ACTOR_INPUT_JAVA_RECORD", ListedFilmActorInputJavaRecord.class);
 
     private final ExternalReference reference;
 
