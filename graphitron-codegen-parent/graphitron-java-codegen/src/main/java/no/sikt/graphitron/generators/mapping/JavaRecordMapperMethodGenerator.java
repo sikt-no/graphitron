@@ -205,8 +205,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             listVarNames.add(listVarName);
             var getterMapping = new MethodMapping(field.getName());
             code.declare(listVarName,
-                    "$N.contains($N + $S)\n? $L : null",
-                    VAR_ARGS, VAR_PATH_HERE, field.getName(),
+                    "$L ? $L : null", FormatCodeBlocks.selectionSetLookup(field.getName(), false, true),
                     asMethodCall(inputVar, getterMapping.asGet()));
         }
 
@@ -274,7 +273,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
         var getterMapping = new MethodMapping(field.getName());
 
         return CodeBlock.builder()
-                .beginControlFlow("if ($N.contains($N + $S))", VAR_ARGS, VAR_PATH_HERE, field.getName())
+                .beginControlFlow("if ($L)", FormatCodeBlocks.selectionSetLookup(field.getName(), false, true))
                 .declare(VAR_NODE_ID_VALUE, asMethodCall(inputVar, getterMapping.asGet()))
                 .beginControlFlow("if ($N != null)", VAR_NODE_ID_VALUE)
                 .add(generateNodeIdFieldValueCode(field, targetVarName, hasValueVarName, overlappingColumns, jooqRecordClass))
