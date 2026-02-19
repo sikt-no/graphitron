@@ -28,7 +28,7 @@ public class TransformMojo extends AbstractMojo {
      * Transform configuration settings.
      */
     @Parameter(required = true)
-    private TransformConfiguration transform;
+    private TransformPluginConfiguration transform;
 
     @Override
     public void execute() throws MojoExecutionException {

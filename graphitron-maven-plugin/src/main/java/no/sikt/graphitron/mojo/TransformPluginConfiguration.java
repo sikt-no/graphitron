@@ -1,13 +1,20 @@
 package no.sikt.graphitron.mojo;
 
 import no.fellesstudentsystem.schema_transformer.OutputSchema;
+import no.fellesstudentsystem.schema_transformer.TransformConfig;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
- * Configuration for schema transformation.
+ * Maven plugin configuration for schema transformation.
+ * <p>
+ * This class is populated by Maven's XML parameter binding from the {@code <transform>} element
+ * in plugin configuration. Use {@link #toTransformConfig} to create a {@link TransformConfig}
+ * for use by the schema transformer.
  */
-public class TransformConfiguration {
+public class TransformPluginConfiguration {
 
     /**
      * Directories to search for GraphQL schema files. The plugin will process all schema files found
@@ -66,7 +73,7 @@ public class TransformConfiguration {
 
     private Set<String> directivesToRemove;
 
-    public TransformConfiguration() {}
+    public TransformPluginConfiguration() {}
 
     public Set<String> getSchemaRootDirectories() {
         return schemaRootDirectories;
@@ -138,5 +145,22 @@ public class TransformConfiguration {
 
     public void setDirectivesToRemove(Set<String> directivesToRemove) {
         this.directivesToRemove = directivesToRemove;
+    }
+
+    /**
+     * Creates a {@link TransformConfig} for use by the schema transformer.
+     *
+     * @param schemaLocations resolved schema file paths
+     * @param descriptionSuffixForFeatures resolved description suffix map
+     * @return a TransformConfig with the current settings
+     */
+    public TransformConfig toTransformConfig(List<String> schemaLocations, Map<String, String> descriptionSuffixForFeatures) {
+        return new TransformConfig(
+                schemaLocations,
+                getDirectivesToRemove(),
+                descriptionSuffixForFeatures,
+                addFeatureFlags,
+                removeGeneratorDirectives,
+                expandConnections);
     }
 }

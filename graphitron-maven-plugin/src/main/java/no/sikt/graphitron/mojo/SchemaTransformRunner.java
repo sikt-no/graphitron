@@ -26,9 +26,9 @@ public class SchemaTransformRunner {
     private static final String GENERATOR_SCHEMA_FILENAME = "generator-schema.graphql";
     private static final String DIRECTIVES_RESOURCE = "/directives.graphqls";
 
-    private final TransformConfiguration config;
+    private final TransformPluginConfiguration config;
 
-    public SchemaTransformRunner(TransformConfiguration config) {
+    public SchemaTransformRunner(TransformPluginConfiguration config) {
         this.config = config;
     }
 
@@ -148,14 +148,7 @@ public class SchemaTransformRunner {
             List<String> inputSchemaFiles,
             Map<String, String> descriptionSuffixForFeatures) {
 
-        var clientConfig = new TransformConfig(
-                inputSchemaFiles,
-                config.getDirectivesToRemove(),
-                descriptionSuffixForFeatures,
-                config.isAddFeatureFlags(),
-                config.isRemoveGeneratorDirectives(),
-                config.isExpandConnections());
-
+        var clientConfig = config.toTransformConfig(inputSchemaFiles, descriptionSuffixForFeatures);
         return new SchemaTransformer(clientConfig).transformSchema();
     }
 
