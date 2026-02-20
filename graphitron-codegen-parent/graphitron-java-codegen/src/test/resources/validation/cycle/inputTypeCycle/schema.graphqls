@@ -1,0 +1,7 @@
+input InputA {
+    b: InputB
+}
+
+input InputB {
+    a: InputA
+}

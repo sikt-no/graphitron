@@ -1,0 +1,13 @@
+type TypeA {
+    i: InterfaceI
+}
+
+interface InterfaceI {
+    a1: TypeA
+    a2: TypeA
+}
+
+type Impl implements InterfaceI {
+    a1: TypeA
+    a2: TypeA
+}
