@@ -1,0 +1,10 @@
+scalar FieldSet
+directive @key(fields: FieldSet!, resolvable: Boolean = true) repeatable on OBJECT | INTERFACE
+
+type Query {
+  a: A
+}
+
+type A {
+  id: String
+}

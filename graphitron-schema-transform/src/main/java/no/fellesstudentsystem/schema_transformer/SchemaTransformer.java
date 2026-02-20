@@ -52,9 +52,12 @@ public class SchemaTransformer {
     private List<Function<GraphQLSchema, GraphQLSchema>> getSchemaTransforms(TypeDefinitionRegistry registry) {
         var transforms = new ArrayList<Function<GraphQLSchema, GraphQLSchema>>();
 
-        // This one goes first since removing fields and types allows us to not process them in later transforms.
         if (config.removeExcludedElements()) {
+            // This one goes first since removing fields and types allows us to not process them in later transforms.
             transforms.add((s) -> new ElementRemovalFilter(s, DIRECTIVES_FOR_REMOVING_ELEMENTS).getModifiedGraphQLSchema());
+
+            // This clears out non-resolvable keys so our entity handling does not try to resolve them.
+            transforms.add((s) -> new KeyFilter(s).getModifiedGraphQLSchema());
         }
 
         if (config.addFeatureFlags()) {

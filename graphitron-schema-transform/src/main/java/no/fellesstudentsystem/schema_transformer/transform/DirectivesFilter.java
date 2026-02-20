@@ -22,7 +22,7 @@ public class DirectivesFilter implements ModifyingGraphQLTypeVisitor {
      */
     @Override
     public GraphQLSchema getModifiedGraphQLSchema() {
-        var generatorDirectiveVisitor = new GraphQLTypeVisitorStub() {
+        var visitor = new GraphQLTypeVisitorStub() {
             @Override
             public TraversalControl visitGraphQLDirective(GraphQLDirective node, TraverserContext<GraphQLSchemaElement> context) {
                 if (isExcludedDirective(node.getName())) {
@@ -39,7 +39,7 @@ public class DirectivesFilter implements ModifyingGraphQLTypeVisitor {
                 return CONTINUE;
             }
         };
-        return SchemaTransformer.transformSchema(schema, generatorDirectiveVisitor);
+        return SchemaTransformer.transformSchema(schema, visitor);
     }
 
     /**

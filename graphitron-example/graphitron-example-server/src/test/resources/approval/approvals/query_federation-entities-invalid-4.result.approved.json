@@ -1,7 +1,7 @@
 {
     "errors": [
         {
-            "message": "An exception occurred. The error has been logged with id [UUID]: Key {actorId=1, __typename=FederatedFilmActorWithBadKey} is not unique in Result",
+            "message": "Cannot resolve entity with __typename 'FederatedFilm'.",
             "locations": [
                 {
                     "line": 2,

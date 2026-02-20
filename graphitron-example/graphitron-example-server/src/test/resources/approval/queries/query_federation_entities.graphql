@@ -22,6 +22,12 @@ query FederationEntities($representations: [_Any!]!) {
                 id
             }
         }
+        ... on FederatedCustomerOneNonResolvable {
+            id
+            firstName
+            lastName
+            email
+        }
         ... on FederatedFilm {
             id
         }

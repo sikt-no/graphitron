@@ -48,7 +48,8 @@ public enum GraphQLReservedName {
     OPERATION_MUTATION(uncapitalize(SCHEMA_MUTATION.getName())),
 
     FEDERATION_KEY(FederationDirectives.keyName),
-    FEDERATION_KEY_ARGUMENT(FederationDirectives.fieldsArgumentName),
+    FEDERATION_KEY_FIELDS(FederationDirectives.fieldsArgumentName),
+    FEDERATION_KEY_RESOLVABLE("resolvable"),
     FEDERATION_LINK("link"),
     FEDERATION_LINK_IMPORT("import"),
     FEDERATION_TAG("tag"),

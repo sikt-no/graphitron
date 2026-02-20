@@ -2,7 +2,10 @@
     "data": {
         "_entities": [
             {
-                "id": "RmVkZXJhdGVkRmlsbTo0"
+                "id": "RmVkZXJhdGVkQ3VzdG9tZXJPbmVOb25SZXNvbHZhYmxlOjg",
+                "firstName": "SUSAN",
+                "lastName": "WILSON",
+                "email": "SUSAN.WILSON@sakilacustomer.org"
             }
         ]
     }
