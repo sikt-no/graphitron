@@ -1,0 +1,12 @@
+type Query {
+  query(input: LookupInput @lookupKey): [Address]
+}
+
+type Address @table {
+  cityId: Int @field(name: "CITY_ID")
+}
+
+input LookupInput {
+  customerId: [Int!]! @field(name: "CUSTOMER_ID") @reference(path: [{table: "CUSTOMER"}])
+  cityId: [Int!]! @field(name: "CITY_ID") @reference(path: [{table: "CITY"}])
+}

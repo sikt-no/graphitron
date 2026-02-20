@@ -104,6 +104,7 @@ public class ProcessedDefinitionsValidator {
         validatePaginatedFieldsHaveOrdering();
         validateDefaultOrderNotOnInterfaceOrUnion();
         validateNoCyclesWithoutTable();
+        validateLookupArguments();
 
         logWarnings();
         throwIfErrors();
@@ -1794,5 +1795,33 @@ public class ProcessedDefinitionsValidator {
                         field.getTypeName(),
                         DEFAULT_ORDER.getName()
                 ));
+    }
+
+    private void validateLookupArguments() {
+        allFields.forEach(field -> {
+            var lookupArguments = field.getNonReservedArguments().stream()
+                    .filter(InputField::isLookupKey)
+                    .toList();
+
+            lookupArguments.stream()
+                    .filter(it -> it.hasFieldReferences() || schema.isNodeIdReferenceInputField(it, field))
+                    .forEach(it -> addErrorMessage(
+                            "Argument/input field %s has %s directive, but is a reference field. Lookup on references is not currently supported.",
+                            it.formatPath(), LOOKUP_KEY.getName()));
+
+            lookupArguments.stream()
+                    .filter(schema::isInputType)
+                    .forEach(arg -> {
+                        var referenceFields = schema.getInputType(arg).getFields().stream()
+                                .filter(it -> it.hasFieldReferences() || schema.isNodeIdReferenceInputField(it, field))
+                                .map(GenerationSourceField::formatPath)
+                                .collect(Collectors.joining(", "));
+                        if (!referenceFields.isEmpty()) {
+                            addErrorMessage(
+                                    "Argument %s has %s directive, but contains reference field(s): %s. Lookup on references is not currently supported.",
+                                    arg.formatPath(), LOOKUP_KEY.getName(), referenceFields);
+                        }
+                    });
+        });
     }
 }

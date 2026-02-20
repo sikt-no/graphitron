@@ -71,7 +71,7 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
         var inputFields = new ArrayList<ArgumentField>();
 
         if (!isResolver() && !isTopLevel) {
-            return inputs.stream().map(it -> new ArgumentField(it, container)).collect(Collectors.toList());
+            return inputs.stream().map(it -> new ArgumentField(it, container, field.getName())).toList();
         }
 
         boolean hasFirst = false, hasAfter = false, hasLast = false, hasBefore = false;
@@ -93,7 +93,7 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
             } else if (name.equals(GraphQLReservedName.PAGINATION_BEFORE.getName())) {
                 hasBefore = true;
             }
-            inputFields.add(new ArgumentField(in, container));
+            inputFields.add(new ArgumentField(in, container, field.getName()));
         }
 
         var hasConnection = getTypeName().endsWith(GraphQLReservedName.SCHEMA_CONNECTION_SUFFIX.getName());

@@ -5,9 +5,7 @@ import graphql.language.*;
 import graphql.language.SchemaDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.definitions.fields.AbstractField;
-import no.sikt.graphitron.definitions.fields.GenerationSourceField;
-import no.sikt.graphitron.definitions.fields.InputField;
+import no.sikt.graphitron.definitions.fields.*;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
@@ -856,6 +854,13 @@ public class ProcessedSchema {
         return false;
     }
 
+    public boolean isNodeIdReferenceInputField(InputField argument, GenerationField targetField) {
+        if (isNodeIdField(argument)) {
+            return argument.hasFieldReferences() || !getNodeTypeForNodeIdFieldOrThrow(argument).getName().equals(targetField.getTypeName());
+        }
+        return false;
+    }
+
     /**
      * Is this a node ID field in a non-node type that shares the same table with another node type?
      * @return Whether this is a field creating a node ID for another node type from the current table
@@ -874,10 +879,8 @@ public class ProcessedSchema {
                 ? Optional.of(containerType.getTable())
                 : Optional.ofNullable(getPreviousTableObjectForObject(containerType)).map(RecordObjectSpecification::getTable);
 
-
         var nodeObject = getNodeTypeForNodeIdField(field);
         return nodeObject.isPresent() && localTable.filter(t -> nodeObject.get().getTable().equals(t)).isPresent();
-
     }
 
     /**
