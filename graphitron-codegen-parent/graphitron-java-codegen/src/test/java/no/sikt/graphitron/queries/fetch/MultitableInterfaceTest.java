@@ -1,5 +1,6 @@
 package no.sikt.graphitron.queries.fetch;
 
+import no.sikt.graphitron.validation.InvalidSchemaException;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -7,6 +8,8 @@ import org.junit.jupiter.api.Test;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
+import static no.sikt.graphitron.generators.db.FetchMultiTableDBMethodGenerator.MSG_ERROR_NO_TABLE;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Multi-table interfaces - Queries")
 public class MultitableInterfaceTest extends InterfaceTest {
@@ -177,5 +180,21 @@ public class MultitableInterfaceTest extends InterfaceTest {
                 ".from(_a_payment_1831371789_customer).where(_a_payment_1831371789_customer.EMAIL.eq(_mi_email))",
                 ".from(_a_payment).where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment)).fetch"
         );
+    }
+
+    @Test
+    @DisplayName("Type implements multitable interface but has no table")
+    void implementationWithoutTable() {
+        assertThatThrownBy(() -> generateFiles("implementationWithoutTable"))
+                .isInstanceOf(InvalidSchemaException.class)
+                .hasMessage("Problems have been found that prevent code generation: \n" + String.format(MSG_ERROR_NO_TABLE, "Customer", "SomeInterface"));
+    }
+
+    @Test
+    @DisplayName("Two types implement multitable interface but have no tables")
+    void twoImplementationsWithoutTable() {
+        assertThatThrownBy(() -> generateFiles("twoImplementationsWithoutTable"))
+                .isInstanceOf(InvalidSchemaException.class)
+                .hasMessage("Problems have been found that prevent code generation: \n" + String.format(MSG_ERROR_NO_TABLE, "Address', 'Customer", "SomeInterface"));
     }
 }
