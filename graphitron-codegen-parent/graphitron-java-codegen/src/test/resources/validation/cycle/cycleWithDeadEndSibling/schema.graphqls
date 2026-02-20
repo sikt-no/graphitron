@@ -1,0 +1,16 @@
+type TypeA {
+    deadEnd: DeadEnd
+    b: TypeB
+}
+
+type TypeB {
+    a: TypeA
+}
+
+type DeadEnd {
+    d: DeadEndLeaf
+}
+
+type DeadEndLeaf {
+    s: String
+}

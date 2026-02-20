@@ -1,0 +1,9 @@
+type TypeA {
+    path1: TypeB
+    path2: TypeB
+}
+
+type TypeB {
+    path1: TypeA
+    path2: TypeA
+}

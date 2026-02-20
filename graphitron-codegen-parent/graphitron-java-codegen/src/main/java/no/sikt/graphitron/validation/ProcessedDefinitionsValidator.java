@@ -76,6 +76,9 @@ public class ProcessedDefinitionsValidator {
     public void validateDirectiveUsage() {
         schema.getObjects().values().forEach(it -> checkPaginationSpecs(it.getFields()));
 
+        // Validate cycles first to ensure there are no infinite loops later
+        validateNoCycles();
+
         validateTablesAndKeys();
         validateRequiredTableFields();
         validateUnionFieldsTable();
@@ -90,7 +93,6 @@ public class ProcessedDefinitionsValidator {
         validateMutationRequiredFields();
         validateRecursiveRecordInputs();
         validateOnlyOneInputRecordInputWhenNoTypeTableIsPresent();
-        validateSelfReferenceHasSplitQuery();
         validateNotUsingBothExternalFieldAndField();
         validateExternalField();
         validateNodeDirective();
@@ -103,7 +105,6 @@ public class ProcessedDefinitionsValidator {
         validateJavaRecordFieldMappings();
         validatePaginatedFieldsHaveOrdering();
         validateDefaultOrderNotOnInterfaceOrUnion();
-        validateNoCyclesWithoutTable();
         validateLookupArguments();
 
         logWarnings();
@@ -586,17 +587,14 @@ public class ProcessedDefinitionsValidator {
         schema.getObjects().values().stream()
                 .filter(RecordObjectDefinition::hasTable)
                 .toList()
-                .forEach(object -> {
-                    var initialTable = object.getTable();
-                    validateTableFieldsExist(initialTable, object.getFields(), new LinkedHashSet<>());
-                });
+                .forEach(object -> validateTableFieldsExist(object.getTable(), object.getFields()));
 
         // Validate input objects with table (jOOQ record input)
         var alreadyValidatedJooqRecordInput = schema.getInputTypes().values().stream()
                 .filter(RecordObjectDefinition::hasTable)
                 .filter(it -> !it.hasJavaRecordReference())
                 .map(input -> {
-                    validateTableFieldsExist(input.getTable(), input.getFields(), false, new LinkedHashSet<>());
+                    validateTableFieldsExist(input.getTable(), input.getFields(), false);
                     return input.getName();
                 })
                 .toList();
@@ -613,7 +611,7 @@ public class ProcessedDefinitionsValidator {
                     var argumentsToValidate = field.getNonReservedArguments().stream()
                             .filter(it -> !alreadyValidatedJooqRecordInput.contains(it.getTypeName()))
                             .toList();
-                    validateTableFieldsExist(table, argumentsToValidate, field.hasOverridingCondition(), new LinkedHashSet<>());
+                    validateTableFieldsExist(table, argumentsToValidate, field.hasOverridingCondition());
                 });
 
         // Validate fields with implicit table from input jOOQ record
@@ -644,49 +642,34 @@ public class ProcessedDefinitionsValidator {
                     } else {
                         return;
                     }
-                    validateTableFieldsExist(implicitTableFromInput, fields, new LinkedHashSet<>());
+                    validateTableFieldsExist(implicitTableFromInput, fields);
                 });
     }
 
-    private void validateTableFieldsExist(JOOQMapping currentTable, Collection<ObjectField> fields, Set<String> visitedTypes) {
+    private void validateTableFieldsExist(JOOQMapping currentTable, Collection<ObjectField> fields) {
         for (var field : getFieldsInTableContext(fields, currentTable)) {
             if (schema.isObject(field)) { // Field wrapper object
-                var object = schema.getObject(field);
-
-                if (hasCircularReference(object.getName(), visitedTypes)) {
-                    continue;
-                }
-                // Copy to avoid accumulating types across sibling fields
-                var newVisited = new LinkedHashSet<>(visitedTypes);
-                newVisited.add(object.getName());
-                validateTableFieldsExist(currentTable, object.getFields(), newVisited);
-            } else if (currentTable != null) {
-                validateFieldExists(currentTable.getMappingName(), field);
+                validateTableFieldsExist(currentTable, schema.getObject(field).getFields());
+                continue;
             }
+            validateFieldExists(currentTable.getMappingName(), field);
         }
     }
 
-    private void validateTableFieldsExist(JOOQMapping currentTable, Collection<? extends InputField> fields, boolean hasOverridingCondition, Set<String> visitedTypes) {
+    private void validateTableFieldsExist(JOOQMapping currentTable, Collection<? extends InputField> fields, boolean hasOverridingCondition) {
         for (var field : getFieldsInTableContext(fields, currentTable)) {
             var hasCondition = hasOverridingCondition || field.hasOverridingCondition();
             if (schema.isInputType(field)) {
                 var inputType = schema.getInputType(field);
                 if (!inputType.hasTable()) {
-                    var typeName = inputType.getName();
-                    if (hasCircularReference(typeName, visitedTypes)) {
-                        continue;
-                    }
-                    // Copy to avoid accumulating types across sibling fields
-                    var newVisited = new LinkedHashSet<>(visitedTypes);
-                    newVisited.add(typeName);
-                    validateTableFieldsExist(currentTable, inputType.getFields(), hasCondition, newVisited);
+                    validateTableFieldsExist(currentTable, inputType.getFields(), hasCondition);
                 }
-            } else if (currentTable != null && !hasCondition) {
+            } else if (!hasCondition) {
                 validateFieldExists(currentTable.getMappingName(), field);
             }
         }
         // Validate that @field columns exist in @reference tables
-        if (currentTable != null && !hasOverridingCondition) {
+        if (!hasOverridingCondition) {
             fields.stream()
                     .filter(field -> field.isGenerated() && field.hasFieldReferences() && !field.hasNodeID() && !field.hasOverridingCondition())
                     .forEach(field ->
@@ -712,26 +695,6 @@ public class ProcessedDefinitionsValidator {
                 || field.isExternalField()
                 || field.hasServiceReference()
                 || (schema.isInputType(field) && schema.getInputType(field).hasJavaRecordReference());
-    }
-
-    private boolean hasCircularReference(String typeName, Set<String> visitedTypes) {
-        if (visitedTypes.contains(typeName)) {
-            addErrorMessage("Circular reference detected without @table directive: %s. Add a @table directive to one of these types to break the cycle.",
-                    String.join(" -> ", visitedTypes) + " -> " + typeName);
-            return true;
-        }
-        return false;
-    }
-
-    private void validateNoCyclesWithoutTable() {
-        // TODO: Improve validation if cycles in schema
-        // Cycles in table types is validated in table field validation
-        schema.getObjects().values().stream()
-                .filter(it -> !it.hasTable() && !it.isOperationRoot())
-                .forEach(object -> validateTableFieldsExist(null, object.getFields(), new LinkedHashSet<>()));
-        schema.getInputTypes().values().stream()
-                .filter(it -> !it.hasTable())
-                .forEach(input -> validateTableFieldsExist(null, input.getFields(), false, new LinkedHashSet<>()));
     }
 
     private void validateExternalMappingReferences() {
@@ -1477,17 +1440,6 @@ public class ProcessedDefinitionsValidator {
         }
     }
 
-    private void validateSelfReferenceHasSplitQuery() {
-        schema.getObjects().values()
-                .forEach(object -> object.getFields()
-                        .forEach(field -> {
-                            if (Objects.equals(field.getTypeName(), object.getName()) && !field.isResolver()) {
-                                addErrorMessage("Self reference must have splitQuery, field \"" + field.getName() + "\" in object \"" + object.getName() + "\"");
-                            }
-                        })
-                );
-    }
-
     private void validateNotUsingBothExternalFieldAndField() {
         schema.getObjects().values()
                 .forEach(object -> object.getFields().stream()
@@ -1795,6 +1747,132 @@ public class ProcessedDefinitionsValidator {
                         field.getTypeName(),
                         DEFAULT_ORDER.getName()
                 ));
+    }
+
+    /**
+     * Validates that neither input types nor output types contain cycles that would cause infinite recursion
+     * during code generation (or later validation).
+     */
+    private void validateNoCycles() {
+        validateInputCycles();
+        validateOutputTypeCycles();
+        throwIfErrors();
+    }
+
+    private void validateInputCycles() {
+        var alreadyExplored = new HashSet<String>();
+        schema.getInputTypes().values()
+                .forEach(input ->
+                        detectCycles(input.getName(), new LinkedHashMap<>(), alreadyExplored, "Input type cycles are not allowed."));
+    }
+
+    private void validateOutputTypeCycles() {
+        var alreadyExplored = new HashSet<String>();
+        var errorSuffix = String.format("A resolver is required to break the cycle, for example by adding @%s to (one of) the field(s).",
+                SPLIT_QUERY.getName());
+
+        schema.getObjects().values()
+                .forEach(type -> detectCycles(type.getName(), new LinkedHashMap<>(), alreadyExplored, errorSuffix));
+        schema.getInterfaces().values()
+                .forEach(type -> detectCycles(type.getName(), new LinkedHashMap<>(), alreadyExplored, errorSuffix));
+    }
+
+    /**
+     * Detects cycles in input types, and cycles in output types not broken by a resolver.
+     *
+     * @param typeName        the name of the type, interface or input currently being visited
+     * @param currentPath     ordered map of types on the current DFS path, each mapped to the field paths leading from it
+     * @param alreadyExplored types whose entire subgraph has already been checked
+     * @param errorSuffix     appended after the cycle path in the error message, e.g. a workaround suggestion
+     */
+    private void detectCycles(String typeName, LinkedHashMap<String, List<String>> currentPath, Set<String> alreadyExplored, String errorSuffix) {
+        if (alreadyExplored.contains(typeName)) return;
+
+        if (currentPath.containsKey(typeName)) {
+            addErrorMessage("Cycle detected: %s. %s", formatCyclePath(currentPath, typeName), errorSuffix);
+            return;
+        }
+
+        getNextPaths(typeName)
+                .forEach((fieldTargetType, fieldPaths) -> {
+                    currentPath.put(typeName, fieldPaths);
+                    detectCycles(fieldTargetType, currentPath, alreadyExplored, errorSuffix);
+                });
+        currentPath.remove(typeName);
+        alreadyExplored.add(typeName);
+    }
+
+    /** Returns a type's non-resolver fields, grouped by target type name. */
+    private Map<String, List<String>> getNextPaths(String typeName) {
+        if (schema.isInputType(typeName)) {
+            return schema.getInputType(typeName)
+                    .getFields().stream()
+                    .filter(GenerationTarget::isGenerated)
+                    .filter(field -> schema.isInputType(field.getTypeName()))
+                    .collect(Collectors.groupingBy(
+                            FieldSpecification::getTypeName,
+                            LinkedHashMap::new,
+                            Collectors.mapping(GenerationField::formatPath, Collectors.toList())
+                            )
+                    );
+        }
+        var fields = schema.isObject(typeName)
+                ? schema.getObject(typeName).getFields()
+                : Optional.ofNullable(schema.getInterface(typeName))
+                    .map(AbstractObjectDefinition::getFields)
+                    .orElse(List.of());
+
+        return fields.stream()
+                .filter(GenerationTarget::isGenerated)
+                .filter(field -> !field.isResolver())
+                .filter(field -> !schema.isScalar(field))
+                .flatMap(field ->
+                        resolveFieldTargets(field)
+                                .map(targetTypeName -> Map.entry(field.formatPath(), targetTypeName)))
+                .collect(Collectors.groupingBy(
+                        Map.Entry::getValue,
+                        LinkedHashMap::new,
+                        Collectors.mapping(Map.Entry::getKey, Collectors.toList())));
+    }
+
+    /** Resolves the type names a field can point to, expanding interfaces to their implementations and unions to their members. */
+    private Stream<String> resolveFieldTargets(GenerationField field) {
+        if (schema.isObject(field) || schema.isInputType(field)) {
+            return Stream.of(field.getTypeName());
+        } else if (schema.isInterface(field)) {
+            return Stream.concat(
+                    Stream.of(field.getTypeName()), // Include interface name in order to check for interface cycles
+                    schema.getImplementationsForInterface(field.getTypeName()).stream()
+                            .map(AbstractObjectDefinition::getName)
+            );
+        } else if (schema.isUnion(field)) {
+            return schema.getUnionSubTypes(field.getTypeName()).stream()
+                    .map(AbstractObjectDefinition::getName);
+        }
+        return Stream.empty();
+    }
+
+    /**
+     * Formats the cycle portion of a path as a human-readable string, e.g. {@code 'TypeA.b' -> 'TypeB.a' -> 'TypeA'}.
+     * @param fullPath Ordered map of types on the current DFS path, each mapped to the field paths leading from it
+     * @param typeNameInCycle Name of a type/interface/input type which is in the cycle.
+     * @return Path as a human-readable string
+     */
+    private static String formatCyclePath(LinkedHashMap<String, List<String>> fullPath, String typeNameInCycle) {
+        var cyclePath = new LinkedHashMap<>(fullPath);
+        for (var key : fullPath.keySet()) {
+            if (key.equals(typeNameInCycle)) break;
+            cyclePath.remove(key);
+        }
+
+        var path = cyclePath.values()
+                .stream()
+                .map(fieldPaths -> String.join("/", fieldPaths))
+                .reduce("",
+                        (accumulated, step) -> accumulated + step + " -> ");
+
+        // Append the repeated type name to close the cycle
+        return path + String.format("'%s'", cyclePath.keySet().iterator().next());
     }
 
     private void validateLookupArguments() {
