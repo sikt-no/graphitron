@@ -11,7 +11,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -57,10 +59,27 @@ abstract public class ValidationTest extends GeneratorTest {
         assertErrorsContain(file, Set.of(), values);
     }
 
+    protected void assertErrorsContainOnce(String file, String ... values) {
+        assertErrorsContainExactlyNTimes(file, 1, Set.of(), values);
+    }
+
     protected void assertErrorsContain(String file, Set<SchemaComponent> components, String ... values) {
         assertThatThrownBy(() -> getProcessedSchema(file, components))
                 .isInstanceOf(InvalidSchemaException.class)
                 .hasMessageContainingAll(values);
+    }
+
+    protected void assertErrorsDoNotContain(String file, String ... values) {
+        assertThatThrownBy(() -> getProcessedSchema(file))
+                .isInstanceOf(InvalidSchemaException.class)
+                .satisfies(it -> assertThat(it.getMessage()).doesNotContain(values));
+    }
+
+    protected void assertErrorsContainExactlyNTimes(String file, int n, Set<SchemaComponent> components, String ... values) {
+        assertThatThrownBy(() -> getProcessedSchema(file, components))
+                .isInstanceOf(InvalidSchemaException.class)
+                .matches(it ->
+                        Arrays.stream(values).allMatch(value -> Pattern.compile(Pattern.quote(value)).matcher(it.getMessage()).results().count() == n));
     }
 
     @BeforeEach

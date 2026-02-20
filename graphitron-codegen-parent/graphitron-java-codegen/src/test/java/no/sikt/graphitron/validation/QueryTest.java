@@ -68,12 +68,6 @@ public class QueryTest extends ValidationTest {
         );
     }
 
-    @Test
-    @DisplayName("Type references self but does not create a new query")
-    void selfReferenceWithoutSplit() {
-        assertErrorsContain("selfReferenceWithoutSplit", "Self reference must have splitQuery, field \"customer\" in object \"Customer\"");
-    }
-
     @Test  // Reverse references are allowed and should not cause warnings or errors.
     @DisplayName("Correct reverse join")
     void reverseJoin() {
@@ -219,13 +213,6 @@ public class QueryTest extends ValidationTest {
     @DisplayName("Union with one error type should not throw error")
     void errorUnionWithOneSubtype() {
         getProcessedSchema("errorUnionWithOneSubtype", Set.of(ERROR));
-    }
-
-    @Test
-    @DisplayName("Circular reference between wrapper types without @table should report the cycle")
-    void circularReferenceWithoutTable() {
-        assertErrorsContain("circularReferenceWithoutTable",
-                "Circular reference detected without @table directive: WrapperA -> WrapperB -> WrapperA. Add a @table directive to one of these types to break the cycle.");
     }
 
     @Test

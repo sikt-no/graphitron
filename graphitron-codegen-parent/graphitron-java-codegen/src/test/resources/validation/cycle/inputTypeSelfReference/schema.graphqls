@@ -1,0 +1,3 @@
+input InputA {
+    a: InputA
+}

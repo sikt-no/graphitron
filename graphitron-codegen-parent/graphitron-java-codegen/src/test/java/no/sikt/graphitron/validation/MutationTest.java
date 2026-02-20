@@ -162,18 +162,4 @@ public class MutationTest extends ValidationTest { // TODO: Some of these tests 
     void noHandlingSet() {
         assertErrorsContain("noHandlingSet", "Mutation 'mutation' is set to generate, but has neither a service nor mutation type set.");
     }
-
-    @Test
-    @DisplayName("Circular reference between input types without @table should report the cycle")
-    void circularInputReferenceWithoutTable() {
-        assertErrorsContain("circularInputReferenceWithoutTable",
-                "Circular reference detected without @table directive: InputA -> InputB -> InputA. Add a @table directive to one of these types to break the cycle.");
-    }
-
-    @Test
-    @DisplayName("Self-referencing input type without @table should report the cycle")
-    void selfReferencingInputWithoutTable() {
-        assertErrorsContain("selfReferencingInputWithoutTable",
-                "Circular reference detected without @table directive: InputA -> InputA. Add a @table directive to one of these types to break the cycle.");
-    }
 }

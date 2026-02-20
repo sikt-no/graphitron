@@ -1,0 +1,12 @@
+type TypeA {
+    i: InterfaceI
+}
+
+interface InterfaceI {
+    notInCycle: String
+}
+
+type Impl implements InterfaceI {
+    notInCycle: String
+    a: TypeA
+}
