@@ -1,6 +1,5 @@
 package no.sikt.graphitron.generators.db;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
@@ -422,7 +421,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     protected CodeBlock formatEntitiesWhere(FetchContext context, ObjectDefinition implementation) {
         var type = processedSchema.getObject(context.getReferenceObjectField());
         var conditionBlocks = new ArrayList<CodeBlock>();
-        for (var k: type.getEntityKeys().getKeys()) {
+        for (var k: type.getEntityKeys().keys()) {
             var containedKeys = k.getKeys();
             var code = CodeBlock.builder();
             if (containedKeys.size() < 2) {

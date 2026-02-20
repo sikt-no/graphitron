@@ -1,0 +1,13 @@
+directive @D on FIELD_DEFINITION
+
+type Query {
+  iface1: Iface1
+}
+
+interface Iface1 {
+  a: String
+}
+
+type Impl1 implements Iface1 {
+  a: String
+}
