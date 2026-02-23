@@ -125,7 +125,7 @@ type Address implements Node @node @table {
 type City implements Node @table @node(typeId: "CityType"){
     id: ID! @nodeId
     name: String! @field(name: "CITY_")
-    countryName: String! @field(name: "COUNTRY_") @reference(path: [{table: "COUNTRY"}])
+    countryName: String! @field(name: "COUNTRY_") @reference(path: [{table: "COUNTRY"}]) # Column subquery reference for approval test
     addressExample: Address @splitQuery @notGenerated
     addresses: [Address!]! @splitQuery # Non-nullable for loadNonNullable approval test
     addressesPaginated: [Address] @splitQuery @asConnection

@@ -1,0 +1,16 @@
+{
+    "data": {
+        "cities": {
+            "nodes": [
+                {
+                    "id": "Q2l0eVR5cGU6MQ",
+                    "countryName": "Spain"
+                },
+                {
+                    "id": "Q2l0eVR5cGU6Mg",
+                    "countryName": "Saudi Arabia"
+                }
+            ]
+        }
+    }
+}
