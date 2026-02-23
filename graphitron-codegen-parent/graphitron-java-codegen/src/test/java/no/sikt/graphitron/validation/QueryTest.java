@@ -258,4 +258,29 @@ public class QueryTest extends ValidationTest {
         getProcessedSchema("tableWithSameNameAsSchema");
         assertNoWarnings();
     }
+
+    @Test
+    @DisplayName("Error should be thrown on lookup argument with @reference")
+    void lookupAndReferenceOnArgument() {
+        assertErrorsContain("lookupAndReferenceOnArgument",
+                "Argument/input field 'customerId' on 'Query.query' has lookupKey directive, but is a reference field. " +
+                        "Lookup on references is not currently supported."
+        );
+    }
+
+    @Test
+    @DisplayName("Error should be thrown on lookup input type containing @reference fields")
+    void lookupInputTypeWithReferenceFields() {
+        assertErrorsContain("lookupInputTypeWithReferenceFields",
+                "Argument 'input' on 'Query.query' has lookupKey directive, but contains reference field(s): 'LookupInput.customerId', 'LookupInput.cityId'. " +
+                        "Lookup on references is not currently supported."
+        );
+    }
+
+    @Test
+    @DisplayName("No error on lookup input type without reference fields")
+    void noWarningsOnLookupTypeWithoutReferenceFields() {
+        getProcessedSchema("lookupInputType", Set.of(CUSTOMER_NODE));
+        assertNoWarnings();
+    }
 }
