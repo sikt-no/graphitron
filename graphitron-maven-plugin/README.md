@@ -173,17 +173,17 @@ The output is a JSON file (default: `target/graphitron-lsp-config.json`) with th
 
 ### Transform Configuration
 
-| Parameter | Description | Required | Default |
-|-----------|-------------|----------|---------|
-| `schemaRootDirectories` | Directories containing `.graphqls` files | Yes | - |
-| `outputSchema` | Output filename for transformed schema | * | - |
-| `outputSchemas` | Multiple output schemas (for feature splitting) | * | - |
-| `expandConnections` | Expand `@asConnection` to Relay types | No | `true` |
-| `addFeatureFlags` | Add feature flag filtering | No | `false` |
-| `removeFederationDefinitions` | Remove federation types (`_Entity`, `_Any`, etc.) from output ** | No | `true` |
-| `removeGeneratorDirectives` | Strip Graphitron directives from output | No | `true` |
-| `directivesToRemove` | Additional directives to remove | No | - |
-| `descriptionSuffixFilename` | File containing description suffixes | No | - |
+| Parameter                     | Description                                                      | Required | Default |
+|-------------------------------|------------------------------------------------------------------|----------|---------|
+| `schemaRootDirectories`       | Directories containing `.graphqls` files                         | Yes      | -       |
+| `outputSchema`                | Output filename for transformed schema                           | *        | -       |
+| `outputSchemas`               | Multiple output schemas (for feature splitting)                  | *        | -       |
+| `expandConnections`           | Expand `@asConnection` to Relay types                            | No       | `true`  |
+| `addFeatureFlags`             | Add feature flag filtering                                       | No       | `false` |
+| `removeFederationDefinitions` | Remove federation types (`_Entity`, `_Any`, etc.) from output ** | No       | `false` |
+| `removeGeneratorDirectives`   | Strip Graphitron directives from output                          | No       | `true`  |
+| `directivesToRemove`          | Additional directives to remove                                  | No       | -       |
+| `descriptionSuffixFilename`   | File containing description suffixes                             | No       | -       |
 
 \* One of `outputSchema` or `outputSchemas` is required for standalone `transform` goal. For `generate` goal, `schema.graphql` is produced automatically.
 
@@ -191,16 +191,16 @@ The output is a JSON file (default: `target/graphitron-lsp-config.json`) with th
 
 ### Code Generation Configuration
 
-| Parameter | Description | Required | Default                    |
-|-----------|-------------|----------|----------------------------|
-| `jooqGeneratedPackage` | Package containing jOOQ generated classes | Yes | -                          |
-| `outputPackage` | Package for generated GraphQL code | No | `no.sikt.graphql`          |
-| `outputPath` | Directory for generated sources | No | `target/generated-sources` |
-| `schemaFiles` | Pre-transformed schema files (when not using `<transform>`) | No | -                          |
-| `userSchemaFiles` | Schema files to expose to clients | No | ***                        |
-| `makeNodeStrategy` | Enable Relay Global Object Identification | No | `false`                    |
-| `scalars` | Custom scalar implementations | No | -                          |
-| `maxAllowedPageSize` | Maximum page size for connections | No | `1000`                     |
+| Parameter              | Description                                                 | Required | Default                    |
+|------------------------|-------------------------------------------------------------|----------|----------------------------|
+| `jooqGeneratedPackage` | Package containing jOOQ generated classes                   | Yes      | -                          |
+| `outputPackage`        | Package for generated GraphQL code                          | No       | `no.sikt.graphql`          |
+| `outputPath`           | Directory for generated sources                             | No       | `target/generated-sources` |
+| `schemaFiles`          | Pre-transformed schema files (when not using `<transform>`) | No       | -                          |
+| `userSchemaFiles`      | Schema files to expose to clients                           | No       | ***                        |
+| `makeNodeStrategy`     | Enable Relay Global Object Identification                   | No       | `false`                    |
+| `scalars`              | Custom scalar implementations                               | No       | -                          |
+| `maxAllowedPageSize`   | Maximum page size for connections                           | No       | `1000`                     |
 
 \*\*\* Defaults to `schema.graphql` when using `<transform>`, otherwise defaults to `schemaFiles`.
 
@@ -208,10 +208,10 @@ The output is a JSON file (default: `target/graphitron-lsp-config.json`) with th
 
 Inherits `jooqGeneratedPackage`, `externalReferences`, and `externalReferenceImports` from the shared plugin configuration.
 
-| Parameter | Description | Required | Default |
-|-----------|-------------|----------|---------|
-| `outputFile` | Path for the generated JSON file | No | `target/graphitron-lsp-config.json` |
-| `includeExternalReferencesForLSP` | Include external references in output | No | `true` |
+| Parameter                         | Description                           | Required | Default                             |
+|-----------------------------------|---------------------------------------|----------|-------------------------------------|
+| `outputFile`                      | Path for the generated JSON file      | No       | `target/graphitron-lsp-config.json` |
+| `includeExternalReferencesForLSP` | Include external references in output | No       | `true`                              |
 
 ## Examples
 
