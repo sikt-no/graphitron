@@ -27,6 +27,13 @@ extend type Query {
             method: "allCustomerEmails_illegalArgument"
         }
     )
+    #Tests custom exception handling with a custom exception class from the service module. Errors in payload.
+    allCustomerEmails_customExceptionHandled: CustomExceptionPayload @service(
+        service: {
+            className: "no.sikt.graphitron.example.service.CustomerService",
+            method: "allCustomerEmails_customException"
+        }
+    )
 }
 
 type CustomerEmailsPayload{
@@ -59,6 +66,17 @@ interface Error {
 
 type InvalidInput implements Error @error(handlers: [
     {handler: DATABASE, code: "0", matches: "year_check", description: "Release year must be between 1901 and 2155"}]) {
+    path: [String!]!
+    message: String!
+}
+
+type CustomExceptionPayload {
+    customers: [Customer!]
+    errors: [CustomExceptionError!]
+}
+
+type CustomExceptionError implements Error @error(handlers: [
+    {handler: GENERIC, className: "no.sikt.graphitron.example.service.CustomBusinessException", description: "Access to customer emails is restricted by business rules"}]) {
     path: [String!]!
     message: String!
 }

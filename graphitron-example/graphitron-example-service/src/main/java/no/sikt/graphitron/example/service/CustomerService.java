@@ -53,6 +53,10 @@ public class CustomerService {
         throw new IllegalArgumentException("This is the error message from the IllegalArgumentException");
     }
 
+    public List<CustomerRecord> allCustomerEmails_customException() {
+        throw new CustomBusinessException("Custom business rule violated: restricted access");
+    }
+
     public List<UpdateCustomerEmailResult> updateCustomerEmail(List<UpdateCustomerEmailRecord> input) {
         var customer = new CustomerRecord();
         UpdateCustomerEmailRecord first = input.get(0);

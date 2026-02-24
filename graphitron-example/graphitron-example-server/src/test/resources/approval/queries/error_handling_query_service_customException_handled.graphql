@@ -1,0 +1,9 @@
+query {
+    allCustomerEmails_customExceptionHandled {
+        errors {
+            __typename
+            path
+            message
+        }
+    }
+}
