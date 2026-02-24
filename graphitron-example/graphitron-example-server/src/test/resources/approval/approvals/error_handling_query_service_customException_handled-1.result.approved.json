@@ -1,0 +1,15 @@
+{
+    "data": {
+        "allCustomerEmails_customExceptionHandled": {
+            "errors": [
+                {
+                    "__typename": "CustomExceptionError",
+                    "path": [
+                        "allCustomerEmails_customExceptionHandled"
+                    ],
+                    "message": "Access to customer emails is restricted by business rules"
+                }
+            ]
+        }
+    }
+}

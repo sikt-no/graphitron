@@ -1,5 +1,8 @@
 package no.sikt.graphql.exception;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -9,6 +12,8 @@ import java.util.stream.Stream;
  * Can match against the full exception cause chain.
  */
 public class GenericExceptionMatcher {
+    private static final Logger LOGGER = LoggerFactory.getLogger(GenericExceptionMatcher.class);
+
     private final String substringOfExceptionMessage;
     private final String fullyQualifiedClassName;
 
@@ -21,8 +26,10 @@ public class GenericExceptionMatcher {
         return streamCauses(throwable)
                 .anyMatch(it -> {
                     try {
-                        return Class.forName(fullyQualifiedClassName).isInstance(it) && messageMatches(it.getMessage());
+                        return Class.forName(fullyQualifiedClassName, true, Thread.currentThread().getContextClassLoader())
+                                .isInstance(it) && messageMatches(it.getMessage());
                     } catch (ClassNotFoundException e) {
+                        LOGGER.warn("Could not find exception class '{}'. Ensure the class is on the classpath.", fullyQualifiedClassName);
                         return false;
                     }
                 });

@@ -83,4 +83,13 @@ class GenericExceptionMatcherTest {
 
         assertFalse(underTest.matches(throwable));
     }
+
+    @Test
+    @DisplayName("matches returns false when exception class is not found on classpath")
+    void notMatchesUnknownClass() {
+        var matcher = new GenericExceptionMatcher("com.example.NonExistentException", null);
+        Throwable throwable = new RuntimeException("any message");
+
+        assertFalse(matcher.matches(throwable));
+    }
 }
