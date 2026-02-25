@@ -7,7 +7,11 @@ import graphql.relay.PageInfo;
 import java.util.List;
 
 /**
- * Helper class for handling extended connection types based on the <a href="https://relay.dev/graphql/connections.htm">cursor connection specification</a>.
+ * Helper class for handling extended connection types based on the
+ * <a href="https://relay.dev/graphql/connections.htm">cursor connection specification</a>.
+ * The fields {@code nodes} and {@code totalCount} are added to the standard connection type. These fields are not part
+ * of the official specification, but are commonly used in GraphQL APIs. They are optional in this implementation and
+ * can be omitted if not needed.
  */
 public class ConnectionImpl<T> extends DefaultConnection<T> {
     private final List<T> nodes;
@@ -15,7 +19,7 @@ public class ConnectionImpl<T> extends DefaultConnection<T> {
 
     public ConnectionImpl(List<Edge<T>> edges, List<T> nodes, PageInfo pageInfo, Integer totalCount) {
         super(edges, pageInfo);
-        this.nodes = nodes;
+        this.nodes = (nodes != null) ? nodes : List.of();
         this.totalCount = totalCount;
     }
 
@@ -46,7 +50,7 @@ public class ConnectionImpl<T> extends DefaultConnection<T> {
         }
 
         public Builder<T> setNodes(List<T> nodes) {
-            this.nodes = nodes;
+            this.nodes = (nodes != null) ? nodes : List.of();
             return this;
         }
 

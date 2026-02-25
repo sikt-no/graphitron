@@ -43,7 +43,24 @@ public class DataFetcherHelper extends AbstractFetcher {
      * Load the data for a root resolver. The result is paginated.
      * @param pageSize Size of the pages for pagination.
      * @param dbFunction Function to call to retrieve the query data.
-     * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
+     * @return A paginated resolver result.
+     * @param <T> Type that the resolver fetches.
+     */
+    public <T> CompletableFuture<ConnectionImpl<T>> loadPaginated(
+            int pageSize,
+            DBQueryRoot<List<Pair<String, T>>> dbFunction
+    ) {
+        return loadPaginated(pageSize, dbFunction, null);
+    }
+
+
+    /**
+     * Load the data for a root resolver. The result is paginated.
+     * @param pageSize Size of the pages for pagination.
+     * @param dbFunction Function to call to retrieve the query data.
+     * @param countFunction Function to call to retrieve the total count of elements that could be potentially
+     *                      retrieved. This parameter will be null if the schema does not contain the optional
+     *                      {@code totalCount} field.
      * @return A paginated resolver result.
      * @param <T> Type that the resolver fetches.
      */
@@ -56,7 +73,9 @@ public class DataFetcherHelper extends AbstractFetcher {
                 getPaginatedConnection(
                         dbFunction.callDBMethod(dslContext, connectionSelect),
                         pageSize,
-                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? (Integer) countFunction.callDBMethod(dslContext, Set.of()) : null
+                        countFunction != null && connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName())
+                        ? (Integer) countFunction.callDBMethod(dslContext, Set.of())
+                        : null
                 )
         );
     }
@@ -77,7 +96,23 @@ public class DataFetcherHelper extends AbstractFetcher {
      * Load the data for a resolver. The result is paginated.
      * @param pageSize Size of the pages for pagination.
      * @param dbFunction Function to call to retrieve the query data.
-     * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
+     * @return A paginated resolver result.
+     */
+    public <K, V> CompletableFuture<ConnectionImpl<V>> loadPaginated(
+            K key,
+            int pageSize,
+            DBQuery<K, List<Pair<String, V>>> dbFunction
+    ) {
+        return loadPaginated(key, pageSize, dbFunction, null);
+    }
+
+    /**
+     * Load the data for a resolver. The result is paginated.
+     * @param pageSize Size of the pages for pagination.
+     * @param dbFunction Function to call to retrieve the query data.
+     * @param countFunction Function to call to retrieve the total count of elements that could be potentially
+     *                      retrieved. This parameter will be null if the schema does not contain the optional
+     *                      {@code totalCount} field.
      * @return A paginated resolver result.
      */
     public <K, V> CompletableFuture<ConnectionImpl<V>> loadPaginated(
@@ -220,7 +255,9 @@ public class DataFetcherHelper extends AbstractFetcher {
                 getPaginatedConnection(
                         resultAsMap(keys, dbFunction.callDBMethod(dslContext, idSet, selectionSet)),
                         pageSize,
-                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(dslContext, idSet) : null
+                        countFunction != null && connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName())
+                        ? countFunction.callDBMethod(dslContext, idSet)
+                        : null
                 )
         );
     }

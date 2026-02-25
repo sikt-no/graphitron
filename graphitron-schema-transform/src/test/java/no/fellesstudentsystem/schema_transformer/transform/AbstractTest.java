@@ -92,6 +92,41 @@ public class AbstractTest {
                 .isZero();
     }
 
+    protected void assertTransformedSchemaExactlyMatches(GraphQLSchema generatedSchema, GraphQLSchema expectedSchema) {
+        CapturingReporter schemaDiffReporter = new CapturingReporter();
+        new SchemaDiff(SchemaDiff.Options.defaultOptions().enforceDirectives())
+                .diffSchema(SchemaDiffSet.diffSetFromSdl(expectedSchema, generatedSchema), schemaDiffReporter);
+
+        // SchemaDiff emits a lot of INFO events that are just traversal/trace output ("Examining ...").
+        // Those aren't actionable schema differences, so we ignore them and only fail on meaningful INFO events.
+        // Note: Some versions include leading whitespace (tabs/newlines) before "Examining", so we treat any
+        // whitespace prefix as trace.
+        var traceInfoEvents = schemaDiffReporter.getInfos().stream()
+                .filter(it -> it.toString().matches("(?s).*reasonMsg='\\s*Examining\\b.*"))
+                .toList();
+        var meaningfulInfoEvents = schemaDiffReporter.getInfos().stream()
+                .filter(it -> !it.toString().matches("(?s).*reasonMsg='\\s*Examining\\b.*"))
+                .toList();
+
+        String diffEventsReport = Stream.of(
+                        schemaDiffReporter.getDangers().stream(),
+                        schemaDiffReporter.getBreakages().stream(),
+                        meaningfulInfoEvents.stream()
+                )
+                .flatMap(s -> s)
+                .map(DiffEvent::toString)
+                .collect(Collectors.joining(",\n "));
+
+        assertThat(schemaDiffReporter.getDangerCount() + schemaDiffReporter.getBreakageCount() +
+                   meaningfulInfoEvents.size())
+                .as(
+                        "Found the following differences between the schemas (ignored %s INFO trace events):\n%s",
+                        traceInfoEvents.size(),
+                        diffEventsReport
+                )
+                .isZero();
+    }
+
     protected static List<String> findSchemas(Set<String> parentFolders) {
         return SchemaReader.findSchemaFilesRecursivelyInDirectory(parentFolders.stream().map(it -> SRC_TEST_RESOURCES + it).collect(Collectors.toSet()));
     }

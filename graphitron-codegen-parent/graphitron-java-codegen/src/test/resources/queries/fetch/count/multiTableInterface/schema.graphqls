@@ -17,6 +17,7 @@ type PaymentTypeTwo implements Payment @table(name: "PAYMENT_P2007_02") {
 type PaymentConnection {
     edges: [PaymentConnectionEdge]
     nodes: [Payment!]!
+    totalCount: Int
 }
 
 type PaymentConnectionEdge {

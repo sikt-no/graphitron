@@ -63,7 +63,25 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
      * Load the data for a root resolver. The result is paginated.
      * @param pageSize Size of the pages for pagination.
      * @param dbFunction Function to call to retrieve the query data.
-     * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
+     * @param dbTransform Function that maps the query output to the resolver output.
+     * @return A paginated resolver result.
+     * @param <T> Type that the query returns.
+     */
+    public <T, U> CompletableFuture<ConnectionImpl<U>> loadPaginated(
+            int pageSize,
+            Supplier<List<Pair<String, T>>> dbFunction,
+            TransformCall<A, List<Pair<String, T>>, List<Pair<String, U>>> dbTransform
+    ) {
+        return loadPaginated(pageSize, dbFunction, null, dbTransform);
+    }
+
+    /**
+     * Load the data for a root resolver. The result is paginated.
+     * @param pageSize Size of the pages for pagination.
+     * @param dbFunction Function to call to retrieve the query data.
+     * @param countFunction Function to call to retrieve the total count of elements that could be potentially
+     *                      retrieved. This parameter will be null if the schema does not contain the optional
+     *                      {@code totalCount} field.
      * @param dbTransform Function that maps the query output to the resolver output.
      * @return A paginated resolver result.
      * @param <T> Type that the query returns.
@@ -78,7 +96,9 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
                 getPaginatedConnection(
                         dbTransform.transform(abstractTransformer, dbFunction.get()),
                         pageSize,
-                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.apply(Set.of()) : null
+                        countFunction != null && connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName())
+                        ? countFunction.apply(Set.of())
+                        : null
                 )
         );
     }
@@ -101,7 +121,26 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
      * Load the data for a resolver. The result is paginated.
      * @param pageSize Size of the pages for pagination.
      * @param dbFunction Function to call to retrieve the query data.
-     * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
+     * @param dbTransform Function that maps the query output to the resolver output.
+     * @return A paginated resolver result.
+     * @param <V0> Type that the query returns.
+     */
+    public <K, V0, V1> CompletableFuture<ConnectionImpl<V1>> loadPaginated(
+            K key,
+            int pageSize,
+            Function<Set<K>, Map<K, List<Pair<String, V0>>>> dbFunction,
+            TransformCall<A, List<Pair<String, V0>>, List<Pair<String, V1>>> dbTransform
+    ) {
+        return loadPaginated(key, pageSize, dbFunction, null, dbTransform);
+    }
+
+    /**
+     * Load the data for a resolver. The result is paginated.
+     * @param pageSize Size of the pages for pagination.
+     * @param dbFunction Function to call to retrieve the query data.
+     * @param countFunction Function to call to retrieve the total count of elements that could be potentially
+     *                      retrieved. This parameter will be null if the schema does not contain the optional
+     *                      {@code totalCount} field.
      * @param dbTransform Function that maps the query output to the resolver output.
      * @return A paginated resolver result.
      * @param <V0> Type that the query returns.
@@ -151,7 +190,9 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
                                 .stream()
                                 .collect(Collectors.toMap(Map.Entry::getKey, it -> dbTransform.transform(abstractTransformer, it.getValue()))) : Map.of(),
                         pageSize,
-                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.apply(idSet) : null
+                        countFunction != null && connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName())
+                        ? countFunction.apply(idSet)
+                        : null
                 )
         );
     }
