@@ -1,6 +1,7 @@
 type PersonWithEmailConnection {
     edges: [PersonWithEmailConnectionEdge]
     nodes: [PersonWithEmail!]!
+    totalCount: Int
 }
 
 type PersonWithEmailConnectionEdge {

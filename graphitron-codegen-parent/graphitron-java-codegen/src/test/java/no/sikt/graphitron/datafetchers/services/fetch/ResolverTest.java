@@ -146,4 +146,23 @@ public class ResolverTest extends GeneratorTest {
                 "queryNormal() {return _iv_env -> {return"
         );
     }
+
+    @Test
+    @DisplayName("When optional field 'totalCount' is included in the schema for a field having a service and pagination, generate the count method")
+    void serviceWithPaginationAndAllOptionalFieldsIncluded() {
+        assertGeneratedContentMatches(
+                "operation/withPaginationAndAllOptionalFieldsIncluded",
+                CUSTOMER_CONNECTION
+        );
+    }
+
+
+    @Test
+    @DisplayName("When optional field 'totalCount' is not included in the schema for a field having a service and pagination, do not generate the count method")
+    void serviceWithPaginationAndNoOptionalFieldsIncluded() {
+        assertGeneratedContentMatches(
+                "operation/withPaginationAndNoOptionalFieldsIncluded",
+                CUSTOMER_CONNECTION_WITH_NO_OPTIONALS
+        );
+    }
 }
