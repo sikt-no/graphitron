@@ -65,7 +65,7 @@ interface Error {
 }
 
 type InvalidInput implements Error @error(handlers: [
-    {handler: DATABASE, code: "0", matches: "year_check", description: "Release year must be between 1901 and 2155"}]) {
+    {handler: DATABASE, sqlState: "23514", matches: "year_check", description: "Release year must be between 1901 and 2155"}]) {
     path: [String!]!
     message: String!
 }

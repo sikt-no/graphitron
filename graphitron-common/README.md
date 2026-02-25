@@ -170,9 +170,9 @@ interface Error {
 
 type InvalidInput implements Error @error(handlers: [
     {
-        handler: DATABASE, 
-        code: "23514", 
-        matches: "year_check", 
+        handler: DATABASE,
+        sqlState: "23514",
+        matches: "year_check",
         description: "Release year must be between 1901 and 2155"
     },
     {
@@ -237,13 +237,13 @@ You can provide your own implementation of `DataAccessExceptionMapper` to custom
 
 The `ErrorMessageFormatter` class provides user-friendly messages for common SQL errors:
 
-| SQL State | Error Type | User Message |
-|-----------|------------|--------------|
-| 23505 | Unique constraint | "Duplicate value not allowed" |
-| 23503 | Foreign key | "Referenced record does not exist" |
-| 23502 | Not null | "Required field cannot be empty" |
-| 23514 | Check constraint | "Value violates constraint: [name]" |
-| 22001 | Data too long | "Value exceeds maximum length" |
+| SQL State | Error Type        | User Message                        |
+|-----------|-------------------|-------------------------------------|
+| 23505     | Unique constraint | "Duplicate value not allowed"       |
+| 23503     | Foreign key       | "Referenced record does not exist"  |
+| 23502     | Not null          | "Required field cannot be empty"    |
+| 23514     | Check constraint  | "Value violates constraint: [name]" |
+| 22001     | Data too long     | "Value exceeds maximum length"      |
 
 For check constraints, the formatter attempts to extract and humanize the constraint name (e.g., "year_check" becomes "year").
 
@@ -270,7 +270,7 @@ For check constraints, the formatter attempts to extract and humanize the constr
 
 ### Custom Exception Strategy Example
 
-Extend `SchemaBasedErrorStrategy` to handle application-specific exceptions. See [ExceptionStrategyImpl.java](../graphitron-example/graphitron-example-server/src/main/java/no/sikt/graphitron/example/exceptionhandling/ExceptionStrategyImpl.java) in the example project:
+Extend `SchemaBasedErrorStrategy` to handle application-specific exceptions. See [ExceptionStrategyImpl.java](../graphitron-example/graphitron-example-server/src/main/java/no/sikt/graphitron/example/exceptionhandling/SchemaBasedErrorStrategyImpl.java) in the example project:
 
 ```java
 public class ExceptionStrategyImpl extends SchemaBasedErrorStrategy {

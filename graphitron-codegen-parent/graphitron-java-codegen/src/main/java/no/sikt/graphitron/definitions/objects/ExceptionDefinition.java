@@ -55,6 +55,7 @@ public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefi
                                     }),
                             objectDefinition.getName(),
                             getOptionalObjectFieldByName(objectFields, CODE).map(DirectiveHelpers::stringValueOf).orElse(null),
+                            getOptionalObjectFieldByName(objectFields, SQL_STATE).map(DirectiveHelpers::stringValueOf).orElse(null),
                             getOptionalObjectFieldByName(objectFields, MATCHES).map(DirectiveHelpers::stringValueOf).orElse(null),
                             getOptionalObjectFieldByName(objectFields, DESCRIPTION).map(DirectiveHelpers::stringValueOf).orElse(null)
                     );

@@ -5,15 +5,17 @@ import org.jooq.exception.DataAccessException;
 import java.sql.SQLException;
 
 /**
- * Matcher for DataAccessException that checks both SQL error code and message content.
+ * Matcher for DataAccessException that checks SQL error code, SQL state, and message content.
  * This class extends GenericExceptionMatcher to add SQL-specific matching logic.
  */
 public class DataAccessMatcher extends GenericExceptionMatcher {
     private final String errorCode;
+    private final String sqlState;
 
-    public DataAccessMatcher(String errorCode, String substringOfExceptionMessage) {
+    public DataAccessMatcher(String errorCode, String sqlState, String substringOfExceptionMessage) {
         super(DataAccessException.class.getName(), substringOfExceptionMessage);
         this.errorCode = errorCode;
+        this.sqlState = sqlState;
     }
 
     boolean matches(DataAccessException exception) {
@@ -23,6 +25,8 @@ public class DataAccessMatcher extends GenericExceptionMatcher {
             return false;
         }
 
-        return this.errorCode.equals(Integer.toString(sqlException.getErrorCode())) && super.matches(exception);
+        boolean codeMatches = errorCode == null || errorCode.equals(Integer.toString(sqlException.getErrorCode()));
+        boolean sqlStateMatches = sqlState == null || sqlState.equals(sqlException.getSQLState());
+        return codeMatches && sqlStateMatches && super.matches(exception);
     }
 }
