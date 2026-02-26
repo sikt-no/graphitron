@@ -10,5 +10,8 @@ public record TransformConfig(
         Map<String, String> descriptionSuffixForFeatures,
         boolean addFeatureFlags,
         boolean removeGeneratorDirectives,
+        boolean removeExcludedElements,
         boolean expandConnections
-) {}
+) {
+    public static Set<String> DIRECTIVES_FOR_REMOVING_ELEMENTS = Set.of("external", "notGenerated", "requires");
+}

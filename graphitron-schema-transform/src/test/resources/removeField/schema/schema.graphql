@@ -1,0 +1,26 @@
+directive @D on FIELD_DEFINITION
+
+type Query {
+  q: String
+  t1: T1
+  t2: T2
+  t3: T3
+  u1: U1
+  u2: U2
+}
+
+type T1 {
+  f: String
+}
+
+type T2 {
+  f: String @D
+}
+
+type T3 {
+  f0: String
+  f1: String @D
+}
+
+union U1 = T2
+union U2 = T1 | T2

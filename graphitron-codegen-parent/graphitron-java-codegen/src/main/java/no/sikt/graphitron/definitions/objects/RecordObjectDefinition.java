@@ -8,7 +8,7 @@ import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.ObjectSpecification;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
-import no.sikt.graphitron.definitions.keys.EntityKeySet;
+import no.sikt.graphql.federation.fieldsets.FederationFieldSet;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.generators.codebuilding.NameFormat;
 import no.sikt.graphitron.mappings.TableReflection;
@@ -27,19 +27,18 @@ import static no.sikt.graphitron.mappings.TableReflection.getRequiredFields;
 import static no.sikt.graphql.directives.DirectiveHelpers.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.NAME;
-import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_KEY;
-import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_KEY_ARGUMENT;
+import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
 /**
  * A generalized implementation of {@link ObjectSpecification} for types that can be linked to tables or records.
  */
 public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U extends GenerationField> extends AbstractObjectDefinition<T, U> implements RecordObjectSpecification<U> {
     private final JOOQMapping table;
-    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated, hasKeys, hasNodeDirective, hasCustomTypeId;
+    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated, hasKeys, hasNodeDirective, hasCustomTypeId, isFederationExternal;
     private final ClassReference classReference;
     private final List<U> inputsSortedByNullability;
     private final LinkedHashSet<String> requiredInputs;
-    private final EntityKeySet keys;
+    private final FederationFieldSet keys;
     private final String typeId;
     private final LinkedList<String> keyColumns;
 
@@ -64,7 +63,8 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         requiredInputs = hasTable() ? getRequiredFields(getTable().getMappingName()).stream().map(String::toUpperCase).collect(Collectors.toCollection(LinkedHashSet::new)) : new LinkedHashSet<>();
         inputsSortedByNullability = sortInputsByNullability();
         hasKeys = objectDefinition.hasDirective(FEDERATION_KEY.getName());
-        keys = hasKeys ? new EntityKeySet(getRepeatableDirectiveArgumentString(objectDefinition, FEDERATION_KEY.getName(), FEDERATION_KEY_ARGUMENT.getName())) : null;
+        keys = hasKeys ? FederationFieldSet.fromString(getRepeatableDirectiveArgumentString(objectDefinition, FEDERATION_KEY.getName(), FEDERATION_KEY_ARGUMENT.getName())) : null;
+        isFederationExternal = objectDefinition.hasDirective(FEDERATION_EXTERNAL.getName());
 
         hasNodeDirective = objectDefinition.hasDirective(NODE.getName());
         var typeIdParameter = getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.TYPE_ID);
@@ -79,7 +79,7 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
     @NotNull
     private List<U> sortInputsByNullability() {
         var splitOnIsRequired = getFields().stream().collect(Collectors.partitioningBy(this::isNonNullable));
-        return Stream.concat(splitOnIsRequired.get(false).stream(), splitOnIsRequired.get(true).stream()).collect(Collectors.toList());
+        return Stream.concat(splitOnIsRequired.get(false).stream(), splitOnIsRequired.get(true).stream()).toList();
     }
 
     /**
@@ -89,7 +89,7 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         if (field.isID() && hasTable()) {
             var idFields = TableReflection.getRequiredFields(getTable().getMappingName()).stream()
                     .map(String::toUpperCase)
-                    .collect(Collectors.toList());
+                    .toList();
             if (!idFields.isEmpty()) {
                 if (requiredInputs.containsAll(idFields)) {
                     return true;
@@ -181,14 +181,16 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
     }
 
     @Override
-    public EntityKeySet getEntityKeys() {
+    public FederationFieldSet getEntityKeys() {
         return keys;
     }
 
+    @Override
     public boolean hasNodeDirective() {
         return hasNodeDirective;
     }
 
+    @Override
     public String getTypeId() {
         return typeId;
     }
@@ -197,11 +199,18 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         return hasCustomTypeId;
     }
 
+    @Override
     public boolean hasCustomKeyColumns() {
         return !keyColumns.isEmpty();
     }
 
+    @Override
     public LinkedList<String> getKeyColumns() {
         return keyColumns;
+    }
+
+    @Override
+    public boolean isFederationExternal() {
+        return isFederationExternal;
     }
 }

@@ -1,0 +1,16 @@
+query FederationRequires {
+    _entities(representations: [
+        {
+        __typename: "FederatedCustomer",
+        firstName: "DOROTHY",
+        lastName: "TAYLOR"
+        }
+    ]) {
+        ... on FederatedCustomer {
+            id
+            email
+            externalEmail
+            requiresEmail
+        }
+    }
+}

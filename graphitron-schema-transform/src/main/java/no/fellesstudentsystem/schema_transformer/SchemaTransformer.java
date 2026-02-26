@@ -15,6 +15,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static graphql.schema.idl.EchoingWiringFactory.fakeScalar;
+import static no.fellesstudentsystem.schema_transformer.TransformConfig.DIRECTIVES_FOR_REMOVING_ELEMENTS;
 import static no.fellesstudentsystem.schema_transformer.mapping.GraphQLDirective.CONNECTION;
 import static no.fellesstudentsystem.schema_transformer.schema.SchemaReader.getTypeDefinitionRegistry;
 import static no.fellesstudentsystem.schema_transformer.schema.SchemaWriter.writeSchemaToString;
@@ -50,6 +51,11 @@ public class SchemaTransformer {
 
     private List<Function<GraphQLSchema, GraphQLSchema>> getSchemaTransforms(TypeDefinitionRegistry registry) {
         var transforms = new ArrayList<Function<GraphQLSchema, GraphQLSchema>>();
+
+        // This one goes first since removing fields and types allows us to not process them in later transforms.
+        if (config.removeExcludedElements()) {
+            transforms.add((s) -> new ElementRemovalFilter(s, DIRECTIVES_FOR_REMOVING_ELEMENTS).getModifiedGraphQLSchema());
+        }
 
         if (config.addFeatureFlags()) {
             transforms.add((s) -> new FeatureConfiguration(s, config.descriptionSuffixForFeatures(), federationIsImported(registry)).getModifiedGraphQLSchema());
