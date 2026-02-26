@@ -57,8 +57,6 @@ mise r sakila          # Start example database (Sakila)
 mise r jooq            # Regenerate jOOQ classes from database
 mise r rebuild <module> # Rebuild specific module while server is running
 
-# For quick builds without tests/javadocs, use Maven profiles:
-mvn clean install -Pquick
 ```
 
 ## Testing & Important Files
@@ -73,6 +71,7 @@ mvn clean install -Pquick
 2. **Check pom.xml** before adding any dependencies - use what's already available
 3. **Write tests** using JUnit 5 and AssertJ for all new functionality
 4. **Follow the framework patterns** already established in the codebase
+5. **Never use `-Pquick`, `-DskipTests`, or `-Dmaven.test.skip`** when building with tests.
 
 ## Common Tasks
 - **Schema changes**: Update .graphqls files → run `mvn graphitron:generate-code`
