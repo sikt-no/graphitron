@@ -6,6 +6,7 @@ import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.Custome
 import org.jooq.DSLContext;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * Fake service for mapper tests. Does not need to return meaningful values as only the generated result is tested.
@@ -21,7 +22,7 @@ public class MapperFetchService {
         return null;
     }
 
-    public CustomerJavaRecord fetchCustomerDetails() {
+    public CustomerJavaRecord fetchCustomerDetails(Set<Integer> resolverKeys) {
         return null;
     }
 

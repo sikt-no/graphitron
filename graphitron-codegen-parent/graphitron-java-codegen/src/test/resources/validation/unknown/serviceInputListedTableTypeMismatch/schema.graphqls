@@ -1,0 +1,7 @@
+type Query {
+    test(input: [TestInput]): String @service(service: {className: "no.sikt.graphitron.codereferences.services.TypeMismatchService", method: "checkIncorrect"})
+}
+
+input TestInput @table(name: "CUSTOMER") {
+    customerId: Int @field(name: "CUSTOMER_ID")
+}
