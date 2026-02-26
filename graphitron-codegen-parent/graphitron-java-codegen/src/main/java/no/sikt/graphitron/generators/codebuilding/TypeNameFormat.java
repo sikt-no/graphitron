@@ -5,6 +5,7 @@ import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -106,6 +107,17 @@ public class TypeNameFormat {
      */
     public static ParameterizedTypeName getObjectMapTypeName() {
         return STRING_OBJECT_MAP;
+    }
+
+    private static TypeName getWildcardTypeName() {
+        return WildcardTypeName.subtypeOf(Object.class);
+    }
+
+    /**
+     * @return List type with wildcard ('?') ParameterizedTypeName.
+     */
+    public static ParameterizedTypeName getWildCardListTypeName() {
+        return ParameterizedTypeName.get(LIST.className, getWildcardTypeName());
     }
 
     /**

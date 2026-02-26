@@ -1,12 +1,10 @@
 [
   {
-    "representations": [
-      {
-        "__typename": "FederatedStaff",
-        "email": "Mike.Hillyer@sakilastaff.com",
-        "username": "Mike"
-      }
-    ]
+    "representations": {
+      "__typename": "FederatedStaff",
+      "email": "Mike.Hillyer@sakilastaff.com",
+      "username": "Mike"
+    }
   },
   {
     "representations": [
@@ -48,6 +46,43 @@
       {
         "__typename": "FederatedFilm",
         "id": "RmVkZXJhdGVkRmlsbTo0"
+      }
+    ]
+  },
+  {
+    "representations": [
+      {
+        "__typename": "FederatedStaff",
+        "email": "Mike.Hillyer@sakilastaff.com",
+        "username": "Mike"
+      },
+      {
+        "__typename": "FederatedStaff",
+        "email": "nope@sakilastaff.com",
+        "username": "DoesNotExist"
+      },
+      {
+        "__typename": "FederatedStaff",
+        "email": "Mike.Hillyer@sakilastaff.com",
+        "username": "Mike"
+      }
+    ]
+  },
+  {
+    "representations": [
+      {
+        "__typename": "FederatedPayment",
+        "amount": 0.99,
+        "dateTime": "2005-05-28T10:35:23",
+        "paymentId": 2
+      }
+    ]
+  },
+  {
+    "representations": [
+      {
+        "__typename": "FederatedFilmActorWithBadKey",
+        "actorId": 1
       }
     ]
   }

@@ -3,8 +3,7 @@ package no.sikt.graphitron.queries.fetch;
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.reducedgenerators.InterfaceOnlyFetchDBClassGenerator;
-import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
+import no.sikt.graphitron.reducedgenerators.*;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -27,7 +26,9 @@ public class OptionalSelectTest extends GeneratorTest {
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         return List.of(
                 new MapOnlyFetchDBClassGenerator(schema),
-                new InterfaceOnlyFetchDBClassGenerator(schema)
+                new InterfaceOnlyFetchDBClassGenerator(schema),
+                new EntityOnlyFetchDBClassGenerator(schema),
+                new EntityOnlyHelperDBClassGenerator(schema)
         );
     }
 
@@ -145,7 +146,7 @@ public class OptionalSelectTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "entity", Set.of(FEDERATION_QUERY),
                 "representations, SelectionSet _iv_select)",
-                "_a_customer.getId(),_iv_select.ifRequested(\"address\", () -> DSL.field(DSL.select(DSL.row("
+                "_a_customer.getId(),_iv_select.ifRequested(\"address\", () -> DSL.field(DSL.select(_1_customerFor_Entity_customer_address"
         );
     }
 

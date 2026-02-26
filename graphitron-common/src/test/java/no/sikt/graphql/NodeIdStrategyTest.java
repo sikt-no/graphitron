@@ -87,4 +87,16 @@ class NodeIdStrategyTest {
 
         assertTrue(vacationDestinationRecord.changed());
     }
+
+    @Test
+    @DisplayName("Node IDs with different base64 padding are considered equal")
+    void nodeIdsWithDifferentPaddingAreEqual() {
+        assertTrue(new NodeIdStrategy().areEqualNodeIds("QzoxCg==", "QzoxCg"));
+    }
+
+    @Test
+    @DisplayName("areEqualNodeIds returns false when decoding fails, even if inputs are equal")
+    void returnsFalseWhenDecodingFails() {
+        assertFalse(new NodeIdStrategy().areEqualNodeIds("@", "@"));
+    }
 }

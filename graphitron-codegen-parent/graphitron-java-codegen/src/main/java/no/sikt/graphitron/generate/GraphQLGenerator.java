@@ -94,7 +94,11 @@ public class GraphQLGenerator {
         return generators
                 .stream()
                 .flatMap(it -> it.generateAllAsMap().entrySet().stream())
-                .collect(Collectors.toMap(Map.Entry::getKey, it -> List.of(it.getValue().split("\n"))));
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        it -> List.of(it.getValue().split("\n")),
+                        (a, b) -> Stream.concat(a.stream(), b.stream()).toList()
+                ));
     }
 
     /**
