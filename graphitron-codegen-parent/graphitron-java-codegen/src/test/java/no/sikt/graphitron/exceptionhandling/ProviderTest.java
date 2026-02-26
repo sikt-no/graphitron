@@ -154,7 +154,7 @@ public class ProviderTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "databaseHandledError", Set.of(MUTATION_RESPONSE),
                 "m1 = new DataAccessExceptionContentToErrorMapping(" +
-                        "new DataAccessMatcher(null, null),(path, msg) -> new SomeError(",
+                        "new DataAccessMatcher(null, null, null),(path, msg) -> new SomeError(",
                 "mutationDatabaseList = List.of(m1)",
                 "dataAccessMappingsForOperation.put(\"mutation\", mutationDatabaseList"
         );
@@ -166,9 +166,9 @@ public class ProviderTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "multipleDatabaseHandlers", Set.of(MUTATION_RESPONSE),
                 "m1 = new DataAccessExceptionContentToErrorMapping(" +
-                        "new DataAccessMatcher(\"C_0\", null),(path, msg) -> new SomeError",
+                        "new DataAccessMatcher(\"C_0\", null, null),(path, msg) -> new SomeError",
                 "m2 = new DataAccessExceptionContentToErrorMapping(" +
-                        "new DataAccessMatcher(\"C_1\", null),(path, msg) -> new SomeError",
+                        "new DataAccessMatcher(\"C_1\", null, null),(path, msg) -> new SomeError",
                 "List.of(m1, m2)"
         );
     }
@@ -178,7 +178,7 @@ public class ProviderTest extends GeneratorTest {
     void databaseWithCode() {
         assertGeneratedContentContains(
                 "databaseWithCode", Set.of(MUTATION_RESPONSE),
-                "DataAccessMatcher(\"CODE\","
+                "DataAccessMatcher(\"CODE\", null,"
         );
     }
 
@@ -187,7 +187,25 @@ public class ProviderTest extends GeneratorTest {
     void databaseWithMatches() {
         assertGeneratedContentContains(
                 "databaseWithMatches", Set.of(MUTATION_RESPONSE),
-                "DataAccessMatcher(null, \"MATCHES\")"
+                "DataAccessMatcher(null, null, \"MATCHES\")"
+        );
+    }
+
+    @Test
+    @DisplayName("A database handler with sqlState set")
+    void databaseWithSqlState() {
+        assertGeneratedContentContains(
+                "databaseWithSqlState", Set.of(MUTATION_RESPONSE),
+                "DataAccessMatcher(null, \"23503\", null)"
+        );
+    }
+
+    @Test
+    @DisplayName("A database handler with both code and sqlState set")
+    void databaseWithCodeAndSqlState() {
+        assertGeneratedContentContains(
+                "databaseWithCodeAndSqlState", Set.of(MUTATION_RESPONSE),
+                "DataAccessMatcher(\"20997\", \"23503\", null)"
         );
     }
 
@@ -209,11 +227,11 @@ public class ProviderTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "bothGenericAndDatabaseInMultipleErrorsForOneResponse", Set.of(MUTATION_RESPONSE),
                 "m1 = new DataAccessExceptionContentToErrorMapping(" +
-                        "new DataAccessMatcher(null, null),(path, msg) -> new SomeError0",
+                        "new DataAccessMatcher(null, null, null),(path, msg) -> new SomeError0",
                 "m2 = new GenericExceptionContentToErrorMapping(" +
                         "new GenericExceptionMatcher(\"java.lang.IllegalArgumentException\", null),(path, msg) -> new SomeError0",
                 "m3 = new DataAccessExceptionContentToErrorMapping(" +
-                        "new DataAccessMatcher(null, null),(path, msg) -> new SomeError1",
+                        "new DataAccessMatcher(null, null, null),(path, msg) -> new SomeError1",
                 "m4 = new GenericExceptionContentToErrorMapping(" +
                         "new GenericExceptionMatcher(\"java.lang.IllegalArgumentException\", null),(path, msg) -> new SomeError1",
                 "mutationDatabaseList = List.of(m1)",
@@ -279,7 +297,7 @@ public class ProviderTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "unionMultipleMixedHandlers", Set.of(MUTATION_RESPONSE),
                 "m1 = new DataAccessExceptionContentToErrorMapping(" +
-                        "new DataAccessMatcher(null, null),(path, msg) -> new SomeError1",
+                        "new DataAccessMatcher(null, null, null),(path, msg) -> new SomeError1",
                 "m2 = new GenericExceptionContentToErrorMapping(" +
                         "new GenericExceptionMatcher(\"java.lang.IllegalArgumentException\", null),(path, msg) -> new SomeError0",
                 "mutationDatabaseList = List.of(m1)",
@@ -293,9 +311,9 @@ public class ProviderTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "unionMultipleErrorsWithMultipleMixedHandlers", Set.of(MUTATION_RESPONSE),
                 "m1 = new DataAccessExceptionContentToErrorMapping(" +
-                        "new DataAccessMatcher(null, null),(path, msg) -> new SomeError0",
+                        "new DataAccessMatcher(null, null, null),(path, msg) -> new SomeError0",
                 "m2 = new DataAccessExceptionContentToErrorMapping(" +
-                        "new DataAccessMatcher(null, null),(path, msg) -> new SomeError1",
+                        "new DataAccessMatcher(null, null, null),(path, msg) -> new SomeError1",
                 "m3 = new GenericExceptionContentToErrorMapping(" +
                         "new GenericExceptionMatcher(\"java.lang.IllegalArgumentException\", null),(path, msg) -> new SomeError0",
                 "m4 = new GenericExceptionContentToErrorMapping(" +

@@ -73,6 +73,13 @@ input ErrorHandler {
   code: String
 
   """
+  For the DATABASE handler, this is the SQL state code (e.g. "23503" for foreign key violation).
+  SQL state codes are standardized and work across database vendors.
+  Can be used together with or instead of 'code'.
+  """
+  sqlState: String
+
+  """
   A string that the exception message must contain in order to be handled.
   If not present, the handler will be used for all exceptions of the specified class.
   """

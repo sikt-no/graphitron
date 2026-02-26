@@ -11,15 +11,17 @@ public class ExceptionToErrorMapping {
     private final String exceptionClassName;
     private final String errorTypeName;
     private final String databaseErrorCode;
+    private final String sqlState;
     private final String exceptionMessageContains;
     private final String errorDescription;
 
     public ExceptionToErrorMapping(ErrorHandlerType handler, String exceptionClassName, String errorTypeName, String databaseErrorCode,
-                                   @Nullable String exceptionMessageContains, @Nullable String errorDescription) {
+                                   @Nullable String sqlState, @Nullable String exceptionMessageContains, @Nullable String errorDescription) {
         this.handler = handler;
         this.exceptionClassName = exceptionClassName;
         this.errorTypeName = errorTypeName;
         this.databaseErrorCode = databaseErrorCode;
+        this.sqlState = sqlState;
         this.exceptionMessageContains = exceptionMessageContains;
         this.errorDescription = errorDescription;
     }
@@ -40,6 +42,10 @@ public class ExceptionToErrorMapping {
         return databaseErrorCode;
     }
 
+    public String getSqlState() {
+        return sqlState;
+    }
+
     public Optional<String> getErrorDescription() {
         return Optional.ofNullable(errorDescription);
     }
@@ -49,12 +55,12 @@ public class ExceptionToErrorMapping {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         ExceptionToErrorMapping that = (ExceptionToErrorMapping) o;
-        return Objects.equals(exceptionClassName, that.exceptionClassName) && Objects.equals(errorTypeName, that.errorTypeName) && Objects.equals(databaseErrorCode, that.databaseErrorCode) && Objects.equals(exceptionMessageContains, that.exceptionMessageContains) && Objects.equals(errorDescription, that.errorDescription);
+        return Objects.equals(exceptionClassName, that.exceptionClassName) && Objects.equals(errorTypeName, that.errorTypeName) && Objects.equals(databaseErrorCode, that.databaseErrorCode) && Objects.equals(sqlState, that.sqlState) && Objects.equals(exceptionMessageContains, that.exceptionMessageContains) && Objects.equals(errorDescription, that.errorDescription);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(exceptionClassName, errorTypeName, databaseErrorCode, exceptionMessageContains, errorDescription);
+        return Objects.hash(exceptionClassName, errorTypeName, databaseErrorCode, sqlState, exceptionMessageContains, errorDescription);
     }
 
     public ErrorHandlerType getHandler() {

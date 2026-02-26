@@ -198,7 +198,6 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
                                 createExceptionToErrorMappingCodeBlock(
                                         DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className,
                                         DATA_ACCESS_EXCEPTION_MAPPING_CONTENT.className,
-                                        errorMapping.getDatabaseErrorCode(),
                                         errorMapping));
                         break;
                     case GENERIC:
@@ -206,7 +205,6 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
                                 createExceptionToErrorMappingCodeBlock(
                                         GENERIC_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className,
                                         GENERIC_EXCEPTION_MAPPING_CONTENT.className,
-                                        errorMapping.getExceptionClassName(),
                                         errorMapping));
                         break;
                     default:
@@ -219,13 +217,15 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
             return codeBuilder.build();
         }
 
-        private CodeBlock createExceptionToErrorMappingCodeBlock(ClassName contentToErrorMappingClassName, ClassName contentClassName, String constructorArg1, ExceptionToErrorMapping exceptionToErrorMapping) {
+        private CodeBlock createExceptionToErrorMappingCodeBlock(ClassName contentToErrorMappingClassName, ClassName contentClassName, ExceptionToErrorMapping exceptionToErrorMapping) {
             return CodeBlock.builder()
                     .add("new $T(\n", contentToErrorMappingClassName)
                     .indent()
-                    .add("new $T($S, $S),\n",
+                    .add("new $T($L, $S),\n",
                             contentClassName,
-                            constructorArg1,
+                            contentToErrorMappingClassName.equals(DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className)
+                                    ? CodeBlock.of("$S, $S", exceptionToErrorMapping.getDatabaseErrorCode(), exceptionToErrorMapping.getSqlState())
+                                    : CodeBlock.of("$S", exceptionToErrorMapping.getExceptionClassName()),
                             exceptionToErrorMapping.getExceptionMessageContains())
                     .add("(path, $L) -> new $T(path, $L))",
                             MSG_VARIABLE_NAME,

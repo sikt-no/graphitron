@@ -1103,6 +1103,12 @@ type MyError implements Error @error(handlers:
 [
   {
     handler: DATABASE,
+    sqlState: "23514",
+    matches: "year_check",
+    description: "Release year must be between 1901 and 2155"
+  },
+  {
+    handler: DATABASE,
     code: "20997",
     description: "You are not allowed to do this like that"
   },
@@ -1121,9 +1127,13 @@ type MyError implements Error @error(handlers:
 In this instance, certain exceptions are mapped to be handled as _MyError_. The parameters inside the handler object are explained as follows:
 - `handler` - Determines the error handler to use. Presently, there are two options available, DATABASE and GENERIC.
 - `className` -  Specifies the fully qualified name of the exception class. This field is required for the GENERIC handler and defaults to `org.jooq.exception.DataAccessException` if not provided for the DATABASE handler.
-- `code` - For the `DATABASE` handler this is the database error code associated with the exception. Not in use for the GENERIC handler.
+- `code` - For the `DATABASE` handler, this is the vendor-specific database error code (`SQLException.getErrorCode()`). The meaning and usefulness of this value varies between databases. For example, Oracle uses specific error codes while PostgreSQL always returns `0`. Not in use for the GENERIC handler.
+- `sqlState` - For the `DATABASE` handler, this is the standardized SQL state code (`SQLException.getSQLState()`). SQL state codes follow the SQL standard and are supported across databases, though the level of specificity varies. For example, PostgreSQL returns specific codes like `"23514"` (check constraint violation), while Oracle returns the generic `"23000"` for all constraint violations. Not in use for the GENERIC handler.
 - `matches` - Can be used to specify a string that the exception message must contain in order to be handled.
 - `description` - A description of the error to be returned to the user. If not provided, the exception message will be used instead.
+
+> **Note**: `code` and `sqlState` can be used together when you need to match on both. When both are specified, the exception must match on all provided criteria. Which parameter is most useful depends on your database,
+> check your database's documentation for how it reports error codes and SQL states.
 
 ### Custom field logic with @externalField
 The **@externalField** directive indicates that the annotated field is

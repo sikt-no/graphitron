@@ -187,7 +187,7 @@ public class ExceptionStrategyTest {
             genericMappingsForOperation = new HashMap<>();
 
             var m1 = new DataAccessExceptionContentToErrorMapping(
-                    new DataAccessMatcher("20997", null),
+                    new DataAccessMatcher("20997", null, null),
                     (path, msg) -> new SomeError(path, "This is an error"));
 
             var mutation1DatabaseList = List.of(m1);

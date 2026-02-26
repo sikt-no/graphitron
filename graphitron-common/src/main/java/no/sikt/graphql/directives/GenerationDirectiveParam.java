@@ -27,6 +27,7 @@ public enum GenerationDirectiveParam {
     CLASS_NAME("className"),
     CONTEXT_ARGUMENTS("contextArguments"),
     CODE("code"),
+    SQL_STATE("sqlState"),
     MATCHES("matches"),
     DESCRIPTION("description"),
     ON("on"),
