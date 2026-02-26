@@ -1,0 +1,28 @@
+union _Entity = Customer
+
+type Customer @table
+  @key(fields: "f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23") {
+  f1: ID
+  f2: ID
+  f3: ID
+  f4: ID
+  f5: ID
+  f6: ID
+  f7: ID
+  f8: ID
+  f9: ID
+  f10: ID
+  f11: ID
+  f12: ID
+  f13: ID
+  f14: ID
+  f15: ID
+  f16: ID
+  f17: ID
+  f18: ID
+  f19: ID
+  f20: ID
+  f21: ID
+  f22: ID
+  f23: ID
+}
