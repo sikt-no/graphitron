@@ -33,7 +33,20 @@ public class EntityResolverTest extends GeneratorTest {
     @Test
     @DisplayName("One entity exists")
     void defaultCase() {
-        assertGeneratedContentContains("default", "List<Map<String, Object>> _mi_representations = _iv_env.getArgument(\"representations\")");
+        assertGeneratedContentMatches("default");
+    }
+
+    @Test
+    @DisplayName("Two entities exists")
+    void twoEntities() {
+        assertGeneratedContentContains("twoEntities",
+                """
+                        Map.of(
+                                "Address", (_iv_ctx, _iv_reps, _iv_selectionSet) -> AddressDBQueries.addressFor_Entity(_iv_ctx, _iv_reps, _iv_selectionSet),
+                                "Customer", (_iv_ctx, _iv_reps, _iv_selectionSet) -> CustomerDBQueries.customerFor_Entity(_iv_ctx, _iv_reps, _iv_selectionSet)
+                        )
+                        """
+        );
     }
 
     @Test  // Dummy datafetcher when there are no entities, but _entities is defined. Should not happen in practice.

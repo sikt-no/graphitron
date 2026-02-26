@@ -145,4 +145,23 @@ public class NodeIdStrategy {
         return field.getDataType().convert(value);
     }
 
+    /**
+     * Check whether two strings are equal if decoded as node IDs. Returns {@code false} if decoding fails.
+     *
+     * <p>Used by the {@code _entities} query to match representation IDs from the router against
+     * IDs produced by the local service. These may differ in base64 padding while still decoding
+     * to the same value.
+     *
+     * <pre>{@code
+     * // "QzoxCg==" and "QzoxCg" both decode to "C:1\n", so this returns true:
+     * nodeIdStrategy.areEqualNodeIds("QzoxCg==", "QzoxCg");
+     * }</pre>
+     */
+    public boolean areEqualNodeIds(String a, String b) {
+        try {
+            return dec(a).equals(dec(b));
+        } catch (Exception e) {
+            return false;
+        }
+    }
 }

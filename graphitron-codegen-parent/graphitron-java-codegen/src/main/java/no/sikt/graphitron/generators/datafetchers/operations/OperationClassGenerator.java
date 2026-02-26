@@ -49,6 +49,7 @@ public class OperationClassGenerator extends DataFetcherClassGenerator<ObjectDef
     @Override
     public TypeSpec generate(ObjectDefinition target) {
         var generators = List.of(
+                new FetchEntitiesMethodGenerator(target, processedSchema),
                 new OperationMethodGenerator(target, processedSchema),
                 new FetchNodeMethodGenerator(target, processedSchema)
         );

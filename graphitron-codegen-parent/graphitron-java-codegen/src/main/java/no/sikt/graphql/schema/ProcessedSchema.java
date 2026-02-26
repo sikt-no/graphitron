@@ -5,7 +5,9 @@ import graphql.language.*;
 import graphql.language.SchemaDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.definitions.fields.*;
+import no.sikt.graphitron.definitions.fields.AbstractField;
+import no.sikt.graphitron.definitions.fields.GenerationSourceField;
+import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
@@ -15,9 +17,7 @@ import no.sikt.graphitron.definitions.interfaces.ObjectSpecification;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.objects.*;
-import no.sikt.graphitron.mappings.ReflectionHelpers;
 import no.sikt.graphitron.validation.ProcessedDefinitionsValidator;
-import org.jooq.impl.UpdatableRecordImpl;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import org.jetbrains.annotations.NotNull;
@@ -433,6 +433,10 @@ public class ProcessedSchema {
      */
     public Map<String, ObjectDefinition> getEntities() {
         return entities;
+    }
+
+    public boolean isEntity(String typeName) {
+        return entities.containsKey(typeName);
     }
 
     /**
