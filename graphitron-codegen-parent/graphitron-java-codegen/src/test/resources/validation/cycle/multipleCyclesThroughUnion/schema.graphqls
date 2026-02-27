@@ -1,0 +1,13 @@
+type TypeA {
+    u: U
+}
+
+union U = TypeB | TypeC
+
+type TypeB {
+    path1: TypeA
+}
+
+type TypeC {
+    path2: TypeA
+}
