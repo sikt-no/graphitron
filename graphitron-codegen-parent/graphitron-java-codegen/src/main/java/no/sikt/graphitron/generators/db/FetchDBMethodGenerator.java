@@ -1220,7 +1220,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         // Pattern: [callingMethod]_[returnType]
         var returnTypeName = processedSchema.getRecordType(target).getName();
 
-        if (target instanceof VirtualSourceField && processedSchema.isInterface(target.getContainerTypeName()) || processedSchema.isUnion(target.getContainerTypeName())) {
+        if (target instanceof VirtualSourceField) {
             return generateNestedMethodName(interfaceOrUnionQueryName(returnTypeName, target.getContainerTypeName()), returnTypeName);
         }
         return generateNestedMethodName(asQueryMethodName(target.getName(), localObject.getName()), returnTypeName);
