@@ -1,0 +1,11 @@
+[
+  {
+    "representations": [{"__typename":  "NonExistingType"}]
+  },
+  {
+    "representations": [{"__typename":  "Customer"}]
+  },
+  {
+    "representations": [{}]
+  }
+]

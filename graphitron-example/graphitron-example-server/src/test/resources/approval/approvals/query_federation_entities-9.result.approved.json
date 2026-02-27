@@ -1,0 +1,19 @@
+{
+    "data": {
+        "_entities": [
+            {
+                "id": "RmVkZXJhdGVkU3RhZmY6MQ",
+                "email": "Mike.Hillyer@sakilastaff.com",
+                "username": "Mike"
+            },
+            {
+                "id": "RmVkZXJhdGVkQWRkcmVzczox",
+                "addressLine1": "47 MySakila Drive",
+                "zip": null,
+                "city": {
+                    "id": "Q2l0eVR5cGU6MzAw"
+                }
+            }
+        ]
+    }
+}

@@ -177,14 +177,20 @@ public class DataFetcherHelper extends AbstractFetcher {
             List<?> inputList,
             Map<String, DBQuery<Map<String, Object>, ? extends V>> typeNameToDBQueryMap
     ) {
-        List<Map<String, Object>> representations = inputList.stream().findAny().map(it -> it instanceof Map).orElse(false)
-        ? (List<Map<String, Object>>) inputList : (List<Map<String, Object>>) inputList.get(0);
+        List<Map<String, Object>> representations;
+        if (inputList.isEmpty() || inputList.stream().findAny().get() instanceof Map) {
+            representations = (List<Map<String, Object>>) inputList;
+        } else {
+            representations = (List<Map<String, Object>>) inputList.get(0);
+        }
 
         return loadLookupMultipleSources(
                 representations,
-                it -> (String) it.get("__typename"),
+                it -> (String) it.getOrDefault("__typename", null),
                 typeNameToDBQueryMap,
-                (representation, entities) -> getEntityForRepresentation(representation, entities, nodeIdStrategy)
+                (representation, entities) -> getEntityForRepresentation(representation, entities, nodeIdStrategy),
+                "Resolving __typename in representation failed for entity.",
+                "Cannot resolve entity with __typename '%s'."
         );
     }
 
@@ -228,7 +234,9 @@ public class DataFetcherHelper extends AbstractFetcher {
             List<K> inputList,
             Function<K, String> sourceResolver,
             Map<String, DBQuery<K, ? extends V>> sourceToDBQueryMap,
-            BiFunction<K, Map<K, V>, V> inputToResultLookup
+            BiFunction<K, Map<K, V>, V> inputToResultLookup,
+            String sourceResolverReturnedNullError,
+            String dbQueryForSourceMissingError
     ) {
         if (inputList.isEmpty()) {
             return CompletableFuture.completedFuture(List.of());
@@ -236,13 +244,20 @@ public class DataFetcherHelper extends AbstractFetcher {
 
         Map<K, V> allResults = new HashMap<>();
         inputList.stream()
-                .collect(Collectors.groupingBy(sourceResolver, Collectors.toSet()))
+                .collect(Collectors.groupingBy(it -> {
+                            var source = sourceResolver.apply(it);
+                            if (source == null) {
+                                throw new IllegalArgumentException(sourceResolverReturnedNullError);
+                            }
+                            return source;
+                        }, Collectors.toSet())
+                )
                 .forEach((dbQueryKey, inputSet) -> {
                     if (dbQueryKey == null) {
-                        throw new IllegalArgumentException("Source resolver returned null for an input element.");
+                        throw new IllegalArgumentException(sourceResolverReturnedNullError);
                     }
                     var query = Optional.ofNullable(sourceToDBQueryMap.getOrDefault(dbQueryKey, null))
-                            .orElseThrow(() -> new IllegalArgumentException("Could not resolve query for key " + dbQueryKey));
+                            .orElseThrow(() -> new IllegalArgumentException(String.format(dbQueryForSourceMissingError, dbQueryKey)));
 
                     allResults.putAll(query.callDBMethod(dslContext, inputSet, select));
                 });

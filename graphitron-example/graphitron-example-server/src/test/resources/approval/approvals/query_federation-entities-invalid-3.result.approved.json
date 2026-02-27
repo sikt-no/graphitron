@@ -1,0 +1,20 @@
+{
+    "errors": [
+        {
+            "message": "Resolving __typename in representation failed for entity.",
+            "locations": [
+                {
+                    "line": 2,
+                    "column": 5
+                }
+            ],
+            "path": [
+                "_entities"
+            ],
+            "extensions": {
+                "classification": "DataFetchingException"
+            }
+        }
+    ],
+    "data": null
+}

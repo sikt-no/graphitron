@@ -85,5 +85,14 @@
         "actorId": 1
       }
     ]
+  },
+  {
+    "representations": [
+      {"__typename": "FederatedStaff", "email": "Mike.Hillyer@sakilastaff.com", "username": "Mike"},
+      {"__typename": "FederatedAddress", "id": "RmVkZXJhdGVkQWRkcmVzczox"}
+    ]
+  },
+  {
+    "representations": []
   }
 ]
