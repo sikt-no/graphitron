@@ -107,6 +107,14 @@ public class OutputTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Wrapped field annotated with @externalField should use method extended on field's target jooq table")
+    void externalFieldWrappedType() {
+        assertGeneratedContentContains("externalFieldWrappedType",
+                "DSL.row(no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod.name(_a_customer))"
+        );
+    }
+
+    @Test
     @DisplayName("Field annotated with @externalField should map types correctly even when over 22 fields")
     void externalFieldOver22() {
         assertGeneratedContentContains("externalFieldOver22",

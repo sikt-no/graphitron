@@ -295,7 +295,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     ? generateCorrelatedSubquery(field, context.nextContext(field))
                     : generateSelectRow(context.nextContext(field));
         } else if (field.isExternalField()) {
-            JOOQMapping table = processedSchema.getObject(field.getContainerTypeName()).getTable();
+            JOOQMapping table = context.getTargetTable();
 
             if (table == null) {
                 throw new IllegalArgumentException("No table found for field " + field.getName());
