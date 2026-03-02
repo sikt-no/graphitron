@@ -27,7 +27,7 @@ input FilmListOrderByInput {
 }
 
 enum FilmListOrderByField {
-    TITLE @index(name: "idx_title")
+    TITLE @order(index: "idx_title")
 }
 
 enum OrderDirection {

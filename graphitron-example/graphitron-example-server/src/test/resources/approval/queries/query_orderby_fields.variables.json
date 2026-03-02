@@ -1,0 +1,47 @@
+[
+  {
+    "_comment": "Field-based sort by LAST_NAME ASC",
+    "orderBy": {
+      "orderByField": "LAST_NAME",
+      "direction": "ASC"
+    },
+    "after": null
+  },
+  {
+    "_comment": "Field-based sort by LAST_NAME DESC",
+    "orderBy": {
+      "orderByField": "LAST_NAME",
+      "direction": "DESC"
+    },
+    "after": null
+  },
+  {
+    "_comment": "Multi-field sort by FULL_NAME (LAST_NAME + FIRST_NAME) ASC",
+    "orderBy": {
+      "orderByField": "FULL_NAME",
+      "direction": "ASC"
+    },
+    "after": null
+  },
+  {
+    "_comment": "Primary key sort ASC",
+    "orderBy": {
+      "orderByField": "ID",
+      "direction": "ASC"
+    },
+    "after": null
+  },
+  {
+    "_comment": "Primary key sort DESC",
+    "orderBy": {
+      "orderByField": "ID",
+      "direction": "DESC"
+    },
+    "after": null
+  },
+  {
+    "_comment": "No orderBy - falls back to primary key",
+    "orderBy": null,
+    "after": null
+  }
+]

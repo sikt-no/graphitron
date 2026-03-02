@@ -1,0 +1,63 @@
+{
+    "data": {
+        "customersDefaultOrderPrimaryKeyDesc": {
+            "edges": [
+                {
+                    "cursor": "WzU5OV0",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6NTk5",
+                        "name": {
+                            "firstName": "AUSTIN",
+                            "lastName": "CINTRON"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WzU5OF0",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6NTk4",
+                        "name": {
+                            "firstName": "WADE",
+                            "lastName": "DELVALLE"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WzU5N10",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6NTk3",
+                        "name": {
+                            "firstName": "FREDDIE",
+                            "lastName": "DUGGAN"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WzU5Nl0",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6NTk2",
+                        "name": {
+                            "firstName": "ENRIQUE",
+                            "lastName": "FORSYTHE"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WzU5NV0",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6NTk1",
+                        "name": {
+                            "firstName": "TERRENCE",
+                            "lastName": "GUNDERSON"
+                        }
+                    }
+                }
+            ],
+            "pageInfo": {
+                "startCursor": "WzU5OV0",
+                "endCursor": "WzU5NV0",
+                "hasNextPage": true
+            }
+        }
+    }
+}

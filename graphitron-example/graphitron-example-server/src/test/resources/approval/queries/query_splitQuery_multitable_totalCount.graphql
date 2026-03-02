@@ -1,5 +1,5 @@
 {
-    films(first: 2) {
+    filmsOrderBy(first: 2) {
         nodes {
             id
             actorsAndCategories {

@@ -1,6 +1,6 @@
 {
     "data": {
-        "films": {
+        "filmsOrderBy": {
             "edges": [
                 {
                     "cursor": "WyJaT1JSTyBBUksiXQ",

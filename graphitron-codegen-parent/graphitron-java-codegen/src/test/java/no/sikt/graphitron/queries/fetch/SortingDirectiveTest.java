@@ -12,9 +12,9 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
+import no.sikt.graphql.directives.GenerationDirective;
+
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
-import static no.sikt.graphql.directives.GenerationDirective.INDEX;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.NAME;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Sorting - Queries with custom ordering")
@@ -57,7 +57,8 @@ public class SortingDirectiveTest extends GeneratorTest {
     void twoFields() {
         assertGeneratedContentContains(
                 "twoFields",
-                ".entry(\"STORE\", \"IDX_FK_STORE_ID\"),Map.entry(\"NAME\", \"IDX_LAST_NAME\""
+                "case \"STORE\" -> QueryHelper.getSortFields(_a_customer, \"IDX_FK_STORE_ID\",",
+                "case \"NAME\" -> QueryHelper.getSortFields(_a_customer, \"IDX_LAST_NAME\","
         );
     }
 
@@ -66,7 +67,7 @@ public class SortingDirectiveTest extends GeneratorTest {
     void twoFieldIndex() {
         assertGeneratedContentContains(
                 "twoFieldIndex",
-                ".ofEntries(Map.entry(\"STORE_ID_FILM_ID\", \"IDX_STORE_ID_FILM_ID\"))"
+                "case \"STORE_ID_FILM_ID\" -> QueryHelper.getSortFields(_a_inventory, \"IDX_STORE_ID_FILM_ID\","
         );
     }
 
@@ -86,10 +87,71 @@ public class SortingDirectiveTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Sorting parameter without index set")
+    @DisplayName("Sorting parameter without @order directive set")
     void missingDirective() {
         assertThatThrownBy(() -> generateFiles("missingDirective", Set.of(CUSTOMER_TABLE)))
                 .isInstanceOf(InvalidSchemaException.class)
-                .hasMessageContaining("Expected enum field 'NAME' of 'OrderByField' to have an '@%s(%s: ...)' directive, but no such directive was set", INDEX.getName(), NAME.getName());
+                .hasMessageContaining("Expected enum field 'NAME' of 'OrderByField' to have an '@%s' directive", GenerationDirective.ORDER.getName());
+    }
+
+    @Test
+    @DisplayName("Field-based sorting")
+    void fields() {
+        assertGeneratedContentContains("fields",
+                ".LAST_NAME.sort(");
+    }
+
+    @Test
+    @DisplayName("Field-based sorting with collation")
+    void fieldsWithCollation() {
+        assertGeneratedContentContains("fieldsWithCollation",
+                ".LAST_NAME.collate(\"xdanish_ai\")");
+    }
+
+    @Test
+    @DisplayName("Multiple fields with collation")
+    void multipleFieldsWithCollation() {
+        assertGeneratedContentContains("multipleFieldsWithCollation",
+                ".LAST_NAME.collate(\"xdanish_ai\")",
+                ".FIRST_NAME.collate(\"xdanish_ai\")");
+    }
+
+    @Test
+    @DisplayName("Primary key sorting")
+    void primaryKey() {
+        assertGeneratedContentContains("primaryKey",
+                "f.sort(",
+                "getPrimaryKey().getFieldsArray()");
+    }
+
+    @Test
+    @DisplayName("Mixed sorting modes")
+    void mixed() {
+        assertGeneratedContentContains("mixed",
+                "switch (");
+    }
+
+    @Test
+    @DisplayName("Non-existent field in @order(fields:)")
+    void wrongField() {
+        assertThatThrownBy(() -> generateFiles("wrongField", Set.of(CUSTOMER_TABLE)))
+                .isInstanceOf(InvalidSchemaException.class)
+                .hasMessageContaining("has no field");
+    }
+
+    @Test
+    @DisplayName("Multiple @order modes set simultaneously")
+    void multipleModes() {
+        assertThatThrownBy(() -> generateFiles("multipleModes", Set.of(CUSTOMER_TABLE)))
+                .isInstanceOf(InvalidSchemaException.class)
+                .hasMessageContaining("must have exactly one");
+    }
+
+    @Test
+    @DisplayName("Primary key sorting on table without PK")
+    void primaryKeyNoPK() {
+        assertThatThrownBy(() -> generateFiles("primaryKeyNoPK", Set.of()))
+                .isInstanceOf(InvalidSchemaException.class)
+                .hasMessageContaining("has no primary key");
     }
 }

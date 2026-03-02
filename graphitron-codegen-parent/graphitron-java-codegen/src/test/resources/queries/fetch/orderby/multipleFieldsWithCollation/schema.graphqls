@@ -1,0 +1,15 @@
+type Query {
+  query(orderBy: Order @orderBy): [CustomerTable]
+}
+
+enum OrderByField {
+  NAME_NORSK @order(fields: [
+    {name: "LAST_NAME", collate: "xdanish_ai"},
+    {name: "FIRST_NAME", collate: "xdanish_ai"}
+  ])
+}
+
+type CustomerTable @table(name: "Customer") {
+  lastName: String @field(name: "LAST_NAME")
+  firstName: String @field(name: "FIRST_NAME")
+}

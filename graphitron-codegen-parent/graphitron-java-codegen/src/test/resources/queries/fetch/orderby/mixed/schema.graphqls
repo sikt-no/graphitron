@@ -1,0 +1,14 @@
+type Query {
+  query(orderBy: Order @orderBy): [CustomerTable]
+}
+
+enum OrderByField {
+  NAME @order(index: "IDX_LAST_NAME")
+  STATUS @order(fields: [{name: "ACTIVE"}])
+  ID @order(primaryKey: true)
+}
+
+type CustomerTable @table(name: "Customer") {
+  name: String @field(name: "LAST_NAME")
+  active: Int @field(name: "ACTIVE")
+}

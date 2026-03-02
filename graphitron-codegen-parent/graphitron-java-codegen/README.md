@@ -63,8 +63,9 @@ using Java and [jOOQ](https://www.jooq.org/).
   - [Batch lookups with @lookupKey](#batch-lookups-with-lookupkey)
     - [Constraints](#constraints)
     - [Valid and invalid patterns](#valid-and-invalid-patterns)
-  - [Sort results with @orderBy input](#sort-results-with-orderby-input)
-  - [Default sorting with @defaultOrder](#default-sorting-with-defaultorder)
+  - [Sorting](#sorting)
+    - [Sort results with @orderBy input](#sort-results-with-orderby-input)
+    - [Default sorting with @defaultOrder](#default-sorting-with-defaultorder)
 - [Special interfaces](#special-interfaces)
   - [Node](#node)
   - [Error](#error)
@@ -1419,7 +1420,11 @@ input InNested {
 }
 ```
 
-### Sort results with @orderBy input
+### Sorting
+If no ordering is specified, paginated queries default to sorting by primary key in ascending order.
+You can control sorting behavior with the `@orderBy` and `@defaultOrder` directives.
+
+#### Sort results with @orderBy input
 Incorporating the **orderBy** functionality in your GraphQL schema allow API users to sort query results based on specific fields.
 
 _Step 1: Define Order Input Types_
@@ -1445,19 +1450,39 @@ enum OrderDirection {
 _Step 2: Define Order By fields_
 
 Next, define the `OrderByField` enum. This should include all the fields on which sorting should be allowed.
-Each of these fields must be backed by a database index to optimize the query performance.
-The **index** directive indicates the corresponding database index:
+The **@order** directive specifies how each enum value maps to database sorting. There are three modes:
 
+**Index-based sorting** (backed by a database index):
 ```graphql
 enum FilmOrderByField {
-    LANGUAGE @index(name : "IDX_FK_LANGUAGE_ID")
-    TITLE @index(name : "IDX_TITLE")
+    LANGUAGE @order(index: "IDX_FK_LANGUAGE_ID")
+    TITLE @order(index: "IDX_TITLE")
 }
 ```
 
-Note: A single OrderByField can involve more than one field in the database, e.g.: `STORE_ID_FILM_ID @index(name : "idx_store_id_film_id")`
+Note: A single OrderByField can involve more than one field in the database, e.g.: `STORE_ID_FILM_ID @order(index: "idx_store_id_film_id")`
 
-To expose these indexes to Graphitron through jOOQ, ensure index code generation is enabled in jOOQ's generator config:
+**Field-based sorting** (with optional collation, no index required):
+```graphql
+enum PersonOrderByField {
+    NAME_NORSK @order(fields: [
+        {name: "LAST_NAME", collate: "xdanish_ai"},
+        {name: "FIRST_NAME", collate: "xdanish_ai"}
+    ])
+    STATUS @order(fields: [{name: "ACTIVE"}])
+}
+```
+
+**Primary key sorting** (uses the table's primary key):
+```graphql
+enum PersonOrderByField {
+    ID @order(primaryKey: true)
+}
+```
+
+Exactly one of `index`, `fields`, or `primaryKey` must be set on each enum value.
+
+For index-based sorting, ensure index code generation is enabled in jOOQ's generator config:
 
 ```xml
 <database>
@@ -1466,7 +1491,7 @@ To expose these indexes to Graphitron through jOOQ, ensure index code generation
 </database>
 ```
 
-Graphitron will look for the indexes using their names as specified by the **index** directive.
+Graphitron will look for the indexes using their names as specified by the **@order** directive.
 Exceptions will be thrown if no matching index is found for the corresponding database table.
 
 _Step 3: Add orderBy argument to Query_
@@ -1479,20 +1504,39 @@ type Query {
 }
 ```
 
-### Default sorting with @defaultOrder
+#### Default sorting with @defaultOrder
 The **@defaultOrder** directive specifies the default sort order for a field when no `@orderBy` input is provided.
-It uses a database index for consistent, efficient sorting.
+Exactly one of `index`, `fields`, or `primaryKey` must be set.
 
 **Parameters:**
-* _index_ - Name of the database index to use for sorting (required)
+* _index_ - Name of the database index to use for sorting
+* _fields_ - Field(s) to sort by, with optional collation (see [FieldSort](#field-based-sorting))
+* _primaryKey_ - Use the table's primary key for sorting (default: `false`)
 * _direction_ - Sort direction: `ASC` or `DESC` (default: `ASC`)
 
 If an `@orderBy` input is also present on the field and the user provides an orderBy value, the user's value takes precedence over the default.
 
-**Example:**
+**Index-based:**
 ```graphql
 type Query {
-    films(orderBy: FilmOrder @orderBy, first: Int = 100, after: String): FilmConnection @defaultOrder(index: "IDX_TITLE", direction: ASC)
+    films(orderBy: FilmOrder @orderBy, first: Int = 100, after: String): FilmConnection @defaultOrder(index: "IDX_TITLE")
+}
+```
+
+**Field-based (with optional collation):**
+```graphql
+type Query {
+    customers(first: Int = 100, after: String): CustomerConnection @defaultOrder(fields: [
+        {name: "LAST_NAME", collate: "case_insensitive"},
+        {name: "FIRST_NAME", collate: "case_insensitive"}
+    ])
+}
+```
+
+**Primary key:**
+```graphql
+type Query {
+    customers(first: Int = 100, after: String): CustomerConnection @defaultOrder(primaryKey: true, direction: DESC)
 }
 ```
 

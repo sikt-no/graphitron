@@ -1,7 +1,7 @@
 # Tests @defaultOrder with idx_last_name index
 # Customers are ordered alphabetically by last name
 query DefaultOrderCustomers {
-    customersWithDefaultOrder(first: 5) {
+    customersDefaultOrderIndex(first: 5) {
         edges {
             cursor
             node {

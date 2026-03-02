@@ -1694,7 +1694,7 @@ public class ProcessedDefinitionsValidator {
                     var recordType = schema.getRecordType(field);
                     var tableName = recordType.getTable().getMappingName();
                     if (!tableHasPrimaryKey(tableName)) {
-                        var hasDefaultOrder = field.getDefaultOrderIndex().isPresent();
+                        var hasDefaultOrder = field.getDefaultOrder().isPresent();
                         var orderByField = field.getOrderField();
                         var hasNonNullableOrderBy = orderByField.isPresent() && orderByField.get().isNonNullable();
 
@@ -1735,7 +1735,7 @@ public class ProcessedDefinitionsValidator {
      */
     private void validateDefaultOrderNotOnInterfaceOrUnion() {
         allFields.stream()
-                .filter(field -> field.getDefaultOrderIndex().isPresent())
+                .filter(field -> field.getDefaultOrder().isPresent())
                 .filter(field -> schema.isInterface(field) || schema.isUnion(field))
                 .forEach(field -> addErrorMessage(
                         "@%s directive on field '%s' in type '%s' is not supported because the field returns %s type '%s'. " +

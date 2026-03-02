@@ -21,14 +21,11 @@ import org.jooq.ForeignKey;
 import org.jooq.Key;
 
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.LinkedList;
+import java.util.*;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedName;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArrayList;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
@@ -851,6 +848,20 @@ public class FormatCodeBlocks {
 
     public static CodeBlock getPrimaryKeyFieldsWithTableAliasBlock(String targetAlias) {
         return CodeBlock.of("$N.fields($L)", targetAlias, getPrimaryKeyFieldsBlock(targetAlias));
+    }
+
+    public static CodeBlock getPrimaryKeyFieldsWithTableAliasBlock(String targetAlias, String direction) {
+        var sortOrder = direction.equalsIgnoreCase("ASC")
+                ? CodeBlock.of("$T.ASC", SORT_ORDER.className)
+                : CodeBlock.of("$T.DESC", SORT_ORDER.className);
+        return getPrimaryKeyFieldsWithTableAliasBlock(targetAlias, sortOrder);
+    }
+
+    public static CodeBlock getPrimaryKeyFieldsWithTableAliasBlock(String targetAlias, CodeBlock sortOrder) {
+        return CodeBlock.of(
+                "$T.of($N.fields($L)).map(f -> f.sort($L)).toArray($T[]::new)",
+                STREAM.className, targetAlias, getPrimaryKeyFieldsBlock(targetAlias),
+                sortOrder, SORT_FIELD.className);
     }
 
     private static @NotNull CodeBlock getPrimaryKeyFieldsBlock(String target) {

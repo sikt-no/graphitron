@@ -3,5 +3,5 @@ type Query {
 }
 
 enum OrderByField {
-  NAME @index(name : "IDX_LAST_NAME")
+  NAME @order(index: "IDX_LAST_NAME")
 }

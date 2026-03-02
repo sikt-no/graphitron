@@ -3,7 +3,7 @@ type Query {
 }
 
 enum OrderByField {
-  DEPENDER @index(name : "PG_DEPEND_DEPENDER_INDEX")
+  DEPENDER @order(index: "PG_DEPEND_DEPENDER_INDEX")
 }
 
 type PgDepend @table(name: "PG_DEPEND") {

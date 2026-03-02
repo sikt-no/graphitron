@@ -5,10 +5,10 @@ import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
 
 import fake.graphql.example.model.CustomerTable;
 import fake.graphql.example.model.Order;
+import java.lang.IllegalArgumentException;
 import java.lang.Integer;
 import java.lang.String;
 import java.util.List;
-import java.util.Map;
 import no.sikt.graphql.helpers.query.QueryHelper;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.apache.commons.lang3.tuple.ImmutablePair;
@@ -24,8 +24,10 @@ public class QueryDBQueries {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         var _iv_orderFields = _mi_orderBy == null
                 ? _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())
-                : QueryHelper.getSortFields(_a_customer, Map.ofEntries(Map.entry("NAME", "IDX_LAST_NAME"))
-                .get(_mi_orderBy.getOrderByField().toString()), _mi_orderBy.getDirection().toString());
+                : switch (_mi_orderBy.getOrderByField().toString()) {
+                    case "NAME" -> QueryHelper.getSortFields(_a_customer, "IDX_LAST_NAME", _mi_orderBy.getDirection().toString());
+                    default -> throw new IllegalArgumentException("Unknown order by field: " + _mi_orderBy.getOrderByField().toString());
+                };
         return _iv_ctx
                 .select(
                         QueryHelper.getOrderByToken(_a_customer, _iv_orderFields),

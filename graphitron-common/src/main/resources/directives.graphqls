@@ -141,17 +141,37 @@ directive @mutation(typeName: MutationType!) on FIELD_DEFINITION
 """Handle this input argument as orderBy functionality"""
 directive @orderBy on ARGUMENT_DEFINITION
 
-"""Connect this enum value to an index with the given name"""
-directive @index(name: String) on ENUM_VALUE
+"""Connect this enum value to a sorting specification. Exactly one of index, fields, or primaryKey must be set."""
+directive @order(
+  """Name of the database index to use"""
+  index: String
+  """Field(s) to sort by, with optional collation"""
+  fields: [FieldSort!]
+  """Use primary key fields for sorting"""
+  primaryKey: Boolean = false
+) on ENUM_VALUE
+
+"""Field sort specification for @order and @defaultOrder directives"""
+input FieldSort {
+  """Database field name (as defined in the jOOQ table)"""
+  name: String!
+  """Collation to apply (e.g., "xdanish_ai"). Database-specific."""
+  collate: String
+}
 
 """
 Specifies the default sort order for this field when no @orderBy input is provided.
-Uses a database index for consistent, efficient sorting.
+Uses a database index, field names, or primary key for consistent, efficient sorting.
 If @orderBy input is also present and the user provides an orderBy value, that takes precedence.
+Exactly one of index, fields, or primaryKey must be set.
 """
 directive @defaultOrder(
   """Name of the database index to use for sorting"""
-  index: String!
+  index: String
+  """Field(s) to sort by, with optional collation"""
+  fields: [FieldSort!]
+  """Use primary key fields for sorting"""
+  primaryKey: Boolean = false
   """Sort direction (default: ASC)"""
   direction: SortDirection = ASC
 ) on FIELD_DEFINITION

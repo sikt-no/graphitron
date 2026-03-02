@@ -28,11 +28,11 @@ public class CodeReference {
 
     public CodeReference(List<ObjectField> objectFields, String defaultMethodName) {
         this.schemaClassReference = getOptionalObjectFieldByName(objectFields, NAME).map(DirectiveHelpers::stringValueOf).orElse(null);
-        this.className = getOptionalObjectFieldByName(objectFields, CLASSNAME).map(DirectiveHelpers::stringValueOf).orElse(null);
+        this.className = getOptionalObjectFieldByName(objectFields, CLASS_NAME).map(DirectiveHelpers::stringValueOf).orElse(null);
         this.methodName = getOptionalObjectFieldByName(objectFields, METHOD).map(DirectiveHelpers::stringValueOf).orElse(defaultMethodName);
 
         if (this.className == null && this.schemaClassReference == null) {
-            throw new IllegalArgumentException("Can't find " + CLASSNAME.getName() + " or " + NAME.getName() + " in directive arguments.");
+            throw new IllegalArgumentException("Can't find " + CLASS_NAME.getName() + " or " + NAME.getName() + " in directive arguments.");
         }
     }
 

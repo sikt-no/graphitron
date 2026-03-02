@@ -3,8 +3,8 @@ type Query {
 }
 
 enum OrderByField {
-  NAME @index(name : "IDX_LAST_NAME")
-  STORE @index(name : "IDX_FK_STORE_ID")
+  NAME @order(index: "IDX_LAST_NAME")
+  STORE @order(index: "IDX_FK_STORE_ID")
 }
 
 type CustomerTable @table(name: "Customer") {
