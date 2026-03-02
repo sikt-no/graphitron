@@ -66,6 +66,8 @@
                                     <directory>${project.basedir}/src/main/resources/graphql</directory>
                                 </schemaRootDirectories>
                                 <removeFederationDefinitions>true</removeFederationDefinitions>
+                                <nodesFieldInConnectionsEnabled>true</nodesFieldInConnectionsEnabled>
+                                <totalCountFieldInConnectionsEnabled>true</totalCountFieldInConnectionsEnabled>
                             </transform>
 
                             <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>

@@ -51,6 +51,7 @@ public class SchemaTransformer {
 
     private List<Function<GraphQLSchema, GraphQLSchema>> getSchemaTransforms(TypeDefinitionRegistry registry) {
         var transforms = new ArrayList<Function<GraphQLSchema, GraphQLSchema>>();
+        var disabledConnectionFields = getDisabledConnectionFields();
 
         // This one goes first since removing fields and types allows us to not process them in later transforms.
         if (config.removeExcludedElements()) {
@@ -69,6 +70,12 @@ public class SchemaTransformer {
 
         if (!filterDirectives.isEmpty()) {
             transforms.add((s) -> new DirectivesFilter(s, filterDirectives).getModifiedGraphQLSchema());
+        }
+
+        if (!disabledConnectionFields.isEmpty()) {
+            transforms.add(schema -> new ConnectionFieldFilter(schema, disabledConnectionFields)
+                    .getModifiedGraphQLSchema()
+            );
         }
 
         return transforms;
@@ -160,5 +167,24 @@ public class SchemaTransformer {
             });
         });
         return new SchemaGenerator().makeExecutableSchema(typeDefinitionRegistry, runtimeWiring);
+    }
+
+    /**
+     * Determines which connection fields should be disabled based on the configuration. The {@code nodes} and
+     * {@code totalCount} fields are not part of the Relay Connection specification, so they can be disabled if desired.
+     *
+     * @return A set of connection field names to be disabled.
+     */
+    private Set<String> getDisabledConnectionFields() {
+        var disabledFields = new HashSet<String>();
+
+        if (!config.nodesFieldInConnectionsEnabled()) {
+            disabledFields.add("nodes");
+        }
+        if (!config.totalCountFieldInConnectionsEnabled()) {
+            disabledFields.add("totalCount");
+        }
+
+        return disabledFields;
     }
 }

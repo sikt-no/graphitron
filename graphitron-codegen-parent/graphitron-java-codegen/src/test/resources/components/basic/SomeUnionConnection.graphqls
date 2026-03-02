@@ -2,6 +2,7 @@ type SomeUnionConnection {
     edges: [SomeUnionConnectionEdge]
     pageInfo: PageInfo
     nodes: [SomeUnion!]!
+    totalCount: Int
 }
 
 type SomeUnionConnectionEdge {

@@ -1,0 +1,12 @@
+directive @asConnection(defaultFirstValue: Int = 100) on FIELD_DEFINITION
+
+type Query {
+  someType(
+    param: String!,
+  ): [SomeType] @asConnection
+}
+
+type SomeType {
+  id: ID!
+  field: String!
+}

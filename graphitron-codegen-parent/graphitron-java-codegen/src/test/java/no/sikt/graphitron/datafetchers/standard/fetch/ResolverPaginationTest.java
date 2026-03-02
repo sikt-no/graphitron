@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.CONTEXT_CONDITION;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION_WITH_NO_OPTIONALS;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_CONNECTION;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.SPLIT_QUERY_WRAPPER;
 
@@ -102,6 +104,36 @@ public class ResolverPaginationTest extends GeneratorTest {
                 "operation/withContextCondition",
                 "queryForQuery(_iv_ctx, _iv_pageSize, _mi_after, _cf_ctxField, _iv_selectionSet)",
                 "countQueryForQuery(_iv_ctx, _cf_ctxField)"
+        );
+    }
+
+    @Test
+    @DisplayName("When optional field 'totalCount' is included in the schema, generate the count method")
+    void countMethodCalledWhenAllOptionalFieldsIncluded() {
+        assertGeneratedContentContains(
+                "operation/allOptionalFieldsIncluded",
+                Set.of(CUSTOMER_CONNECTION),
+                        """
+                        .loadPaginated(
+                        _iv_pageSize,
+                        (_iv_ctx, _iv_selectionSet) -> QueryDBQueries.customersForQuery(_iv_ctx, _iv_pageSize, _mi_after, _iv_selectionSet),
+                        (_iv_ctx, _iv_keys) -> QueryDBQueries.countCustomersForQuery(_iv_ctx)
+                        """
+        );
+    }
+
+    @Test
+    @DisplayName("When optional field 'totalCount' is not included in the schema, do not generate the count method")
+    void countMethodNotCalledWhenAllOptionalFieldsDisabled() {
+        assertGeneratedContentContains(
+                "operation/allOptionalFieldsExcluded",
+                Set.of(CUSTOMER_CONNECTION_WITH_NO_OPTIONALS),
+                        """
+                        .loadPaginated(
+                        _iv_pageSize,
+                        (_iv_ctx, _iv_selectionSet) -> QueryDBQueries.customersForQuery(_iv_ctx, _iv_pageSize, _mi_after, _iv_selectionSet)
+                        );
+                        """
         );
     }
 }

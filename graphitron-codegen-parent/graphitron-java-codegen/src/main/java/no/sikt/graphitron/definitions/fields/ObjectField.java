@@ -24,7 +24,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_EXTERNAL;
 public class ObjectField extends GenerationSourceField<FieldDefinition> {
     private int firstDefault = 100;
     private int lastDefault = 100;
-    private boolean hasForwardPagination, hasBackwardPagination, hasRequiredPaginationFields;
+    private boolean hasForwardPagination, hasBackwardPagination, hasRequiredPaginationFields, hasPaginationTotalCountField;
     private final List<ArgumentField> arguments, nonReservedArguments;
     private final ArgumentField orderField;
     private final LinkedHashMap<String, ArgumentField> argumentsByName;
@@ -127,6 +127,15 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
     public boolean hasPagination() {
         return hasForwardPagination() || hasBackwardPagination();
     }
+
+    public boolean hasTotalCountFieldInReturnType() {
+        return hasPaginationTotalCountField;
+    }
+
+    public void setHasTotalCountFieldInReturnType(boolean hasTotalCountField) {
+        hasPaginationTotalCountField = hasTotalCountField;
+    }
+
 
     @Override
     public boolean hasMutationType() {

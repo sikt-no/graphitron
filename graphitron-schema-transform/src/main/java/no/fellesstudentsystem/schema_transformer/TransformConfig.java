@@ -11,7 +11,9 @@ public record TransformConfig(
         boolean addFeatureFlags,
         boolean removeGeneratorDirectives,
         boolean removeExcludedElements,
-        boolean expandConnections
+        boolean expandConnections,
+        boolean nodesFieldInConnectionsEnabled,
+        boolean totalCountFieldInConnectionsEnabled
 ) {
     public static Set<String> DIRECTIVES_FOR_REMOVING_ELEMENTS = Set.of("external", "notGenerated", "requires");
 }
