@@ -275,14 +275,17 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 .beginControlFlow("if ($L)", FormatCodeBlocks.selectionSetLookup(field.getName(), false, true))
                 .declare(VAR_NODE_ID_VALUE, asMethodCall(inputVar, getterMapping.asGet()))
                 .add(
-                        ifNotNull(
+                        wrapNotNull(
                                 VAR_NODE_ID_VALUE,
                                 generateNodeIdFieldValueCode(
                                         field,
                                         targetVarName,
                                         hasValueVarName,
                                         overlappingColumns,
-                                        jooqRecordClass)))
+                                        jooqRecordClass
+                                )
+                        )
+                )
                 .endControlFlow()
                 .add("\n")
                 .build();

@@ -8,8 +8,9 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.ifNotNull;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.selectionSetLookup;
+import java.util.ArrayList;
+
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.outputPrefix;
 import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
@@ -34,7 +35,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
             return CodeBlock.empty();
         }
 
-        var fieldCode = CodeBlock.builder();
+        var fieldCode = new ArrayList<CodeBlock>();
         var type = context.getTargetType();
         var fields = (toRecord ? type.getInputsSortedByNullability().stream().filter(it -> !processedSchema.hasJOOQRecord(it)).toList() : type.getFields())
                 .stream()
@@ -80,19 +81,24 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
                                 : CodeBlock.of("new $T()", innerContext.getTargetType().getGraphClassName())
                 );
 
-                var ifBlock = isType && toRecord ? ifNotNull(inputPrefix(varName)) : CodeBlock.of("if ($L)", selectionSetLookup(innerContext.getPath(), false, toRecord));
-                fieldCode
-                        .addIf(isType && toRecord, declareBlock)
-                        .beginControlFlow("$L", ifBlock)
-                        .addIf(isType && !toRecord && previousHadSource, declareBlock)
-                        .add(innerCode.build())
-                        .addIf(isType && !toRecord && previousHadSource && !innerField.isResolver(), () -> innerContext.getSetMappingBlock(outputPrefix(varName)))
-                        .endControlFlow()
-                        .add("\n");
+                if (isType && toRecord) {
+                    fieldCode.add(CodeBlock.join(declareBlock, wrapNotNull(inputPrefix(varName), innerCode.build())));
+                } else {
+                    fieldCode.add(
+                            CodeBlock
+                                    .builder()
+                                    .beginControlFlow("if ($L)", selectionSetLookup(innerContext.getPath(), false, toRecord))
+                                    .addIf(isType && previousHadSource, declareBlock)
+                                    .add(innerCode.build())
+                                    .addIf(isType && previousHadSource && !innerField.isResolver(), () -> innerContext.getSetMappingBlock(outputPrefix(varName)))
+                                    .endControlFlow()
+                                    .build()
+                    );
+                }
             }
         }
 
-        return context.wrapFields(fieldCode.build());
+        return context.wrapFields(CodeBlock.join(fieldCode, "\n"));
     }
 
     @Override

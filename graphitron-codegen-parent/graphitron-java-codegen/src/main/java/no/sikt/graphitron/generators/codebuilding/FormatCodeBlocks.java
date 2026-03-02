@@ -84,23 +84,6 @@ public class FormatCodeBlocks {
     }
 
     /**
-     * @return CodeBlock that contains an if statement with a null check on the provided name.
-     */
-    @NotNull
-    public static CodeBlock ifNotNull(String name) {
-        return CodeBlock.of("if ($N != null)", name);
-    }
-
-    @NotNull
-    public static CodeBlock ifNotNull(String name, CodeBlock codeBlock) {
-        return CodeBlock.builder()
-                .beginControlFlow("if ($N != null)", name)
-                .add(codeBlock)
-                .endControlFlow()
-                .build();
-    }
-
-    /**
      * @return CodeBlock that creates an empty List.
      */
     @NotNull
@@ -393,28 +376,21 @@ public class FormatCodeBlocks {
     }
 
     /**
-     * @return CodeBlock consisting of a declaration of the page size variable through a method call.
+     * @return CodeBlock that wraps the provided CodeBlock in an if not null check.
      */
     @NotNull
-    public static CodeBlock declarePageSize(int defaultFirst) {
-        return CodeBlock.statementOf(
-                "int $L = $T.getPageSize($N, $L, $L)",
-                VAR_PAGE_SIZE,
-                RESOLVER_HELPERS.className,
-                inputPrefix(GraphQLReservedName.PAGINATION_FIRST.getName()),
-                GeneratorConfig.getMaxAllowedPageSize(),
-                defaultFirst
-        );
+    public static CodeBlock wrapNotNull(String valueToCheck, CodeBlock code) {
+        return wrapNotNull(CodeBlock.of("$N", valueToCheck), code);
     }
 
     /**
      * @return CodeBlock that wraps the provided CodeBlock in an if not null check.
      */
     @NotNull
-    public static CodeBlock wrapNotNull(String valueToCheck, CodeBlock code) {
+    public static CodeBlock wrapNotNull(CodeBlock valueToCheck, CodeBlock code) {
         return CodeBlock
                 .builder()
-                .beginControlFlow("$L", ifNotNull(valueToCheck))
+                .beginControlFlow("if ($L != null)", valueToCheck)
                 .add(code)
                 .endControlFlow()
                 .build();
