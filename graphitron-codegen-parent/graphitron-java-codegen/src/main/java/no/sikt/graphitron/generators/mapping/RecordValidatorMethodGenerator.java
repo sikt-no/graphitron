@@ -61,7 +61,7 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
                 .getInputsSortedByNullability()
                 .stream()
                 .filter(it -> !processedSchema.hasInputJOOQRecord(it))
-                .filter(it -> !(it.isExplicitlyNotGenerated() || it.isResolver()))
+                .filter(it -> !(it.isExplicitlyNotGenerated() || it.createsDataFetcher()))
                 .toList();
         for (var innerField : containedInputs) {
             var innerContext = context.iterateContext(innerField);

@@ -1,8 +1,6 @@
 package no.sikt.graphitron.generators.context;
 
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
-import no.sikt.graphitron.definitions.fields.AbstractField;
-import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
@@ -43,7 +41,7 @@ public class MapperContext {
             toRecord,
             mapsJavaRecord,
             isValidation,
-            isResolver,
+            createsDataFetchers,
             targetIsType,
             isInitContext,
             pastFieldOverrideExists,
@@ -56,7 +54,7 @@ public class MapperContext {
     private final ProcessedSchema schema;
 
     // Initial context values. Only some of the initial values here are used.
-    private MapperContext(boolean toRecord, boolean mapsJavaRecord, boolean isValidation, boolean isResolver, ProcessedSchema schema) {
+    private MapperContext(boolean toRecord, boolean mapsJavaRecord, boolean isValidation, boolean createsDataFetchers, ProcessedSchema schema) {
         recursion = 0;
         path = "";
         indexPath = "";
@@ -79,7 +77,7 @@ public class MapperContext {
         this.toRecord = toRecord;
         this.mapsJavaRecord = mapsJavaRecord;
         this.isValidation = isValidation;
-        this.isResolver = isResolver;
+        this.createsDataFetchers = createsDataFetchers;
         this.schema = schema;
 
         isInitContext = true;
@@ -94,7 +92,7 @@ public class MapperContext {
         this.mapsJavaRecord = previousContext.mapsJavaRecord;
         this.toRecord = previousContext.toRecord;
         this.isValidation = previousContext.isValidation;
-        this.isResolver = previousContext.isResolver;
+        this.createsDataFetchers = previousContext.createsDataFetchers;
         this.target = target;
         this.targetType = (RecordObjectDefinition<?, ?>)schema.getRecordType(target);
 
@@ -104,7 +102,7 @@ public class MapperContext {
         hasTable = targetIsType && targetType.hasTable();
         hasJavaRecordReference = targetIsType && targetType.hasJavaRecordReference();
         recursion = previousContext.recursion + 1;
-        isIterable = isResolver ? target.isIterableWrapped() : (target.isIterableWrapped() && !hasJavaRecordReference || previousContext.isInitContext);
+        isIterable = createsDataFetchers ? target.isIterableWrapped() : (target.isIterableWrapped() && !hasJavaRecordReference || previousContext.isInitContext);
         wasIterable = isIterable || previousContext.wasIterable;
         isSimpleIDMode = !previousContext.hasRecordReference && !toRecord && !target.isInput() && target.isID(); // Special case, may become unsupported in the future.
 
@@ -141,11 +139,11 @@ public class MapperContext {
     }
 
     private String getSchemaNameToUse() {
-        if (isResolver && toRecord) {
+        if (createsDataFetchers && toRecord) {
             return uncapitalize(target.getName());
         }
 
-        if (previousContext.isInitContext || isResolver) {
+        if (previousContext.isInitContext || createsDataFetchers) {
             return uncapitalize(schema.isRecordType(target) ? schema.getRecordType(target).getName() : target.getTypeName());
         }
 
@@ -157,7 +155,7 @@ public class MapperContext {
     }
 
     private String getRecordName() {
-        if (isResolver && !toRecord) {
+        if (createsDataFetchers && !toRecord) {
             return uncapitalize(target.getTypeName());
         }
 
@@ -168,7 +166,7 @@ public class MapperContext {
 
     private String getNextPath() {
         if (previousContext.isInitContext) {
-            return isResolver && toRecord ? target.getName() : "";
+            return createsDataFetchers && toRecord ? target.getName() : "";
         }
 
         if (previousContext.path.isEmpty()) {
@@ -180,7 +178,7 @@ public class MapperContext {
 
     private String getNextIndexPath() {
         if (previousContext.isInitContext) {
-            return isResolver && toRecord ? target.getName() : "";
+            return createsDataFetchers && toRecord ? target.getName() : "";
         }
 
         if (previousContext.indexPath.isEmpty() && !previousContext.isIterable) {
@@ -316,12 +314,12 @@ public class MapperContext {
         var targetEqualsPrevious = targetName.equals(previousContext.targetName);
         var code = CodeBlock.builder();
         if (isIterable && hasSourceName()) {
-            code.declareIf(isResolver || isValidation, namedIteratorPrefix(sourceName), "$N.get($N)", inputPrefix(sourceName), getIndexName());
+            code.declareIf(createsDataFetchers || isValidation, namedIteratorPrefix(sourceName), "$N.get($N)", inputPrefix(sourceName), getIndexName());
 
             if (!isValidation) {
                 code.add(continueCheck(namedIteratorPrefix(sourceName)));
 
-                if (!isResolver && !mapsJavaRecord && !targetEqualsPrevious) {
+                if (!createsDataFetchers && !mapsJavaRecord && !targetEqualsPrevious) {
                     code.add(select(declareRecord(outputPrefix(targetName), targetType, false, false), declareNew(outputPrefix(targetName), targetType.getGraphClassName())));
                 }
             } else if (previousContext.isInitContext) {
@@ -333,7 +331,7 @@ public class MapperContext {
                 .declareNewIf(!isValidation && mapsJavaRecord && !targetEqualsPrevious, outputPrefix(targetName), targetType.asTargetClassName(toRecord))
                 .add(fieldCode);
 
-        if (isResolver) {
+        if (createsDataFetchers) {
             return isIterable ? wrapForIndexed(sourceName, code.build()) : code.build();
         }
 
@@ -375,7 +373,7 @@ public class MapperContext {
                     foreignKey.isPresent() ? referenceNodeIdColumnsBlock(schema.getRecordType(target.getContainerTypeName()), nodeType, foreignKey.get()) : nodeIdColumnsBlock(nodeType)
             );
         }
-        return setValue(outputPrefix(previousContext.targetName), setTargetMapping, valueToSet, target.isResolver());
+        return setValue(outputPrefix(previousContext.targetName), setTargetMapping, valueToSet, target.createsDataFetcher());
     }
 
     public CodeBlock getSetMappingBlock(String valueToSet) {

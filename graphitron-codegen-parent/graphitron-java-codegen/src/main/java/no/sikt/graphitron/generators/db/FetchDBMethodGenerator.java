@@ -168,7 +168,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected CodeBlock generateCorrelatedSubquery(GenerationField field, FetchContext context) {
         var isConnection = ((ObjectField) field).hasForwardPagination();
         var isMultiset = field.isIterableWrapped() || isConnection;
-        var orderByFieldsBlock = field.isResolver() && tableHasPrimaryKey(context.getTargetTableName())
+        var orderByFieldsBlock = field.createsDataFetcher() && tableHasPrimaryKey(context.getTargetTableName())
                 ? CodeBlock.of(VAR_ORDER_FIELDS)
                 : createOrderFieldsBlock((ObjectField) field, context.getTargetAlias(), context.getTargetTableName());
         var shouldBeOrdered = isMultiset && !orderByFieldsBlock.isEmpty();
@@ -202,7 +202,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .addIf(isConnection, this::createSeekAndLimitBlock)
                 .build();
 
-        if (field.isResolver()) {
+        if (field.createsDataFetcher()) {
             return isMultiset ? wrapInMultiset(contents) : wrapInField(contents);
         }
 
@@ -264,7 +264,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .getFields()
                 .stream()
                 .filter(it -> !processedSchema.isExceptionOrExceptionUnion(it))
-                .filter(f -> !(f.isResolver() && processedSchema.isRecordType(f)))
+                .filter(f -> !(f.createsDataFetcher() && processedSchema.isRecordType(f)))
                 .collect(Collectors.toList());
 
         var rowElements = new ArrayList<CodeBlock>();
@@ -377,7 +377,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .getReferenceObject()
                 .getFields()
                 .stream()
-                .filter(f -> !(f.isResolver() && processedSchema.isRecordType(f)))
+                .filter(f -> !(f.createsDataFetcher() && processedSchema.isRecordType(f)))
                 .anyMatch(FieldSpecification::isIterableWrapped);
 
         if (!context.hasPreviousContext() && !context.hasApplicableTable() && listedFieldWithoutTableIsPresent) {
@@ -654,7 +654,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     /**
      * @return Formatted CodeBlock for the where-statement and surrounding code. Applies conditions and joins.
      */
-    protected CodeBlock formatWhereContents(FetchContext context, String resolverKeyParamName, boolean isRoot, boolean isResolverRoot) {
+    protected CodeBlock formatWhereContents(FetchContext context, String resolverKeyParamName, boolean isRoot, boolean isDataFetcherRoot) {
         var conditionList = new ArrayList<CodeBlock>();
 
         if (context.getReferenceObject() instanceof InterfaceDefinition) {
@@ -675,11 +675,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             );
         }
 
-        if (!isRoot && !resolverKeyParamName.isEmpty() && isResolverRoot) {
+        if (!isRoot && !resolverKeyParamName.isEmpty() && isDataFetcherRoot) {
             conditionList.add(inResolverKeysBlock(resolverKeyParamName, context));
         }
 
-        if (!isResolverRoot && (context.hasNonSubqueryFields() || context.hasApplicableTable())) {
+        if (!isDataFetcherRoot && (context.hasNonSubqueryFields() || context.hasApplicableTable())) {
             conditionList.addAll(getInputConditions(context, (ObjectField) context.getReferenceObjectField()));
             var otherConditionsFields = context
                     .getConditionSourceFields()

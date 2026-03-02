@@ -100,6 +100,16 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
     }
 
     @Override
+    public boolean createsDataFetcher() {
+        return hasResolvers;
+    }
+
+    @Override
+    public boolean createsDataFetchersForFields() {
+        return hasResolvers;
+    }
+
+    @Override
     public boolean isGenerated() {
         return isGenerated;
     }

@@ -13,7 +13,6 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.mappings.TableReflection;
-import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 import org.jooq.Field;
@@ -21,14 +20,11 @@ import org.jooq.ForeignKey;
 import org.jooq.Key;
 
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.LinkedList;
+import java.util.*;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedName;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArrayList;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
@@ -63,10 +59,10 @@ public class FormatCodeBlocks {
      * @param name Name of a field that should be declared as a record. This will be the name of the variable.
      * @param input Input type that should be declared as a record.
      * @param isIterable Is this record wrapped in a list?
-     * @param isResolver Is this declaration to be used in a resolver?
+     * @param createsDataFetchers Is this declaration to be used in a resolver?
      * @return CodeBlock that declares a new record variable and that attaches context configuration if needed.
      */
-    public static CodeBlock declareRecord(String name, RecordObjectSpecification<?> input, boolean isIterable, boolean isResolver) {
+    public static CodeBlock declareRecord(String name, RecordObjectSpecification<?> input, boolean isIterable, boolean createsDataFetchers) {
         if (!input.hasRecordReference()) {
             return CodeBlock.empty();
         }
@@ -75,7 +71,7 @@ public class FormatCodeBlocks {
                 .builder()
                 .declareNewIf(isIterable, asListedName(name), wrapArrayList(input.getRecordClassName()))
                 .declareNewIf(!isIterable, name, input.getRecordClassName())
-                .addStatementIf(!input.hasJavaRecordReference() && !isIterable, "$N$L", name, isResolver ? ATTACH_RESOLVER : ATTACH)
+                .addStatementIf(!input.hasJavaRecordReference() && !isIterable, "$N$L", name, createsDataFetchers ? ATTACH_RESOLVER : ATTACH)
                 .build();
     }
 
@@ -270,8 +266,8 @@ public class FormatCodeBlocks {
      * @return CodeBlock that sets a value through a mapping.
      */
     @NotNull
-    public static CodeBlock setValue(String container, MethodMapping mapping, CodeBlock value, boolean isResolverKey) {
-        return CodeBlock.of("$N$L", uncapitalize(container), isResolverKey ? mapping.asSetKeyCall(value) : mapping.asSetCall(value));
+    public static CodeBlock setValue(String container, MethodMapping mapping, CodeBlock value, boolean isDataFetcherKey) {
+        return CodeBlock.of("$N$L", uncapitalize(container), isDataFetcherKey ? mapping.asSetKeyCall(value) : mapping.asSetCall(value));
     }
 
     /**

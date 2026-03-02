@@ -18,8 +18,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getObjectMapTypeName;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.sourcePrefix;

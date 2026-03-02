@@ -319,7 +319,7 @@ public class FetchContext {
         var newJoinListSequence = new JoinListSequence();
         var previousGraphPath = graphPath;
 
-        if (!referenceObjectField.isResolver() && processedSchema.isObject(referenceObjectField)) {
+        if (!referenceObjectField.createsDataFetcher() && processedSchema.isObject(referenceObjectField)) {
             previousGraphPath += (previousGraphPath.isEmpty() ? "" : "/") + referenceObjectField.getName();
             var refTable = processedSchema.getObject(referenceObjectField).getTable();
 
@@ -443,7 +443,7 @@ public class FetchContext {
      */
     private JoinListSequence processFieldReferences(JoinListSequence joinSequence, JOOQMapping refTable, List<FieldReference> references, boolean requiresLeftJoin, boolean checkLastRef) {
         var previousTable = joinSequence.isEmpty() ? getPreviousTable() : joinSequence.getLast().getTable();
-        if (getReferenceObjectField().isResolver() && previousContext != null && checkLastRef) previousTable = previousContext.getPreviousTable();
+        if (getReferenceObjectField().createsDataFetcher() && previousContext != null && checkLastRef) previousTable = previousContext.getPreviousTable();
 
         var relations = new ArrayList<TableRelation>();
         for (var fRef : references) {
@@ -461,7 +461,7 @@ public class FetchContext {
         }
 
         for (int i = 0; i < references.size(); i++) {
-            if (getReferenceObjectField().isResolver() && previousContext == null && i > 0) break;
+            if (getReferenceObjectField().createsDataFetcher() && previousContext == null && i > 0) break;
             joinSequence = resolveNextSequence(references.get(i), relations.get(i), joinSequence, requiresLeftJoin);
         }
         return joinSequence;
@@ -474,7 +474,7 @@ public class FetchContext {
         if (previous == null) {
             return makeJoinSequence(target);
         }
-        if (getReferenceObjectField().isResolver() && previousContext == null) {
+        if (getReferenceObjectField().createsDataFetcher() && previousContext == null) {
             return makeJoinSequence(previous);
         }
 

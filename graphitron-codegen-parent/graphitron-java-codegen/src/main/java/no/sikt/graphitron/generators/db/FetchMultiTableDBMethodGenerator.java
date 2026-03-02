@@ -77,7 +77,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         var joins = CodeBlock.builder();
         var mappedDeclarationBlock = CodeBlock.builder();
 
-        if (target.isResolver()) {
+        if (target.createsDataFetcher()) {
             initialContext = implementations
                     .stream()
                     .findFirst()
@@ -110,8 +110,8 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
         var unionQuery = getUnionQuery(sortFieldQueryMethodCalls, inputs, target.hasPagination());
         var multitableQuery = CodeBlock.builder()
-                .addIf(target.isResolver(), "$T", DSL.className)
-                .addIf(!target.isResolver(), "$N", VAR_CONTEXT)
+                .addIf(target.createsDataFetcher(), "$T", DSL.className)
+                .addIf(!target.createsDataFetcher(), "$N", VAR_CONTEXT)
                 .add(".select(")
                 .add(indentIfMultiline(wrapRow(createSelectBlock(mappedQueryVariables))))
                 .add(".mapping($L)", createMappingContent(target, implementations, target.hasPagination()))
@@ -122,7 +122,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .addIf(!processedSchema.returnsList(target), "\n.limit(2)\n") // So that we get a DataFetchingException on multiple rows, without fetching more than necessary
                 .build();
 
-        if (target.isResolver()) {
+        if (target.createsDataFetcher()) {
             multitableQuery = processedSchema.returnsList(target)
                     ? wrapInMultiset(multitableQuery)
                     : wrapInField(multitableQuery);
@@ -130,20 +130,20 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
         return CodeBlock.builder()
                 .declareIf(target.hasPagination(), TOKEN, () -> getTokenVariableDeclaration(implementations))
-                .addIf(target.isResolver(), () -> createAliasDeclarations(initialContext.getAliasSet()))
+                .addIf(target.createsDataFetcher(), () -> createAliasDeclarations(initialContext.getAliasSet()))
                 .declare(UNION_KEYS_QUERY, unionQuery)
                 .add("\n")
                 .add(mappedDeclarationBlock.build())
                 .add("\nreturn ")
                 .indent()
-                .addIf(target.isResolver(), "$N.select(\n", VAR_CONTEXT)
+                .addIf(target.createsDataFetcher(), "$N.select(\n", VAR_CONTEXT)
                 .indent()
-                .addIf(target.isResolver(), () -> getInitialKey(initialContext))
+                .addIf(target.createsDataFetcher(), () -> getInitialKey(initialContext))
                 .add(multitableQuery)
                 .unindent()
-                .addIf(target.isResolver(), "\n)")
-                .addIf(target.isResolver(), () -> CodeBlock.of("\n.from($L)\n", initialContext.renderQuerySource(getLocalTable())))
-                .addIf(target.isResolver(), () -> formatWhereContents(initialContext, resolverKeyParamName, isRoot, target.isResolver()))
+                .addIf(target.createsDataFetcher(), "\n)")
+                .addIf(target.createsDataFetcher(), () -> CodeBlock.of("\n.from($L)\n", initialContext.renderQuerySource(getLocalTable())))
+                .addIf(target.createsDataFetcher(), () -> formatWhereContents(initialContext, resolverKeyParamName, isRoot, target.createsDataFetcher()))
                 .add(getFetchCodeBlock(target))
                 .unindent()
                 .build();
@@ -206,7 +206,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
     private CodeBlock getFetchCodeBlock(ObjectField target) {
         var isList = processedSchema.returnsList(target);
-        if (target.isResolver()) {
+        if (target.createsDataFetcher()) {
             var valuesBlock = CodeBlock.of("$1L -> $1N.value1().valuesRow(),\n", VAR_RECORD_ITERATOR);
             return CodeBlock
                     .builder()
@@ -285,7 +285,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     private List<MethodSpec> getMethodsForImplementation(ObjectField target, ObjectDefinition implementation, List<ParameterSpec> methodInputs) {
         var virtualTarget = new VirtualSourceField(implementation, target);
         var context = new FetchContext(processedSchema, virtualTarget, localObject, true);
-        var refContext = virtualTarget.isResolver() ? context.nextContext(virtualTarget) : context;
+        var refContext = virtualTarget.createsDataFetcher() ? context.nextContext(virtualTarget) : context;
 
         return List.of(getSortFieldsMethod(target, implementation, refContext, methodInputs), getMappedMethod(target, implementation));
     }
@@ -297,7 +297,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .returns(getReturnTypeForKeysMethod(target.hasPagination(), !processedSchema.returnsList(target)))
                 .addCode(getSortFieldsMethodCode(implementation, context, target));
 
-        if (target.isResolver()) {
+        if (target.createsDataFetcher()) {
             Optional.ofNullable(initialContext)
                     .flatMap(it -> it.getAliasSet().stream().findFirst())
                     .ifPresent(startAlias ->
@@ -362,14 +362,14 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         // When first reference step is a condition reference without key, we need to join explicitly
         // Otherwise, the first join is implicit via the jOOQ key path and can be skipped for cleaner code.
         var firstReferenceStep = context.getReferenceObjectField().getFieldReferences().stream().findFirst();
-        var hasConditionReferenceAsFirstStep = queryTarget.isResolver()
+        var hasConditionReferenceAsFirstStep = queryTarget.createsDataFetcher()
                 && firstReferenceStep.map(it -> it.hasTableCondition() && !it.hasKey()).orElse(false);
 
         boolean returnsList = processedSchema.returnsList(queryTarget);
 
         return CodeBlock.builder()
                 // Skip first alias declaration for resolvers - it's already declared in main method and passed to helpers
-                .add(createAliasDeclarations(context.getAliasSet(), queryTarget.isResolver()))
+                .add(createAliasDeclarations(context.getAliasSet(), queryTarget.createsDataFetcher()))
                 .declareIf(returnsList, VAR_ORDER_FIELDS, getPrimaryKeyFieldsWithTableAliasBlock(targetAlias))
                 .add("return $T.select(\n", DSL.className)
                 .indent()

@@ -147,7 +147,7 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
         // For resolver fields (like splitQuery), we need to navigate to get the correct context
         // For non-resolver fields, rootFetchContext already represents the correct context
         var context = methodState.rootFetchContext;
-        var parentContext = field.isResolver() ? context.nextContext(field) : context;
+        var parentContext = field.createsDataFetcher() ? context.nextContext(field) : context;
         // Start at depth 0 (root helper method level)
         var helperMethods = generateNestedHelperMethods(field, parentHelperName, parentContext, new HashSet<>(), 0);
 
@@ -182,7 +182,7 @@ public abstract class NestedFetchDBMethodGenerator extends FetchDBMethodGenerato
         try {
             // Context: root uses rootFetchContext (with optional nextContext for resolvers), nested uses parentContext.nextContext()
             var context = isRootHelper
-                    ? (target.isResolver() ? methodState.rootFetchContext.nextContext(target) : methodState.rootFetchContext)
+                    ? (target.createsDataFetcher() ? methodState.rootFetchContext.nextContext(target) : methodState.rootFetchContext)
                     : parentContext.nextContext(target);
 
             var returnType = nestedRecordType.getGraphClassName();

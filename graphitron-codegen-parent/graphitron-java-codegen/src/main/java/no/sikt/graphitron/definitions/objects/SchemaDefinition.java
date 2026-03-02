@@ -82,6 +82,16 @@ public class SchemaDefinition implements ObjectSpecification<OperationField>, Ge
     }
 
     @Override
+    public boolean createsDataFetcher() {
+        return false;
+    }
+
+    @Override
+    public boolean createsDataFetchersForFields() {
+        return false;
+    }
+
+    @Override
     public boolean isGenerated() {
         return true;
     }

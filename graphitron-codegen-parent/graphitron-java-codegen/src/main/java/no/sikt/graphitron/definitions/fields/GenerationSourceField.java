@@ -33,7 +33,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
  * This class represents the general functionality associated with GraphQLs fields that can initialise code generation.
  */
 public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesContainer<T>> extends AbstractField<T> implements GenerationField {
-    private final boolean isGenerated, isResolver, isGeneratedAsResolver, isExternalField,
+    private final boolean isGenerated, createsDataFetchers, createsDataFetcher, isExternalField,
             hasFieldDirective, hasNodeID, hasTableMethod, hasService;
     private final ArrayList<FieldReference> fieldReferences;
     private final Map<String, List<FieldReference>> multitableReferences;
@@ -43,6 +43,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     private final ServiceWrapper serviceWrapper;
     private final String nodeIdTypeName;
     private final Map<String, TypeName> contextFields;
+
     public GenerationSourceField(T field, FieldType fieldType, String container) {
         super(field, fieldType, container);
         fieldReferences = new ArrayList<>();
@@ -74,12 +75,12 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         hasFieldDirective = field.hasDirective(FIELD.getName());
         isExternalField = field.hasDirective(EXTERNAL_FIELD.getName());
         isGenerated = !field.hasDirective(NOT_GENERATED.getName());
-        isResolver = field.hasDirective(SPLIT_QUERY.getName())
+        createsDataFetchers = field.hasDirective(SPLIT_QUERY.getName())
                 || (field instanceof FieldDefinition && !container.equals(SCHEMA_QUERY.getName()) && !container.equals(SCHEMA_MUTATION.getName()) && !((FieldDefinition) field).getInputValueDefinitions().isEmpty());
         hasTableMethod = field.hasDirective(TABLE_METHOD.getName());
         hasService = field.hasDirective(SERVICE.getName());
 
-        isGeneratedAsResolver = (isResolver || container.equals(SCHEMA_QUERY.getName()) || container.equals(SCHEMA_MUTATION.getName())) && isGenerated;
+        createsDataFetcher = (createsDataFetchers || container.equals(SCHEMA_QUERY.getName()) || container.equals(SCHEMA_MUTATION.getName())) && isGenerated;
 
         hasNodeID = field.hasDirective(GenerationDirective.NODE_ID.getName());
         nodeIdTypeName = getOptionalDirectiveArgumentString(field, GenerationDirective.NODE_ID, GenerationDirectiveParam.TYPE_NAME)
@@ -157,8 +158,13 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     }
 
     @Override
-    public boolean isResolver() {
-        return isResolver;
+    public boolean createsDataFetcher() {
+        return createsDataFetchers;
+    }
+
+    @Override
+    public boolean createsDataFetchersForFields() {
+        return false;
     }
 
     public boolean isExternalField() {
@@ -256,7 +262,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
 
     @Override
     public boolean isGeneratedWithResolver() {
-        return isGeneratedAsResolver;
+        return createsDataFetcher;
     }
 
     @Override

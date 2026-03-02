@@ -47,14 +47,14 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
         // Note that this must happen before alias declaration.
         var selectRowBlock = getSelectRowOrField(target, context);
-        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
+        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.createsDataFetcher());
         for (var alias: context.getAliasSet()) {
             if (alias.hasTableMethod()){
                 createServiceDependency(alias.getReferenceObjectField());
             }
         }
         var querySource = context.renderQuerySource(getLocalTable());
-        var refContext = target.isResolver() ? context.nextContext(target) : context;
+        var refContext = target.createsDataFetcher() ? context.nextContext(target) : context;
         var actualRefTable = refContext.getTargetAlias();
         var actualRefTableName = refContext.getTargetTableName();
         var selectAliasesBlock = createAliasDeclarations(context.getAliasSet());
@@ -89,8 +89,8 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .addCode(createSelectJoins(context.getJoinSet()))
                 .addCode(whereBlock)
                 .addCode(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
-                .addCodeIf(!target.isResolver() && !orderFields.isEmpty(), ".orderBy($L)\n", VAR_ORDER_FIELDS)
-                .addCodeIf(target.hasForwardPagination() && !target.isResolver(), this::createSeekAndLimitBlock)
+                .addCodeIf(!target.createsDataFetcher() && !orderFields.isEmpty(), ".orderBy($L)\n", VAR_ORDER_FIELDS)
+                .addCodeIf(target.hasForwardPagination() && !target.createsDataFetcher(), this::createSeekAndLimitBlock)
                 .addCode(setFetch(target))
                 .unindent()
                 .unindent()
@@ -110,7 +110,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         return indentIfMultiline(
                 Stream.of(
                         getInitialKey(context),
-                        CodeBlock.ofIf(target.hasForwardPagination() && !target.isResolver(), "$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, VAR_ORDER_FIELDS),
+                        CodeBlock.ofIf(target.hasForwardPagination() && !target.createsDataFetcher(), "$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, VAR_ORDER_FIELDS),
                         selectRowBlock
                 ).collect(CodeBlock.joining())
         );

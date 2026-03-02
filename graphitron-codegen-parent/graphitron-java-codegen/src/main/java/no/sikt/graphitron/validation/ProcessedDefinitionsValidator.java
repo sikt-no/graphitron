@@ -445,7 +445,7 @@ public class ProcessedDefinitionsValidator {
                         ? schema.getTypesFromInterfaceOrUnion(it.getTypeName()).orElse(List.of()).stream().map(o -> new VirtualSourceField(o.getName(), (ObjectField) it))
                         : Stream.of(it))
                 .filter(field -> !field.hasServiceReference())
-                .filter(field -> schema.isRecordType(field.getTypeName()) || field.hasFieldReferences() || field.isResolver())
+                .filter(field -> schema.isRecordType(field.getTypeName()) || field.hasFieldReferences() || field.createsDataFetcher())
                 .forEach(this::validateReferencePath);
     }
 
@@ -459,7 +459,7 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateReferencePath(GenerationField field, String sourceTable, String targetTable) {
-        if (sourceTable.equals(targetTable) && !field.isResolver() && !field.hasFieldReferences() && !field.hasNodeID()) {
+        if (sourceTable.equals(targetTable) && !field.createsDataFetcher() && !field.hasFieldReferences() && !field.hasNodeID()) {
             return;
         }
         for (FieldReference fieldReference : field.getFieldReferences()) {
@@ -746,7 +746,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(it -> schema.isObjectWithPreviousTableObject(it.getContainerTypeName()))
                 .filter(schema::isMultiTableField)
                 .forEach(field -> {
-                    if (!field.isResolver()) {
+                    if (!field.createsDataFetcher()) {
                         addErrorMessage("%s is a multitable field outside root, but is missing the %s directive. " +
                                         "Multitable queries outside root is only supported for resolver fields.",
                                 field.formatPath(), SPLIT_QUERY.getName()
@@ -769,7 +769,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(Objects::nonNull)
                 .flatMap(it -> it.getFields().stream())
                 .filter(schema::isMultiTableField)
-                .filter(it -> it.isResolver() || it.isRootField())
+                .filter(it -> it.createsDataFetcher() || it.isRootField())
                 .filter(it -> !it.hasServiceReference())
                 .filter(it -> !it.getName().equals(FEDERATION_ENTITIES_FIELD.getName()))
                 .filter(it -> !it.getTypeName().equals(NODE_TYPE.getName()))
@@ -1396,7 +1396,7 @@ public class ProcessedDefinitionsValidator {
             recordType.getFields()
                     .stream()
                     .filter(GenerationTarget::isGenerated)
-                    .filter(it -> !it.isResolver())
+                    .filter(it -> !it.createsDataFetcher())
                     .forEach(f -> {
                         if (f.hasFieldReferences()) {
                             result.add(f);
@@ -1510,7 +1510,7 @@ public class ProcessedDefinitionsValidator {
                 .map(schema::getObject)
                 .map(AbstractObjectDefinition::getFields)
                 .flatMap(Collection::stream)
-                .filter(GenerationSourceField::isResolver)
+                .filter(GenerationSourceField::createsDataFetcher)
                 .forEach(field -> {
                     var errorMessageStart = String.format("%s in a java record has %s directive, but",
                             field.formatPath(),
@@ -1537,7 +1537,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(AbstractField::isIterableWrapped)
                 .filter(schema::isObject)
                 .filter(it -> !it.hasFieldReferences())
-                .filter(it -> !it.isResolver())
+                .filter(it -> !it.createsDataFetcher())
                 .filter(it -> Optional.ofNullable(schema.getObject(it).getTable())
                         .map(t -> schema.getPreviousTableObjectForField(it).getTable().equals(t))
                         .orElse(true)
@@ -1607,7 +1607,7 @@ public class ProcessedDefinitionsValidator {
     private boolean shouldSkipFieldValidation(GenerationField field, boolean isInput) {
         return isInput
                 ? schema.isInputType(field)
-                : !field.isResolver() && schema.isObject(field);
+                : !field.createsDataFetcher() && schema.isObject(field);
     }
 
     private void validateFieldHasMethod(GenerationField field, RecordObjectDefinition<?, ?> type,
@@ -1829,7 +1829,7 @@ public class ProcessedDefinitionsValidator {
 
         return fields.stream()
                 .filter(GenerationTarget::isGenerated)
-                .filter(field -> !field.isResolver())
+                .filter(field -> !field.createsDataFetcher())
                 .filter(field -> !schema.isScalar(field))
                 .flatMap(field ->
                         resolveFieldTargets(field)
