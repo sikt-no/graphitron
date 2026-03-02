@@ -6,6 +6,7 @@ import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.AliasWrapper;
+import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
@@ -20,10 +21,11 @@ import org.jooq.SelectSeekStepN;
 
 import javax.lang.model.element.Modifier;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsEnabled;
+import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
@@ -44,6 +46,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     public static final String PK_FIELDS = "$pkFields";
     public static final String INNER_ROW_NUM = "$innerRowNum";
     private static final String ELEMENT_FIRST = ELEMENT_NAME + "0";
+    public static final String MSG_ERROR_NO_TABLE = "Type(s) '%s' are used in a query returning multitable interface or union '%s', but do not have tables set. This is not supported.";
     private FetchContext initialContext;
 
     public FetchMultiTableDBMethodGenerator(
@@ -86,10 +89,16 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                     .orElse(null);
         }
 
+        var typesMissingTable = implementations
+                .stream()
+                .filter(it -> !it.hasTable())
+                .map(AbstractObjectDefinition::getName)
+                .collect(Collectors.joining("', '"));
+        if (!typesMissingTable.isEmpty()) {
+            addErrorMessageAndThrow(MSG_ERROR_NO_TABLE, typesMissingTable, target.getTypeName());
+        }
+
         for (var implementation : implementations) {
-            if (!implementation.hasTable()) {
-                addErrorMessageAndThrow("Type '%s' is returned in an interface query, but not have table set. This is not supported.", implementation.getName());
-            }
             String typeName = implementation.getName();
             sortFieldQueryMethodCalls.add(getSortFieldsMethodName(target, implementation));
             String mappedVariableName = joinStepPrefix(typeName);

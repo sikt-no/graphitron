@@ -1,0 +1,11 @@
+type Query {
+  someInterface: SomeInterface
+}
+
+interface SomeInterface {
+  id: ID
+}
+
+type Customer implements SomeInterface {
+  id: ID
+}
