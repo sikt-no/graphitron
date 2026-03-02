@@ -1,0 +1,35 @@
+type Query {
+    test(input: TestInput, orderBy: TestOrderByInput @orderBy, first: Int = 100, after: String): TestConnection @service(service: {className: "no.sikt.graphitron.codereferences.services.TypeMismatchService", method: "checkAllInputFeatures"}, contextArguments: ["ctx1", "ctx2"])
+}
+
+input TestInput @table(name: "CUSTOMER") {
+    customerId: Int @field(name: "CUSTOMER_ID")
+}
+
+type TestConnection {
+    edges: [TestEdge]
+    pageInfo: PageInfo
+}
+
+type TestEdge {
+    cursor: String
+    node: TestNode
+}
+
+type TestNode @table(name: "CUSTOMER") {
+    customerId: Int @field(name: "CUSTOMER_ID")
+}
+
+input TestOrderByInput {
+    orderByField: TestOrderByField!
+    direction: OrderDirection!
+}
+
+enum TestOrderByField {
+    NAME @index(name: "idx_last_name")
+}
+
+enum OrderDirection {
+    ASC
+    DESC
+}

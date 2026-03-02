@@ -4,6 +4,7 @@ import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.*;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
+import no.sikt.graphitron.definitions.helpers.CodeReferenceWrapper;
 import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -15,6 +16,7 @@ import no.sikt.graphitron.definitions.objects.EnumDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
+import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.mappings.ReflectionHelpers;
 import no.sikt.graphitron.mappings.TableReflection;
@@ -89,6 +91,8 @@ public class ProcessedDefinitionsValidator {
         validateInputFields();
         validateExternalMappingReferences();
         validateServiceMethods();
+        validateServiceInputTypes();
+        validateServiceMethodParameterTypes();
         validateMutationDirectives();
         validateMutationRequiredFields();
         validateRecursiveRecordInputs();
@@ -728,16 +732,191 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateServiceMethods() {
-        var referenceSet = GeneratorConfig.getExternalReferences();
         allFields
                 .stream()
                 .filter(ObjectField::isGenerated)
                 .filter(ObjectField::hasServiceReference)
                 .map(GenerationSourceField::getExternalMethod)
-                .map(ServiceWrapper::getReference)
-                .filter(referenceSet::contains)
-                .filter(it -> referenceSet.getMethodsFrom(it).stream().findFirst().isEmpty())
-                .forEach(it -> addErrorMessage("Service reference with name '%s' does not contain a method named '%s'.", referenceSet.getClassFrom(it), it.getMethodName()));
+                .filter(it -> GeneratorConfig.getExternalReferences().contains(it.getReference()))
+                .filter(it -> getAllOverloads(it).isEmpty())
+                .forEach(it -> addErrorMessage("Service reference with name '%s' does not contain a method named '%s'.", GeneratorConfig.getExternalReferences().getClassFrom(it.getReference()), it.getReference().getMethodName()));
+    }
+
+    private void validateServiceInputTypes() {
+        allFields
+                .stream()
+                .filter(ObjectField::isGenerated)
+                .filter(ObjectField::hasServiceReference)
+                .forEach(field -> field.getNonReservedArguments()
+                        .stream()
+                        .filter(schema::isInputType)
+                        .filter(arg -> !schema.hasRecord(arg))
+                        .forEach(arg -> addErrorMessage(
+                                "Input type '%s' is used as an argument on service field '%s.%s', but has neither the @table nor the @record directive. "
+                                        + "Input types on @service operations must have one of these directives.",
+                                arg.getTypeName(),
+                                field.getContainerTypeName(),
+                                field.getName()
+                        ))
+                );
+    }
+
+    private void validateServiceMethodParameterTypes() {
+        allFields
+                .stream()
+                .filter(ObjectField::isGenerated)
+                .filter(ObjectField::hasServiceReference)
+                .filter(field -> field.getNonReservedArguments()
+                        .stream()
+                        .filter(schema::isInputType)
+                        .allMatch(schema::hasRecord))
+                .forEach(this::checkServiceParameterTypes);
+    }
+
+    private void checkServiceParameterTypes(ObjectField field) {
+        var serviceWrapper = field.getExternalMethod();
+        var method = serviceWrapper.getMethod();
+        if (method == null) {
+            return; // Method not resolved — handled by validateServiceMethods()
+        }
+
+        var parser = new InputParser(field, schema);
+        var resolverKeyOffset = field.isRootField() ? 0 : 1;
+
+        if (hasParameterCountMismatch(field, serviceWrapper, method, parser, resolverKeyOffset)) return;
+
+        validateRecordParameterTypes(field, serviceWrapper, method, parser, resolverKeyOffset);
+    }
+
+    private boolean hasParameterCountMismatch(ObjectField field, CodeReferenceWrapper serviceWrapper,
+            Method method, InputParser parser, int resolverKeyOffset) {
+        var expectedParamCount = resolverKeyOffset + parser.getMethodInputNames(true, true, true).size();
+        if (method.getParameterTypes().length == expectedParamCount) {
+            return false;
+        }
+        var overloads = getAllOverloads(serviceWrapper);
+        if (overloads.stream().noneMatch(o -> o.getParameterTypes().length == expectedParamCount)) {
+            addErrorMessage(
+                    "Service field '%s.%s' maps to %d method parameter(s) but there is no overload of '%s' with that parameter count. Available overloads:\n%s",
+                    field.getContainerTypeName(),
+                    field.getName(),
+                    expectedParamCount,
+                    serviceWrapper.getMethodName(),
+                    formatOverloads(overloads, serviceWrapper.getMethodName())
+            );
+        }
+        return true;
+    }
+
+    private void validateRecordParameterTypes(ObjectField field, CodeReferenceWrapper serviceWrapper,
+            Method method, InputParser parser, int resolverKeyOffset) {
+        var allMethodInputs = parser.getMethodInputNames(false, false, false);
+
+        for (var entry : parser.getRecords().entrySet()) {
+            var varName = entry.getKey();
+            var inputField = entry.getValue();
+
+            var posInInputs = allMethodInputs.indexOf(VariablePrefix.inputPrefix(varName));
+            if (posInInputs < 0) {
+                continue;
+            }
+            var methodParamIndex = resolverKeyOffset + posInInputs;
+
+            var inputDef = schema.getInputType(inputField);
+            if (inputDef == null || !inputDef.hasRecordReference()) {
+                continue;
+            }
+            var inputClass = inputDef.getRecordReference();
+            if (inputClass == null) {
+                continue;
+            }
+
+            var inputIsListed = inputField.isIterableWrapped();
+            if (!isParameterCompatible(method, methodParamIndex, inputClass, inputIsListed)) {
+                var overloads = getAllOverloads(serviceWrapper);
+                if (overloads.stream().noneMatch(o -> isParameterCompatible(o, methodParamIndex, inputClass, inputIsListed))) {
+                    addErrorMessage(
+                            "Argument '%s' on service field '%s.%s' has input type '%s' which maps to '%s', "
+                                    + "but there is no overload of '%s' that accepts this. Available overloads:\n%s",
+                            inputField.getName(),
+                            field.getContainerTypeName(),
+                            field.getName(),
+                            inputField.getTypeName(),
+                            formatExpectedType(inputClass, inputIsListed),
+                            serviceWrapper.getMethodName(),
+                            formatOverloads(overloads, serviceWrapper.getMethodName())
+                    );
+                }
+            }
+        }
+    }
+
+    private boolean isParameterCompatible(Method method, int paramIndex, Class<?> inputClass, boolean inputIsListed) {
+        var paramTypes = method.getParameterTypes();
+        if (paramIndex >= paramTypes.length) {
+            return false;
+        }
+        if (inputIsListed != List.class.isAssignableFrom(paramTypes[paramIndex])) {
+            return false;
+        }
+        var effectiveType = getEffectiveParameterType(method, paramIndex, inputIsListed);
+        return effectiveType != null && effectiveType.isAssignableFrom(inputClass);
+    }
+
+    private String formatExpectedType(Class<?> inputClass, boolean isListed) {
+        return isListed ? "List<" + inputClass.getSimpleName() + ">" : inputClass.getSimpleName();
+    }
+
+    private List<Method> getAllOverloads(CodeReferenceWrapper serviceWrapper) {
+        return GeneratorConfig.getExternalReferences().getMethodsFrom(serviceWrapper.getReference());
+    }
+
+    private Class<?> getEffectiveParameterType(Method method, int paramIndex, boolean isListed) {
+        var paramTypes = method.getParameterTypes();
+        if (paramIndex >= paramTypes.length) {
+            return null;
+        }
+        if (!isListed) {
+            return paramTypes[paramIndex];
+        }
+        var genericTypes = method.getGenericParameterTypes();
+        if (paramIndex < genericTypes.length
+                && genericTypes[paramIndex] instanceof ParameterizedType pt
+                && pt.getActualTypeArguments().length > 0
+                && pt.getActualTypeArguments()[0] instanceof Class<?> elementType) {
+            return elementType;
+        }
+        return null;
+    }
+
+    private String formatOverloads(List<Method> overloads, String methodName) {
+        if (overloads.isEmpty()) {
+            return "  (no overloads found)";
+        }
+        return overloads.stream()
+                .map(m -> "  " + formatMethodSignature(m, methodName))
+                .collect(Collectors.joining("\n"));
+    }
+
+    private String formatMethodSignature(Method method, String methodName) {
+        var params = Arrays.stream(method.getGenericParameterTypes())
+                .map(this::formatTypeName)
+                .collect(Collectors.joining(", "));
+        return methodName + "(" + params + ")";
+    }
+
+    private String formatTypeName(Type type) {
+        if (type instanceof ParameterizedType pt) {
+            var raw = ((Class<?>) pt.getRawType()).getSimpleName();
+            var args = Arrays.stream(pt.getActualTypeArguments())
+                    .map(this::formatTypeName)
+                    .collect(Collectors.joining(", "));
+            return raw + "<" + args + ">";
+        }
+        if (type instanceof Class<?> cls) {
+            return cls.getSimpleName();
+        }
+        return type.getTypeName();
     }
 
     private void validateUnionFieldsTable() {
