@@ -25,5 +25,10 @@ query FederationEntities($representations: [_Any!]!) {
         ... on FederatedFilm {
             id
         }
+        ... on FederatedPayment {
+            amount
+            dateTime
+            paymentId
+        }
     }
 }

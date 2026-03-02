@@ -6,6 +6,8 @@ public class VariableNames {
     public final static String
             VAR_SELECTION_SET = internalPrefix("selectionSet"),
             VAR_IDS = internalPrefix("ids"),
+            VAR_REPS = internalPrefix("reps"),
+            VAR_REP = internalPrefix("rep"),
             VAR_RESOLVER_KEYS = internalPrefix("keys"),
             VAR_LOOKUP_KEYS = internalPrefix("lookupKeys"),
             VAR_PAGE_SIZE = internalPrefix("pageSize"),

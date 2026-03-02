@@ -18,10 +18,9 @@ import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declarePageSize;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getObjectMapTypeName;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.sourcePrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_STRATEGY;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
@@ -63,7 +62,7 @@ abstract public class DataFetcherMethodGenerator extends AbstractSchemaMethodGen
         return CodeBlock.declare(
                 !isEntitiesField
                         ? TypeNameFormat.iterableWrapType(field, false, processedSchema)
-                        : wrapList(getObjectMapTypeName()),
+                        : TypeNameFormat.getWildCardListTypeName(),
                 inputPrefix(field.getName()),
                 transformBlock
         );

@@ -168,6 +168,13 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return CodeBlock that wraps the supplied CodeBlock in a Map.
+     */
+    public static CodeBlock mapOf(CodeBlock code) {
+        return CodeBlock.of("$T.of($L)", MAP.className, code);
+    }
+
+    /**
      * @return CodeBlock that wraps this method name in a method call format.
      */
     public static CodeBlock asMethodCall(String method) {

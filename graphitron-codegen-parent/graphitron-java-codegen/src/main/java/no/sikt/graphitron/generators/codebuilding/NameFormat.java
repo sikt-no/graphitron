@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.namedIteratorPrefix;
+import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITY_UNION;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -110,7 +111,7 @@ public class NameFormat {
     /**
      * @return Interface method naming for this interface implementation.
      */
-    public static String interfaceQueryName(String implementationName, String interfaceName) {
+    public static String interfaceOrUnionQueryName(String implementationName, String interfaceName) {
         return String.format("%sFor%s", uncapitalize(implementationName), capitalize(interfaceName));
     }
 
@@ -119,7 +120,11 @@ public class NameFormat {
      */
     @NotNull
     public static String asNodeQueryName(String s) {
-        return interfaceQueryName(s, NODE_TYPE.getName());
+        return interfaceOrUnionQueryName(s, NODE_TYPE.getName());
+    }
+
+    public static String asEntitiesQueryName(String s) {
+        return interfaceOrUnionQueryName(s, FEDERATION_ENTITY_UNION.getName());
     }
 
     /**

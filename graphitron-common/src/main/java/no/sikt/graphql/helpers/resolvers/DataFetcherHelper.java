@@ -5,6 +5,7 @@ import graphql.GraphqlErrorBuilder;
 import graphql.schema.DataFetchingEnvironment;
 import no.sikt.graphql.exception.ValidationViolationGraphQLException;
 import no.sikt.graphql.helpers.functions.DBCount;
+import no.sikt.graphql.NodeIdStrategy;
 import no.sikt.graphql.helpers.functions.DBQuery;
 import no.sikt.graphql.helpers.functions.DBQueryRoot;
 import no.sikt.graphql.helpers.selection.SelectionSet;
@@ -15,6 +16,7 @@ import org.dataloader.MappedBatchLoaderWithContext;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -161,6 +163,105 @@ public class DataFetcherHelper extends AbstractFetcher {
         var dbResult = dbFunction.callDBMethod(dslContext, new HashSet<>(keys), select);
         var orderedResult = keys.stream().map(dbResult::get).toList();
         return CompletableFuture.completedFuture(orderedResult);
+    }
+
+    public <V> CompletableFuture<List<V>> loadLookupEntities(
+            List<?> inputList,
+            Map<String, DBQuery<Map<String, Object>, ? extends V>> typeNameToDBQueryMap
+    ) {
+        return loadLookupEntities(null, inputList, typeNameToDBQueryMap);
+    }
+
+    public <V> CompletableFuture<List<V>> loadLookupEntities(
+            NodeIdStrategy nodeIdStrategy,
+            List<?> inputList,
+            Map<String, DBQuery<Map<String, Object>, ? extends V>> typeNameToDBQueryMap
+    ) {
+        List<Map<String, Object>> representations;
+        if (inputList.isEmpty() || inputList.stream().findAny().get() instanceof Map) {
+            representations = (List<Map<String, Object>>) inputList;
+        } else {
+            representations = (List<Map<String, Object>>) inputList.get(0);
+        }
+
+        return loadLookupMultipleSources(
+                representations,
+                it -> (String) it.getOrDefault("__typename", null),
+                typeNameToDBQueryMap,
+                (representation, entities) -> getEntityForRepresentation(representation, entities, nodeIdStrategy),
+                "Resolving __typename in representation failed for entity.",
+                "Cannot resolve entity with __typename '%s'."
+        );
+    }
+
+    static <V> V getEntityForRepresentation(Map<String, Object> representation, Map<Map<String, Object>, V> entities, NodeIdStrategy nodeIdStrategy) {
+        return entities.entrySet().stream()
+                .filter(entity -> representation.entrySet().stream()
+                        .allMatch(r -> representationKeyMatchesEntity(r, entity, nodeIdStrategy)))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static <V> boolean representationKeyMatchesEntity(Map.Entry<String, Object> representationKey, Map.Entry<Map<String, Object>, V> entity, NodeIdStrategy nodeIdStrategy) {
+        Map<String, Object> representationForEntity = entity.getKey();
+        if (!representationForEntity.containsKey(representationKey.getKey())) {
+            return false;
+        }
+
+        var valueForEntity = representationForEntity.get(representationKey.getKey());
+        if (valueForEntity instanceof String entityValString && representationKey.getValue() instanceof String repValString) {
+            if (entityValString.equals(representationKey.getValue())) {
+                return true;
+            }
+            return Optional.ofNullable(nodeIdStrategy)
+                    .map(n -> n.areEqualNodeIds(entityValString, repValString))
+                    .orElse(false);
+        }
+        return valueForEntity.toString().equals(representationKey.getValue().toString());
+    }
+
+    /**
+     * Load data from multiple DB sources, returning results in input order.
+     *
+     * @param inputList The ordered list of input elements. Determines the order of the returned results.
+     * @param sourceResolver Function that maps each input element to a source identifier used to select the DB query.
+     * @param sourceToDBQueryMap Map from source identifier to the DB function that fetches elements for that source.
+     * @param inputToResultLookup Function that matches an input key to a value in the results map.
+     * @return A resolver result with elements ordered to match {@code inputList}. Elements not found will be {@code null}.
+     */
+    public <K, V> CompletableFuture<List<V>> loadLookupMultipleSources(
+            List<K> inputList,
+            Function<K, String> sourceResolver,
+            Map<String, DBQuery<K, ? extends V>> sourceToDBQueryMap,
+            BiFunction<K, Map<K, V>, V> inputToResultLookup,
+            String sourceResolverReturnedNullError,
+            String dbQueryForSourceMissingError
+    ) {
+        if (inputList.isEmpty()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+
+        Map<K, V> allResults = new HashMap<>();
+        inputList.stream()
+                .collect(Collectors.groupingBy(it -> {
+                            var source = sourceResolver.apply(it);
+                            if (source == null) {
+                                throw new IllegalArgumentException(sourceResolverReturnedNullError);
+                            }
+                            return source;
+                        }, Collectors.toSet())
+                )
+                .forEach((dbQueryKey, inputSet) -> {
+                    if (dbQueryKey == null) {
+                        throw new IllegalArgumentException(sourceResolverReturnedNullError);
+                    }
+                    var query = Optional.ofNullable(sourceToDBQueryMap.getOrDefault(dbQueryKey, null))
+                            .orElseThrow(() -> new IllegalArgumentException(String.format(dbQueryForSourceMissingError, dbQueryKey)));
+
+                    allResults.putAll(query.callDBMethod(dslContext, inputSet, select));
+                });
+        return CompletableFuture.completedFuture(inputList.stream().map(it -> inputToResultLookup.apply(it, allResults)).toList());
     }
 
     /**

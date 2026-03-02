@@ -1,7 +1,7 @@
 package no.sikt.graphitron.queries.fetch;
 
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.reducedgenerators.UnionOnlyFetchDBClassGenerator;
+import no.sikt.graphitron.reducedgenerators.EntityOnlyFetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.FEDERATION_QUERY;
 
 @DisplayName("Node ID input - entity input fields with nodeId directive")
 public class EntityNodeIdInputTest extends NodeIdDirectiveTest {
@@ -20,7 +20,7 @@ public class EntityNodeIdInputTest extends NodeIdDirectiveTest {
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        return List.of(new UnionOnlyFetchDBClassGenerator(schema));
+        return List.of(new EntityOnlyFetchDBClassGenerator(schema));
     }
 
     @Test

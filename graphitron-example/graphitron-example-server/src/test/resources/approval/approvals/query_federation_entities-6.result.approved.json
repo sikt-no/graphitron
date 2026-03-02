@@ -1,0 +1,17 @@
+{
+    "data": {
+        "_entities": [
+            {
+                "id": "RmVkZXJhdGVkU3RhZmY6MQ",
+                "email": "Mike.Hillyer@sakilastaff.com",
+                "username": "Mike"
+            },
+            null,
+            {
+                "id": "RmVkZXJhdGVkU3RhZmY6MQ",
+                "email": "Mike.Hillyer@sakilastaff.com",
+                "username": "Mike"
+            }
+        ]
+    }
+}

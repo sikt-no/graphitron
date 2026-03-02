@@ -1,7 +1,6 @@
 package no.sikt.graphitron.generators.db;
 
 import no.sikt.graphitron.configuration.CodeGenerationThresholds;
-import no.sikt.graphitron.validation.CodeGenerationThresholdEvaluator;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -10,6 +9,7 @@ import no.sikt.graphitron.generators.abstractions.MethodGenerator;
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.mappings.TableReflection;
+import no.sikt.graphitron.validation.CodeGenerationThresholdEvaluator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,10 +71,12 @@ public class DBClassGenerator extends AbstractSchemaClassGenerator<ObjectDefinit
                         new FetchNodeImplementationDBMethodGenerator(target, processedSchema, objectFieldsReturningNode),
                         new FetchMultiTableDBMethodGenerator(target, processedSchema),
                         new FetchSingleTableInterfaceDBMethodGenerator(target, processedSchema),
+                        new FetchEntityImplementationDBMethodGenerator(target, processedSchema),
                         new BatchUpdateDBMethodGenerator(target, processedSchema),
                         new UpdateWithReturningDBMethodGenerator(target, processedSchema),
                         new SelectHelperDBMethodGenerator(target, processedSchema),
-                        new NodeSelectHelperDBMethodGenerator(target, processedSchema, objectFieldsReturningNode)
+                        new NodeSelectHelperDBMethodGenerator(target, processedSchema, objectFieldsReturningNode),
+                        new EntitySelectHelperDBMethodGenerator(target, processedSchema)
                 )
         ).build();
         warnOrCrashIfMethodsExceedsBounds(typeSpec);
