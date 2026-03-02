@@ -1,6 +1,7 @@
 [tools]
 maven = "3.9.9"
 java = "21"
+watchexec = "latest"
 
 [tasks.clean]
 description = "Maven clean"
@@ -29,6 +30,17 @@ run = [
   "mvn --also-make-dependents --projects :{{arg(index=0)}},-:graphitron-example-server install",
   "touch $(git rev-parse --show-toplevel)/graphitron-example/graphitron-example-server/src/main/resources/META-INF/resources/index.html",
 ]
+
+[tasks.generate]
+alias = "g"
+description = "Regenerate graphitron-example-spec (transform + codegen)"
+run = "mvn generate-sources -pl :graphitron-example-spec"
+
+[tasks.watch]
+alias = "w"
+description = "Watch schema files and regenerate on changes (graphitron-example)"
+run = "mise watch -t generate"
+sources = ["graphitron-example/graphitron-example-spec/src/main/resources/graphql/**/*.graphqls"]
 
 [tasks.debug-generate]
 description = "Debug generate for graphitron-example"
