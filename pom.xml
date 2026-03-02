@@ -91,7 +91,7 @@
             <dependency>
                 <groupId>com.apollographql.federation</groupId>
                 <artifactId>federation-graphql-java-support</artifactId>
-                <version>5.5.0</version>
+                <version>6.0.0</version>
             </dependency>
 
             <dependency>
