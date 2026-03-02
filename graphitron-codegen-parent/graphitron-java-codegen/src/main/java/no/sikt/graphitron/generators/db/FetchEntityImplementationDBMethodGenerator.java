@@ -94,7 +94,7 @@ public class FetchEntityImplementationDBMethodGenerator extends FetchDBMethodGen
                 .indent()
                 .beginControlFlow("$L ->", VAR_ITERATOR)
                 .declare(VAR_REP, "new $T<$T, $T>()", HASH_MAP.className, STRING.className, OBJECT.className)
-                .addStatement("$N.put($S, $S)", VAR_REP, "__typename", obj.getName());
+                .addStatement("$N.put($S, $S)", VAR_REP, TYPE_NAME.getName(), obj.getName());
 
         int start = 1;
         for (var field : allFieldsIncludedInAnyEntityKey) {

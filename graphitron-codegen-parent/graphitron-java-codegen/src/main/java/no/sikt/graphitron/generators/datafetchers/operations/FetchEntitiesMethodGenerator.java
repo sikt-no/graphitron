@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.datafetchers.operations;
 
+import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
@@ -24,11 +25,9 @@ import static no.sikt.graphql.naming.GraphQLReservedName.*;
  * Generates resolver for the Query._entities.
  */
 public class FetchEntitiesMethodGenerator extends DataFetcherMethodGenerator {
-    private final ObjectDefinition localObject;
 
     public FetchEntitiesMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
-        this.localObject = localObject;
     }
 
     @Override
@@ -80,9 +79,7 @@ public class FetchEntitiesMethodGenerator extends DataFetcherMethodGenerator {
                 VAR_SELECTION_SET,
                 getQueryClassName(asQueryClass(implementation.getName())),
                 asEntitiesQueryName(implementation.getName()),
-                shouldMakeNodeStrategy() ?
-                        CodeBlock.of("$N, $N, $N, $N", VAR_CONTEXT, VAR_NODE_STRATEGY, VAR_REPS, VAR_SELECTION_SET)
-                        : CodeBlock.of("$N, $N, $N", VAR_CONTEXT, VAR_REPS, VAR_SELECTION_SET)
+                CodeBlock.of("$N, $L$N, $N", VAR_CONTEXT, CodeBlock.ofIf(shouldMakeNodeStrategy(), "$N, ", VAR_NODE_STRATEGY), VAR_REPS, VAR_SELECTION_SET)
         );
     }
 
@@ -94,7 +91,7 @@ public class FetchEntitiesMethodGenerator extends DataFetcherMethodGenerator {
         return localObject
                 .getFields()
                 .stream()
-                .filter(ObjectField::isGeneratedWithResolver)
+                .filter(GenerationSourceField::isGenerated)
                 .filter(it -> getLocalObject().isOperationRoot())
                 .filter(it -> it.getName().equals(FEDERATION_ENTITIES_FIELD.getName()))
                 .filter(it -> it.getTypeName().equals(FEDERATION_ENTITY_UNION.getName()))
