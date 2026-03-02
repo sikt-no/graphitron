@@ -53,7 +53,6 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
     private static final String
             RESPONSE_NAME = internalPrefix("response"),
             TRANSFORMER_LAMBDA_NAME = internalPrefix("recordTransform");
-    private final static CodeBlock DUMMY_RESOLVER = returnWrap(CodeBlock.of("$N -> return null", VAR_ENV));
 
     public OperationMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -66,9 +65,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         var methodCall = getMethodCall(target, parser, false); // Note, do this before declaring services.
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
         var builder = getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(getReturnTypeName(target))));
-        if (getLocalObject().isOperationRoot() && target.getName().equals(FEDERATION_ENTITIES_FIELD.getName()) && processedSchema.isFederationImported() && processedSchema.getEntities().isEmpty()) {
-            return builder.addCode(DUMMY_RESOLVER).build();
-        }
+
         return builder
                 .beginControlFlow("return $N ->", VAR_ENV)
                 .addCode(extractParams(target))
@@ -582,6 +579,10 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         }
 
         if (processedSchema.isInterface(target) && target.getTypeName().equals(NODE_TYPE.getName())) {
+            return false;
+        }
+
+        if (getLocalObject().isOperationRoot() && target.getName().equals(FEDERATION_ENTITIES_FIELD.getName()) && processedSchema.isFederationImported()) {
             return false;
         }
 

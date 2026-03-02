@@ -1,0 +1,11 @@
+{
+    "data": {
+        "_entities": [
+            {
+                "amount": 0.99,
+                "dateTime": "2005-05-28T10:35:23",
+                "paymentId": 2
+            }
+        ]
+    }
+}

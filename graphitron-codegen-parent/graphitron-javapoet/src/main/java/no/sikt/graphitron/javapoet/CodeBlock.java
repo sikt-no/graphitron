@@ -760,6 +760,17 @@ public final class CodeBlock {
         }
 
         /**
+         * Ends a control flow block and appends comma to the end.
+         * This is useful when a lambda is passed as an argument to a method call
+         * and is followed by additional arguments.
+         */
+        public Builder endControlFlowWithComma() {
+            unindent();
+            add("},\n");
+            return this;
+        }
+
+        /**
          * @param controlFlow the optional control flow construct and its code, such as
          *                    "while(foo == 20)". Only used for "do/while" control flows.
          */

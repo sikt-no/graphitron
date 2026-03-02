@@ -38,3 +38,20 @@ type FederatedFilm implements Node @node @table(name: "FILM") @key(fields: "id",
     id: ID! @nodeId
     title: String
 }
+
+"""
+Type with non-string key
+"""
+type FederatedPayment @table(name: "PAYMENT") @key(fields: "paymentId amount dateTime") {
+    paymentId: Int @field(name: "PAYMENT_ID")
+    amount: BigDecimal
+    dateTime: LocalDateTime @field(name: "PAYMENT_DATE")
+}
+
+"""
+Type with bad key which does not uniquely identify one entity (FILM_ACTOR has primary key with both ACTOR_ID and FILM_ID)
+"""
+type FederatedFilmActorWithBadKey @table(name: "FILM_ACTOR") @key(fields: "actorId") {
+    actorId: Int! @field(name: "ACTOR_ID")
+    filmId: Int! @field(name: "FILM_ID")
+}

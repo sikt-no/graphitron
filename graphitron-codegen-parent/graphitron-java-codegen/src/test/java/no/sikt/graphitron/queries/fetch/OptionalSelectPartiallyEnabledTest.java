@@ -3,6 +3,7 @@ package no.sikt.graphitron.queries.fetch;
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
+import no.sikt.graphitron.reducedgenerators.EntityOnlyFetchDBClassGenerator;
 import no.sikt.graphitron.reducedgenerators.InterfaceOnlyFetchDBClassGenerator;
 import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -25,7 +26,8 @@ abstract class OptionalSelectPartiallyEnabledTest extends GeneratorTest {
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         return List.of(
                 new MapOnlyFetchDBClassGenerator(schema),
-                new InterfaceOnlyFetchDBClassGenerator(schema)
+                new InterfaceOnlyFetchDBClassGenerator(schema),
+                new EntityOnlyFetchDBClassGenerator(schema)
         );
     }
 

@@ -103,8 +103,9 @@ public class StrategyNodeResolverTest extends GeneratorTest {
     void entity() {
         assertGeneratedContentContains(
                 "entity", Set.of(NODE, FEDERATION_QUERY),
+                "loadLookupEntities(_iv_nodeIdStrategy, _mi_representations,",
                 "_entities(NodeIdStrategy _iv_nodeIdStrategy)",
-                "_entitiesForQuery(_iv_ctx, _iv_nodeIdStrategy, _mi_representations"
+                "customerFor_Entity(_iv_ctx, _iv_nodeIdStrategy, _iv_reps"
         );
     }
 

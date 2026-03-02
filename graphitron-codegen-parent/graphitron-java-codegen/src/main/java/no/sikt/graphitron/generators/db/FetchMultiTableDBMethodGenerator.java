@@ -22,8 +22,8 @@ import javax.lang.model.element.Modifier;
 import java.util.*;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsEnabled;
+import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
@@ -360,8 +360,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
     private CodeBlock getSortFieldsMethodCode(ObjectDefinition implementation, FetchContext context, ObjectField queryTarget) {
         var targetAlias = context.getTargetAlias();
-        var isEntities = getLocalObject().isOperationRoot() && queryTarget.getName().equals(FEDERATION_ENTITIES_FIELD.getName()) && processedSchema.isFederationImported();
-        var whereBlock = !isEntities ? formatWhereContents(context, resolverKeyParamName, isRoot, false) : formatEntitiesWhere(context, implementation);
+        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, false);
         String implName = implementation.getName();
 
         // When first reference step is a condition reference without key, we need to join explicitly
@@ -376,7 +375,6 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 // Skip first alias declaration for resolvers - it's already declared in main method and passed to helpers
                 .add(createAliasDeclarations(context.getAliasSet(), queryTarget.isResolver()))
                 .declareIf(returnsList, VAR_ORDER_FIELDS, getPrimaryKeyFieldsWithTableAliasBlock(targetAlias))
-                .declareIf(isEntities, VAR_FILTERED_REPRESENTATIONS, getFilteredEntities(implName))
                 .add("return $T.select(\n", DSL.className)
                 .indent()
                 .indent()
@@ -412,75 +410,6 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .addStatement("")
                 .unindent()
                 .unindent()
-                .build();
-    }
-
-    /**
-     * @return Formatted CodeBlock for the where-statement and surrounding code for federation queries.
-     */
-    protected CodeBlock formatEntitiesWhere(FetchContext context, ObjectDefinition implementation) {
-        var type = processedSchema.getObject(context.getReferenceObjectField());
-        var conditionBlocks = new ArrayList<CodeBlock>();
-        for (var k: type.getEntityKeys().keys()) {
-            var containedKeys = k.getKeys();
-            var code = CodeBlock.builder();
-            if (containedKeys.size() < 2) {
-                var key = containedKeys.get(0);
-                code.add(getEntitiesConditionCode(context, key, type.getFieldByName(key), implementation));
-            } else {
-                var conditions = new ArrayList<CodeBlock>();
-                for (var key : containedKeys) {
-                    conditions.add(getEntitiesConditionCode(context, key, type.getFieldByName(key), implementation));
-                }
-                code.add("$T.and($L)", DSL.className, indentIfMultiline(CodeBlock.join(conditions, ",\n")));
-            }
-            conditionBlocks.add(code.build());
-            // var nestedKeys = k.getNestedKeys();  # TODO: Support nested keys.
-        }
-        return formatJooqConditions(conditionBlocks, "or");
-    }
-
-    private CodeBlock getFilteredEntities(String implementationName) {
-        return CodeBlock
-                .builder()
-                .add("$N\n", VAR_REPRESENTATIONS)
-                .add(".stream()\n")
-                .add(".filter($T::nonNull)\n", OBJECTS.className)
-                .add(".filter($L -> $S.equals($N.get($S)))\n", VAR_ITERATOR, implementationName, VAR_ITERATOR, TYPE_NAME.getName())
-                .add(collectToList())
-                .build();
-    }
-
-    private CodeBlock getEntitiesConditionCode(FetchContext context, String key, ObjectField field, ObjectDefinition implementation) {
-        var type = field.isID()
-                ? STRING.className
-                : getFieldType(context.getTargetTable().getName(), field.getUpperCaseName()).map(ClassName::get).orElse(STRING.className);
-        var streamBlock = CodeBlock.of(
-                "$N.stream().map($L -> ($T) $N.get($S))",
-                VAR_FILTERED_REPRESENTATIONS,
-                VAR_ITERATOR,
-                type,
-                VAR_ITERATOR,
-                key
-        );
-        if (processedSchema.isNodeIdField(field)) {
-            var code = CodeBlock.of("$L.filter($T::nonNull)$L", streamBlock, OBJECTS.className, collectToList());
-            return hasIdOrIdsBlock(code, implementation, context.getTargetAlias(), CodeBlock.empty(), true);
-        }
-
-        return CodeBlock
-                .builder()
-                .add("$N.", context.getTargetAlias())
-                .addIf(field.isID(), "hasIds(")
-                .addIf(
-                        !field.isID(),
-                        "$L$L.in(",
-                        field.getUpperCaseName(),
-                        toJOOQEnumConverter(field.getTypeName(), processedSchema)
-                )
-                .add(streamBlock)
-                .add(collectToList())
-                .add(")")
                 .build();
     }
 
@@ -559,6 +488,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .getFields()
                 .stream()
                 .filter(processedSchema::isMultiTableField)
+                .filter(it -> !it.getName().equals(FEDERATION_ENTITIES_FIELD.getName()))
                 .filter(it -> !it.getTypeName().equals(NODE_TYPE.getName()))
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())

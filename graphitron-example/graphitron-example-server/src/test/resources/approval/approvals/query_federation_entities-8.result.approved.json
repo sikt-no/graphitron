@@ -1,0 +1,20 @@
+{
+    "errors": [
+        {
+            "message": "An exception occurred. The error has been logged with id [UUID]: Key {actorId=1, __typename=FederatedFilmActorWithBadKey} is not unique in Result",
+            "locations": [
+                {
+                    "line": 2,
+                    "column": 5
+                }
+            ],
+            "path": [
+                "_entities"
+            ],
+            "extensions": {
+                "classification": "DataFetchingException"
+            }
+        }
+    ],
+    "data": null
+}
