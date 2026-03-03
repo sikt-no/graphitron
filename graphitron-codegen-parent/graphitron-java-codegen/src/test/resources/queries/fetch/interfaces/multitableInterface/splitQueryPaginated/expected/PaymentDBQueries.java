@@ -37,9 +37,9 @@ public class PaymentDBQueries {
 
     public static Map<Row1<Long>, List<Pair<String, PersonWithEmail>>>  staffAndCustomersForPayment(DSLContext _iv_ctx, Set<Row1<Long>> _rk_payment, Integer _iv_pageSize, String _mi_after, SelectionSet _iv_select) {
         var _iv_token = QueryHelper.getOrderByValuesForMultitableInterface(_iv_ctx,
-                Map.of(
-                        "Customer", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray()),
-                        "Staff", STAFF.fields(STAFF.getPrimaryKey().getFieldsArray())),
+                Map.ofEntries(
+                        Map.entry("Customer", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())),
+                        Map.entry("Staff", STAFF.fields(STAFF.getPrimaryKey().getFieldsArray()))),
                 _mi_after);
 
         var _a_payment = PAYMENT.as("payment_1831371789");

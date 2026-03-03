@@ -175,6 +175,21 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return CodeBlock that wraps the supplied CodeBlock in a Map using ofEntries.
+     *         Use this instead of {@link #mapOf(CodeBlock)} when the map may have more than 10 entries.
+     */
+    public static CodeBlock mapOfEntries(CodeBlock code) {
+        return CodeBlock.of("$T.ofEntries($L)", MAP.className, code);
+    }
+
+    /**
+     * @return CodeBlock that creates a single Map.entry(key, value) expression.
+     */
+    public static CodeBlock mapEntry(String key, CodeBlock value) {
+        return CodeBlock.of("$T.entry($S, $L)", MAP.className, key, value);
+    }
+
+    /**
      * @return CodeBlock that wraps this method name in a method call format.
      */
     public static CodeBlock asMethodCall(String method) {

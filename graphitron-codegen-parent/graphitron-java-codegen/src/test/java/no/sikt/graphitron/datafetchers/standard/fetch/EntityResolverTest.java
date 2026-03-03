@@ -41,9 +41,9 @@ public class EntityResolverTest extends GeneratorTest {
     void twoEntities() {
         assertGeneratedContentContains("twoEntities",
                 """
-                        Map.of(
-                                "Address", (_iv_ctx, _iv_reps, _iv_selectionSet) -> AddressDBQueries.addressFor_Entity(_iv_ctx, _iv_reps, _iv_selectionSet),
-                                "Customer", (_iv_ctx, _iv_reps, _iv_selectionSet) -> CustomerDBQueries.customerFor_Entity(_iv_ctx, _iv_reps, _iv_selectionSet)
+                        Map.ofEntries(
+                                Map.entry("Address", (_iv_ctx, _iv_reps, _iv_selectionSet) -> AddressDBQueries.addressFor_Entity(_iv_ctx, _iv_reps, _iv_selectionSet)),
+                                Map.entry("Customer", (_iv_ctx, _iv_reps, _iv_selectionSet) -> CustomerDBQueries.customerFor_Entity(_iv_ctx, _iv_reps, _iv_selectionSet))
                         )
                         """
         );

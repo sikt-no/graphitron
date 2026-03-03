@@ -14,8 +14,8 @@ public class QueryGeneratedDataFetcher {
             List<?> _mi_representations = _iv_env.getArgument("representations");
             return new DataFetcherHelper(_iv_env).loadLookupEntities(
                     _mi_representations,
-                    Map.of(
-                            "Customer", (_iv_ctx, _iv_reps, _iv_selectionSet) -> CustomerDBQueries.customerFor_Entity(_iv_ctx, _iv_reps, _iv_selectionSet)
+                    Map.ofEntries(
+                            Map.entry("Customer", (_iv_ctx, _iv_reps, _iv_selectionSet) -> CustomerDBQueries.customerFor_Entity(_iv_ctx, _iv_reps, _iv_selectionSet))
                     )
             );
         } ;
