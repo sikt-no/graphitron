@@ -183,7 +183,7 @@ public class FormatCodeBlocks {
     }
 
     /**
-     * @return CodeBlock that creates a single Map.entry(key, value) expression.
+     * @return CodeBlock that wraps the supplied key string and value CodeBlocks in a Map.Entry.
      */
     public static CodeBlock mapEntry(String key, CodeBlock value) {
         return CodeBlock.of("$T.entry($S, $L)", MAP.className, key, value);
@@ -458,8 +458,8 @@ public class FormatCodeBlocks {
      * @return CodeBlock that wraps the provided CodeBlock in a jOOQ row.
      */
     @NotNull
-    public static CodeBlock wrapObjectRow(CodeBlock code) {
-        return CodeBlock.ofIf(!code.isEmpty(), "$T.objectRow($L)", QUERY_HELPER.className, indentIfMultiline(code));
+    public static CodeBlock wrapRowOfMap(CodeBlock code) {
+        return CodeBlock.ofIf(!code.isEmpty(), "$T.rowOfMap($L)", QUERY_HELPER.className, indentIfMultiline(code));
     }
 
     /**

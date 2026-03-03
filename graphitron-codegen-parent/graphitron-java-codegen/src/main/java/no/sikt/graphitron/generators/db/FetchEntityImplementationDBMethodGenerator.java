@@ -82,27 +82,21 @@ public class FetchEntityImplementationDBMethodGenerator extends FetchDBMethodGen
                 .addCode(createSelectJoins(context.getJoinSet()))
                 .addCode(formatWhere(context, implementation))
                 .addCode(createSelectConditions(context.getConditionList(), true))
-                .addCode(fetchAndMapBlock(entityUnionClass, implementation, allFieldsIncludedInEntityKey))
+                .addCode(fetchAndMapBlock(entityUnionClass, implementation))
                 .unindent()
                 .unindent()
                 .build();
     }
 
-    private static @NonNull CodeBlock fetchAndMapBlock(ClassName entityUnionClass, ObjectDefinition obj, LinkedList<ObjectField> allFieldsIncludedInAnyEntityKey) {
-        var builder = CodeBlock.builder()
+    private static @NonNull CodeBlock fetchAndMapBlock(ClassName entityUnionClass, ObjectDefinition obj) {
+        return CodeBlock
+                .builder()
                 .add(".fetchMap(\n")
                 .indent()
                 .beginControlFlow("$L ->", VAR_ITERATOR)
                 .declare(VAR_REP, "new $T<$T, $T>()", HASH_MAP.className, STRING.className, OBJECT.className)
-                .addStatement("$N.put($S, $S)", VAR_REP, TYPE_NAME.getName(), obj.getName());
-
-        int start = 1;
-        for (var field : allFieldsIncludedInAnyEntityKey) {
-            builder.addStatement("$N.put($S, $N.value1().value$L())", VAR_REP, field.getName(), VAR_ITERATOR, start);
-            start++;
-        }
-
-        return builder
+                .addStatement("$N.put($S, $S)", VAR_REP, TYPE_NAME.getName(), obj.getName())
+                .addStatement("$N.putAll($N.value1())", VAR_REP, VAR_ITERATOR)
                 .add(returnWrap(VAR_REP))
                 .endControlFlowWithComma()
                 .add("$1N -> ($2T) $1N.value2()\n", VAR_ITERATOR, entityUnionClass)
@@ -112,8 +106,9 @@ public class FetchEntityImplementationDBMethodGenerator extends FetchDBMethodGen
     }
 
     private @NonNull CodeBlock getSelectBlock(ObjectField virtualField, List<String> methodInputs, LinkedList<ObjectField> fieldsInAnyEntityKey, FetchContext context) {
-        return CodeBlock.builder()
-                .add(wrapRow(indentIfMultiline(CodeBlock.join(fieldsInAnyEntityKey.stream().map(it -> generateForField(it, context)).toList(), "\n, "))))
+        return CodeBlock
+                .builder()
+                .add(wrapRowOfMap(fieldsInAnyEntityKey.stream().map(it -> mapEntry(it.getName(), generateForField(it, context))).collect(CodeBlock.joining(",\n"))))
                 .add(",\n$L($L)", generateHelperMethodName(virtualField), String.join(", ", methodInputs))
                 .build();
     }
