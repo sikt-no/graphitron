@@ -1,8 +1,8 @@
 union _Entity = Customer
 
-type Customer @table @key(fields: "address") {
+type Customer @table @key(fields: "addressId") {
   id: ID
-  address: Address @reference(path: [{table: "ADDRESS"}])
+  addressId: Int @reference(path: [{table: "ADDRESS"}]) @field(name: "ADDRESS_ID")
 }
 
 type Address @table {

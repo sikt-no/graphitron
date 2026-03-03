@@ -1922,8 +1922,10 @@ public class ProcessedDefinitionsValidator {
             return;
         }
 
-        if (entityType.getEntityKeys().keys().stream().anyMatch(key -> !key.getNestedKeys().isEmpty()))
-            addErrorMessage("Nested key found in type %s. This is currently not supported.", entityType.getName());
+        var hasNestedKeys = entityType.getEntityKeys().keys().stream().anyMatch(key -> !key.getNestedKeys().isEmpty());
+        if (hasNestedKeys) {
+            addErrorMessage("Nested key(s) found in entity type %s. This is currently not supported.", entityType.getName());
+        }
 
         var size = entityType.getEntityKeys().keys().stream()
                 .flatMap(key -> key.getKeys().stream())
@@ -1939,9 +1941,11 @@ public class ProcessedDefinitionsValidator {
                         .filter(field -> field.getName().equals(key))
                         .findFirst();
                 if (matchingField.isEmpty()) {
-                    addErrorMessage("Key field %s was not found in type %s", key, entityType.getName());
-                } else if (matchingField.get().hasFieldReferences()) {
-                    addErrorMessage("Key field %s in type %s is a reference. This is currently not supported",
+                    var similarFields = findSimilarStringsWithDistance(key, entityType.getFields().stream().map(AbstractField::getName), 6);
+                    var suggestion = similarFields.isEmpty() ? "" : ". Did you mean: " + String.join(", ", similarFields.keySet());
+                    addErrorMessage("Entity Key field %s was not found in type %s%s", key, entityType.getName(), suggestion);
+                } else if (matchingField.get().hasFieldReferences() || schema.isNodeIdReferenceField(matchingField.get())) {
+                    addErrorMessage("Entity Key field %s in type %s is a reference. This is currently not supported",
                             key, entityType.getName());
                 }
             }

@@ -32,27 +32,41 @@ public class EntityValidationTest extends ValidationTest {
     @DisplayName("Entity with nested key")
     void nestedKey() {
         assertErrorsContain("nestedKey",
-                "Nested key found in type Customer. This is currently not supported.");
+                "Nested key(s) found in entity type Customer. This is currently not supported.");
     }
 
     @Test
     @DisplayName("Key field not found in type")
     void keyNotFound() {
         assertErrorsContain("keyNotFound",
-                "Key field nonExistentField was not found in type Customer");
+                "Entity Key field nonExistentField was not found in type Customer");
+    }
+
+    @Test
+    @DisplayName("Key field not found in type suggests similar field")
+    void keyNotFoundSimilar() {
+        assertErrorsContain("keyNotFoundSimilar",
+                "Entity Key field cusomerId was not found in type Customer. Did you mean: customerId");
     }
 
     @Test
     @DisplayName("Key field is a reference")
     void keyIsReference() {
         assertErrorsContain("keyIsReference",
-                "Key field address in type Customer is a reference. This is currently not supported");
+                "Entity Key field addressId in type Customer is a reference. This is currently not supported");
     }
 
     @Test
     @DisplayName("Total amount of keys exceeds 22")
     void tooManyKeys() {
         assertErrorsContain("tooManyKeys",
+                "Total amount of key columns in type Customer can't be greater than 22.");
+    }
+
+    @Test
+    @DisplayName("Total amount of keys exceeds 22 across multiple @key directives")
+    void tooManyKeysSplit() {
+        assertErrorsContain("tooManyKeysSplit",
                 "Total amount of key columns in type Customer can't be greater than 22.");
     }
 }
