@@ -18,15 +18,14 @@ public class MockService {
     }
 
     public Map<Row1<Integer>, List<FilmRecord>> filmsFromCity(Set<Row1<Integer>> cityKeys) {
-        var counter = new int[]{1};
         return cityKeys.stream().collect(Collectors.toMap(
-            key -> key,
-            key -> {
-                var film = new FilmRecord();
-                film.setFilmId(String.valueOf(counter[0]++));
-                film.setTitle("Film from service");
-                return List.of(film);
-            }
+                key -> key,
+                key -> {
+                    var film = new FilmRecord();
+                    film.setFilmId(String.valueOf(key.field1()));
+                    film.setTitle("Film from service");
+                    return List.of(film);
+                }
         ));
     }
 
