@@ -6,7 +6,6 @@ import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.AliasWrapper;
-import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
@@ -21,7 +20,6 @@ import org.jooq.SelectSeekStepN;
 
 import javax.lang.model.element.Modifier;
 import java.util.*;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsEnabled;
@@ -33,7 +31,6 @@ import static no.sikt.graphitron.generators.db.FetchSingleTableInterfaceDBMethod
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECT_JOIN_STEP;
 import static no.sikt.graphitron.mappings.TableReflection.*;
-import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAndThrow;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
 public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
@@ -46,7 +43,6 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     public static final String PK_FIELDS = "$pkFields";
     public static final String INNER_ROW_NUM = "$innerRowNum";
     private static final String ELEMENT_FIRST = ELEMENT_NAME + "0";
-    public static final String MSG_ERROR_NO_TABLE = "Type(s) '%s' are used in a query returning multitable interface or union '%s', but do not have tables set. This is not supported.";
     private FetchContext initialContext;
 
     public FetchMultiTableDBMethodGenerator(
@@ -63,7 +59,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         var unionOrInterfaceDefinition = processedSchema.isUnion(target) ? processedSchema.getUnion(target) : processedSchema.getInterface(target);
 
         // Order is important for paginated queries as it gets data fields by index in the mapping
-        LinkedHashSet<ObjectDefinition> implementations = new LinkedHashSet<>(processedSchema.getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName()));
+        var implementations = processedSchema.getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName()).orElse(List.of());
 
         return getSpecBuilder(target, unionOrInterfaceDefinition.getGraphClassName(), inputParser)
                 .addCode(implementations.isEmpty() ? returnWrap("null") : getCode(target, implementations, inputParser.getMethodInputNames(false, false, true)))
@@ -75,7 +71,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         return null;
     }
 
-    private CodeBlock getCode(ObjectField target, LinkedHashSet<ObjectDefinition> implementations, List<String> inputs) {
+    private CodeBlock getCode(ObjectField target, List<ObjectDefinition> implementations, List<String> inputs) {
         List<String> sortFieldQueryMethodCalls = new ArrayList<>();
         LinkedHashMap<String, String> mappedQueryVariables = new LinkedHashMap<>();
         var joins = CodeBlock.builder();
@@ -87,15 +83,6 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                     .findFirst()
                     .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), localObject, false))
                     .orElse(null);
-        }
-
-        var typesMissingTable = implementations
-                .stream()
-                .filter(it -> !it.hasTable())
-                .map(AbstractObjectDefinition::getName)
-                .collect(Collectors.joining("', '"));
-        if (!typesMissingTable.isEmpty()) {
-            addErrorMessageAndThrow(MSG_ERROR_NO_TABLE, typesMissingTable, target.getTypeName());
         }
 
         for (var implementation : implementations) {
@@ -162,7 +149,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .build();
     }
 
-    private static @NotNull CodeBlock getTokenVariableDeclaration(Set<ObjectDefinition> implementations) {
+    private static @NotNull CodeBlock getTokenVariableDeclaration(List<ObjectDefinition> implementations) {
         var map = mapOfEntries(
                 indentIfMultiline(
                         implementations.stream()
@@ -235,7 +222,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 RECORD1.className);
     }
 
-    private CodeBlock createMappingContent(GenerationSourceField<?> target, LinkedHashSet<ObjectDefinition> implementations, boolean isConnection) {
+    private CodeBlock createMappingContent(GenerationSourceField<?> target, List<ObjectDefinition> implementations, boolean isConnection) {
         var interfaceClassName = processedSchema.getRecordType(target).getGraphClassName();
         var lambdaParameters = new LinkedHashMap<String, String>();
 
@@ -288,7 +275,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         return Stream.concat(
                 Stream.of(mainMethod),
                 processedSchema
-                        .getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName())
+                        .getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName()).orElse(List.of())
                         .stream()
                         .map(it -> getMethodsForImplementation(target, it, methodInputs))
                         .flatMap(Collection::stream)

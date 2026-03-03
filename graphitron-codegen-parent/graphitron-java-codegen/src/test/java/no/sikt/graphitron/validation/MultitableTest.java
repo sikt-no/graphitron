@@ -1,11 +1,11 @@
 package no.sikt.graphitron.validation;
 
-import no.sikt.graphitron.common.configuration.SchemaComponent;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.PERSON_WITH_EMAIL;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -85,6 +85,42 @@ public class MultitableTest extends ValidationTest {
                 () -> getProcessedSchema("splitQueryRequiredOnMultitableFieldOutsideRoot", PERSON_WITH_EMAIL),
                 "'Payment.staffAndCustomers' is a multitable field outside root, but is missing the splitQuery directive. " +
                         "Multitable queries outside root is only supported for resolver fields"
+        );
+    }
+
+    @Test
+    @DisplayName("Type implements multitable interface but has no table")
+    void implementationWithoutTable() {
+        assertErrorsContain(
+                () -> getProcessedSchema("implementationWithoutTable"),
+                String.format("Type(s) '%s' are used in a query '%s' returning multitable interface or union '%s', but do not have tables set. This is not supported.", "Customer", "Query.someInterface", "SomeInterface")
+        );
+    }
+
+    @Test
+    @DisplayName("Two types implement multitable interface but have no tables")
+    void twoImplementationsWithoutTable() {
+        assertErrorsContain(
+                () -> getProcessedSchema("twoImplementationsWithoutTable"),
+                String.format("Type(s) '%s' are used in a query '%s' returning multitable interface or union '%s', but do not have tables set. This is not supported.", "Address', 'Customer", "Query.someInterface", "SomeInterface")
+        );
+    }
+
+    @Test
+    @DisplayName("Union contains type without table")
+    void typeWithoutTableInUnion() {
+        assertErrorsContain(
+                () -> getProcessedSchema("typeWithoutTableInUnion", Set.of(CUSTOMER)),
+                String.format("Type(s) '%s' are used in a query '%s' returning multitable interface or union '%s', but do not have tables set. This is not supported.", "Customer", "Query.someUnion", "SomeUnion")
+        );
+    }
+
+    @Test
+    @DisplayName("Union contains two types without tables")
+    void twoTypesWithoutTableInUnion() {
+        assertErrorsContain(
+                () -> getProcessedSchema("twoTypesWithoutTableInUnion", Set.of(CUSTOMER)),
+                String.format("Type(s) '%s' are used in a query '%s' returning multitable interface or union '%s', but do not have tables set. This is not supported.", "Customer', 'Address", "Query.someUnion", "SomeUnion")
         );
     }
 }

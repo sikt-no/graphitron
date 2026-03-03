@@ -28,8 +28,6 @@ public class QueryTest extends ValidationTest {
         );
     }
 
-
-
     @Test
     @DisplayName("Has connection but misses some of the pagination inputs")
     void incompletePaginationFields() {
@@ -38,15 +36,6 @@ public class QueryTest extends ValidationTest {
                 "Type CustomerConnection ending with the reserved suffix 'Connection' must have either " +
                         "forward(first and after fields) or backwards(last and before fields) pagination, yet " +
                         "neither was found."
-        );
-    }
-
-    @Test
-    @DisplayName("Query of Union whose subtype lacks table")
-    void unionSubTypeNoTable() {
-        assertErrorsContain(
-                () -> getProcessedSchema("unionSubTypeNoTable", Set.of(SOMEUNION_CONNECTION, PAGE_INFO)),
-                "Type Staff in Union 'SomeUnion' in Query has no table."
         );
     }
 
@@ -186,16 +175,6 @@ public class QueryTest extends ValidationTest {
                         " The following fields will be treated as mandatory in the resulting, generated condition tuple: 'id'"
         );
     }
-
-    @Test
-    @DisplayName("Query on root with an interface implementation without table set")
-    void interfaceWithoutTableFromRoot() {
-        assertErrorsContain("interfaceWithoutTableFromRoot",
-                "Interface 'SomeInterface' is returned in field 'someInterface', but " +
-                        "type 'Customer' implementing 'SomeInterface' does not have table set. This is not supported."
-        );
-    }
-
 
     @Test
     @DisplayName("Interface with one implementing type validation.")

@@ -41,6 +41,7 @@ import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getFo
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static no.sikt.graphitron.mappings.ReflectionHelpers.getJooqRecordClassForNodeIdInputField;
 import static no.sikt.graphitron.mappings.TableReflection.*;
+import static no.sikt.graphitron.validation.ErrorMessages.*;
 import static no.sikt.graphitron.validation.ValidationHandler.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirective.NODE_ID;
@@ -56,9 +57,6 @@ import static org.apache.commons.lang3.StringUtils.*;
 public class ProcessedDefinitionsValidator {
     protected final ProcessedSchema schema;
     private final List<ObjectField> allFields;
-    protected static final String
-            ERROR_MISSING_FIELD = "Input type %s referencing table %s does not map all fields required by the database. Missing required fields: %s",
-            ERROR_MISSING_NON_NULLABLE = "Input type %s referencing table %s does not map all fields required by the database as non-nullable. Nullable required fields: %s";
 
     public ProcessedDefinitionsValidator(ProcessedSchema schema) {
         this.schema = schema;
@@ -79,9 +77,9 @@ public class ProcessedDefinitionsValidator {
         // Validate cycles first to ensure there are no infinite loops later
         validateNoCycles();
 
+        validateMultitableTypeTables();
         validateTablesAndKeys();
         validateRequiredTableFields();
-        validateUnionFieldsTable();
         validateSingleTableInterfaceDefinitions();
         validateInterfacesReturnedInFields();
         validateMultitableFieldsOutsideRoot();
@@ -112,7 +110,7 @@ public class ProcessedDefinitionsValidator {
     }
 
     /*
-     * This is a temporary validation until GGG-104 has been fixed.
+     * This is a temporary validation until GG-104 has been fixed.
      */
     private void validateUnionAndInterfaceSubTypes() {
         schema.getObjects()
@@ -123,7 +121,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(field -> !field.getTypeName().equals(FEDERATION_SERVICE_TYPE.getName()))
                 .filter(field -> !field.getTypeName().equals(FEDERATION_ENTITY_UNION.getName()))
                 .forEach(field -> {
-                    var subTypes = schema.getTypesFromInterfaceOrUnion(field.getTypeName());
+                    var subTypes = schema.getTypesFromInterfaceOrUnion(field.getTypeName()).orElse(List.of());
                     if (subTypes.size() < 2 && subTypes.stream().noneMatch(type -> type.implementsInterface(ERROR_TYPE.getName()))) {
                         addErrorMessage(
                                 "Multitable queries is currently only supported for interface and unions with more than one implementing type. \n" +
@@ -443,7 +441,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(it -> !schema.isMultiTableInterface(it.getName())) // Don't validate fields on the interface definition since the interface itself has no table
                 .flatMap(it -> it.getFields().stream())
                 .flatMap(it -> schema.isMultiTableField(it)
-                        ? schema.getTypesFromInterfaceOrUnion(it.getTypeName()).stream().map(o -> new VirtualSourceField(o.getName(), (ObjectField) it))
+                        ? schema.getTypesFromInterfaceOrUnion(it.getTypeName()).orElse(List.of()).stream().map(o -> new VirtualSourceField(o.getName(), (ObjectField) it))
                         : Stream.of(it))
                 .filter(field -> !field.hasServiceReference())
                 .filter(field -> schema.isRecordType(field.getTypeName()) || field.hasFieldReferences() || field.isResolver())
@@ -740,24 +738,6 @@ public class ProcessedDefinitionsValidator {
                 .forEach(it -> addErrorMessage("Service reference with name '%s' does not contain a method named '%s'.", referenceSet.getClassFrom(it), it.getMethodName()));
     }
 
-    private void validateUnionFieldsTable() {
-        if (schema.getObjects().containsKey("Query")) {
-            for (ObjectField field : schema.getObject("Query").getFields()) {
-                if (field.getName().equals(FEDERATION_ENTITIES_FIELD.getName())) {
-                    continue;
-                }
-
-                if (schema.isUnion(field)) {
-                    for (ObjectDefinition subType : schema.getUnionSubTypes(field.getTypeName())) {
-                        if (!subType.hasTable()) {
-                            addErrorMessage("Type %s in Union '%s' in Query has no table.", subType.getName(), schema.getUnion(field).getName());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     private void validateMultitableFieldsOutsideRoot() {
         allFields.stream()
                 .filter(GenerationSourceField::isGenerated)
@@ -780,14 +760,38 @@ public class ProcessedDefinitionsValidator {
                 });
     }
 
+    private void validateMultitableTypeTables() {
+        schema
+                .getObjects()
+                .values()
+                .stream()
+                .filter(Objects::nonNull)
+                .flatMap(it -> it.getFields().stream())
+                .filter(schema::isMultiTableField)
+                .filter(it -> it.isResolver() || it.isRootField())
+                .filter(it -> !it.hasServiceReference())
+                .filter(it -> !it.getName().equals(FEDERATION_ENTITIES_FIELD.getName()))
+                .filter(it -> !it.getTypeName().equals(NODE_TYPE.getName()))
+                .filter(it -> !it.getTypeName().equals(ERROR_TYPE.getName()))
+                .forEach((field) -> {
+                    var multitableName = field.getTypeName();
+                    var typesMissingTable = schema
+                            .getTypesFromInterfaceOrUnion(multitableName).orElse(List.of())
+                            .stream()
+                            .filter(it -> !it.hasTable())
+                            .map(AbstractObjectDefinition::getName)
+                            .collect(Collectors.joining("', '"));
+                    if (!typesMissingTable.isEmpty()) {
+                        addErrorMessage(MISSING_TABLE_ON_MULTITABLE.getMsg(), typesMissingTable, field.formatPath(), field.getTypeName());
+                    }
+                });
+    }
+
     private void validateSingleTableInterfaceDefinitions() {
         schema.getInterfaces().forEach((name, interfaceDefinition) -> {
                     if (name.equalsIgnoreCase(NODE_TYPE.getName()) || name.equalsIgnoreCase(ERROR_TYPE.getName())) return;
 
-                    var implementations = schema.getObjects()
-                            .values()
-                            .stream()
-                            .filter(it -> it.implementsInterface(schema.getInterface(name).getName())).toList();
+                    var implementations = schema.getTypesFromInterfaceOrUnion(interfaceDefinition).orElse(List.of());
 
                     if (interfaceDefinition.hasDiscriminator() == interfaceDefinition.isMultiTableInterface()) {
                         addErrorMessage(
@@ -928,7 +932,8 @@ public class ProcessedDefinitionsValidator {
                                     .ofNullable(schema.getObjectOrConnectionNode(typeName))
                                     .map(AbstractObjectDefinition::getName)
                                     .orElse(typeName);
-                            if (!field.isRootField() && (schema.isSingleTableInterface(field) || name.equals(NODE_TYPE.getName()))) {
+                            var isSingleTable = schema.isSingleTableInterface(field);
+                            if (!field.isRootField() && (isSingleTable || name.equals(NODE_TYPE.getName()))) {
                                 addErrorMessage("interface (%s) returned in non root object. This is not fully " +
                                         "supported. Use with care", name);
                             }
@@ -950,16 +955,15 @@ public class ProcessedDefinitionsValidator {
                                         .stream()
                                         .filter(it -> it.implementsInterface(schema.getInterface(name).getName()))
                                         .forEach(implementation -> {
-                                            if (!implementation.hasTable()) {
+                                            if (!implementation.hasTable() && isSingleTable) {
                                                 addErrorMessage("Interface '%s' is returned in field '%s', but type '%s' " +
                                                         "implementing '%s' does not have table set. This is not supported.", name, field.getName(), implementation.getName(), name);
-                                            } else if (!tableHasPrimaryKey(implementation.getTable().getName())) {
+                                            } else if (implementation.hasTable() && !tableHasPrimaryKey(implementation.getTable().getName())) {
                                                 addErrorMessage("Interface '%s' is returned in field '%s', but implementing type '%s' " +
                                                         "has table '%s' which does not have a primary key. This is not supported.", name, field.getName(), implementation.getName(), implementation.getTable().getName());
                                             }
                                         });
                             }
-
                         }
                 );
     }
@@ -1417,7 +1421,7 @@ public class ProcessedDefinitionsValidator {
                         .stream()
                         .map(InputField::getUpperCaseName)
                         .collect(Collectors.toSet());
-        checkRequiredFieldsExist(recordFieldNames, requiredDBFields, recordInput, ERROR_MISSING_FIELD);
+        checkRequiredFieldsExist(recordFieldNames, requiredDBFields, recordInput, MISSING_FIELD.getMsg());
 
         var requiredRecordFieldNames =
                 inputObject.getFields()
@@ -1425,7 +1429,7 @@ public class ProcessedDefinitionsValidator {
                         .filter(AbstractField::isNonNullable)
                         .map(InputField::getUpperCaseName)
                         .collect(Collectors.toSet());
-        checkRequiredFieldsExist(requiredRecordFieldNames, requiredDBFields, recordInput, ERROR_MISSING_NON_NULLABLE);
+        checkRequiredFieldsExist(requiredRecordFieldNames, requiredDBFields, recordInput, MISSING_NON_NULLABLE.getMsg());
     }
 
     protected void checkRequiredFieldsExist(Set<String> actualFields, List<String> requiredFields, InputField recordInput, String message) {

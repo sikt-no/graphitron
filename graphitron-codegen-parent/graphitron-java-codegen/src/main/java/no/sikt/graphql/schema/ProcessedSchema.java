@@ -357,61 +357,52 @@ public class ProcessedSchema {
     /**
      * @return Get the implementations for an interface given its name
      */
-    public Set<ObjectDefinition> getImplementationsForInterface(String interfaceName) {
+    public List<ObjectDefinition> getImplementationsForInterface(String interfaceName) {
         return getObjects()
                 .values()
                 .stream()
                 .filter(it -> it.implementsInterface(interfaceName))
-                .collect(Collectors.toSet());
+                .toList();
     }
 
     /**
      * @return Get the implementations for an interface
      */
-    public Set<ObjectDefinition> getImplementationsForInterface(InterfaceDefinition interfaceDefinition) {
+    public List<ObjectDefinition> getImplementationsForInterface(InterfaceDefinition interfaceDefinition) {
         return getImplementationsForInterface(interfaceDefinition.getName());
     }
 
     /**
      * @return Get the ObjectDefinition for each Type in a Union given its name
      */
-    public Set<ObjectDefinition> getUnionSubTypes(String objectName) {
+    public List<ObjectDefinition> getUnionSubTypes(String objectName) {
         return getUnion(objectName).
                 getFieldTypeNames()
                 .stream()
                 .map(this::getObjectOrConnectionNode)
-                .collect(Collectors.toSet());
+                .toList();
     }
 
-    /*
+    /**
     * Returns the ObjectDefinition for each Type in a union given that the name
     * supplied is a union. Otherwise, return the ObjectDefinition for all types
     * that implements the given interface.
     * */
-
-    public Set<ObjectDefinition> getTypesFromInterfaceOrUnion(String name) {
+    public Optional<List<ObjectDefinition>> getTypesFromInterfaceOrUnion(String name) {
         if (isUnion(name)) {
-            return getUnionSubTypes(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
+            return Optional.of(getUnionSubTypes(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name));
         }
         if (isInterface(name)) {
-            return getImplementationsForInterface(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
+            return Optional.of(getImplementationsForInterface(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name));
         }
-        return null;
+        return Optional.empty();
     }
 
-    /*
-     * Returns the ObjectDefinition for each type implementing an interface given its interfaceTypeDefinition
-     * */
-    public Set<ObjectDefinition> getTypesFromInterfaceOrUnion(InterfaceDefinition interfaceDefinition) {
-        return getTypesFromInterfaceOrUnion(interfaceDefinition.getName());
-    }
-
-
-    /*
-     * Returns the ObjectDefinition for each type in a union given its unionTypeDefinition
-     * */
-    public Set<ObjectDefinition> getTypesFromInterfaceOrUnion(UnionDefinition unionDefinition) {
-        return getTypesFromInterfaceOrUnion(unionDefinition.getName());
+    /**
+     * Returns the ObjectDefinition for each type implementing an interface or union given its definition
+     */
+    public Optional<List<ObjectDefinition>> getTypesFromInterfaceOrUnion(RecordObjectSpecification<?> definition) {
+        return getTypesFromInterfaceOrUnion(definition.getName());
     }
 
     /**
