@@ -154,19 +154,19 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     private static @NotNull CodeBlock getTokenVariableDeclaration(Set<ObjectDefinition> implementations) {
-        var code = CodeBlock.builder()
-                .add("$T.getOrderByValuesForMultitableInterface($N, \n$T.of(", QUERY_HELPER.className, VAR_CONTEXT, MAP.className)
-                .indent();
+        var map = mapOfEntries(
+                indentIfMultiline(
+                        implementations.stream()
+                                .map(impl -> mapEntry(impl.getName(), getPrimaryKeyFieldsWithTableAliasBlock(impl.getTable().getName())))
+                                .collect(CodeBlock.joining(",\n"))
+                )
+        );
 
-        var mapEntries = implementations.stream()
-                .map(implementation ->
-                        CodeBlock.of("\n$S, $L", implementation.getName(), getPrimaryKeyFieldsWithTableAliasBlock(implementation.getTable().getName())))
-                .toList();
-
-        return code
-                .add(CodeBlock.join(mapEntries, ","))
+        return CodeBlock.builder()
+                .add("$T.getOrderByValuesForMultitableInterface($N, \n", QUERY_HELPER.className, VAR_CONTEXT)
+                .indent()
+                .add("$L,\n$N)", map, inputPrefix(PAGINATION_AFTER.getName()))
                 .unindent()
-                .add("\n),\n$N)", inputPrefix(PAGINATION_AFTER.getName()))
                 .build();
     }
 

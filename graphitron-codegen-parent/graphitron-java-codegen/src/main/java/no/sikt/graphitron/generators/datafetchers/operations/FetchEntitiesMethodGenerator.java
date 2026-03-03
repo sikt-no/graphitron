@@ -40,12 +40,12 @@ public class FetchEntitiesMethodGenerator extends DataFetcherMethodGenerator {
             return builder.addCode(returnWrap(CodeBlock.of("$N -> return null", VAR_ENV))).build();
         }
 
-        var typeNameToMethodMap = mapOf(
+        var typeNameToMethodMap = mapOfEntries(
                 indentIfMultiline(
                         processedSchema.getEntities()
                                 .entrySet().stream()
                                 .map(it ->
-                                        CodeBlock.of("$S, $L", it.getKey(), methodCallForImplementation(it.getValue())))
+                                        mapEntry(it.getKey(), methodCallForImplementation(it.getValue())))
                                 .collect(CodeBlock.joining(",\n"))
                 )
         );

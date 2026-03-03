@@ -34,8 +34,9 @@ public class QueryDBQueries {
 
     public static List<Pair<String, SomeInterface>> someInterfaceForQuery(DSLContext _iv_ctx, Integer _iv_pageSize, String _mi_after, SelectionSet _iv_select) {
         var _iv_token = QueryHelper.getOrderByValuesForMultitableInterface(_iv_ctx,
-                Map.of("Address", ADDRESS.fields(ADDRESS.getPrimaryKey().getFieldsArray()),
-                        "Customer", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())),
+                Map.ofEntries(
+                        Map.entry("Address", ADDRESS.fields(ADDRESS.getPrimaryKey().getFieldsArray())),
+                        Map.entry("Customer", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray()))),
                 _mi_after);
 
         var _iv_unionKeysQuery = customerSortFieldsForSomeInterface(_iv_pageSize, _iv_token).unionAll(addressSortFieldsForSomeInterface(_iv_pageSize, _iv_token));
