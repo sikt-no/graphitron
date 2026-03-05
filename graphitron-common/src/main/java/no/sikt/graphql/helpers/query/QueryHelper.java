@@ -111,18 +111,28 @@ public class QueryHelper {
         return resultMap;
     }
 
-    public static SelectField<Map> objectRow(String label, Object row) {
+    public static SelectField<Map> rowOfMap(String label, Object row) {
         if (row == null) {
             return null;
         }
         return DSL.row(row).mapping(Map.class, r -> Map.of(label, r));
     }
 
-    public static SelectField<Map> objectRow(List<String> labels, List<Object> row) {
+    public static SelectField<Map> rowOfMap(List<String> labels, List<Object> row) {
         if (row.stream().allMatch(Objects::isNull)) {
             return null;
         }
         return DSL.row(row).mapping(Map.class, r -> makeObjectMap(labels.toArray(new String[0]), r));
+    }
+
+    public static SelectField<Map> rowOfMap(Map.Entry<String, Object> ...entries) {
+        var entryList = List.of(entries);
+        var values = entryList.stream().map(Map.Entry::getValue).toList();
+        if (values.stream().allMatch(Objects::isNull)) {
+            return null;
+        }
+        var keys = entryList.stream().map(Map.Entry::getKey).toList();
+        return DSL.row(values).mapping(Map.class, r -> makeObjectMap(keys.toArray(new String[0]), r));
     }
 
     private static <T, U> HashMap<T, U> buildEnumMap(List<T> from, List<U> to) {

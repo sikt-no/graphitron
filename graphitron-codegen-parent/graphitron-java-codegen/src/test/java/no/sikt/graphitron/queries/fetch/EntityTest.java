@@ -46,7 +46,7 @@ public class EntityTest extends GeneratorTest {
                 var _a_customer = CUSTOMER.as("customer_2168032777");
                 return _iv_ctx
                         .select(
-                                DSL.row(_a_customer.getId()),
+                                QueryHelper.rowOfMap(Map.entry("id", _a_customer.getId())),
                                 customerFor_Entity_customer()
                         )
                         .from(_a_customer)
@@ -54,7 +54,7 @@ public class EntityTest extends GeneratorTest {
                         .fetchMap(_iv_it -> {
                                     var _iv_rep = new HashMap<String, Object>();
                                     _iv_rep.put("__typename", "Customer");
-                                    _iv_rep.put("id", _iv_it.value1().value1());
+                                    _iv_rep.putAll(_iv_it.value1());
                                     return _iv_rep;
                                 },
                                 _iv_it -> (_Entity) _iv_it.value2());
@@ -73,14 +73,9 @@ public class EntityTest extends GeneratorTest {
     void twoKeys() {
         assertGeneratedContentContains(
                 "twoKeys",
-                "row(_a_customer.getId(),_a_customer.FIRST_NAME)",
+                "rowOfMap(Map.entry(\"id\", _a_customer.getId()), Map.entry(\"first\", _a_customer.FIRST_NAME))",
                 "where(_a_customer.hasIds(_mi_representations_filtered.stream().map(_iv_it -> (String) _iv_it.get(\"id\")).toList()))" +
                         ".or(_a_customer.FIRST_NAME.in(_mi_representations_filtered.stream().map(_iv_it -> _iv_it.get(\"first\")).toList()))"
-                ,
-                """
-                _iv_rep.put("id", _iv_it.value1().value1());
-                _iv_rep.put("first", _iv_it.value1().value2());
-                """
         );
     }
 
@@ -96,11 +91,6 @@ public class EntityTest extends GeneratorTest {
                                 _a_customer.FIRST_NAME.in(_mi_representations_filtered.stream().map(_iv_it -> _iv_it.get("first")).toList())
                         )
                 )
-                """
-                ,
-                """
-                _iv_rep.put("id", _iv_it.value1().value1());
-                _iv_rep.put("first", _iv_it.value1().value2());
                 """
         );
     }
