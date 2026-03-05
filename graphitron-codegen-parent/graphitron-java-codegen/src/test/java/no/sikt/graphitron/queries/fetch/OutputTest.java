@@ -107,7 +107,7 @@ public class OutputTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Wrapped field annotated with @externalField should use method extended on field's target jooq table")
+    @DisplayName("External field in wrapper type without table should find previous target table")
     void externalFieldWrappedType() {
         assertGeneratedContentContains("externalFieldWrappedType",
                 "DSL.row(no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod.name(_a_customer))"
