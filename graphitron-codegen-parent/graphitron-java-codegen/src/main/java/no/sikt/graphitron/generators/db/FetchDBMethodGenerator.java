@@ -1123,15 +1123,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var defaultOrderByFields = defaultOrder
                 .map(order -> {
                     if (order.isIndex()) {
-                        ValidationHandler.isTrue(
-                                TableReflection.tableHasIndex(tableName, order.index()),
-                                "Table '%s' has no index '%s' specified in @defaultOrder for field '%s'",
-                                tableName, order.index(), referenceField.getName()
-                        );
+                        validateIndexExists(tableName, order.index(), referenceField.getName());
                         return CodeBlock.of(
                                 "$T.getSortFields($N, $S, $S)",
                                 QUERY_HELPER.className, actualRefTable, order.index(), order.direction());
                     } else if (order.isFields()) {
+                        validateFieldsExist(tableName, order.fields(), referenceField.getName());
                         var sortOrder = order.direction().equalsIgnoreCase("ASC")
                                 ? CodeBlock.of("$T.ASC", SORT_ORDER.className)
                                 : CodeBlock.of("$T.DESC", SORT_ORDER.className);
@@ -1182,17 +1179,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             switch (field.getSortMode()) {
                 case INDEX -> {
                     var indexName = field.getIndexName().orElseThrow();
-                    ValidationHandler.isTrue(tableHasIndex(targetTableName, indexName),
-                            "Table '%s' has no index '%s' necessary for sorting by '%s'", targetTableName, indexName, enumValueName);
+                    validateIndexExists(targetTableName, indexName, enumValueName);
                     code.add("case $S -> $T.getSortFields($N, $S, $N.getDirection().toString());\n",
                             enumValueName, QUERY_HELPER.className, actualRefTable, indexName, orderInputFieldName);
                 }
                 case FIELDS -> {
                     var fieldSpecs = field.getFieldSortSpecs();
-                    fieldSpecs.forEach(spec -> ValidationHandler.isTrue(
-                            getField(targetTableName, spec.name()).isPresent(),
-                            "Table '%s' has no field '%s' specified in @order for enum value '%s'",
-                            targetTableName, spec.name(), enumValueName));
+                    validateFieldsExist(targetTableName, fieldSpecs, enumValueName);
                     var dynamicSortOrder = createDynamicSortOrderBlock(orderInputFieldName);
                     code.add("case $S -> ", enumValueName);
                     code.add(createFieldSortFields(fieldSpecs, actualRefTable, dynamicSortOrder));
@@ -1222,6 +1215,17 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return CodeBlock.of(
                 "$N.getDirection().toString().equalsIgnoreCase($S) ? $T.ASC : $T.DESC",
                 orderInputFieldName, "ASC", SORT_ORDER.className, SORT_ORDER.className);
+    }
+
+    private static void validateIndexExists(String tableName, String indexName, String sourceFieldName) {
+        ValidationHandler.isTrue(tableHasIndex(tableName, indexName),
+                "Table '%s' has no index '%s' specified for '%s'", tableName, indexName, sourceFieldName);
+    }
+
+    private static void validateFieldsExist(String tableName, List<FieldSortSpec> fieldSpecs, String sourceFieldName) {
+        fieldSpecs.forEach(spec -> ValidationHandler.isTrue(
+                getField(tableName, spec.name()).isPresent(),
+                "Table '%s' has no field '%s' specified for '%s'", tableName, spec.name(), sourceFieldName));
     }
 
     private CodeBlock createFieldSortFields(List<FieldSortSpec> fieldSpecs, String tableAlias, CodeBlock sortOrder) {

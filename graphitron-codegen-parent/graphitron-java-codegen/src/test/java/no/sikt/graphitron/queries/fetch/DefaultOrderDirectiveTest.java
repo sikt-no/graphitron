@@ -92,6 +92,14 @@ public class DefaultOrderDirectiveTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Default order with non-existent field should fail")
+    void withWrongField() {
+        assertThatThrownBy(() -> generateFiles("withWrongField", Set.of()))
+                .isInstanceOf(InvalidSchemaException.class)
+                .hasMessageContaining("has no field 'NONEXISTENT_FIELD'");
+    }
+
+    @Test
     @DisplayName("Default order with both index and fields should fail")
     void withBothIndexAndFields() {
         assertThatThrownBy(() -> generateFiles("withBothIndexAndFields", Set.of()))

@@ -83,7 +83,7 @@ public class SortingDirectiveTest extends GeneratorTest {
     void wrongIndex() {
         assertThatThrownBy(() -> generateFiles("wrongIndex", Set.of(CUSTOMER_TABLE)))
                 .isInstanceOf(InvalidSchemaException.class)
-                .hasMessage("Table 'CUSTOMER' has no index 'WRONG_INDEX' necessary for sorting by 'EMAIL'");
+                .hasMessage("Table 'CUSTOMER' has no index 'WRONG_INDEX' specified for 'EMAIL'");
     }
 
     @Test
