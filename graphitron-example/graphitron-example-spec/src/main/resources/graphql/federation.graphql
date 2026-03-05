@@ -32,7 +32,17 @@ type FederatedCustomer implements Node @node @table(name: "CUSTOMER") @key(field
 }
 
 """
-Type with a non-resolvable key. Should not resolve, but currently does, see GG-375.
+Type with two keys, only one is resolvable.
+"""
+type FederatedCustomerOneNonResolvable implements Node @node @table(name: "CUSTOMER") @key(fields: "id") @key(fields: "firstName lastName", resolvable: false) {
+    id: ID! @nodeId
+    firstName: String! @field(name: "FIRST_NAME")
+    lastName: String! @field(name: "LAST_NAME")
+    email: String
+}
+
+"""
+Type with a non-resolvable key.
 """
 type FederatedFilm implements Node @node @table(name: "FILM") @key(fields: "id", resolvable: false) {
     id: ID! @nodeId

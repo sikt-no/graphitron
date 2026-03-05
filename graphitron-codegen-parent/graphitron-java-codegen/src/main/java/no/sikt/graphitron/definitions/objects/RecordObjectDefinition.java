@@ -63,7 +63,7 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         requiredInputs = hasTable() ? getRequiredFields(getTable().getMappingName()).stream().map(String::toUpperCase).collect(Collectors.toCollection(LinkedHashSet::new)) : new LinkedHashSet<>();
         inputsSortedByNullability = sortInputsByNullability();
         hasKeys = objectDefinition.hasDirective(FEDERATION_KEY.getName());
-        keys = hasKeys ? FederationFieldSet.fromString(getRepeatableDirectiveArgumentString(objectDefinition, FEDERATION_KEY.getName(), FEDERATION_KEY_ARGUMENT.getName())) : null;
+        keys = hasKeys ? FederationFieldSet.fromString(getRepeatableDirectiveArgumentString(objectDefinition, FEDERATION_KEY.getName(), FEDERATION_KEY_FIELDS.getName())) : null;
         isFederationExternal = objectDefinition.hasDirective(FEDERATION_EXTERNAL.getName());
 
         hasNodeDirective = objectDefinition.hasDirective(NODE.getName());

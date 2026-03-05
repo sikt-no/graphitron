@@ -1,5 +1,6 @@
 [
   {
+    "_comment": "#1 - Entity with a compound key, one type returned",
     "representations": {
       "__typename": "FederatedStaff",
       "email": "Mike.Hillyer@sakilastaff.com",
@@ -7,6 +8,7 @@
     }
   },
   {
+    "_comment": "#2 - Entity with a compound key, two types returned",
     "representations": [
       {
         "__typename": "FederatedStaff",
@@ -21,6 +23,7 @@
     ]
   },
   {
+    "_comment": "#3 - Entity with a splitQuery",
     "representations": [
       {
         "__typename": "FederatedAddress",
@@ -29,6 +32,7 @@
     ]
   },
   {
+    "_comment": "#4 - Entity with two keys, both resolvable and used",
     "representations": [
       {
         "__typename": "FederatedCustomer",
@@ -42,14 +46,26 @@
     ]
   },
   {
+    "_comment": "#5 - Entity with two keys, using the resolvable one",
     "representations": [
       {
-        "__typename": "FederatedFilm",
-        "id": "RmVkZXJhdGVkRmlsbTo0"
+        "__typename": "FederatedCustomerOneNonResolvable",
+        "id": "RmVkZXJhdGVkQ3VzdG9tZXJPbmVOb25SZXNvbHZhYmxlOjg="
       }
     ]
   },
   {
+    "_comment": "#6 - Entity with two keys, using the non-resolvable one",
+    "representations": [
+      {
+        "__typename": "FederatedCustomerOneNonResolvable",
+        "firstName": "SUSAN",
+        "lastName": "WILSON"
+      }
+    ]
+  },
+  {
+    "_comment": "#7 - Fetching entities where one type does not exist",
     "representations": [
       {
         "__typename": "FederatedStaff",
@@ -69,6 +85,7 @@
     ]
   },
   {
+    "_comment": "#8 - Entity with a non-string key",
     "representations": [
       {
         "__typename": "FederatedPayment",
@@ -79,6 +96,7 @@
     ]
   },
   {
+    "_comment": "#9 - Entity with a non-identifying key",
     "representations": [
       {
         "__typename": "FederatedFilmActorWithBadKey",
@@ -87,12 +105,14 @@
     ]
   },
   {
+    "_comment": "#10 - Fetching two types of entities at once",
     "representations": [
       {"__typename": "FederatedStaff", "email": "Mike.Hillyer@sakilastaff.com", "username": "Mike"},
       {"__typename": "FederatedAddress", "id": "RmVkZXJhdGVkQWRkcmVzczox"}
     ]
   },
   {
+    "_comment": "#11 - Empty representations",
     "representations": []
   }
 ]

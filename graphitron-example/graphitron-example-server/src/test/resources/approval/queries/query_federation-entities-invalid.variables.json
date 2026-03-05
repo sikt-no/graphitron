@@ -1,11 +1,23 @@
 [
   {
+    "_comment": "1 - Nonexistent type",
     "representations": [{"__typename":  "NonExistingType"}]
   },
   {
+    "_comment": "2 - Type that is not an entity",
     "representations": [{"__typename":  "Customer"}]
   },
   {
+    "_comment": "3 - No typename provided",
     "representations": [{}]
+  },
+  {
+    "_comment": "4 - Entity has only non-resolvable keys",
+    "representations": [
+      {
+        "__typename": "FederatedFilm",
+        "id": "RmVkZXJhdGVkRmlsbTo0"
+      }
+    ]
   }
 ]
