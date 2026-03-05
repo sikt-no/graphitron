@@ -10,7 +10,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.PAGE_INFO;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.SOMEUNION_CONNECTION;
 
 @DisplayName("Query outputs - Union types")
 public class UnionTest extends GeneratorTest {

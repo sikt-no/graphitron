@@ -80,7 +80,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     private CodeBlock getCodeForMultitableCountMethod(ObjectField target) {
-        var implementations = processedSchema.getTypesFromInterfaceOrUnion(target.getTypeName());
+        var implementations = processedSchema.getTypesFromInterfaceOrUnion(target.getTypeName()).orElse(List.of());
 
         var aliasSet = new LinkedHashSet<AliasWrapper>();
         var codeForImplementations = CodeBlock.builder();

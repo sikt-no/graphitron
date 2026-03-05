@@ -9,7 +9,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
-import java.util.Set;
+import java.util.Optional;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_OBJECT;
@@ -27,7 +27,7 @@ public class TypeNameMethodGenerator extends AbstractSchemaMethodGenerator<TypeR
 
     @Override
     public MethodSpec generate(TypeResolverTarget target) {
-        var components = getComponents(target).stream().map(TypeNameMethodGenerator::ifStatement).collect(CodeBlock.joining("\n"));
+        var components = getComponents(target).orElse(List.of()).stream().map(TypeNameMethodGenerator::ifStatement).collect(CodeBlock.joining("\n"));
         return getDefaultSpecBuilder(METHOD_NAME, STRING.className)
                 .addModifiers(Modifier.STATIC)
                 .addParameter(OBJECT.className, VAR_OBJECT)
@@ -36,11 +36,11 @@ public class TypeNameMethodGenerator extends AbstractSchemaMethodGenerator<TypeR
                 .build();
     }
 
-    private Set<ObjectDefinition> getComponents(TypeResolverTarget target) {
+    private Optional<List<ObjectDefinition>> getComponents(TypeResolverTarget target) {
         if (processedSchema.isInterface(target.getName()) || processedSchema.isUnion(target.getName())) {
             return processedSchema.getTypesFromInterfaceOrUnion(target.getName());
         }
-        return Set.of();
+        return Optional.empty();
     }
 
     private static CodeBlock ifStatement(ObjectDefinition obj) {

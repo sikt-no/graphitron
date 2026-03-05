@@ -23,8 +23,8 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.getSel
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.findKeyForResolverField;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ORDER_FIELDS;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ITERATOR;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ORDER_FIELDS;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.internalPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
@@ -57,7 +57,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                 .build();
     }
 
-    private CodeBlock getCode(ObjectField target, Set<ObjectDefinition> implementations) {
+    private CodeBlock getCode(ObjectField target, List<ObjectDefinition> implementations) {
         var context = new FetchContext(processedSchema, target, getLocalObject(), false);
         var overriddenFields = getFieldsOverriddenByType(processedSchema.getInterface(target), implementations);
         var selectCode = generateSelectRow(context, target, implementations, overriddenFields);
@@ -85,7 +85,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         return null;
     }
 
-    private @NotNull HashMap<String, Set<String>> getFieldsOverriddenByType(InterfaceDefinition targetInterface, Set<ObjectDefinition> implementations) {
+    private @NotNull HashMap<String, Set<String>> getFieldsOverriddenByType(InterfaceDefinition targetInterface, List<ObjectDefinition> implementations) {
         HashMap<String, Set<String>> overriddenFields = new HashMap<>();
 
         // Find overridden interface fields
@@ -102,10 +102,9 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         );
 
         // Find overridden non-interface fields
-        var implementationList = new ArrayList<>(implementations);
-        for (int i = 0; i < implementationList.size(); i++) {
-            for (int j = i + 1; j < implementationList.size(); j++) {
-                compareNonInterfaceFields(implementationList.get(i), implementationList.get(j), targetInterface, overriddenFields);
+        for (int i = 0; i < implementations.size(); i++) {
+            for (int j = i + 1; j < implementations.size(); j++) {
+                compareNonInterfaceFields(implementations.get(i), implementations.get(j), targetInterface, overriddenFields);
             }
         }
         return overriddenFields;
@@ -130,7 +129,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         return fieldDirectiveDiffers || isNodeIdField;
     }
 
-    protected CodeBlock generateSelectRow(FetchContext context, ObjectField target, Set<ObjectDefinition> implementations, HashMap<String, Set<String>> overriddenFields) {
+    protected CodeBlock generateSelectRow(FetchContext context, ObjectField target, List<ObjectDefinition> implementations, HashMap<String, Set<String>> overriddenFields) {
         List<GenerationField> allFields = new LinkedList<>();
 
         context.getReferenceObject()
@@ -183,7 +182,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         return CodeBlock.join(rowElements, ",\n");
     }
 
-    private CodeBlock fetchAndMap(ObjectField target, Set<ObjectDefinition> implementations, String querySource, HashMap<String, Set<String>> overriddenFields, FetchContext context) {
+    private CodeBlock fetchAndMap(ObjectField target, List<ObjectDefinition> implementations, String querySource, HashMap<String, Set<String>> overriddenFields, FetchContext context) {
         var interfaceDefinition = processedSchema.getInterface(target);
 
         var returnInsideIfBlock = !target.hasForwardPagination();

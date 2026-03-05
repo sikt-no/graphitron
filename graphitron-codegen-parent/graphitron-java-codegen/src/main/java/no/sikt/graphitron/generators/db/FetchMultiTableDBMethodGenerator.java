@@ -31,7 +31,6 @@ import static no.sikt.graphitron.generators.db.FetchSingleTableInterfaceDBMethod
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECT_JOIN_STEP;
 import static no.sikt.graphitron.mappings.TableReflection.*;
-import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAndThrow;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
 public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
@@ -60,7 +59,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         var unionOrInterfaceDefinition = processedSchema.isUnion(target) ? processedSchema.getUnion(target) : processedSchema.getInterface(target);
 
         // Order is important for paginated queries as it gets data fields by index in the mapping
-        LinkedHashSet<ObjectDefinition> implementations = new LinkedHashSet<>(processedSchema.getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName()));
+        var implementations = processedSchema.getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName()).orElse(List.of());
 
         return getSpecBuilder(target, unionOrInterfaceDefinition.getGraphClassName(), inputParser)
                 .addCode(implementations.isEmpty() ? returnWrap("null") : getCode(target, implementations, inputParser.getMethodInputNames(false, false, true)))
@@ -72,7 +71,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         return null;
     }
 
-    private CodeBlock getCode(ObjectField target, LinkedHashSet<ObjectDefinition> implementations, List<String> inputs) {
+    private CodeBlock getCode(ObjectField target, List<ObjectDefinition> implementations, List<String> inputs) {
         List<String> sortFieldQueryMethodCalls = new ArrayList<>();
         LinkedHashMap<String, String> mappedQueryVariables = new LinkedHashMap<>();
         var joins = CodeBlock.builder();
@@ -87,9 +86,6 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         }
 
         for (var implementation : implementations) {
-            if (!implementation.hasTable()) {
-                addErrorMessageAndThrow("Type '%s' is returned in an interface query, but not have table set. This is not supported.", implementation.getName());
-            }
             String typeName = implementation.getName();
             sortFieldQueryMethodCalls.add(getSortFieldsMethodName(target, implementation));
             String mappedVariableName = joinStepPrefix(typeName);
@@ -153,7 +149,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .build();
     }
 
-    private static @NotNull CodeBlock getTokenVariableDeclaration(Set<ObjectDefinition> implementations) {
+    private static @NotNull CodeBlock getTokenVariableDeclaration(List<ObjectDefinition> implementations) {
         var map = mapOfEntries(
                 indentIfMultiline(
                         implementations.stream()
@@ -226,7 +222,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 RECORD1.className);
     }
 
-    private CodeBlock createMappingContent(GenerationSourceField<?> target, LinkedHashSet<ObjectDefinition> implementations, boolean isConnection) {
+    private CodeBlock createMappingContent(GenerationSourceField<?> target, List<ObjectDefinition> implementations, boolean isConnection) {
         var interfaceClassName = processedSchema.getRecordType(target).getGraphClassName();
         var lambdaParameters = new LinkedHashMap<String, String>();
 
@@ -279,7 +275,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         return Stream.concat(
                 Stream.of(mainMethod),
                 processedSchema
-                        .getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName())
+                        .getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName()).orElse(List.of())
                         .stream()
                         .map(it -> getMethodsForImplementation(target, it, methodInputs))
                         .flatMap(Collection::stream)
