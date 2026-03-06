@@ -1917,14 +1917,15 @@ public class ProcessedDefinitionsValidator {
 
     private void validateEntity(ObjectDefinition entityType) {
         if (!entityType.hasTable()) {
-            addErrorMessage("Entity type %s must map to a table using the @table directive",
-                    entityType.getName());
+            addErrorMessage("Entity type '%s' must map to a table using the @%s directive",
+                    entityType.getName(),
+                    TABLE.getName());
             return;
         }
 
         var hasNestedKeys = entityType.getEntityKeys().keys().stream().anyMatch(key -> !key.getNestedKeys().isEmpty());
         if (hasNestedKeys) {
-            addErrorMessage("Nested key(s) found in entity type %s. This is currently not supported.", entityType.getName());
+            addErrorMessage("Nested key(s) found in entity type '%s'. This is currently not supported.", entityType.getName());
         }
 
         for (var compositekey: entityType.getEntityKeys().keys()) {
@@ -1934,10 +1935,10 @@ public class ProcessedDefinitionsValidator {
                         .findFirst();
                 if (matchingField.isEmpty()) {
                     var similarFields = findSimilarStringsWithDistance(key, entityType.getFields().stream().map(AbstractField::getName), 6);
-                    var suggestion = similarFields.isEmpty() ? "" : ". Did you mean: " + String.join(", ", similarFields.keySet());
-                    addErrorMessage("Entity Key field %s was not found in type %s%s", key, entityType.getName(), suggestion);
+                    var suggestion = similarFields.isEmpty() ? "" : String.format(". Did you mean one of: '%s'?", String.join("', '", similarFields.keySet()));
+                    addErrorMessage("Entity Key field '%s' was not found in type '%s'%s", key, entityType.getName(), suggestion);
                 } else if (matchingField.get().hasFieldReferences() || schema.isNodeIdReferenceField(matchingField.get())) {
-                    addErrorMessage("Entity Key field %s in type %s is a reference. This is currently not supported",
+                    addErrorMessage("Entity Key field '%s' in type '%s' is a reference. This is currently not supported.",
                             key, entityType.getName());
                 }
             }

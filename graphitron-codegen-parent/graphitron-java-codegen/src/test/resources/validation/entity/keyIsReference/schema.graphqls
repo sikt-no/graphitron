@@ -5,6 +5,3 @@ type Customer @table @key(fields: "addressId") {
   addressId: Int @reference(path: [{table: "ADDRESS"}]) @field(name: "ADDRESS_ID")
 }
 
-type Address @table {
-  id: ID
-}
