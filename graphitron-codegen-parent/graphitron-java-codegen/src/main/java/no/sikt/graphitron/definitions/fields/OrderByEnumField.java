@@ -43,23 +43,12 @@ public class OrderByEnumField extends AbstractField<EnumValueDefinition> {
                 "Enum field '%s' of '%s' must have exactly one of @%s(index:), @%s(fields:), or @%s(primaryKey: true) set, but %d were set",
                 field.getName(), container, ORDER.getName(), ORDER.getName(), ORDER.getName(), modeCount);
 
-        if (hasIndex) {
-            indexName = indexArg.get();
-            fieldSortSpecs = null;
-            sortMode = SortMode.INDEX;
-        } else if (hasFields) {
-            indexName = null;
-            fieldSortSpecs = fieldsArg.get().stream().map(FieldSortSpec::from).toList();
-            sortMode = SortMode.FIELDS;
-        } else if (hasPrimaryKey) {
-            indexName = null;
-            fieldSortSpecs = null;
-            sortMode = SortMode.PRIMARY_KEY;
-        } else {
-            indexName = null;
-            fieldSortSpecs = null;
-            sortMode = null;
-        }
+        indexName = hasIndex ? indexArg.get() : null;
+        fieldSortSpecs = hasFields ? fieldsArg.get().stream().map(FieldSortSpec::from).toList() : null;
+        sortMode = hasIndex ? SortMode.INDEX
+                : hasFields ? SortMode.FIELDS
+                : hasPrimaryKey ? SortMode.PRIMARY_KEY
+                : null;
     }
 
     /**

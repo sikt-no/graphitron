@@ -19,8 +19,8 @@ public record DefaultOrder(String index, List<FieldSortSpec> fields, boolean pri
                 + (fields != null && !fields.isEmpty() ? 1 : 0)
                 + (primaryKey ? 1 : 0);
         ValidationHandler.isTrue(modeCount == 1,
-                "@%s must have exactly one of index, fields, or primaryKey set, but %d were set.",
-                DEFAULT_ORDER.getName(), modeCount);
+                "@%s must have exactly one of %s, %s, or %s set, but %d were set.",
+                DEFAULT_ORDER.getName(), INDEX.getName(), FIELDS.getName(), PRIMARY_KEY.getName(), modeCount);
     }
 
     public static DefaultOrder from(FieldDefinition field) {

@@ -23,7 +23,6 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -1169,44 +1168,16 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add("$N == null\n", orderInputFieldName)
                 .indent().indent()
                 .add("? $L\n", defaultOrderByFieldsBlock)
-                .add(": switch ($N.get$L().toString()) {\n", orderInputFieldName,
-                        capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()))
-                .indent();
+                .beginControlFlow(": switch ($N.get$L().toString())", orderInputFieldName,
+                        capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()));
 
-        orderByFieldEnum.getFields().forEach(field -> {
-            var enumValueName = field.getName();
-
-            switch (field.getSortMode()) {
-                case INDEX -> {
-                    var indexName = field.getIndexName().orElseThrow();
-                    validateIndexExists(targetTableName, indexName, enumValueName);
-                    code.add("case $S -> $T.getSortFields($N, $S, $N.getDirection().toString());\n",
-                            enumValueName, QUERY_HELPER.className, actualRefTable, indexName, orderInputFieldName);
-                }
-                case FIELDS -> {
-                    var fieldSpecs = field.getFieldSortSpecs();
-                    validateFieldsExist(targetTableName, fieldSpecs, enumValueName);
-                    var dynamicSortOrder = createDynamicSortOrderBlock(orderInputFieldName);
-                    code.add("case $S -> ", enumValueName);
-                    code.add(createFieldSortFields(fieldSpecs, actualRefTable, dynamicSortOrder));
-                    code.add(";\n");
-                }
-                case PRIMARY_KEY -> {
-                    ValidationHandler.isTrue(
-                            tableHasPrimaryKey(targetTableName),
-                            "Table '%s' has no primary key, but @order(primaryKey: true) is set on enum value '%s'",
-                            targetTableName, enumValueName);
-                    var dynamicSortOrder = createDynamicSortOrderBlock(orderInputFieldName);
-                    code.add("case $S -> $L;\n", enumValueName,
-                            getPrimaryKeyFieldsWithTableAliasBlock(actualRefTable, dynamicSortOrder));
-                }
-            }
-        });
+        orderByFieldEnum.getFields().forEach(field ->
+                code.add(createOrderByCase(field, actualRefTable, orderInputFieldName, targetTableName)));
 
         code.add("default -> throw new $T($S + $N.get$L().toString());\n",
                 ILLEGAL_ARGUMENT_EXCEPTION.className, "Unknown order by field: ",
                 orderInputFieldName, capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()));
-        code.unindent().add("}")
+        code.endControlFlow()
                 .unindent().unindent();
         return code.build();
     }
@@ -1215,6 +1186,34 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return CodeBlock.of(
                 "$N.getDirection().toString().equalsIgnoreCase($S) ? $T.ASC : $T.DESC",
                 orderInputFieldName, "ASC", SORT_ORDER.className, SORT_ORDER.className);
+    }
+
+    private CodeBlock createOrderByCase(OrderByEnumField field, String actualRefTable, String orderInputFieldName, String targetTableName) {
+        var enumValueName = field.getName();
+        return switch (field.getSortMode()) {
+            case INDEX -> {
+                var indexName = field.getIndexName().orElseThrow();
+                validateIndexExists(targetTableName, indexName, enumValueName);
+                yield CodeBlock.of("case $S -> $T.getSortFields($N, $S, $N.getDirection().toString());\n",
+                        enumValueName, QUERY_HELPER.className, actualRefTable, indexName, orderInputFieldName);
+            }
+            case FIELDS -> {
+                var fieldSpecs = field.getFieldSortSpecs();
+                validateFieldsExist(targetTableName, fieldSpecs, enumValueName);
+                var dynamicSortOrder = createDynamicSortOrderBlock(orderInputFieldName);
+                yield CodeBlock.of("case $S -> $L;\n", enumValueName,
+                        createFieldSortFields(fieldSpecs, actualRefTable, dynamicSortOrder));
+            }
+            case PRIMARY_KEY -> {
+                ValidationHandler.isTrue(
+                        tableHasPrimaryKey(targetTableName),
+                        "Table '%s' has no primary key, but @order(primaryKey: true) is set on enum value '%s'",
+                        targetTableName, enumValueName);
+                var dynamicSortOrder = createDynamicSortOrderBlock(orderInputFieldName);
+                yield CodeBlock.of("case $S -> $L;\n", enumValueName,
+                        getPrimaryKeyFieldsWithTableAliasBlock(actualRefTable, dynamicSortOrder));
+            }
+        };
     }
 
     private static void validateIndexExists(String tableName, String indexName, String sourceFieldName) {
@@ -1242,11 +1241,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .collect(CodeBlock.joining(",\n"));
 
         return CodeBlock.builder()
-                .add("new $T[] {\n", SORT_FIELD.className)
-                .indent()
-                .add("$L", fieldBlocks)
-                .unindent()
-                .add("\n}")
+                .beginControlFlow("new $T[]", SORT_FIELD.className)
+                .add(fieldBlocks)
+                .endControlFlow()
                 .build();
     }
 
