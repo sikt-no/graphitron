@@ -104,6 +104,7 @@ public class ProcessedDefinitionsValidator {
         validatePaginatedFieldsHaveOrdering();
         validateDefaultOrderNotOnInterfaceOrUnion();
         validateLookupArguments();
+        validateEntities();
 
         logWarnings();
         throwIfErrors();
@@ -1905,5 +1906,44 @@ public class ProcessedDefinitionsValidator {
                         }
                     });
         });
+    }
+
+    private void validateEntities() {
+        schema.getObjects().values().stream()
+                .filter(RecordObjectDefinition::isEntity)
+                .forEach(this::validateEntity);
+    }
+
+
+    private void validateEntity(ObjectDefinition entityType) {
+        if (!entityType.hasTable()) {
+            addErrorMessage("Entity type '%s' must map to a table using the @%s directive",
+                    entityType.getName(),
+                    TABLE.getName());
+            return;
+        }
+
+        var hasNestedKeys = entityType.getEntityKeys().keys().stream().anyMatch(key -> !key.getNestedKeys().isEmpty());
+        if (hasNestedKeys) {
+            addErrorMessage("Nested key(s) found in entity type '%s'. This is currently not supported.", entityType.getName());
+        }
+
+        for (var compositekey: entityType.getEntityKeys().keys()) {
+            for (var key : compositekey.getKeys()) {
+                var matchingField = entityType.getFields().stream()
+                        .filter(field -> field.getName().equals(key))
+                        .findFirst();
+                if (matchingField.isEmpty()) {
+                    var similarFields = findSimilarStringsWithDistance(key, entityType.getFields().stream().map(AbstractField::getName), 6);
+                    var suggestion = similarFields.isEmpty() ? "" : String.format(". Did you mean one of: '%s'?", String.join("', '", similarFields.keySet()));
+                    addErrorMessage("Entity Key field '%s' was not found in type '%s'%s", key, entityType.getName(), suggestion);
+                } else if (matchingField.get().hasFieldReferences() || schema.isNodeIdReferenceField(matchingField.get())) {
+                    addErrorMessage("Entity Key field '%s' in type '%s' is a reference. This is currently not supported.",
+                            key, entityType.getName());
+                }
+            }
+
+        }
+
     }
 }

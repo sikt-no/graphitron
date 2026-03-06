@@ -1,0 +1,7 @@
+union _Entity = Customer
+
+type Customer @table @key(fields: "addressId") {
+  id: ID
+  addressId: Int @reference(path: [{table: "ADDRESS"}]) @field(name: "ADDRESS_ID")
+}
+
