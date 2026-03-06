@@ -55,18 +55,4 @@ public class EntityValidationTest extends ValidationTest {
         assertErrorsContain("keyIsReference",
                 "Entity Key field addressId in type Customer is a reference. This is currently not supported");
     }
-
-    @Test
-    @DisplayName("Total amount of keys exceeds 22")
-    void tooManyKeys() {
-        assertErrorsContain("tooManyKeys",
-                "Total amount of key columns in type Customer can't be greater than 22.");
-    }
-
-    @Test
-    @DisplayName("Total amount of keys exceeds 22 across multiple @key directives")
-    void tooManyKeysSplit() {
-        assertErrorsContain("tooManyKeysSplit",
-                "Total amount of key columns in type Customer can't be greater than 22.");
-    }
 }

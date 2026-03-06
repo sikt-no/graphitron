@@ -1927,14 +1927,6 @@ public class ProcessedDefinitionsValidator {
             addErrorMessage("Nested key(s) found in entity type %s. This is currently not supported.", entityType.getName());
         }
 
-        var size = entityType.getEntityKeys().keys().stream()
-                .flatMap(key -> key.getKeys().stream())
-                .toList()
-                .size();
-
-        if (size > 22)
-            addErrorMessage("Total amount of key columns in type %s can't be greater than 22.", entityType.getName());
-
         for (var compositekey: entityType.getEntityKeys().keys()) {
             for (var key : compositekey.getKeys()) {
                 var matchingField = entityType.getFields().stream()
