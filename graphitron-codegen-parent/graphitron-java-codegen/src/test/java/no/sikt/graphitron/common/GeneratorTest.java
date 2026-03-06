@@ -82,8 +82,9 @@ public abstract class GeneratorTest {
     public static void assertGeneratedContentMatches(String expectedOutputFolder, Map<String, List<String>> generatedFiles) {
         var path = Paths.get(expectedOutputFolder + "/" + EXPECTED_OUTPUT_NAME);
         if (!Files.exists(path)) {
-            assertThat(generatedFiles).isEmpty();
-            return;
+            throw new IllegalArgumentException(
+                    "Expected output directory not found: " + path + ". Use assertNothingGenerated() if no output is expected."
+            );
         }
 
         var expectedFileNames = new HashSet<String>();
@@ -212,8 +213,11 @@ public abstract class GeneratorTest {
     }
 
     public ProcessedSchema getProcessedSchema(String schemaParentFolder, Set<SchemaComponent> extraComponents) {
-        if (!Files.exists(Paths.get(sourceTestPath + schemaParentFolder + "/" + COMMON_TEST_SCHEMA_NAME))) {
-            return getProcessedSchema(extraComponents);
+        var schemaFile = Paths.get(sourceTestPath + schemaParentFolder + "/" + COMMON_TEST_SCHEMA_NAME);
+        if (!Files.exists(schemaFile)) {
+            throw new IllegalArgumentException(
+                    "Test schema file not found: " + schemaFile + ""
+            );
         }
         return TestConfiguration.getProcessedSchema(sourceTestPath + schemaParentFolder, mergeComponentsAndSetConfig(extraComponents), validateSchema(), checkProcessedSchemaDefault);
     }

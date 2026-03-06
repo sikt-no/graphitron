@@ -67,7 +67,7 @@ public class WiringBuilderTest extends GeneratorTest {
     @Test
     @DisplayName("No fetchers are generated")
     void noFetchers() {
-        assertGeneratedContentContains(".newRuntimeWiring();return wiring;");
+        assertGeneratedContentContains(Set.of(), ".newRuntimeWiring();return wiring;");
     }
 
     @Test
@@ -86,8 +86,8 @@ public class WiringBuilderTest extends GeneratorTest {
     void twoTypes() {
         assertGeneratedContentContains(
                 "twoTypes",
-                        ".newTypeWiring(\"Query\").dataFetcher(\"customer\",",
-                        ".newTypeWiring(\"Customer\").dataFetcher(\"address\","
+                ".newTypeWiring(\"Query\").dataFetcher(\"customer\",",
+                ".newTypeWiring(\"Customer\").dataFetcher(\"address\","
         );
     }
 

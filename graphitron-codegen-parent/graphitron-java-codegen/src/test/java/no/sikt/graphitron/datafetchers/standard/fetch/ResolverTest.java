@@ -142,7 +142,7 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Root resolver that is not generated")
     void notGenerated() {
-        assertGeneratedContentMatches("operation/notGenerated");
+        assertNothingGenerated("operation/notGenerated");
     }
 
     @Test
@@ -182,7 +182,7 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Resolver that is not generated")
     void splitQueryNotGenerated() {
-        assertGeneratedContentMatches("splitquery/notGenerated", SPLIT_QUERY_WRAPPER);
+        assertNothingGenerated("splitquery/notGenerated", Set.of(SPLIT_QUERY_WRAPPER));
     }
 
     @Test
