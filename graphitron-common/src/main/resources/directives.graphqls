@@ -253,3 +253,28 @@ directive @nodeId(
 Specifies that the table that is used on the field should be the jOOQ table returned from the specified tableMethod
 """
 directive @tableMethod(tableMethodReference: ExternalCodeReference!, contextArguments: [String!]) on FIELD_DEFINITION
+
+"""
+Specifies how fields should be resolved for nested types. This would typically be used with non-resolvable federation entities.
+"""
+directive @experimental_constructType(
+  """
+  The selection argument specifies how we can construct the type of this field.
+  The key side references the field in the type we are constructing while the value side denotes the column we want to fetch the data from.
+  This is similar to what goes inside a selection set in GraphQL. The differences are:
+  - We require comma to separate between fields
+  - Does not support arguments
+  - Does not support variables
+  - Does not support nesting
+
+  Examples:
+  ```graphql
+  @experimental_constructType(selection: "firstName: FIRST_NAME, lastName: LAST_NAME")
+  @experimental_constructType(selection: \"\"\"<br>
+  first_name,<br>
+  surname: LAST_NAME<br>
+  \"\"\")
+  ```
+  """
+  selection: String
+) on FIELD_DEFINITION
