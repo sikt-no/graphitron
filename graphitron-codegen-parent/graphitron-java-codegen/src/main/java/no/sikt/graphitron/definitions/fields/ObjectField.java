@@ -4,6 +4,8 @@ import graphql.language.FieldDefinition;
 import graphql.language.IntValue;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
+import no.sikt.graphitron.definitions.helpers.ConstructSelection;
+import no.sikt.graphitron.definitions.helpers.SelectionParser;
 import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.directives.GenerationDirectiveParam;
 import no.sikt.graphql.naming.GraphQLReservedName;
@@ -14,6 +16,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphql.directives.DirectiveHelpers.*;
+import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_EXTERNAL;
@@ -32,6 +35,7 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
     private final MutationType mutationType;
     private final boolean hasLookupKey, isFederationExternal;
     private final DefaultOrder defaultOrder;
+    private final ConstructSelection construct;
     public final static List<String> RESERVED_PAGINATION_NAMES = List.of(
             GraphQLReservedName.PAGINATION_FIRST.getName(),
             GraphQLReservedName.PAGINATION_AFTER.getName(),
@@ -61,6 +65,9 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
                 "'%s' has both @%s and @%s defined. These directives can not be used together", getName(), ORDER_BY.getName(), LOOKUP_KEY.getName());
         ValidationHandler.isTrue(!hasLookupKey || !hasPagination(),
                 "'%s' has both pagination and @%s defined. These can not be used together", getName(), LOOKUP_KEY.getName());
+        construct = field.hasDirective(CONSTRUCT_TYPE.getName())
+                ? getOptionalDirectiveArgumentString(field, CONSTRUCT_TYPE, SELECTION).map(SelectionParser::parseSelection).orElse(null)
+                : null;
     }
 
     private List<ArgumentField> setInputAndPagination(FieldDefinition field, boolean isTopLevel, String container) {
