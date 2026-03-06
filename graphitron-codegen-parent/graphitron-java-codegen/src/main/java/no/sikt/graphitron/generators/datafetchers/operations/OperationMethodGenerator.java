@@ -180,12 +180,13 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         }
         params.addAll(parser.getMethodInputNames(false, false, true));
 
-        if (target.hasTotalCountFieldInReturnType()) {
-            var countFunction = countFunction(objectToCall, method, params, target.hasServiceReference());
-            return CodeBlock.of(" $N,\n$L,\n$L$L", VAR_PAGE_SIZE, queryFunction, countFunction, transformWrap);
-        } else {
-            return CodeBlock.of(" $N,\n$L$L", VAR_PAGE_SIZE, queryFunction, transformWrap);
-        }
+        var countFunction = CodeBlock.ofIf(
+                target.hasTotalCountFieldInReturnType(processedSchema),
+                ",\n$L",
+                () -> countFunction(objectToCall, method, params, target.hasServiceReference())
+        );
+
+        return CodeBlock.of(" $N,\n$L$L$L", VAR_PAGE_SIZE, queryFunction, countFunction, transformWrap);
     }
 
     /**

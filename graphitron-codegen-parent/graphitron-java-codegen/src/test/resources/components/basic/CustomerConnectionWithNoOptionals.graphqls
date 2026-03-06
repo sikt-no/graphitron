@@ -1,9 +1,9 @@
-type CustomerConnection {
-  edges: [CustomerConnectionEdge]
+type CustomerNoOptionalsConnection {
+  edges: [CustomerNoOptionalsConnectionEdge]
   pageInfo: PageInfo
 }
 
-type CustomerConnectionEdge {
+type CustomerNoOptionalsConnectionEdge {
   cursor: String
   node: CustomerTable
 }

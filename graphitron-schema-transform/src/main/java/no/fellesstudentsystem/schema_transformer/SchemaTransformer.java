@@ -44,14 +44,17 @@ public class SchemaTransformer {
         var transforms = new ArrayList<Consumer<TypeDefinitionRegistry>>();
         transforms.add(MergeExtensions::transform);
         if (config.expandConnections()) {
-            transforms.add(MakeConnections::transform);
+            transforms.add(registry -> MakeConnections.transform(
+                    registry,
+                    config.nodesFieldInConnectionsEnabled(),
+                    config.totalCountFieldInConnectionsEnabled()
+            ));
         }
         return transforms;
     }
 
     private List<Function<GraphQLSchema, GraphQLSchema>> getSchemaTransforms(TypeDefinitionRegistry registry) {
         var transforms = new ArrayList<Function<GraphQLSchema, GraphQLSchema>>();
-        var disabledConnectionFields = getDisabledConnectionFields();
 
         if (config.removeExcludedElements()) {
             // This one goes first since removing fields and types allows us to not process them in later transforms.
@@ -73,12 +76,6 @@ public class SchemaTransformer {
 
         if (!filterDirectives.isEmpty()) {
             transforms.add((s) -> new DirectivesFilter(s, filterDirectives).getModifiedGraphQLSchema());
-        }
-
-        if (!disabledConnectionFields.isEmpty()) {
-            transforms.add(schema -> new ConnectionFieldFilter(schema, disabledConnectionFields)
-                    .getModifiedGraphQLSchema()
-            );
         }
 
         return transforms;

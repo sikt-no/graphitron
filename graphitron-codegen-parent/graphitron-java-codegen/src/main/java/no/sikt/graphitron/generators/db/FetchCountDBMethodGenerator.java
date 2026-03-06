@@ -158,7 +158,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .stream()
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(ObjectField::hasRequiredPaginationFields)
-                .filter(ObjectField::hasTotalCountFieldInReturnType)
+                .filter(it -> it.hasTotalCountFieldInReturnType(processedSchema))
                 .filter(it -> !it.hasServiceReference())
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())

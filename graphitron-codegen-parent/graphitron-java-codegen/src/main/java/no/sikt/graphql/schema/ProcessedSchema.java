@@ -168,8 +168,6 @@ public class ProcessedSchema {
 
         federationIsImported = LinkDirectiveProcessor.loadFederationImportedDefinitions(typeRegistry) != null;
         federationEntitiesExist = queryType != null && queryType.hasField(FEDERATION_ENTITIES_FIELD.getName()) && isFederationImported();
-
-        markConnectionsWithTotalCountField();
     }
 
     private SchemaDefinition createSchemaDefinition() {
@@ -196,21 +194,6 @@ public class ProcessedSchema {
             );
         }
         return definitionBuilder.build();
-    }
-
-    /**
-     * Mark fields whose return type is a connection type that contains the {@code totalCount} field. This is used to
-     * determine whether to generate a count method or not through
-     * {@link no.sikt.graphitron.generators.db.FetchCountDBMethodGenerator}.
-     */
-    private void markConnectionsWithTotalCountField() {
-        this.objects
-                .values()
-                .stream()
-                .flatMap(obj -> obj.getFields().stream())
-                .filter(this::isConnectionObject)
-                .filter(this::hasTotalCountField)
-                .forEach(field -> field.setHasTotalCountFieldInReturnType(true));
     }
 
     public boolean nodeExists() {
@@ -839,16 +822,6 @@ public class ProcessedSchema {
      */
     public boolean federationEntitiesExist() {
         return federationEntitiesExist;
-    }
-
-    /**
-     * @param field A field whose type is assumed to be a connection object present in {@link #connectionObjects}.
-     * @return Whether this field points to a connection object type that has a {@code totalCount} field.
-     */
-    private boolean hasTotalCountField(FieldSpecification field) {
-        return connectionObjects
-                .get(field.getTypeName())
-                .hasField(GraphQLReservedName.CONNECTION_TOTAL_COUNT.getName());
     }
 
     /**

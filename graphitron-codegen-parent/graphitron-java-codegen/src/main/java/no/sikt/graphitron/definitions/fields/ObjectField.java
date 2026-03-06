@@ -7,6 +7,7 @@ import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
 import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.directives.GenerationDirectiveParam;
 import no.sikt.graphql.naming.GraphQLReservedName;
+import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.*;
 import java.util.function.Function;
@@ -24,7 +25,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_EXTERNAL;
 public class ObjectField extends GenerationSourceField<FieldDefinition> {
     private int firstDefault = 100;
     private int lastDefault = 100;
-    private boolean hasForwardPagination, hasBackwardPagination, hasRequiredPaginationFields, hasPaginationTotalCountField;
+    private boolean hasForwardPagination, hasBackwardPagination, hasRequiredPaginationFields;
     private final List<ArgumentField> arguments, nonReservedArguments;
     private final ArgumentField orderField;
     private final LinkedHashMap<String, ArgumentField> argumentsByName;
@@ -128,14 +129,14 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
         return hasForwardPagination() || hasBackwardPagination();
     }
 
-    public boolean hasTotalCountFieldInReturnType() {
-        return hasPaginationTotalCountField;
-    }
+    public boolean hasTotalCountFieldInReturnType(ProcessedSchema schema) {
+        var connectionObject = schema.getConnectionObject(this.getTypeName());
 
-    public void setHasTotalCountFieldInReturnType(boolean hasTotalCountField) {
-        hasPaginationTotalCountField = hasTotalCountField;
+        return connectionObject != null && connectionObject
+                .getFields()
+                .stream()
+                .anyMatch(field -> field.getName().equals(GraphQLReservedName.CONNECTION_TOTAL_COUNT.getName()));
     }
-
 
     @Override
     public boolean hasMutationType() {
