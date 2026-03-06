@@ -9,6 +9,8 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.*;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
+import static no.sikt.graphql.directives.GenerationDirective.TABLE;
+import static no.sikt.graphql.directives.GenerationDirective.RECORD;
 
 @DisplayName("Schema validation - Unknown and unresolvable values")
 public class UnknownTest extends ValidationTest {
@@ -331,7 +333,7 @@ public class UnknownTest extends ValidationTest {
     @DisplayName("Service input type missing @table or @record directive")
     void serviceInputMissingDirective() {
         assertErrorsContain("serviceInputMissingDirective",
-                "Input type 'TestInput' is used as an argument on service field 'Query.test', but has neither the @table nor the @record directive.");
+                String.format("Input type 'TestInput' is used as an argument on service field 'Query.test', but has neither the @%s nor the @%s directive.", TABLE.getName(), RECORD.getName()));
     }
 
     @Test

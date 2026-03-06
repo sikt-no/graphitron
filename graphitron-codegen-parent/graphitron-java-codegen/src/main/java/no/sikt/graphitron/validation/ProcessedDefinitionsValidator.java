@@ -43,6 +43,8 @@ import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getFo
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static no.sikt.graphitron.mappings.ReflectionHelpers.getJooqRecordClassForNodeIdInputField;
 import static no.sikt.graphitron.mappings.TableReflection.*;
+import static no.sikt.graphitron.validation.ServiceMethodFormatter.formatExpectedListableType;
+import static no.sikt.graphitron.validation.ServiceMethodFormatter.formatOverloads;
 import static no.sikt.graphitron.validation.ErrorMessages.*;
 import static no.sikt.graphitron.validation.ValidationHandler.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
@@ -711,9 +713,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(e -> !referenceSet.contains(e))
                 .forEach(e -> addErrorMessage("No enum with name '%s' found.", e.getSchemaClassReference()));
 
-        allFields
-                .stream()
-                .filter(ObjectField::isGenerated)
+        allFields.stream()
                 .filter(ObjectField::hasServiceReference)
                 .map(ObjectField::getExternalMethod)
                 .map(ServiceWrapper::getReference)
@@ -731,9 +731,7 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateServiceMethods() {
-        allFields
-                .stream()
-                .filter(ObjectField::isGenerated)
+        allFields.stream()
                 .filter(ObjectField::hasServiceReference)
                 .map(GenerationSourceField::getExternalMethod)
                 .filter(it -> GeneratorConfig.getExternalReferences().contains(it.getReference()))
@@ -742,28 +740,27 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateServiceInputTypes() {
-        allFields
-                .stream()
-                .filter(ObjectField::isGenerated)
+        allFields.stream()
                 .filter(ObjectField::hasServiceReference)
                 .forEach(field -> field.getNonReservedArguments()
                         .stream()
                         .filter(schema::isInputType)
                         .filter(arg -> !schema.hasRecord(arg))
                         .forEach(arg -> addErrorMessage(
-                                "Input type '%s' is used as an argument on service field '%s.%s', but has neither the @table nor the @record directive. "
-                                        + "Input types on @service operations must have one of these directives.",
+                                "Input type '%s' is used as an argument on service field '%s.%s', but has neither the @%s nor the @%s directive. "
+                                        + "Input types on @%s operations must have one of these directives.",
                                 arg.getTypeName(),
                                 field.getContainerTypeName(),
-                                field.getName()
+                                field.getName(),
+                                TABLE.getName(),
+                                RECORD.getName(),
+                                SERVICE.getName()
                         ))
                 );
     }
 
     private void validateServiceMethodParameterTypes() {
-        allFields
-                .stream()
-                .filter(ObjectField::isGenerated)
+        allFields.stream()
                 .filter(ObjectField::hasServiceReference)
                 .filter(field -> field.getNonReservedArguments()
                         .stream()
@@ -774,27 +771,20 @@ public class ProcessedDefinitionsValidator {
 
     private void checkServiceParameterTypes(ObjectField field) {
         var serviceWrapper = field.getExternalMethod();
-        var method = serviceWrapper.getMethod();
-        if (method == null) {
-            return; // Method not resolved — handled by validateServiceMethods()
+        var overloads = getAllOverloads(serviceWrapper);
+        if (overloads.isEmpty()) {
+            return;
         }
 
         var parser = new InputParser(field, schema);
         var resolverKeyOffset = field.isRootField() ? 0 : 1;
-
-        if (hasParameterCountMismatch(field, serviceWrapper, method, parser, resolverKeyOffset)) return;
-
-        validateRecordParameterTypes(field, serviceWrapper, method, parser, resolverKeyOffset);
-    }
-
-    private boolean hasParameterCountMismatch(ObjectField field, CodeReferenceWrapper serviceWrapper,
-            Method method, InputParser parser, int resolverKeyOffset) {
         var expectedParamCount = resolverKeyOffset + parser.getMethodInputNames(true, true, true).size();
-        if (method.getParameterTypes().length == expectedParamCount) {
-            return false;
-        }
-        var overloads = getAllOverloads(serviceWrapper);
-        if (overloads.stream().noneMatch(o -> o.getParameterTypes().length == expectedParamCount)) {
+
+        var candidates = overloads.stream()
+                .filter(m -> m.getParameterTypes().length == expectedParamCount)
+                .toList();
+
+        if (candidates.isEmpty()) {
             addErrorMessage(
                     "Service field '%s.%s' maps to %d method parameter(s) but there is no overload of '%s' with that parameter count. Available overloads:\n%s",
                     field.getContainerTypeName(),
@@ -803,12 +793,9 @@ public class ProcessedDefinitionsValidator {
                     serviceWrapper.getMethodName(),
                     formatOverloads(overloads, serviceWrapper.getMethodName())
             );
+            return;
         }
-        return true;
-    }
 
-    private void validateRecordParameterTypes(ObjectField field, CodeReferenceWrapper serviceWrapper,
-            Method method, InputParser parser, int resolverKeyOffset) {
         var allMethodInputs = parser.getMethodInputNames(false, false, false);
 
         for (var entry : parser.getRecords().entrySet()) {
@@ -831,21 +818,18 @@ public class ProcessedDefinitionsValidator {
             }
 
             var inputIsListed = inputField.isIterableWrapped();
-            if (!isParameterCompatible(method, methodParamIndex, inputClass, inputIsListed)) {
-                var overloads = getAllOverloads(serviceWrapper);
-                if (overloads.stream().noneMatch(o -> isParameterCompatible(o, methodParamIndex, inputClass, inputIsListed))) {
-                    addErrorMessage(
-                            "Argument '%s' on service field '%s.%s' has input type '%s' which maps to '%s', "
-                                    + "but there is no overload of '%s' that accepts this. Available overloads:\n%s",
-                            inputField.getName(),
-                            field.getContainerTypeName(),
-                            field.getName(),
-                            inputField.getTypeName(),
-                            formatExpectedType(inputClass, inputIsListed),
-                            serviceWrapper.getMethodName(),
-                            formatOverloads(overloads, serviceWrapper.getMethodName())
-                    );
-                }
+            if (candidates.stream().noneMatch(o -> isParameterCompatible(o, methodParamIndex, inputClass, inputIsListed))) {
+                addErrorMessage(
+                        "Argument '%s' on service field '%s.%s' has input type '%s' which maps to '%s', "
+                                + "but there is no overload of '%s' that accepts this. Available overloads:\n%s",
+                        inputField.getName(),
+                        field.getContainerTypeName(),
+                        field.getName(),
+                        inputField.getTypeName(),
+                        formatExpectedListableType(inputClass, inputIsListed),
+                        serviceWrapper.getMethodName(),
+                        formatOverloads(candidates, serviceWrapper.getMethodName())
+                );
             }
         }
     }
@@ -860,10 +844,6 @@ public class ProcessedDefinitionsValidator {
         }
         var effectiveType = getEffectiveParameterType(method, paramIndex, inputIsListed);
         return effectiveType != null && effectiveType.isAssignableFrom(inputClass);
-    }
-
-    private String formatExpectedType(Class<?> inputClass, boolean isListed) {
-        return isListed ? "List<" + inputClass.getSimpleName() + ">" : inputClass.getSimpleName();
     }
 
     private List<Method> getAllOverloads(CodeReferenceWrapper serviceWrapper) {
@@ -886,36 +866,6 @@ public class ProcessedDefinitionsValidator {
             return elementType;
         }
         return null;
-    }
-
-    private String formatOverloads(List<Method> overloads, String methodName) {
-        if (overloads.isEmpty()) {
-            return "  (no overloads found)";
-        }
-        return overloads.stream()
-                .map(m -> "  " + formatMethodSignature(m, methodName))
-                .collect(Collectors.joining("\n"));
-    }
-
-    private String formatMethodSignature(Method method, String methodName) {
-        var params = Arrays.stream(method.getGenericParameterTypes())
-                .map(this::formatTypeName)
-                .collect(Collectors.joining(", "));
-        return methodName + "(" + params + ")";
-    }
-
-    private String formatTypeName(Type type) {
-        if (type instanceof ParameterizedType pt) {
-            var raw = ((Class<?>) pt.getRawType()).getSimpleName();
-            var args = Arrays.stream(pt.getActualTypeArguments())
-                    .map(this::formatTypeName)
-                    .collect(Collectors.joining(", "));
-            return raw + "<" + args + ">";
-        }
-        if (type instanceof Class<?> cls) {
-            return cls.getSimpleName();
-        }
-        return type.getTypeName();
     }
 
     private void validateMultitableFieldsOutsideRoot() {
