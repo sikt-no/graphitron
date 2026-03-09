@@ -216,7 +216,7 @@ public abstract class GeneratorTest {
         var schemaFile = Paths.get(sourceTestPath + schemaParentFolder + "/" + COMMON_TEST_SCHEMA_NAME);
         if (!Files.exists(schemaFile)) {
             throw new IllegalArgumentException(
-                    "Test schema file not found: " + schemaFile + ""
+                    "Test schema file not found: " + schemaFile
             );
         }
         return TestConfiguration.getProcessedSchema(sourceTestPath + schemaParentFolder, mergeComponentsAndSetConfig(extraComponents), validateSchema(), checkProcessedSchemaDefault);
@@ -245,6 +245,15 @@ public abstract class GeneratorTest {
 
     protected void assertGeneratedContentMatches(String resourceRootFolder, SchemaComponent... extraComponents) {
         assertGeneratedContentMatches(sourceTestPath + resourceRootFolder, generateFiles(resourceRootFolder, Set.of(extraComponents)));
+    }
+
+    /**
+     * Asserts that generated content matches expected output files, building the schema entirely from the given
+     * components. Unlike {@link #assertGeneratedContentMatches(String, SchemaComponent...)}, this does not require
+     * a {@code schema.graphqls} file in the resource folder.
+     */
+    protected void assertGeneratedContentMatchesFromComponents(String expectedOutputFolder, SchemaComponent... components) {
+        assertGeneratedContentMatches(sourceTestPath + expectedOutputFolder, generateFiles(Set.of(components)));
     }
 
 

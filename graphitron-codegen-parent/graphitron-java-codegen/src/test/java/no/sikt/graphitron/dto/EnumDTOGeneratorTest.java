@@ -25,7 +25,7 @@ public class EnumDTOGeneratorTest extends DTOGeneratorTest {
     @Test
     @DisplayName("Simple enum")
     void defaultCase() {
-        assertGeneratedContentContains("default", Set.of(DUMMY_ENUM),
+        assertGeneratedContentContains(Set.of(DUMMY_ENUM),
                 "public enum DummyEnum { A, B, C }"
         );
     }

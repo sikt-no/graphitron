@@ -27,7 +27,7 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
     @Test
     @DisplayName("Simple type")
     void defaultCase() {
-        assertGeneratedContentMatches("default", CUSTOMER_TABLE);
+        assertGeneratedContentMatchesFromComponents("default", CUSTOMER_TABLE);
     }
 
     @Test
@@ -68,7 +68,7 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
     @Test
     @DisplayName("Type implementing interface")
     void implementingInterface() {
-        assertGeneratedContentContains("implementingInterface", Set.of(VALIDATION_ERROR),
+        assertGeneratedContentContains(Set.of(VALIDATION_ERROR),
                 "ValidationError implements Error"
         );
     }

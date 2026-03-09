@@ -31,7 +31,7 @@ public class WiringBuilderTest extends GeneratorTest {
     @Test
     @DisplayName("One data fetcher generator exists")
     void defaultCase() {
-        assertGeneratedContentMatches("default", CUSTOMER_QUERY, CUSTOMER);
+        assertGeneratedContentMatchesFromComponents("default", CUSTOMER_QUERY, CUSTOMER);
     }
 
     @Test
