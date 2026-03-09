@@ -51,8 +51,8 @@ public abstract class DTOGenerator<T extends GenerationTarget> extends AbstractS
                     .forEach((key) -> {
                         var dtoVarName = key.getDTOVariableName();
                         allVariableNames.add(dtoVarName);
-                        var typeName = key.getRecordTypeName();
-                        addClassKeyVariable(key.getRowTypeName(), dtoVarName, classBuilder);
+                        var typeName = key.getTypeName();
+                        addClassKeyVariable(typeName, dtoVarName, classBuilder);
                         addConstructorKeyVariable(typeName, dtoVarName, constructorBuilder);
                         if (hasErrors) {
                             addConstructorKeyVariable(typeName, dtoVarName, constructorNoErrorsBuilder);
@@ -66,7 +66,7 @@ public abstract class DTOGenerator<T extends GenerationTarget> extends AbstractS
                     var key = keyMap.getOrDefault(field.getName(), null);
                     var variableName = getDTOVariableNameForField(field);
                     var typeName = getTypeNameForField(field, key);
-                    var setValue = field.createsDataFetcher() ? key.getDTOVariableName() + ".valuesRow()" : field.getName();
+                    var setValue = field.createsDataFetcher() ? key.getDTOVariableName() : field.getName();
 
                     allVariableNames.add(variableName);
 
@@ -111,7 +111,7 @@ public abstract class DTOGenerator<T extends GenerationTarget> extends AbstractS
 
     private void addConstructorKeyVariable(TypeName fieldType, String name, MethodSpec.Builder constructorBuilder) {
         constructorBuilder
-                .addStatement("this.$N = $N.valuesRow()", name, name)
+                .addStatement("this.$N = $N", name, name)
                 .addParameter(fieldType, name);
     }
 
@@ -193,7 +193,7 @@ public abstract class DTOGenerator<T extends GenerationTarget> extends AbstractS
                     : typeClass;
 
         } else { // Fields with @splitQuery
-            return firstStepKeyForField.getRowTypeName(processedSchema.isOrderedMultiKeyQuery(field));
+            return firstStepKeyForField.getTypeName(processedSchema.isOrderedMultiKeyQuery(field));
         }
     }
 

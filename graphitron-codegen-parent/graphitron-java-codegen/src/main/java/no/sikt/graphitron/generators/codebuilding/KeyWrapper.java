@@ -10,23 +10,22 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jooq.Key;
-import org.jooq.Typed;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.mappings.JavaPoetClassName.LIST;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessage;
-import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAndThrow;
 import static no.sikt.graphql.directives.GenerationDirective.SPLIT_QUERY;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
-public record KeyWrapper(Key<?> key) {
+public record KeyWrapper(Key<?> key, TypeName tableRecordTypeName) {
     public String getDTOVariableName() {
         return uncapitalize(key.getName());
     }
@@ -36,59 +35,31 @@ public record KeyWrapper(Key<?> key) {
     }
 
     /**
-     * Get the Row TypeName for the key variable
-     *
-     * @return Row TypeName of the key variable
+     * Returns the TableRecord TypeName for this key.
      */
-    public TypeName getRowTypeName(boolean asList) {
-        return getTypeName(false, asList, true);
-    }
-
-    public TypeName getRowTypeName() {
-        return getRowTypeName(false);
+    public TypeName getTypeName() {
+        return getTypeName(false);
     }
 
     /**
-     * Get the Record TypeName for the key variable
-     *
-     * @return Record TypeName of the key variable
+     * Returns the TableRecord TypeName for this key, optionally wrapped in a List.
      */
-    public TypeName getRecordTypeName() {
-        return getTypeName(true,false, true);
-    }
-
-    public TypeName getRecordTypeName(boolean parameterized) {
-        return getTypeName(true,false, parameterized);
-    }
-
-    private TypeName getTypeName(boolean asRecordType, boolean asList, boolean parameterized) {
-        var keyFields = key.getFields();
-
-        if (keyFields.size() > 22) {
-            addErrorMessageAndThrow("Key '%s' has more than 22 fields, which is not supported.", key.getName());
-        }
-
-        var rowOrRecordClass = ClassName.get("org.jooq", String.format("%s%d", asRecordType ? "Record" : "Row", keyFields.size()));
-        var maybeParameterized = parameterized
-                ? ParameterizedTypeName.get(rowOrRecordClass, keyFields.stream().map(Typed::getType).map(ClassName::get).toArray(ClassName[]::new))
-                : rowOrRecordClass;
-
-        return asList ? ParameterizedTypeName.get(LIST.className, maybeParameterized) : maybeParameterized;
+    public TypeName getTypeName(boolean asList) {
+        return asList ? ParameterizedTypeName.get(LIST.className, tableRecordTypeName) : tableRecordTypeName;
     }
 
     /**
-     * Get map of field names to keys used in the first step of the reference in resolver fields.
-     * The key could either be a foreign key or the primary key of the current table.
+     * Maps resolver field names to their resolved keys (foreign key or primary key).
      *
-     * @param fields The fields to find keys for
-     * @param schema The processed schema
-     * @return The map of field names and keys
+     * @param fields The fields to find keys for. This list may contain fields which are not resolvers.
+     * @param schema The processed schema.
+     * @return Map of field names to their resolved keys.
      */
     public static LinkedHashMap<String, KeyWrapper> getKeyMapForResolverFields(List<? extends GenerationField> fields, ProcessedSchema schema) {
         return fields.stream()
                 .filter(GenerationTarget::isGeneratedWithResolver)
                 .collect(Collectors.toMap(GenerationField::getName, it ->
-                        findKeyForResolverField(it, schema), (a, b) -> b, LinkedHashMap::new));
+                        getKeyForResolverFieldOrThrow(it, schema), (a, b) -> b, LinkedHashMap::new));
     }
 
     /**
@@ -104,18 +75,21 @@ public record KeyWrapper(Key<?> key) {
     }
 
     /**
-     * Finds the key used in the first step when resolving a resolver field
+     * Finds the key used in the first step when resolving a resolver field, throwing if not found.
      *
-     * @param field           The resolver field
-     * @param processedSchema The processed schema
-     * @return Wrapper for the key used in the first step when resolving a resolver field
+     * @param field           The resolver field.
+     * @param processedSchema The processed schema.
+     * @return Wrapper for the key used in the first resolution step.
      */
-    public static KeyWrapper findKeyForResolverField(GenerationField field, ProcessedSchema processedSchema) {
-        return new KeyWrapper(findKeyForField(field, processedSchema));
+    public static KeyWrapper getKeyForResolverFieldOrThrow(GenerationField field, ProcessedSchema processedSchema) {
+        return getResolverKey(field, processedSchema)
+                .orElseThrow(() -> new RuntimeException("Failed to find resolver key for field " + field.formatPath()));
     }
-
-    private static Key<?> findKeyForField(GenerationField field, ProcessedSchema processedSchema) {
-        if (!field.createsDataFetcher()) return null;
+    /**
+     * Finds the key used in the first resolution step if the field is a resolver field.
+     */
+    private static Optional<KeyWrapper> getResolverKey(GenerationField field, ProcessedSchema processedSchema) {
+        if (!field.createsDataFetcher()) return Optional.empty();
 
         var container = processedSchema.getRecordType(field.getContainerTypeName());
 
@@ -125,31 +99,26 @@ public record KeyWrapper(Key<?> key) {
 
         if (previousTable == null) {
             var targetTable = processedSchema.getRecordType(field).getTable().getName();
-
-            return getPrimaryKeyForTable(targetTable)
-                    .orElseThrow(() -> {
-                        addErrorMessage("Code generation failed for %s.%s as the table %s must have a primary key in order to be referenced from a service."
-                        , field.getContainerTypeName(), field.getName(), targetTable);
-                        return ValidationHandler.getException();
-                    });
+            return withPrimaryKey(
+                    targetTable,
+                    () -> String.format("Code generation failed for %s as the table '%s' must have a primary key in order to be referenced from a service.",
+                                field.formatPath(), targetTable)
+            );
         }
 
         var tableFromFieldType = processedSchema.isRecordType(field) ? processedSchema.getRecordType(field).getTable() : null;
 
-        String foreignKeyName;
-        var primaryKeyOptional = getPrimaryKeyForTable(previousTable.getName());
-
         if (GeneratorConfig.alwaysUsePrimaryKeyInSplitQueries() || processedSchema.isMultiTableField(field)) {
-            return primaryKeyOptional
-                    .orElseThrow(() -> {
-                        addErrorMessage("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table in %s field.",
-                                field.getContainerTypeName(), field.getName(), previousTable.getName(), SPLIT_QUERY.getName());
-                        return ValidationHandler.getException();
-                    });
+            return withPrimaryKey(
+                    previousTable.getName(),
+                    () -> String.format("Code generation failed for %s as the table '%s' must have a primary key in order to reference another table in @%s field.",
+                            field.formatPath(), previousTable.getName(), SPLIT_QUERY.getName())
+            );
         }
 
+        String foreignKeyName;
         if (processedSchema.isScalar(field.getTypeName()) && !field.hasFieldReferences()) {
-            throw new RuntimeException("Cannot resolve reference for scalar field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'.");
+            throw new RuntimeException("Cannot resolve reference for scalar field " + field.formatPath() + ".");
         } else if (field.hasFieldReferences()) {
             var firstRef = field.getFieldReferences().stream().findFirst().get();
             Optional<String> implicitKey = firstRef.hasTable() ? findImplicitKey(previousTable.getName(), firstRef.getTable().getName()) : Optional.empty();
@@ -157,54 +126,65 @@ public record KeyWrapper(Key<?> key) {
             if (firstRef.hasKey()) {
                 foreignKeyName = firstRef.getKey().getName();
             } else if (firstRef.hasTableCondition() && implicitKey.isEmpty()) {
-                return primaryKeyOptional
-                        .orElseThrow(() -> {
-                            addErrorMessage(
-                                "Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table without a foreign key.",
-                                        field.getContainerTypeName(), field.getName(), previousTable.getName());
-                                return ValidationHandler.getException();
-                        });
+                return withPrimaryKey(
+                        previousTable.getName(),
+                        () -> String.format("Code generation failed for %s as the table '%s' must have a primary key in order to reference another table without a foreign key.",
+                                field.formatPath(), previousTable.getName())
+                );
             } else {
                 foreignKeyName = implicitKey.stream().findFirst()
                         .orElseThrow(() -> {
-                            addErrorMessage("Cannot find implicit key for field '%s' in type '%s'.",
-                            field.getName(), field.getContainerTypeName());
+                            addErrorMessage("Cannot find implicit key for field %s.", field.formatPath());
                             return ValidationHandler.getException();
                         });
             }
         } else {
             foreignKeyName = findImplicitKey(previousTable.getName(), (tableFromFieldType != null ? tableFromFieldType : previousTable).getName())
                     .orElseThrow(() -> {
-                        addErrorMessage("Cannot find implicit key for field '%s' in type '%s'.",
-                                field.getName(), field.getContainerTypeName());
+                        addErrorMessage("Cannot find implicit key for field %s.", field.formatPath());
                         return ValidationHandler.getException();
                     });
         }
 
         var foreignKey = getForeignKey(foreignKeyName)
                 .orElseThrow(() -> {
-                   addErrorMessage("Cannot find key with name %s", foreignKeyName);
+                   addErrorMessage("Cannot find key with name '%s'.", foreignKeyName);
                    return ValidationHandler.getException();
                 });
 
-        if (!foreignKey.getTable().getName().equalsIgnoreCase(previousTable.getName())) { // Reverse reference
-            return primaryKeyOptional
-                    .orElseThrow(() -> {
-                       addErrorMessage("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table in a listed field.",
-                               field.getContainerTypeName(), field.getName(), previousTable.getName());
-                       return ValidationHandler.getException();
-                    });
-        }
-        return foreignKey;
+        String javaTableNameForKey = getTableJavaFieldNameByTableName(foreignKey.getTable().getName())
+                .orElseThrow(() -> new RuntimeException("Cannot find jOOQ table name for table " + foreignKey.getTable().getName())); // Should never happen
+
+        var targetTable = javaTableNameForKey.equalsIgnoreCase(previousTable.getName())
+                ? foreignKey.getInverseKey().getTable()
+                : foreignKey.getTable();
+
+        return Optional.of(new KeyWrapper(foreignKey, ClassName.get(targetTable.getRecordType())));
+    }
+
+    private static Optional<KeyWrapper> withPrimaryKey(String tableJavaName, Supplier<String> noPrimaryKeyErrorMessage) {
+        var primaryKey = getPrimaryKeyForTable(tableJavaName)
+                .orElseThrow(() -> {
+                    addErrorMessage(noPrimaryKeyErrorMessage.get());
+                    return ValidationHandler.getException();
+                });
+        var tableRecordClass = getRecordClass(tableJavaName)
+                .map(ClassName::get)
+                .orElseThrow(() -> {
+                    // This should never happen
+                    addErrorMessage("Cannot find TableRecord class for table with name '%s'.", tableJavaName);
+                    return ValidationHandler.getException();
+                });
+        return Optional.of(new KeyWrapper(primaryKey, tableRecordClass));
     }
 
     /**
-     * Get the Row TypeName for the key used for a resolver field
+     * Returns the TableRecord TypeName for the key used in the first resolution step of a resolver field.
      *
-     * @param field The resolver field
-     * @return TypeName of the key variable
+     * @param field The resolver field.
+     * @return TableRecord TypeName of the resolved key.
      */
-    public static TypeName getKeyRowTypeName(GenerationField field, ProcessedSchema schema) {
-        return findKeyForResolverField(field, schema).getRowTypeName();
+    public static TypeName getKeyTableRecordTypeName(GenerationField field, ProcessedSchema schema) {
+        return getKeyForResolverFieldOrThrow(field, schema).getTypeName();
     }
 }

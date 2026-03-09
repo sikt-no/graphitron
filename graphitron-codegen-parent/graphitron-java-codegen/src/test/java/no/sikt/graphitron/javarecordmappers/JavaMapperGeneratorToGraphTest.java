@@ -118,9 +118,12 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     void splitQuery() {
         assertGeneratedContentContains(
                 "splitQuery",
-                "var _mi_address = _nit_customerJavaRecord.getAddress();" +
-                        "if (_mi_address != null && _iv_select.contains(_iv_pathHere + \"address\")) {" +
-                        "_mo_customer.setAddressKey(DSL.row(_mi_address.getAddressId()));"
+                """
+                var _mi_address = _nit_customerJavaRecord.getAddress();
+                if (_mi_address != null && _iv_select.contains(_iv_pathHere + "address")) {
+                    _mo_customer.setAddressKey(_mi_address.key().into(AddressRecord.class));
+                }
+                """
         );
     }
 
@@ -131,7 +134,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
                 "splitQueryNested",
                 "var _mi_address = _nit_customerJavaRecord.getAddress();" +
                         "if (_mi_address != null && _iv_select.contains(_iv_pathHere + \"wrapper/address\")) {" +
-                        "_mo_wrapper.setAddressKey(DSL.row(_mi_address.getAddressId()));"
+                        "_mo_wrapper.setAddressKey(_mi_address.key().into(AddressRecord.class));"
         );
     }
 
@@ -141,7 +144,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "splitQueryListed",
                 "var _mi_address = _nit_customerJavaRecord.getAddress()",
-                "customer.setAddressKey(_mi_address.stream().map(_iv_it -> DSL.row(_iv_it.getAddressId())).toList());"
+                "customer.setAddressKey(_mi_address.stream().map(_iv_it -> _iv_it.key().into(AddressRecord.class)).toList());"
         );
     }
 

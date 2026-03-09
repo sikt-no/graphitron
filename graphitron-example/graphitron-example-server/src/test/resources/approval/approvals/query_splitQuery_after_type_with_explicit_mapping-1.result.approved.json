@@ -1,0 +1,18 @@
+{
+    "data": {
+        "customerManyFieldsLookup": [
+            {
+                "customerId1": 1,
+                "address": {
+                    "id": "QWRkcmVzczo1"
+                }
+            },
+            {
+                "customerId1": 2,
+                "address": {
+                    "id": "QWRkcmVzczo2"
+                }
+            }
+        ]
+    }
+}

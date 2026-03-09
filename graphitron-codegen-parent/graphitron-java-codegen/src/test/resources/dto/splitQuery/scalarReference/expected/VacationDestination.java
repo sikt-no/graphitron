@@ -1,34 +1,32 @@
 package no.sikt.graphitron.example.generated.graphitron.model;
 
-import java.lang.Long;
 import java.lang.Object;
 import java.lang.Override;
 import java.util.Objects;
-import org.jooq.Record1;
-import org.jooq.Row1;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.VacationRecord;
 
 public class VacationDestination {
-    private Row1<Long> vacation_destination_vacation_fkey;
+    private VacationRecord vacation_destination_vacation_fkey;
 
-    private Row1<Long> vacationDescriptionKey;
+    private VacationRecord vacationDescriptionKey;
 
     public VacationDestination() {
     }
 
-    public VacationDestination(Record1<Long> vacation_destination_vacation_fkey) {
-        this.vacation_destination_vacation_fkey = vacation_destination_vacation_fkey.valuesRow();
-        this.vacationDescriptionKey = vacation_destination_vacation_fkey.valuesRow();
+    public VacationDestination(VacationRecord vacation_destination_vacation_fkey) {
+        this.vacation_destination_vacation_fkey = vacation_destination_vacation_fkey;
+        this.vacationDescriptionKey = vacation_destination_vacation_fkey;
     }
 
-    public Row1<Long> getVacation_destination_vacation_fkey() {
+    public VacationRecord getVacation_destination_vacation_fkey() {
         return vacation_destination_vacation_fkey;
     }
 
-    public Row1<Long> getVacationDescriptionKey() {
+    public VacationRecord getVacationDescriptionKey() {
         return vacationDescriptionKey;
     }
 
-    public void setVacationDescriptionKey(Row1<Long> vacationDescriptionKey) {
+    public void setVacationDescriptionKey(VacationRecord vacationDescriptionKey) {
         this.vacationDescriptionKey = vacationDescriptionKey;
     }
 

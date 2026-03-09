@@ -76,7 +76,7 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "customer.address().as(",
                 "DSL.row(_a_customer_2168032777_address.getId()",
                 ".from(_a_customer)",
-                ".where(DSL.row(_a_customer.CUSTOMER_ID).in(_rk_customer))"
+                ".where(DSL.row(_a_customer.CUSTOMER_ID).in(_rk_customer.stream().map(_iv_it -> _iv_it.key().valuesRow()).toList()))"
         );
     }
 
@@ -96,7 +96,8 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "alias/innerTableSelfReference",
                 "film_2185543202_film = _a_film.film().as(",
-                ".row(DSL.row(_a_film_2185543202_film.FILM_ID), _a_film_2185543202_film.getId()"
+                ".row(DSL.row(_a_film_2185543202_film.FILM_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_film_2185543202_film.FILM_ID)))," +
+                        " _a_film_2185543202_film.getId()"
         );
     }
 

@@ -10,14 +10,15 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.Nullable;
-import org.jooq.Field;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.findKeyForResolverField;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.extractKeyAsTableRecord;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyTableRecordTypeName;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asRecordName;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.namedIteratorPrefixIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getForeignKeyForNodeIdReference;
@@ -399,17 +400,15 @@ public class MapperContext {
     }
 
     private CodeBlock getResolverKeySetMappingBlock(String varName, boolean isKeyList) {
-        return getSetMappingBlock(
-                CodeBlock.builder()
-                        .addIf(isKeyList, "$N.stream().map($N -> ", varName, VAR_ITERATOR)
-                        .add(wrapRow(findKeyForResolverField(target, schema).key().getFields().stream()
-                                .map(Field::getName)
-                                .map(it -> new MethodMapping(toCamelCase(it)))
-                                .map(it -> getValue(isKeyList ? VAR_ITERATOR : varName, it))
-                                .collect(CodeBlock.joining(", "))))
-                        .addIf(isKeyList, ")$L", collectToList())
-                        .build()
-        );
+        var recordClass = getKeyTableRecordTypeName(target, schema);
+
+        if (isKeyList) {
+            return getSetMappingBlock(CodeBlock.of("$N.stream().map($N -> $L)$L",
+                    varName, VAR_ITERATOR, extractKeyAsTableRecord(VAR_ITERATOR, recordClass), collectToList())
+            );
+        }
+
+        return getSetMappingBlock(extractKeyAsTableRecord(varName, recordClass));
     }
 
     public CodeBlock getRecordSetMappingBlock() {

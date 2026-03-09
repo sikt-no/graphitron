@@ -126,7 +126,7 @@ public class OptionalSelectTest extends GeneratorTest {
     void splitQuery() {
         assertGeneratedContentContains(
                 "splitQuery",
-                "DSL.row(_a_customer.CUSTOMER_ID), DSL.field(DSL.select(addressForCustomer_address(_iv_select",
+                "_a_customer.CUSTOMER_ID))), DSL.field(DSL.select(addressForCustomer_address(_iv_select",
                 "ifRequested(\"city\", () ->" // Check path on subquery
         );
     }
@@ -136,7 +136,7 @@ public class OptionalSelectTest extends GeneratorTest {
     void splitQueryList() {
         assertGeneratedContentContains(
                 "splitQueryList",
-                "DSL.row(_a_address.ADDRESS_ID), DSL.multiset(DSL.select(customersForAddress_customer(_iv_select"
+                "_a_address.ADDRESS_ID))), DSL.multiset(DSL.select(customersForAddress_customer(_iv_select"
         );
     }
 

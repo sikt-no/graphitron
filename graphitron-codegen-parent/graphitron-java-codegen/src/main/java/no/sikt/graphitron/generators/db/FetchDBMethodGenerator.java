@@ -37,8 +37,8 @@ import java.util.stream.Stream;
 import static no.sikt.graphitron.configuration.GeneratorConfig.*;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyRowTypeName;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyTableRecordTypeName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
@@ -82,7 +82,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 code.add(concatBlock).add(",\n");
             }
         } else if (!isRoot) {
-            code.add("$L,\n", getSelectKeyColumnRow(context));
+            code.add("$L,\n", resolverKeyAsTableRecord(context));
         }
         return code.build();
     }
@@ -272,7 +272,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var keySet = getKeySetForResolverFields(context.getReferenceObject().getFields(), processedSchema);
         var targetTable = context.getTargetTableName();
         var targetAlias = context.getTargetAlias();
-        keySet.forEach(key -> rowElements.add(getSelectKeyColumnRow(key.key(), targetTable, targetAlias)));
+        keySet.forEach(key -> rowElements.add(keyAsTableRecordWithQueryHelper(key.key(), targetTable, targetAlias)));
 
         var referenceFieldSources = new HashMap<String, String>(); // Used to keep track of field sources for explicit mapping
 
@@ -510,7 +510,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         int i = 0;
         for (var key : keySet) {
-            innerMappingCode.add(CodeBlock.of("($T) $N[$L]", key.getRecordTypeName(), VAR_RECORD_ITERATOR, i));
+            innerMappingCode.add(CodeBlock.of("($T) $N[$L]", key.getTypeName(), VAR_RECORD_ITERATOR, i));
             i++;
         }
 
@@ -1253,7 +1253,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 asQueryMethodName(referenceField.getName(), getLocalObject().getName()),
                 getReturnType(referenceField, refTypeName)
         )
-                .addParameterIf(!isRoot, () -> wrapSet(getKeyRowTypeName(referenceField, processedSchema)), resolverKeyParamName)
+                .addParameterIf(!isRoot, () -> wrapSet(getKeyTableRecordTypeName(referenceField, processedSchema)), resolverKeyParamName)
                 .addParameters(parser.getMethodParameterSpecs(true, true, true))
                 .addParameter(SELECTION_SET.className, VAR_SELECT);
     }
@@ -1268,7 +1268,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             return wrapListIf(type, referenceField.isIterableWrapped() || referenceField.hasForwardPagination());
         } else if (!isRoot) {
             return wrapMap(
-                    getKeyRowTypeName(referenceField, processedSchema),
+                    getKeyTableRecordTypeName(referenceField, processedSchema),
                     wrapListIf(type, referenceField.isIterableWrapped() && !processedSchema.isOrderedMultiKeyQuery(referenceField) || referenceField.hasForwardPagination()));
         } else {
             return wrapMap(STRING.className, wrapListIf(type, referenceField.hasForwardPagination()));
