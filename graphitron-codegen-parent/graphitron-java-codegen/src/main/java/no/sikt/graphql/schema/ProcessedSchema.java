@@ -676,7 +676,7 @@ public class ProcessedSchema {
     public boolean isOrderedMultiKeyQuery(GenerationField field) {
         RecordObjectSpecification<?> type = getRecordType(field.getTypeName());
         boolean hasTable = type != null && type.hasTable();
-        return field.isIterableWrapped() && field.isResolver()
+        return field.isIterableWrapped() && field.createsDataFetcher()
                 && (hasJavaRecord(field.getContainerTypeName()) || !isObjectWithPreviousTableObject(field.getContainerTypeName()))
                 && hasTable;
     }
@@ -986,7 +986,7 @@ public class ProcessedSchema {
     }
 
     public boolean isReferenceResolverField(ObjectField field) {
-        return field.isResolver() && isObjectOrConnectionNodeWithPreviousTableObject(field.getContainerTypeName());
+        return field.createsDataFetcher() && isObjectOrConnectionNodeWithPreviousTableObject(field.getContainerTypeName());
     }
 
     /**
@@ -1009,7 +1009,7 @@ public class ProcessedSchema {
      * @return {@code true} if resolving this field requires a correlated subquery, {@code false} otherwise
      */
     public boolean invokesSubquery(GenerationField field, JOOQMapping currentTable) {
-        if (field.isResolver() || isExceptionOrExceptionUnion(field)) {
+        if (field.createsDataFetcher() || isExceptionOrExceptionUnion(field)) {
             return false;
         }
 
@@ -1274,7 +1274,7 @@ public class ProcessedSchema {
         var hasService = field.hasServiceReference();
         var hasMutationType = field.hasMutationType();
         var type = getRecordType(field);
-        if (!field.isInput() && hasMutationType || field.isResolver() && isMutation && !hasService || type == null) {
+        if (!field.isInput() && hasMutationType || field.createsDataFetcher() && isMutation && !hasService || type == null) {
             return List.of();
         }
 
@@ -1306,7 +1306,7 @@ public class ProcessedSchema {
                         seen,
                         isMutation,
                         canMapTableHere && !(hadTable || type.hasTable()),
-                        !canMapTableHere && (hadTable || type.hasTable()) && !it.isResolver(),
+                        !canMapTableHere && (hadTable || type.hasTable()) && !it.createsDataFetcher(),
                         false,
                         recursion + 1
                 ).stream()).toList()

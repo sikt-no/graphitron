@@ -10,6 +10,7 @@ import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
@@ -17,7 +18,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declarePageSize;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.sourcePrefix;
@@ -54,6 +54,20 @@ abstract public class DataFetcherMethodGenerator extends AbstractSchemaMethodGen
                 .addAll(target.getArguments().stream().map(it -> declareArgument(it, isEntitiesField)).toList())
                 .addIf(target.hasForwardPagination(), declarePageSize(target.getFirstDefault()))
                 .build();
+    }
+
+    /**
+     * @return CodeBlock consisting of a declaration of the page size variable through a method call.
+     */
+    public static CodeBlock declarePageSize(int defaultFirst) {
+        return CodeBlock.statementOf(
+                "int $L = $T.getPageSize($N, $L, $L)",
+                VAR_PAGE_SIZE,
+                RESOLVER_HELPERS.className,
+                inputPrefix(GraphQLReservedName.PAGINATION_FIRST.getName()),
+                GeneratorConfig.getMaxAllowedPageSize(),
+                defaultFirst
+        );
     }
 
     private CodeBlock declareArgument(ArgumentField field, boolean isEntitiesField) {

@@ -66,13 +66,13 @@ public abstract class DTOGenerator<T extends GenerationTarget> extends AbstractS
                     var key = keyMap.getOrDefault(field.getName(), null);
                     var variableName = getDTOVariableNameForField(field);
                     var typeName = getTypeNameForField(field, key);
-                    var setValue = field.isResolver() ? key.getDTOVariableName() + ".valuesRow()" : field.getName();
+                    var setValue = field.createsDataFetcher() ? key.getDTOVariableName() + ".valuesRow()" : field.getName();
 
                     allVariableNames.add(variableName);
 
                     addClassFieldVariable(typeName, variableName, classBuilder);
                     boolean shouldWrapAsList = processedSchema.isOrderedMultiKeyQuery(field);
-                    addConstructorFieldVariable(typeName, variableName, constructorBuilder, setValue, false, field.isResolver(), shouldWrapAsList);
+                    addConstructorFieldVariable(typeName, variableName, constructorBuilder, setValue, false, field.createsDataFetcher(), shouldWrapAsList);
                     if (hasErrors) {
                         addConstructorFieldVariable(
                                 typeName,
@@ -80,7 +80,7 @@ public abstract class DTOGenerator<T extends GenerationTarget> extends AbstractS
                                 constructorNoErrorsBuilder,
                                 setValue,
                                 processedSchema.isExceptionOrExceptionUnion(field),
-                                field.isResolver(),
+                                field.createsDataFetcher(),
                                 shouldWrapAsList
                         );
                     }
@@ -96,7 +96,7 @@ public abstract class DTOGenerator<T extends GenerationTarget> extends AbstractS
     }
 
     protected static String getDTOVariableNameForField(GenerationSourceField<? extends NamedNode<?>> field) {
-        return field.isResolver() ? field.getName() + SUFFIX_RESOLVER_KEY_DTO : field.getName();
+        return field.createsDataFetcher() ? field.getName() + SUFFIX_RESOLVER_KEY_DTO : field.getName();
     }
 
     public static String getDTOGetterMethodNameForField(GenerationSourceField<?> field) {
@@ -122,11 +122,11 @@ public abstract class DTOGenerator<T extends GenerationTarget> extends AbstractS
                 .addMethod(getSetterMethod(fieldType, name));
     }
 
-    private void addConstructorFieldVariable(TypeName fieldType, String name, MethodSpec.Builder constructorBuilder, String setValueInConstructor, boolean isError, boolean isResolver, boolean isList) {
+    private void addConstructorFieldVariable(TypeName fieldType, String name, MethodSpec.Builder constructorBuilder, String setValueInConstructor, boolean isError, boolean createsDataFetchers, boolean isList) {
         constructorBuilder
                 .addStatementIf(isList, "this.$N = $T.of($N)", name, LIST.className, isError ? "null" : setValueInConstructor)
                 .addStatementIf(!isList, "this.$N = $N", name, isError ? "null" : setValueInConstructor)
-                .addParameterIf(!isResolver && !isError, fieldType, name);
+                .addParameterIf(!createsDataFetchers && !isError, fieldType, name);
     }
 
     private MethodSpec getGetterMethod(TypeName fieldType, String fieldName) {

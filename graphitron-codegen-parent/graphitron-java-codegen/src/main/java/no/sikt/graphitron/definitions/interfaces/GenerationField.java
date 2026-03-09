@@ -21,10 +21,8 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
 
     boolean isInput();
 
-    /**
-     * @return Does this field point to a resolver method?
-     */
-    boolean isResolver();
+    @Override
+    boolean createsDataFetcher();
 
     boolean hasCondition();
 

@@ -55,6 +55,16 @@ public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition,
     }
 
     @Override
+    public boolean createsDataFetcher() {
+        return false;
+    }
+
+    @Override
+    public boolean createsDataFetchersForFields() {
+        return false;
+    }
+
+    @Override
     public boolean isGenerated() {
         return true;
     }

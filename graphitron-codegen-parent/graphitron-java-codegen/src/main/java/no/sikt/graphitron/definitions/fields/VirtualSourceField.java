@@ -16,7 +16,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 public class VirtualSourceField extends ObjectField {
     private final List<ArgumentField> nonReservedArguments, arguments;
     private final SQLCondition condition;
-    private final boolean isResolver;
+    private final boolean createsDataFetchers;
     private final List<FieldReference> fieldReferences;
     private String originalFieldName;
 
@@ -26,13 +26,13 @@ public class VirtualSourceField extends ObjectField {
             List<ArgumentField> arguments,
             List<ArgumentField> nonReservedArguments,
             SQLCondition condition,
-            boolean isResolver,
+            boolean createsDataFetchers,
             List<FieldReference> fieldReferences) {
         super(new FieldDefinition("for_" + targetTypeName,new TypeName(targetTypeName)), container);
         this.arguments = arguments;
         this.nonReservedArguments = nonReservedArguments;
         this.condition = condition;
-        this.isResolver = isResolver;
+        this.createsDataFetchers = createsDataFetchers;
         this.fieldReferences = fieldReferences;
     }
 
@@ -42,7 +42,7 @@ public class VirtualSourceField extends ObjectField {
                 target.getArguments(),
                 target.getNonReservedArguments(),
                 target.getCondition(),
-                target.isResolver(),
+                target.createsDataFetcher(),
                 target.getMultitableReferences().getOrDefault(targetTypeName, List.of()));
         this.originalFieldName = target.getName();
     }
@@ -65,7 +65,7 @@ public class VirtualSourceField extends ObjectField {
                 originalTarget.getArguments(),
                 originalTarget.getNonReservedArguments(),
                 originalTarget.getCondition(),
-                originalTarget.isResolver(),
+                originalTarget.createsDataFetcher(),
                 List.of());
     }
 
@@ -106,8 +106,8 @@ public class VirtualSourceField extends ObjectField {
     }
 
     @Override
-    public boolean isResolver() {
-        return isResolver;
+    public boolean createsDataFetcher() {
+        return createsDataFetchers;
     }
 
     @Override

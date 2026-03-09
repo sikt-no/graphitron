@@ -62,7 +62,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         var overriddenFields = getFieldsOverriddenByType(processedSchema.getInterface(target), implementations);
         var selectCode = generateSelectRow(context, target, implementations, overriddenFields);
         var querySource = context.getTargetAlias();
-        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
+        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.createsDataFetcher());
         var fetchAndMap = fetchAndMap(target, implementations, querySource, overriddenFields, context);
         var orderFields = createOrderFieldsDeclarationBlock(target, context.getTargetAlias(), context.getTargetTableName());
 
@@ -167,7 +167,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                     QUERY_HELPER.className, context.getTargetAlias(), VAR_ORDER_FIELDS, TOKEN));
         }
 
-        allFields.stream().filter(it -> !it.isResolver())
+        allFields.stream().filter(it -> !it.createsDataFetcher())
                 .forEach(field -> {
                     var isOverriddenField = isOverriddenField(overriddenFields, field.getContainerTypeName(), field);
                     var fieldAlias = field.getName();
@@ -202,7 +202,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
 
         for (var implementation : implementations) {
             var overriddenFieldsForImpl = getOverriddenFieldsForImplementation(overriddenFields, implementation.getName());
-            var resolverFieldsForImpl = implementation.getFields().stream().filter(GenerationSourceField::isResolver).toList();
+            var resolverFieldsForImpl = implementation.getFields().stream().filter(GenerationSourceField::createsDataFetcher).toList();
             var needToManuallySetFields = !overriddenFieldsForImpl.isEmpty() || !resolverFieldsForImpl.isEmpty();
             var needInnerDataVariable = !returnInsideIfBlock && needToManuallySetFields;
 

@@ -24,7 +24,7 @@ import static no.sikt.graphql.directives.GenerationDirectiveParam.ON;
  */
 public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeDefinition, ObjectField> implements TypeResolverTarget, RecordObjectSpecification<ObjectField> {
     private final JOOQMapping table;
-    private final boolean isGenerated, hasTable, hasDiscriminator, hasResolvers;
+    private final boolean isGenerated, hasTable, hasDiscriminator, createsDataFetchers;
     private final String discriminatorFieldName;
 
     public InterfaceDefinition(InterfaceTypeDefinition typeDefinition) {
@@ -37,7 +37,7 @@ public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeD
 
         hasDiscriminator = typeDefinition.hasDirective(GenerationDirective.DISCRIMINATE.getName());
         discriminatorFieldName = hasDiscriminator ? getDirectiveArgumentString(typeDefinition, GenerationDirective.DISCRIMINATE, ON) : null;
-        hasResolvers = getFields().stream().anyMatch(GenerationTarget::isGeneratedWithResolver);
+        createsDataFetchers = getFields().stream().anyMatch(GenerationTarget::isGeneratedWithResolver);
     }
 
     @Override
@@ -116,13 +116,23 @@ public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeD
     }
 
     @Override
+    public boolean createsDataFetcher() {
+        return false;
+    }
+
+    @Override
+    public boolean createsDataFetchersForFields() {
+        return false;
+    }
+
+    @Override
     public boolean isGenerated() {
         return isGenerated;
     }
 
     @Override
     public boolean isGeneratedWithResolver() {
-        return hasResolvers;
+        return createsDataFetchers;
     }
 
     @Override

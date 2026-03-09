@@ -13,7 +13,6 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.mappings.TableReflection;
-import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 import org.jooq.Field;
@@ -21,14 +20,11 @@ import org.jooq.ForeignKey;
 import org.jooq.Key;
 
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.LinkedList;
+import java.util.*;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedName;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArrayList;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
@@ -63,10 +59,10 @@ public class FormatCodeBlocks {
      * @param name Name of a field that should be declared as a record. This will be the name of the variable.
      * @param input Input type that should be declared as a record.
      * @param isIterable Is this record wrapped in a list?
-     * @param isResolver Is this declaration to be used in a resolver?
+     * @param createsDataFetchers Is this declaration to be used in a resolver?
      * @return CodeBlock that declares a new record variable and that attaches context configuration if needed.
      */
-    public static CodeBlock declareRecord(String name, RecordObjectSpecification<?> input, boolean isIterable, boolean isResolver) {
+    public static CodeBlock declareRecord(String name, RecordObjectSpecification<?> input, boolean isIterable, boolean createsDataFetchers) {
         if (!input.hasRecordReference()) {
             return CodeBlock.empty();
         }
@@ -75,29 +71,12 @@ public class FormatCodeBlocks {
                 .builder()
                 .declareNewIf(isIterable, asListedName(name), wrapArrayList(input.getRecordClassName()))
                 .declareNewIf(!isIterable, name, input.getRecordClassName())
-                .addStatementIf(!input.hasJavaRecordReference() && !isIterable, "$N$L", name, isResolver ? ATTACH_RESOLVER : ATTACH)
+                .addStatementIf(!input.hasJavaRecordReference() && !isIterable, "$N$L", name, createsDataFetchers ? ATTACH_RESOLVER : ATTACH)
                 .build();
     }
 
     public static CodeBlock recordTransformPart(String transformerName, String varName, String typeName, boolean isJava, boolean isInput) {
         return CodeBlock.of("$N.$L($N, ", transformerName, recordTransformMethod(typeName, isJava, isInput), uncapitalize(varName));
-    }
-
-    /**
-     * @return CodeBlock that contains an if statement with a null check on the provided name.
-     */
-    @NotNull
-    public static CodeBlock ifNotNull(String name) {
-        return CodeBlock.of("if ($N != null)", name);
-    }
-
-    @NotNull
-    public static CodeBlock ifNotNull(String name, CodeBlock codeBlock) {
-        return CodeBlock.builder()
-                .beginControlFlow("if ($N != null)", name)
-                .add(codeBlock)
-                .endControlFlow()
-                .build();
     }
 
     /**
@@ -287,8 +266,8 @@ public class FormatCodeBlocks {
      * @return CodeBlock that sets a value through a mapping.
      */
     @NotNull
-    public static CodeBlock setValue(String container, MethodMapping mapping, CodeBlock value, boolean isResolverKey) {
-        return CodeBlock.of("$N$L", uncapitalize(container), isResolverKey ? mapping.asSetKeyCall(value) : mapping.asSetCall(value));
+    public static CodeBlock setValue(String container, MethodMapping mapping, CodeBlock value, boolean isDataFetcherKey) {
+        return CodeBlock.of("$N$L", uncapitalize(container), isDataFetcherKey ? mapping.asSetKeyCall(value) : mapping.asSetCall(value));
     }
 
     /**
@@ -393,28 +372,21 @@ public class FormatCodeBlocks {
     }
 
     /**
-     * @return CodeBlock consisting of a declaration of the page size variable through a method call.
+     * @return CodeBlock that wraps the provided CodeBlock in an if not null check.
      */
     @NotNull
-    public static CodeBlock declarePageSize(int defaultFirst) {
-        return CodeBlock.statementOf(
-                "int $L = $T.getPageSize($N, $L, $L)",
-                VAR_PAGE_SIZE,
-                RESOLVER_HELPERS.className,
-                inputPrefix(GraphQLReservedName.PAGINATION_FIRST.getName()),
-                GeneratorConfig.getMaxAllowedPageSize(),
-                defaultFirst
-        );
+    public static CodeBlock wrapNotNull(String valueToCheck, CodeBlock code) {
+        return wrapNotNull(CodeBlock.of("$N", valueToCheck), code);
     }
 
     /**
      * @return CodeBlock that wraps the provided CodeBlock in an if not null check.
      */
     @NotNull
-    public static CodeBlock wrapNotNull(String valueToCheck, CodeBlock code) {
+    public static CodeBlock wrapNotNull(CodeBlock valueToCheck, CodeBlock code) {
         return CodeBlock
                 .builder()
-                .beginControlFlow("$L", ifNotNull(valueToCheck))
+                .beginControlFlow("if ($L != null)", valueToCheck)
                 .add(code)
                 .endControlFlow()
                 .build();

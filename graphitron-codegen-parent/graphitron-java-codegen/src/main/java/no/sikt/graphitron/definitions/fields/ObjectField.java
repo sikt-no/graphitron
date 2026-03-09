@@ -72,7 +72,7 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
         var inputs = field.getInputValueDefinitions();
         var inputFields = new ArrayList<ArgumentField>();
 
-        if (!isResolver() && !isTopLevel) {
+        if (!this.createsDataFetcher() && !isTopLevel) {
             return inputs.stream().map(it -> new ArgumentField(it, container, field.getName())).toList();
         }
 

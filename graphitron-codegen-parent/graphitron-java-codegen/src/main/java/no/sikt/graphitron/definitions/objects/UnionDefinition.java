@@ -54,6 +54,11 @@ public class UnionDefinition extends RecordObjectDefinition<UnionTypeDefinition,
     }
 
     @Override
+    public boolean createsDataFetcher() {
+        return false;
+    }
+
+    @Override
     public boolean isGenerated() {
         return isGenerated;
     }

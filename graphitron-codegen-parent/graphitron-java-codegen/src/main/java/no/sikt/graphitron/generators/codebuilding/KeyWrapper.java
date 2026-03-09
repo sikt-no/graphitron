@@ -115,7 +115,7 @@ public record KeyWrapper(Key<?> key) {
     }
 
     private static Key<?> findKeyForField(GenerationField field, ProcessedSchema processedSchema) {
-        if (!field.isResolver()) return null;
+        if (!field.createsDataFetcher()) return null;
 
         var container = processedSchema.getRecordType(field.getContainerTypeName());
 

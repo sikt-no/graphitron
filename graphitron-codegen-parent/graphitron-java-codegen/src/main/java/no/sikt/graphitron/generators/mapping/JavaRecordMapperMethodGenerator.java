@@ -52,7 +52,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 .getTargetType()
                 .getFields()
                 .stream()
-                .filter(it -> !(it.isExplicitlyNotGenerated() || (it.isResolver() && toRecord)))
+                .filter(it -> !(it.isExplicitlyNotGenerated() || (it.createsDataFetcher() && toRecord)))
                 .toList();
 
         // Group @nodeId fields targeting jOOQ records
@@ -75,7 +75,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
 
             var varName = inputPrefix(innerContext.getHelperVariableName());
             var innerCode = CodeBlock.builder();
-            if (!innerContext.getTarget().isResolver()) {
+            if (!innerContext.getTarget().createsDataFetcher()) {
                 if (!innerContext.targetIsType()) {
                     innerCode.add(innerContext.getFieldSetMappingBlock());
                 } else if (innerContext.hasRecordReference()) {
@@ -89,7 +89,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
 
             if (!innerCode.isEmpty()) {
                 var notAlreadyDefined = innerContext.variableNotAlreadyDeclared();
-                var shouldDeclareVariable = notAlreadyDefined || innerContext.getTarget().isResolver();
+                var shouldDeclareVariable = notAlreadyDefined || innerContext.getTarget().createsDataFetcher();
                 var nullBlock = CodeBlock.ofIf(shouldDeclareVariable, "$N != null && ", varName);
                 fieldCode
                         .declareIf(shouldDeclareVariable, varName, innerContext.getSourceGetCallBlock())
@@ -275,14 +275,17 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 .beginControlFlow("if ($L)", FormatCodeBlocks.selectionSetLookup(field.getName(), false, true))
                 .declare(VAR_NODE_ID_VALUE, asMethodCall(inputVar, getterMapping.asGet()))
                 .add(
-                        ifNotNull(
+                        wrapNotNull(
                                 VAR_NODE_ID_VALUE,
                                 generateNodeIdFieldValueCode(
                                         field,
                                         targetVarName,
                                         hasValueVarName,
                                         overlappingColumns,
-                                        jooqRecordClass)))
+                                        jooqRecordClass
+                                )
+                        )
+                )
                 .endControlFlow()
                 .add("\n")
                 .build();
