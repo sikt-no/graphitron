@@ -1,6 +1,7 @@
 package no.sikt.graphitron.example.service;
 
 import no.sikt.graphitron.example.generated.jooq.tables.records.AddressRecord;
+import no.sikt.graphitron.example.generated.jooq.tables.records.CityRecord;
 import no.sikt.graphitron.example.generated.jooq.tables.records.CustomerRecord;
 import no.sikt.graphitron.example.generated.jooq.tables.records.FilmRecord;
 import no.sikt.graphitron.example.service.records.MockUpdateAddressAndCustomerResultRecord;
@@ -17,12 +18,25 @@ public class MockService {
     public MockService(DSLContext context) {
     }
 
-    public Map<Row1<Integer>, List<FilmRecord>> filmsFromCity(Set<Row1<Integer>> cityKeys) {
+    @Deprecated(forRemoval = true)
+    public Map<Row1<Integer>, List<FilmRecord>> filmsFromCityWithRow(Set<Row1<Integer>> cityKeys) {
         return cityKeys.stream().collect(Collectors.toMap(
                 key -> key,
                 key -> {
                     var film = new FilmRecord();
                     film.setFilmId(String.valueOf(key.field1()));
+                    film.setTitle("Film from service");
+                    return List.of(film);
+                }
+        ));
+    }
+
+    public Map<CityRecord, List<FilmRecord>> filmsFromCity(Set<CityRecord> cityKeys) {
+        return cityKeys.stream().collect(Collectors.toMap(
+                key -> key,
+                key -> {
+                    var film = new FilmRecord();
+                    film.setFilmId(String.valueOf(key.getCityId()));
                     film.setTitle("Film from service");
                     return List.of(film);
                 }

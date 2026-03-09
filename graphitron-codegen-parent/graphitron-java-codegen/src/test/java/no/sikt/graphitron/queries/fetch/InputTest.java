@@ -170,7 +170,7 @@ public class InputTest extends GeneratorTest {
     void onSplitQueryField() {
         assertGeneratedContentContains("onSplitQueryField",
                 ".from(_a_address_223244161_customer).where(_a_address_223244161_customer.EMAIL.eq(_mi_email))",
-                ".from(_a_address).where(DSL.row(_a_address.ADDRESS_ID).in(_rk_address)).fetch" // Make sure conditon is not applied on outer query
+                ".from(_a_address).where(DSL.row(_a_address.ADDRESS_ID).in(_rk_address.stream().map(_iv_it -> _iv_it.key().valuesRow()).toList())).fetch" // Make sure condition is not applied on outer query
         );
     }
 

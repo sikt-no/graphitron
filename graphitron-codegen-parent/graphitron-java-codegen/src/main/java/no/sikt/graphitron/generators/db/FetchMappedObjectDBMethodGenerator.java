@@ -15,8 +15,8 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.util.List;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsEnabled;
+import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.inferFieldTypeName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
@@ -144,9 +144,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         }
 
         var code = CodeBlock.builder()
-                .add(".fetchMap(")
-                .addIf(lookupExists, "$T::value1, ", RECORD2.className)
-                .addIf(!lookupExists, "$1L -> $1N.value1().valuesRow(), ", VAR_RECORD_ITERATOR);
+                .add(".fetchMap($T::value1, ", RECORD2.className);
 
         if (processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(referenceField.getContainerTypeName()) && referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()) {
             if (referenceField.hasForwardPagination() && (referenceField.getOrderField().isPresent() || tableHasPrimaryKey(refObject.getTable().getName()))) {
@@ -170,7 +168,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             code
                     .add(".fetchMap(\n")
                     .indent()
-                    .add("$1L -> $1N.value1().valuesRow(),\n", VAR_RECORD_ITERATOR)
+                    .add("$T::value1,\n", RECORD2.className)
                     .add(
                             "$1L -> $1N.value2().map($2L -> $2N.value2() == null ? null : new $3T<>($2N.value1(), $2N.value2()))",
                             VAR_ITERATOR,

@@ -7,26 +7,27 @@ import fake.graphql.example.model.Customer;
 import fake.graphql.example.model.PersonWithEmail;
 import fake.graphql.example.model.Staff;
 
-import java.lang.Long;
 import java.lang.RuntimeException;
 import java.lang.String;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Payment;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.PaymentRecord;
+import no.sikt.graphql.helpers.query.QueryHelper;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.JSONB;
 import org.jooq.Record2;
-import org.jooq.Row1;
 import org.jooq.SelectJoinStep;
 import org.jooq.SelectLimitPercentStep;
 import org.jooq.impl.DSL;
 
 public class PaymentDBQueries {
 
-    public static Map<Row1<Long>, PersonWithEmail> staffAndCustomersForPayment(DSLContext _iv_ctx, Set<Row1<Long>> _rk_payment, SelectionSet _iv_select) {
+    public static Map<PaymentRecord, PersonWithEmail> staffAndCustomersForPayment(DSLContext _iv_ctx, Set<PaymentRecord> _rk_payment, SelectionSet _iv_select) {
         var _a_payment = PAYMENT.as("payment_1831371789");
         var _iv_unionKeysQuery = staffSortFieldsForStaffAndCustomers(_a_payment).unionAll(customerSortFieldsForStaffAndCustomers(_a_payment));
 
@@ -34,7 +35,7 @@ public class PaymentDBQueries {
         var _sjs_staff = staffForStaffAndCustomers();
 
         return _iv_ctx.select(
-                        DSL.row(_a_payment.PAYMENT_ID),
+                        DSL.row(_a_payment.PAYMENT_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_payment.PAYMENT_ID))),
                         DSL.field(
                                 DSL.select(
                                                 DSL.row(
@@ -57,9 +58,9 @@ public class PaymentDBQueries {
                         )
                 )
                 .from(_a_payment)
-                .where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment))
+                .where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment.stream().map(_iv_it -> _iv_it.key().valuesRow()).toList()))
                 .fetchMap(
-                        _iv_r -> _iv_r.value1().valuesRow(),
+                        Record2::value1,
                         Record2::value2
                 );
     }

@@ -7,9 +7,9 @@ import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.JoinElement;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.Alias;
+import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.TableRelation;
-import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -20,7 +20,7 @@ import java.util.*;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.definitions.mapping.JOOQMapping.fromTable;
-import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.findKeyForResolverField;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyForResolverFieldOrThrow;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 
 /**
@@ -106,7 +106,7 @@ public class FetchContext {
         graphPath = pastGraphPath;
 
         this.previousContext = previousContext;
-        this.resolverKey = findKeyForResolverField(referenceObjectField, processedSchema);
+        this.resolverKey = referenceObjectField.createsDataFetcher() ? getKeyForResolverFieldOrThrow(referenceObjectField, processedSchema) : null;
 
         hasApplicableTable = previousTable != null || referenceTable != null;
         var hasPreviousApplicableTable = optionalPrevious.map(FetchContext::hasApplicableTable).orElse(false);
