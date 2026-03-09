@@ -156,4 +156,26 @@ public class OptionalSelectExecutionTest extends QueryTrackingTestBase {
                 .contains("first_name")
                 .contains("last_name");
     }
+
+    @Test
+    @DisplayName("Wrapped external fields are selected when the corresponding field is requested")
+    void wrappedExternalFieldIsSelectedWhenRequested() {
+        executeQuery("""
+                {
+                  customerForSelectionSetTest(first: 1) {
+                    nodes {
+                      customerId
+                      nameFormattedInType
+                    }
+                  }
+                }
+            """);
+
+        assertThat(getExecutedQueries()).as("One query should have been executed.")
+                .hasSize(1);
+
+        assertThat(getExecutedQueries().get(0)).as("Query should include external field computation")
+                .contains("first_name")
+                .contains("last_name");
+    }
 }

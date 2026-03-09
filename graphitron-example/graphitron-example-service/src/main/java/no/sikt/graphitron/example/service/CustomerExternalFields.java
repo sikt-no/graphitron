@@ -8,4 +8,8 @@ public class CustomerExternalFields {
     public static Field<String> nameFormatted(Customer customer) {
         return DSL.concat(customer.FIRST_NAME, DSL.inline(" "), customer.LAST_NAME);
     }
+
+    public static Field<String> wrappedNameFormattedInType(Customer customer) {
+        return DSL.concat(customer.FIRST_NAME, DSL.inline(" "), customer.LAST_NAME);
+    }
 }
