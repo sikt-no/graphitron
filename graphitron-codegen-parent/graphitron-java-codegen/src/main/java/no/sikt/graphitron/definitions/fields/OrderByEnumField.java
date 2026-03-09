@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import no.sikt.graphql.directives.GenerationDirective;
+
 import static no.sikt.graphql.directives.DirectiveHelpers.*;
 import static no.sikt.graphql.directives.GenerationDirective.ORDER;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.*;
@@ -25,6 +27,18 @@ public class OrderByEnumField extends AbstractField<EnumValueDefinition> {
 
     public OrderByEnumField(EnumValueDefinition field, String container) {
         super(field, container);
+
+        // Support deprecated @index(name:) as fallback for @order(index:)
+        var legacyIndexArg = getOptionalDirectiveArgumentString(field, GenerationDirective.INDEX, NAME);
+        if (legacyIndexArg.isPresent()) {
+            ValidationHandler.addWarningMessage(
+                    "Enum field '%s' of '%s' uses deprecated @index directive. Use @order(index: \"%s\") instead.",
+                    field.getName(), container, legacyIndexArg.get());
+            indexName = legacyIndexArg.get();
+            fieldSortSpecs = null;
+            sortMode = SortMode.INDEX;
+            return;
+        }
 
         var indexArg = getOptionalDirectiveArgumentString(field, ORDER, INDEX);
         var fieldsArg = getOptionalDirectiveArgumentObjectValueList(field, ORDER, FIELDS);

@@ -34,27 +34,23 @@ public class SortingDirectiveTest extends GeneratorTest {
         return List.of(new MapOnlyFetchDBClassGenerator(schema));
     }
 
+    // --- Index-based sorting ---
+
     @Test
-    @DisplayName("One sorting parameter")
-    void defaultCase() {
+    @DisplayName("Index-based sorting with single enum value")
+    void indexBasedSorting() {
         assertGeneratedContentMatches("default");
     }
 
     @Test
-    @DisplayName("Including pagination")
-    void paginated() {
+    @DisplayName("Index-based sorting with pagination")
+    void indexBasedWithPagination() {
         assertGeneratedContentMatches("paginated", CUSTOMER_CONNECTION_ORDER, PAGE_INFO);
     }
 
     @Test
-    @DisplayName("No list or pagination") // Does not do any ordering.
-    void withoutList() {
-        assertGeneratedContentMatches("withoutList");
-    }
-
-    @Test
-    @DisplayName("Multiple fields")
-    void twoFields() {
+    @DisplayName("Index-based sorting with multiple enum values")
+    void indexBasedMultipleEnumValues() {
         assertGeneratedContentContains(
                 "twoFields",
                 "case \"STORE\" -> QueryHelper.getSortFields(_a_customer, \"IDX_FK_STORE_ID\",",
@@ -63,8 +59,8 @@ public class SortingDirectiveTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Sorting parameter on a two field index")
-    void twoFieldIndex() {
+    @DisplayName("Index-based sorting on a composite index")
+    void indexBasedCompositeIndex() {
         assertGeneratedContentContains(
                 "twoFieldIndex",
                 "case \"STORE_ID_FILM_ID\" -> QueryHelper.getSortFields(_a_inventory, \"IDX_STORE_ID_FILM_ID\","
@@ -72,84 +68,105 @@ public class SortingDirectiveTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Table without primary key")
-    void noPrimaryKey() {
-        assertGeneratedContentContains("noPrimaryKey",
-                "? new SortField[] {}");
+    @DisplayName("Deprecated @index directive works as @order(index:)")
+    void deprecatedIndexDirective() {
+        assertGeneratedContentContains("deprecatedIndex",
+                "case \"NAME\" -> QueryHelper.getSortFields(_a_customer, \"IDX_LAST_NAME\",");
     }
 
-    @Test
-    @DisplayName("Sorting on a parameter that has an invalid index")
-    void wrongIndex() {
-        assertThatThrownBy(() -> generateFiles("wrongIndex", Set.of(CUSTOMER_TABLE)))
-                .isInstanceOf(InvalidSchemaException.class)
-                .hasMessage("Table 'CUSTOMER' has no index 'WRONG_INDEX' specified for 'EMAIL'");
-    }
-
-    @Test
-    @DisplayName("Sorting parameter without @order directive set")
-    void missingDirective() {
-        assertThatThrownBy(() -> generateFiles("missingDirective", Set.of(CUSTOMER_TABLE)))
-                .isInstanceOf(InvalidSchemaException.class)
-                .hasMessageContaining("Expected enum field 'NAME' of 'OrderByField' to have an '@%s' directive", GenerationDirective.ORDER.getName());
-    }
+    // --- Field-based sorting ---
 
     @Test
     @DisplayName("Field-based sorting")
-    void fields() {
+    void fieldBasedSorting() {
         assertGeneratedContentContains("fields",
                 ".LAST_NAME.sort(");
     }
 
     @Test
     @DisplayName("Field-based sorting with collation")
-    void fieldsWithCollation() {
+    void fieldBasedWithCollation() {
         assertGeneratedContentContains("fieldsWithCollation",
                 ".LAST_NAME.collate(\"xdanish_ai\")");
     }
 
     @Test
-    @DisplayName("Multiple fields with collation")
-    void multipleFieldsWithCollation() {
+    @DisplayName("Field-based sorting with multiple fields and collation")
+    void fieldBasedMultipleFieldsWithCollation() {
         assertGeneratedContentContains("multipleFieldsWithCollation",
                 ".LAST_NAME.collate(\"xdanish_ai\")",
                 ".FIRST_NAME.collate(\"xdanish_ai\")");
     }
 
+    // --- Primary key sorting ---
+
     @Test
     @DisplayName("Primary key sorting")
-    void primaryKey() {
+    void primaryKeySorting() {
         assertGeneratedContentContains("primaryKey",
                 "f.sort(",
                 "getPrimaryKey().getFieldsArray()");
     }
 
+    // --- Mixed modes ---
+
     @Test
-    @DisplayName("Mixed sorting modes")
-    void mixed() {
+    @DisplayName("Mixed sorting modes in single enum")
+    void mixedSortingModes() {
         assertGeneratedContentContains("mixed",
                 "switch (");
     }
 
+    // --- Edge cases and validation ---
+
     @Test
-    @DisplayName("Non-existent field in @order(fields:)")
-    void wrongField() {
+    @DisplayName("No ordering generated for non-list field")
+    void noOrderingForNonListField() {
+        assertGeneratedContentMatches("withoutList");
+    }
+
+    @Test
+    @DisplayName("Empty default sort fields when table has no primary key")
+    void noPrimaryKeyFallback() {
+        assertGeneratedContentContains("noPrimaryKey",
+                "? new SortField[] {}");
+    }
+
+    @Test
+    @DisplayName("Non-existent index should fail validation")
+    void nonExistentIndex() {
+        assertThatThrownBy(() -> generateFiles("wrongIndex", Set.of(CUSTOMER_TABLE)))
+                .isInstanceOf(InvalidSchemaException.class)
+                .hasMessage("Table 'CUSTOMER' has no index 'WRONG_INDEX' specified for 'EMAIL'");
+    }
+
+    @Test
+    @DisplayName("Non-existent field in @order(fields:) should fail validation")
+    void nonExistentField() {
         assertThatThrownBy(() -> generateFiles("wrongField", Set.of(CUSTOMER_TABLE)))
                 .isInstanceOf(InvalidSchemaException.class)
                 .hasMessageContaining("has no field");
     }
 
     @Test
-    @DisplayName("Multiple @order modes set simultaneously")
-    void multipleModes() {
+    @DisplayName("Missing @order directive should fail validation")
+    void missingOrderDirective() {
+        assertThatThrownBy(() -> generateFiles("missingDirective", Set.of(CUSTOMER_TABLE)))
+                .isInstanceOf(InvalidSchemaException.class)
+                .hasMessageContaining("Expected enum field 'NAME' of 'OrderByField' to have an '@%s' directive", GenerationDirective.ORDER.getName());
+    }
+
+    @Test
+    @DisplayName("Multiple @order modes set simultaneously should fail validation")
+    void multipleModesSet() {
         assertThatThrownBy(() -> generateFiles("multipleModes", Set.of(CUSTOMER_TABLE)))
                 .isInstanceOf(InvalidSchemaException.class)
                 .hasMessageContaining("must have exactly one");
     }
 
     @Test
-    @DisplayName("Primary key sorting on table without PK")
-    void primaryKeyNoPK() {
+    @DisplayName("Primary key sorting on table without PK should fail validation")
+    void primaryKeyOnTableWithoutPK() {
         assertThatThrownBy(() -> generateFiles("primaryKeyNoPK", Set.of()))
                 .isInstanceOf(InvalidSchemaException.class)
                 .hasMessageContaining("has no primary key");

@@ -141,6 +141,9 @@ directive @mutation(typeName: MutationType!) on FIELD_DEFINITION
 """Handle this input argument as orderBy functionality"""
 directive @orderBy on ARGUMENT_DEFINITION
 
+"""Connect this enum value to an index with the given name. Deprecated: use @order(index:) instead."""
+directive @index(name: String) on ENUM_VALUE
+
 """Connect this enum value to a sorting specification. Exactly one of index, fields, or primaryKey must be set."""
 directive @order(
   """Name of the database index to use"""

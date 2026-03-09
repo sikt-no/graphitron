@@ -11,6 +11,11 @@ public enum GenerationDirective {
     NOT_GENERATED("notGenerated"),
     TABLE("table", EnumSet.of(GenerationDirectiveParam.NAME)),
     FIELD("field", EnumSet.of(GenerationDirectiveParam.NAME, GenerationDirectiveParam.JAVA_NAME)),
+    /**
+     * @deprecated Use {@link #ORDER} with the index parameter instead.
+     */
+    @Deprecated
+    INDEX("index", EnumSet.of(GenerationDirectiveParam.NAME)),
     ORDER("order", EnumSet.of(GenerationDirectiveParam.INDEX, GenerationDirectiveParam.FIELDS, GenerationDirectiveParam.PRIMARY_KEY)),
     SERVICE("service", EnumSet.of(GenerationDirectiveParam.SERVICE, GenerationDirectiveParam.CONTEXT_ARGUMENTS)),
     TABLE_METHOD("tableMethod", EnumSet.of(GenerationDirectiveParam.TABLE_METHOD_REFERENCE, GenerationDirectiveParam.CONTEXT_ARGUMENTS)),
