@@ -1,0 +1,12 @@
+type Query {
+    test(input: CustomerInput): String @service(service: {className: "no.sikt.graphitron.codereferences.services.TypeMismatchService", method: "checkNested"})
+}
+
+input CustomerInput @table(name: "CUSTOMER") {
+    customerId: Int @field(name: "CUSTOMER_ID")
+    address: AddressInput
+}
+
+input AddressInput @table(name: "ADDRESS") {
+    addressId: Int @field(name: "ADDRESS_ID")
+}

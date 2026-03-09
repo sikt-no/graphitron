@@ -1,0 +1,7 @@
+type Query {
+    test(input: TestInput): String @service(service: {className: "no.sikt.graphitron.codereferences.services.ResolverFetchService", method: "query"})
+}
+
+input TestInput {
+    value: String
+}

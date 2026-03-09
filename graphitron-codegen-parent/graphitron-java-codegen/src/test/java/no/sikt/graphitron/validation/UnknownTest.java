@@ -9,6 +9,8 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.*;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
+import static no.sikt.graphql.directives.GenerationDirective.TABLE;
+import static no.sikt.graphql.directives.GenerationDirective.RECORD;
 
 @DisplayName("Schema validation - Unknown and unresolvable values")
 public class UnknownTest extends ValidationTest {
@@ -328,9 +330,103 @@ public class UnknownTest extends ValidationTest {
     }
 
     @Test
+    @DisplayName("Service input type missing @table or @record directive")
+    void serviceInputMissingDirective() {
+        assertErrorsContain("serviceInputMissingDirective",
+                String.format("Input type 'TestInput' is used as an argument on service field 'Query.test', but has neither the @%s nor the @%s directive.", TABLE.getName(), RECORD.getName()));
+    }
+
+    @Test
+    @DisplayName("Service input type with @record maps to incompatible class")
+    void serviceInputTypeMismatch() {
+        assertErrorsContain("serviceInputTypeMismatch",
+                "on service field 'Query.test'",
+                "has input type 'TestInput' which maps to 'CustomerJavaRecord'",
+                "but there is no overload of 'check' that accepts this",
+                "check(CustomerRecord)");
+    }
+
+    @Test
+    @DisplayName("Service input type with @table maps to incompatible class")
+    void serviceInputTableTypeMismatch() {
+        assertErrorsContain("serviceInputTableTypeMismatch",
+                "on service field 'Query.test'",
+                "has input type 'TestInput' which maps to 'CustomerRecord'",
+                "but there is no overload of 'checkString' that accepts this",
+                "checkString(String)");
+    }
+
+    @Test
+    @DisplayName("Service input type with valid @table directive does not produce false positive")
+    void serviceInputValidRecord() {
+        getProcessedSchema("serviceInputValidRecord");
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("Nested @table input with another @table field does not produce false positive")
+    void serviceInputNestedTableWithRecord() {
+        getProcessedSchema("serviceInputNestedTableWithRecord");
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("Nested @table input with extra method parameter triggers count mismatch")
+    void serviceInputCountMismatch() {
+        assertErrorsContain("serviceInputCountMismatch",
+                "Service field 'Query.test' maps to 2 method parameter(s)",
+                "but there is no overload of 'checkNestedWrongCount' with that parameter count",
+                "checkNestedWrongCount(CustomerRecord, AddressRecord, CustomerRecord)");
+    }
+
+    @Test
+    @DisplayName("Listed @table input with valid service method does not produce false positive")
+    void serviceInputListedTable() {
+        getProcessedSchema("serviceInputListedTable");
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("Listed @table input with incompatible service method element type")
+    void serviceInputListedTableTypeMismatch() {
+        assertErrorsContain("serviceInputListedTableTypeMismatch",
+                "on service field 'Query.test'",
+                "has input type 'TestInput' which maps to 'List<CustomerRecord>'",
+                "but there is no overload of 'checkIncorrect' that accepts this",
+                "checkIncorrect(List<String>)");
+    }
+
+    @Test
+    @DisplayName("Listed input but service method expects non-list parameter")
+    void serviceInputListedNonListParam() {
+        assertErrorsContain("serviceInputListedNonListParam",
+                "on service field 'Query.test'",
+                "has input type 'TestInput' which maps to 'List<CustomerRecord>'",
+                "but there is no overload of 'check' that accepts this",
+                "check(CustomerRecord)");
+    }
+
+    @Test
+    @DisplayName("Non-listed input but service method expects list parameter")
+    void serviceInputNonListedListParam() {
+        assertErrorsContain("serviceInputNonListedListParam",
+                "on service field 'Query.test'",
+                "has input type 'TestInput' which maps to 'CustomerRecord'",
+                "but there is no overload of 'checkList' that accepts this",
+                "checkList(List<CustomerRecord>)");
+    }
+
+    @Test
     @DisplayName("Service field on table type returning Java record should not validate record fields against table")
     void tableObjectWithServiceField() {
         getProcessedSchema("tableObjectWithServiceField", Set.of(CUSTOMER_TABLE));
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("Service input with ordering, pagination, and context arguments does not produce false positive")
+    void serviceInputCountWithAllFeatures() {
+        getProcessedSchema("serviceInputCountWithAllFeatures", Set.of(CUSTOMER_TABLE, PAGE_INFO));
         assertNoWarnings();
     }
 }
