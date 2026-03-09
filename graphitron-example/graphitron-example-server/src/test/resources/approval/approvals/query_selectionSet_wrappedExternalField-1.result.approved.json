@@ -1,0 +1,14 @@
+{
+    "data": {
+        "customerForSelectionSetTest": {
+            "nodes": [
+                {
+                    "customerId": 1,
+                    "nameFormattedInType": {
+                        "wrappedNameFormattedInType": "MARY SMITH"
+                    }
+                }
+            ]
+        }
+    }
+}

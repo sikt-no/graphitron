@@ -1,0 +1,10 @@
+{
+    customerForSelectionSetTest(first: 1) {
+        nodes {
+            customerId
+            nameFormattedInType {
+                wrappedNameFormattedInType
+            }
+        }
+    }
+}
