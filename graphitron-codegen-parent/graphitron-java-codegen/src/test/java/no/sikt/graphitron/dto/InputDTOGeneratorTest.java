@@ -25,7 +25,7 @@ public class InputDTOGeneratorTest extends DTOGeneratorTest {
     @Test
     @DisplayName("Input type")
     void defaultCase() {
-        assertGeneratedContentContains("default", Set.of(DUMMY_INPUT),
+        assertGeneratedContentContains(Set.of(DUMMY_INPUT),
                 "DummyInput(String id)");
     }
 }

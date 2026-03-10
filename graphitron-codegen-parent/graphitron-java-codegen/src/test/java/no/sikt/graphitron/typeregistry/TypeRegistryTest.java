@@ -27,6 +27,6 @@ public class TypeRegistryTest extends GeneratorTest {
     @Test
     @DisplayName("Return type registry")
     void defaultCase() {
-        assertGeneratedContentMatches("default", CUSTOMER_QUERY, CUSTOMER);
+        assertGeneratedContentMatchesFromComponents("default", CUSTOMER_QUERY, CUSTOMER);
     }
 }
