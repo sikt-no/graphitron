@@ -1,0 +1,11 @@
+type Query {
+  query(orderBy: Order @orderBy): [CustomerTable]
+}
+
+enum OrderByField {
+  ID @order(primaryKey: true)
+}
+
+type CustomerTable @table(name: "Customer") {
+  name: String @field(name: "LAST_NAME")
+}

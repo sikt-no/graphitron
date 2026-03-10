@@ -1,6 +1,6 @@
 {
     "data": {
-        "inventories": {
+        "inventoriesOrderBy": {
             "edges": [
                 {
                     "cursor": "WzIsIDEwMDBd",

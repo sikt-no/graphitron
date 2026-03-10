@@ -12,6 +12,7 @@ import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
+import no.sikt.graphitron.definitions.objects.OrderByEnumDefinition;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
@@ -22,7 +23,6 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -1110,33 +1110,35 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     protected CodeBlock createOrderFieldsBlock(ObjectField referenceField, String actualRefTable, String tableName) {
         var orderByField = referenceField.getOrderField();
-        var defaultOrderIndex = referenceField.getDefaultOrderIndex();
+        var defaultOrder = referenceField.getDefaultOrder();
         var hasPrimaryKey = tableHasPrimaryKey(tableName);
 
         // No sorting possible if no orderBy, no defaultOrder, and no primary key
-        if (orderByField.isEmpty() && defaultOrderIndex.isEmpty() && !hasPrimaryKey) {
+        if (orderByField.isEmpty() && defaultOrder.isEmpty() && !hasPrimaryKey) {
             return CodeBlock.empty();
         }
 
         // Determine default order fields (defaultOrder takes precedence over primary key)
-        CodeBlock defaultOrderByFields = defaultOrderIndex.map( index -> {
-            ValidationHandler.isTrue(
-                    TableReflection.tableHasIndex(tableName, defaultOrderIndex.get()),
-                    "Table '%s' has no index '%s' specified in @defaultOrder for field '%s'",
-                    tableName, defaultOrderIndex.get(), referenceField.getName()
-            );
-            return CodeBlock.of(
-                    "$T.getSortFields($N, $S, $S)",
-                    QUERY_HELPER.className,
-                    actualRefTable,
-                    defaultOrderIndex.get(),
-                    referenceField.getDefaultOrderDirection()
-            );
-        }).orElseGet( () ->
-                hasPrimaryKey
+        var defaultOrderByFields = defaultOrder
+                .map(order -> {
+                    if (order.isIndex()) {
+                        validateIndexExists(tableName, order.index(), referenceField.getName());
+                        return CodeBlock.of(
+                                "$T.getSortFields($N, $S, $S)",
+                                QUERY_HELPER.className, actualRefTable, order.index(), order.direction());
+                    } else if (order.isFields()) {
+                        validateFieldsExist(tableName, order.fields(), referenceField.getName());
+                        var sortOrder = order.direction().equalsIgnoreCase("ASC")
+                                ? CodeBlock.of("$T.ASC", SORT_ORDER.className)
+                                : CodeBlock.of("$T.DESC", SORT_ORDER.className);
+                        return createFieldSortFields(order.fields(), actualRefTable, sortOrder);
+                    } else {
+                        return getPrimaryKeyFieldsWithTableAliasBlock(actualRefTable, order.direction());
+                    }
+                })
+                .orElseGet(() -> hasPrimaryKey
                         ? getPrimaryKeyFieldsWithTableAliasBlock(actualRefTable)
-                        : CodeBlock.of("new $T[] {}", SORT_FIELD.className)
-        );
+                        : CodeBlock.of("new $T[] {}", SORT_FIELD.className));
 
         var code = CodeBlock.builder();
         orderByField.ifPresentOrElse(
@@ -1146,45 +1148,103 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     @NotNull
-    private CodeBlock createCustomOrderBy(InputField orderInputField, String actualRefTable, CodeBlock primaryKeyFieldsBlock, String targetTableName) {
+    private CodeBlock createCustomOrderBy(InputField orderInputField, String actualRefTable, CodeBlock defaultOrderByFieldsBlock, String targetTableName) {
         var orderByFieldEnum = processedSchema.getOrderByFieldEnum(orderInputField);
-        var orderByFieldToDBIndexName = orderByFieldEnum
-                .getFields()
-                .stream()
-                .collect(Collectors.toMap(AbstractField::getName, FetchDBMethodGenerator::getIndexName));
 
-        orderByFieldToDBIndexName.forEach((orderByField, indexName) -> ValidationHandler.isTrue(TableReflection.tableHasIndex(targetTableName, indexName),
-                "Table '%S' has no index '%S' necessary for sorting by '%s'", targetTableName, indexName, orderByField));
+        // Validate that all enum fields have a valid sort mode (i.e. @order directive is set)
+        orderByFieldEnum.getFields().stream()
+                .filter(field -> field.getSortMode() == null)
+                .forEach(field -> ValidationHandler.addErrorMessageAndThrow("Enum field '%s' of '%s' has no valid @order directive", field.getName(), orderByFieldEnum.getName()));
 
-        var sortFieldMapEntries = orderByFieldToDBIndexName.entrySet()
-                .stream()
-                .map(it -> CodeBlock.of("Map.entry($S, $S)", it.getKey(), it.getValue()))
-                .collect(CodeBlock.joining(",\n"));
-        var sortFieldsMapBlock = CodeBlock.builder()
-                .add("$T.ofEntries(\n", MAP.className)
-                .indent()
-                .add("$L)", sortFieldMapEntries)
-                .add("\n")
-                .unindent()
-                .build();
-
-        var orderInputFieldName = inputPrefix(orderInputField.getName());
-        return CodeBlock.builder()
-                .add("$N == null\n", orderInputFieldName)
-                .indent().indent()
-                .add("? $L\n", primaryKeyFieldsBlock)
-                .add(": $T.getSortFields($N, $L.get($N.get$L().toString()), $N.getDirection().toString())",
-                        QUERY_HELPER.className, actualRefTable, sortFieldsMapBlock, orderInputFieldName, capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()), orderInputFieldName)
-                .unindent().unindent()
-                .build();
+        return createOrderBySwitch(orderByFieldEnum, orderInputField, actualRefTable, defaultOrderByFieldsBlock, targetTableName);
     }
 
-    private static String getIndexName(OrderByEnumField enumField) {
-        var indexName = enumField.getIndexName();
-        if(indexName.isEmpty()) {
-            ValidationHandler.addErrorMessageAndThrow("No index name found on enumField %s", enumField.getName());
-        }
-        return indexName.orElseThrow();
+    @NotNull
+    private CodeBlock createOrderBySwitch(OrderByEnumDefinition orderByFieldEnum, InputField orderInputField,
+                                          String actualRefTable, CodeBlock defaultOrderByFieldsBlock, String targetTableName) {
+        var orderInputFieldName = inputPrefix(orderInputField.getName());
+
+        var code = CodeBlock.builder()
+                .add("$N == null\n", orderInputFieldName)
+                .indent().indent()
+                .add("? $L\n", defaultOrderByFieldsBlock)
+                .beginControlFlow(": switch ($N.get$L().toString())", orderInputFieldName,
+                        capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()));
+
+        orderByFieldEnum.getFields().forEach(field ->
+                code.add(createOrderByCase(field, actualRefTable, orderInputFieldName, targetTableName)));
+
+        code.add("default -> throw new $T($S + $N.get$L().toString());\n",
+                ILLEGAL_ARGUMENT_EXCEPTION.className, "Unknown order by field: ",
+                orderInputFieldName, capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()));
+        code.endControlFlow()
+                .unindent().unindent();
+        return code.build();
+    }
+
+    private static CodeBlock createDynamicSortOrderBlock(String orderInputFieldName) {
+        return CodeBlock.of(
+                "$N.getDirection().toString().equalsIgnoreCase($S) ? $T.ASC : $T.DESC",
+                orderInputFieldName, "ASC", SORT_ORDER.className, SORT_ORDER.className);
+    }
+
+    private CodeBlock createOrderByCase(OrderByEnumField field, String actualRefTable, String orderInputFieldName, String targetTableName) {
+        var enumValueName = field.getName();
+        return switch (field.getSortMode()) {
+            case INDEX -> {
+                var indexName = field.getIndexName().orElseThrow();
+                validateIndexExists(targetTableName, indexName, enumValueName);
+                yield CodeBlock.of("case $S -> $T.getSortFields($N, $S, $N.getDirection().toString());\n",
+                        enumValueName, QUERY_HELPER.className, actualRefTable, indexName, orderInputFieldName);
+            }
+            case FIELDS -> {
+                var fieldSpecs = field.getFieldSortSpecs();
+                validateFieldsExist(targetTableName, fieldSpecs, enumValueName);
+                var dynamicSortOrder = createDynamicSortOrderBlock(orderInputFieldName);
+                yield CodeBlock.of("case $S -> $L;\n", enumValueName,
+                        createFieldSortFields(fieldSpecs, actualRefTable, dynamicSortOrder));
+            }
+            case PRIMARY_KEY -> {
+                ValidationHandler.isTrue(
+                        tableHasPrimaryKey(targetTableName),
+                        "Table '%s' has no primary key, but @order(primaryKey: true) is set on enum value '%s'",
+                        targetTableName, enumValueName);
+                var dynamicSortOrder = createDynamicSortOrderBlock(orderInputFieldName);
+                yield CodeBlock.of("case $S -> $L;\n", enumValueName,
+                        getPrimaryKeyFieldsWithTableAliasBlock(actualRefTable, dynamicSortOrder));
+            }
+        };
+    }
+
+    private static void validateIndexExists(String tableName, String indexName, String sourceFieldName) {
+        ValidationHandler.isTrue(tableHasIndex(tableName, indexName),
+                "Table '%s' has no index '%s' specified for '%s'", tableName, indexName, sourceFieldName);
+    }
+
+    private static void validateFieldsExist(String tableName, List<FieldSortSpec> fieldSpecs, String sourceFieldName) {
+        fieldSpecs.forEach(spec -> ValidationHandler.isTrue(
+                getField(tableName, spec.name()).isPresent(),
+                "Table '%s' has no field '%s' specified for '%s'", tableName, spec.name(), sourceFieldName));
+    }
+
+    private CodeBlock createFieldSortFields(List<FieldSortSpec> fieldSpecs, String tableAlias, CodeBlock sortOrder) {
+        var fieldBlocks = fieldSpecs.stream()
+                .map(spec -> {
+                    if (spec.collation() != null) {
+                        return CodeBlock.of("$N.$N.collate($S).sort($L)",
+                                tableAlias, spec.name(), spec.collation(), sortOrder);
+                    } else {
+                        return CodeBlock.of("$N.$N.sort($L)",
+                                tableAlias, spec.name(), sortOrder);
+                    }
+                })
+                .collect(CodeBlock.joining(",\n"));
+
+        return CodeBlock.builder()
+                .beginControlFlow("new $T[]", SORT_FIELD.className)
+                .add(fieldBlocks)
+                .endControlFlow()
+                .build();
     }
 
     @NotNull

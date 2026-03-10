@@ -1,6 +1,6 @@
 {
     "data": {
-        "customersWithDefaultOrder": {
+        "customersDefaultOrderIndex": {
             "edges": [
                 {
                     "cursor": "WyJBQk5FWSJd",
@@ -9,26 +9,6 @@
                         "name": {
                             "firstName": "RAFAEL",
                             "lastName": "ABNEY"
-                        }
-                    }
-                },
-                {
-                    "cursor": "WyJBREFNIl0",
-                    "node": {
-                        "id": "Q3VzdG9tZXI6NTA0",
-                        "name": {
-                            "firstName": "NATHANIEL",
-                            "lastName": "ADAM"
-                        }
-                    }
-                },
-                {
-                    "cursor": "WyJBREFNUyJd",
-                    "node": {
-                        "id": "Q3VzdG9tZXI6MzY",
-                        "name": {
-                            "firstName": "KATHLEEN",
-                            "lastName": "ADAMS"
                         }
                     }
                 },
@@ -51,11 +31,31 @@
                             "lastName": "ALLARD"
                         }
                     }
+                },
+                {
+                    "cursor": "WyJBTExFTiJd",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6Mjc",
+                        "name": {
+                            "firstName": "SHIRLEY",
+                            "lastName": "ALLEN"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WyJBTFZBUkVaIl0",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6MjIw",
+                        "name": {
+                            "firstName": "CHARLENE",
+                            "lastName": "ALVAREZ"
+                        }
+                    }
                 }
             ],
             "pageInfo": {
                 "startCursor": "WyJBQk5FWSJd",
-                "endCursor": "WyJBTExBUkQiXQ",
+                "endCursor": "WyJBTFZBUkVaIl0",
                 "hasNextPage": true
             }
         }

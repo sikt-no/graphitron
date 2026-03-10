@@ -1,0 +1,25 @@
+# Side-by-side comparison: @defaultOrder with and without collation.
+# Without collation (C locale): uppercase sorts before lowercase, so "abel" and "Acosta" appear after all uppercase names.
+# With case_insensitive collation: "abel", "ABNEY", "Acosta" sort together alphabetically.
+query CollationComparisonDefaultOrder {
+    withoutCollation: customersDefaultOrderFields(first: 5) {
+        edges {
+            cursor
+            node {
+                id
+                name { firstName lastName }
+            }
+        }
+        pageInfo { hasNextPage }
+    }
+    withCollation: customersDefaultOrderFieldsCollated(first: 5) {
+        edges {
+            cursor
+            node {
+                id
+                name { firstName lastName }
+            }
+        }
+        pageInfo { hasNextPage }
+    }
+}

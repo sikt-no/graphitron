@@ -1,0 +1,7 @@
+type Query {
+  query: [CustomerTable] @defaultOrder(primaryKey: true, direction: DESC)
+}
+
+type CustomerTable @table(name: "Customer") {
+  name: String @field(name: "LAST_NAME")
+}

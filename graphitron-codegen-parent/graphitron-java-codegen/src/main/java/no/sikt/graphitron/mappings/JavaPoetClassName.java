@@ -55,6 +55,7 @@ public enum JavaPoetClassName {
     DATA_SERVICE_FETCHER(ServiceDataFetcherHelper.class),
     DSL(org.jooq.impl.DSL.class),
     SORT_FIELD(org.jooq.SortField.class),
+    SORT_ORDER(org.jooq.SortOrder.class),
     DSL_CONTEXT(org.jooq.DSLContext.class),
     EXCEPTION_TO_ERROR_MAPPING_PROVIDER(ExceptionToErrorMappingProvider.class),
     NODE_ID_HANDLER(NodeIdHandler.class),

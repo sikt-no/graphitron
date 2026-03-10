@@ -56,7 +56,7 @@ public class DefaultOrderDirectiveTest extends GeneratorTest {
                 """
                  var _iv_orderFields = _mi_orderBy == null
                                         ? QueryHelper.getSortFields(_a_customer, "IDX_LAST_NAME", "ASC")
-                                        : QueryHelper.getSortFields(_a_customer, Map.ofEntries(
+                                        : switch (_mi_orderBy.getOrderByField().toString()) {
                  """
         );
     }
@@ -67,5 +67,43 @@ public class DefaultOrderDirectiveTest extends GeneratorTest {
         assertThatThrownBy(() -> generateFiles("invalidIndex", Set.of()))
                 .isInstanceOf(InvalidSchemaException.class)
                 .hasMessageContaining("has no index 'NONEXISTENT_INDEX'");
+    }
+
+    @Test
+    @DisplayName("Default order with fields - uses direct field references")
+    void withFields() {
+        assertGeneratedContentContains("withFields",
+                ".LAST_NAME.sort(SortOrder.DESC)");
+    }
+
+    @Test
+    @DisplayName("Default order with fields and collation")
+    void withFieldsAndCollation() {
+        assertGeneratedContentContains("withFieldsAndCollation",
+                ".LAST_NAME.collate(\"xdanish_ai\").sort(SortOrder.ASC)");
+    }
+
+    @Test
+    @DisplayName("Default order with primary key DESC")
+    void withPrimaryKey() {
+        assertGeneratedContentContains("withPrimaryKey",
+                "getPrimaryKey().getFieldsArray()",
+                "f.sort(SortOrder.DESC)");
+    }
+
+    @Test
+    @DisplayName("Default order with non-existent field should fail")
+    void withWrongField() {
+        assertThatThrownBy(() -> generateFiles("withWrongField", Set.of()))
+                .isInstanceOf(InvalidSchemaException.class)
+                .hasMessageContaining("has no field 'NONEXISTENT_FIELD'");
+    }
+
+    @Test
+    @DisplayName("Default order with both index and fields should fail")
+    void withBothIndexAndFields() {
+        assertThatThrownBy(() -> generateFiles("withBothIndexAndFields", Set.of()))
+                .isInstanceOf(InvalidSchemaException.class)
+                .hasMessageContaining("must have exactly one of index, fields, or primaryKey set");
     }
 }

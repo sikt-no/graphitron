@@ -1,0 +1,67 @@
+extend type Query {
+    # @defaultOrder with index
+    customersDefaultOrderIndex(first: Int = 100, after: String): CustomerConnection @defaultOrder(index: "idx_last_name")
+    # @defaultOrder with fields
+    customersDefaultOrderFields(first: Int = 100, after: String): CustomerConnection @defaultOrder(fields: [{name: "LAST_NAME"}])
+    # @defaultOrder with fields and collation
+    customersDefaultOrderFieldsCollated(first: Int = 100, after: String): CustomerConnection @defaultOrder(fields: [{name: "LAST_NAME", collate: "case_insensitive"}, {name: "FIRST_NAME", collate: "case_insensitive"}])
+    # @defaultOrder with primary key DESC
+    customersDefaultOrderPrimaryKeyDesc(first: Int = 100, after: String): CustomerConnection @defaultOrder(primaryKey: true, direction: DESC)
+
+    # @orderBy with index
+    filmsOrderBy(orderBy: FilmsOrderByInput @orderBy): [Film] @asConnection
+    # @orderBy with multi-column index
+    inventoriesOrderBy(orderBy: InventoriesOrderByInput @orderBy): [Inventory] @asConnection
+    # @orderBy with fields and primaryKey (mixed-mode enum)
+    customersOrderByFields(orderBy: CustomersOrderByInput @orderBy): [Customer] @asConnection
+    # @orderBy with fields and collation
+    customersOrderByFieldsCollated(orderBy: CustomersCollationOrderByInput @orderBy): [Customer] @asConnection
+
+    # @orderBy with @defaultOrder fallback
+    filmsOrderByWithDefaultOrder(orderBy: FilmsOrderByInput @orderBy): [Film] @asConnection @defaultOrder(index: "idx_title")
+}
+
+input FilmsOrderByInput {
+    orderByField: FilmsOrderByFields!
+    direction: OrderDirection!
+}
+
+enum FilmsOrderByFields {
+    TITLE @order(index: "IDX_TITLE")
+    LANGUAGE @order(index: "IDX_FK_LANGUAGE_ID")
+}
+
+input InventoriesOrderByInput {
+    orderByField: InventoriesOrderByFields!
+    direction: OrderDirection!
+}
+
+enum InventoriesOrderByFields {
+    STORE_ID_FILM_ID @order(index: "IDX_STORE_ID_FILM_ID")
+}
+
+enum OrderDirection {
+    ASC
+    DESC
+}
+
+input CustomersOrderByInput {
+    orderByField: CustomersOrderByFields!
+    direction: OrderDirection!
+}
+
+enum CustomersOrderByFields {
+    LAST_NAME @order(fields: [{name: "LAST_NAME"}])
+    FULL_NAME @order(fields: [{name: "LAST_NAME"}, {name: "FIRST_NAME"}])
+    ID @order(primaryKey: true)
+}
+
+input CustomersCollationOrderByInput {
+    orderByField: CustomersCollationOrderByFields!
+    direction: OrderDirection!
+}
+
+enum CustomersCollationOrderByFields {
+    LAST_NAME @order(fields: [{name: "LAST_NAME", collate: "case_insensitive"}])
+    FULL_NAME @order(fields: [{name: "LAST_NAME", collate: "case_insensitive"}, {name: "FIRST_NAME", collate: "case_insensitive"}])
+}

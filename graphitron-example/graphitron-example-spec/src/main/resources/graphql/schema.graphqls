@@ -11,7 +11,6 @@ type Query {
     helloWorld: String @notGenerated
 
     customers(first: Int = 100, after: String): CustomerConnection
-    customersWithDefaultOrder(first: Int = 100, after: String): CustomerConnection @defaultOrder(index: "idx_last_name")
     activeCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "activeCustomers"}, override: true)
     inactiveCustomers(lastNameStartingWith: String): [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions"}, override: true)
     customersByAddress(addressId: ID! @nodeId(typeName: "Address")): [Customer] @asConnection
@@ -20,8 +19,6 @@ type Query {
     customerLookup(customerIds: [ID!]! @lookupKey @nodeId(typeName: "Customer")): [Customer]
     customerLookupInt(id: Int! @field(name: "CUSTOMER_ID") @lookupKey): [Customer]
 
-    films(orderBy: FilmsOrderByInput @orderBy): [Film] @asConnection
-    filmsWithDefaultOrder(orderBy: FilmsOrderByInput @orderBy): [Film] @asConnection @defaultOrder(index: "idx_title")
     filmLookup(filmId: [String!]! @lookupKey @field(name: "FILM_ID")): [Film]
     filmLookupWithAdditionalField(filmId: [String!]! @lookupKey @field(name: "FILM_ID"), title: [String!] @lookupKey): [Film]
     filmLookupWithInputObject(filmIds: [FilmLookupInput] @lookupKey): [Film]
@@ -42,8 +39,6 @@ type Query {
     citiesWithoutId: [CityWithoutID] @asConnection
 
     languageOrStaff: [LanguageStaffUnion] @asConnection
-
-    inventories(orderBy: InventoriesOrderByInput @orderBy): [Inventory] @asConnection
 
     addresses: [Address] @asConnection
     addressTableMethod(input: String @field(name: "POSTAL_CODE")): Address @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
@@ -191,11 +186,6 @@ input FilmLookupInput {
     title: String!
 }
 
-input FilmsOrderByInput {
-    orderByField: FilmsOrderByFields!
-    direction: OrderDirection!
-}
-
 # If the table directive is missing here, we get a bad crash without useful feedback.
 input FilmInput @table(name: "FILM") {
     filmId: ID! @nodeId(typeName: "Film")
@@ -206,11 +196,6 @@ input FilmDescriptionInput @table(name: "FILM") {
     description: String
 }
 
-enum FilmsOrderByFields {
-    TITLE @index(name: "IDX_TITLE")
-    LANGUAGE @index(name: "IDX_FK_LANGUAGE_ID")
-}
-
 type Inventory implements Node @node @table {
     id: ID! @nodeId
     inventoryId: Int! @field(name: "INVENTORY_ID")
@@ -218,20 +203,6 @@ type Inventory implements Node @node @table {
     storeId: Int! @field(name: "STORE_ID")
     film: Film
     lastUpdate: LocalDateTime @field(name: "LAST_UPDATE")
-}
-
-input InventoriesOrderByInput {
-    orderByField: InventoriesOrderByFields!
-    direction: OrderDirection!
-}
-
-enum InventoriesOrderByFields {
-    STORE_ID_FILM_ID @index(name: "IDX_STORE_ID_FILM_ID")
-}
-
-enum OrderDirection {
-    ASC
-    DESC
 }
 
 type Payment @table {

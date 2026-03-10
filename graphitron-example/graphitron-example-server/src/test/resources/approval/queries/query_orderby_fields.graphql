@@ -1,0 +1,20 @@
+# Tests @order(fields:) and @order(primaryKey:) with mixed-mode enum
+query OrderingByFieldsQuery ($orderBy: CustomersOrderByInput, $after: String) {
+    customersOrderByFields(first: 3, orderBy: $orderBy, after: $after) {
+        edges {
+            cursor
+            node {
+                id
+                name {
+                    firstName
+                    lastName
+                }
+            }
+        }
+        pageInfo {
+            startCursor
+            endCursor
+            hasNextPage
+        }
+    }
+}

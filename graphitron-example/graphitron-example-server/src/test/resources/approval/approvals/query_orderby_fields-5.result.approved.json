@@ -1,0 +1,43 @@
+{
+    "data": {
+        "customersOrderByFields": {
+            "edges": [
+                {
+                    "cursor": "WzU5OV0",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6NTk5",
+                        "name": {
+                            "firstName": "AUSTIN",
+                            "lastName": "CINTRON"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WzU5OF0",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6NTk4",
+                        "name": {
+                            "firstName": "WADE",
+                            "lastName": "DELVALLE"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WzU5N10",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6NTk3",
+                        "name": {
+                            "firstName": "FREDDIE",
+                            "lastName": "DUGGAN"
+                        }
+                    }
+                }
+            ],
+            "pageInfo": {
+                "startCursor": "WzU5OV0",
+                "endCursor": "WzU5N10",
+                "hasNextPage": true
+            }
+        }
+    }
+}

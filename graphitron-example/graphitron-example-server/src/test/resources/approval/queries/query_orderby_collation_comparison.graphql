@@ -1,0 +1,25 @@
+# Side-by-side comparison: @orderBy with and without collation.
+# Without collation (C locale): uppercase sorts before lowercase.
+# With case_insensitive collation: names sort alphabetically regardless of case.
+query CollationComparisonOrderBy($after: String) {
+    withoutCollation: customersOrderByFields(first: 5, orderBy: {orderByField: LAST_NAME, direction: ASC}, after: $after) {
+        edges {
+            cursor
+            node {
+                id
+                name { firstName lastName }
+            }
+        }
+        pageInfo { hasNextPage }
+    }
+    withCollation: customersOrderByFieldsCollated(first: 5, orderBy: {orderByField: LAST_NAME, direction: ASC}, after: $after) {
+        edges {
+            cursor
+            node {
+                id
+                name { firstName lastName }
+            }
+        }
+        pageInfo { hasNextPage }
+    }
+}

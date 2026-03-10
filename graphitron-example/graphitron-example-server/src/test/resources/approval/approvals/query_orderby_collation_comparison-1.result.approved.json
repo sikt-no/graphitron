@@ -1,0 +1,118 @@
+{
+    "data": {
+        "withoutCollation": {
+            "edges": [
+                {
+                    "cursor": "WyJBQk5FWSJd",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6NTA1",
+                        "name": {
+                            "firstName": "RAFAEL",
+                            "lastName": "ABNEY"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WyJBTEVYQU5ERVIiXQ",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6OTY",
+                        "name": {
+                            "firstName": "DIANA",
+                            "lastName": "ALEXANDER"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WyJBTExBUkQiXQ",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6NDcw",
+                        "name": {
+                            "firstName": "GORDON",
+                            "lastName": "ALLARD"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WyJBTExFTiJd",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6Mjc",
+                        "name": {
+                            "firstName": "SHIRLEY",
+                            "lastName": "ALLEN"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WyJBTFZBUkVaIl0",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6MjIw",
+                        "name": {
+                            "firstName": "CHARLENE",
+                            "lastName": "ALVAREZ"
+                        }
+                    }
+                }
+            ],
+            "pageInfo": {
+                "hasNextPage": true
+            }
+        },
+        "withCollation": {
+            "edges": [
+                {
+                    "cursor": "WyJhYmVsIl0",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6NTA0",
+                        "name": {
+                            "firstName": "NATHANIEL",
+                            "lastName": "abel"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WyJBQk5FWSJd",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6NTA1",
+                        "name": {
+                            "firstName": "RAFAEL",
+                            "lastName": "ABNEY"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WyJBY29zdGEiXQ",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6MzY",
+                        "name": {
+                            "firstName": "KATHLEEN",
+                            "lastName": "Acosta"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WyJBTEVYQU5ERVIiXQ",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6OTY",
+                        "name": {
+                            "firstName": "DIANA",
+                            "lastName": "ALEXANDER"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WyJBTExBUkQiXQ",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6NDcw",
+                        "name": {
+                            "firstName": "GORDON",
+                            "lastName": "ALLARD"
+                        }
+                    }
+                }
+            ],
+            "pageInfo": {
+                "hasNextPage": true
+            }
+        }
+    }
+}

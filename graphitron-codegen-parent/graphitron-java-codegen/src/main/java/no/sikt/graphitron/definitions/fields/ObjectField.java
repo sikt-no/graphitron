@@ -14,8 +14,7 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphql.directives.DirectiveHelpers.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.DIRECTION;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.INDEX;
+import static no.sikt.graphql.directives.GenerationDirectiveParam.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_EXTERNAL;
 
 /**
@@ -31,8 +30,7 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
     private final LinkedHashSet<String> lookupKeys;
     private final MutationType mutationType;
     private final boolean hasLookupKey, isFederationExternal;
-    private final String defaultOrderIndex;
-    private final String defaultOrderDirection;
+    private final DefaultOrder defaultOrder;
     public final static List<String> RESERVED_PAGINATION_NAMES = List.of(
             GraphQLReservedName.PAGINATION_FIRST.getName(),
             GraphQLReservedName.PAGINATION_AFTER.getName(),
@@ -51,13 +49,9 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
         mutationType = field.hasDirective(MUTATION.getName())
                 ? MutationType.valueOf(getDirectiveArgumentEnum(field, MUTATION, GenerationDirectiveParam.TYPE))
                 : null;
-        if (field.hasDirective(DEFAULT_ORDER.getName())) {
-            defaultOrderIndex = getDirectiveArgumentString(field, DEFAULT_ORDER, INDEX);
-            defaultOrderDirection = getOptionalDirectiveArgumentEnum(field, DEFAULT_ORDER, DIRECTION).orElse("ASC");
-        } else {
-            defaultOrderIndex = null;
-            defaultOrderDirection = null;
-        }
+        defaultOrder = field.hasDirective(DEFAULT_ORDER.getName())
+                ? DefaultOrder.from(field)
+                : null;
         lookupKeys = nonReservedArguments.stream().filter(ArgumentField::isLookupKey).map(AbstractField::getName).collect(Collectors.toCollection(LinkedHashSet::new));
         hasLookupKey = !lookupKeys.isEmpty();
         isFederationExternal = field.hasDirective(FEDERATION_EXTERNAL.getName());
@@ -226,18 +220,8 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
         return Optional.ofNullable(orderField);
     }
 
-    /**
-     * @return The index name specified in @defaultOrder directive, if present.
-     */
-    public Optional<String> getDefaultOrderIndex() {
-        return Optional.ofNullable(defaultOrderIndex);
-    }
-
-    /**
-     * @return The sort direction specified in @defaultOrder directive (ASC or DESC). Defaults to ASC.
-     */
-    public String getDefaultOrderDirection() {
-        return defaultOrderDirection;
+    public Optional<DefaultOrder> getDefaultOrder() {
+        return Optional.ofNullable(defaultOrder);
     }
 
     @Override

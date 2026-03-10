@@ -3,5 +3,5 @@ type Query {
 }
 
 enum OrderByField {
-  EMAIL @index(name : "WRONG_INDEX")
+  EMAIL @order(index: "WRONG_INDEX")
 }

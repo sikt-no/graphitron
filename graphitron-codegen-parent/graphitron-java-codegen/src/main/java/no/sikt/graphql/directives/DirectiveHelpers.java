@@ -183,6 +183,23 @@ public class DirectiveHelpers {
                 .orElseThrow(getIllegalArgumentExceptionSupplier(param.getName(), directive.getName()));
     }
 
+    /**
+     * @param container The graph element to be inspected.
+     * @param directive The directive this argument should be set on.
+     * @param param Name of the argument.
+     * @return List of ObjectValue elements from the directive argument, if it exists.
+     */
+    public static Optional<List<ObjectValue>> getOptionalDirectiveArgumentObjectValueList(DirectivesContainer<?> container, GenerationDirective directive, GenerationDirectiveParam param) {
+        directive.checkParamIsValid(param);
+        var value = getArgument(container, directive, param.getName());
+        if (value instanceof ArrayValue arrayValue) {
+            return Optional.of(arrayValue.getValues().stream()
+                    .map(v -> (ObjectValue) v)
+                    .collect(Collectors.toList()));
+        }
+        return Optional.empty();
+    }
+
     public static <T extends NamedNode<T>> Optional<T> getOptionalObjectFieldByName(List<T> fields, GenerationDirectiveParam param) {
         var name = param.getName();
         return fields

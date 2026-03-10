@@ -1,0 +1,43 @@
+{
+    "data": {
+        "customersOrderByFields": {
+            "edges": [
+                {
+                    "cursor": "WzFd",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6MQ",
+                        "name": {
+                            "firstName": "MARY",
+                            "lastName": "SMITH"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WzJd",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6Mg",
+                        "name": {
+                            "firstName": "PATRICIA",
+                            "lastName": "JOHNSON"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WzNd",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6Mw",
+                        "name": {
+                            "firstName": "LINDA",
+                            "lastName": "WILLIAMS"
+                        }
+                    }
+                }
+            ],
+            "pageInfo": {
+                "startCursor": "WzFd",
+                "endCursor": "WzNd",
+                "hasNextPage": true
+            }
+        }
+    }
+}

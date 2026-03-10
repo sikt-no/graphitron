@@ -3,7 +3,7 @@ type Query {
 }
 
 enum OrderByField {
-  STORE @index(name: "IDX_FK_STORE_ID")
+  STORE @order(index: "IDX_FK_STORE_ID")
 }
 
 type CustomerTable @table(name: "Customer") {

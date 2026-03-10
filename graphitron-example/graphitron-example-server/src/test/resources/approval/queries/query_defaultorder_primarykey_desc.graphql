@@ -1,0 +1,20 @@
+# Tests @defaultOrder(primaryKey: true, direction: DESC)
+query DefaultOrderPrimaryKeyDesc {
+    customersDefaultOrderPrimaryKeyDesc(first: 5) {
+        edges {
+            cursor
+            node {
+                id
+                name {
+                    firstName
+                    lastName
+                }
+            }
+        }
+        pageInfo {
+            startCursor
+            endCursor
+            hasNextPage
+        }
+    }
+}

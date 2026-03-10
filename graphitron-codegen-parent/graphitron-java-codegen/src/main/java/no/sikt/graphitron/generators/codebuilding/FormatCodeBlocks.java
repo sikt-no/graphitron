@@ -825,6 +825,20 @@ public class FormatCodeBlocks {
         return CodeBlock.of("$N.fields($L)", targetAlias, getPrimaryKeyFieldsBlock(targetAlias));
     }
 
+    public static CodeBlock getPrimaryKeyFieldsWithTableAliasBlock(String targetAlias, String direction) {
+        var sortOrder = direction.equalsIgnoreCase("ASC")
+                ? CodeBlock.of("$T.ASC", SORT_ORDER.className)
+                : CodeBlock.of("$T.DESC", SORT_ORDER.className);
+        return getPrimaryKeyFieldsWithTableAliasBlock(targetAlias, sortOrder);
+    }
+
+    public static CodeBlock getPrimaryKeyFieldsWithTableAliasBlock(String targetAlias, CodeBlock sortOrder) {
+        return CodeBlock.of(
+                "$T.of($N.fields($L)).map(f -> f.sort($L)).toArray($T[]::new)",
+                STREAM.className, targetAlias, getPrimaryKeyFieldsBlock(targetAlias),
+                sortOrder, SORT_FIELD.className);
+    }
+
     private static @NotNull CodeBlock getPrimaryKeyFieldsBlock(String target) {
         return getPrimaryKeyFieldsBlock(CodeBlock.of(target));
     }

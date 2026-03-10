@@ -1,0 +1,43 @@
+{
+    "data": {
+        "customersOrderByFields": {
+            "edges": [
+                {
+                    "cursor": "WyJBQk5FWSIsICJSQUZBRUwiXQ",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6NTA1",
+                        "name": {
+                            "firstName": "RAFAEL",
+                            "lastName": "ABNEY"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WyJBTEVYQU5ERVIiLCAiRElBTkEiXQ",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6OTY",
+                        "name": {
+                            "firstName": "DIANA",
+                            "lastName": "ALEXANDER"
+                        }
+                    }
+                },
+                {
+                    "cursor": "WyJBTExBUkQiLCAiR09SRE9OIl0",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6NDcw",
+                        "name": {
+                            "firstName": "GORDON",
+                            "lastName": "ALLARD"
+                        }
+                    }
+                }
+            ],
+            "pageInfo": {
+                "startCursor": "WyJBQk5FWSIsICJSQUZBRUwiXQ",
+                "endCursor": "WyJBTExBUkQiLCAiR09SRE9OIl0",
+                "hasNextPage": true
+            }
+        }
+    }
+}

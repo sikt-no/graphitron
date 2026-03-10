@@ -8,5 +8,5 @@ type Inventory @table {
 }
 
 enum OrderByField {
-  STORE_ID_FILM_ID @index(name : "IDX_STORE_ID_FILM_ID")
+  STORE_ID_FILM_ID @order(index: "IDX_STORE_ID_FILM_ID")
 }

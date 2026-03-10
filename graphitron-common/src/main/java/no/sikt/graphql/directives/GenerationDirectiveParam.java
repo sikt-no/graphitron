@@ -18,7 +18,6 @@ public enum GenerationDirectiveParam {
     TABLE_METHOD_REFERENCE("tableMethodReference"),
     ROUTES("routes"),
     ERROR("error"),
-    CLASSNAME("className"),
     METHOD("method"),
 
     RECORD("record"),
@@ -36,6 +35,9 @@ public enum GenerationDirectiveParam {
     KEY_COLUMNS("keyColumns"),
     TYPE_NAME("typeName"),
     INDEX("index"),
+    FIELDS("fields"),
+    PRIMARY_KEY("primaryKey"),
+    COLLATE("collate"),
     DIRECTION("direction");
 
     private final String name;
