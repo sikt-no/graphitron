@@ -100,6 +100,14 @@ public class QueryTest extends ValidationTest {
         assertErrorsContain("externalFieldNoTable", "No table found for field name");
     }
 
+
+    @Test
+    @DisplayName("External field in wrapper type without table should find previous target table")
+    void externalFieldWrappedType() {
+        getProcessedSchema("externalFieldWrappedType");
+        assertNoWarnings();
+    }
+
     @Test
     @DisplayName("Subtype should not be validated as reference")
     void sharedSubtypeShouldNotBeValidatedAsReference() {

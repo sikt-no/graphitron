@@ -1,0 +1,13 @@
+{
+    "data": {
+        "customerWithExternalField": {
+            "nodes": [
+                {
+                    "nameFormattedInType": {
+                        "wrappedNameFormattedInType": "MARY SMITH"
+                    }
+                }
+            ]
+        }
+    }
+}

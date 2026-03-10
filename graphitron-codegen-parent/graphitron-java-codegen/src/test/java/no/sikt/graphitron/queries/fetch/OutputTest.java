@@ -107,6 +107,14 @@ public class OutputTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("External field in wrapper type without table should find previous target table")
+    void externalFieldWrappedType() {
+        assertGeneratedContentContains("externalFieldWrappedType",
+                "DSL.row(no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod.name(_a_customer))"
+        );
+    }
+
+    @Test
     @DisplayName("Field annotated with @externalField should map types correctly even when over 22 fields")
     void externalFieldOver22() {
         assertGeneratedContentContains("externalFieldOver22",

@@ -1,0 +1,9 @@
+{
+    customerWithExternalField(first: 1) {
+        nodes {
+            nameFormattedInType {
+                wrappedNameFormattedInType
+            }
+        }
+    }
+}

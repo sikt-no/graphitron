@@ -1591,7 +1591,13 @@ public class ProcessedDefinitionsValidator {
                         .filter(GenerationSourceField::isExternalField)
                         .forEach(field -> {
                             String typeName = field.getContainerTypeName();
-                            JOOQMapping table = schema.getObject(typeName).getTable();
+                            JOOQMapping table =
+                                    Optional.ofNullable(schema.getObject(typeName).getTable())
+                                            .orElseGet(() ->
+                                                    Optional.ofNullable(schema.getPreviousTableObjectForField(field))
+                                                            .map(RecordObjectSpecification::getTable)
+                                                            .orElse(null)
+                                            );
 
                             if (table == null) {
                                 addErrorMessage("No table found for field " + field.getName() + "in type " + typeName);
