@@ -78,6 +78,7 @@
                             <externalReferenceImports>
                                 <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
                                 <externalReferenceImport>no.sikt.graphitron.example.service.CustomerExternalFields</externalReferenceImport>
+                                <externalReferenceImport>no.sikt.graphitron.example.service.CustomerWithExternalFields</externalReferenceImport>
                             </externalReferenceImports>
                             <makeNodeStrategy>true</makeNodeStrategy>
                             <scalars>

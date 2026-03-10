@@ -1,9 +1,8 @@
 {
     "data": {
-        "customerForSelectionSetTest": {
+        "customerWithExternalField": {
             "nodes": [
                 {
-                    "customerId": 1,
                     "nameFormattedInType": {
                         "wrappedNameFormattedInType": "MARY SMITH"
                     }

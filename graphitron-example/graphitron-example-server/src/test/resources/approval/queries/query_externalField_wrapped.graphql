@@ -1,7 +1,6 @@
 {
-    customerForSelectionSetTest(first: 1) {
+    customerWithExternalField(first: 1) {
         nodes {
-            customerId
             nameFormattedInType {
                 wrappedNameFormattedInType
             }

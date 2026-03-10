@@ -1,0 +1,11 @@
+extend type Query {
+    customerWithExternalField: [CustomerWithExternalFields] @asConnection
+}
+
+type CustomerWithExternalFields @table(name: "CUSTOMER"){
+    nameFormattedInType: NameFormattedInType
+}
+
+type NameFormattedInType {
+    wrappedNameFormattedInType: String @externalField
+}
