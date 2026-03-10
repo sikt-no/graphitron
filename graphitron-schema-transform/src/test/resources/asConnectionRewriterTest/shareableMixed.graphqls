@@ -1,0 +1,14 @@
+directive @shareable on OBJECT | FIELD_DEFINITION
+
+type Query {
+    someType: [SomeType] @asConnection @shareable
+    otherType: [OtherType] @asConnection
+}
+
+type SomeType {
+    id: ID!
+}
+
+type OtherType {
+    id: ID!
+}
