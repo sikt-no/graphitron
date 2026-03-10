@@ -141,6 +141,13 @@ public final class CodeBlock {
         return empty();
     }
 
+    public static CodeBlock ofIf(boolean predicate, String format, Supplier<CodeBlock> codeBlock) {
+        if (predicate) {
+            return of(format, codeBlock.get());
+        }
+        return empty();
+    }
+
     public static CodeBlock statementOf(String format, Object... args) {
         return new Builder().addStatement(format, args).build();
     }

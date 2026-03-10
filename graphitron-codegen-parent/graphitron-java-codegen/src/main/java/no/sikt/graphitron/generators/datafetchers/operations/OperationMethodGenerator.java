@@ -134,7 +134,12 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .build();
         return CodeBlock
                 .builder()
-                .add("return $L.$L($L", target.hasServiceReference() ? newServiceDataFetcherWithTransform() : newDataFetcher(), getFetcherMethodName(target, localObject), indentIfMultiline(innerCode))
+                .add("return $L.$L($L",
+                     target.hasServiceReference()
+                     ? newServiceDataFetcherWithTransform()
+                     : newDataFetcher(),
+                     getFetcherMethodName(target, localObject),
+                     indentIfMultiline(innerCode))
                 .addStatement(")")
                 .build();
     }
@@ -174,8 +179,14 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
             params.add(VAR_RESOLVER_KEYS);
         }
         params.addAll(parser.getMethodInputNames(false, false, true));
-        var countFunction = countFunction(objectToCall, method, params, target.hasServiceReference());
-        return CodeBlock.of(" $N,\n$L,\n$L$L", VAR_PAGE_SIZE, queryFunction, countFunction, transformWrap);
+
+        var countFunction = CodeBlock.ofIf(
+                target.hasTotalCountFieldInReturnType(processedSchema),
+                ",\n$L",
+                () -> countFunction(objectToCall, method, params, target.hasServiceReference())
+        );
+
+        return CodeBlock.of(" $N,\n$L$L$L", VAR_PAGE_SIZE, queryFunction, countFunction, transformWrap);
     }
 
     /**

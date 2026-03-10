@@ -2,6 +2,7 @@ type CustomerConnection {
   edges: [CustomerConnectionEdge]
   pageInfo: PageInfo
   nodes: [CustomerTable!]!
+  totalCount: Int
 }
 
 type CustomerConnectionEdge {

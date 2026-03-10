@@ -1,0 +1,29 @@
+type Query {
+  someType(
+    param: String!,
+  ): QuerySomeTypeConnection
+}
+
+type PageInfo {
+  hasPreviousPage: Boolean!
+  hasNextPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type QuerySomeTypeConnection {
+  edges: [QuerySomeTypeConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [SomeType]
+  totalCount: Int
+}
+
+type QuerySomeTypeConnectionEdge {
+  cursor: String
+  node: SomeType
+}
+
+type SomeType {
+  id: ID!
+  field: String!
+}

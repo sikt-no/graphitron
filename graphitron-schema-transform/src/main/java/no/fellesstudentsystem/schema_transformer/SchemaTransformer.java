@@ -44,7 +44,11 @@ public class SchemaTransformer {
         var transforms = new ArrayList<Consumer<TypeDefinitionRegistry>>();
         transforms.add(MergeExtensions::transform);
         if (config.expandConnections()) {
-            transforms.add(MakeConnections::transform);
+            transforms.add(registry -> MakeConnections.transform(
+                    registry,
+                    config.nodesFieldInConnectionsEnabled(),
+                    config.totalCountFieldInConnectionsEnabled()
+            ));
         }
         return transforms;
     }
@@ -163,5 +167,24 @@ public class SchemaTransformer {
             });
         });
         return new SchemaGenerator().makeExecutableSchema(typeDefinitionRegistry, runtimeWiring);
+    }
+
+    /**
+     * Determines which connection fields should be disabled based on the configuration. The {@code nodes} and
+     * {@code totalCount} fields are not part of the Relay Connection specification, so they can be disabled if desired.
+     *
+     * @return A set of connection field names to be disabled.
+     */
+    private Set<String> getDisabledConnectionFields() {
+        var disabledFields = new HashSet<String>();
+
+        if (!config.nodesFieldInConnectionsEnabled()) {
+            disabledFields.add("nodes");
+        }
+        if (!config.totalCountFieldInConnectionsEnabled()) {
+            disabledFields.add("totalCount");
+        }
+
+        return disabledFields;
     }
 }

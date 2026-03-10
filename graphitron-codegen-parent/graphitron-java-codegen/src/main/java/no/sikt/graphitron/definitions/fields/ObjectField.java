@@ -7,6 +7,7 @@ import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
 import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.directives.GenerationDirectiveParam;
 import no.sikt.graphql.naming.GraphQLReservedName;
+import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.*;
 import java.util.function.Function;
@@ -120,6 +121,15 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
      */
     public boolean hasPagination() {
         return hasForwardPagination() || hasBackwardPagination();
+    }
+
+    public boolean hasTotalCountFieldInReturnType(ProcessedSchema schema) {
+        var connectionObject = schema.getConnectionObject(this.getTypeName());
+
+        return connectionObject != null && connectionObject
+                .getFields()
+                .stream()
+                .anyMatch(field -> field.getName().equals(GraphQLReservedName.CONNECTION_TOTAL_COUNT.getName()));
     }
 
     @Override

@@ -19,6 +19,7 @@ type AddressConnection {
     edges: [AddressConnectionEdge]
     pageInfo: PageInfo
     nodes: [Address!]!
+    totalCount: Int
 }
 
 type AddressConnectionEdge {

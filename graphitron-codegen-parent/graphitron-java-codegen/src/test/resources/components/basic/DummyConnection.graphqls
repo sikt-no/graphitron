@@ -2,6 +2,7 @@ type DummyConnection {
   edges: [DummyConnectionEdge]
   pageInfo: PageInfo
   nodes: [DummyType!]!
+  totalCount: Int
 }
 
 type DummyConnectionEdge {

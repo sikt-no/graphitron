@@ -31,9 +31,22 @@ public class MakeConnections {
             PAGE_INFO = new TypeName(CONNECTION_PAGE_INFO_NODE.getName());
 
     public static void transform(TypeDefinitionRegistry typeDefinitionRegistry) {
+        transform(typeDefinitionRegistry, true, true);
+    }
+
+    public static void transform(
+            TypeDefinitionRegistry typeDefinitionRegistry,
+            boolean nodesFieldInConnectionsEnabled,
+            boolean totalCountFieldInConnectionsEnabled
+    ) {
         var objectTypeDefinitions = typeDefinitionRegistry.getTypes(ObjectTypeDefinition.class);
         for (var objectTypeDefinition : objectTypeDefinitions) {
-            var fields = rewriteTypeDefinition(typeDefinitionRegistry, objectTypeDefinition);
+            var fields = rewriteTypeDefinition(
+                    typeDefinitionRegistry,
+                    objectTypeDefinition,
+                    nodesFieldInConnectionsEnabled,
+                    totalCountFieldInConnectionsEnabled
+            );
 
             if (!fields.isEmpty()) {
                 if (!typeDefinitionRegistry.hasType(PAGE_INFO)) {
@@ -48,7 +61,12 @@ public class MakeConnections {
 
         var interfaceTypeDefinitions = typeDefinitionRegistry.getTypes(InterfaceTypeDefinition.class);
         for (var interfaceTypeDefinition : interfaceTypeDefinitions) {
-            var fields = rewriteTypeDefinition(typeDefinitionRegistry, interfaceTypeDefinition);
+            var fields = rewriteTypeDefinition(
+                    typeDefinitionRegistry,
+                    interfaceTypeDefinition,
+                    nodesFieldInConnectionsEnabled,
+                    totalCountFieldInConnectionsEnabled
+            );
 
             if (!fields.isEmpty()) {
                 if (!typeDefinitionRegistry.hasType(PAGE_INFO)) {
@@ -65,14 +83,26 @@ public class MakeConnections {
                 .ifPresent(typeDefinitionRegistry::remove);
     }
 
-    private static <T extends DirectivesContainer<T> & ImplementingTypeDefinition<T>> List<FieldDefinition> rewriteTypeDefinition(TypeDefinitionRegistry typeDefinitionRegistry, T objectTypeDefinition) {
+    private static <T extends DirectivesContainer<T> & ImplementingTypeDefinition<T>> List<FieldDefinition> rewriteTypeDefinition(
+            TypeDefinitionRegistry typeDefinitionRegistry,
+            T objectTypeDefinition,
+            boolean nodesFieldInConnectionsEnabled,
+            boolean totalCountFieldInConnectionsEnabled
+    ) {
         var transformedFields = false;
         var fields = new ArrayList<FieldDefinition>();
         for (var fieldDefinition : objectTypeDefinition.getFieldDefinitions()) {
             if (fieldDefinition.hasDirective(AS_CONNECTION.getName())) {
                 transformedFields = true;
 
-                var newFieldDefinition = transformListWrapperToConnection(typeDefinitionRegistry, objectTypeDefinition, fieldDefinition);
+                var newFieldDefinition = transformListWrapperToConnection(
+                        typeDefinitionRegistry,
+                        objectTypeDefinition,
+                        fieldDefinition,
+                        nodesFieldInConnectionsEnabled,
+                        totalCountFieldInConnectionsEnabled
+                );
+
                 fields.add(newFieldDefinition);
             } else {
                 fields.add(fieldDefinition);
@@ -110,7 +140,13 @@ public class MakeConnections {
                 .build();
     }
 
-    private static <T extends DirectivesContainer<T> & ImplementingTypeDefinition<T>> FieldDefinition transformListWrapperToConnection(TypeDefinitionRegistry typeDefinitionRegistry, T objectTypeDefinition, FieldDefinition fieldDefinition) {
+    private static <T extends DirectivesContainer<T> & ImplementingTypeDefinition<T>> FieldDefinition transformListWrapperToConnection(
+            TypeDefinitionRegistry typeDefinitionRegistry,
+            T objectTypeDefinition,
+            FieldDefinition fieldDefinition,
+            boolean nodesFieldInConnectionsEnabled,
+            boolean totalCountFieldInConnectionsEnabled
+    ) {
         var wrappedType = getWrappedType(objectTypeDefinition, fieldDefinition);
         var connections = fieldDefinition.getDirectives(AS_CONNECTION.getName());
         if (connections.size() > 1) {
@@ -119,7 +155,15 @@ public class MakeConnections {
         var connection = connections.get(0);
 
         var connectionTypeName = getConnectionTypeName(objectTypeDefinition, fieldDefinition, connection);
-        var connectionType = maybeCreateConnectionType(connectionTypeName, typeDefinitionRegistry, fieldDefinition, (TypeName) wrappedType);
+        var connectionType = maybeCreateConnectionType(
+                connectionTypeName,
+                typeDefinitionRegistry,
+                fieldDefinition,
+                (TypeName) wrappedType,
+                nodesFieldInConnectionsEnabled,
+                totalCountFieldInConnectionsEnabled
+        );
+
         var source = fieldDefinition.getSourceLocation();
         return fieldDefinition.transform(builder -> {
             // 2. Endre felttypen til å peke på Connection-typen
@@ -184,7 +228,14 @@ public class MakeConnections {
     }
 
     @NotNull
-    private static TypeName maybeCreateConnectionType(String connectionTypeName, TypeDefinitionRegistry typeDefinitionRegistry, FieldDefinition fieldDefinition, TypeName wrappedType) {
+    private static TypeName maybeCreateConnectionType(
+            String connectionTypeName,
+            TypeDefinitionRegistry typeDefinitionRegistry,
+            FieldDefinition fieldDefinition,
+            TypeName wrappedType,
+            boolean nodesFieldInConnectionsEnabled,
+            boolean totalCountFieldInConnectionsEnabled
+    ) {
         // 1. Opprett og legg til Connection- og Edge-typene i typeDefinitionRegistry
         //    dersom Connection-typen ikke allerede er definert.
         //    TODO: kopiere feature-direktiv fra parent-feltet?
@@ -210,30 +261,41 @@ public class MakeConnections {
                     .sourceLocation(source)
                     .build();
 
-            var connection = ObjectTypeDefinition.newObjectTypeDefinition()
-                    .name(connectionTypeName)
-                    .fieldDefinitions(List.of(
-                            FieldDefinition.newFieldDefinition()
-                                    .name(CONNECTION_EDGE_FIELD.getName())
-                                    .type(new ListType(edgeType))
-                                    .sourceLocation(source)
-                                    .build(),
-                            FieldDefinition.newFieldDefinition()
-                                    .name("pageInfo")
-                                    .type(PAGE_INFO)
-                                    .sourceLocation(source)
-                                    .build(),
-                            FieldDefinition.newFieldDefinition()
-                                    .name(CONNECTION_NODES_FIELD.getName())
-                                    .type(fieldDefinition.getType())
-                                    .sourceLocation(source)
-                                    .build(),
-                            FieldDefinition.newFieldDefinition()
+            var fieldsInConnectionType = new ArrayList<>(List.of(
+                    FieldDefinition.newFieldDefinition()
+                                   .name(CONNECTION_EDGE_FIELD.getName())
+                                   .type(new ListType(edgeType))
+                                   .sourceLocation(source)
+                                   .build(),
+                    FieldDefinition.newFieldDefinition()
+                                   .name("pageInfo")
+                                   .type(PAGE_INFO)
+                                   .sourceLocation(source)
+                                   .build()
+            ));
+
+            if (nodesFieldInConnectionsEnabled) {
+               fieldsInConnectionType.add(
+                       FieldDefinition.newFieldDefinition()
+                                      .name(CONNECTION_NODES_FIELD.getName())
+                                      .type(fieldDefinition.getType())
+                                      .sourceLocation(source)
+                                      .build()
+               );
+            }
+            if (totalCountFieldInConnectionsEnabled) {
+                fieldsInConnectionType.add(
+                        FieldDefinition.newFieldDefinition()
                                     .name(CONNECTION_TOTAL_COUNT.getName())
                                     .type(INT_TYPE)
                                     .sourceLocation(source)
                                     .build()
-                    ))
+                );
+            }
+
+            var connection = ObjectTypeDefinition.newObjectTypeDefinition()
+                    .name(connectionTypeName)
+                    .fieldDefinitions(fieldsInConnectionType)
                     .sourceLocation(source)
                     .build();
             typeDefinitionRegistry.add(connection);

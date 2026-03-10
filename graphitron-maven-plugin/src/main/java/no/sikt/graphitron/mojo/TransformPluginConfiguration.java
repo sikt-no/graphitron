@@ -50,6 +50,16 @@ public class TransformPluginConfiguration {
     private boolean expandConnections = true;
 
     /**
+     * Whether to include the {@code nodes} field in generated connection types.
+     */
+    private boolean nodesFieldInConnectionsEnabled = true;
+
+    /**
+     * Whether to include the {@code totalCount} field in generated connection types.
+     */
+    private boolean totalCountFieldInConnectionsEnabled = true;
+
+    /**
      * Whether to add feature flags to the schema based on directory structure.
      */
     private boolean addFeatureFlags = false;
@@ -120,6 +130,22 @@ public class TransformPluginConfiguration {
         this.expandConnections = expandConnections;
     }
 
+    public boolean isNodesFieldInConnectionsEnabled() {
+        return this.nodesFieldInConnectionsEnabled;
+    }
+
+    public void setNodesFieldInConnectionsEnabled(boolean nodesFieldInConnectionsEnabled) {
+        this.nodesFieldInConnectionsEnabled = nodesFieldInConnectionsEnabled;
+    }
+
+    public boolean isTotalCountFieldInConnectionsEnabled() {
+        return this.totalCountFieldInConnectionsEnabled;
+    }
+
+    public void setTotalCountFieldInConnectionsEnabled(boolean totalCountFieldInConnectionsEnabled) {
+        this.totalCountFieldInConnectionsEnabled = totalCountFieldInConnectionsEnabled;
+    }
+
     public boolean isAddFeatureFlags() {
         return addFeatureFlags;
     }
@@ -175,6 +201,9 @@ public class TransformPluginConfiguration {
                 addFeatureFlags,
                 removeGeneratorDirectives,
                 isRemoveExcludedElements(),
-                expandConnections);
+                expandConnections,
+                nodesFieldInConnectionsEnabled,
+                totalCountFieldInConnectionsEnabled
+        );
     }
 }
