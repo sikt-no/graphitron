@@ -446,6 +446,7 @@ public class ProcessedDefinitionsValidator {
                 .stream()
                 .filter(schema::hasTableObjectForObject)
                 .filter(it -> !schema.isMultiTableInterface(it.getName())) // Don't validate fields on the interface definition since the interface itself has no table
+                .filter(it -> !it.hasJavaRecordReference()) // Don't validate fields on @record types since their data comes from Java records
                 .flatMap(it -> it.getFields().stream())
                 .flatMap(it -> schema.isMultiTableField(it)
                         ? schema.getTypesFromInterfaceOrUnion(it.getTypeName()).orElse(List.of()).stream().map(o -> new VirtualSourceField(o.getName(), (ObjectField) it))

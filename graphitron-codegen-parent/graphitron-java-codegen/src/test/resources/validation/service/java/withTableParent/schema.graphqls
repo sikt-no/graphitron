@@ -1,0 +1,8 @@
+type ParentNode implements Node @node(typeId: "parent", keyColumns: ["customer_id"]) @table(name: "CUSTOMER") {
+    id: ID! @nodeId
+    customerJavaRecords: CustomerJavaRecord @service(service: {className: "ResolverFetchService", method: "queryJavaRecord"}) @splitQuery
+}
+
+type CustomerJavaRecord @record(record: {className: "CustomerJavaRecord"}){
+    customer: CustomerTable @splitQuery # No FK from CUSTOMER to CUSTOMER, but the Java record has a matching getter
+}

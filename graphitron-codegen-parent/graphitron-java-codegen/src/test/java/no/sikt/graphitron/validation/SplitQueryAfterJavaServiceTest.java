@@ -7,6 +7,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
 
 @DisplayName("Schema validation - splitQuery fields after services returning Java record")
 public class SplitQueryAfterJavaServiceTest extends ValidationTest {
@@ -41,6 +42,12 @@ public class SplitQueryAfterJavaServiceTest extends ValidationTest {
         assertErrorsContain("notType", Set.of(CUSTOMER_TABLE),
                 "'DummyTypeRecord.customer' in a java record has splitQuery directive, " +
                         "but does not return a type with table. This is not supported.");
+    }
+
+    @Test
+    @DisplayName("Parent type with @table should not cause foreign key validation")
+    void withTableParent() {
+        getProcessedSchema("withTableParent", Set.of(NODE, CUSTOMER_TABLE));
     }
 
     @Test
