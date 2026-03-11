@@ -10,6 +10,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jooq.Key;
+import org.jooq.Typed;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -21,6 +22,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.LIST;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessage;
+import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAndThrow;
 import static no.sikt.graphql.directives.GenerationDirective.SPLIT_QUERY;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -32,6 +34,19 @@ public record KeyWrapper(Key<?> key, TypeName tableRecordTypeName) {
 
     public String getDTOGetterName() {
         return "get" + capitalize(key.getName());
+    }
+
+    @Deprecated
+    public TypeName getRowTypeName() {
+        var keyFields = key.getFields();
+
+        if (keyFields.size() > 22) {
+            addErrorMessageAndThrow("Key '%s' has more than 22 fields, which is not supported.", key.getName());
+        }
+
+        var rowOrRecordClass = ClassName.get("org.jooq", String.format("%s%d", "Row", keyFields.size()));
+
+        return ParameterizedTypeName.get(rowOrRecordClass, keyFields.stream().map(Typed::getType).map(ClassName::get).toArray(ClassName[]::new));
     }
 
     /**
