@@ -30,20 +30,21 @@ using Java and [jOOQ](https://www.jooq.org/).
     - [Define table join paths for multitable types with @multitableReference](#define-table-join-paths-for-multitable-types-with-multitablereference)
   - [Custom query conditions with @condition](#custom-query-conditions-with-condition)
     - [Example: Setup](#example-setup)
-    - [Example: No _override_ on input parameter](#example-no-_override_-on-input-parameter)
-    - [Example: No _override_ on field with input parameters](#example-no-_override_-on-field-with-input-parameters)
+    - [Example: No _override_ on input parameter](#example-no-override-on-input-parameter)
+    - [Example: No _override_ on field with input parameters](#example-no-override-on-field-with-input-parameters)
     - [Example: Both field and parameters](#example-both-field-and-parameters)
-    - [Example: With _override_ on input parameter](#example-with-_override_-on-input-parameter)
-    - [Example: With _override_ on field with input parameters](#example-with-_override_-on-field-with-input-parameters)
-    - [Example: With _override_ on both field and parameters](#example-with-_override_-on-both-field-and-parameters)
+    - [Example: With _override_ on input parameter](#example-with-override-on-input-parameter)
+    - [Example: With _override_ on field with input parameters](#example-with-override-on-field-with-input-parameters)
+    - [Example: With _override_ on both field and parameters](#example-with-override-on-both-field-and-parameters)
     - [Example: Conditions on input type fields](#example-conditions-on-input-type-fields)
     - [Example: Condition using flat record configuration](#example-condition-using-flat-record-configuration)
     - [Example: Condition using nested record configurations](#example-condition-using-nested-record-configurations)
-    - [Example: Schema with listed input types and condition set _on_ listed input field](#example-schema-with-listed-input-types-and-condition-set-_on_-listed-input-field)
-    - [Example: Schema with listed input types and condition set on input field _inside_ a list input](#example-schema-with-listed-input-types-and-condition-set-on-input-field-_inside_-a-list-input)
+    - [Example: Schema with listed input types and condition set _on_ listed input field](#example-schema-with-listed-input-types-and-condition-set-on-listed-input-field)
+    - [Example: Schema with listed input types and condition set on input field _inside_ a list input](#example-schema-with-listed-input-types-and-condition-set-on-input-field-inside-a-list-input)
   - [Map enums with @enum](#map-enums-with-enum)
   - [Generate mutations with @mutation](#generate-mutations-with-mutation)
   - [Custom logic with @service](#custom-logic-with-service)
+    - [Services outside root](#services-outside-root)
     - [Resolving @splitQuery fields after services](#resolving-splitquery-fields-after-services)
       - [Services returning jOOQ records](#services-returning-jooq-records)
       - [Services returning Java records](#services-returning-java-records)
@@ -862,9 +863,36 @@ input EditCustomerInput @table(name: "CUSTOMER") { # @table specifies the jOOQ t
 }
 ```
 
+#### Services outside root
+Using **@service** on non-root fields is supported when combined with the **@splitQuery** directive.
+The service method must accept a `Set` of parent table record and return a `Map` from those parents to the resulting values.
+Only the primary key fields in the parent table record will be populated with values.
+
+The resulting values should be a type containing the data you need. Use jOOQ TableRecords if you want Graphitron to generate re-entry queries. In that case, Graphitron will only use the PK fields of those records. Other fields will be ignored.
+
+_Schema:_
+```graphql
+type City @table {
+  filmsFromCity: [Film!]! @splitQuery @service(service: {className: "some.path.MockService"})
+}
+```
+
+_Required service code:_
+```java
+public class MockService {
+    public MockService(DSLContext context) { … }
+
+    public Map<CityRecord, List<FilmRecord>> filmsFromCity(Set<CityRecord> cityKeys) {
+      …
+    }
+}
+```
+
+> **Deprecated:** Using a `RowN` (e.g., `Row1<Integer>`) matching the primary key (instead of a `TableRecord`) as the resolver key is deprecated. Support will be removed in 9.0.0.
+
 #### Resolving @splitQuery fields after services
 After a service you may want to fetch data from the database with a re-entry query. This can be done by using the @splitQuery directive.
-For these fields to resolve correctly, the service must return records with the necessary key fields populated.
+For these fields to resolve correctly, the service must return records with the primary key fields populated.
 
 ##### Services returning jOOQ records
 To enable Graphitron to resolve a **splitQuery** field after a jOOQ record service, the returned record must include all the key fields required for the next query.
