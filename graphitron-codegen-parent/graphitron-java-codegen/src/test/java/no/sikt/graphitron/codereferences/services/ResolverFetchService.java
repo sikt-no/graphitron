@@ -4,6 +4,7 @@ import no.sikt.graphitron.codereferences.dummyreferences.DummyRecord;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jooq.DSLContext;
+import org.jooq.Row1;
 
 import java.util.List;
 import java.util.Map;
@@ -14,7 +15,8 @@ import java.util.stream.Collectors;
  * Fake service for resolver tests. Does not need to return meaningful values as only the generated result is tested.
  */
 public class ResolverFetchService {
-    public ResolverFetchService(DSLContext context) {}
+    public ResolverFetchService(DSLContext context) {
+    }
 
     public CustomerRecord query(String id) {
         return null;
@@ -73,6 +75,10 @@ public class ResolverFetchService {
     }
 
     public DummyRecord queryJavaRecord(Set<String> id) {
+        return null;
+    }
+
+    public Map<Row1<Integer>, CustomerRecord> customerNestedWithRowNResolverKey(List<Row1<Integer>> resolverKeys) {
         return null;
     }
 }
