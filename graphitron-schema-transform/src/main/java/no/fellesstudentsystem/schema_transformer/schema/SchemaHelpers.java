@@ -8,7 +8,7 @@ import graphql.schema.GraphQLNamedSchemaElement;
 import graphql.schema.GraphQLSchemaElement;
 import graphql.schema.idl.DirectiveInfo;
 import graphql.util.TraverserContext;
-import no.fellesstudentsystem.schema_transformer.mapping.GraphQLDirective;
+import no.fellesstudentsystem.schema_transformer.directives.TransformDirective;
 
 import java.util.List;
 import java.util.Set;
@@ -26,7 +26,7 @@ public class SchemaHelpers {
             Stream.of(FEDERATION_LINK.getName())
     ).collect(Collectors.toSet());
 
-    public static List<String> getOptionalDirectiveArgumentStringList(DirectivesContainer<?> container, GraphQLDirective directive, String arg) {
+    public static List<String> getOptionalDirectiveArgumentStringList(DirectivesContainer<?> container, TransformDirective directive, String arg) {
         return getOptionalDirectiveArgumentStringList(container, directive.getName(), arg);
     }
 

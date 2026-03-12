@@ -11,11 +11,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.schema_transformer.mapping.GraphQLDirective.AS_CONNECTION;
-import static no.fellesstudentsystem.schema_transformer.mapping.GraphQLDirectiveParam.CONNECTION_NAME;
-import static no.fellesstudentsystem.schema_transformer.mapping.GraphQLDirectiveParam.FIRST_DEFAULT;
+import static no.fellesstudentsystem.schema_transformer.directives.TransformDirective.AS_CONNECTION;
+import static no.fellesstudentsystem.schema_transformer.directives.TransformDirective.CONNECTION;
+import static no.fellesstudentsystem.schema_transformer.directives.TransformDirectiveParam.CONNECTION_NAME;
+import static no.fellesstudentsystem.schema_transformer.directives.TransformDirectiveParam.FIRST_DEFAULT;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
 
@@ -23,6 +26,7 @@ public class MakeConnections {
     private static final Map<String, DirectiveDefinition> directives = new SchemaParser()
             .parse(MakeConnections.class.getResourceAsStream("/schema/directives.graphqls"))
             .getDirectiveDefinitions();
+    private static final Directive SHAREABLE = Directive.newDirective().name(FEDERATION_SHAREABLE.getName()).build();
 
     private static final TypeName
             STRING_TYPE = new TypeName(Scalars.GraphQLString.getName()),
@@ -39,87 +43,100 @@ public class MakeConnections {
             boolean nodesFieldInConnectionsEnabled,
             boolean totalCountFieldInConnectionsEnabled
     ) {
+        var queryLocation = Optional.ofNullable(typeDefinitionRegistry.getTypeOrNull(SCHEMA_QUERY.getName())).map(Node::getSourceLocation).orElse(null);
+
         var objectTypeDefinitions = typeDefinitionRegistry.getTypes(ObjectTypeDefinition.class);
+        var interfaceTypeDefinitions = typeDefinitionRegistry.getTypes(InterfaceTypeDefinition.class);
+
+        // If any field mapping to a given connection type name is shareable, the connection type itself must be shareable.
+        var sharableConnectionTypes = collectSharableConnectionTypes(objectTypeDefinitions, interfaceTypeDefinitions);
+
+        boolean addPageInfo = false;
         for (var objectTypeDefinition : objectTypeDefinitions) {
             var fields = rewriteTypeDefinition(
                     typeDefinitionRegistry,
                     objectTypeDefinition,
                     nodesFieldInConnectionsEnabled,
-                    totalCountFieldInConnectionsEnabled
+                    totalCountFieldInConnectionsEnabled,
+                    sharableConnectionTypes
             );
 
             if (!fields.isEmpty()) {
-                if (!typeDefinitionRegistry.hasType(PAGE_INFO)) {
-                    var sourceLocation = typeDefinitionRegistry.getType(SCHEMA_QUERY.getName()).map(Node::getSourceLocation).orElse(null);
-                    typeDefinitionRegistry.add(createPageInfo(sourceLocation));
-                }
-
+                addPageInfo = true;
                 typeDefinitionRegistry.remove(objectTypeDefinition);
                 typeDefinitionRegistry.add(objectTypeDefinition.transform(builder -> builder.fieldDefinitions(fields)));
             }
         }
 
-        var interfaceTypeDefinitions = typeDefinitionRegistry.getTypes(InterfaceTypeDefinition.class);
         for (var interfaceTypeDefinition : interfaceTypeDefinitions) {
             var fields = rewriteTypeDefinition(
                     typeDefinitionRegistry,
                     interfaceTypeDefinition,
                     nodesFieldInConnectionsEnabled,
-                    totalCountFieldInConnectionsEnabled
+                    totalCountFieldInConnectionsEnabled,
+                    sharableConnectionTypes
             );
 
             if (!fields.isEmpty()) {
-                if (!typeDefinitionRegistry.hasType(PAGE_INFO)) {
-                    var sourceLocation = typeDefinitionRegistry.getType(SCHEMA_QUERY.getName()).map(Node::getSourceLocation).orElse(null);
-                    typeDefinitionRegistry.add(createPageInfo(sourceLocation));
-                }
-
+                addPageInfo = true;
                 typeDefinitionRegistry.remove(interfaceTypeDefinition);
                 typeDefinitionRegistry.add(interfaceTypeDefinition.transform(builder -> builder.definitions(fields)));
             }
+        }
+
+        if (addPageInfo && !typeDefinitionRegistry.hasType(PAGE_INFO)) {
+            var pageInfo = createPageInfo(queryLocation, !sharableConnectionTypes.isEmpty() ? List.of(SHAREABLE) : List.of());
+            typeDefinitionRegistry.add(pageInfo);
         }
         typeDefinitionRegistry
                 .getDirectiveDefinition(AS_CONNECTION.getName())
                 .ifPresent(typeDefinitionRegistry::remove);
     }
 
+    private static Set<String> collectSharableConnectionTypes(List<ObjectTypeDefinition> objects, List<InterfaceTypeDefinition> interfaces) {
+        return Stream.concat(
+                objects.stream().flatMap(it -> collectSharableFields(it.getName(), it.getFieldDefinitions()).stream()),
+                interfaces.stream().flatMap(it -> collectSharableFields(it.getName(), it.getFieldDefinitions()).stream())
+        ).collect(Collectors.toSet());
+    }
+
+    private static List<String> collectSharableFields(String typeName, List<FieldDefinition> fields) {
+        return fields
+                .stream()
+                .filter(it -> it.hasDirective(AS_CONNECTION.getName()) && it.hasDirective(FEDERATION_SHAREABLE.getName()))
+                .map(it -> getConnectionTypeName(typeName, it.getName(), it.getDirectives(AS_CONNECTION.getName()).get(0)))
+                .toList();
+    }
+
     private static <T extends DirectivesContainer<T> & ImplementingTypeDefinition<T>> List<FieldDefinition> rewriteTypeDefinition(
             TypeDefinitionRegistry typeDefinitionRegistry,
             T objectTypeDefinition,
             boolean nodesFieldInConnectionsEnabled,
-            boolean totalCountFieldInConnectionsEnabled
+            boolean totalCountFieldInConnectionsEnabled,
+            Set<String> sharableConnectionTypes
     ) {
-        var transformedFields = false;
-        var fields = new ArrayList<FieldDefinition>();
-        for (var fieldDefinition : objectTypeDefinition.getFieldDefinitions()) {
-            if (fieldDefinition.hasDirective(AS_CONNECTION.getName())) {
-                transformedFields = true;
-
-                var newFieldDefinition = transformListWrapperToConnection(
-                        typeDefinitionRegistry,
-                        objectTypeDefinition,
-                        fieldDefinition,
-                        nodesFieldInConnectionsEnabled,
-                        totalCountFieldInConnectionsEnabled
-                );
-
-                fields.add(newFieldDefinition);
-            } else {
-                fields.add(fieldDefinition);
-            }
-        }
-
-        if (transformedFields) {
-            return fields;
-        } else {
+        var definitions = objectTypeDefinition.getFieldDefinitions();
+        if (definitions.stream().noneMatch(it -> it.hasDirective(AS_CONNECTION.getName()))) {
             return List.of();
         }
+
+        return definitions.stream().map(it ->
+                transformListWrapperToConnection(
+                        typeDefinitionRegistry,
+                        objectTypeDefinition,
+                        it,
+                        nodesFieldInConnectionsEnabled,
+                        totalCountFieldInConnectionsEnabled,
+                        sharableConnectionTypes
+                )
+        ).toList();
     }
 
-    private static SDLDefinition<?> createPageInfo(SourceLocation sourceLocation) {
+    private static SDLDefinition<?> createPageInfo(SourceLocation sourceLocation, List<Directive> directives) {
         return ObjectTypeDefinition.newObjectTypeDefinition()
                 .name(CONNECTION_PAGE_INFO_NODE.getName())
                 .sourceLocation(sourceLocation)
+                .directives(directives)
                 .fieldDefinitions(List.of(
                         FieldDefinition.newFieldDefinition()
                                 .name(HAS_PREVIOUS_PAGE_FIELD.getName())
@@ -145,23 +162,31 @@ public class MakeConnections {
             T objectTypeDefinition,
             FieldDefinition fieldDefinition,
             boolean nodesFieldInConnectionsEnabled,
-            boolean totalCountFieldInConnectionsEnabled
+            boolean totalCountFieldInConnectionsEnabled,
+            Set<String> sharableConnectionTypes
     ) {
+        if (!fieldDefinition.hasDirective(AS_CONNECTION.getName())) {
+            return fieldDefinition;
+        }
+
         var wrappedType = getWrappedType(objectTypeDefinition, fieldDefinition);
         var connections = fieldDefinition.getDirectives(AS_CONNECTION.getName());
+
+        // Will never happen, validation in GraphQL will fail first as directive is not repeatable.
         if (connections.size() > 1) {
-            throw new IllegalArgumentException(String.format("The field %s.%s has more than one connection directive. This is not supported.", objectTypeDefinition.getName(), fieldDefinition.getName()));
+            throw new IllegalArgumentException(String.format("The field %s.%s has more than one %s directive. This is not supported.", objectTypeDefinition.getName(), fieldDefinition.getName(), CONNECTION.getName()));
         }
         var connection = connections.get(0);
-
-        var connectionTypeName = getConnectionTypeName(objectTypeDefinition, fieldDefinition, connection);
+        var connectionTypeName = getConnectionTypeName(objectTypeDefinition.getName(), fieldDefinition.getName(), connection);
+        var directives = sharableConnectionTypes.contains(connectionTypeName) ? List.of(SHAREABLE) : List.<Directive>of();
         var connectionType = maybeCreateConnectionType(
                 connectionTypeName,
                 typeDefinitionRegistry,
                 fieldDefinition,
                 (TypeName) wrappedType,
                 nodesFieldInConnectionsEnabled,
-                totalCountFieldInConnectionsEnabled
+                totalCountFieldInConnectionsEnabled,
+                directives
         );
 
         var source = fieldDefinition.getSourceLocation();
@@ -170,39 +195,43 @@ public class MakeConnections {
             builder.type(connectionType);
 
             // 3. Endre felttypen til å ha first og after-argument
-            builder.inputValueDefinition(InputValueDefinition
-                    .newInputValueDefinition()
-                    .name(PAGINATION_FIRST.getName())
-                    .type(INT_TYPE)
-                    .defaultValue(getDefaultFirstValue(connection))
-                    .sourceLocation(source)
-                    .build());
+            builder.inputValueDefinition(
+                    InputValueDefinition
+                            .newInputValueDefinition()
+                            .name(PAGINATION_FIRST.getName())
+                            .type(INT_TYPE)
+                            .defaultValue(getDefaultFirstValue(connection))
+                            .sourceLocation(source)
+                            .build()
+            );
 
-            builder.inputValueDefinition(InputValueDefinition
-                    .newInputValueDefinition()
-                    .name(PAGINATION_AFTER.getName())
-                    .type(STRING_TYPE)
-                    .sourceLocation(source)
-                    .build());
+            builder.inputValueDefinition(
+                    InputValueDefinition
+                            .newInputValueDefinition()
+                            .name(PAGINATION_AFTER.getName())
+                            .type(STRING_TYPE)
+                            .sourceLocation(source)
+                            .build()
+            );
 
             // Filtrer bort asConnection-direktivet
             builder.directives(
                     fieldDefinition.getDirectives()
                             .stream()
                             .filter(directive -> !AS_CONNECTION.getName().equals(directive.getName()))
-                            .collect(Collectors.toList())
+                            .toList()
             );
         });
     }
 
-    private static String getConnectionTypeName(NamedNode<?> objectTypeDefinition, FieldDefinition fieldDefinition, Directive connection) {
+    private static String getConnectionTypeName(String objectName, String fieldName, Directive connection) {
         var forcedConnectionNameArgument = connection.getArgument(AS_CONNECTION.getParamName(CONNECTION_NAME));
-        if (forcedConnectionNameArgument != null && forcedConnectionNameArgument.getValue() != null) {
-            var value = (StringValue) forcedConnectionNameArgument.getValue();
-            return value.getValue();
+        if (forcedConnectionNameArgument == null || forcedConnectionNameArgument.getValue() == null) {
+            return objectName + capitalize(fieldName) + SCHEMA_CONNECTION_SUFFIX.getName();
         }
 
-        return String.format("%s%sConnection", objectTypeDefinition.getName(), capitalize(fieldDefinition.getName()));
+        var value = (StringValue) forcedConnectionNameArgument.getValue();
+        return value.getValue();
     }
 
     @NotNull
@@ -234,18 +263,19 @@ public class MakeConnections {
             FieldDefinition fieldDefinition,
             TypeName wrappedType,
             boolean nodesFieldInConnectionsEnabled,
-            boolean totalCountFieldInConnectionsEnabled
+            boolean totalCountFieldInConnectionsEnabled,
+            List<Directive> directives
     ) {
         // 1. Opprett og legg til Connection- og Edge-typene i typeDefinitionRegistry
         //    dersom Connection-typen ikke allerede er definert.
-        //    TODO: kopiere feature-direktiv fra parent-feltet?
 
         var connectionType = new TypeName(connectionTypeName);
         var source = fieldDefinition.getSourceLocation();
         if (!typeDefinitionRegistry.hasType(connectionType)) {
-            var edgeType = new TypeName(connectionTypeName + "Edge");
+            var edgeType = new TypeName(connectionTypeName + SCHEMA_EDGE_SUFFIX.getName());
             var edge = ObjectTypeDefinition.newObjectTypeDefinition()
                     .name(edgeType.getName())
+                    .directives(directives)
                     .fieldDefinitions(List.of(
                             FieldDefinition.newFieldDefinition()
                                     .name(CONNECTION_CURSOR_FIELD.getName())
@@ -263,33 +293,33 @@ public class MakeConnections {
 
             var fieldsInConnectionType = new ArrayList<>(List.of(
                     FieldDefinition.newFieldDefinition()
-                                   .name(CONNECTION_EDGE_FIELD.getName())
-                                   .type(new ListType(edgeType))
-                                   .sourceLocation(source)
-                                   .build(),
+                            .name(CONNECTION_EDGE_FIELD.getName())
+                            .type(new ListType(edgeType))
+                            .sourceLocation(source)
+                            .build(),
                     FieldDefinition.newFieldDefinition()
-                                   .name("pageInfo")
-                                   .type(PAGE_INFO)
-                                   .sourceLocation(source)
-                                   .build()
+                            .name(CONNECTION_PAGE_INFO_FIELD.getName())
+                            .type(PAGE_INFO)
+                            .sourceLocation(source)
+                            .build()
             ));
 
             if (nodesFieldInConnectionsEnabled) {
-               fieldsInConnectionType.add(
-                       FieldDefinition.newFieldDefinition()
-                                      .name(CONNECTION_NODES_FIELD.getName())
-                                      .type(fieldDefinition.getType())
-                                      .sourceLocation(source)
-                                      .build()
-               );
+                fieldsInConnectionType.add(
+                        FieldDefinition.newFieldDefinition()
+                                .name(CONNECTION_NODES_FIELD.getName())
+                                .type(fieldDefinition.getType())
+                                .sourceLocation(source)
+                                .build()
+                );
             }
             if (totalCountFieldInConnectionsEnabled) {
                 fieldsInConnectionType.add(
                         FieldDefinition.newFieldDefinition()
-                                    .name(CONNECTION_TOTAL_COUNT.getName())
-                                    .type(INT_TYPE)
-                                    .sourceLocation(source)
-                                    .build()
+                                .name(CONNECTION_TOTAL_COUNT.getName())
+                                .type(INT_TYPE)
+                                .sourceLocation(source)
+                                .build()
                 );
             }
 
@@ -297,6 +327,7 @@ public class MakeConnections {
                     .name(connectionTypeName)
                     .fieldDefinitions(fieldsInConnectionType)
                     .sourceLocation(source)
+                    .directives(directives)
                     .build();
             typeDefinitionRegistry.add(connection);
             typeDefinitionRegistry.add(edge);

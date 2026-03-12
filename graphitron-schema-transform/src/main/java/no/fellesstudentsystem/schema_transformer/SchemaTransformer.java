@@ -16,7 +16,7 @@ import java.util.stream.Collectors;
 
 import static graphql.schema.idl.EchoingWiringFactory.fakeScalar;
 import static no.fellesstudentsystem.schema_transformer.TransformConfig.DIRECTIVES_FOR_REMOVING_ELEMENTS;
-import static no.fellesstudentsystem.schema_transformer.mapping.GraphQLDirective.CONNECTION;
+import static no.fellesstudentsystem.schema_transformer.directives.TransformDirective.CONNECTION;
 import static no.fellesstudentsystem.schema_transformer.schema.SchemaReader.getTypeDefinitionRegistry;
 import static no.fellesstudentsystem.schema_transformer.schema.SchemaWriter.writeSchemaToString;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;

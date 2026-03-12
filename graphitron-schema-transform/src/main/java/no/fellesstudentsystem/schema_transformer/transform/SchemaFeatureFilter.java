@@ -11,8 +11,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static graphql.util.TraversalControl.CONTINUE;
-import static no.fellesstudentsystem.schema_transformer.mapping.GraphQLDirective.FEATURE;
-import static no.fellesstudentsystem.schema_transformer.mapping.GraphQLDirectiveParam.FLAGS;
+import static no.fellesstudentsystem.schema_transformer.directives.TransformDirective.FEATURE;
+import static no.fellesstudentsystem.schema_transformer.directives.TransformDirectiveParam.FLAGS;
 import static no.fellesstudentsystem.schema_transformer.schema.SchemaHelpers.getOptionalDirectiveArgumentStringList;
 
 /**

@@ -6,6 +6,7 @@ import com.apollographql.federation.graphqljava._FieldSet;
 import com.apollographql.federation.graphqljava._Service;
 
 import static graphql.relay.Relay.NODE;
+import static graphql.relay.Relay.pageInfoType;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -23,7 +24,7 @@ public enum GraphQLReservedName {
     CONNECTION_NODES_FIELD("nodes"),
     CONNECTION_CURSOR_FIELD("cursor"),
     CONNECTION_EDGE_FIELD("edges"),
-    CONNECTION_PAGE_INFO_NODE("PageInfo"),
+    CONNECTION_PAGE_INFO_NODE(pageInfoType.getName()),
     CONNECTION_PAGE_INFO_FIELD(uncapitalize(CONNECTION_PAGE_INFO_NODE.getName())),
     HAS_PREVIOUS_PAGE_FIELD("hasPreviousPage"),
     HAS_NEXT_PAGE_FIELD("hasNextPage"),
@@ -60,6 +61,8 @@ public enum GraphQLReservedName {
     FEDERATION_ENTITY_UNION(_Entity.typeName),
     FEDERATION_REPRESENTATIONS_ARGUMENT(_Entity.argumentName),
     FEDERATION_EXTERNAL(FederationDirectives.externalName),
+    FEDERATION_REQUIRES(FederationDirectives.requiresName),
+    FEDERATION_SHAREABLE("shareable"),
     FEDERATION_FIELD_SET(_FieldSet.typeName);
 
     private final String name;

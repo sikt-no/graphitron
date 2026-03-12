@@ -1,0 +1,26 @@
+type PageInfo @shareable {
+  hasPreviousPage: Boolean!
+  hasNextPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type Query {
+  someType(first: Int = 100, after: String): QuerySomeTypeConnection @shareable
+}
+
+type QuerySomeTypeConnection @shareable {
+  edges: [QuerySomeTypeConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [SomeType]
+  totalCount: Int
+}
+
+type QuerySomeTypeConnectionEdge @shareable {
+  cursor: String
+  node: SomeType
+}
+
+type SomeType {
+  id: ID!
+}
