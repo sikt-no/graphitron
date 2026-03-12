@@ -130,28 +130,35 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
 
                 for (String keyColumn : keyColumns) {
                     var field = tableFieldCodeBlock(targetTable, getJavaFieldName(targetTable, keyColumn).orElseThrow());
-                    var setValue = val(
-                            CodeBlock.of("$N.$L()",
-                                recordInput.isIterableWrapped() ? VAR_ITERATOR : recordInputVariableName,
-                                new MethodMapping(keyColumn).asCamelGet()
-                            )
+                    var getterExpr = CodeBlock.of("$N.$L()",
+                            recordInput.isIterableWrapped() ? VAR_ITERATOR : recordInputVariableName,
+                            new MethodMapping(keyColumn).asCamelGet()
                     );
+                    var setValue = val(getterExpr);
 
-                    if (!inputSetValue.getChecksAsSequence().isEmpty()) {
-                        setValue = ofTernary(inputSetValue.getCheckSequenceCodeBlock(), setValue, defaultValue(field));
+                    if (inputField.isNullable()) {
+                        setValue = ofTernary(
+                                CodeBlock.of("$L != null", inputSetValue.getNameWithPath()),
+                                setValue,
+                                defaultValue(field)
+                        );
                     }
                     setValueMap.put(field, setValue);
                 }
             } else {
+                var field = tableFieldCodeBlock(targetTable, inputField.getUpperCaseName());
                 var setValue = val(inputSetValue.getNameWithPath());
-                if (!inputSetValue.getChecksAsSequence().isEmpty()) {
+                if (inputField.isNullable()) {
+                    var recordVar = recordInput.isIterableWrapped()
+                            ? CodeBlock.of("$N", VAR_ITERATOR)
+                            : CodeBlock.of("$N", recordInputVariableName);
                     setValue = ofTernary(
-                            inputSetValue.getCheckSequenceCodeBlock(),
+                            CodeBlock.of("$L.changed($L)", recordVar, field),
                             setValue,
-                            defaultValue(targetTable, inputField.getUpperCaseName())
+                            defaultValue(field)
                     );
                 }
-                setValueMap.put(tableFieldCodeBlock(targetTable, inputField.getUpperCaseName()), setValue);
+                setValueMap.put(field, setValue);
             }
         }
 

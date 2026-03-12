@@ -315,7 +315,11 @@ public class MapperContext {
         var targetEqualsPrevious = targetName.equals(previousContext.targetName);
         var code = CodeBlock.builder();
         if (isIterable && hasSourceName()) {
-            code.declareIf(createsDataFetchers || isValidation, namedIteratorPrefix(sourceName), "$N.get($N)", inputPrefix(sourceName), getIndexName());
+            code.declareIf(createsDataFetchers || isValidation || toRecord, namedIteratorPrefix(sourceName), "$N.get($N)", inputPrefix(sourceName), getIndexName());
+
+            if (toRecord && !createsDataFetchers && !isValidation) {
+                code.declare(VAR_ARGS, "$N.$L($N, $N)", VAR_TRANSFORMER, METHOD_ARGS_FOR_INDEX_NAME, VAR_PATH_NAME, getIndexName());
+            }
 
             if (!isValidation) {
                 code.add(continueCheck(namedIteratorPrefix(sourceName)));
@@ -344,7 +348,7 @@ public class MapperContext {
             }
         }
 
-        var forCode = CodeBlock.builder().add(isIterable && hasSourceName() ? (isValidation ? wrapForIndexed(sourceName, code.build()) : wrapFor(sourceName, code.build())) : code.build());
+        var forCode = CodeBlock.builder().add(isIterable && hasSourceName() ? (isValidation || toRecord ? wrapForIndexed(sourceName, code.build()) : wrapFor(sourceName, code.build())) : code.build());
         if (isValidation || !previousContext.isInitContext && (toRecord || !mapsJavaRecord)) {
             return forCode.build();
         }
