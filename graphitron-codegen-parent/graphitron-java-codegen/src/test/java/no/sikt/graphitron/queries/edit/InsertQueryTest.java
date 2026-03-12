@@ -110,7 +110,7 @@ public class InsertQueryTest extends MutationQueryTest {
     void nullableField() {
         assertGeneratedContentContains("nullableField",
                 "insertInto(CUSTOMER, CUSTOMER.ADDRESS_ID)" +
-                        ".values(_mi_inRecord.getAddressId() != null ? DSL.val(_mi_inRecord.getAddressId()) : DSL.defaultValue(CUSTOMER.ADDRESS_ID))"
+                        ".values(_mi_inRecord.changed(CUSTOMER.ADDRESS_ID) ? DSL.val(_mi_inRecord.getAddressId()) : DSL.defaultValue(CUSTOMER.ADDRESS_ID))"
         );
     }
 
@@ -152,7 +152,7 @@ public class InsertQueryTest extends MutationQueryTest {
                 """
                     .valuesOfRows(_mi_inRecordList.stream().map(_iv_it -> {
                                 return DSL.row(
-                                    _iv_it.getCustomerId() != null ? DSL.val(_iv_it.getCustomerId()) : DSL.defaultValue(CUSTOMER.CUSTOMER_ID)
+                                    _iv_it.changed(CUSTOMER.CUSTOMER_ID) ? DSL.val(_iv_it.getCustomerId()) : DSL.defaultValue(CUSTOMER.CUSTOMER_ID)
                                 );
                             }).toList()
                     )

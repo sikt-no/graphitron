@@ -1,0 +1,10 @@
+{
+    "data": {
+        "insertFilmWrapped": {
+            "film": {
+                "title": "Absent Field Film",
+                "rentalDuration": 3
+            }
+        }
+    }
+}

@@ -1,0 +1,10 @@
+{
+    "data": {
+        "insertFilmWrapped": {
+            "film": {
+                "title": "Explicit Null Film",
+                "rentalDuration": null
+            }
+        }
+    }
+}

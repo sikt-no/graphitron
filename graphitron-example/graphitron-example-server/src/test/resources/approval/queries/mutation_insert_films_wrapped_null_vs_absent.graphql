@@ -1,0 +1,9 @@
+# Verify per-item explicit null vs absent handling in list insert mutations (GG-407)
+mutation InsertFilmsWrapped($in: [FilmCreateInput!]!) {
+    insertFilmsWrapped(in: $in) {
+        films {
+            title
+            rentalDuration
+        }
+    }
+}
