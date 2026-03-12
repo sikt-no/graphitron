@@ -135,12 +135,12 @@ public class SingleTableInterfaceTest extends InterfaceTest {
                 // Make sure only correct fields are selected
                 """
                         select(
-                            DSL.row(_a_address.ADDRESS_ID).as("address_pkey"),
+                            DSL.row(_a_address.ADDRESS_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_address.ADDRESS_ID))).as("address_pkey"),
                             _a_address.DISTRICT.as("_iv_discriminator"),
                             _a_address.POSTAL_CODE.as("postalCode")
                             )
                         """,
-                "data.setCustomerKey(_iv_it.get(\"address_pkey\", Record1.class).valuesRow())"
+                "data.setCustomerKey(_iv_it.get(\"address_pkey\", AddressRecord.class))"
         );
     }
 
@@ -148,7 +148,7 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     @DisplayName("With splitQuery reference in type")
     void splitQueryReferenceInType() {
         assertGeneratedContentContains("splitQueryReferenceInType",
-                "DSL.row(_a_address.ADDRESS_ID).as(\"address_pkey\")",
+                "DSL.row(_a_address.ADDRESS_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_address.ADDRESS_ID))).as(\"address_pkey\")",
                 "AddressInDistrictOne.class); _iv_data.setCustomerKey(_iv_it.get(\"address_pkey\"",
                 "return _iv_it.into(AddressInDistrictTwo.class);"
         );

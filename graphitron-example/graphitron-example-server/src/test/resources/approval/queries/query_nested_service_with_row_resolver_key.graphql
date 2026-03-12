@@ -1,0 +1,14 @@
+# Temporary test to ensure backward compatability for nested services with signature Map<RowN, ?>.
+{
+    cities(first: 2) {
+        nodes {
+            id
+            addresses {
+                id
+            }
+            filmsFromCityWithRowResolverKey {
+                id
+            }
+        }
+    }
+}

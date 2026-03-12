@@ -668,41 +668,46 @@ public class FormatCodeBlocks {
         return CodeBlock.statementOf("return $L", code);
     }
 
-    public static CodeBlock inResolverKeysBlock(String resolverKeyParamName, FetchContext context) {
-        return CodeBlock.of("$L.in($N)", getSelectKeyColumnRow(context), resolverKeyParamName);
-    }
-
     /**
-     * Returns the select code for the columns of a key.
-     *
-     * @param key               The key
-     * @param aliasVariableName The variable name for the table alias
-     * @return Select code for the columns in the key
+     * Returns condition for filtering on resolver key.
      */
-    public static CodeBlock getSelectKeyColumnRow(Key<?> key, String tableName, String aliasVariableName) {
-        return wrapRow(
-                getSelectKeyColumn(key, tableName, aliasVariableName)
+    public static CodeBlock inResolverKeysBlock(String resolverKeyParamName, FetchContext context) {
+        return CodeBlock.of(
+                "$1L.in($2N.stream().map($3N -> $3N.key().valuesRow()).toList())",
+                wrapRow(commaSeparatedKeyFields(context.getResolverKey().key(), context.getTargetTableName(), context.getTargetAlias())),
+                resolverKeyParamName,
+                VAR_ITERATOR
         );
     }
 
     /**
-     * Returns codeblock for selecting key columns for the resolver key
-     * @param context The fetching context
-     * @return Select code for the columns in the resolver key
+     * Returns code for selecting resolver key and converting it into a table record.
      */
-    public static CodeBlock getSelectKeyColumnRow(FetchContext context) {
-        return getSelectKeyColumnRow(context.getResolverKey().key(), context.getTargetTableName(), context.getTargetAlias());
+    public static CodeBlock resolverKeyAsTableRecord(FetchContext context) {
+        return keyAsTableRecordWithQueryHelper(context.getResolverKey().key(), context.getTargetTableName(), context.getTargetAlias());
     }
 
-    public static CodeBlock getSelectKeyColumn(Key<?> key, String tableName, String aliasVariableName) {
+    /**
+     * Returns a CodeBlock that selects key fields as a row and converts fetched records into TableRecords
+     * via {@link no.sikt.graphql.helpers.query.QueryHelper#intoTableRecord}.
+     */
+    public static CodeBlock keyAsTableRecordWithQueryHelper(Key<?> key, String tableName, String aliasVariableName) {
+        CodeBlock keyFields = commaSeparatedKeyFields(key, tableName, aliasVariableName);
+        return CodeBlock.builder()
+                .add(wrapRow(keyFields))
+                .add(".convertFrom($1N -> $2T.intoTableRecord($1N, $3L))", VAR_ITERATOR, QUERY_HELPER.className, listOf(keyFields))
+                .build();
+    }
+
+    public static CodeBlock commaSeparatedResolverKeyFields(FetchContext context) {
+        return commaSeparatedKeyFields(context.getResolverKey().key(), context.getTargetTableName(), context.getTargetAlias());
+    }
+
+    private static CodeBlock commaSeparatedKeyFields(Key<?> key, String tableName, String aliasVariableName) {
         return getJavaFieldNamesForKey(tableName, key)
                 .stream()
                 .map(it -> CodeBlock.of("$N.$L", aliasVariableName, it))
                 .collect(CodeBlock.joining(", "));
-    }
-
-    public static CodeBlock getSelectKeyColumn(FetchContext context) {
-        return getSelectKeyColumn(context.getResolverKey().key(), context.getTargetTableName(), context.getTargetAlias());
     }
 
     public static CodeBlock createNodeIdBlock(RecordObjectSpecification<?> obj, String targetAlias) {
@@ -849,5 +854,18 @@ public class FormatCodeBlocks {
 
     public static CodeBlock ofTernary(CodeBlock ifExpr, CodeBlock thenExpr, CodeBlock elseExpr) {
         return CodeBlock.of("$L ? $L : $L", ifExpr, thenExpr, elseExpr);
+    }
+
+    /**
+     * Returns a CodeBlock that extracts the primary key from a TableRecord and maps it into a new record of the same type.
+     * The resulting record will only have its key fields populated.
+     * <p>Example output: {@code myTableRecord.key().into(MyTableRecord.class)}
+     *
+     * @param variableName variable name of the table record to extract the key from.
+     * @param recordClass  the record class to map the key into. This should match the record class of the variable.
+     * @return CodeBlock that converts a table record into a key-only record of the same type.
+     */
+    public static CodeBlock extractKeyAsTableRecord(String variableName, TypeName recordClass) {
+        return CodeBlock.of("$N.key().into($T.class)", variableName, recordClass);
     }
 }

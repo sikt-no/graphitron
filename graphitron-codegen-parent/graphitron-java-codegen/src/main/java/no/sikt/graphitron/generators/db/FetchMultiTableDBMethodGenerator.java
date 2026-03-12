@@ -207,12 +207,11 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     private CodeBlock getFetchCodeBlock(ObjectField target) {
         var isList = processedSchema.returnsList(target);
         if (target.createsDataFetcher()) {
-            var valuesBlock = CodeBlock.of("$1L -> $1N.value1().valuesRow(),\n", VAR_RECORD_ITERATOR);
             return CodeBlock
                     .builder()
                     .add(".fetchMap(")
-                    .addIf(!isList, indentIfMultiline(CodeBlock.of("$L$T::value2", valuesBlock, RECORD2.className)))
-                    .addIf(isList, indentIfMultiline(CodeBlock.of("$1L$2L -> $2L.value2().map($3T::value1)", valuesBlock, VAR_RECORD_ITERATOR, RECORD1.className)))
+                    .addIf(!isList, indentIfMultiline(CodeBlock.of("$1T::value1, $1T::value2", RECORD2.className)))
+                    .addIf(isList, indentIfMultiline(CodeBlock.of("$1T::value1,\n$2L -> $2L.value2().map($3T::value1)", RECORD2.className, VAR_RECORD_ITERATOR, RECORD1.className)))
                     .addStatement(")")
                     .build();
         }

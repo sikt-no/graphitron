@@ -52,9 +52,10 @@ public class OutputTest extends GeneratorTest {
     void splitQueryListed() {
         assertGeneratedContentContains(
                 "splitQueryListed", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
-                "Map<Row1<Long>, List<CustomerTable>> queryForWrapper",
-                ".select(DSL.row(_a_address.ADDRESS_ID),DSL.multiset(DSL.select",
-                ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), _iv_r -> _iv_r.value2().map(Record1::value1))"
+                "Map<AddressRecord, List<CustomerTable>> queryForWrapper",
+                ".select(DSL.row(_a_address.ADDRESS_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_address.ADDRESS_ID)))," +
+                        "DSL.multiset(DSL.select",
+                ".fetchMap(Record2::value1, _iv_r -> _iv_r.value2().map(Record1::value1))"
         );
     }
 
@@ -345,7 +346,7 @@ public class OutputTest extends GeneratorTest {
     @DisplayName("Row with more than 22 fields including key for splitQuery field")
     void over22FieldsWithSplitQuery() {
         assertGeneratedContentContains("over22FieldsWithSplitQuery",
-                "new Film( (Record1<Long>) _iv_r[0], _a_film.TITLE.getDataType().convert(_iv_r[1])",
+                "new Film( (FilmRecord) _iv_r[0], _a_film.TITLE.getDataType().convert(_iv_r[1])",
                 "_iv_r[22]))"
         );
     }
@@ -412,7 +413,7 @@ public class OutputTest extends GeneratorTest {
     void innerTableSelfReference() {
         assertGeneratedContentContains(
                 "innerTableSelfReference",
-                ".row(_a_film.FILM_ID),DSL.field(",
+                ".row(_a_film.FILM_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_film.FILM_ID))), DSL.field",
                 ".mapping(Functions.nullOnAllNull(Film::new");
     }
 

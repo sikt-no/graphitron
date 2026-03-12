@@ -8,9 +8,11 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.directives.GenerationDirectiveParam;
+import org.jooq.Row;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -118,5 +120,21 @@ abstract public class CodeReferenceWrapper {
      */
     public Method getMethod() {
         return method;
+    }
+
+    @Deprecated
+    public boolean isMethodUsingRowResolverKey() {
+        if (method == null) {
+            return false;
+        }
+        if (!(method.getGenericReturnType() instanceof ParameterizedType returnType)) {
+            return false;
+        }
+        if (returnType.getRawType() != Map.class || returnType.getActualTypeArguments().length < 1) {
+            return false;
+        }
+        var firstArg = returnType.getActualTypeArguments()[0];
+        var rawFirstArg = firstArg instanceof ParameterizedType p ? (Class<?>) p.getRawType() : (Class<?>) firstArg;
+        return Row.class.isAssignableFrom(rawFirstArg);
     }
 }

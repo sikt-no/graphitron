@@ -160,7 +160,8 @@ public class MutationOutputTest extends MutationQueryTest {
     void tableObjectWithSplitQueryReference() {
         assertGeneratedContentContains("tableObjectWithSplitQueryReference",
                 "{ return",
-                "DSL.row(DSL.row(CUSTOMER.CUSTOMER_ID), _iv_nodeIdStrategy.createId",
+                "DSL.row(DSL.row(CUSTOMER.CUSTOMER_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(CUSTOMER.CUSTOMER_ID)))," +
+                        "_iv_nodeIdStrategy.createId",
                 "getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer"
         );
     }

@@ -169,7 +169,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("SplitQuery field")
     void withSplitQueryReference() {
         assertGeneratedContentContains("withSplitQueryReference",
-                "if (_iv_select.contains(_iv_pathHere + \"address\")) {_mo_customer.setAddressKey(DSL.row(_nit_customerRecord.getCustomerId()));}"
+                "if (_iv_select.contains(_iv_pathHere + \"address\")) {_mo_customer.setAddressKey(_nit_customerRecord.key().into(CustomerRecord.class));}"
         );
     }
 
@@ -178,7 +178,11 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     void withSplitQueryList() {
         assertGeneratedContentContains("withSplitQueryList",
                 "customer.setId(_nit_customerRecord.getId())",
-                "if (_iv_select.contains(_iv_pathHere + \"customers\")) {_mo_customerPayload.setCustomersKey(_mi_customerPayloadRecord.stream().map(_iv_it -> DSL.row(_iv_it.getCustomerId())).toList());}"
+                """
+                    if (_iv_select.contains(_iv_pathHere + "customers")) {
+                        _mo_customerPayload.setCustomersKey(_mi_customerPayloadRecord.stream().map(_iv_it -> _iv_it.key().into(CustomerRecord.class)).toList());
+                    }
+                """
         );
     }
 
@@ -186,7 +190,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("SplitQuery field with key provided in reference directive")
     void withSplitQueryReferenceWithKey() {
         assertGeneratedContentContains("withSplitQueryReferenceWithKey",
-                "if (_iv_select.contains(_iv_pathHere + \"address\")) {_mo_customer.setAddressKey(DSL.row(_nit_customerRecord.getCustomerId()));}"
+                "if (_iv_select.contains(_iv_pathHere + \"address\")) {_mo_customer.setAddressKey(_nit_customerRecord.key().into(CustomerRecord.class));}"
         );
     }
 
@@ -194,7 +198,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("SplitQuery list field with key provided in reference directive")
     void withSplitQueryReferenceWithKeyList() {
         assertGeneratedContentContains("withSplitQueryReferenceWithKeyList",
-                "\"payments\")) {_mo_customer.setPaymentsKey(DSL.row(_nit_customerRecord.getCustomerId()))"
+                "\"payments\")) {_mo_customer.setPaymentsKey(_nit_customerRecord.key().into(CustomerRecord.class))"
         );
     }
 
@@ -202,7 +206,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("SplitQuery field with condition and no key provided in reference directive")
     void withSplitQueryReferenceWithCondition() {
         assertGeneratedContentContains("withSplitQueryReferenceWithCondition",
-                "\"address\")) {_mo_customer.setAddressKey(DSL.row(_nit_customerRecord.getCustomerId()))"
+                "\"address\")) {_mo_customer.setAddressKey(_nit_customerRecord.key().into(CustomerRecord.class))"
         );
     }
 
@@ -210,7 +214,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("SplitQuery list field with condition and no key provided in reference directive")
     void withSplitQueryReferenceWithConditionList() {
         assertGeneratedContentContains("withSplitQueryReferenceWithConditionList",
-                "\"payments\")) {_mo_customer.setPaymentsKey(DSL.row(_nit_customerRecord.getCustomerId()))"
+                "\"payments\")) {_mo_customer.setPaymentsKey(_nit_customerRecord.key().into(CustomerRecord.class))"
         );
     }
 

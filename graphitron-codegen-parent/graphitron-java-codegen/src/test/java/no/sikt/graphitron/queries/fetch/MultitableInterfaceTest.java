@@ -85,12 +85,17 @@ public class MultitableInterfaceTest extends InterfaceTest {
     }
 
     @Test
-    @DisplayName("Interface with type reference with splitQuery should have primary key fields in subquery")
+    @DisplayName("Interface with type reference with splitQuery should have resolver key in subquery")
     void interfaceWithTypeSplitQueryOnlyPrimaryKey() {
         assertGeneratedContentContains(
                 "interfaceWithTypeSplitQuery",
                 Set.of(CUSTOMER_TABLE),
-                "row(DSL.row(_a_payment.PAYMENT_ID), _a_payment.getId()).mapping"
+                """
+                row(DSL.row(
+                    _a_payment.PAYMENT_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_payment.PAYMENT_ID))),
+                    _a_payment.getId()
+                ).mapping
+                """
         );
     }
 
@@ -175,7 +180,7 @@ public class MultitableInterfaceTest extends InterfaceTest {
     void splitQueryWithInput() {
         assertGeneratedContentContains("splitQueryWithInput", Set.of(PERSON_WITH_EMAIL_CONNECTION),
                 ".from(_a_payment_1831371789_customer).where(_a_payment_1831371789_customer.EMAIL.eq(_mi_email))",
-                ".from(_a_payment).where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment)).fetch"
+                ".from(_a_payment).where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment.stream().map(_iv_it -> _iv_it.key().valuesRow()).toList())).fetch"
         );
     }
 }
