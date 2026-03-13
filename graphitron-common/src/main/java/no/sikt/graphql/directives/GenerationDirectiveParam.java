@@ -38,7 +38,8 @@ public enum GenerationDirectiveParam {
     FIELDS("fields"),
     PRIMARY_KEY("primaryKey"),
     COLLATE("collate"),
-    DIRECTION("direction");
+    DIRECTION("direction"),
+    SELECTION("selection");
 
     private final String name;
 

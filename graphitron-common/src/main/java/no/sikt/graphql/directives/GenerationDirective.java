@@ -33,7 +33,8 @@ public enum GenerationDirective {
     DISCRIMINATOR("discriminator", EnumSet.of(GenerationDirectiveParam.VALUE)),
     EXTERNAL_FIELD("externalField"),
     NODE("node", EnumSet.of(GenerationDirectiveParam.TYPE_ID, GenerationDirectiveParam.KEY_COLUMNS)),
-    NODE_ID("nodeId", EnumSet.of(GenerationDirectiveParam.TYPE_NAME));
+    NODE_ID("nodeId", EnumSet.of(GenerationDirectiveParam.TYPE_NAME)),
+    CONSTRUCT_TYPE("experimental_constructType", EnumSet.of(GenerationDirectiveParam.SELECTION));
 
     private final String name;
 
