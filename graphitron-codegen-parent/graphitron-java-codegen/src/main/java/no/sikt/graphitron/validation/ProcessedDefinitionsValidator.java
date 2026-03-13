@@ -26,7 +26,6 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.text.similarity.LevenshteinDistance;
 import org.jooq.Field;
 import org.jooq.Key;
-import org.jooq.UniqueKey;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
@@ -43,9 +42,9 @@ import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getFo
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static no.sikt.graphitron.mappings.ReflectionHelpers.getJooqRecordClassForNodeIdInputField;
 import static no.sikt.graphitron.mappings.TableReflection.*;
+import static no.sikt.graphitron.validation.ErrorMessages.*;
 import static no.sikt.graphitron.validation.ServiceMethodFormatter.formatExpectedListableType;
 import static no.sikt.graphitron.validation.ServiceMethodFormatter.formatOverloads;
-import static no.sikt.graphitron.validation.ErrorMessages.*;
 import static no.sikt.graphitron.validation.ValidationHandler.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirective.NODE_ID;
@@ -142,36 +141,46 @@ public class ProcessedDefinitionsValidator {
         schema.getObjects().values().stream()
                 .filter(ObjectDefinition::hasNodeDirective)
                 .forEach(objectDefinition -> {
-                    if (!objectDefinition.hasTable()) {
+                    var nodeConfiguration = objectDefinition.getNodeConfiguration()
+                            .orElseThrow(() -> new RuntimeException(String.format( "Node type '%s' is unexpectedly missing node configuration.", objectDefinition.getName())));
+
+                    if (objectDefinition.getTable() == null) {
                         addErrorMessage("Type %s has the %s directive, but is missing the %s directive.",
                                 objectDefinition.getName(), NODE.getName(), TABLE.getName());
                     } else {
-                        var tableFields = getJavaFieldNamesForTable(objectDefinition.getTable().getName());
-                        objectDefinition.getKeyColumns().stream()
+                        if (!objectDefinition.getTable().getName().equals(nodeConfiguration.javaTableName())) {
+                            throw new RuntimeException(String.format(
+                                    "Unexpected mismatch between node configuration table and object table for '%s'. Please report if you have encountered this issue.",
+                                    objectDefinition.getName())
+                            );
+                        }
+
+                        var tableFields = getJavaFieldNamesForTable(nodeConfiguration.javaTableName());
+                        nodeConfiguration.keyColumnsJavaNames().stream()
                                 .filter(col -> tableFields.stream().noneMatch(it -> it.equalsIgnoreCase(col)))
                                 .forEach(col -> addErrorMessage(
-                                        " Key column '%s' in node ID for type '%s' does not exist in table '%s'",
+                                        "Key column '%s' in node ID for type '%s' does not exist in table '%s'",
                                         col,
                                         objectDefinition.getName(),
-                                        objectDefinition.getTable().getName())
+                                        nodeConfiguration.javaTableName())
                                 );
 
-                        if (getPrimaryOrUniqueKeyMatchingIdFields(objectDefinition).isEmpty()) {
+                        if (getPrimaryOrUniqueKeyMatchingFields(nodeConfiguration.javaTableName(), nodeConfiguration.keyColumnsJavaNames()).isEmpty()) {
                             addErrorMessage(
                                     "Key columns in node ID for type '%s' does not match a PK/UK for table '%s'",
                                     objectDefinition.getName(),
-                                    objectDefinition.getTable().getName());
+                                    nodeConfiguration.javaTableName());
                         }
                     }
                     if (!objectDefinition.implementsInterface(NODE_TYPE.getName())) {
                         addErrorMessage("Type %s has the %s directive, but does not implement the %s interface.",
                                 objectDefinition.getName(), NODE.getName(), NODE_TYPE.getName());
                     }
-                    if (GeneratorConfig.requireTypeIdOnNode() && !objectDefinition.hasCustomTypeId()) {
+                    if (GeneratorConfig.requireTypeIdOnNode() && !nodeConfiguration.hasCustomTypeId()) {
                         addErrorMessage("Type '%s' has the '%s' directive, but is missing the '%s' parameter which has been configured to be required.",
                                 objectDefinition.getName(), NODE.getName(), TYPE_ID.getName());
                     }
-                    typeIdMap.computeIfAbsent(objectDefinition.getTypeId(), k -> new HashSet<>())
+                    typeIdMap.computeIfAbsent(nodeConfiguration.typeId(), k -> new HashSet<>())
                             .add(objectDefinition.getName());
                 });
 
@@ -183,12 +192,6 @@ public class ProcessedDefinitionsValidator {
                                 String.join(", ", entry.getValue()),
                                 entry.getKey())
                 );
-    }
-
-    private Optional<? extends UniqueKey<?>> getPrimaryOrUniqueKeyMatchingIdFields(ObjectDefinition target) {
-        return !target.hasCustomKeyColumns() ?
-                getPrimaryKeyForTable(target.getTable().getName())
-                : getPrimaryOrUniqueKeyMatchingFields(target.getTable().getName(), target.getKeyColumns());
     }
 
     private void validateNodeId() {
@@ -343,7 +346,10 @@ public class ProcessedDefinitionsValidator {
         }
 
         var nodeType = schema.getNodeTypeForNodeIdFieldOrThrow(field);
-        var firstForeignKeyReferencesTargetTable = foreignKey.getInverseKey().getTable().getName().equalsIgnoreCase(nodeType.getTable().getName());
+        var nodeConfig = schema.getNodeConfigurationForTypeOrThrow(nodeType);
+        var firstForeignKeyReferencesTargetTable = getTableJavaFieldNameByTableName(foreignKey.getInverseKey().getTable().getName())
+                .orElse(foreignKey.getInverseKey().getTable().getName())
+                .equalsIgnoreCase(nodeConfig.javaTableName());
 
         if (field.getFieldReferences().size() > 1 || (field.hasFieldReferences() && !firstForeignKeyReferencesTargetTable)) {
             addErrorMessage(
@@ -356,7 +362,7 @@ public class ProcessedDefinitionsValidator {
             return;
         }
 
-        var targetKey = getPrimaryOrUniqueKeyMatchingIdFields(nodeType);
+        var targetKey =  getPrimaryOrUniqueKeyMatchingFields(nodeConfig.javaTableName(), nodeConfig.keyColumnsJavaNames());
 
         if (targetKey.isPresent() && !targetKey.get().equals(foreignKey.getKey())) {
             addErrorMessage(
