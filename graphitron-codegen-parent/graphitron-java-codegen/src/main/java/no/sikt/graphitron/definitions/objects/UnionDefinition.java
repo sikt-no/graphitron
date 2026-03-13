@@ -5,14 +5,12 @@ import graphql.language.UnionTypeDefinition;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.interfaces.TypeResolverTarget;
-import no.sikt.graphql.federation.fieldsets.FederationFieldSet;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphql.federation.fieldsets.FederationFieldSet;
 
-import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Collectors;
-
-import no.sikt.graphitron.javapoet.ClassName;
 
 import static no.sikt.graphql.directives.GenerationDirective.NOT_GENERATED;
 
@@ -80,26 +78,6 @@ public class UnionDefinition extends RecordObjectDefinition<UnionTypeDefinition,
 
     @Override
     public FederationFieldSet getEntityKeys() {
-        return null;
-    }
-
-    @Override
-    public boolean hasNodeDirective() {
-        return false;
-    }
-
-    @Override
-    public String getTypeId() {
-        return null;
-    }
-
-    @Override
-    public boolean hasCustomKeyColumns() {
-        return false;
-    }
-
-    @Override
-    public LinkedList<String> getKeyColumns() {
         return null;
     }
 

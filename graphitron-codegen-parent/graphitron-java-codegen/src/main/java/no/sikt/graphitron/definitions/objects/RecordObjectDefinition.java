@@ -1,29 +1,28 @@
 package no.sikt.graphitron.definitions.objects;
 
-import no.sikt.graphitron.javapoet.ClassName;
 import graphql.language.TypeDefinition;
 import no.sikt.graphitron.configuration.externalreferences.CodeReference;
 import no.sikt.graphitron.definitions.helpers.ClassReference;
+import no.sikt.graphitron.definitions.helpers.NodeConfiguration;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.ObjectSpecification;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
-import no.sikt.graphql.federation.fieldsets.FederationFieldSet;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
+import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.generators.codebuilding.NameFormat;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.directives.GenerationDirectiveParam;
+import no.sikt.graphql.federation.fieldsets.FederationFieldSet;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.LinkedHashSet;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldName;
-import static no.sikt.graphitron.mappings.TableReflection.getRequiredFields;
+import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphql.directives.DirectiveHelpers.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.NAME;
@@ -34,13 +33,12 @@ import static no.sikt.graphql.naming.GraphQLReservedName.*;
  */
 public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U extends GenerationField> extends AbstractObjectDefinition<T, U> implements RecordObjectSpecification<U> {
     private final JOOQMapping table;
-    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated, hasKeys, hasNodeDirective, hasCustomTypeId, isFederationExternal;
+    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated, hasKeys, hasNodeDirective, isFederationExternal;
     private final ClassReference classReference;
     private final List<U> inputsSortedByNullability;
     private final LinkedHashSet<String> requiredInputs;
     private final FederationFieldSet keys;
-    private final String typeId;
-    private final LinkedList<String> keyColumns;
+    private final NodeConfiguration nodeConfiguration;
 
     public RecordObjectDefinition(T objectDefinition) {
         super(objectDefinition);
@@ -67,13 +65,29 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         isFederationExternal = objectDefinition.hasDirective(FEDERATION_EXTERNAL.getName());
 
         hasNodeDirective = objectDefinition.hasDirective(NODE.getName());
-        var typeIdParameter = getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.TYPE_ID);
-        hasCustomTypeId = typeIdParameter.isPresent();
-        typeId = typeIdParameter.orElse(hasTable() ? getName() : null);
-        keyColumns = getOptionalDirectiveArgumentStringList(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.KEY_COLUMNS)
-                .stream()
-                .map(columnName -> getJavaFieldName(getTable().getName(), columnName).orElse(columnName))
-                .collect(Collectors.toCollection(LinkedList::new));
+
+        if (hasNodeDirective) {
+            var typeIdParameter = getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.TYPE_ID);
+
+            String javaTableName = Optional.ofNullable(getTable()).map(MethodMapping::getName).orElse(null);
+
+            var keyColumns = getOptionalDirectiveArgumentStringList(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.KEY_COLUMNS)
+                    .stream()
+                    .map(columnName -> getJavaFieldName(javaTableName, columnName).orElse(columnName))
+                    .collect(Collectors.toCollection(LinkedList::new));
+
+            if (keyColumns.isEmpty()) {
+                keyColumns = getPrimaryKeyForTable(javaTableName)
+                        .stream()
+                        .map(it -> getJavaFieldNamesForKey(getTable().getName(), it))
+                        .flatMap(Collection::stream)
+                        .collect(Collectors.toCollection(LinkedList::new));
+            }
+
+            nodeConfiguration = new NodeConfiguration(typeIdParameter.orElse(getName()), javaTableName, keyColumns, typeIdParameter.isPresent());
+        } else {
+            nodeConfiguration = null;
+        }
     }
 
     @NotNull
@@ -201,22 +215,8 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
     }
 
     @Override
-    public String getTypeId() {
-        return typeId;
-    }
-
-    public boolean hasCustomTypeId() {
-        return hasCustomTypeId;
-    }
-
-    @Override
-    public boolean hasCustomKeyColumns() {
-        return !keyColumns.isEmpty();
-    }
-
-    @Override
-    public LinkedList<String> getKeyColumns() {
-        return keyColumns;
+    public Optional<NodeConfiguration> getNodeConfiguration() {
+        return Optional.ofNullable(nodeConfiguration);
     }
 
     @Override
