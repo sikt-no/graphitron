@@ -72,7 +72,10 @@ public enum ReferencedEntry {
     LISTED_NODEID_INPUT_JAVA_RECORD("LISTED_NODEID_INPUT_JAVA_RECORD", ListedNodeIdInputJavaRecord.class),
     LISTED_RENTAL_INPUT_JAVA_RECORD("LISTED_RENTAL_INPUT_JAVA_RECORD", ListedRentalInputJavaRecord.class),
     LISTED_AND_SINGULAR_INPUT_JAVA_RECORD("LISTED_AND_SINGULAR_INPUT_JAVA_RECORD", ListedAndSingularInputJavaRecord.class),
-    LISTED_FILM_ACTOR_INPUT_JAVA_RECORD("LISTED_FILM_ACTOR_INPUT_JAVA_RECORD", ListedFilmActorInputJavaRecord.class);
+    LISTED_FILM_ACTOR_INPUT_JAVA_RECORD("LISTED_FILM_ACTOR_INPUT_JAVA_RECORD", ListedFilmActorInputJavaRecord.class),
+
+    // Optional field record.
+    OPTIONAL_FIELD_RECORD("OPTIONAL_FIELD_RECORD", OptionalFieldJavaRecord.class);
 
     private final ExternalReference reference;
 

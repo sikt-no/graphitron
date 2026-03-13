@@ -120,6 +120,14 @@ extend type Mutation {
             method: "updateCustomerEmail"
         }
     )
+    """Test explicit null vs absent handling for service operations with Optional fields (GG-407)"""
+    checkOptionalFields(input: [OptionalFieldServiceInput!]!)
+    : OptionalFieldCheckPayload @service(
+        service: {
+            className: "no.sikt.graphitron.example.service.OptionalFieldService",
+            method: "checkOptionalFields"
+        }
+    )
 }
 
 type CreateCustomerEmailPayload{
@@ -142,6 +150,23 @@ type CustomerEmail @table(name: "CUSTOMER") {
 input UpdateCustomerEmailInput @record(record: {className: "no.sikt.graphitron.example.service.records.UpdateCustomerEmailRecord"}){
   customerId: Int
   email: String
+}
+
+"""Test explicit null vs absent handling for service operations with Optional Java record fields (GG-407)"""
+input OptionalFieldServiceInput @record(record: {className: "no.sikt.graphitron.example.service.records.OptionalFieldInput"}) {
+    title: String!
+    rentalDuration: Int
+    description: String
+}
+
+type OptionalFieldCheckPayload {
+    results: [OptionalFieldCheckResult!]
+}
+
+type OptionalFieldCheckResult @record(record: {className: "no.sikt.graphitron.example.service.records.OptionalFieldResult"}) {
+    title: String
+    rentalDurationStatus: String
+    descriptionStatus: String
 }
 
 extend type City {

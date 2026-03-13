@@ -10,6 +10,8 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.Nullable;
+import java.util.Optional;
+import org.jooq.Field;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
@@ -25,6 +27,7 @@ import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getFo
 import static no.sikt.graphitron.javapoet.CodeBlock.declareNew;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.ReflectionHelpers.classHasMethod;
+import static no.sikt.graphitron.mappings.ReflectionHelpers.setterAcceptsOptional;
 import static no.sikt.graphitron.mappings.TableReflection.recordUsesFSHack;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_ID;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -392,6 +395,9 @@ public class MapperContext {
                     ? CodeBlock.of("$L.stream().toArray($T[]::new)", valueToSet, target.getTypeClass())
                     : CodeBlock.of("$T.of($L)", LIST.className, valueToSet);
         }
+        if (toRecord && mapsJavaRecord && isSetterOptional()) {
+            valueToSet = CodeBlock.of("$T.ofNullable($L)", Optional.class, valueToSet);
+        }
         return getSetMappingBlock(valueToSet);
     }
 
@@ -474,6 +480,16 @@ public class MapperContext {
     private boolean targetHasRequiredMethod() {
         // Assume the schema ones are OK anyway. It is done like this because these classes are not defined in tests.
         return !toRecord || classHasMethod(previousContext.targetType.getRecordReference(), setTargetMapping.asSet());
+    }
+
+    private boolean isSetterOptional() {
+        if (!previousContext.hasRecordReference) {
+            return false;
+        }
+        return setterAcceptsOptional(
+                previousContext.targetType.getRecordReference(),
+                setTargetMapping.asSet()
+        );
     }
 
     /**

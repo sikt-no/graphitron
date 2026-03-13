@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.*;
@@ -25,7 +26,7 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(DUMMY_SERVICE, NESTED_RECORD, MAPPER_RECORD_ENUM, JAVA_RECORD_CUSTOMER, MAPPER_RECORD_ADDRESS);
+        return makeReferences(DUMMY_SERVICE, NESTED_RECORD, MAPPER_RECORD_ENUM, JAVA_RECORD_CUSTOMER, MAPPER_RECORD_ADDRESS, OPTIONAL_FIELD_RECORD);
     }
 
     @Override
@@ -166,6 +167,15 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
                 "containingNonRecordWrapperWithJOOQRecord", Set.of(CUSTOMER_INPUT_TABLE),
                 "mapperNestedJavaRecord.setCustomer(_iv_transform.customerInputTableToJOOQRecord(_mi_customer, _iv_pathHere + \"inner/customer\")"
         );
+    }
+
+    @Test
+    @DisplayName("Optional setter fields are wrapped in Optional.ofNullable()")
+    void optionalFields() {
+        assertGeneratedContentContains("optionalFields", Set.of(OPTIONAL_FIELD_INPUT),
+                "setId(_nit_optionalFieldInput.getId())",
+                "setName(Optional.ofNullable(_nit_optionalFieldInput.getName()))",
+                "setRentalDuration(Optional.ofNullable(_nit_optionalFieldInput.getRentalDuration()))");
     }
 
     @Test

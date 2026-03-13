@@ -51,6 +51,22 @@ public class ReflectionHelpers {
     }
 
     /**
+     * Checks whether a setter method on the given class accepts an Optional parameter.
+     *
+     * @param recordClass The POJO class to inspect
+     * @param setterName  The setter method name (e.g., "setRentalDuration")
+     * @return true if the setter's first parameter is Optional
+     */
+    public static boolean setterAcceptsOptional(Class<?> recordClass, String setterName) {
+        if (recordClass == null) {
+            return false;
+        }
+        return Arrays.stream(recordClass.getMethods())
+                .filter(m -> m.getName().equals(setterName) && m.getParameterCount() == 1)
+                .anyMatch(m -> m.getParameterTypes()[0] == Optional.class);
+    }
+
+    /**
      * Gets the jOOQ record class that a @nodeId field should produce.
      * Uses reflection on the Java record class to get the target field's type.
      * @param field The @nodeId field
