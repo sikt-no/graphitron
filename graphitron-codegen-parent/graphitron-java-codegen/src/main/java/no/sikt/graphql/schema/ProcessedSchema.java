@@ -11,6 +11,7 @@ import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
+import no.sikt.graphitron.definitions.helpers.NodeConfiguration;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.ObjectSpecification;
@@ -18,6 +19,7 @@ import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.objects.*;
 import no.sikt.graphitron.validation.ProcessedDefinitionsValidator;
+import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import org.jetbrains.annotations.NotNull;
@@ -30,8 +32,7 @@ import java.util.stream.Stream;
 import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForDeletes;
 import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForInserts;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
-import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldNamesForKey;
-import static no.sikt.graphitron.mappings.TableReflection.getPrimaryKeyForTable;
+import static no.sikt.graphql.directives.GenerationDirective.NODE;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -472,18 +473,6 @@ public class ProcessedSchema {
                 .toList();
     }
 
-    public Optional<LinkedList<String>> getKeyColumnsForNodeType(RecordObjectSpecification<?> type) {
-        if (!isNodeType(type.getName())) {
-            throw new IllegalArgumentException("Non-node object type provided in getKeyColumnsForNodeType: " + type.getName());
-        }
-        if (!type.getKeyColumns().isEmpty()) {
-            return Optional.of(type.getKeyColumns());
-        }
-
-        return getPrimaryKeyForTable(type.getTable().getName())
-                .map(f -> new LinkedList<>(getJavaFieldNamesForKey(type.getTable().getName(), f)));
-    }
-
     /**
      * @return Get the object that this field points to.
      */
@@ -912,6 +901,40 @@ public class ProcessedSchema {
      */
     public ObjectDefinition getNodeTypeForNodeIdFieldOrThrow(GenerationField field) {
         return getNodeTypeForNodeIdField(field).orElseThrow(() -> new RuntimeException("Cannot find node type for node ID field " + field.formatPath()));
+    }
+
+    /**
+     * Finds node type for a node ID field. If not found an error is thrown.
+     * @param field The {@link GenerationField} to resolve the node type for. The field must be a node ID field.
+     * @return the corresponding {@link RecordObjectSpecification}
+     */
+    public NodeConfiguration getNodeConfigurationForNodeIdFieldOrThrow(GenerationField field) {
+        return getNodeConfigurationForTypeOrThrow(getNodeTypeForNodeIdFieldOrThrow(field));
+    }
+
+    /**
+     * Returns the {@link NodeConfiguration} for the given type name, or throws if the {@code @node} configuration is missing.
+     * @param typeName the name of a node type in the schema
+     * @return the node configuration for the type
+     */
+    public NodeConfiguration getNodeConfigurationForTypeOrThrow(String typeName) {
+        return getNodeConfigurationForTypeOrThrow(getNodeType(typeName));
+    }
+
+    /**
+     * Returns the {@link NodeConfiguration} for the given object, or throws if the {@code @node} configuration is missing.
+     * @param object the record object to retrieve the node configuration from
+     * @return the node configuration for the object
+     */
+    public NodeConfiguration getNodeConfigurationForTypeOrThrow(RecordObjectSpecification<?> object) {
+        return object.getNodeConfiguration()
+                .orElseThrow(() -> {
+                    ValidationHandler.addErrorMessageAndThrow(
+                            "Expected type '%s' to have @%s configuration, but it is unexpectedly null. Has validation been skipped?",
+                            object.getName(), NODE.getName()
+                    );
+                    return ValidationHandler.getException();
+                });
     }
 
     /**
