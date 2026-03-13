@@ -86,17 +86,16 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
                     .ifPresent(it -> {
                         var recordInputName = inputPrefix(it.getKey());
                         var inputType = it.getValue();
-                        var nodeType = processedSchema.getNodeTypeForNodeIdField(inputType);
-                        if (nodeType.isPresent()) {
-                            String tableName = nodeType.get().getTable().getName();
-                            var columnNames = getNodeIdKeyColumnNames(nodeType.get().getKeyColumns(), tableName);
-                            if (!columnNames.isEmpty()) {
-                                var isIterable = recordInputs.get(it.getKey()).isIterableWrapped();
-                                code.addIf(isIterable, "$N.forEach($N -> {\n", recordInputName, VAR_ITERATOR);
-                                var variableName = isIterable ? VAR_ITERATOR : recordInputName;
-                                columnNames.forEach(columnName -> code.addStatement("$N.changed($N.$N, true)", variableName, tableName, columnName));
-                                code.addIf(isIterable, "});\n");
-                            }
+                        var nodeType = processedSchema.getNodeConfigurationForNodeIdFieldOrThrow(inputType);
+                        String tableName = nodeType.javaTableName();
+                        var columnNames = getNodeIdKeyColumnNames(nodeType.keyColumnsJavaNames(), tableName);
+                        if (!columnNames.isEmpty()) {
+                            var isIterable = recordInputs.get(it.getKey()).isIterableWrapped();
+                            code.addIf(isIterable, "$N.forEach($N -> {\n", recordInputName, VAR_ITERATOR);
+                            var variableName = isIterable ? VAR_ITERATOR : recordInputName;
+                            columnNames.forEach(columnName -> code.addStatement("$N.changed($N.$N, true)", variableName, tableName, columnName));
+                            code.addIf(isIterable, "});\n");
+
                         }
                     });
         }

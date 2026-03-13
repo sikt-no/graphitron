@@ -32,6 +32,7 @@ import java.util.stream.Stream;
 import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForDeletes;
 import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForInserts;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
+import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getForeignKeyForNodeIdReference;
 import static no.sikt.graphql.directives.GenerationDirective.NODE;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -829,11 +830,16 @@ public class ProcessedSchema {
 
     public boolean isNodeIdReferenceField(GenerationField field) {
         if (isNodeIdField(field)) {
+//            if (field.isRootField() || getPreviousTableObjectForField(field) == null) {
+//                return false;
+//            }
             if (isNodeIdForNodeTypeWithSameTable(field)) {
                 return false;
             }
 
-            return field.hasFieldReferences() || !getNodeTypeForNodeIdFieldOrThrow(field).getName().equals(field.getContainerTypeName());
+            return field.hasFieldReferences()
+                    || !getNodeTypeForNodeIdFieldOrThrow(field).getName().equals(field.getContainerTypeName())
+                    || getForeignKeyForNodeIdReference(field, this).isPresent();
         }
         return false;
     }

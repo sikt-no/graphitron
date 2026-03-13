@@ -43,7 +43,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
-import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getSourceFieldsForForeignKey;
+import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.maplksjdasdjaoisd;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -590,7 +590,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         if (processedSchema.isNodeIdField(field)) {
             return createNodeIdBlock(
-                    processedSchema.isNodeIdField(field) ? processedSchema.getNodeTypeForNodeIdFieldOrThrow(field) : context.getReferenceObject(),
+                    processedSchema.getNodeConfigurationForNodeIdFieldOrThrow(field),
                     context.getTargetAlias()
             );
         }
@@ -797,13 +797,16 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 ? CodeBlock.of(inputCondition.getNamePath())
                 : inputCondition.getNameWithPath();
         if (processedSchema.isNodeIdField(field)) {
-            return hasIdOrIdsBlock(
-                    name,
-                    processedSchema.getNodeTypeForNodeIdFieldOrThrow(field),
-                    renderedSequence.toString(),
-                    getSourceFieldsForForeignKey(field, processedSchema, renderedSequence),
-                    field.isIterableWrapped()
-            );
+            if (processedSchema.isNodeIdReferenceField(field)) {
+                return hasNodeIdOrIdsBlock(
+                        name,
+                        processedSchema.getNodeConfigurationForNodeIdFieldOrThrow(field),
+                        renderedSequence.toString(),
+                        maplksjdasdjaoisd(field, processedSchema, renderedSequence),
+                        field.isIterableWrapped()
+                );
+            }
+            return hasNodeIdOrIdsBlock(name, processedSchema.getNodeConfigurationForNodeIdFieldOrThrow(field), renderedSequence.toString(), field.isIterableWrapped());
         }
 
         if (field.isID() && !shouldMakeNodeStrategy()) {
@@ -941,7 +944,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var referenceObject = processedSchema.hasJOOQRecord(field.getContainerTypeName())
                     ? processedSchema.getNodeTypeForNodeIdFieldOrThrow(field)
                     : context.getReferenceObject();
-            return hasIdBlock(getElement, referenceObject, context.getTargetAlias());
+            return hasNodeIdOrIdsBlock(getElement, processedSchema.getNodeConfigurationForTypeOrThrow(referenceObject), context.getTargetAlias(), false);
         }
 
         if (!condition.hasRecord()) {

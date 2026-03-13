@@ -40,6 +40,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
+import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getNodeIdReferenceFields;
 import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodNameForField;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.FUNCTION;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
@@ -365,22 +366,22 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
             var targetTable = type.getTable().getName();
             for (InputField recordField : type.getFields()) {
                 if (processedSchema.isNodeIdField(recordField)) {
-                    var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(recordField);
+                    var nodeType = processedSchema.getNodeConfigurationForNodeIdFieldOrThrow(recordField);
                     var unpackedVarName = VariablePrefix.unpackedPrefix(recordField.getName());
 
                     LinkedList<String> columns;
-                    if (!nodeType.getTable().getName().equalsIgnoreCase(targetTable)) {
+                    if (!nodeType.javaTableName().equalsIgnoreCase(targetTable)) {
                         var foreignKey = NodeIdReferenceHelpers.getForeignKeyForNodeIdReference(recordField, processedSchema)
                                 .orElseThrow(() -> new RuntimeException("Cannot find foreign key for nodeId field " + recordField.getName() + " in " + type.getName()));
-                        columns = FormatCodeBlocks.getReferenceNodeIdFields(targetTable, nodeType, foreignKey);
+                        columns = getNodeIdReferenceFields(targetTable, nodeType, foreignKey);
                     } else {
-                        columns = processedSchema.getKeyColumnsForNodeType(nodeType).orElseGet(LinkedList::new);
+                        columns = nodeType.keyColumnsJavaNames();
                     }
 
                     for (int i = 0; i < columns.size(); i++) {
                         tableColumnToInputFieldMappings
                                 .computeIfAbsent(columns.get(i), k -> new ArrayList<>())
-                                .add(FieldToColumnRecord.forNodeIdField(recordField, nodeType.getTypeId(), i, unpackedVarName, columns.get(i)));
+                                .add(FieldToColumnRecord.forNodeIdField(recordField, nodeType.typeId(), i, unpackedVarName, columns.get(i)));
                     }
                 } else {
                     String jooqColumn = recordField.getUpperCaseName();
@@ -410,7 +411,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                     .toList();
 
             for (InputField nodeIdField : nodeIdFieldsToUnpack) {
-                var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(nodeIdField);
+                var nodeType = processedSchema.getNodeConfigurationForNodeIdFieldOrThrow(nodeIdField);
                 var unpackedVarName = unpackedPrefix(nodeIdField.getName());
 
                 code.addStatement("var $N = $N.$L() != null ? $N.unpackIdValues($S, $N.$L(), $L) : null",
@@ -418,10 +419,10 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                         itemVarName,
                         nodeIdField.getMappingFromSchemaName().asGet(),
                         VAR_NODE_STRATEGY,
-                        nodeType.getTypeId(),
+                        nodeType.typeId(),
                         itemVarName,
                         nodeIdField.getMappingFromSchemaName().asGet(),
-                        FormatCodeBlocks.nodeIdColumnsBlock(nodeType));
+                        commaSeparatedNodeIdFieldsWithStaticTableInstanceBlock(nodeType));
             }
 
             for (var entry : overlappingColumns) {

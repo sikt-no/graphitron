@@ -1,6 +1,5 @@
 package no.sikt.graphitron.generators.codebuilding;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -18,7 +17,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.namedIteratorPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 public class LookupHelpers {
@@ -164,7 +164,7 @@ public class LookupHelpers {
     private static @NotNull CodeBlock getKeyFieldBlock(ProcessedSchema schema, CodeBlock table, InputField it) {
         if (it.isID()) {
             return schema.isNodeIdField(it)
-                    ? createNodeIdBlock(schema.getNodeTypeForNodeIdFieldOrThrow(it), table.toString())
+                    ? createNodeIdBlock(schema.getNodeConfigurationForNodeIdFieldOrThrow(it), table.toString())
                     : CodeBlock.of("$L$L", table, it.getMappingFromFieldOverride().asGetCall());
         }
         var fieldBlock =  CodeBlock.of("$L.$L", table, it.getUpperCaseName());

@@ -304,9 +304,10 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             Class<?> jooqRecordClass) {
 
         var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(field);
+        var nodeConfig = processedSchema.getNodeConfigurationForTypeOrThrow(nodeType);
         var tableName = getTableName(jooqRecordClass);
         var isReference = !tableName.equals(nodeType.getTable().getName()) || field.hasFieldReferences();
-        var columnsBlock = FormatCodeBlocks.generateNodeIdColumnsBlock(tableName, nodeType, field, processedSchema);
+        var columnsBlock = commaSeparatedTableFieldsBlock(staticTableInstanceBlock(tableName), getKeyFieldsForSourceNodeTable(nodeType, field, tableName, processedSchema));
 
         var code = CodeBlock.builder();
 
@@ -322,7 +323,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 .addStatement("$N.$L($N, $N, $S, $L)",
                         VAR_NODE_STRATEGY,
                         isReference ? METHOD_SET_RECORD_REFERENCE_ID : METHOD_SET_RECORD_ID,
-                        targetVarName, VAR_NODE_ID_VALUE, nodeType.getTypeId(), columnsBlock)
+                        targetVarName, VAR_NODE_ID_VALUE, nodeConfig.typeId(), columnsBlock)
                 .build();
     }
 
@@ -402,7 +403,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                     VAR_NODE_STRATEGY,
                     VAR_NODE_ID_VALUE,
                     targetVarName,
-                    nodeType.getTypeId(),
+                    processedSchema.getNodeConfigurationForTypeOrThrow(nodeType).typeId(),
                     columnName,
                     CodeBlock.of("($1L) -> $1N.$2L()", VAR_ITERATOR, nameMapping.asCamelGet()),
                     javaNameKeyColumns

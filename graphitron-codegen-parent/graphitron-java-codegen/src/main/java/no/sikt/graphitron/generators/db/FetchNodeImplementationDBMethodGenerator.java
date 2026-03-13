@@ -70,8 +70,8 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
         CodeBlock id;
         CodeBlock whereCondition;
         if (shouldMakeNodeStrategy()) {
-            id = CodeBlock.of("$L,\n$L", createNodeIdBlock(localObject, context.getTargetAlias()), selectBlock);
-            whereCondition = hasIdOrIdsBlock(CodeBlock.of(argumentName), localObject, context.getTargetAlias(), CodeBlock.empty(), true);
+            id = CodeBlock.of("$L,\n$L", createNodeIdBlock(processedSchema.getNodeConfigurationForTypeOrThrow(localObject), context.getTargetAlias()), selectBlock);
+            whereCondition = hasNodeIdOrIdsBlock(CodeBlock.of(argumentName), processedSchema.getNodeConfigurationForTypeOrThrow(localObject), context.getTargetAlias(),true);
         } else {
             var hasOrIn = argument.isID()
                     ? CodeBlock.of("hasIds")

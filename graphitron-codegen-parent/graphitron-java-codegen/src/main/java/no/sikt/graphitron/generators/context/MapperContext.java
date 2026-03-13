@@ -21,6 +21,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getForeignKeyForNodeIdReference;
+import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getNodeIdReferenceFields;
 import static no.sikt.graphitron.javapoet.CodeBlock.declareNew;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.ReflectionHelpers.classHasMethod;
@@ -275,7 +276,8 @@ public class MapperContext {
         }
 
         if (!toRecord && schema.isNodeIdField(target)) {
-            return createNodeIdBlockForRecord(schema.getRecordType(target.getContainerTypeName()), namedIteratorPrefixIf(previousContext.sourceName, previousContext.isIterable));
+            var nodeConfig = schema.getNodeConfigurationForTypeOrThrow(target.getContainerTypeName());
+            return createNodeIdBlockForRecord(nodeConfig, namedIteratorPrefixIf(previousContext.sourceName, previousContext.isIterable));
         }
 
         return getValue(
@@ -361,16 +363,21 @@ public class MapperContext {
 
     public CodeBlock getSetMappingBlock(CodeBlock valueToSet) {
         if (schema.isNodeIdField(target) && toRecord && !mapsJavaRecord) {
-            var nodeType = schema.getNodeTypeForNodeIdFieldOrThrow(target);
+            var nodeConfiguration = schema.getNodeConfigurationForNodeIdFieldOrThrow(target);
             var foreignKey = getForeignKeyForNodeIdReference(target, schema);
+            var tableName = schema.getRecordType(target.getContainerTypeName()).getTable().getName();
+
+            var nodeIdFields = foreignKey.isPresent()
+                    ? commaSeparatedTableFieldsWithStaticTableInstanceBlock(tableName, getNodeIdReferenceFields(tableName, nodeConfiguration, foreignKey.get()))
+                    : commaSeparatedNodeIdFieldsWithStaticTableInstanceBlock(nodeConfiguration);
 
             return CodeBlock.statementOf("$N.$L($N, $L, $S, $L)",
                     VAR_NODE_STRATEGY,
                     foreignKey.isPresent() ? METHOD_SET_RECORD_REFERENCE_ID : METHOD_SET_RECORD_ID,
                     outputPrefix(previousContext.targetName),
                     valueToSet,
-                    nodeType.getTypeId(),
-                    foreignKey.isPresent() ? referenceNodeIdColumnsBlock(schema.getRecordType(target.getContainerTypeName()), nodeType, foreignKey.get()) : nodeIdColumnsBlock(nodeType)
+                    nodeConfiguration.typeId(),
+                    nodeIdFields
             );
         }
         return setValue(outputPrefix(previousContext.targetName), setTargetMapping, valueToSet, target.createsDataFetcher());

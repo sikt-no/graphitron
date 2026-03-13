@@ -26,6 +26,7 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getForeignKeyForNodeIdReference;
+import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getNodeIdReferenceFields;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
 import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldName;
 
@@ -119,13 +120,13 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
         for (var inputSetValue : setValues) {
             var inputField = inputSetValue.getInput();
             if (processedSchema.isNodeIdField(inputField)) {
-                var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(inputField);
-                var keyColumns = processedSchema.getKeyColumnsForNodeType(nodeType).orElseThrow();
+                var nodeType = processedSchema.getNodeConfigurationForNodeIdFieldOrThrow(inputField);
+                var keyColumns = nodeType.keyColumnsJavaNames();
 
-                if (!nodeType.getTable().getName().equalsIgnoreCase(targetTable) || inputField.hasFieldReferences()) {
+                if (!nodeType.javaTableName().equalsIgnoreCase(targetTable) || inputField.hasFieldReferences()) {
                     var key = getForeignKeyForNodeIdReference(inputField, processedSchema)
                             .orElseThrow(() -> new RuntimeException("Cannot find foreign key for input node ID field " + inputField.formatPath() + " for " + target.formatPath()));
-                    keyColumns = getReferenceNodeIdFields(targetTable, nodeType, key);
+                    keyColumns = getNodeIdReferenceFields(targetTable, nodeType, key);
                 }
 
                 for (String keyColumn : keyColumns) {
