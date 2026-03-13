@@ -41,6 +41,6 @@ public class CustomerDBQueries {
             NodeIdStrategy _iv_nodeIdStrategy) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         var _a_customer_2168032777_address = _a_customer.address().as("address_2138977089");
-        return DSL.row(_iv_nodeIdStrategy.createId("Address", _a_customer_2168032777_address.fields(_a_customer_2168032777_address.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Address::new));
+        return DSL.row(_iv_nodeIdStrategy.createId("Address", _a_customer_2168032777_address.ADDRESS_ID)).mapping(Functions.nullOnAllNull(Address::new));
     }
 }
