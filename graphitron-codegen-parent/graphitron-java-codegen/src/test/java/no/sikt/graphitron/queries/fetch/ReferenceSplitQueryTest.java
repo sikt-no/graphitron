@@ -44,7 +44,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void previousQueryOnlyPrimaryKey() {
         assertGeneratedContentContains(
                 "previousQuery", Set.of(CUSTOMER_QUERY),
-                "DSL.row(DSL.row(_a_customer.CUSTOMER_ID)).mapping(Functions.nullOnAllNull(Customer::new"
+                "DSL.row(DSL.row(_a_customer.CUSTOMER_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_customer.CUSTOMER_ID))))" +
+                        ".mapping(Functions.nullOnAllNull(Customer::new"
         );
     }
 
@@ -53,7 +54,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void previousQueryPaginated() {
         assertGeneratedContentContains(
                 "previousQueryPaginated", Set.of(CUSTOMER_CONNECTION),
-                "DSL.row(DSL.row(_a_store.STORE_ID)).mapping(Functions.nullOnAllNull(Store::new"
+                "DSL.row(DSL.row(_a_store.STORE_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_store.STORE_ID))))" +
+                        ".mapping(Functions.nullOnAllNull(Store::new"
         );
     }
 
@@ -62,7 +64,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void previousQueryConditionPath() {
         assertGeneratedContentContains(
                 "previousQueryConditionPath", Set.of(CUSTOMER_QUERY),
-                "DSL.row(DSL.row(_a_customer.CUSTOMER_ID)).mapping(Functions.nullOnAllNull(Customer::new"
+                "DSL.row(DSL.row(_a_customer.CUSTOMER_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_customer.CUSTOMER_ID))))" +
+                        ".mapping(Functions.nullOnAllNull(Customer::new"
         );
     }
 
@@ -82,7 +85,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void previousQueryNestedOnlySplitQuery() {
         assertGeneratedContentContains(
                 "previousQueryNested", Set.of(CUSTOMER_QUERY),
-                "row(_a_customer_2168032777_address.ADDRESS_ID), _a_customer_2168032777_address.getId())" +
+                "row(_a_customer_2168032777_address.ADDRESS_ID)" +
+                        ".convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_customer_2168032777_address.ADDRESS_ID)))," +
+                        "_a_customer_2168032777_address.getId())" +
                         ".mapping(Functions.nullOnAllNull(Address::"
         );
     }
@@ -92,7 +97,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void previousQuerySingleTableInterface() {
         assertGeneratedContentContains(
                 "previousQuerySingleTableInterface", Set.of(ADDRESS_BY_DISTRICT),
-                "row(DSL.row(_a_city.CITY_ID)).mapping"
+                "row(DSL.row(_a_city.CITY_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_city.CITY_ID)))).mapping"
         );
     }
 
@@ -101,7 +106,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void previousQueryMultitableInterface() {
         assertGeneratedContentContains(
                 "previousQueryMultitableInterface",
-                "row(DSL.row(_a_filmcategory.FILM_ID, _a_filmcategory.CATEGORY_ID)).mapping"
+                "row(DSL.row(_a_filmcategory.FILM_ID, _a_filmcategory.CATEGORY_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_filmcategory.FILM_ID, _a_filmcategory.CATEGORY_ID)))).mapping"
         );
     }
 
@@ -110,7 +115,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void previousQueryMultitableUnion() {
         assertGeneratedContentContains(
                 "previousQueryMultitableUnion",
-                "row(DSL.row(_a_filmcategory.FILM_ID, _a_filmcategory.CATEGORY_ID)).mapping"
+                "row(_a_filmcategory.FILM_ID, _a_filmcategory.CATEGORY_ID)" +
+                        ".convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_filmcategory.FILM_ID, _a_filmcategory.CATEGORY_ID))))" +
+                        ".mapping(Functions.nullOnAllNull(FilmCategory::"
         );
     }
 
@@ -161,7 +168,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                             var _a_language_3571151285_filmlanguageidfkey = _a_language.filmLanguageIdFkey().as("film_4095514247");
                             var _a_film_4095514247_filmlanguageidfkey = _a_language_3571151285_filmlanguageidfkey.filmLanguageIdFkey().as("language_4281699989");
                             return DSL.row(
-                                    DSL.row(_a_film_4095514247_filmlanguageidfkey.LANGUAGE_ID),
+                                    DSL.row(_a_film_4095514247_filmlanguageidfkey.LANGUAGE_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_film_4095514247_filmlanguageidfkey.LANGUAGE_ID))),
                                     _a_film_4095514247_filmlanguageidfkey.getId(),
                                     _a_film_4095514247_filmlanguageidfkey.NAME
                             ).mapping(Functions.nullOnAllNull(Language::new));
@@ -269,7 +276,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "list", Set.of(CUSTOMER_NOT_GENERATED),
                 ".from(_a_customer_2168032777_address)",
                 "DSL.multiset(DSL.select(",
-                ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), _iv_r -> _iv_r.value2().map(Record1::value1))"
+                ".fetchMap(Record2::value1, _iv_r -> _iv_r.value2().map(Record1::value1))"
         );
     }
 
@@ -321,7 +328,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void fromMultitableInterface() {
         assertGeneratedContentContains(
                 "fromMultitableInterface", Set.of(CUSTOMER_TABLE),
-                "DSL.row(_a_payment.PAYMENT_ID), DSL.field(",
+                "DSL.row(_a_payment.PAYMENT_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_payment.PAYMENT_ID))), DSL.field(",
                 "customerForPayment_customerTable()).from(_a_payment_1831371789_customer)",
                 ".from(_a_payment).where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment"
         );
@@ -342,11 +349,11 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void afterJavaService() {
         assertGeneratedContentContains(
                 "afterJavaService", Set.of(CUSTOMER_TABLE),
-                "Set<Row1<Long>> _rk_customer",
-                ".select(DSL.row(_a_address.ADDRESS_ID), addressForCustomer_address(",
+                "Set<AddressRecord> _rk_customer",
+                ".select(DSL.row(_a_address.ADDRESS_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_address.ADDRESS_ID))), addressForCustomer_address(",
                 ".from(_a_address)" +
-                        ".where(DSL.row(_a_address.ADDRESS_ID).in(_rk_customer))" +
-                        ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), Record2::value2)"
+                        ".where(DSL.row(_a_address.ADDRESS_ID).in(_rk_customer.stream().map(_iv_it -> _iv_it.key().valuesRow()).toList()))" +
+                        ".fetchMap(Record2::value1, Record2::value2)"
         );
     }
 
@@ -355,8 +362,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void afterJavaServiceListed() {
         assertGeneratedContentContains(
                 "afterJavaServiceListed", Set.of(CUSTOMER_TABLE),
-                "Map<Row1<Long>, Address> addressForCustomer(DSLContext _iv_ctx, Set<Row1<Long>> _rk_customer",
-                ".select(DSL.row(_a_address.ADDRESS_ID), addressForCustomer_address("
+                "Map<AddressRecord, Address> addressForCustomer(DSLContext _iv_ctx, Set<AddressRecord> _rk_customer",
+                ".select(DSL.row(_a_address.ADDRESS_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_address.ADDRESS_ID))), addressForCustomer_address("
         );
     }
 
@@ -365,7 +372,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void afterJavaServiceNested() {
         assertGeneratedContentContains(
                 "afterJavaServiceNested", Set.of(CUSTOMER_TABLE),
-                ".select(DSL.row(_a_address.ADDRESS_ID), addressForWrapper_address("
+                ".select(DSL.row(_a_address.ADDRESS_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_address.ADDRESS_ID))), addressForWrapper_address("
         );
     }
 

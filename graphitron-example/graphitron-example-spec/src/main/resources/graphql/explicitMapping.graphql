@@ -1,0 +1,29 @@
+extend type Query {
+    customerManyFieldsLookup(customerIds: [Int!] @field(name: "CUSTOMER_ID") @lookupKey): [CustomerManyFields]
+}
+
+type CustomerManyFields @table(name: "CUSTOMER") {
+    customerId1: Int @field(name: "CUSTOMER_ID")
+    customerId2: Int @field(name: "CUSTOMER_ID")
+    customerId3: Int @field(name: "CUSTOMER_ID")
+    customerId4: Int @field(name: "CUSTOMER_ID")
+    customerId5: Int @field(name: "CUSTOMER_ID")
+    customerId6: Int @field(name: "CUSTOMER_ID")
+    customerId7: Int @field(name: "CUSTOMER_ID")
+    customerId8: Int @field(name: "CUSTOMER_ID")
+    customerId9: Int @field(name: "CUSTOMER_ID")
+    customerId10: Int @field(name: "CUSTOMER_ID")
+    customerId11: Int @field(name: "CUSTOMER_ID")
+    customerId12: Int @field(name: "CUSTOMER_ID")
+    customerId13: Int @field(name: "CUSTOMER_ID")
+    customerId14: Int @field(name: "CUSTOMER_ID")
+    customerId15: Int @field(name: "CUSTOMER_ID")
+    customerId16: Int @field(name: "CUSTOMER_ID")
+    customerId17: Int @field(name: "CUSTOMER_ID")
+    customerId18: Int @field(name: "CUSTOMER_ID")
+    customerId19: Int @field(name: "CUSTOMER_ID")
+    customerId20: Int @field(name: "CUSTOMER_ID")
+    customerId21: Int @field(name: "CUSTOMER_ID")
+    customerId22: Int @field(name: "CUSTOMER_ID")
+    address: Address @splitQuery
+}

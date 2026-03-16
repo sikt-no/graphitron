@@ -161,4 +161,28 @@ public class QueryHelper {
                 .map(it -> it == null ? null : map.getOrDefault(it, null))
                 .toList();
     }
+
+    /**
+     * Maps a {@link Record} containing a subset of column values into a new {@link TableRecord},
+     * populating only the specified fields. The values in {@code r} are matched to {@code fields}
+     * by position.
+     *
+     * <p>This is primarily used for constructing resolver keys where only the primary key fields
+     * need to be populated, and serves as a workaround for a
+     * <a href="https://github.com/jOOQ/jOOQ/issues/19711">jOOQ bug</a> where
+     * {@code RecordN.into(TableRecord)} fails on Oracle.</p>
+     *
+     * @param record      the source record whose values are mapped by position onto {@code fields}
+     * @param fields the target table fields; must be non-empty and belong to the same table
+     * @return a new table record with the given fields populated from {@code r}
+     */
+    public static <T extends TableRecord<T>, U extends Record> T intoTableRecord(U record, List<TableField<T, ?>> fields) {
+        T tableRecord = fields.stream().findFirst()
+                .map(TableField::getTable)
+                .map(RecordQualifier::newRecord)
+                .orElseThrow(() -> new RuntimeException("Creating table record failed."));
+
+        tableRecord.fromArray(record.intoArray(), fields.toArray(TableField[]::new));
+        return tableRecord;
+    }
 }

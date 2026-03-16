@@ -29,7 +29,7 @@ public class InterfaceDTOGenerator extends DTOGenerator<InterfaceDefinition> {
         new LinkedHashSet<>(keyMap.values()).forEach(( key) ->
                 interfaceBuilder.addMethod(
                         MethodSpec.methodBuilder(key.getDTOGetterName())
-                                .returns(key.getRowTypeName())
+                                .returns(key.getTypeName())
                                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
                                 .build()
                 )

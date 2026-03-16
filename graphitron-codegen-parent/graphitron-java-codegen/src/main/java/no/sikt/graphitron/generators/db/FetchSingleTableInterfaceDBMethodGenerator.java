@@ -19,9 +19,9 @@ import org.jetbrains.annotations.NotNull;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.getSelectKeyColumnRow;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
-import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.findKeyForResolverField;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.keyAsTableRecordWithQueryHelper;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyForResolverFieldOrThrow;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ITERATOR;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ORDER_FIELDS;
@@ -155,7 +155,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                 .forEach(key ->
                         rowElements.add(
                                 CodeBlock.of("$L.as($S)",
-                                        getSelectKeyColumnRow(key.key(), context.getTargetTableName(), context.getTargetAlias()),
+                                        keyAsTableRecordWithQueryHelper(key.key(), context.getTargetTableName(), context.getTargetAlias()),
                                         key.key().getName()))
                 );
 
@@ -227,14 +227,10 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
 
             resolverFieldsForImpl.forEach(
                     it -> {
-                        var key = findKeyForResolverField(it, processedSchema);
+                        var key = getKeyForResolverFieldOrThrow(it, processedSchema);
                         mapping.add("$N$L",
                                 innerVariableName,
-                                (new MethodMapping(it.getName())).asSetKeyCall(
-                                        CodeBlock.of("$N.get($S, $T.class).valuesRow()",
-                                                VAR_ITERATOR,
-                                                key.key().getName(),
-                                                key.getRecordTypeName(false)))
+                                (new MethodMapping(it.getName())).asSetKeyCall(CodeBlock.of("$N.get($S, $T.class)", VAR_ITERATOR, key.key().getName(), key.getTypeName()))
                         );
                     }
             );

@@ -1,0 +1,34 @@
+{
+    "data": {
+        "cities": {
+            "nodes": [
+                {
+                    "id": "Q2l0eVR5cGU6MQ",
+                    "addresses": [
+                        {
+                            "id": "QWRkcmVzczo1Ng"
+                        }
+                    ],
+                    "filmsFromCityWithRowResolverKey": [
+                        {
+                            "id": "RmlsbTox"
+                        }
+                    ]
+                },
+                {
+                    "id": "Q2l0eVR5cGU6Mg",
+                    "addresses": [
+                        {
+                            "id": "QWRkcmVzczoxMDU"
+                        }
+                    ],
+                    "filmsFromCityWithRowResolverKey": [
+                        {
+                            "id": "RmlsbToy"
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}

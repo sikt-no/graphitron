@@ -1,0 +1,8 @@
+{
+    customerManyFieldsLookup(customerIds: [1, 2]) {
+        customerId1
+        address {
+            id
+        }
+    }
+}

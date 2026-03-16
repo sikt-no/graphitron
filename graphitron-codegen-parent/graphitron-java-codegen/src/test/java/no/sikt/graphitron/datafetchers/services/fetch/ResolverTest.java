@@ -178,4 +178,13 @@ public class ResolverTest extends GeneratorTest {
                 """
         );
     }
+
+    @Test
+    @DisplayName("Nested service with RowN as resolver key should map previous key to Row")
+    void nestedServiceWithRowResolverKey() {
+        assertGeneratedContentContains(
+                "operation/nestedServiceWithRowResolverKey",
+                "(Row1<Long>) _os_address.getCustomerKey().key().valuesRow(),"
+        );
+    }
 }
