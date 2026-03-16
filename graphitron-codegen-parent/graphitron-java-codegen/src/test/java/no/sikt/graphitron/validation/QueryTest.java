@@ -7,8 +7,12 @@ import org.junit.jupiter.api.Test;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
+import static no.sikt.graphql.directives.GenerationDirective.CONSTRUCT_TYPE;
+import static no.sikt.graphql.directives.GenerationDirective.EXTERNAL_FIELD;
+import static no.sikt.graphql.directives.GenerationDirective.FIELD;
 import static no.sikt.graphql.directives.GenerationDirective.LOOKUP_KEY;
 import static no.sikt.graphql.directives.GenerationDirective.ORDER_BY;
+import static no.sikt.graphql.directives.GenerationDirective.TABLE;
 
 @DisplayName("Schema validation - Errors thrown when checking the schema")
 public class QueryTest extends ValidationTest {
@@ -256,5 +260,84 @@ public class QueryTest extends ValidationTest {
     void noWarningsOnLookupTypeWithoutReferenceFields() {
         getProcessedSchema("lookupInputType", Set.of(CUSTOMER_NODE));
         assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("Construct type on field without resolvable table")
+    void constructTypeOnFieldWithoutResolvableTable() {
+        assertErrorsContain("constructTypeOnFieldWithoutResolvableTable", Set.of(CUSTOMER_QUERY),
+                String.format(
+                        "Field %s uses @%s but the containing type has no resolvable table.",
+                        "'Customer.field'",
+                        CONSTRUCT_TYPE.getName()
+                )
+        );
+    }
+
+    @Test
+    @DisplayName("Construct type target has @table directive")
+    void constructTypeTargetHasTable() {
+        assertErrorsContain("constructTypeTargetHasTable", Set.of(CUSTOMER_QUERY),
+                String.format(
+                        "Field %s uses @%s but the target type '%s' has a @%s directive. The target type must not have its own table.",
+                        "'Customer.field'",
+                        CONSTRUCT_TYPE.getName(),
+                        "Address",
+                        TABLE.getName()
+                )
+        );
+    }
+
+    @Test
+    @DisplayName("Construct type combined with @field directive")
+    void constructTypeWithFieldDirective() {
+        assertErrorsContain("constructTypeWithFieldDirective", Set.of(CUSTOMER_QUERY),
+                String.format(
+                        "Field %s can not have both @%s and @%s directives.",
+                        "'Customer.field'",
+                        CONSTRUCT_TYPE.getName(),
+                        FIELD.getName()
+                )
+        );
+    }
+
+    @Test
+    @DisplayName("Construct type combined with @externalField directive")
+    void constructTypeWithExternalFieldDirective() {
+        assertErrorsContain("constructTypeWithExternalFieldDirective", Set.of(CUSTOMER_QUERY),
+                String.format(
+                        "Field %s can not have both @%s and @%s directives.",
+                        "'Customer.field'",
+                        CONSTRUCT_TYPE.getName(),
+                        EXTERNAL_FIELD.getName()
+                )
+        );
+    }
+
+    @Test
+    @DisplayName("Construct type with invalid selection field")
+    void constructTypeInvalidSelectionField() {
+        assertErrorsContain("constructTypeInvalidSelectionField", Set.of(CUSTOMER_QUERY),
+                String.format(
+                        "Field %s uses @%s with selection field '%s' which does not exist in target type '%s'.",
+                        "'Customer.field'",
+                        CONSTRUCT_TYPE.getName(),
+                        "nonExistent",
+                        "Inner"
+                )
+        );
+    }
+
+    @Test
+    @DisplayName("Construct type with nested object in selection")
+    void constructTypeWithNestedObject() {
+        assertErrorsContain("constructTypeWithNestedObject", Set.of(CUSTOMER_QUERY),
+                String.format(
+                        "Field %s uses @%s with selection field '%s' which is an object type. Only scalar and enum fields are allowed in construct selections.",
+                        "'Customer.field'",
+                        CONSTRUCT_TYPE.getName(),
+                        "nested"
+                )
+        );
     }
 }

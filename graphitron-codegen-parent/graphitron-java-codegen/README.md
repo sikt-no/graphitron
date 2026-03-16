@@ -24,6 +24,7 @@ using Java and [jOOQ](https://www.jooq.org/).
     - [Split database queries with @splitQuery](#split-database-queries-with-splitquery)
     - [Skip DataFetcher generation with @notGenerated](#skip-datafetcher-generation-with-notgenerated)
     - [Map fields to table columns with @field](#map-fields-to-table-columns-with-field)
+    - [Construct nested types from table columns with @experimental_constructType](#construct-nested-types-from-table-columns-with-experimental_constructtype)
   - [Tables, joins and records](#tables-joins-and-records)
     - [Link types to database tables with @table](#link-types-to-database-tables-with-table)
     - [Define table join paths with @reference](#define-table-join-paths-with-reference)
@@ -312,6 +313,45 @@ input SomeInput @record(record: {className: "some.path.SomeRecord"}) {
 
 type SomeType @table { … }
 ```
+
+#### Construct nested types from table columns with @experimental_constructType
+The **experimental_constructType** directive constructs nested object types from columns in the parent table,
+when the target type does not have the `@table` directive. This is useful when you want re-use nested types with different mappings,
+or when mapping keys for non-resolvable federation entities. The logic is equivalent to that of the `@field` directive.
+
+The _selection_ parameter uses the GraphQL syntax to map fields to columns in the parent table:
+- `fieldName: COLUMN_NAME` maps the field to a specific, differently named column.
+- `fieldName` assumes the column has the same name as the field.
+- Fields that are not included in the selection will resolve to `null`.
+
+```graphql
+type Customer @table {
+  info: CustomerInfo @experimental_constructType(selection: "label: FIRST_NAME, detail: EMAIL")
+}
+
+type CustomerInfo { # Both fields are resolved from Customer.
+  label: String
+  detail: String
+}
+```
+
+Multiline input is also allowed:
+
+```graphql
+type Customer @table {
+  info: CustomerInfo @experimental_constructType(selection: """
+    label: FIRST_NAME,
+    detail: EMAIL
+  """)
+}
+```
+
+**Restrictions:**
+- The containing type have access to a table, either by specifying `@table` or inheriting it from previous types.
+- The target type mis forbidden from having a `@table` directive set.
+- Can not be combined with `@field` or `@externalField` on the same field.
+- Nested object types are not supported.
+- All selection field names must exist in the target type.
 
 ### Tables, joins and records
 #### Link types to database tables with @table

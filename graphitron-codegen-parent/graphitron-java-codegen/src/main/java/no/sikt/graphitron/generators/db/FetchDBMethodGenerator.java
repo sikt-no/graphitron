@@ -25,7 +25,6 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.apache.commons.lang3.tuple.Pair;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
@@ -164,7 +163,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return codeBuilder.build();
     }
 
-    protected CodeBlock generateCorrelatedSubquery(GenerationField field, FetchContext context) {
+    protected CodeBlock generateCorrelatedSubquery(FetchContext context) {
+        var field = context.getReferenceObjectField();
         var isConnection = ((ObjectField) field).hasForwardPagination();
         var isMultiset = field.isIterableWrapped() || isConnection;
         var orderByFieldsBlock = field.createsDataFetcher() && tableHasPrimaryKey(context.getTargetTableName())
@@ -258,65 +258,67 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * @return Code block which contains the entire recursive structure of the row statement.
      */
     protected CodeBlock generateSelectRow(FetchContext context) {
-        var fieldsWithoutSplitting = context
+        var fields = context
                 .getReferenceObject()
                 .getFields()
                 .stream()
                 .filter(it -> !processedSchema.isExceptionOrExceptionUnion(it))
                 .filter(f -> !(f.createsDataFetcher() && processedSchema.isRecordType(f)))
-                .collect(Collectors.toList());
+                .toList();
 
         var rowElements = new ArrayList<CodeBlock>();
+        var keySet = new LinkedHashSet<KeyWrapper>();
 
-        var keySet = getKeySetForResolverFields(context.getReferenceObject().getFields(), processedSchema);
-        var targetTable = context.getTargetTableName();
-        var targetAlias = context.getTargetAlias();
-        keySet.forEach(key -> rowElements.add(keyAsTableRecordWithQueryHelper(key.key(), targetTable, targetAlias)));
-
-        var referenceFieldSources = new HashMap<String, String>(); // Used to keep track of field sources for explicit mapping
-
-        for (GenerationField field : fieldsWithoutSplitting) {
-            var innerRowCodeAndFieldSource = getSelectCodeAndFieldSource(field, context);
-
-            rowElements.add(innerRowCodeAndFieldSource.getLeft());
-            referenceFieldSources.put(field.getName(), innerRowCodeAndFieldSource.getRight());
+        if (context.getReferenceObjectField() instanceof ObjectField objectField && objectField.hasSelectConstruct()) {
+            var constructMap = objectField.getSelectConstruct().values();
+            fields.forEach(field -> rowElements.add(
+                    Optional.ofNullable(constructMap.get(field.getName()))
+                            .map(it -> generateForField(field, context, it.toUpperCase()))
+                            .orElse(inline(asCast(TypeName.OBJECT, CodeBlock.of("null"))))
+            ));
+        } else {
+            keySet.addAll(getKeySetForResolverFields(context.getReferenceObject().getFields(), processedSchema));
+            var table = context.getTargetTableName();
+            var alias = context.getTargetAlias();
+            keySet.forEach(key -> rowElements.add(keyAsTableRecordWithQueryHelper(key.key(), table, alias)));
+            fields.forEach(field -> rowElements.add(getSelectCode(field, context)));
         }
 
-        return createMapping(context, fieldsWithoutSplitting, referenceFieldSources, rowElements, keySet);
+        return createMapping(context, fields, rowElements, keySet);
     }
 
-    protected Pair<CodeBlock, String> getSelectCodeAndFieldSource(GenerationField field, FetchContext context) {
-        CodeBlock innerRowCode;
-        String fieldSource = null;
+    protected CodeBlock getSelectCode(GenerationField field, FetchContext context) {
+        if (processedSchema.invokesSubquery(field, context.getTargetTable())) {
+            return generateCorrelatedSubquery(context.nextContext(field));
+        }
 
         if (processedSchema.isObject(field)) {
-            innerRowCode = processedSchema.invokesSubquery(field, context.getTargetTable())
-                    ? generateCorrelatedSubquery(field, context.nextContext(field))
-                    : generateSelectRow(context.nextContext(field));
-        } else if (field.isExternalField()) {
-            JOOQMapping table = context.getTargetTable();
-
-            if (table == null) {
-                throw new IllegalArgumentException("No table found for field " + field.getName());
-            }
-
-            var externalFieldCode = CodeBlock.of(
-                    "$L.$L($L)",
-                    getImportReferenceOfValidExtensionMethod(field, table.getName()),
-                    field.getName(),
-                    context.getTargetAlias());
-
-            innerRowCode = optionalSelectOnExternalFieldsIsEnabled()
-                    ? wrapSelectIfRequested(context.getGraphPath(field), externalFieldCode)
-                    : externalFieldCode;
-        } else if (processedSchema.invokesSubquery(field, context.getTargetTable())) {
-            var fieldContext = context.nextContext(field);
-            fieldSource = fieldContext.renderQuerySource(getLocalTable()).toString();
-            innerRowCode = generateCorrelatedSubquery(field, fieldContext);
-        } else {
-            innerRowCode = generateForField(field, context);
+            return generateSelectRow(context.nextContext(field));
         }
-        return Pair.of(innerRowCode, fieldSource);
+
+        if (field.isExternalField()) {
+            return getExternalBlock(field, context);
+        }
+
+        return generateForField(field, context);
+    }
+
+    private CodeBlock getExternalBlock(GenerationField field, FetchContext context) {
+        JOOQMapping table = context.getTargetTable();
+
+        if (table == null) {
+            throw new IllegalArgumentException("No table found for field " + field.getName());
+        }
+
+        var externalFieldCode = CodeBlock.of(
+                "$L.$L($L)",
+                getImportReferenceOfValidExtensionMethod(field, table.getName()),
+                field.getName(),
+                context.getTargetAlias());
+
+        return optionalSelectOnExternalFieldsIsEnabled()
+                ? wrapSelectIfRequested(context.getGraphPath(field), externalFieldCode)
+                : externalFieldCode;
     }
 
     private static String getImportReferenceOfValidExtensionMethod(GenerationField field, String tableName) {
@@ -333,7 +335,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return reference.get();
     }
 
-    protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements, LinkedHashSet<KeyWrapper> keySet) {
+    private CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, List<CodeBlock> rowElements, LinkedHashSet<KeyWrapper> keySet) {
         boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplitting.size() + keySet.size() > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPE_SAFETY;
 
         CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()
@@ -341,7 +343,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 : createMappingFunction(context, fieldsWithoutSplitting, maxTypeSafeFieldSizeIsExceeded);
 
         var mappingContent = maxTypeSafeFieldSizeIsExceeded
-                ? wrapWithExplicitMapping(regularMappingFunction, context, fieldsWithoutSplitting, referenceFieldSources, keySet)
+                ? wrapWithExplicitMapping(regularMappingFunction, context, fieldsWithoutSplitting, keySet)
                 : regularMappingFunction;
 
         return CodeBlock
@@ -504,7 +506,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * Used when fields size exceeds {@link #MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPE_SAFETY}. This
      * requires the mapping function to be wrapped with explicit mapping, without type safety.
      */
-    private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<? extends GenerationField> fieldsWithoutTable, HashMap<String, String> sourceForReferenceFields, LinkedHashSet<KeyWrapper> keySet) {
+    private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<? extends GenerationField> fieldsWithoutTable, LinkedHashSet<KeyWrapper> keySet) {
         var innerMappingCode = new ArrayList<CodeBlock>();
 
         int i = 0;
@@ -547,7 +549,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 innerMappingCode.add(
                         CodeBlock.of(
                                 "$L.$N.getDataType().convert($N[$L])",
-                                field.hasFieldReferences() ? sourceForReferenceFields.get(field.getName()) : context.renderQuerySource(getLocalTable()),
+                                field.hasFieldReferences() ? context.nextContext(field).renderQuerySource(getLocalTable()) : context.renderQuerySource(getLocalTable()),
                                 field.getUpperCaseName(),
                                 VAR_RECORD_ITERATOR,
                                 i
@@ -583,6 +585,18 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * Generate a single argument in the row method call.
      */
     protected CodeBlock generateForField(GenerationField field, FetchContext context, boolean overrideEnum) {
+        return generateForField(field, context, overrideEnum, field.getUpperCaseName());
+    }
+
+    /**
+     * Generate a single argument in the row method call, with an explicit column name override.
+     * Used by construct type generation to map inner fields to columns on the parent table.
+     */
+    private CodeBlock generateForField(GenerationField field, FetchContext context, String columnName) {
+        return generateForField(field, context, false, columnName);
+    }
+
+    private CodeBlock generateForField(GenerationField field, FetchContext context, boolean overrideEnum, String columnName) {
         if (processedSchema.isUnion(field)) {
             return generateForUnionField(field, context);
         }
@@ -603,10 +617,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         var convertArrayFieldToList = field.isIterableWrapped()
-                && getFieldType(context.getTargetTable().getName(), field.getUpperCaseName()).map(Class::isArray).orElse(false);
+                && getFieldType(context.getTargetTable().getName(), columnName).map(Class::isArray).orElse(false);
 
         return CodeBlock.builder()
-                .add("$L.$N", renderedSource, field.getUpperCaseName())
+                .add("$L.$N", renderedSource, columnName)
                 .addIf(!overrideEnum, toJOOQEnumConverter(field.getTypeName(), processedSchema))
                 .addIf(convertArrayFieldToList, arrayToListConverter())
                 .build();

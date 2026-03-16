@@ -1,0 +1,22 @@
+{
+    "data": {
+        "staffWithConstructed": [
+            {
+                "id": "U3RhZmZXaXRoQ29uc3RydWN0ZWQ6MQ",
+                "info": {
+                    "label": "Mike",
+                    "detail": "Mike.Hillyer@sakilastaff.com"
+                }
+            }
+        ],
+        "customersWithConstructed": [
+            {
+                "id": "Q3VzdG9tZXJXaXRoQ29uc3RydWN0ZWQ6MQ",
+                "info": {
+                    "label": "SMITH",
+                    "detail": "MARY.SMITH@sakilacustomer.org"
+                }
+            }
+        ]
+    }
+}

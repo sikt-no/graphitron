@@ -108,7 +108,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             return generateForField(target, context);
         }
         return processedSchema.isReferenceResolverField(target)
-                ? generateCorrelatedSubquery(target, context.nextContext(target))
+                ? generateCorrelatedSubquery(context.nextContext(target))
                 : generateSelectRow(context);
     }
 

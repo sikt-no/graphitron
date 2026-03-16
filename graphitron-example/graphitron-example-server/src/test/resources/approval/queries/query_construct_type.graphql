@@ -1,0 +1,16 @@
+query ConstructTypeQuery($staffId: ID!, $customerId: ID!) {
+    staffWithConstructed(staffId: $staffId) {
+        id
+        info {
+            label
+            detail
+        }
+    }
+    customersWithConstructed(customerId: $customerId) {
+        id
+        info {
+            label
+            detail
+        }
+    }
+}
