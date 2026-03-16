@@ -1,0 +1,12 @@
+# Service with no input returning a @table type. The service only sets the PK;
+# all other fields are auto-fetched from the database using that PK.
+{
+    customerService {
+        id
+        email
+        name {
+            firstName
+            lastName
+        }
+    }
+}

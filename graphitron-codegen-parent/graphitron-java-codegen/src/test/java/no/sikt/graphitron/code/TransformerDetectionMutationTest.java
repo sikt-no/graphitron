@@ -23,7 +23,6 @@ public class TransformerDetectionMutationTest extends AbstractTransformerDetecti
                 "addresses",
                 "mutation",
                 "addressesWrapped",
-                "city",
                 "cityRecord"
         );
     }

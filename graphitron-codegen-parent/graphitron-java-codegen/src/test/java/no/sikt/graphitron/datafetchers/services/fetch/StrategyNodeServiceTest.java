@@ -54,20 +54,26 @@ public class StrategyNodeServiceTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Service resolver with node strategy enabled")
+    @DisplayName("Service resolver with node strategy enabled, auto-fetches from DB for table type")
     void resolver() {
         assertGeneratedContentContains("default",
-                "customerNodeRecordToGraphType(_iv_response, _iv_nodeIdStrategy, \"\")"
+                "loadAndFetch"
+        );
+        resultDoesNotContain("default",
+                "customerNodeRecordToGraphType"
         );
     }
 
     @Test
-    @DisplayName("Root service including input jOOQ records")
+    @DisplayName("Root service including input jOOQ records, auto-fetches from DB for table type")
     void withInputJOOQRecord() {
         assertGeneratedContentContains(
                 "withInputJOOQRecord",
                 ".customerNodeInputTableToJOOQRecord(_mi_in, _iv_nodeIdStrategy, \"in\")",
-                ".customerNodeRecordToGraphType(_iv_response, _iv_nodeIdStrategy, \"\")"
+                "loadAndFetch"
+        );
+        resultDoesNotContain("withInputJOOQRecord",
+                "customerNodeRecordToGraphType"
         );
     }
 }

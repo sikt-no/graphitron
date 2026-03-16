@@ -1,0 +1,12 @@
+type Query {
+  query: Payload @service(service: {name: "RESOLVER_FETCH_SERVICE"})
+}
+
+type Payload {
+  result: ServiceResult
+}
+
+type ServiceResult @record(record: {name: "ID_RECORD"}) {
+  id: ID
+  customer: CustomerTable @splitQuery
+}
