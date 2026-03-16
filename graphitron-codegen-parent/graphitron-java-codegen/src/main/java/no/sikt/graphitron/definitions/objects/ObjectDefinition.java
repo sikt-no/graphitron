@@ -25,7 +25,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
  * This is typically the only object type used in table referencing and joining operations.
  */
 public class ObjectDefinition extends RecordObjectDefinition<ObjectTypeDefinition, ObjectField> {
-    private final boolean isRoot, hasResolvers, hasDiscriminator;
+    private final boolean isRoot, hasDiscriminator;
     private final LinkedHashSet<String> implementsInterfaces;
     private final ObjectTypeDefinition objectTypeDefinition;
     private final String discriminator;
@@ -34,7 +34,6 @@ public class ObjectDefinition extends RecordObjectDefinition<ObjectTypeDefinitio
         super(objectDefinition);
 
         isRoot = isRootType(objectDefinition);
-        hasResolvers = getFields().stream().anyMatch(GenerationTarget::isGeneratedWithResolver);
         implementsInterfaces = objectDefinition.getImplements().stream()
                 .map(it -> ((TypeName) it).getName())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
@@ -71,7 +70,7 @@ public class ObjectDefinition extends RecordObjectDefinition<ObjectTypeDefinitio
 
     @Override
     public boolean isGeneratedWithResolver() {
-        return hasResolvers;
+        return getFields().stream().anyMatch(GenerationTarget::isGeneratedWithResolver);
     }
 
     /**

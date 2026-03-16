@@ -6,6 +6,7 @@ import java.lang.String;
 import java.util.ArrayList;
 import java.util.List;
 import no.sikt.graphitron.codereferences.records.MapperNestedJavaRecord;
+import org.jooq.impl.DSL;
 
 public class AddressTypeMapper {
     public static List<Address> toGraphType(List<MapperNestedJavaRecord> _mi_mapperNestedJavaRecord,
@@ -20,7 +21,7 @@ public class AddressTypeMapper {
                 var _mo_address = new Address();
                 var _mi_customer = _nit_mapperNestedJavaRecord.getCustomer();
                 if (_mi_customer != null && _iv_select.contains(_iv_pathHere + "customer")) {
-                    _mo_address.setCustomer(_iv_transform.customerTableRecordToGraphType(_mi_customer, _iv_pathHere + "customer"));
+                    _mo_address.setCustomerKey(DSL.row(_mi_customer.getCustomerId()));
                 }
 
                 _mlo_address.add(_mo_address);

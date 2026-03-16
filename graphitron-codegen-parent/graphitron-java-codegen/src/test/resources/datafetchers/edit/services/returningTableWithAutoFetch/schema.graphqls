@@ -1,0 +1,3 @@
+type Mutation {
+  mutation: CustomerTable @service(service: {name: "RESOLVER_MUTATION_SERVICE", method: "mutationCustomer"})
+}

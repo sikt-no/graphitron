@@ -164,6 +164,8 @@ public class ProcessedSchema {
         (queryType != null ? Stream.concat(nodes, Stream.of(queryType)) : nodes).forEach(this::buildPreviousTableMap);
         interfaces.values().forEach(this::buildPreviousTableMap);
 
+        markImplicitSplitQueryFields();
+
         transformableFields = findTransformableFields();
 
         federationIsImported = LinkDirectiveProcessor.loadFederationImportedDefinitions(typeRegistry) != null;
@@ -311,8 +313,8 @@ public class ProcessedSchema {
     }
 
     /**
-    * @return Does this name belong to a multi-table interface type in the schema?
-    */
+     * @return Does this name belong to a multi-table interface type in the schema?
+     */
     public boolean isMultiTableInterface(String name) {
         return isInterface(name) && getInterface(name).isMultiTableInterface();
     }
@@ -384,10 +386,10 @@ public class ProcessedSchema {
     }
 
     /**
-    * Returns the ObjectDefinition for each Type in a union given that the name
-    * supplied is a union. Otherwise, return the ObjectDefinition for all types
-    * that implements the given interface.
-    * */
+     * Returns the ObjectDefinition for each Type in a union given that the name
+     * supplied is a union. Otherwise, return the ObjectDefinition for all types
+     * that implements the given interface.
+     * */
     public Optional<List<ObjectDefinition>> getTypesFromInterfaceOrUnion(String name) {
         if (isUnion(name)) {
             return Optional.of(getUnionSubTypes(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name));
@@ -968,8 +970,8 @@ public class ProcessedSchema {
     }
 
     /**
-    * @return Returns whether the object has a table on or above it.
-    * */
+     * @return Returns whether the object has a table on or above it.
+     * */
     public boolean hasTableObjectForObject(RecordObjectSpecification<?> object) {
         return objectWithPreviousTable.containsKey(object.getName());
     }
@@ -1139,6 +1141,35 @@ public class ProcessedSchema {
                 .flatMap(Collection::stream)
                 .filter(it -> !objectWithPreviousTable.containsKey(it.getName()))
                 .forEach(it -> buildPreviousTableMap(it, tableObject, seenObjects, recursion + 1));
+    }
+
+    /**
+     * For @record types reachable from @service fields, mark any @table-typed fields as implicit split queries.
+     * Traverses through plain wrapper types (no @table, no @record) to find nested @record types.
+     */
+    private void markImplicitSplitQueryFields() {
+        objects.values().stream()
+                .flatMap(obj -> obj.getFields().stream())
+                .filter(GenerationSourceField::hasServiceReference)
+                .filter(field -> isObject(field) && !hasJOOQRecord(field))
+                .forEach(serviceField -> markImplicitSplitQueryFields(getObject(serviceField), new HashSet<>()));
+    }
+
+    private void markImplicitSplitQueryFields(ObjectDefinition type, Set<String> seen) {
+        if (type == null || !seen.add(type.getName())) {
+            return;
+        }
+        if (type.hasRecordReference()) {
+            type.getFields().stream()
+                    .filter(field -> !field.createsDataFetcher())
+                    .filter(this::hasJOOQRecord)
+                    .forEach(GenerationSourceField::markAsImplicitSplitQuery);
+        }
+        // Recurse into non-@table object fields to find nested @record types.
+        type.getFields().stream()
+                .filter(field -> isObject(field) && !hasJOOQRecord(field))
+                .map(this::getObject)
+                .forEach(nested -> markImplicitSplitQueryFields(nested, seen));
     }
 
     /**

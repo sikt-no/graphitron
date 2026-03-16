@@ -1,13 +1,17 @@
 package no.sikt.graphql.helpers.resolvers;
 
 import graphql.schema.DataFetchingEnvironment;
+import no.sikt.graphql.helpers.functions.ServiceThenDBListQuery;
 import no.sikt.graphql.helpers.functions.TransformCall;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphql.helpers.transform.AbstractTransformer;
 import no.sikt.graphql.relay.ConnectionImpl;
 import org.apache.commons.lang3.tuple.Pair;
 
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -57,6 +61,55 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
      */
     public <T, U> CompletableFuture<U> load(Supplier<T> dbFunction, TransformCall<A, T, U> dbTransform) {
         return CompletableFuture.completedFuture(dbTransform.transform(abstractTransformer, dbFunction.get()));
+    }
+
+    /**
+     * Call a service, then use the primary key from its result to fetch the full record from the database.
+     * The key is extracted from the service result and passed as a singleton set to the batch DB method.
+     *
+     * @param serviceFunction Function to call the service.
+     * @param keyExtractor Function to extract the key from the service result.
+     * @param dbFunction Function that takes a set of keys and fetches matching records from DB.
+     * @return A resolver result with the full record from the database.
+     * @param <T> Type returned by the service (e.g., a jOOQ TableRecord).
+     * @param <K> The key type (e.g., a jOOQ Row1).
+     * @param <U> Type returned by the DB query (e.g., a GraphQL DTO).
+     */
+    public <T, K, U> CompletableFuture<U> loadAndFetch(
+            Supplier<T> serviceFunction,
+            Function<T, K> keyExtractor,
+            ServiceThenDBListQuery<K, U> dbFunction) {
+        var serviceResult = serviceFunction.get();
+        var key = keyExtractor.apply(serviceResult);
+        var resultMap = dbFunction.callDBMethod(dslContext, Set.of(key), select);
+        return CompletableFuture.completedFuture(resultMap.get(key));
+    }
+
+    /**
+     * Call a service that returns a list of records, then batch-fetch the full records from the database.
+     * Extracts primary keys from the service results, issues a single DB query with WHERE IN,
+     * and maps results back to the original input order.
+     *
+     * @param serviceFunction Function to call the service (returns a list of records with PKs set).
+     * @param keyExtractor Function to extract the key from each service result.
+     * @param dbFunction Function that takes a set of keys and fetches all matching records from DB.
+     * @return A resolver result with the full records from the database, in the same order as the service results.
+     * @param <T> Type returned by the service (e.g., a jOOQ TableRecord).
+     * @param <K> The key type (e.g., a jOOQ Row1).
+     * @param <U> Type returned by the DB query (e.g., a GraphQL DTO).
+     */
+    public <T, K, U> CompletableFuture<List<U>> loadAndFetchList(
+            Supplier<List<T>> serviceFunction,
+            Function<T, K> keyExtractor,
+            ServiceThenDBListQuery<K, U> dbFunction) {
+        var serviceResults = serviceFunction.get();
+        var keys = serviceResults.stream().map(keyExtractor).collect(Collectors.toSet());
+        var resultMap = dbFunction.callDBMethod(dslContext, keys, select);
+        return CompletableFuture.completedFuture(
+                serviceResults.stream()
+                        .map(r -> resultMap.get(keyExtractor.apply(r)))
+                        .toList()
+        );
     }
 
     /**

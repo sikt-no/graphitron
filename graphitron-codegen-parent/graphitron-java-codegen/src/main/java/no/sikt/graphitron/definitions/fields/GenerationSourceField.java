@@ -35,6 +35,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesContainer<T>> extends AbstractField<T> implements GenerationField {
     private final boolean isGenerated, createsDataFetchers, createsDataFetcher, isExternalField,
             hasFieldDirective, hasNodeID, hasTableMethod, hasService;
+    private boolean implicitSplitQuery;
     private final ArrayList<FieldReference> fieldReferences;
     private final Map<String, List<FieldReference>> multitableReferences;
 
@@ -159,7 +160,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
 
     @Override
     public boolean createsDataFetcher() {
-        return createsDataFetchers;
+        return createsDataFetchers || implicitSplitQuery;
     }
 
     @Override
@@ -262,7 +263,14 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
 
     @Override
     public boolean isGeneratedWithResolver() {
-        return createsDataFetcher;
+        return createsDataFetcher || implicitSplitQuery;
+    }
+
+    /**
+     * Mark this field as an implicit split query, giving it the same behavior as an explicit {@code @splitQuery} directive.
+     */
+    public void markAsImplicitSplitQuery() {
+        this.implicitSplitQuery = true;
     }
 
     @Override
