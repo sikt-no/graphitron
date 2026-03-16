@@ -1,5 +1,7 @@
 package no.sikt.graphitron.validation;
 
+import no.sikt.graphitron.validation.messages.interfaces.ErrorMessage;
+import no.sikt.graphitron.validation.messages.interfaces.WarningMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,12 +23,30 @@ public class ValidationHandler {
     }
 
     /**
+     * Adds an error message that will be thrown at a later time.
+     * @param message - A formated description of the error.
+     * @param args - The arguments for the formatedErrorMessage
+     */
+    public static void addErrorMessage(ErrorMessage message, Object... args) {
+        errorMessages.add(message.format(args));
+    }
+
+    /**
      * Adds a warning message that will be logged.
      * @param formatedWarningMessage - A formated description of the warning
      * @param args - Arguments for the formatedWarningMessage
      */
     public static void addWarningMessage(String formatedWarningMessage, Object... args) {
         warningMessages.add(String.format(formatedWarningMessage, args));
+    }
+
+    /**
+     * Adds a warning message that will be logged.
+     * @param message - A formated description of the warning.
+     * @param args - Arguments for the message.
+     */
+    public static void addWarningMessage(WarningMessage message, Object... args) {
+        warningMessages.add(message.format(args));
     }
 
     /**

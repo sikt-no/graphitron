@@ -17,6 +17,7 @@ import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.mappings.ReflectionHelpers;
 import no.sikt.graphitron.mappings.TableReflection;
+import no.sikt.graphitron.validation.messages.InputTableError;
 import no.sikt.graphql.directives.GenerationDirectiveParam;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -39,10 +40,13 @@ import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static no.sikt.graphitron.mappings.ReflectionHelpers.getJooqRecordClassForNodeIdInputField;
 import static no.sikt.graphitron.mappings.TableReflection.*;
-import static no.sikt.graphitron.validation.ErrorMessages.*;
 import static no.sikt.graphitron.validation.ServiceMethodFormatter.formatExpectedListableType;
 import static no.sikt.graphitron.validation.ServiceMethodFormatter.formatOverloads;
 import static no.sikt.graphitron.validation.ValidationHandler.*;
+import static no.sikt.graphitron.validation.messages.ConstructError.*;
+import static no.sikt.graphitron.validation.messages.InputTableError.MISSING_FIELD;
+import static no.sikt.graphitron.validation.messages.InputTableError.MISSING_NON_NULLABLE;
+import static no.sikt.graphitron.validation.messages.MultitableError.MISSING_TABLE_ON_MULTITABLE;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirective.NODE_ID;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.TYPE_ID;
@@ -94,6 +98,7 @@ public class ProcessedDefinitionsValidator {
         validateRecursiveRecordInputs();
         validateOnlyOneInputRecordInputWhenNoTypeTableIsPresent();
         validateNotUsingBothExternalFieldAndField();
+        validateConstructTypeDirective();
         validateExternalField();
         validateNodeDirective();
         validateUnionAndInterfaceSubTypes();
@@ -659,6 +664,9 @@ public class ProcessedDefinitionsValidator {
     private void validateTableFieldsExist(JOOQMapping currentTable, Collection<ObjectField> fields) {
         for (var field : getFieldsInTableContext(fields, currentTable)) {
             if (schema.isObject(field)) { // Field wrapper object
+                if (field.hasSelectConstruct()) {
+                    continue; // Validated in validateConstructTypeDirective
+                }
                 validateTableFieldsExist(currentTable, schema.getObject(field).getFields());
                 continue;
             }
@@ -917,7 +925,7 @@ public class ProcessedDefinitionsValidator {
                             .map(AbstractObjectDefinition::getName)
                             .collect(Collectors.joining("', '"));
                     if (!typesMissingTable.isEmpty()) {
-                        addErrorMessage(MISSING_TABLE_ON_MULTITABLE.getMsg(), typesMissingTable, field.formatPath(), field.getTypeName());
+                        addErrorMessage(MISSING_TABLE_ON_MULTITABLE, typesMissingTable, field.formatPath(), field.getTypeName());
                     }
                 });
     }
@@ -1556,7 +1564,7 @@ public class ProcessedDefinitionsValidator {
                         .stream()
                         .map(InputField::getUpperCaseName)
                         .collect(Collectors.toSet());
-        checkRequiredFieldsExist(recordFieldNames, requiredDBFields, recordInput, MISSING_FIELD.getMsg());
+        checkRequiredFieldsExist(MISSING_FIELD, recordFieldNames, requiredDBFields, recordInput);
 
         var requiredRecordFieldNames =
                 inputObject.getFields()
@@ -1564,10 +1572,10 @@ public class ProcessedDefinitionsValidator {
                         .filter(AbstractField::isNonNullable)
                         .map(InputField::getUpperCaseName)
                         .collect(Collectors.toSet());
-        checkRequiredFieldsExist(requiredRecordFieldNames, requiredDBFields, recordInput, MISSING_NON_NULLABLE.getMsg());
+        checkRequiredFieldsExist(MISSING_NON_NULLABLE, requiredRecordFieldNames, requiredDBFields, recordInput);
     }
 
-    protected void checkRequiredFieldsExist(Set<String> actualFields, List<String> requiredFields, InputField recordInput, String message) {
+    protected void checkRequiredFieldsExist(InputTableError message, Set<String> actualFields, List<String> requiredFields, InputField recordInput) {
         if (!actualFields.containsAll(requiredFields)) {
             var missingFields = requiredFields.stream().filter(it -> !actualFields.contains(it)).collect(Collectors.joining(", "));
             addWarningMessage(
@@ -1588,6 +1596,68 @@ public class ProcessedDefinitionsValidator {
                                 )
                         )
                 );
+    }
+
+    private void validateConstructTypeDirective() {
+        schema
+                .getObjects()
+                .values()
+                .forEach(object -> object
+                        .getFields()
+                        .stream()
+                        .filter(ObjectField::hasSelectConstruct)
+                        .forEach(field -> validateConstructField(field, object))
+                );
+    }
+
+    private void validateConstructField(ObjectField field, ObjectDefinition object) {
+        var targetType = schema.getObject(field.getTypeName());
+
+        if (targetType == null) {
+            addErrorMessage(CONSTRUCT_FIELD_IS_NOT_TYPE, field.formatPath(), field.getTypeName());
+            return;
+        }
+
+        if (targetType.hasTable()) {
+            addErrorMessage(CONSTRUCT_TYPE_HAS_TABLE, field.formatPath(), field.getTypeName());
+        }
+
+        var hasTable = schema.hasTableObjectForObject(object);
+        if (!hasTable) {
+            addErrorMessage(CONSTRUCT_MISSING_TABLE, field.formatPath());
+        }
+
+        if (field.hasFieldDirective()) {
+            addErrorMessage(CONSTRUCT_FIELD_HAS_ILLEGAL_DIRECTIVE, field.formatPath(), FIELD.getName());
+        }
+
+        if (field.isExternalField()) {
+            addErrorMessage(CONSTRUCT_FIELD_HAS_ILLEGAL_DIRECTIVE, field.formatPath(), EXTERNAL_FIELD.getName());
+        }
+
+        var construct = field.getSelectConstruct();
+        var tableJavaName = hasTable
+                ? schema.getPreviousTableObjectForObject(object).getTable().getMappingName()
+                : null;
+
+        for (var entry : construct.values().entrySet()) {
+            var selectionFieldName = entry.getKey();
+            var columnName = entry.getValue();
+
+            var innerField = targetType.getFields().stream()
+                    .filter(f -> f.getName().equals(selectionFieldName))
+                    .findFirst();
+
+            if (innerField.isEmpty()) {
+                addErrorMessage(CONSTRUCT_NONEXISTENT_FIELD, field.formatPath(), selectionFieldName, targetType.getName());
+            } else if (schema.isObject(innerField.get())) {
+                addErrorMessage(CONSTRUCT_CONTAINS_NESTED_TYPE, field.formatPath(), selectionFieldName);
+            }
+
+            if (hasTable && tableExists(tableJavaName) && getJavaFieldName(tableJavaName, columnName).isEmpty()) {
+                addErrorMessage(CONSTRUCT_NONEXISTENT_COLUMN, field.formatPath(), columnName, tableJavaName);
+            }
+        }
     }
 
     private void validateExternalField() {

@@ -1,0 +1,19 @@
+extend type Query {
+    staffWithConstructed(staffId: ID! @nodeId(typeName: "StaffWithConstructed")): [StaffWithConstructed]
+    customersWithConstructed(customerId: ID! @nodeId(typeName: "CustomerWithConstructed")): [CustomerWithConstructed]
+}
+
+type ConstructedInfo {
+    label: String
+    detail: String
+}
+
+type StaffWithConstructed implements Node @node @table(name: "STAFF") {
+    id: ID! @nodeId
+    info: ConstructedInfo @experimental_constructType(selection: "label: FIRST_NAME, detail: EMAIL")
+}
+
+type CustomerWithConstructed implements Node @node @table(name: "CUSTOMER") {
+    id: ID! @nodeId
+    info: ConstructedInfo @experimental_constructType(selection: "label: LAST_NAME, detail: EMAIL")
+}
