@@ -93,6 +93,7 @@ public class SchemaTransformRunner {
                 config.getDirectivesToRemove(),
                 descriptionSuffixForFeatures,
                 false,  // No feature flags for generator schema
+                false,  // Don't add @key directives
                 false,  // Keep generator directives
                 true,  // Always exclude elements that the codegen should not generate.
                 true,

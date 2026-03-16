@@ -91,6 +91,7 @@ public class ConnectionTest extends AbstractTest {
                 Set.of(),
                 null,
                 false,
+                false,
                 true,
                 true,
                 true,
