@@ -1,3 +1,0 @@
-type Address @table {
-  customer: Customer @service(service: {className: "no.sikt.graphitron.codereferences.services.ResolverFetchService", method: "customerNestedWithRowNResolverKey"})                  @splitQuery
-}
