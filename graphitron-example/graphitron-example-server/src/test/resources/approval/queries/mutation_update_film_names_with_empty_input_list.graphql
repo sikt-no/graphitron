@@ -1,0 +1,7 @@
+mutation {
+    updateFilmNames(in: []
+    ) {
+        id
+        title
+    }
+}

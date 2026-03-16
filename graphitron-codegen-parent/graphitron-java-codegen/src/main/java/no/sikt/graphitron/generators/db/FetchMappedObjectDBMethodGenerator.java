@@ -10,6 +10,7 @@ import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.directives.GenerationDirective;
+import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
@@ -31,7 +32,14 @@ import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIE
 public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
     public FetchMappedObjectDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
-        super(localObject, processedSchema);
+        super(
+                localObject,
+                processedSchema,
+                localObject.isOperationRoot()
+                && localObject.getName().equals(GraphQLReservedName.SCHEMA_MUTATION.getName())
+                ? true
+                : false
+        );
     }
 
     /**
