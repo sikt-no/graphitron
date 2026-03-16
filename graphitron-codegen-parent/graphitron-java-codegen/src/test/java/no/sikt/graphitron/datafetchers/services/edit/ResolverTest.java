@@ -142,11 +142,11 @@ public class ResolverTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("With service that returns a jOOQ record")
+    @DisplayName("With service that returns a jOOQ record, should fetch from DB")
     void returningJOOQRecord() {
         assertGeneratedContentContains(
                 "returningJOOQRecord", Set.of(CUSTOMER_TABLE),
-                ".customerTableRecordToGraphType(_iv_response, \"\")"
+                "loadAndFetch"
         );
     }
 
@@ -164,5 +164,23 @@ public class ResolverTest extends GeneratorTest {
     void validation() {
         GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
         assertGeneratedContentContains("recordInput", Set.of(CUSTOMER_INPUT_TABLE), "_iv_transform.validate();");
+    }
+
+    @Test
+    @DisplayName("Mutation service returning table type should fetch from DB instead of transforming service result")
+    void returningTableWithAutoFetch() {
+        assertGeneratedContentContains(
+                "returningTableWithAutoFetch", Set.of(CUSTOMER_TABLE),
+                "loadAndFetch"
+        );
+    }
+
+    @Test
+    @DisplayName("Mutation service returning table type should NOT use record-to-graph transform")
+    void returningTableWithAutoFetchShouldNotTransform() {
+        resultDoesNotContain(
+                "returningTableWithAutoFetch", Set.of(CUSTOMER_TABLE),
+                "customerTableRecordToGraphType"
+        );
     }
 }

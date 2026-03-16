@@ -1,0 +1,8 @@
+type Query {
+  query: ServiceResult @service(service: {name: "RESOLVER_FETCH_SERVICE"})
+}
+
+type ServiceResult @record(record: {name: "ID_RECORD"}) {
+  id: ID
+  customer: CustomerTable @splitQuery
+}
