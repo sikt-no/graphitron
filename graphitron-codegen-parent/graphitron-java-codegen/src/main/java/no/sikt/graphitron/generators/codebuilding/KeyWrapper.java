@@ -44,9 +44,9 @@ public record KeyWrapper(Key<?> key, TypeName tableRecordTypeName) {
             addErrorMessageAndThrow("Key '%s' has more than 22 fields, which is not supported.", key.getName());
         }
 
-        var rowOrRecordClass = ClassName.get("org.jooq", String.format("%s%d", "Row", keyFields.size()));
+        var rowClass = ClassName.get("org.jooq", String.format("%s%d", "Row", keyFields.size()));
 
-        return ParameterizedTypeName.get(rowOrRecordClass, keyFields.stream().map(Typed::getType).map(ClassName::get).toArray(ClassName[]::new));
+        return ParameterizedTypeName.get(rowClass, keyFields.stream().map(Typed::getType).map(ClassName::get).toArray(ClassName[]::new));
     }
 
     /**
@@ -98,7 +98,7 @@ public record KeyWrapper(Key<?> key, TypeName tableRecordTypeName) {
      */
     public static KeyWrapper getKeyForResolverFieldOrThrow(GenerationField field, ProcessedSchema processedSchema) {
         return getResolverKey(field, processedSchema)
-                .orElseThrow(() -> new RuntimeException("Failed to find resolver key for field " + field.formatPath()));
+                .orElseThrow(() -> new IllegalStateException("Failed to find resolver key for field " + field.formatPath()));
     }
     /**
      * Finds the key used in the first resolution step if the field is a resolver field.
@@ -133,7 +133,7 @@ public record KeyWrapper(Key<?> key, TypeName tableRecordTypeName) {
 
         String foreignKeyName;
         if (processedSchema.isScalar(field.getTypeName()) && !field.hasFieldReferences()) {
-            throw new RuntimeException("Cannot resolve reference for scalar field " + field.formatPath() + ".");
+            throw new IllegalStateException("Cannot resolve reference for scalar field " + field.formatPath() + ".");
         } else if (field.hasFieldReferences()) {
             var firstRef = field.getFieldReferences().stream().findFirst().get();
             Optional<String> implicitKey = firstRef.hasTable() ? findImplicitKey(previousTable.getName(), firstRef.getTable().getName()) : Optional.empty();
@@ -168,7 +168,7 @@ public record KeyWrapper(Key<?> key, TypeName tableRecordTypeName) {
                 });
 
         String javaTableNameForKey = getTableJavaFieldNameByTableName(foreignKey.getTable().getName())
-                .orElseThrow(() -> new RuntimeException("Cannot find jOOQ table name for table " + foreignKey.getTable().getName())); // Should never happen
+                .orElseThrow(() -> new IllegalStateException("Cannot find jOOQ table name for table " + foreignKey.getTable().getName())); // Should never happen
 
         var targetTable = javaTableNameForKey.equalsIgnoreCase(previousTable.getName())
                 ? foreignKey.getInverseKey().getTable()
