@@ -37,8 +37,6 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 processedSchema,
                 localObject.isOperationRoot()
                 && localObject.getName().equals(GraphQLReservedName.SCHEMA_MUTATION.getName())
-                ? true
-                : false
         );
     }
 

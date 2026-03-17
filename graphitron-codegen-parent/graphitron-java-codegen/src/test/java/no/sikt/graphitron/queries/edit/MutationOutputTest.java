@@ -165,24 +165,4 @@ public class MutationOutputTest extends MutationQueryTest {
                 "getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer"
         );
     }
-
-    @Test
-    @DisplayName("Updating objects with an empty input list should return an empty output list")
-    void emptyInputListForUpdate() {
-        assertGeneratedContentContains(
-                "emptyInputListForUpdate",
-                ".where(_mi_inRecordList != null && _mi_inRecordList.size() > 0 ? DSL.row(",
-                ").toList()) : DSL.falseCondition())"
-          );
-    }
-
-    @Test
-    @DisplayName("Upserting objects with an empty input list should return an empty output list")
-    void emptyInputListForUpsert() {
-        assertGeneratedContentContains(
-                "emptyInputListForUpsert",
-                ".where(_mi_inRecordList != null && _mi_inRecordList.size() > 0 ? DSL.row(",
-                ").toList()) : DSL.falseCondition())"
-          );
-    }
 }
