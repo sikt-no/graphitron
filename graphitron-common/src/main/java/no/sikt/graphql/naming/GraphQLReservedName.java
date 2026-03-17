@@ -33,8 +33,6 @@ public enum GraphQLReservedName {
 
     CONNECTION_TOTAL_COUNT("totalCount"),
 
-    ORDER_BY_FIELD("orderByField"),
-
     NODE_TYPE(NODE),
     NODE_ID("id"),
     ERROR_TYPE("Error"),

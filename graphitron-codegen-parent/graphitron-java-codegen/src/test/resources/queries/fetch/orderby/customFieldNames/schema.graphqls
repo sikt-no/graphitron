@@ -1,0 +1,21 @@
+type Query {
+  query(mySortBy: SortInput @orderBy): [CustomerTable]
+}
+
+input SortInput {
+  myCustomSortDirection: MyOrderDirection!
+  myCustomSortField: SortableField!
+}
+
+enum MyOrderDirection {
+  ASC
+  DESC
+}
+
+enum SortableField {
+  NAME @order(index: "IDX_LAST_NAME")
+}
+
+type CustomerTable @table(name: "Customer") {
+  name: String @field(name: "LAST_NAME")
+}

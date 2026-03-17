@@ -1,0 +1,11 @@
+type Query {
+  query(orderBy: BadInput @orderBy): [CustomerTable]
+}
+
+input BadInput {
+  orderByField: OrderByField!
+}
+
+enum OrderByField {
+  NAME @order(index: "IDX_LAST_NAME")
+}

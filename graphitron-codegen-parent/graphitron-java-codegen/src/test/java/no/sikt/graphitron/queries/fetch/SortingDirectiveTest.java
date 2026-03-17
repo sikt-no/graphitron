@@ -12,8 +12,6 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import no.sikt.graphql.directives.GenerationDirective;
-
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -149,14 +147,6 @@ public class SortingDirectiveTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Missing @order directive should fail validation")
-    void missingOrderDirective() {
-        assertThatThrownBy(() -> generateFiles("missingDirective", Set.of(CUSTOMER_TABLE)))
-                .isInstanceOf(InvalidSchemaException.class)
-                .hasMessageContaining("Expected enum field 'NAME' of 'OrderByField' to have an '@%s' directive", GenerationDirective.ORDER.getName());
-    }
-
-    @Test
     @DisplayName("Multiple @order modes set simultaneously should fail validation")
     void multipleModesSet() {
         assertThatThrownBy(() -> generateFiles("multipleModes", Set.of(CUSTOMER_TABLE)))
@@ -170,5 +160,14 @@ public class SortingDirectiveTest extends GeneratorTest {
         assertThatThrownBy(() -> generateFiles("primaryKeyNoPK", Set.of()))
                 .isInstanceOf(InvalidSchemaException.class)
                 .hasMessageContaining("has no primary key");
+    }
+
+    @Test
+    @DisplayName("Custom field names for orderBy and direction should work")
+    void customFieldNames() {
+        assertGeneratedContentContains("customFieldNames",
+                ".getMyCustomSortField().toString()",
+                ".getMyCustomSortDirection().toString()"
+        );
     }
 }

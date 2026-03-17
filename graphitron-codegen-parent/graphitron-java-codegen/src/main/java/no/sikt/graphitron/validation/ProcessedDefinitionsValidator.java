@@ -108,6 +108,7 @@ public class ProcessedDefinitionsValidator {
         validateWrapperTypesWithPreviousTable();
         validateJavaRecordFieldMappings();
         validatePaginatedFieldsHaveOrdering();
+        validateOrderByInputTypes();
         validateDefaultOrderNotOnInterfaceOrUnion();
         validateLookupArguments();
         validateEntities();
@@ -1888,6 +1889,39 @@ public class ProcessedDefinitionsValidator {
                         field.getTypeName(),
                         DEFAULT_ORDER.getName()
                 ));
+    }
+
+    /**
+     * Validates that all @orderBy input types have the required structure:
+     * one enum field with @order/@index directives (the sort field) and one direction enum (ASC/DESC).
+     */
+    private void validateOrderByInputTypes() {
+        allFields.stream()
+                .map(ObjectField::getOrderField)
+                .flatMap(Optional::stream)
+                .forEach(orderField -> {
+                    var inputType = schema.getInputType(orderField);
+                    if (inputType == null) {
+                        addErrorMessage("Input type '%s' not found in schema", orderField.getTypeName());
+                        return;
+                    }
+                    var enums = inputType.getFields().stream()
+                            .filter(schema::isEnum)
+                            .map(schema::getEnum)
+                            .toList();
+                    var orderByCount = enums.stream().filter(EnumDefinition::isOrderByEnum).count();
+                    var directionCount = enums.stream().filter(EnumDefinition::isDirectionEnum).count();
+                    if (orderByCount != 1) {
+                        addErrorMessage(
+                                "Expected exactly one orderBy enum field on type '%s', but found %d. The @%s input type must contain exactly one enum field whose values have @%s directives.",
+                                orderField.getTypeName(), orderByCount, ORDER_BY.getName(), ORDER.getName());
+                    }
+                    if (directionCount != 1) {
+                        addErrorMessage(
+                                "Expected exactly one direction enum field on type '%s', but found %d. The @%s input type must contain exactly one direction enum field (e.g., with ASC/DESC values).",
+                                orderField.getTypeName(), directionCount, ORDER_BY.getName());
+                    }
+                });
     }
 
     /**
