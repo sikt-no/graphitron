@@ -175,9 +175,15 @@ public class NodeIdInputTest extends ValidationTest {
 
 
     @Test
-    @DisplayName("Reference validation for java record inputs.")
-    void referenceValidation() {
-        assertErrorsContain("javaRecordReference", Set.of(CUSTOMER_NODE),
+    @DisplayName("Valid, implicit node ID reference in Java record input should pass validation")
+    void implicitReferenceInJavaRecordInput() {
+        getProcessedSchema("implicitReferenceInJavaRecordInput", Set.of(CUSTOMER_NODE));
+    }
+
+    @Test
+    @DisplayName("Reference validation for java record inputs with ID scalar.")
+    void javaRecordReferenceWithIdScalar() {
+        assertErrorsContain("javaRecordReferenceWithIdScalar", Set.of(CUSTOMER_NODE),
                 "Node ID field 'countryId' in Java record input 'CustomerInput' has a reference via table(s) which is not supported on Java record inputs.");
     }
 

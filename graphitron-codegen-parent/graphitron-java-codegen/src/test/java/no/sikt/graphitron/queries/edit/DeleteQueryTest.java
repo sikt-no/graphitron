@@ -35,8 +35,7 @@ public class DeleteQueryTest extends MutationQueryTest {
     @DisplayName("With node ID field in jOOQ record input")
     void nodeIdInput() {
         assertGeneratedContentContains("nodeIdInput",
-                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_inRecord," +
-                        "CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))"
+                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_inRecord, CUSTOMER.CUSTOMER_ID)"
         );
     }
 
@@ -75,7 +74,7 @@ public class DeleteQueryTest extends MutationQueryTest {
                 """
                         DSL.row(DSL.trueCondition()).in(
                             IntStream.range(0, _mi_inRecordList.size()).mapToObj(_iv_it ->
-                                DSL.row(_iv_nodeIdStrategy.hasId("CustomerNode", _mi_inRecordList.get(_iv_it), CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))
+                                DSL.row(_iv_nodeIdStrategy.hasId("CustomerNode", _mi_inRecordList.get(_iv_it), CUSTOMER.CUSTOMER_ID))
                             ).toList()
                         )
                         """

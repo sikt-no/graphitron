@@ -3,5 +3,5 @@ input CustomerInput @record(record: {className: "no.sikt.graphitron.codereferenc
 }
 
 type Country implements Node @node @table {
-    id: ID!
+    id: ID! @nodeId
 }

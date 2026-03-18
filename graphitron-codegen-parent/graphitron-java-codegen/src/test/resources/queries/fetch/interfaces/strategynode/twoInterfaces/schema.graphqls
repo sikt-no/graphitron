@@ -6,7 +6,7 @@ interface Named {
   firstName: String @field(name: "FIRST_NAME")
 }
 
-type Customer implements Node & Named @table {
+type Customer implements Node & Named @node @table {
   id: ID
   firstName: String @field(name: "FIRST_NAME")
 }
