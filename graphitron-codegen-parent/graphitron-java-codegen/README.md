@@ -1630,15 +1630,15 @@ type Customer implements Node @node @table {
   id: ID! @nodeId
 }
 ```
-Graphitron passes the default arguments to the _createId_ method in your node strategy:
+Graphitron resolves the primary key columns at generation time and passes them to the _createId_ method in your node strategy:
 
 ```java
-nodeIdStrategy.createId("Customer", CUSTOMER.getPrimaryKey().getFieldsArray())
+nodeIdStrategy.createId("Customer", CUSTOMER.CUSTOMER_ID)
 ```
 
 And with a custom configuration like this:
 ```graphql
-type Customer implements Node @node(typeId: "C", keyColumns: ["CUSTOMER_ID"]) @table {
+type Customer implements Node @node(typeId: "C", keyColumns: ["CUSTOMER_ID", "EMAIL"]) @table {
   id: ID! @nodeId
 }
 ```
@@ -1646,7 +1646,7 @@ type Customer implements Node @node(typeId: "C", keyColumns: ["CUSTOMER_ID"]) @t
 Graphitron will instead pass these arguments:
 
 ```java
-nodeIdStrategy.createId("C", CUSTOMER.CUSTOMER_ID)
+nodeIdStrategy.createId("C", CUSTOMER.CUSTOMER_ID, CUSTOMER.EMAIL)
 ```
 
 ### Mark an ID as globally unique with @nodeId

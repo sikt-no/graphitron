@@ -27,7 +27,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("Default case")
     void defaultCase() {
         assertGeneratedContentContains("default",
-                ".where(_iv_nodeIdStrategy.hasId(\"Customer\", _mi_customerId, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())))"
+                ".where(_iv_nodeIdStrategy.hasId(\"Customer\", _mi_customerId, _a_customer.CUSTOMER_ID))"
         );
     }
 
@@ -69,7 +69,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("With self-reference")
     void selfReference() {
         assertGeneratedContentContains("selfReference",
-                ".where(_iv_nodeIdStrategy.hasId(\"Film\", _mi_sequelId, _a_film_2185543202_film_left.fields"
+                ".where(_iv_nodeIdStrategy.hasId(\"Film\", _mi_sequelId, _a_film_2185543202_film_left.FILM_ID))"
         );
     }
 
@@ -78,7 +78,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("In input type")
     void inputType() {
         assertGeneratedContentContains("inputType",
-                ".where(_iv_nodeIdStrategy.hasId(\"Customer\", _mi_filter.getCustomerId(), _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())))"
+                ".where(_iv_nodeIdStrategy.hasId(\"Customer\", _mi_filter.getCustomerId(), _a_customer.CUSTOMER_ID))"
         );
     }
 
@@ -86,7 +86,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("In jOOQ record input type without nodeId directive")
     void implicitInputType() {
         assertGeneratedContentContains("implicitInputType", Set.of(CUSTOMER_NODE),
-                "nodeIdStrategy.hasId(\"CustomerNode\", _mi_filterRecordList.get(_iv_it), _a_customer.fields("
+                "nodeIdStrategy.hasId(\"CustomerNode\", _mi_filterRecordList.get(_iv_it), _a_customer.CUSTOMER_ID)"
         );
     }
 
@@ -94,7 +94,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("In jOOQ record input")
     void jooqRecord() {
         assertGeneratedContentContains("jooqRecord", Set.of(CUSTOMER_NODE),
-                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_filterRecord, _a_customer.fields("
+                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_filterRecord, _a_customer.CUSTOMER_ID)"
         );
     }
 
@@ -145,7 +145,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("In java record input")
     void javaRecord() {
         assertGeneratedContentContains("javaRecord", Set.of(CUSTOMER_NODE),
-                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_inRecord.getId(), _a_customer.fields("
+                ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\", _mi_inRecord.getId(), _a_customer.CUSTOMER_ID)"
         );
     }
 
@@ -162,7 +162,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     void javaRecordReference() {
         assertGeneratedContentContains("javaRecordReference", Set.of(CUSTOMER_NODE),
                 ".leftJoin(_a_customer_2168032777_address_left)",
-                ".where(_iv_nodeIdStrategy.hasId(\"Address\", _mi_inRecord.getAddressId(), _a_customer_2168032777_address_left.fields("
+                ".where(_iv_nodeIdStrategy.hasId(\"Address\", _mi_inRecord.getAddressId(), _a_customer_2168032777_address_left.ADDRESS_ID)"
         );
     }
 
@@ -171,10 +171,9 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     void typeWithoutTable() {
         assertGeneratedContentContains(
                 "typeWithoutTable", Set.of(CUSTOMER_NODE, CUSTOMER_NODE_INPUT_TABLE),
-                "customer.getPrimaryKey().getFieldsArray())))" +
-                        ".from(_a_customer)" +
-                        ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\"",
-                "queryForQuery_customerNoTable(_iv_nodeIdStrategy, _mi_inRecord)).fetchOne("
+                "return DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", _a_customer.CUSTOMER_ID))" +
+                        ".mapping(Functions.nullOnAllNull(CustomerNoTable::new));",
+                "queryForQuery_customerNoTable(_iv_nodeIdStrategy, _mi_inRecord)).from(_a_customer).where(_iv_nodeIdStrategy.hasId(\"CustomerNode\""
         );
     }
 
@@ -183,7 +182,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     void listedInputJOOQRecord() {
         assertGeneratedContentContains(
                 "listedInputJOOQRecord", Set.of(CUSTOMER_NODE, CUSTOMER_NODE_INPUT_TABLE),
-                "nodeIdStrategy.hasId(\"CustomerNode\", _mi_inRecordList.get(_iv_it), _a_customer.fields("
+                "nodeIdStrategy.hasId(\"CustomerNode\", _mi_inRecordList.get(_iv_it), _a_customer.CUSTOMER_ID)"
         );
     }
 
@@ -191,7 +190,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("Node ID input on another table object with same table as node type")
     void asInputOnAnotherTableObjectWithSameTable() {
         assertGeneratedContentContains("asInputOnAnotherTableObjectWithSameTable",
-                ".from(_a_customer).where(_iv_nodeIdStrategy.hasId(\"C\", _mi_in, _a_customer.fields"
+                ".from(_a_customer).where(_iv_nodeIdStrategy.hasId(\"C\", _mi_in, _a_customer.CUSTOMER_ID)"
         );
     }
 

@@ -5,12 +5,11 @@ import graphql.language.*;
 import graphql.language.SchemaDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.definitions.fields.AbstractField;
-import no.sikt.graphitron.definitions.fields.GenerationSourceField;
-import no.sikt.graphitron.definitions.fields.InputField;
+import no.sikt.graphitron.definitions.fields.*;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
+import no.sikt.graphitron.definitions.helpers.NodeConfiguration;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.ObjectSpecification;
@@ -30,8 +29,8 @@ import java.util.stream.Stream;
 import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForDeletes;
 import static no.sikt.graphitron.configuration.GeneratorConfig.useJdbcBatchingForInserts;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
-import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldNamesForKey;
-import static no.sikt.graphitron.mappings.TableReflection.getPrimaryKeyForTable;
+import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.isNodeIdReferenceField;
+import static no.sikt.graphql.directives.GenerationDirective.NODE;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -472,18 +471,6 @@ public class ProcessedSchema {
                 .toList();
     }
 
-    public Optional<LinkedList<String>> getKeyColumnsForNodeType(RecordObjectSpecification<?> type) {
-        if (!isNodeType(type.getName())) {
-            throw new IllegalArgumentException("Non-node object type provided in getKeyColumnsForNodeType: " + type.getName());
-        }
-        if (!type.getKeyColumns().isEmpty()) {
-            return Optional.of(type.getKeyColumns());
-        }
-
-        return getPrimaryKeyForTable(type.getTable().getName())
-                .map(f -> new LinkedList<>(getJavaFieldNamesForKey(type.getTable().getName(), f)));
-    }
-
     /**
      * @return Get the object that this field points to.
      */
@@ -838,46 +825,6 @@ public class ProcessedSchema {
         return GeneratorConfig.shouldMakeNodeStrategy() && field.hasNodeID();
     }
 
-    public boolean isNodeIdReferenceField(GenerationField field) {
-        if (isNodeIdField(field)) {
-            if (isNodeIdForNodeTypeWithSameTable(field)) {
-                return false;
-            }
-
-            return field.hasFieldReferences() || !getNodeTypeForNodeIdFieldOrThrow(field).getName().equals(field.getContainerTypeName());
-        }
-        return false;
-    }
-
-    public boolean isNodeIdReferenceInputField(InputField argument, GenerationField targetField) {
-        if (isNodeIdField(argument)) {
-            return argument.hasFieldReferences() || !getNodeTypeForNodeIdFieldOrThrow(argument).getName().equals(targetField.getTypeName());
-        }
-        return false;
-    }
-
-    /**
-     * Is this a node ID field in a non-node type that shares the same table with another node type?
-     * @return Whether this is a field creating a node ID for another node type from the current table
-     */
-    public boolean isNodeIdForNodeTypeWithSameTable(GenerationField field) {
-        if (!field.hasNodeID() || field.hasFieldReferences()) {
-            return false;
-        }
-
-        var containerType = getRecordType(field.getContainerTypeName());
-        if (containerType == null || containerType.hasNodeDirective()) {
-            return false;
-        }
-
-        var localTable = containerType.hasTable()
-                ? Optional.of(containerType.getTable())
-                : Optional.ofNullable(getPreviousTableObjectForObject(containerType)).map(RecordObjectSpecification::getTable);
-
-        var nodeObject = getNodeTypeForNodeIdField(field);
-        return nodeObject.isPresent() && localTable.filter(t -> nodeObject.get().getTable().equals(t)).isPresent();
-    }
-
     /**
      * @param field the {@link GenerationField} to resolve the node type for
      * @return the corresponding {@link RecordObjectSpecification}, or {@code null} if not found
@@ -912,6 +859,37 @@ public class ProcessedSchema {
      */
     public ObjectDefinition getNodeTypeForNodeIdFieldOrThrow(GenerationField field) {
         return getNodeTypeForNodeIdField(field).orElseThrow(() -> new RuntimeException("Cannot find node type for node ID field " + field.formatPath()));
+    }
+
+    /**
+     * Finds node type for a node ID field. If not found an error is thrown.
+     * @param field The {@link GenerationField} to resolve the node type for. The field must be a node ID field.
+     * @return the corresponding {@link RecordObjectSpecification}
+     */
+    public NodeConfiguration getNodeConfigurationForNodeIdFieldOrThrow(GenerationField field) {
+        return getNodeConfigurationForTypeOrThrow(getNodeTypeForNodeIdFieldOrThrow(field));
+    }
+
+    /**
+     * Returns the {@link NodeConfiguration} for the given type name, or throws if the {@code @node} configuration is missing.
+     * @param typeName the name of a node type in the schema
+     * @return the node configuration for the type
+     */
+    public NodeConfiguration getNodeConfigurationForTypeOrThrow(String typeName) {
+        return getNodeConfigurationForTypeOrThrow(getNodeType(typeName));
+    }
+
+    /**
+     * Returns the {@link NodeConfiguration} for the given object, or throws if the {@code @node} configuration is missing.
+     * @param object the record object to retrieve the node configuration from
+     * @return the node configuration for the object
+     */
+    public NodeConfiguration getNodeConfigurationForTypeOrThrow(RecordObjectSpecification<?> object) {
+        return object.getNodeConfiguration()
+                .orElseThrow(() -> new IllegalStateException(String.format(
+                        "Expected type '%s' to have @%s configuration, but it is unexpectedly null. Has validation been skipped?",
+                        object.getName(), NODE.getName()
+                )));
     }
 
     /**
@@ -1036,7 +1014,7 @@ public class ProcessedSchema {
                 .orElse(false);
 
         // Field reference
-        if (field.hasFieldReferences() || implicitReferenceFromFieldType || isNodeIdReferenceField(field)) {
+        if (field.hasFieldReferences() || implicitReferenceFromFieldType || isNodeIdReferenceField(field, this, currentTable)) {
             return true;
         }
 

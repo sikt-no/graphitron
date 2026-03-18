@@ -5,7 +5,7 @@ type Query {
   film: Film @notGenerated
 }
 
-type Film implements Titled & Node @table {
+type Film implements Titled & Node @table @node {
   id: ID!
   title: String!
 }
