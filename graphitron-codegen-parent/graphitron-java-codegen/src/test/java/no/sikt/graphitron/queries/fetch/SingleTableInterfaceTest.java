@@ -129,6 +129,26 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     }
 
     @Test
+    @DisplayName("Single-table interface on non-root type (singular)")
+    void splitQuery() {
+        assertGeneratedContentContains("splitQuery",
+                "Map<Row1<Long>, Address>",
+                "Set<Row1<Long>> _rk_city",
+                "DSL.row(_a_city.CITY_ID).in(_rk_city)",
+                "fetchMap(_iv_r -> _iv_r.get(\"_rk_city\", Record1.class).valuesRow()"
+        );
+    }
+
+    @Test
+    @DisplayName("Single-table interface on non-root type (listed)")
+    void splitQueryListed() {
+        assertGeneratedContentContains("splitQueryListed",
+                "Map<Row1<Long>, List<Address>>",
+                "fetchGroups("
+        );
+    }
+
+    @Test
     @DisplayName("With splitQuery reference in interface")
     void splitQueryReferenceInInterface() {
         assertGeneratedContentContains("splitQueryReferenceInInterface",

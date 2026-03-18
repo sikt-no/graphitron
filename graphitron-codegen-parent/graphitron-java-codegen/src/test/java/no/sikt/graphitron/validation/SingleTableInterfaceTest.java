@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
+import static no.sikt.graphql.directives.GenerationDirective.SPLIT_QUERY;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 @DisplayName("Single table interface validation")
@@ -138,8 +139,9 @@ public class SingleTableInterfaceTest extends ValidationTest {
     }
 
     @Test
-    @DisplayName("Single table interface is used as type for a split query")
-    void splitQuery() {
-        assertErrorsContain("splitQuery", "interface (AddressInterface) returned in non root object. This is not fully supported. ");
+    @DisplayName("Single table interface outside root without splitQuery")
+    void splitQueryMissing() {
+        assertErrorsContain("splitQueryMissing",
+                String.format("'%s' is a single-table interface field outside root, but is missing the %s directive", "Customer.address", SPLIT_QUERY.getName()));
     }
 }

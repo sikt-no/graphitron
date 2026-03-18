@@ -295,6 +295,13 @@ public final class CodeBlock {
     }
 
     /**
+     * Joins {@code codeBlocks} into a single {@link CodeBlock}.
+     */
+    public static CodeBlock join(String separator, CodeBlock... codeBlocks) {
+        return join(List.of(codeBlocks), separator);
+    }
+
+    /**
      * A {@link Collector} implementation that joins {@link CodeBlock} instances together into one
      * separated by {@code separator}. For example, joining {@code String s}, {@code Object o} and
      * {@code int i} using {@code ", "} would produce {@code String s, Object o, int i}.

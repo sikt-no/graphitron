@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
+import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 @DisplayName("Node interface validation - Checks run when building the schema for interfaces")
@@ -24,7 +25,10 @@ public class NodeInterfaceTest extends ValidationTest {
     @Test
     @DisplayName("Interface is used as type for a split query")
     void splitQuery() {
-        assertErrorsContain("splitQuery", "interface (Node) returned in non root object. This is not fully supported. Use with care");
+        assertErrorsContain("splitQuery",
+                String.format("Field '%s' returns %s interface in a non-root type. This is not supported.",
+                "Wrapper.node",
+                NODE_TYPE.getName()));
     }
 
     @Test
