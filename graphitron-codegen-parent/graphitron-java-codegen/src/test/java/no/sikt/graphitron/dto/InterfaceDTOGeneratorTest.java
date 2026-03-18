@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static no.sikt.graphitron.common.configuration.SchemaComponent.ADDRESS_SINGLE_TABLE_INTERFACE;
+
 public class InterfaceDTOGeneratorTest extends DTOGeneratorTest {
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
@@ -29,7 +31,7 @@ public class InterfaceDTOGeneratorTest extends DTOGeneratorTest {
     @Test
     @DisplayName("Single table interface")
     void singleTable() {
-        assertGeneratedContentMatches("singleTable");
+        assertGeneratedContentMatches("singleTable", ADDRESS_SINGLE_TABLE_INTERFACE);
     }
 
     @Test

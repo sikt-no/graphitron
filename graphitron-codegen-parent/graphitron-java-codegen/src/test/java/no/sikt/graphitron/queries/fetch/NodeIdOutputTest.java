@@ -96,6 +96,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("Node IDs in single table interface queries")
     void inSingleTableInterfaceQuery() {
         assertGeneratedContentContains("singleTableInterface",
+                Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
                 "nodeIdStrategy.createId(\"A1\", _a_address.ADDRESS_ID).as(\"ONE_id\")",
                 "nodeIdStrategy.createId(\"A2\", _a_address.fields(_a_address.getPrimaryKey().getFieldsArray())).as(\"TWO_id\")",
                 "data = _iv_it.into(AddressInDistrictOne.class);" +

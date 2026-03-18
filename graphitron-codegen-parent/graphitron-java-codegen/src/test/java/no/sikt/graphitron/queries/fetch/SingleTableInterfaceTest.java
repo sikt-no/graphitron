@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
+import static no.sikt.graphitron.common.configuration.SchemaComponent.ADDRESS_SINGLE_TABLE_INTERFACE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
@@ -21,13 +22,13 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     @Test
     @DisplayName("Default case")
     void defaultCase() {
-        assertGeneratedContentMatches("default");
+        assertGeneratedContentMatches("default", ADDRESS_SINGLE_TABLE_INTERFACE);
     }
 
     @Test
     @DisplayName("Listed without pagination")
     void listed() {
-        assertGeneratedContentMatches("listed");
+        assertGeneratedContentMatches("listed", ADDRESS_SINGLE_TABLE_INTERFACE);
     }
 
     @Test
@@ -39,7 +40,7 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     @Test
     @DisplayName("Paginated")
     void paginated() {
-        assertGeneratedContentMatches("paginated");
+        assertGeneratedContentMatches("paginated", ADDRESS_SINGLE_TABLE_INTERFACE);
     }
 
     @Test
@@ -66,7 +67,7 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     @DisplayName("With reference field from type definition")
     void withReferenceFieldInType() {
         assertGeneratedContentContains("withReferenceFieldInType",
-                Set.of(CUSTOMER_TABLE),
+                Set.of(CUSTOMER_TABLE, ADDRESS_SINGLE_TABLE_INTERFACE),
                 "address_223244161_customer = _a_address.customer()",
                 "DSL.field(",
                 ".from(_a_address_223244161_customer)).as(\"customer\")"
@@ -77,7 +78,7 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     @DisplayName("Implementing types have the same field")
     void implementingTypesWithSameField() {
         assertGeneratedContentContains("implementingTypesWithSameField",
-                Set.of(CUSTOMER_TABLE),
+                Set.of(CUSTOMER_TABLE, ADDRESS_SINGLE_TABLE_INTERFACE),
                 // Check all selected fields to make sure the duplicate field is only selected once
                 "(_a_address.DISTRICT.as(\"_iv_discriminator\"),_a_address.POSTAL_CODE.as(\"postalCode\")" +
                         ",_a_address.PHONE.as(\"phoneNumber\"))"
@@ -94,13 +95,14 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     @Test
     @DisplayName("Type implementing multiple single table interfaces")
     void typeImplementsMultipleSingleTableInterfaces() {
-        assertDoesNotThrow(() -> generateFiles("typeImplementsMultipleSingleTableInterfaces"));
+        assertDoesNotThrow(() -> generateFiles("typeImplementsMultipleSingleTableInterfaces", Set.of(ADDRESS_SINGLE_TABLE_INTERFACE)));
     }
 
     @Test
     @DisplayName("Overridden field")
     void overriddenField() {
         assertGeneratedContentContains("overriddenField",
+                Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
                 "discriminator\"), _a_address.POSTAL_CODE.as(\"postalCode\"), _a_address.ADDRESS_.as(\"ONE_postalCode\"))",
                 "data.setPostalCode(_iv_it.get(\"ONE_postalCode\", _a_address.ADDRESS_.getConverter()));",
                 "{return _iv_it.into(AddressInDistrictTwo.class);}"
@@ -112,6 +114,7 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     @DisplayName("Default field should not be selected when overridden by all types")
     void interfaceFieldOverriddenByAll() {
         assertGeneratedContentContains("interfaceFieldOverriddenByAll",
+                Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
                 "discriminator\"), _a_address.ADDRESS_.as(\"ONE_postalCode\"), _a_address.ADDRESS2.as(\"TWO_postalCode\"))"
 
         );
@@ -121,6 +124,7 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     @DisplayName("Overridden non-interface field")
     void overriddenNonInterfaceField() {
         assertGeneratedContentContains("overriddenNonInterfaceField",
+                Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
                 "address.ADDRESS_.as(\"ONE_extraField\"), _a_address.POSTAL_CODE.as(\"TWO_extraField\")",
                 ".into(AddressInDistrictOne.class); _iv_data.setExtraField(_iv_it.get(\"ONE_extraField\", _a_address.ADDRESS_.getConverter",
                 ".into(AddressInDistrictTwo.class); _iv_data.setExtraField(_iv_it.get(\"TWO_extraField\", _a_address.POSTAL_CODE.getConverter"
@@ -132,6 +136,7 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     @DisplayName("Single-table interface on non-root type (singular)")
     void splitQuery() {
         assertGeneratedContentContains("splitQuery",
+                Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
                 "Map<Row1<Long>, Address>",
                 "Set<Row1<Long>> _rk_city",
                 "DSL.row(_a_city.CITY_ID).in(_rk_city)",
@@ -143,6 +148,7 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     @DisplayName("Single-table interface on non-root type (listed)")
     void splitQueryListed() {
         assertGeneratedContentContains("splitQueryListed",
+                Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
                 "Map<Row1<Long>, List<Address>>",
                 "fetchGroups("
         );
@@ -168,6 +174,7 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     @DisplayName("With splitQuery reference in type")
     void splitQueryReferenceInType() {
         assertGeneratedContentContains("splitQueryReferenceInType",
+                Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
                 "DSL.row(_a_address.ADDRESS_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(_a_address.ADDRESS_ID))).as(\"address_pkey\")",
                 "AddressInDistrictOne.class); _iv_data.setCustomerKey(_iv_it.get(\"address_pkey\"",
                 "return _iv_it.into(AddressInDistrictTwo.class);"

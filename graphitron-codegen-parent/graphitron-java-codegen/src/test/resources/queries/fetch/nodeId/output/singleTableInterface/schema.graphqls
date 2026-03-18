@@ -2,10 +2,6 @@ type Query {
   address: Address
 }
 
-interface Address @table(name: "ADDRESS") @discriminate(on: "DISTRICT"){
-  postalCode: String @field(name: "POSTAL_CODE")
-}
-
 type AddressInDistrictOne implements Node & Address @table(name: "ADDRESS") @discriminator(value: "ONE") @node(typeId: "A1", keyColumns: "ADDRESS_ID"){
   id: ID! @nodeId
   postalCode: String @field(name: "POSTAL_CODE")

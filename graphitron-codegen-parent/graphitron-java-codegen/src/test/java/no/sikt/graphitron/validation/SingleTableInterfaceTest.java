@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
+import static no.sikt.graphitron.common.configuration.SchemaComponent.ADDRESS_SINGLE_TABLE_INTERFACE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 import static no.sikt.graphql.directives.GenerationDirective.SPLIT_QUERY;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -83,7 +84,7 @@ public class SingleTableInterfaceTest extends ValidationTest {
     @Test
     @DisplayName("Overriding field directive on field in single table interface should not throw error")
     void fieldOverride() {
-        getProcessedSchema("fieldOverride");
+        getProcessedSchema("fieldOverride", ADDRESS_SINGLE_TABLE_INTERFACE);
     }
 
     @Test
@@ -111,7 +112,7 @@ public class SingleTableInterfaceTest extends ValidationTest {
     @Test
     @DisplayName("Mismatch in field directive on field in type implementing single table interface")
     void fieldInTypeConflict() {
-        assertErrorsContain("fieldInTypeConflict",
+        assertErrorsContain("fieldInTypeConflict", Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
                 "Different configuration on fields in types implementing the same single table interface is currently not supported. Field " +
                         "'sharedField' occurs in two or more types implementing interface 'Address', but there is a mismatch between the configuration of the 'field' directive.");
     }
@@ -119,13 +120,13 @@ public class SingleTableInterfaceTest extends ValidationTest {
     @Test
     @DisplayName("Matching reference directive on field in type implementing single table interface")
     void referenceMatches() {
-        assertDoesNotThrow(() -> generateFiles("referenceMatches"));
+        assertDoesNotThrow(() -> generateFiles("referenceMatches", Set.of(ADDRESS_SINGLE_TABLE_INTERFACE)));
     }
 
     @Test
     @DisplayName("Mismatch in reference directive on field in type implementing single table interface")
     void referenceInTypeConflict() {
-        assertErrorsContain("referenceInTypeConflict",
+        assertErrorsContain("referenceInTypeConflict", Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
                 "Different configuration on fields in types implementing the same single table interface is currently not supported. " +
                         "Field 'customer' occurs in two or more types implementing interface 'Address', but there is a mismatch between the configuration of the 'reference' directive.");
     }
@@ -133,7 +134,7 @@ public class SingleTableInterfaceTest extends ValidationTest {
     @Test
     @DisplayName("Mismatch in condition reference directive on field in type implementing single table interface")
     void conditionReferenceInTypeConflict() {
-        assertErrorsContain("conditionReferenceInTypeConflict",
+        assertErrorsContain("conditionReferenceInTypeConflict", Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
                 "Different configuration on fields in types implementing the same single table interface is currently not supported. " +
                         "Field 'customer' occurs in two or more types implementing interface 'Address', but there is a mismatch between the configuration of the 'reference' directive.");
     }

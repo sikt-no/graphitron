@@ -198,6 +198,7 @@ public class ResolverTest extends GeneratorTest {
     @DisplayName("Root resolver returning single table interface")
     void singleTableInterface() {
         assertGeneratedContentContains("operation/singleTableInterface",
+                Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
                 "CompletableFuture<List<Address>>",
                 "QueryDBQueries.addressForQuery("
         );

@@ -1,3 +1,0 @@
-interface Address @table(name: "ADDRESS") @discriminate(on: "DISTRICT"){
-    postalCode: String @field(name: "POSTAL_CODE")
-}
