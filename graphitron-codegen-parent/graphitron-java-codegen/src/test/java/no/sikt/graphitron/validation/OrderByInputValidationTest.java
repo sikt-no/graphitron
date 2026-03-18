@@ -34,4 +34,11 @@ public class OrderByInputValidationTest extends ValidationTest {
         assertErrorsContain("missingOrderDirective", Set.of(CUSTOMER_TABLE, ORDER),
                 "Expected exactly one orderBy enum field on type");
     }
+
+    @Test
+    @DisplayName("Enum value without @order directive should fail validation")
+    void enumValueMissingOrderDirective() {
+        assertErrorsContain("enumValueMissingOrderDirective", Set.of(CUSTOMER_TABLE),
+                "Enum field 'EMAIL' of 'TestOrderByField' has no valid @order directive");
+    }
 }

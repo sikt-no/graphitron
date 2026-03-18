@@ -1,0 +1,18 @@
+type Query {
+  query(orderBy: TestOrder @orderBy): [CustomerTable]
+}
+
+input TestOrder {
+  field: TestOrderByField!
+  direction: OrderDirection!
+}
+
+enum OrderDirection {
+  ASC
+  DESC
+}
+
+enum TestOrderByField {
+  NAME @order(index: "IDX_LAST_NAME")
+  EMAIL
+}

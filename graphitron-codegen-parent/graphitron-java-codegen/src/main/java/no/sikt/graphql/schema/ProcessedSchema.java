@@ -940,13 +940,13 @@ public class ProcessedSchema {
     }
 
     /**
-     * Resolved structure of an @orderBy input type, containing the enum definition and the actual field names.
+     * Resolved structure of an @orderBy input type, containing the enum definition and the actual fields.
      */
-    public record ResolvedOrderInput(OrderByEnumDefinition enumDefinition, String orderByFieldName, String directionFieldName) {}
+    public record ResolvedOrderInput(OrderByEnumDefinition enumDefinition, InputField orderByField, InputField directionField) {}
 
     /**
      * @return The resolved order input structure for the given orderInputField, with the enum definition
-     *         and the actual field names for the orderBy enum and direction fields.
+     *         and the actual fields for the orderBy enum and direction.
      *         Assumes the input type structure has been validated by {@link ProcessedDefinitionsValidator}.
      */
     public ResolvedOrderInput getResolvedOrderInput(InputField orderInputField) {
@@ -965,8 +965,8 @@ public class ProcessedSchema {
 
         return new ResolvedOrderInput(
                 OrderByEnumDefinition.from(getEnum(orderByField)),
-                orderByField.getName(),
-                directionField.getName());
+                orderByField,
+                directionField);
     }
 
     /**

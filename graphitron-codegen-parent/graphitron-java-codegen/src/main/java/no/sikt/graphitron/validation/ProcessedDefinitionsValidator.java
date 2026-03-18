@@ -11,10 +11,7 @@ import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
-import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
-import no.sikt.graphitron.definitions.objects.EnumDefinition;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
-import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
+import no.sikt.graphitron.definitions.objects.*;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
 import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
 import no.sikt.graphitron.generators.context.InputParser;
@@ -43,9 +40,9 @@ import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getFo
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static no.sikt.graphitron.mappings.ReflectionHelpers.getJooqRecordClassForNodeIdInputField;
 import static no.sikt.graphitron.mappings.TableReflection.*;
+import static no.sikt.graphitron.validation.ErrorMessages.*;
 import static no.sikt.graphitron.validation.ServiceMethodFormatter.formatExpectedListableType;
 import static no.sikt.graphitron.validation.ServiceMethodFormatter.formatOverloads;
-import static no.sikt.graphitron.validation.ErrorMessages.*;
 import static no.sikt.graphitron.validation.ValidationHandler.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirective.NODE_ID;
@@ -1921,6 +1918,14 @@ public class ProcessedDefinitionsValidator {
                                 "Expected exactly one direction enum field on type '%s', but found %d. The @%s input type must contain exactly one direction enum field (e.g., with ASC/DESC values).",
                                 orderField.getTypeName(), directionCount, ORDER_BY.getName());
                     }
+                    // Validate that all orderBy enum fields have @order or @index
+                    enums.stream()
+                            .filter(EnumDefinition::isOrderByEnum)
+                            .forEach(e -> e.getObjectDefinition().getEnumValueDefinitions().stream()
+                                    .filter(v -> !v.hasDirective(ORDER.getName()) && !v.hasDirective(INDEX.getName()))
+                                    .forEach(v -> addErrorMessage(
+                                            "Enum field '%s' of '%s' has no valid @%s directive",
+                                            v.getName(), e.getName(), ORDER.getName())));
                 });
     }
 
