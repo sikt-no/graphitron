@@ -36,5 +36,7 @@ public interface ObjectSpecification<T extends FieldSpecification> {
     /**
      * @return Is this type the top node? That should be either the Query or the Mutation type.
      */
-    boolean isOperationRoot();
+    default boolean isOperationRoot() {
+        return false;
+    }
 }

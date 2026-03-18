@@ -88,6 +88,4 @@ public interface FieldSpecification {
     boolean isRootField();
 
     boolean isIterableWrappedWithNullableElement();
-
-    boolean isFederationExternal();
 }

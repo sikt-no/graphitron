@@ -162,11 +162,6 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return createsDataFetchers;
     }
 
-    @Override
-    public boolean createsDataFetchersForFields() {
-        return false;
-    }
-
     public boolean isExternalField() {
         return isExternalField;
     }

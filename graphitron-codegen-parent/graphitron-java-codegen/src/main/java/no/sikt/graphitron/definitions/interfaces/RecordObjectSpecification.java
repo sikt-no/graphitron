@@ -78,7 +78,5 @@ public interface RecordObjectSpecification<T extends GenerationField> extends Ob
 
     boolean hasCustomKeyColumns();
 
-    boolean isFederationExternal();
-
     LinkedList<String> getKeyColumns();
 }

@@ -91,9 +91,4 @@ public class OperationField implements FieldSpecification {
     public boolean isIterableWrappedWithNullableElement() {
         return fieldType.isIterableWrapped() && fieldType.isNullable();
     }
-
-    @Override
-    public boolean isFederationExternal() {
-        return false;
-    }
 }

@@ -21,9 +21,6 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
 
     boolean isInput();
 
-    @Override
-    boolean createsDataFetcher();
-
     boolean hasCondition();
 
     boolean hasOverridingCondition();

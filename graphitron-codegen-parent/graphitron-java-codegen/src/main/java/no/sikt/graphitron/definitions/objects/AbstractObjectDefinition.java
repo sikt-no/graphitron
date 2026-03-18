@@ -69,11 +69,6 @@ public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, U ex
     }
 
     @Override
-    public boolean isOperationRoot() {
-        return false;
-    }
-
-    @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof AbstractObjectDefinition<?, ?> that)) return false;

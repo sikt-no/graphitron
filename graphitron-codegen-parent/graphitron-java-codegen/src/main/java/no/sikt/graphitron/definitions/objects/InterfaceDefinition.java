@@ -116,16 +116,6 @@ public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeD
     }
 
     @Override
-    public boolean createsDataFetcher() {
-        return false;
-    }
-
-    @Override
-    public boolean createsDataFetchersForFields() {
-        return false;
-    }
-
-    @Override
     public boolean isGenerated() {
         return isGenerated;
     }
@@ -152,11 +142,6 @@ public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeD
 
     @Override
     public boolean hasCustomKeyColumns() {
-        return false;
-    }
-
-    @Override
-    public boolean isFederationExternal() {
         return false;
     }
 
