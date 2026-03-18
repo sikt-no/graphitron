@@ -21,9 +21,10 @@ extend type Query {
     filmsOrderByWithDefaultOrder(orderBy: FilmsOrderByInput @orderBy): [Film] @asConnection @defaultOrder(index: "idx_title")
 }
 
+# Field names are customizable. Graphitron detects the orderBy and direction fields by type, not by name.
 input FilmsOrderByInput {
-    orderByField: FilmsOrderByFields!
-    direction: OrderDirection!
+    myCustomSortField: FilmsOrderByFields!
+    myCustomDirection: OrderDirection!
 }
 
 enum FilmsOrderByFields {

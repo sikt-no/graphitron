@@ -26,7 +26,7 @@ input TestOrderByInput {
 }
 
 enum TestOrderByField {
-    NAME @index(name: "idx_last_name")
+    NAME @order(index: "idx_last_name")
 }
 
 enum OrderDirection {

@@ -9,7 +9,7 @@ import no.sikt.graphql.directives.GenerationDirectiveParam;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphql.directives.GenerationDirective.ENUM;
+import static no.sikt.graphql.directives.GenerationDirective.*;
 
 /**
  * Representation of a GraphQL enum type.
@@ -77,5 +77,25 @@ public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition,
     @Override
     public boolean isExplicitlyNotGenerated() {
         return false;
+    }
+
+    /**
+     * @return Does this enum have values with @order or @index directives (i.e., it defines sort fields)?
+     */
+    public boolean isOrderByEnum() {
+        return getObjectDefinition().getEnumValueDefinitions().stream()
+                .anyMatch(v -> v.hasDirective(ORDER.getName()) || v.hasDirective(INDEX.getName()));
+    }
+
+    /**
+     * @return Is this a direction enum (exactly two values: ASC and DESC)?
+     */
+    public boolean isDirectionEnum() {
+        var values = getObjectDefinition().getEnumValueDefinitions();
+        if (values.size() != 2) {
+            return false;
+        }
+        var names = values.stream().map(v -> v.getName().toUpperCase()).sorted().toList();
+        return names.equals(List.of("ASC", "DESC"));
     }
 }

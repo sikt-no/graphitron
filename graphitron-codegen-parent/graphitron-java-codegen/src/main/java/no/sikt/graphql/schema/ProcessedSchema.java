@@ -311,8 +311,8 @@ public class ProcessedSchema {
     }
 
     /**
-    * @return Does this name belong to a multi-table interface type in the schema?
-    */
+     * @return Does this name belong to a multi-table interface type in the schema?
+     */
     public boolean isMultiTableInterface(String name) {
         return isInterface(name) && getInterface(name).isMultiTableInterface();
     }
@@ -384,10 +384,10 @@ public class ProcessedSchema {
     }
 
     /**
-    * Returns the ObjectDefinition for each Type in a union given that the name
-    * supplied is a union. Otherwise, return the ObjectDefinition for all types
-    * that implements the given interface.
-    * */
+     * Returns the ObjectDefinition for each Type in a union given that the name
+     * supplied is a union. Otherwise, return the ObjectDefinition for all types
+     * that implements the given interface.
+     */
     public Optional<List<ObjectDefinition>> getTypesFromInterfaceOrUnion(String name) {
         if (isUnion(name)) {
             return Optional.of(getUnionSubTypes(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name));
@@ -940,17 +940,33 @@ public class ProcessedSchema {
     }
 
     /**
-     * @return The enum definition representing the OrderByField of the given orderInputField
+     * Resolved structure of an @orderBy input type, containing the enum definition and the actual fields.
      */
-    public OrderByEnumDefinition getOrderByFieldEnum(InputField orderInputField) {
-        return Optional.ofNullable(getInputType(orderInputField))
-                .orElseThrow(() -> new IllegalArgumentException(String.format("Input type '%s' not found in schema", orderInputField.getTypeName())))
-                .getFields().stream()
-                .filter(it -> it.getName().equals(GraphQLReservedName.ORDER_BY_FIELD.getName()))
-                .map(this::getEnum)
-                .map(OrderByEnumDefinition::from)
+    public record ResolvedOrderInput(OrderByEnumDefinition enumDefinition, InputField orderByField, InputField directionField) {}
+
+    /**
+     * @return The resolved order input structure for the given orderInputField, with the enum definition
+     *         and the actual fields for the orderBy enum and direction.
+     *         Assumes the input type structure has been validated by {@link ProcessedDefinitionsValidator}.
+     */
+    public ResolvedOrderInput getResolvedOrderInput(InputField orderInputField) {
+        var enumFields = getInputType(orderInputField).getFields().stream()
+                .filter(this::isEnum)
+                .toList();
+
+        var orderByField = enumFields.stream()
+                .filter(f -> getEnum(f).isOrderByEnum())
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(String.format("Expected field '%s' on type %s, but no such field was found", GraphQLReservedName.ORDER_BY_FIELD, orderInputField.getTypeName())));
+                .orElseThrow();
+        var directionField = enumFields.stream()
+                .filter(f -> getEnum(f).isDirectionEnum())
+                .findFirst()
+                .orElseThrow();
+
+        return new ResolvedOrderInput(
+                OrderByEnumDefinition.from(getEnum(orderByField)),
+                orderByField,
+                directionField);
     }
 
     /**
@@ -968,15 +984,15 @@ public class ProcessedSchema {
     }
 
     /**
-    * @return Returns whether the object has a table on or above it.
-    * */
+     * @return Returns whether the object has a table on or above it.
+     */
     public boolean hasTableObjectForObject(RecordObjectSpecification<?> object) {
         return objectWithPreviousTable.containsKey(object.getName());
     }
 
     /*
      * @return Returns whether name belongs to an object with a previous table
-     * */
+     */
     public boolean isObjectWithPreviousTableObject(String name) {
         return isObject(name) && objectWithPreviousTable.containsKey(name);
     }

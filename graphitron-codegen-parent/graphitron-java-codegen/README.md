@@ -1457,7 +1457,8 @@ Incorporating the **orderBy** functionality in your GraphQL schema allow API use
 
 _Step 1: Define Order Input Types_
 
-Firstly, define an input type for **orderBy**. This input type must include a `direction` field and a `orderByField` field:
+Define an input type for **orderBy**. This input type must include exactly one direction enum field (with `ASC`/`DESC` values) and
+exactly one orderBy enum field (whose values have `@order` directives). The field names are flexible, Graphitron identifies each field by its type, not its name:
 
 ```graphql
 input FilmOrder {

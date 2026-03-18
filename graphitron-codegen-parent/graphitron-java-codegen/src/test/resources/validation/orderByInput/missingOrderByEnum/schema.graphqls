@@ -1,0 +1,7 @@
+type Query {
+  query(orderBy: BadInput @orderBy): [CustomerTable]
+}
+
+input BadInput {
+  direction: OrderDirection!
+}

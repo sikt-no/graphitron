@@ -12,7 +12,6 @@ import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
-import no.sikt.graphitron.definitions.objects.OrderByEnumDefinition;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
@@ -44,9 +43,9 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getSourceFieldsForForeignKey;
+import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodNameForField;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
-import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -1149,58 +1148,53 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     @NotNull
     private CodeBlock createCustomOrderBy(InputField orderInputField, String actualRefTable, CodeBlock defaultOrderByFieldsBlock, String targetTableName) {
-        var orderByFieldEnum = processedSchema.getOrderByFieldEnum(orderInputField);
-
-        // Validate that all enum fields have a valid sort mode (i.e. @order directive is set)
-        orderByFieldEnum.getFields().stream()
-                .filter(field -> field.getSortMode() == null)
-                .forEach(field -> ValidationHandler.addErrorMessageAndThrow("Enum field '%s' of '%s' has no valid @order directive", field.getName(), orderByFieldEnum.getName()));
-
-        return createOrderBySwitch(orderByFieldEnum, orderInputField, actualRefTable, defaultOrderByFieldsBlock, targetTableName);
+        var orderInput = processedSchema.getResolvedOrderInput(orderInputField);
+        return createOrderBySwitch(orderInput, orderInputField, actualRefTable, defaultOrderByFieldsBlock, targetTableName);
     }
 
     @NotNull
-    private CodeBlock createOrderBySwitch(OrderByEnumDefinition orderByFieldEnum, InputField orderInputField,
+    private CodeBlock createOrderBySwitch(ProcessedSchema.ResolvedOrderInput orderInput, InputField orderInputField,
                                           String actualRefTable, CodeBlock defaultOrderByFieldsBlock, String targetTableName) {
         var orderInputFieldName = inputPrefix(orderInputField.getName());
+        var orderByFieldGetter = getDTOGetterMethodNameForField(orderInput.orderByField());
+        var directionGetter = getDTOGetterMethodNameForField(orderInput.directionField());
 
         var code = CodeBlock.builder()
                 .add("$N == null\n", orderInputFieldName)
                 .indent().indent()
                 .add("? $L\n", defaultOrderByFieldsBlock)
-                .beginControlFlow(": switch ($N.get$L().toString())", orderInputFieldName,
-                        capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()));
+                .beginControlFlow(": switch ($N.$L().toString())", orderInputFieldName, orderByFieldGetter);
 
-        orderByFieldEnum.getFields().forEach(field ->
-                code.add(createOrderByCase(field, actualRefTable, orderInputFieldName, targetTableName)));
+        orderInput.enumDefinition().getFields().forEach(field ->
+                code.add(createOrderByCase(field, actualRefTable, orderInputFieldName, directionGetter, targetTableName)));
 
-        code.add("default -> throw new $T($S + $N.get$L().toString());\n",
+        code.add("default -> throw new $T($S + $N.$L().toString());\n",
                 ILLEGAL_ARGUMENT_EXCEPTION.className, "Unknown order by field: ",
-                orderInputFieldName, capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()));
+                orderInputFieldName, orderByFieldGetter);
         code.endControlFlow()
                 .unindent().unindent();
         return code.build();
     }
 
-    private static CodeBlock createDynamicSortOrderBlock(String orderInputFieldName) {
+    private static CodeBlock createDynamicSortOrderBlock(String orderInputFieldName, String directionGetter) {
         return CodeBlock.of(
-                "$N.getDirection().toString().equalsIgnoreCase($S) ? $T.ASC : $T.DESC",
-                orderInputFieldName, "ASC", SORT_ORDER.className, SORT_ORDER.className);
+                "$N.$L().toString().equalsIgnoreCase($S) ? $T.ASC : $T.DESC",
+                orderInputFieldName, directionGetter, "ASC", SORT_ORDER.className, SORT_ORDER.className);
     }
 
-    private CodeBlock createOrderByCase(OrderByEnumField field, String actualRefTable, String orderInputFieldName, String targetTableName) {
+    private CodeBlock createOrderByCase(OrderByEnumField field, String actualRefTable, String orderInputFieldName, String directionGetter, String targetTableName) {
         var enumValueName = field.getName();
         return switch (field.getSortMode()) {
             case INDEX -> {
                 var indexName = field.getIndexName().orElseThrow();
                 validateIndexExists(targetTableName, indexName, enumValueName);
-                yield CodeBlock.of("case $S -> $T.getSortFields($N, $S, $N.getDirection().toString());\n",
-                        enumValueName, QUERY_HELPER.className, actualRefTable, indexName, orderInputFieldName);
+                yield CodeBlock.of("case $S -> $T.getSortFields($N, $S, $N.$L().toString());\n",
+                        enumValueName, QUERY_HELPER.className, actualRefTable, indexName, orderInputFieldName, directionGetter);
             }
             case FIELDS -> {
                 var fieldSpecs = field.getFieldSortSpecs();
                 validateFieldsExist(targetTableName, fieldSpecs, enumValueName);
-                var dynamicSortOrder = createDynamicSortOrderBlock(orderInputFieldName);
+                var dynamicSortOrder = createDynamicSortOrderBlock(orderInputFieldName, directionGetter);
                 yield CodeBlock.of("case $S -> $L;\n", enumValueName,
                         createFieldSortFields(fieldSpecs, actualRefTable, dynamicSortOrder));
             }
@@ -1209,7 +1203,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                         tableHasPrimaryKey(targetTableName),
                         "Table '%s' has no primary key, but @order(primaryKey: true) is set on enum value '%s'",
                         targetTableName, enumValueName);
-                var dynamicSortOrder = createDynamicSortOrderBlock(orderInputFieldName);
+                var dynamicSortOrder = createDynamicSortOrderBlock(orderInputFieldName, directionGetter);
                 yield CodeBlock.of("case $S -> $L;\n", enumValueName,
                         getPrimaryKeyFieldsWithTableAliasBlock(actualRefTable, dynamicSortOrder));
             }
