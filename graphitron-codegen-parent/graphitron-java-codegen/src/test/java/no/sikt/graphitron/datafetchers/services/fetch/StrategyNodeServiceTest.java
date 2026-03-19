@@ -57,7 +57,8 @@ public class StrategyNodeServiceTest extends GeneratorTest {
     @DisplayName("Service resolver with node strategy enabled, auto-fetches from DB for table type")
     void resolver() {
         assertGeneratedContentContains("default",
-                "loadAndFetch"
+                "QueryHelper.intoTableRecord(_iv_serviceResult",
+                "new DataFetcherHelper(_iv_env).load(_iv_serviceKey"
         );
         resultDoesNotContain("default",
                 "customerNodeRecordToGraphType"
@@ -70,7 +71,8 @@ public class StrategyNodeServiceTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "withInputJOOQRecord",
                 ".customerNodeInputTableToJOOQRecord(_mi_in, _iv_nodeIdStrategy, \"in\")",
-                "loadAndFetch"
+                "QueryHelper.intoTableRecord(_iv_serviceResult",
+                "new DataFetcherHelper(_iv_env).load(_iv_serviceKey"
         );
         resultDoesNotContain("withInputJOOQRecord",
                 "customerNodeRecordToGraphType"

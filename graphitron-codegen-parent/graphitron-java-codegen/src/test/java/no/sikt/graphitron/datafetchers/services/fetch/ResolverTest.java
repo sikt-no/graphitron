@@ -191,11 +191,12 @@ public class ResolverTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Query service returning table type should auto-fetch from DB instead of transforming service result")
+    @DisplayName("Query service returning table type should auto-fetch from DB via DataFetcherHelper")
     void returningTableWithAutoFetch() {
         assertGeneratedContentContains(
                 "operation/returningTableWithAutoFetch", Set.of(CUSTOMER_TABLE),
-                "loadAndFetch"
+                "QueryHelper.intoTableRecord(_iv_serviceResult",
+                "new DataFetcherHelper(_iv_env).load(_iv_serviceKey"
         );
     }
 
@@ -209,11 +210,11 @@ public class ResolverTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Listed service returning table type should use loadAndFetchList for batch auto-fetch")
+    @DisplayName("Listed service returning table type should use loadByResolverKeys for batch auto-fetch")
     void returningTableListWithAutoFetch() {
         assertGeneratedContentContains(
                 "operation/returningTableListWithAutoFetch", Set.of(CUSTOMER_TABLE),
-                "loadAndFetchList"
+                "new DataFetcherHelper(_iv_env).loadByResolverKeys(_iv_serviceKeys"
         );
     }
 

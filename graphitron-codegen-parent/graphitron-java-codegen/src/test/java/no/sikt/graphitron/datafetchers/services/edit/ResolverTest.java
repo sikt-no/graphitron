@@ -146,7 +146,8 @@ public class ResolverTest extends GeneratorTest {
     void returningJOOQRecord() {
         assertGeneratedContentContains(
                 "returningJOOQRecord", Set.of(CUSTOMER_TABLE),
-                "loadAndFetch"
+                "QueryHelper.intoTableRecord(_iv_serviceResult",
+                "new DataFetcherHelper(_iv_env).load(_iv_serviceKey"
         );
     }
 
@@ -171,7 +172,8 @@ public class ResolverTest extends GeneratorTest {
     void returningTableWithAutoFetch() {
         assertGeneratedContentContains(
                 "returningTableWithAutoFetch", Set.of(CUSTOMER_TABLE),
-                "loadAndFetch"
+                "QueryHelper.intoTableRecord(_iv_serviceResult",
+                "new DataFetcherHelper(_iv_env).load(_iv_serviceKey"
         );
     }
 
