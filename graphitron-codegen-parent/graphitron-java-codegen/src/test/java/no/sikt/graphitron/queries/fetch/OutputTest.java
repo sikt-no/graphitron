@@ -437,4 +437,51 @@ public class OutputTest extends GeneratorTest {
                 "_a_public.DUMMY_COLUMN,"
         );
     }
+
+    @Test
+    @DisplayName("Construct type with basic field mapping")
+    void constructType() {
+        assertGeneratedContentContains("constructType", Set.of(CUSTOMER_QUERY),
+                "_a_customer.F",
+                ".mapping(Functions.nullOnAllNull(Inner::new))"
+        );
+    }
+
+    @Test
+    @DisplayName("Construct type with explicit column mapping")
+    void constructTypeWithColumnMapping() {
+        assertGeneratedContentContains("constructTypeWithColumnMapping", Set.of(CUSTOMER_QUERY),
+                "_a_customer.STORE_ID",
+                ".mapping(Functions.nullOnAllNull(Inner::new))"
+        );
+    }
+
+    @Test
+    @DisplayName("Construct type with enum field")
+    void constructTypeWithEnum() {
+        assertGeneratedContentContains("constructTypeWithEnum", Set.of(DUMMY_ENUM, CUSTOMER_QUERY),
+                "_a_customer.F.convert",
+                ".mapping(Functions.nullOnAllNull(Inner::new))"
+        );
+    }
+
+    @Test
+    @DisplayName("Construct type with multiple fields")
+    void constructTypeMultipleFields() {
+        assertGeneratedContentContains("constructTypeMultipleFields", Set.of(CUSTOMER_QUERY),
+                "_a_customer.F",
+                "_a_customer.STORE_ID",
+                ".mapping(Functions.nullOnAllNull(Inner::new))"
+        );
+    }
+
+    @Test
+    @DisplayName("Construct type with partial selection produces null for unmapped field")
+    void constructTypePartialSelection() {
+        assertGeneratedContentContains("constructTypePartialSelection", Set.of(CUSTOMER_QUERY),
+                "_a_customer.F",
+                "DSL.inline(((Object) null))",
+                ".mapping(Functions.nullOnAllNull(Inner::new))"
+        );
+    }
 }

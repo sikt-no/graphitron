@@ -1,8 +1,9 @@
 package no.sikt.graphql.federation.fieldsets;
 
+import graphql.language.Field;
 import no.sikt.graphql.federation.FieldSetKey;
+import no.sikt.graphql.schema.SelectionSetParser;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -14,28 +15,23 @@ public record FederationFieldSet(List<FieldSetKey> keys) {
     }
 
     private static FieldSetKey parseKeys(String rawKey) {
-        var compound = new ArrayList<FieldSetKey>();
-        var elementList = new ArrayList<>(List.of(rawKey.split("\\s+")));
-        var nestingCount = 0;
-        var nestedContent = new ArrayList<String>();
-        for (var element : elementList) {
-            if (element.equals("{")) {  // Nesting begins.
-                nestingCount++;
-            } else if (element.equals("}")) {
-                nestingCount--;
-                if (nestingCount == 0) {  // Reached the end of the outermost nesting.
-                    var source = (SimpleFieldSetKey) compound.remove(compound.size() - 1);
-                    compound.add(new NestedFieldSetKey(parseKeys(String.join(" ", nestedContent)), source.key()));
-                    nestedContent.clear();
-                }
-            } else if (nestingCount == 0) {  // Key on this level is found.
-                var key = new SimpleFieldSetKey(element);
-                compound.add(key);
-            } else {  // Delegate nested elements to the next recursion level.
-                nestedContent.add(element);
-            }
+        return new CompoundFieldSetKey(
+                SelectionSetParser.parseFields(rawKey).stream().map(FederationFieldSet::toFieldSetKey).toList()
+        );
+    }
+
+    private static FieldSetKey toFieldSetKey(Field field) {
+        if (field.getSelectionSet() == null || field.getSelectionSet().getSelections().isEmpty()) {
+            return new SimpleFieldSetKey(field.getName());
         }
 
-        return new CompoundFieldSetKey(compound);
+        var nestedFields = field
+                .getSelectionSet()
+                .getSelections()
+                .stream()
+                .map(Field.class::cast)
+                .map(FederationFieldSet::toFieldSetKey)
+                .toList();
+        return new NestedFieldSetKey(new CompoundFieldSetKey(nestedFields), field.getName());
     }
 }

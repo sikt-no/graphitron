@@ -177,7 +177,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                         var virtualField = new VirtualSourceField(field.getContainerTypeName(), (ObjectField) field);
                         fieldContext = context.forVirtualField(virtualField);
                     }
-                    rowElements.add(CodeBlock.of("$L.as($S)", getSelectCodeAndFieldSource(field, fieldContext).getLeft(), fieldAlias));
+                    rowElements.add(CodeBlock.of("$L.as($S)", getSelectCode(field, fieldContext), fieldAlias));
                 });
         return CodeBlock.join(rowElements, ",\n");
     }

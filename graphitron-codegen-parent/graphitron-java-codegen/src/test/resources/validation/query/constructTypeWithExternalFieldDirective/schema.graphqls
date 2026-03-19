@@ -1,0 +1,7 @@
+type Customer @table {
+  field: Inner @experimental_constructType(selection: "f") @externalField
+}
+
+type Inner {
+  f: String
+}

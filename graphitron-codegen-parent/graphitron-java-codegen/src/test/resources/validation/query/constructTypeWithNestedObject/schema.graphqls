@@ -1,0 +1,11 @@
+type Customer @table {
+  field: Inner @experimental_constructType(selection: "nested")
+}
+
+type Inner {
+  nested: Nested
+}
+
+type Nested {
+  f: String
+}
