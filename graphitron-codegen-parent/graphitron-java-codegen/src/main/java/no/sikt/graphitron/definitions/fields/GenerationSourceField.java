@@ -268,6 +268,10 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         this.implicitSplitQuery = true;
     }
 
+    public boolean hasImplicitSplitQuery() {
+        return implicitSplitQuery;
+    }
+
     @Override
     public boolean isExplicitlyNotGenerated() {
         return !isGenerated;

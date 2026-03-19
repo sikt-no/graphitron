@@ -55,7 +55,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         }
         var context = new FetchContext(processedSchema, target, getLocalObject(), true);
         var targetSource = context.renderQuerySource(getLocalTable());
-        var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.createsDataFetcher());
+        var where = formatWhereContents(context, target.createsDataFetcher());
         var nextContext = target.createsDataFetcher() ? context.nextContext(target) : context;
         return getSpecBuilder(target, parser)
                 .addCode(declareAllServiceClassesInAliasSet(nextContext.getAliasSet()))
@@ -64,15 +64,15 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .indent()
                 .indent()
                 .addCode(".select(")
-                .addCodeIf(!isRoot,() -> CodeBlock.of("$L, ", resolverKeyAsTableRecord(context)))
+                .addCodeIf(!isRoot(),() -> CodeBlock.of("$L, ", resolverKeyAsTableRecord(context)))
                 .addCode("$T.count())\n", DSL.className)
                 .addCode(".from($L)\n", targetSource)
                 .addCode(createSelectJoins(nextContext.getJoinSet()))
                 .addCode(where)
                 .addCode(createSelectConditions(nextContext.getConditionList(), !where.isEmpty()))
-                .addCodeIf(!isRoot,() -> CodeBlock.of(".groupBy($L)\n", commaSeparatedResolverKeyFields(context)))
-                .addStatementIf(isRoot, ".fetchOne(0, $T.class)", INTEGER.className)
-                .addStatementIf(!isRoot, ".fetchMap($1T::value1, $1T::value2)", RECORD2.className)
+                .addCodeIf(!isRoot(),() -> CodeBlock.of(".groupBy($L)\n", commaSeparatedResolverKeyFields(context)))
+                .addStatementIf(isRoot(), ".fetchOne(0, $T.class)", INTEGER.className)
+                .addStatementIf(!isRoot(), ".fetchMap($1T::value1, $1T::value2)", RECORD2.className)
                 .unindent()
                 .unindent()
                 .build();
@@ -88,11 +88,11 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
             var virtualTarget = new VirtualSourceField(implementation, target);
             var context = new FetchContext(processedSchema, virtualTarget, localObject, true);
             var refContext = virtualTarget.createsDataFetcher() ? context.nextContext(virtualTarget) : context;
-            var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.createsDataFetcher());
+            var where = formatWhereContents(context, target.createsDataFetcher());
             var countForImplementation = CodeBlock.builder()
                     .add("$T.select(", DSL.className)
-                    .addIf(!isRoot, () -> CodeBlock.of("$L)", resolverKeyAsTableRecord(context)))
-                    .addIf(isRoot, "$T.count().as($S))", DSL.className, COUNT_FIELD_NAME)
+                    .addIf(!isRoot(), () -> CodeBlock.of("$L)", resolverKeyAsTableRecord(context)))
+                    .addIf(isRoot(), "$T.count().as($S))", DSL.className, COUNT_FIELD_NAME)
                     .add("\n.from($L)\n", context.getTargetAlias())
                     .add(createSelectJoins(refContext.getJoinSet()))
                     .add(where)
@@ -119,13 +119,13 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         return code
                 .declare(UNION_COUNT_QUERY, "$L\n.asTable()", unionQuery)
                 .add("\nreturn $N.select(", VAR_CONTEXT)
-                .addIf(!isRoot,() -> CodeBlock.of("$N.field(0), $T.count())", UNION_COUNT_QUERY, DSL.className))
-                .addIf(isRoot, "$T.sum($N.field($S, $T.class)))", DSL.className, UNION_COUNT_QUERY, COUNT_FIELD_NAME, INTEGER.className)
+                .addIf(!isRoot(),() -> CodeBlock.of("$N.field(0), $T.count())", UNION_COUNT_QUERY, DSL.className))
+                .addIf(isRoot(), "$T.sum($N.field($S, $T.class)))", DSL.className, UNION_COUNT_QUERY, COUNT_FIELD_NAME, INTEGER.className)
                 .add("\n.from($N)", UNION_COUNT_QUERY)
-                .addStatementIf(isRoot, "\n.fetchOne(0, $T.class)", INTEGER.className)
-                .addIf(!isRoot, "\n.groupBy($N.field(0))", UNION_COUNT_QUERY)
+                .addStatementIf(isRoot(), "\n.fetchOne(0, $T.class)", INTEGER.className)
+                .addIf(!isRoot(), "\n.groupBy($N.field(0))", UNION_COUNT_QUERY)
                 .addStatementIf(
-                        !isRoot && resolverKey.isPresent(),
+                        !isRoot() && resolverKey.isPresent(),
                         () -> CodeBlock.of(
                                 "\n.fetchMap($1L -> (($2T) $1N.value1()), $3T::value2)",
                                 VAR_RECORD_ITERATOR,
@@ -144,9 +144,9 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     private MethodSpec.Builder getSpecBuilder(ObjectField referenceField, InputParser parser) {
         return getDefaultSpecBuilder(
                 asCountMethodName(referenceField.getName(), getLocalObject().getName()),
-                isRoot ? INTEGER.className : wrapMap(getKeyTableRecordTypeName(referenceField, processedSchema), INTEGER.className)
+                isRoot() ? INTEGER.className : wrapMap(getKeyTableRecordTypeName(referenceField, processedSchema), INTEGER.className)
         )
-                .addParameterIf(!isRoot, () -> wrapSet(getKeyTableRecordTypeName(referenceField, processedSchema)), resolverKeyParamName)
+                .addParameterIf(!isRoot(), () -> wrapSet(getKeyTableRecordTypeName(referenceField, processedSchema)), resolverKeyParamName)
                 .addParameters(parser.getMethodParameterSpecs(false, false, true));
     }
 

@@ -1161,14 +1161,22 @@ public class ProcessedSchema {
 
     /**
      * For @record types reachable from @service fields, mark any @table-typed fields as implicit split queries.
+     * Also marks @service fields that directly return @table types as implicit split queries, so that
+     * the existing resolver-key-based DB fetch infrastructure handles the auto-fetch.
      * Traverses through plain wrapper types (no @table, no @record) to find nested @record types.
      */
     private void markImplicitSplitQueryFields() {
         objects.values().stream()
                 .flatMap(obj -> obj.getFields().stream())
                 .filter(GenerationSourceField::hasServiceReference)
-                .filter(field -> isObject(field) && !hasJOOQRecord(field))
-                .forEach(serviceField -> markImplicitSplitQueryFields(getObject(serviceField), new HashSet<>()));
+                .filter(field -> isObject(field))
+                .forEach(serviceField -> {
+                    if (hasTableObject(serviceField) && !serviceField.hasPagination() && !serviceField.createsDataFetcher()) {
+                        serviceField.markAsImplicitSplitQuery();
+                    } else if (!hasJOOQRecord(serviceField)) {
+                        markImplicitSplitQueryFields(getObject(serviceField), new HashSet<>());
+                    }
+                });
     }
 
     private void markImplicitSplitQueryFields(ObjectDefinition type, Set<String> seen) {
