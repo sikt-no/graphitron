@@ -4,92 +4,58 @@ import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
+import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 
-import no.sikt.graphitron.javapoet.ClassName;
-
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.keyAsTableRecordWithQueryHelper;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyTableRecordTypeName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapMap;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
-import static no.sikt.graphitron.mappings.TableReflection.*;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_SELECT;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
 
 /**
  * Generator that creates DB fetch methods for fields where a @service returns a table-backed type.
- * The generated method takes a set of primary keys and batch-fetches all matching records in a
- * single query, returning a Map from key to result. This is used for both single and listed fields;
- * the runtime helper handles wrapping/unwrapping for the single case.
+ * Extends {@link FetchMappedObjectDBMethodGenerator} with {@link #isRoot()} returning false so that
+ * the generated method includes resolver key parameters and WHERE clause for batch fetching by PK.
  */
-public class ServiceResultFetchDBMethodGenerator extends FetchDBMethodGenerator {
+public class ServiceResultFetchDBMethodGenerator extends FetchMappedObjectDBMethodGenerator {
 
     public ServiceResultFetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
     }
 
     @Override
-    public MethodSpec generate(ObjectField target) {
-        var localObject = getLocalObject();
-        var context = new FetchContext(processedSchema, target, localObject, false);
-
-        var querySource = context.renderQuerySource(getLocalTable());
-        var returnType = processedSchema.getRecordType(target).getGraphClassName();
-        var recordType = processedSchema.getRecordType(target);
-        var tableName = recordType.getTable().getName();
-        var pk = getPrimaryKeyForTable(tableName).orElseThrow();
-        var keyType = ClassName.get(getRecordClass(tableName).orElseThrow());
-        var alias = context.getTargetAlias();
-
-        // Build select expression inline. Must be called BEFORE createAliasDeclarations
-        // since it populates the shared alias set with all nested aliases discovered
-        // during recursive context traversal.
-        var selectBlock = generateSelectRow(context);
-        var selectAliasesBlock = createAliasDeclarations(context.getAliasSet());
-
-        // Build the key column for the SELECT (becomes value1 in the result, converted to TableRecord)
-        var keySelectColumn = keyAsTableRecordWithQueryHelper(pk, tableName, alias);
-        // For the WHERE clause, just use the raw row (without convertFrom)
-        var pkFields = getJavaFieldNamesForKey(tableName, pk);
-        var keyWhereRow = CodeBlock.of("$T.row($L)", DSL.className,
-                pkFields.stream().map(f -> CodeBlock.of("$N.$N", alias, f)).collect(CodeBlock.joining(", ")));
-
-        var methodName = asQueryMethodName(target.getName(), localObject.getName());
-
-        return getDefaultSpecBuilder(methodName, wrapMap(keyType, returnType))
-                .addParameter(wrapSet(keyType), VAR_RESOLVER_KEYS)
-                .addParameter(SELECTION_SET.className, VAR_SELECT)
-                .addCode(selectAliasesBlock)
-                .addCode("return $N\n", VAR_CONTEXT)
-                .indent()
-                .indent()
-                .addCode(".select(\n")
-                .indent()
-                .addCode("$L,\n", keySelectColumn)
-                .addCode("$L", selectBlock)
-                .unindent()
-                .addCode("\n)\n")
-                .addCodeIf(!querySource.isEmpty() && (context.hasNonSubqueryFields() || context.hasApplicableTable()), ".from($L)\n", querySource)
-                .addCode(createSelectJoins(context.getJoinSet()))
-                .addCode(".where($L.in($N.stream().map($N -> $N.key().valuesRow()).toList()))\n", keyWhereRow, VAR_RESOLVER_KEYS, VAR_ITERATOR, VAR_ITERATOR)
-                .addCode(createSelectConditions(context.getConditionList(), true))
-                .addStatement(".fetchMap($T::value1, $T::value2)", RECORD2.className, RECORD2.className)
-                .unindent()
-                .unindent()
-                .build();
+    protected boolean isRoot() {
+        return false;
     }
 
-    /**
-     * Override to return null so that nested record fields are inlined rather than
-     * delegating to helper methods (which are not generated for service-returning-table fields).
-     */
     @Override
     protected CodeBlock getHelperMethodCallForNestedField(ObjectField field, FetchContext context) {
         return null;
+    }
+
+    @Override
+    protected CodeBlock getSelectBlockForRecord(ObjectField target, CodeBlock selectRowBlock, boolean isReferenceResolverField, InputParser parser) {
+        return selectRowBlock;
+    }
+
+    /**
+     * Override to exclude input parameters from the DB method signature. Input arguments are passed
+     * to the service call, not to the DB query.
+     */
+    @Override
+    protected MethodSpec.Builder getSpecBuilder(ObjectField referenceField, TypeName refTypeName, InputParser parser) {
+        return getDefaultSpecBuilder(
+                asQueryMethodName(referenceField.getName(), getLocalObject().getName()),
+                getReturnType(referenceField, refTypeName)
+        )
+                .addParameter(wrapSet(getKeyTableRecordTypeName(referenceField, processedSchema)), resolverKeyParamName)
+                .addParameter(SELECTION_SET.className, VAR_SELECT);
     }
 
     @Override
@@ -100,7 +66,6 @@ public class ServiceResultFetchDBMethodGenerator extends FetchDBMethodGenerator 
                 .filter(GenerationSourceField::isGeneratedWithResolver)
                 .filter(ObjectField::hasServiceReference)
                 .filter(it -> !it.hasPagination())
-                .filter(it -> !it.createsDataFetcher())
                 .filter(processedSchema::hasTableObject)
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())

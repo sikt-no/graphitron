@@ -47,7 +47,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
         // Note that this must happen before alias declaration.
         var selectRowBlock = getSelectRowOrField(target, context);
-        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.createsDataFetcher());
+        var whereBlock = formatWhereContents(context, target.createsDataFetcher());
         for (var alias: context.getAliasSet()) {
             if (alias.hasTableMethod()){
                 createServiceDependency(alias.getReferenceObjectField());
@@ -58,7 +58,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var actualRefTable = refContext.getTargetAlias();
         var actualRefTableName = refContext.getTargetTableName();
         var selectAliasesBlock = createAliasDeclarations(context.getAliasSet());
-        var orderFields = !LookupHelpers.lookupExists(target, processedSchema) && (target.isIterableWrapped() || target.hasForwardPagination() || !isRoot)
+        var orderFields = !LookupHelpers.lookupExists(target, processedSchema) && (target.isIterableWrapped() || target.hasForwardPagination() || !isRoot())
                 ? createOrderFieldsDeclarationBlock(target, actualRefTable, actualRefTableName)
                 : empty();
 
@@ -66,15 +66,9 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 ? processedSchema.getRecordType(target).getGraphClassName()
                 : inferFieldTypeName(context.getReferenceObjectField(), true, processedSchema);
 
-        // For record types that are NOT reference resolvers, extract the row mapping into a helper method
         var isReferenceResolverField = processedSchema.isReferenceResolverField(target);
         var parser = new InputParser(target, processedSchema);
-        var methodInputs = parser.getMethodInputNames(true, false, true);
-        if (optionalSelectIsEnabled()) methodInputs.add(VAR_SELECT);
-        if (shouldMakeNodeStrategy()) methodInputs.add(0, VAR_NODE_STRATEGY);
-        var selectBlockToUse = processedSchema.isRecordType(target) && !isReferenceResolverField
-                ? CodeBlock.of("$L($L)", generateHelperMethodName(target), methodInputs.stream().map(CodeBlock::of).collect(CodeBlock.joining(", ")))
-                : selectRowBlock;
+        var selectBlockToUse = getSelectBlockForRecord(target, selectRowBlock, isReferenceResolverField, parser);
         var selectBlock = createSelectBlock(target, context, actualRefTable, selectBlockToUse);
 
         return getSpecBuilder(target, returnType, parser)
@@ -106,6 +100,21 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 : generateSelectRow(context);
     }
 
+    /**
+     * Determine the select block to use for record types. By default, delegates to a helper method
+     * unless the field is a reference resolver field (which uses a correlated subquery).
+     * Subclasses can override to always inline the select.
+     */
+    protected CodeBlock getSelectBlockForRecord(ObjectField target, CodeBlock selectRowBlock, boolean isReferenceResolverField, InputParser parser) {
+        if (!processedSchema.isRecordType(target) || isReferenceResolverField) {
+            return selectRowBlock;
+        }
+        var methodInputs = parser.getMethodInputNames(true, false, true);
+        if (optionalSelectIsEnabled()) methodInputs.add(VAR_SELECT);
+        if (shouldMakeNodeStrategy()) methodInputs.add(0, VAR_NODE_STRATEGY);
+        return CodeBlock.of("$L($L)", generateHelperMethodName(target), methodInputs.stream().map(CodeBlock::of).collect(CodeBlock.joining(", ")));
+    }
+
     private CodeBlock createSelectBlock(ObjectField target, FetchContext context, String actualRefTable, CodeBlock selectRowBlock) {
         return indentIfMultiline(
                 Stream.of(
@@ -133,7 +142,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         }
 
         var lookupExists = LookupHelpers.lookupExists(referenceField, processedSchema);
-        if (isRoot && !lookupExists) {
+        if (isRoot() && !lookupExists) {
             return CodeBlock.statementOf(
                     ".fetch$L($L -> $N.into($T.class))",
                     referenceField.isIterableWrapped() ? "" : "One",
@@ -160,7 +169,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     private CodeBlock getPaginationFetchBlock() {
         var code = CodeBlock.builder();
 
-        if (isRoot) {
+        if (isRoot()) {
             code
                     .add(".fetch()\n")
                     .addStatement(".map($1L -> new $2T<>($1N.value1(), $1N.value2()))", VAR_ITERATOR, IMMUTABLE_PAIR.className);

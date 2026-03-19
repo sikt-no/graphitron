@@ -62,7 +62,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         var overriddenFields = getFieldsOverriddenByType(processedSchema.getInterface(target), implementations);
         var selectCode = generateSelectRow(context, target, implementations, overriddenFields);
         var querySource = context.getTargetAlias();
-        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.createsDataFetcher());
+        var whereBlock = formatWhereContents(context, target.createsDataFetcher());
         var fetchAndMap = fetchAndMap(target, implementations, querySource, overriddenFields, context);
         var orderFields = createOrderFieldsDeclarationBlock(target, context.getTargetAlias(), context.getTargetTableName());
 

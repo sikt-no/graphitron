@@ -54,7 +54,6 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
     protected static final String ELEMENT_NAME = internalPrefix("e");
     protected final String resolverKeyParamName;
-    protected final boolean isRoot = getLocalObject().isOperationRoot();
     protected final boolean conditionsShouldFallbackToFalse; // This will eventually apply to all generated mutations
     private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPE_SAFETY = 22;
 
@@ -66,6 +65,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         this(localObject, processedSchema, false);
+    }
+
+    protected boolean isRoot() {
+        return getLocalObject().isOperationRoot();
     }
 
     protected CodeBlock getInitialKey(FetchContext context) {
@@ -80,7 +83,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             } else {
                 code.add(concatBlock).add(",\n");
             }
-        } else if (!isRoot) {
+        } else if (!isRoot()) {
             code.add("$L,\n", resolverKeyAsTableRecord(context));
         }
         return code.build();
@@ -188,7 +191,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
         }
 
-        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
+        var where = formatWhereContents(context, false);
         var joins = createSelectJoins(context.getJoinSet());
 
         var contents = CodeBlock.builder()
@@ -653,7 +656,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     /**
      * @return Formatted CodeBlock for the where-statement and surrounding code. Applies conditions and joins.
      */
-    protected CodeBlock formatWhereContents(FetchContext context, String resolverKeyParamName, boolean isRoot, boolean isDataFetcherRoot) {
+    protected CodeBlock formatWhereContents(FetchContext context, boolean isDataFetcherRoot) {
         var conditionList = new ArrayList<CodeBlock>();
 
         if (context.getReferenceObject() instanceof InterfaceDefinition) {
@@ -674,7 +677,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             );
         }
 
-        if (!isRoot && !resolverKeyParamName.isEmpty() && isDataFetcherRoot) {
+        if (!isRoot() && !resolverKeyParamName.isEmpty() && isDataFetcherRoot) {
             conditionList.add(inResolverKeysBlock(resolverKeyParamName, context));
         }
 
@@ -1247,20 +1250,20 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 asQueryMethodName(referenceField.getName(), getLocalObject().getName()),
                 getReturnType(referenceField, refTypeName)
         )
-                .addParameterIf(!isRoot, () -> wrapSet(getKeyTableRecordTypeName(referenceField, processedSchema)), resolverKeyParamName)
+                .addParameterIf(!isRoot(), () -> wrapSet(getKeyTableRecordTypeName(referenceField, processedSchema)), resolverKeyParamName)
                 .addParameters(parser.getMethodParameterSpecs(true, true, true))
                 .addParameter(SELECTION_SET.className, VAR_SELECT);
     }
 
     @NotNull
-    private TypeName getReturnType(ObjectField referenceField, TypeName refClassName) {
+    protected TypeName getReturnType(ObjectField referenceField, TypeName refClassName) {
         TypeName type = referenceField.hasForwardPagination() ? ParameterizedTypeName.get(PAIR.className, STRING.className, refClassName) : refClassName;
 
         var lookupExists = LookupHelpers.lookupExists(referenceField, processedSchema);
 
-        if (isRoot && !lookupExists) {
+        if (isRoot() && !lookupExists) {
             return wrapListIf(type, referenceField.isIterableWrapped() || referenceField.hasForwardPagination());
-        } else if (!isRoot) {
+        } else if (!isRoot()) {
             return wrapMap(
                     getKeyTableRecordTypeName(referenceField, processedSchema),
                     wrapListIf(type, referenceField.isIterableWrapped() && !processedSchema.isOrderedMultiKeyQuery(referenceField) || referenceField.hasForwardPagination()));
