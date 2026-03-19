@@ -109,6 +109,11 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
             );
         }
 
+        // Service returning @table: call service, extract PK, then use standard DataFetcherHelper to batch-fetch from DB.
+        if (isServiceReturningTable(target)) {
+            return serviceAutoFetchBlock(target, objectToCall, methodName, parser);
+        }
+
         // If this method is the mutating method of a mutation. In other words, it is not the query that returns the final result.
         if (!isMutatingMethod) {
             return callQueryBlock(target, objectToCall, methodName, parser, queryFunction);
@@ -160,23 +165,11 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         }
 
         var object = processedSchema.getObjectOrConnectionNode(target);
-        var isServiceReturningTable = target.hasServiceReference()
-                && object != null && object.hasTable()
-                && !target.hasForwardPagination()
-                && !target.createsDataFetcher();
-        var transformFunction = target.hasServiceReference() && object != null && !isServiceReturningTable
+        var transformFunction = target.hasServiceReference() && object != null
                 ? transformOutputRecord(object.getName(), object.hasJavaRecordReference())
                 : CodeBlock.empty();
         var transformWrap = CodeBlock.ofIf(!transformFunction.isEmpty(), ",\n$L", transformFunction);
         if (!target.hasRequiredPaginationFields()) {
-            if (isServiceReturningTable) {
-                return CodeBlock.builder()
-                        .addIf(!localObject.isOperationRoot(), "\n")
-                        .add("$L", queryFunction)
-                        .add(",\n$L", serviceAutoFetchKeyExtractor(target))
-                        .add(",\n$L", serviceAutoFetchDBFunction(target))
-                        .build();
-            }
             return CodeBlock
                     .builder()
                     .addIf(!localObject.isOperationRoot(), "\n")
@@ -207,27 +200,19 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         return CodeBlock.of(" $N,\n$L$L$L", VAR_PAGE_SIZE, queryFunction, countFunction, transformWrap);
     }
 
-    /**
-     * @return CodeBlock for a batch DB fetch function used in auto-fetch.
-     * Takes (ctx, keySet, select) and batch-fetches by set of PKs, returning a Map from key to result.
-     */
-    private CodeBlock serviceAutoFetchDBFunction(ObjectField target) {
-        var queryClassName = asQueryClass(localObject.getName());
-        var methodName = asQueryMethodName(target.getName(), localObject.getName());
-        var nodeStrategyArg = CodeBlock.ofIf(shouldMakeNodeStrategy(), ", $N", VAR_NODE_STRATEGY);
-        return CodeBlock.of(
-                "($L, $L, $L) -> $T.$L($L$L, $L, $L)",
-                VAR_CONTEXT, VAR_RESOLVER_KEYS, VAR_SELECTION_SET,
-                getQueryClassName(queryClassName), methodName,
-                VAR_CONTEXT, nodeStrategyArg, VAR_RESOLVER_KEYS, VAR_SELECTION_SET
-        );
+    private boolean isServiceReturningTable(ObjectField target) {
+        var object = processedSchema.getObjectOrConnectionNode(target);
+        return target.hasServiceReference()
+                && object != null && object.hasTable()
+                && !target.hasPagination()
+                && !target.createsDataFetcher();
     }
 
     /**
-     * @return CodeBlock for a key extractor function that extracts the PK from a service result record as a TableRecord.
-     * Used in loadAndFetch/loadAndFetchList to convert each service result to a TableRecord key for batch lookup.
+     * Generate code for service-returning-table auto-fetch. Calls the service, extracts the PK as a TableRecord,
+     * then uses the standard DataFetcherHelper to batch-fetch from DB.
      */
-    private CodeBlock serviceAutoFetchKeyExtractor(ObjectField target) {
+    private CodeBlock serviceAutoFetchBlock(ObjectField target, String serviceName, String methodName, InputParser parser) {
         var recordType = processedSchema.getRecordType(target);
         var table = recordType.getTable();
         var tableName = table.getName();
@@ -238,8 +223,36 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .map(f -> CodeBlock.of("$T.$N.$N", table.getTableClass(), tableName, f))
                 .collect(CodeBlock.joining(", "));
 
-        return CodeBlock.of("$N -> $T.intoTableRecord($N, $T.of($L))",
-                VAR_RECORD_ITERATOR, QUERY_HELPER.className, VAR_RECORD_ITERATOR, LIST.className, fieldList);
+        var keyExtractor = CodeBlock.of("$T.intoTableRecord($N, $T.of($L))",
+                QUERY_HELPER.className, VAR_RECORD_ITERATOR, LIST.className, fieldList);
+
+        var queryClassName = asQueryClass(localObject.getName());
+        var dbMethodName = asQueryMethodName(target.getName(), localObject.getName());
+        var nodeStrategyArg = CodeBlock.ofIf(shouldMakeNodeStrategy(), ", $N", VAR_NODE_STRATEGY);
+        var dbFunction = CodeBlock.of(
+                "($L, $L, $L) -> $T.$L($L$L, $L, $L)",
+                VAR_CONTEXT, VAR_RESOLVER_KEYS, VAR_SELECTION_SET,
+                getQueryClassName(queryClassName), dbMethodName,
+                VAR_CONTEXT, nodeStrategyArg, VAR_RESOLVER_KEYS, VAR_SELECTION_SET
+        );
+
+        var serviceCall = CodeBlock.of("$N.$L($L)",
+                servicePrefix(serviceName), methodName,
+                String.join(", ", parser.getMethodInputNames(true, true, true)));
+
+        var singleKeyExtractor = CodeBlock.of("$T.intoTableRecord($N, $T.of($L))",
+                QUERY_HELPER.className, VAR_SERVICE_RESULT, LIST.className, fieldList);
+
+        var code = CodeBlock.builder().declare(VAR_SERVICE_RESULT, serviceCall);
+        if (target.isIterableWrapped()) {
+            code.declare(VAR_SERVICE_KEYS, CodeBlock.of("$N.stream().map($N -> $L).toList()",
+                            VAR_SERVICE_RESULT, VAR_RECORD_ITERATOR, keyExtractor))
+                    .addStatement("return $L.loadByResolverKeys($N, $L)", newDataFetcher(), VAR_SERVICE_KEYS, dbFunction);
+        } else {
+            code.declare(VAR_SERVICE_KEY, singleKeyExtractor)
+                    .addStatement("return $L.load($N, $L)", newDataFetcher(), VAR_SERVICE_KEY, dbFunction);
+        }
+        return code.build();
     }
 
     /**
@@ -359,14 +372,6 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
         if (!localObject.isOperationRoot() && target.isIterableWrapped() && target.isNonNullable())  {
             return "loadNonNullable";
-        }
-
-        if (target.hasServiceReference() && !target.hasPagination()
-                && !target.createsDataFetcher()) {
-            var object = processedSchema.getObjectOrConnectionNode(target);
-            if (object != null && object.hasTable()) {
-                return target.isIterableWrapped() ? "loadAndFetchList" : "loadAndFetch";
-            }
         }
 
         return target.hasForwardPagination() ? "loadPaginated" : "load";
