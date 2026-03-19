@@ -97,6 +97,36 @@ public class EnvironmentHandler {
         return result;
     }
 
+    /**
+     * Returns the argument presence set for a specific item in a list input.
+     * Uses the indexed argument set to extract per-item keys, with fallback
+     * to the shared argument set for single-item inputs (wrapped in List.of()).
+     *
+     * @param path  The argument path prefix (e.g., "in")
+     * @param index The zero-based index of the list item
+     * @return A set of argument paths for the specific item, in the same format as getArguments()
+     */
+    public Set<String> getArgumentsForIndex(String path, int index) {
+        var indexedArgs = select.getArgumentSet();
+        var indexPrefix = path + "[" + index + "]";
+        var pathHere = path.isEmpty() ? "" : path + "/";
+        var result = new HashSet<String>();
+
+        for (var arg : indexedArgs) {
+            if (arg.startsWith(indexPrefix + "/")) {
+                result.add(pathHere + arg.substring(indexPrefix.length() + 1));
+            }
+        }
+
+        // Fallback for single-item case: when the input is not a list in the
+        // GraphQL args (e.g., single-item overload wraps in List.of()), the
+        // indexed set has no [index] entries. Fall back to the shared set.
+        if (result.isEmpty()) {
+            return arguments;
+        }
+        return result;
+    }
+
     private static Set<String> flattenIndexedArgumentKeys(Map<String, Object> arguments, String path) {
         var result = new HashSet<String>();
         for (var arg : arguments.entrySet()) {

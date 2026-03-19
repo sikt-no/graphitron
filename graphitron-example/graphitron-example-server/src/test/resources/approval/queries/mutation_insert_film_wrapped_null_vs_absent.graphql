@@ -1,0 +1,9 @@
+# Verify explicit null vs absent field handling in insert-with-returning mutations (GG-407)
+mutation InsertFilmWrapped($in: FilmCreateInput!) {
+    insertFilmWrapped(in: $in) {
+        film {
+            title
+            rentalDuration
+        }
+    }
+}

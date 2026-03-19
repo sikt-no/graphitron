@@ -74,6 +74,8 @@ public enum SchemaComponent {
     WRAPPED_ADDRESS_JAVA("records/WrappedAddressJava", Set.of(DUMMY_RECORD), CITY0, CITY1),
     WRAPPED_ADDRESS_JOOQ("records/WrappedAddressJOOQ", CITY0, CITY1),
 
+    OPTIONAL_FIELD_INPUT("basic/OptionalFieldInput", Set.of(ReferencedEntry.OPTIONAL_FIELD_RECORD)),
+
     VALIDATION_ERROR("basic/ValidationError", ERROR);
 
     private final Set<String> fileNames;

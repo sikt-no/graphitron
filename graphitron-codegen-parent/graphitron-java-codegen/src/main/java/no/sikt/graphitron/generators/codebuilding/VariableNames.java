@@ -46,5 +46,6 @@ public class VariableNames {
             METHOD_SOURCE_NAME = "getSource",
             METHOD_GRAPH_CONTEXT = "getGraphQlContext",
             METHOD_SET_RECORD_ID = "setId",
-            METHOD_SET_RECORD_REFERENCE_ID = "setReferenceId";
+            METHOD_SET_RECORD_REFERENCE_ID = "setReferenceId",
+            METHOD_ARGS_FOR_INDEX_NAME = "getArgumentsForIndex";
 }

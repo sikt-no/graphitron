@@ -10,6 +10,8 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.Nullable;
+import java.util.Optional;
+import org.jooq.Field;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
@@ -25,6 +27,7 @@ import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getFo
 import static no.sikt.graphitron.javapoet.CodeBlock.declareNew;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.ReflectionHelpers.classHasMethod;
+import static no.sikt.graphitron.mappings.ReflectionHelpers.setterAcceptsOptional;
 import static no.sikt.graphitron.mappings.TableReflection.recordUsesFSHack;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_ID;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -315,7 +318,11 @@ public class MapperContext {
         var targetEqualsPrevious = targetName.equals(previousContext.targetName);
         var code = CodeBlock.builder();
         if (isIterable && hasSourceName()) {
-            code.declareIf(createsDataFetchers || isValidation, namedIteratorPrefix(sourceName), "$N.get($N)", inputPrefix(sourceName), getIndexName());
+            code.declareIf(createsDataFetchers || isValidation || toRecord, namedIteratorPrefix(sourceName), "$N.get($N)", inputPrefix(sourceName), getIndexName());
+
+            if (toRecord && !createsDataFetchers && !isValidation) {
+                code.declare(VAR_ARGS, "$N.$L($N, $N)", VAR_TRANSFORMER, METHOD_ARGS_FOR_INDEX_NAME, VAR_PATH_NAME, getIndexName());
+            }
 
             if (!isValidation) {
                 code.add(continueCheck(namedIteratorPrefix(sourceName)));
@@ -344,7 +351,7 @@ public class MapperContext {
             }
         }
 
-        var forCode = CodeBlock.builder().add(isIterable && hasSourceName() ? (isValidation ? wrapForIndexed(sourceName, code.build()) : wrapFor(sourceName, code.build())) : code.build());
+        var forCode = CodeBlock.builder().add(isIterable && hasSourceName() ? (isValidation || toRecord ? wrapForIndexed(sourceName, code.build()) : wrapFor(sourceName, code.build())) : code.build());
         if (isValidation || !previousContext.isInitContext && (toRecord || !mapsJavaRecord)) {
             return forCode.build();
         }
@@ -387,6 +394,9 @@ public class MapperContext {
             valueToSet = toRecord
                     ? CodeBlock.of("$L.stream().toArray($T[]::new)", valueToSet, target.getTypeClass())
                     : CodeBlock.of("$T.of($L)", LIST.className, valueToSet);
+        }
+        if (toRecord && mapsJavaRecord && isSetterOptional()) {
+            valueToSet = CodeBlock.of("$T.ofNullable($L)", Optional.class, valueToSet);
         }
         return getSetMappingBlock(valueToSet);
     }
@@ -470,6 +480,16 @@ public class MapperContext {
     private boolean targetHasRequiredMethod() {
         // Assume the schema ones are OK anyway. It is done like this because these classes are not defined in tests.
         return !toRecord || classHasMethod(previousContext.targetType.getRecordReference(), setTargetMapping.asSet());
+    }
+
+    private boolean isSetterOptional() {
+        if (!previousContext.hasRecordReference) {
+            return false;
+        }
+        return setterAcceptsOptional(
+                previousContext.targetType.getRecordReference(),
+                setTargetMapping.asSet()
+        );
     }
 
     /**

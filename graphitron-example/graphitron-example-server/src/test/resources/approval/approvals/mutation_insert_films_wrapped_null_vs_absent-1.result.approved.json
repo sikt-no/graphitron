@@ -1,0 +1,16 @@
+{
+    "data": {
+        "insertFilmsWrapped": {
+            "films": [
+                {
+                    "title": "Film With Null Duration",
+                    "rentalDuration": null
+                },
+                {
+                    "title": "Film With Absent Duration",
+                    "rentalDuration": 3
+                }
+            ]
+        }
+    }
+}

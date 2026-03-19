@@ -19,17 +19,10 @@ public class InputSetValue extends InputComponent {
             Boolean isWrappedInList,
             boolean hasRecord) {
         super(input, sourceInput, startName, namePath, nullChecks, pastWasIterable, isWrappedInList, hasRecord);
-        inferAdditionalChecks(input);
     }
 
     public InputSetValue(InputField input, String startName, boolean hasRecord) {
         this(input, input, startName, "", new LinkedHashSet<>(), false, false, hasRecord);
-    }
-
-    private void inferAdditionalChecks(InputField input) {
-        if (input.isNullable()) {
-            this.nullChecks.add(getNameWithPathString() + " != null");
-        }
     }
 
     @Override
