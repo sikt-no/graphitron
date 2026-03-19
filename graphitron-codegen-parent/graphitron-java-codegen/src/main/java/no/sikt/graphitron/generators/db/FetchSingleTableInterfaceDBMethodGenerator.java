@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.keyAsTableRecordWithQueryHelper;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.resolverKeyAsTableRecord;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyForResolverFieldOrThrow;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ITERATOR;
@@ -153,7 +154,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         var rowElements = new ArrayList<CodeBlock>();
 
         if (!isRoot) {
-            rowElements.add(CodeBlock.of("$L.as($S)", getSelectKeyColumnRow(context), resolverKeyParamName));
+            rowElements.add(CodeBlock.of("$L.as($S)", resolverKeyAsTableRecord(context), resolverKeyParamName));
         }
 
         getKeySetForResolverFields(allFields, processedSchema)
@@ -263,7 +264,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
 
         var resolverKey = context.getResolverKey();
         var keyMapper = CodeBlock.of("$1N -> $1N.get($2S, $3T.class).valuesRow()",
-                VAR_RECORD_ITERATOR, resolverKeyParamName, resolverKey.getRecordTypeName(false));
+                VAR_RECORD_ITERATOR, resolverKeyParamName, resolverKey.getTypeName());
         return CodeBlock.of("\n.$L($L);",
                 target.isIterableWrapped() || target.hasForwardPagination() ? "fetchGroups" : "fetchMap",
                 indentIfMultiline(CodeBlock.join(",\n", keyMapper, mapping.build())));

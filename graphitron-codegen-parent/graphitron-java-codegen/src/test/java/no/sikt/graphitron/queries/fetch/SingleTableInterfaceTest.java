@@ -137,10 +137,10 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     void splitQuery() {
         assertGeneratedContentContains("splitQuery",
                 Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
-                "Map<Row1<Long>, Address>",
-                "Set<Row1<Long>> _rk_city",
-                "DSL.row(_a_city.CITY_ID).in(_rk_city)",
-                "fetchMap(_iv_r -> _iv_r.get(\"_rk_city\", Record1.class).valuesRow()"
+                "Map<CityRecord, Address>",
+                "Set<CityRecord> _rk_city",
+                "DSL.row(_a_city.CITY_ID).in(_rk_city.stream().map(_iv_it -> _iv_it.key().valuesRow()).toList())",
+                "fetchMap(_iv_r -> _iv_r.get(\"_rk_city\", CityRecord.class).valuesRow()"
         );
     }
 
@@ -149,7 +149,7 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     void splitQueryListed() {
         assertGeneratedContentContains("splitQueryListed",
                 Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
-                "Map<Row1<Long>, List<Address>>",
+                "Map<CityRecord, List<Address>>",
                 "fetchGroups("
         );
     }
