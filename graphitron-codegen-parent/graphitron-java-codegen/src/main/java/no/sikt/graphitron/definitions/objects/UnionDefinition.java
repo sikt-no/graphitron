@@ -5,14 +5,9 @@ import graphql.language.UnionTypeDefinition;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.interfaces.TypeResolverTarget;
-import no.sikt.graphql.federation.fieldsets.FederationFieldSet;
-import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 
-import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Collectors;
-
-import no.sikt.graphitron.javapoet.ClassName;
 
 import static no.sikt.graphql.directives.GenerationDirective.NOT_GENERATED;
 
@@ -54,8 +49,13 @@ public class UnionDefinition extends RecordObjectDefinition<UnionTypeDefinition,
     }
 
     @Override
-    public boolean createsDataFetcher() {
-        return false;
+    public List<ObjectField> getFields() {
+        return List.of();
+    }
+
+    @Override
+    public ObjectField getFieldByName(String name) {
+        return null;
     }
 
     @Override
@@ -72,85 +72,4 @@ public class UnionDefinition extends RecordObjectDefinition<UnionTypeDefinition,
     public boolean isExplicitlyNotGenerated() {
         return !isGenerated;
     }
-
-    @Override
-    public boolean isEntity() {
-        return false;
-    }
-
-    @Override
-    public FederationFieldSet getEntityKeys() {
-        return null;
-    }
-
-    @Override
-    public boolean hasNodeDirective() {
-        return false;
-    }
-
-    @Override
-    public String getTypeId() {
-        return null;
-    }
-
-    @Override
-    public boolean hasCustomKeyColumns() {
-        return false;
-    }
-
-    @Override
-    public LinkedList<String> getKeyColumns() {
-        return null;
-    }
-
-    @Override
-    public String getRecordReferenceName() {
-        return null;
-    }
-
-    @Override
-    public JOOQMapping getTable() {
-        return null;
-    }
-
-    @Override
-    public boolean hasTable() {
-        return false;
-    }
-
-    @Override
-    public Class<?> getRecordReference() {
-        return null;
-    }
-
-    @Override
-    public ClassName getRecordClassName() {
-        return null;
-    }
-
-    @Override
-    public boolean hasJavaRecordReference() {
-        return false;
-    }
-
-    @Override
-    public boolean hasRecordReference() {
-        return false;
-    }
-
-    @Override
-    public ClassName asSourceClassName(boolean toRecord) {
-        return null;
-    }
-
-    @Override
-    public ClassName asTargetClassName(boolean toRecord) {
-        return null;
-    }
-
-    @Override
-    public String asRecordName() {
-        return null;
-    }
-
 }

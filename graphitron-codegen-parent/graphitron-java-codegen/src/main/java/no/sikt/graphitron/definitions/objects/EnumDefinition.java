@@ -54,31 +54,6 @@ public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition,
                 .collect(Collectors.toList());
     }
 
-    @Override
-    public boolean createsDataFetcher() {
-        return false;
-    }
-
-    @Override
-    public boolean createsDataFetchersForFields() {
-        return false;
-    }
-
-    @Override
-    public boolean isGenerated() {
-        return true;
-    }
-
-    @Override
-    public boolean isGeneratedWithResolver() {
-        return false;
-    }
-
-    @Override
-    public boolean isExplicitlyNotGenerated() {
-        return false;
-    }
-
     /**
      * @return Does this enum have values with @order or @index directives (i.e., it defines sort fields)?
      */

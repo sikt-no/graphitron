@@ -65,44 +65,11 @@ public class SchemaDefinition implements ObjectSpecification<OperationField>, Ge
         return fieldsByName.get(name);
     }
 
-    /**
-     * @return Is this object an operation node? That should be either the Query or the Mutation type.
-     */
-    @Override
-    public boolean isOperationRoot() {
-        return false;
-    }
-
     public OperationField getQuery() {
         return query;
     }
 
     public OperationField getMutation() {
         return mutation;
-    }
-
-    @Override
-    public boolean createsDataFetcher() {
-        return false;
-    }
-
-    @Override
-    public boolean createsDataFetchersForFields() {
-        return false;
-    }
-
-    @Override
-    public boolean isGenerated() {
-        return true;
-    }
-
-    @Override
-    public boolean isGeneratedWithResolver() {
-        return false;
-    }
-
-    @Override
-    public boolean isExplicitlyNotGenerated() {
-        return false;
     }
 }

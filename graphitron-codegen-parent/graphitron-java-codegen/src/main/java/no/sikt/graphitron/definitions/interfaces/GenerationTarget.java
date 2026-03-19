@@ -6,12 +6,16 @@ public interface GenerationTarget {
     /**
      * @return Does this element lead to the generation of additional data fetchers?
      */
-    boolean createsDataFetcher();
+    default boolean createsDataFetcher() {
+        return false;
+    }
 
     /**
      * @return Does this element contain fields which may produce data fetchers?
      */
-    boolean createsDataFetchersForFields();
+    default boolean createsDataFetchersForFields() {
+        return false;
+    }
 
     /**
      * @return Should this object be generated?
@@ -19,7 +23,9 @@ public interface GenerationTarget {
      * @deprecated To be removed since transform now handles removal of non-generated fields. This is now always true.
      */
     @Deprecated
-    boolean isGenerated();
+    default boolean isGenerated() {
+        return true;
+    }
 
     /**
      * @return Should this object be generated as or containing resolvers?
@@ -28,7 +34,9 @@ public interface GenerationTarget {
      *  To check for resolvers, use {@link GenerationTarget#createsDataFetcher} instead.
      */
     @Deprecated
-    boolean isGeneratedWithResolver();
+    default boolean isGeneratedWithResolver() {
+        return false;
+    }
 
     /**
      * Does this have the {@link GenerationDirective#NOT_GENERATED} directive for skipping generation set?
@@ -36,5 +44,7 @@ public interface GenerationTarget {
      * @deprecated To be removed since transform now handles removal of non-generated fields. This is now always false.
      */
     @Deprecated
-    boolean isExplicitlyNotGenerated();
+    default boolean isExplicitlyNotGenerated() {
+        return false;
+    }
 }

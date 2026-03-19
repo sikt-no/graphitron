@@ -18,8 +18,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphql.directives.DirectiveHelpers.*;
 import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
 import static no.sikt.graphql.directives.GenerationDirective.*;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.*;
-import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_EXTERNAL;
+import static no.sikt.graphql.directives.GenerationDirectiveParam.SELECTION;
 
 /**
  * Represents the default field type, which in addition to the generic field functionality also provides join operation data.
@@ -33,7 +32,7 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
     private final LinkedHashMap<String, ArgumentField> argumentsByName;
     private final LinkedHashSet<String> lookupKeys;
     private final MutationType mutationType;
-    private final boolean hasLookupKey, isFederationExternal;
+    private final boolean hasLookupKey;
     private final DefaultOrder defaultOrder;
     private final ConstructSelection construct;
     public final static List<String> RESERVED_PAGINATION_NAMES = List.of(
@@ -59,7 +58,6 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
                 : null;
         lookupKeys = nonReservedArguments.stream().filter(ArgumentField::isLookupKey).map(AbstractField::getName).collect(Collectors.toCollection(LinkedHashSet::new));
         hasLookupKey = !lookupKeys.isEmpty();
-        isFederationExternal = field.hasDirective(FEDERATION_EXTERNAL.getName());
         argumentsByName = arguments.stream().collect(Collectors.toMap(AbstractField::getName, Function.identity(), (x, y) -> y, LinkedHashMap::new));
         ValidationHandler.isTrue(!hasLookupKey || getOrderField().isEmpty(),
                 "'%s' has both @%s and @%s defined. These directives can not be used together", getName(), ORDER_BY.getName(), LOOKUP_KEY.getName());
@@ -239,11 +237,6 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
 
     public Optional<DefaultOrder> getDefaultOrder() {
         return Optional.ofNullable(defaultOrder);
-    }
-
-    @Override
-    public boolean isFederationExternal() {
-        return isFederationExternal;
     }
 
     @Override

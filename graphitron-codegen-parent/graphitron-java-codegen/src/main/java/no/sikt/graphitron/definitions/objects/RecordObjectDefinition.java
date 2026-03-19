@@ -34,7 +34,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.*;
  */
 public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U extends GenerationField> extends AbstractObjectDefinition<T, U> implements RecordObjectSpecification<U> {
     private final JOOQMapping table;
-    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated, hasKeys, hasNodeDirective, hasCustomTypeId, isFederationExternal;
+    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated, hasKeys, hasNodeDirective, hasCustomTypeId;
     private final ClassReference classReference;
     private final List<U> inputsSortedByNullability;
     private final LinkedHashSet<String> requiredInputs;
@@ -64,7 +64,6 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         inputsSortedByNullability = sortInputsByNullability();
         hasKeys = objectDefinition.hasDirective(FEDERATION_KEY.getName());
         keys = hasKeys ? FederationFieldSet.fromString(getRepeatableDirectiveArgumentString(objectDefinition, FEDERATION_KEY.getName(), FEDERATION_KEY_FIELDS.getName())) : null;
-        isFederationExternal = objectDefinition.hasDirective(FEDERATION_EXTERNAL.getName());
 
         hasNodeDirective = objectDefinition.hasDirective(NODE.getName());
         var typeIdParameter = getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.TYPE_ID);
@@ -217,10 +216,5 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
     @Override
     public LinkedList<String> getKeyColumns() {
         return keyColumns;
-    }
-
-    @Override
-    public boolean isFederationExternal() {
-        return isFederationExternal;
     }
 }
