@@ -18,6 +18,7 @@ type Mutation {
     upsertFilmWithTitleAndLanguage(in: [FilmWithRefInput]): [Film] @mutation(typeName: UPSERT)
     upsertCategory(in: CategoryNameInput): Category @mutation(typeName: UPSERT)
     upsertCategories(in: [CategoryNameInput]): [Category] @mutation(typeName: UPSERT)
+    upsertFilms(in: [UpsertFilmInput!]!): [Film] @mutation(typeName: UPSERT)
 
     deleteFilmID(in: FilmInput!): ID @nodeId(typeName: "Film") @mutation(typeName: DELETE)
     deleteFilmIDListed(in: [FilmInput!]!): [ID] @nodeId(typeName: "Film") @mutation(typeName: DELETE)
@@ -26,6 +27,13 @@ type Mutation {
     deleteCategoriesWrapped(in: [CategoryInput!]!): DeleteCategoriesResult @mutation(typeName: DELETE)
     deleteCategoryByPkAndName(in: CategoryPkAndNameInput!): ID @nodeId(typeName: "Category") @mutation(typeName: DELETE)
     deleteCategoriesByPkAndName(in: [CategoryPkAndNameInput!]!): [ID] @nodeId(typeName: "Category") @mutation(typeName: DELETE)
+}
+
+input UpsertFilmInput @table(name: "FILM")  {
+    filmId: String! @field(name: "FILM_ID")
+    languageId: Int! @field(name: "LANGUAGE_ID")
+    title: String!
+    description: String
 }
 
 type UpdateFilmNamesWrappedResult {

@@ -1,0 +1,7 @@
+mutation UpsertFilms($in: [UpsertFilmInput!]!) {
+    upsertFilms(in: $in) {
+        id
+        title
+        description
+    }
+}
