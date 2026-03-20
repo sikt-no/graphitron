@@ -1169,11 +1169,12 @@ public class ProcessedSchema {
         objects.values().stream()
                 .flatMap(obj -> obj.getFields().stream())
                 .filter(GenerationSourceField::hasServiceReference)
-                .filter(field -> isObject(field))
+                .filter(this::isObject)
                 .forEach(serviceField -> {
                     if (hasTableObject(serviceField) && !serviceField.hasPagination() && !serviceField.createsDataFetcher()) {
                         serviceField.markAsImplicitSplitQuery();
-                    } else if (!hasJOOQRecord(serviceField)) {
+                    }
+                    if (!hasJOOQRecord(serviceField) || hasTableObject(serviceField)) {
                         markImplicitSplitQueryFields(getObject(serviceField), new HashSet<>());
                     }
                 });
@@ -1189,9 +1190,9 @@ public class ProcessedSchema {
                     .filter(this::hasJOOQRecord)
                     .forEach(GenerationSourceField::markAsImplicitSplitQuery);
         }
-        // Recurse into non-@table object fields to find nested @record types.
+        // Recurse into all non-@table object fields to find nested @record/@table types with @table fields.
         type.getFields().stream()
-                .filter(field -> isObject(field) && !hasJOOQRecord(field))
+                .filter(field -> isObject(field) && !hasJOOQRecord(field) && !field.createsDataFetcher())
                 .map(this::getObject)
                 .forEach(nested -> markImplicitSplitQueryFields(nested, seen));
     }
