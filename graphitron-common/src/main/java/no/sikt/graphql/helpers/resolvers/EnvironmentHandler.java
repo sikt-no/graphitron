@@ -10,6 +10,7 @@ import org.jooq.DSLContext;
 import org.jooq.Row;
 
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 /**
@@ -97,7 +98,48 @@ public class EnvironmentHandler {
         return result;
     }
 
-    private static Set<String> flattenIndexedArgumentKeys(Map<String, Object> arguments, String path) {
+    /**
+     * Returns the argument presence set for a specific item in a list input.
+     * Uses the indexed argument set to extract per-item keys, with fallback
+     * to the shared argument set for single-item inputs (wrapped in List.of()).
+     *
+     * @param path  The argument path prefix (e.g., "in")
+     * @param index The zero-based index of the list item
+     * @return A set of argument paths for the specific item, in the same format as getArguments()
+     */
+    public Set<String> getArgumentsForIndex(String path, int index) {
+        return getArgumentsForIndex(select.getArgumentSet(), arguments, path, index);
+    }
+
+    protected static Set<String> getArgumentsForIndex(Set<String> indexedArgs, Set<String> sharedArgs, String path, int index) {
+        var indexPrefix = path + "[" + index + "]";
+        var pathHere = path.isEmpty() ? "" : path + "/";
+        var result = indexedArgs.stream()
+                .filter(arg -> arg.startsWith(indexPrefix + "/"))
+                .map(arg -> pathHere + arg.substring(indexPrefix.length() + 1))
+                .collect(Collectors.toSet());
+
+        // Fallback for nested non-list inputs: when a nested mapper receives
+        // an indexed path like "input[0]/address" and wraps it in List.of(),
+        // there are no "input[0]/address[0]/..." entries. Match directly
+        // against the indexed entries under "input[0]/address/".
+        if (result.isEmpty() && path.contains("[")) {
+            var directPrefix = path + "/";
+            result = indexedArgs.stream()
+                    .filter(arg -> arg.startsWith(directPrefix))
+                    .collect(Collectors.toSet());
+        }
+
+        // Fallback for single-item case: when the input is not a list in the
+        // GraphQL args (e.g., single-item overload wraps in List.of()), the
+        // indexed set has no [index] entries. Fall back to the shared set.
+        if (result.isEmpty()) {
+            return sharedArgs;
+        }
+        return result;
+    }
+
+    protected static Set<String> flattenIndexedArgumentKeys(Map<String, Object> arguments, String path) {
         var result = new HashSet<String>();
         for (var arg : arguments.entrySet()) {
             var key = arg.getKey();

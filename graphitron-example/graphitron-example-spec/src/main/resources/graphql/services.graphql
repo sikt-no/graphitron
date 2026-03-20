@@ -120,6 +120,13 @@ extend type Mutation {
             method: "updateCustomerEmail"
         }
     )
+    checkFilmFieldPresence(in: [FilmInsertWrapper!]!)
+    : [FilmFieldPresence] @service(
+        service: {
+            className: "no.sikt.graphitron.example.service.FilmFieldPresenceService",
+            method: "check"
+        }
+    )
 }
 
 type CreateCustomerEmailPayload{
@@ -142,6 +149,15 @@ type CustomerEmail @table(name: "CUSTOMER") {
 input UpdateCustomerEmailInput @record(record: {className: "no.sikt.graphitron.example.service.records.UpdateCustomerEmailRecord"}){
   customerId: Int
   email: String
+}
+
+input FilmInsertWrapper @record(record: {className: "no.sikt.graphitron.example.service.records.FilmInsertWrapper"}) {
+    films: [FilmCreateInput!]!
+}
+
+type FilmFieldPresence @record(record: {className: "no.sikt.graphitron.example.service.records.FilmFieldPresence"}) {
+    title: String
+    rentalDurationPresent: Boolean
 }
 
 extend type City {

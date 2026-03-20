@@ -1,0 +1,12 @@
+[
+  {
+    "in": [
+      {
+        "films": [
+          {"languageId": "TGFuZ3VhZ2U6MQ", "title": "Film With Null Duration", "rentalDuration": null},
+          {"languageId": "TGFuZ3VhZ2U6MQ", "title": "Film Without Duration"}
+        ]
+      }
+    ]
+  }
+]

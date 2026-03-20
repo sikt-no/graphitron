@@ -143,6 +143,23 @@ public class MutationMatchTest extends MatchTestBase {
                 .body("categories[0].id", is(categoryId));
     }
 
+    @Test
+    @DisplayName("Upsert with list input with optional field")
+    public void upsertFilms() {
+        Map<String, Object> variables = Map.of("in", List.of(
+                Map.of("filmId", "55", "languageId", 1, "title", "UPSERT TEST FILM"),
+                Map.of("filmId", "55555", "languageId", 1, "title", "UPSERT TEST FILM 2", "description", "A test film")
+        ));
+
+        getValidatableResponse("mutation_upsert_films.graphql", variables)
+                .rootPath("data")
+                .body("upsertFilms", hasSize(2))
+                .body("upsertFilms[0].title", is("UPSERT TEST FILM"))
+                .body("upsertFilms[0].description", is("A Awe-Inspiring Story of a Feminist And a Cat who must Conquer a Dog in A Monastery")) // Should be unchanged
+                .body("upsertFilms[1].title", is("UPSERT TEST FILM 2"))
+                .body("upsertFilms[1].description", is("A test film"));
+    }
+
     private void upsertCategories(List<Map<String, String>> input) {
         Map<String, Object> upsertVariables = Map.of("in", input);
 
@@ -156,4 +173,5 @@ public class MutationMatchTest extends MatchTestBase {
         Map<String, Object> queryVariables = Map.of("in", categoryIds.stream().map(it -> Map.of("categoryId", it)).toList());
         return getValidatableResponse(queryFile, queryVariables);
     }
+
 }
