@@ -267,6 +267,38 @@ Split schema by feature flags for gradual rollout. See [Schema Transform README]
 </configuration>
 ```
 
+## Watching for Schema Changes
+
+During development you may want to automatically regenerate code when schema files change. Since the full pipeline is triggered by `mvn generate-sources`, any file-watching tool can be used.
+
+### Using mise and watchexec
+
+[mise](https://mise.jdx.dev/) with [watchexec](https://github.com/watchexec/watchexec) is a lightweight approach. Add the following to your `.mise.toml`:
+
+```toml
+[tools]
+watchexec = "latest"
+
+[tasks.generate]
+description = "Regenerate code (transform + codegen)"
+run = "mvn generate-sources -pl :your-graphql-spec-module"
+
+[tasks.watch]
+description = "Watch schema files and regenerate on changes"
+run = "mise watch -t generate"
+sources = ["path/to/your/schema/**/*.graphqls"]
+```
+
+Then run:
+
+```bash
+mise run watch
+```
+
+This watches the schema directories for changes to `.graphqls` files and runs the full transform + code generation pipeline when a change is detected.
+
+For a working example, see the [graphitron-example `.mise.toml`](../.mise.toml).
+
 ## See Also
 
 - [Example project](../graphitron-example/graphitron-example-spec/pom.xml) - Complete working configuration
