@@ -51,7 +51,7 @@ public class CountTest extends GeneratorTest {
     @Test
     @DisplayName("Connection on interface with discriminator (in same table)")
     void singleTableInterface() {
-        assertGeneratedContentMatches("singleTableInterface");
+        assertGeneratedContentMatches("singleTableInterface", ADDRESS_SINGLE_TABLE_INTERFACE);
     }
 
     @Test

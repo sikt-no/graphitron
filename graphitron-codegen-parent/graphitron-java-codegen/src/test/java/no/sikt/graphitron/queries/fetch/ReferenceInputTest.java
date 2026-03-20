@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
+import static no.sikt.graphitron.common.configuration.SchemaComponent.ADDRESS_SINGLE_TABLE_INTERFACE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 
 @DisplayName("Fetch queries - Inputs through referenced tables")
@@ -144,6 +145,7 @@ public class ReferenceInputTest extends ReferenceTest {
     @DisplayName("On field returning single table interface")
     void onSingleTableInterface() {
         assertGeneratedContentContains("onSingleTableInterface",
+                Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
                 "= _a_address.city()",
                 ".and(_a_address_223244161_city_left.CITY_.eq(_mi_filter.getCity()))",
                 ".leftJoin(_a_address_223244161_city_left)"

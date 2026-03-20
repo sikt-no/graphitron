@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.CONTEXT_CONDITION;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.ADDRESS_SINGLE_TABLE_INTERFACE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION_WITH_NO_OPTIONALS;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_CONNECTION;
@@ -91,6 +92,7 @@ public class ResolverPaginationTest extends GeneratorTest {
     @DisplayName("Root resolver returning a single table interface")
     void singleTableInterface() {
         assertGeneratedContentContains("operation/singleTableInterface",
+                Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
                 "CompletableFuture<ConnectionImpl<Address>>",
                 "loadPaginated",
                 "QueryDBQueries.addressForQuery("

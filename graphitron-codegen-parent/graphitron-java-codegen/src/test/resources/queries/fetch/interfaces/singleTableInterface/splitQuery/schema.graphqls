@@ -1,13 +1,15 @@
 type Query {
-    address: Address
+    query: City @notGenerated
+}
+
+type City @table {
+    address: Address @splitQuery
 }
 
 type AddressInDistrictOne implements Address @table(name: "ADDRESS") @discriminator(value: "ONE") {
     postalCode: String @field(name: "POSTAL_CODE")
-    customer: CustomerTable @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
 }
 
 type AddressInDistrictTwo implements Address @table(name: "ADDRESS") @discriminator(value: "TWO") {
     postalCode: String @field(name: "POSTAL_CODE")
-    customer: CustomerTable @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
 }

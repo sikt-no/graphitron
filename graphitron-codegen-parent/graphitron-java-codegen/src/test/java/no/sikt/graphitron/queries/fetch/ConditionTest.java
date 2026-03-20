@@ -395,6 +395,7 @@ public class ConditionTest extends GeneratorTest {
     @DisplayName("Condition on field returning single table interface")
     void onSingleTableInterface() {
         assertGeneratedContentContains("onFieldReturningSingleTableInterface",
+                Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
                 ".and(_a_address.POSTAL_CODE.eq(_mi_filter.getPostalCode()",
                 ".and(no.sikt.graphitron.codereferences.conditions.QueryAddressInterfaceCondition.address(_a_address, _mi_filter.getPostalCode()"
         );

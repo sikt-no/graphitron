@@ -3,10 +3,6 @@ type Query {
   addressWithPhoneNumber: AddressWithPhoneNumber
 }
 
-interface Address @table(name: "ADDRESS") @discriminate(on: "DISTRICT"){
-  postalCode: String @field(name: "POSTAL_CODE")
-}
-
 interface AddressWithPhoneNumber @table(name: "ADDRESS") @discriminate(on: "DISTRICT"){
   phone: String
 }

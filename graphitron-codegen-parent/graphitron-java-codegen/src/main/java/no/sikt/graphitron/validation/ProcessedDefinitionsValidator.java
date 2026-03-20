@@ -84,6 +84,7 @@ public class ProcessedDefinitionsValidator {
         validateSingleTableInterfaceDefinitions();
         validateInterfacesReturnedInFields();
         validateMultitableFieldsOutsideRoot();
+        validateSingleTableInterfaceFieldsOutsideRoot();
         validateTypesUsingNodeInterfaceWithoutNodeDirective();
         validateInputFields();
         validateExternalMappingReferences();
@@ -889,6 +890,23 @@ public class ProcessedDefinitionsValidator {
                 });
     }
 
+    private void validateSingleTableInterfaceFieldsOutsideRoot() {
+        allFields.stream()
+                .filter(GenerationSourceField::isGenerated)
+                .filter(it -> !it.isRootField())
+                .filter(it -> schema.isObjectWithPreviousTableObject(it.getContainerTypeName()))
+                .filter(schema::isSingleTableInterface)
+                .forEach(field -> {
+                    if (!field.createsDataFetcher()) {
+                        addErrorMessage(
+                                "%s is a single-table interface field outside root, but is missing the %s directive. " +
+                                        "Single-table interface queries outside root are only supported for resolver fields.",
+                                field.formatPath(), SPLIT_QUERY.getName()
+                        );
+                    }
+                });
+    }
+
     private void validateMultitableTypeTables() {
         schema
                 .getObjects()
@@ -1062,9 +1080,8 @@ public class ProcessedDefinitionsValidator {
                                     .map(AbstractObjectDefinition::getName)
                                     .orElse(typeName);
                             var isSingleTable = schema.isSingleTableInterface(field);
-                            if (!field.isRootField() && (isSingleTable || name.equals(NODE_TYPE.getName()))) {
-                                addErrorMessage("interface (%s) returned in non root object. This is not fully " +
-                                        "supported. Use with care", name);
+                            if (!field.isRootField() && name.equals(NODE_TYPE.getName())) {
+                                addErrorMessage("Field %s returns %s interface in a non-root type. This is not supported.", field.formatPath(), NODE_TYPE.getName());
                             }
 
                             if (name.equalsIgnoreCase(NODE_TYPE.getName())) {

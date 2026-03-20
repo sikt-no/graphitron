@@ -161,6 +161,7 @@ public class InputTest extends GeneratorTest {
     @DisplayName("On field returning single table interface")
     void onSingleTableInterface() {
         assertGeneratedContentContains("onSingleTableInterface",
+                Set.of(ADDRESS_SINGLE_TABLE_INTERFACE),
                 ", AddressInput _mi_filter",
                 ".and(_a_address.POSTAL_CODE.eq(_mi_filter.getPostalCode()))");
     }

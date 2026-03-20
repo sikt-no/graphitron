@@ -1,0 +1,11 @@
+type Query {
+    query: Customer @notGenerated
+}
+
+type Customer @table {
+    address: AddressInterface
+}
+
+interface AddressInterface @discriminate(on: "DISTRICT") @table(name: "ADDRESS") {
+    postalCode: String @field(name: "POSTAL_CODE")
+}

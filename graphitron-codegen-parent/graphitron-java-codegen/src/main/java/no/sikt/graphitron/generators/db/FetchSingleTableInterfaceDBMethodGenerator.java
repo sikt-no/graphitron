@@ -21,10 +21,12 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.keyAsTableRecordWithQueryHelper;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.resolverKeyAsTableRecord;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyForResolverFieldOrThrow;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ITERATOR;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ORDER_FIELDS;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_RECORD_ITERATOR;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.internalPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
@@ -151,6 +153,10 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
 
         var rowElements = new ArrayList<CodeBlock>();
 
+        if (!isRoot) {
+            rowElements.add(CodeBlock.of("$L.as($S)", resolverKeyAsTableRecord(context), resolverKeyParamName));
+        }
+
         getKeySetForResolverFields(allFields, processedSchema)
                 .forEach(key ->
                         rowElements.add(
@@ -187,8 +193,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
 
         var returnInsideIfBlock = !target.hasForwardPagination();
         var mapping = CodeBlock.builder()
-                .indent()
-                .beginControlFlow("$N -> ", VAR_ITERATOR)
+                .beginControlFlow("$N ->", VAR_ITERATOR)
                 .declare(
                         DISCRIMINATOR_VALUE,
                         "$N.get($S, $L.$L.getConverter())",
@@ -249,12 +254,21 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                         DISCRIMINATOR_VALUE)
                 .endControlFlow()
                 .addStatementIf(target.hasForwardPagination(), "return $T.of($N, $N)", PAIR.className, TOKEN, DATA)
-                .endControlFlow()
-                .unindent();
+                .endControlFlow();
 
-        return CodeBlock.of("\n.$L(\n$L\n);",
-                target.isIterableWrapped() || target.hasForwardPagination() ? "fetch" : "fetchOne",
-                mapping.build());
+        if (isRoot) {
+            return CodeBlock.of("\n.$L($L);",
+                    target.isIterableWrapped() || target.hasForwardPagination() ? "fetch" : "fetchOne",
+                    indentIfMultiline(mapping.build()));
+        }
+
+        var resolverKey = context.getResolverKey();
+        var keyMapper = CodeBlock.of("$1N -> $1N.get($2S, $3T.class).valuesRow()",
+                VAR_RECORD_ITERATOR, resolverKeyParamName, resolverKey.getTypeName());
+        return CodeBlock.of("\n.$L($L);",
+                target.isIterableWrapped() || target.hasForwardPagination() ? "fetchGroups" : "fetchMap",
+                indentIfMultiline(CodeBlock.join(",\n", keyMapper, mapping.build())));
+
     }
 
     private static @NotNull String getOverriddenFieldAlias(ObjectDefinition implementation, String it) {
