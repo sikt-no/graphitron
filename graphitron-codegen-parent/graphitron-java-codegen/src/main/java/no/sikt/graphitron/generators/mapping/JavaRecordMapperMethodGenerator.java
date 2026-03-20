@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.mapping;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
+import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.AbstractMapperMethodGenerator;
@@ -19,7 +20,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
-import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getKeyFieldsForSourceNodeTable;
+import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.ARRAY_LIST;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.MAPPER_HELPER;
 import static no.sikt.graphitron.mappings.ReflectionHelpers.getJooqRecordClassForNodeIdInputField;
@@ -304,15 +305,16 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             Class<?> jooqRecordClass) {
 
         var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(field);
-        var tableName = getTableName(jooqRecordClass);
-        var isReference = !tableName.equals(nodeType.getTable().getName()) || field.hasFieldReferences();
-        var columnsBlock = FormatCodeBlocks.generateNodeIdColumnsBlock(tableName, nodeType, field, processedSchema);
+
+        var jooqRecordTable = JOOQMapping.fromTable(getTableName(jooqRecordClass));
+        var isReference = isNodeIdReferenceField(field, processedSchema, jooqRecordTable);
+        var keyFields = resolveColumnNamesForNodeIdField(field, processedSchema, jooqRecordTable);
+        var columnsBlock = tableFieldsBlock(staticTableInstanceBlock(jooqRecordTable.getName()), keyFields);
 
         var code = CodeBlock.builder();
 
         if (!overlappingColumns.isEmpty()) {
-            var fieldKeyColumns = getKeyFieldsForSourceNodeTable(nodeType, field, tableName, processedSchema);
-            var hasOverlap = fieldKeyColumns.stream().anyMatch(overlappingColumns::contains);
+            var hasOverlap = keyFields.stream().anyMatch(overlappingColumns::contains);
             code.addIf(hasOverlap && GeneratorConfig.validateOverlappingInputFields(),
                     () -> generateOverlapValidationCode(field, targetVarName, nodeType, overlappingColumns, jooqRecordClass));
         }
@@ -322,7 +324,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 .addStatement("$N.$L($N, $N, $S, $L)",
                         VAR_NODE_STRATEGY,
                         isReference ? METHOD_SET_RECORD_REFERENCE_ID : METHOD_SET_RECORD_ID,
-                        targetVarName, VAR_NODE_ID_VALUE, nodeType.getTypeId(), columnsBlock)
+                        targetVarName, VAR_NODE_ID_VALUE, processedSchema.getNodeConfigurationForTypeOrThrow(nodeType).typeId(), columnsBlock)
                 .build();
     }
 
@@ -337,10 +339,9 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
         Map<String, List<GenerationField>> columnToFields = new LinkedHashMap<>();
 
         for (var field : group.getFields()) {
-            var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(field);
             var tableName = getTableName(group.getJooqRecordClass());
 
-            var keyColumns = getKeyFieldsForSourceNodeTable(nodeType, field, tableName, processedSchema);
+            var keyColumns = resolveColumnNamesForNodeIdField(field, processedSchema, JOOQMapping.fromTable(tableName));
             for (var columnName : keyColumns) {
                 columnToFields.computeIfAbsent(columnName, k -> new ArrayList<>())
                              .add(field);
@@ -373,7 +374,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             Class<?> jooqRecordClass) {
 
         var tableName =  getTableName(jooqRecordClass);
-        var keyColumns = getKeyFieldsForSourceNodeTable(nodeType, field, tableName, processedSchema);
+        var keyColumns = resolveColumnNamesForNodeIdField(field, processedSchema, JOOQMapping.fromTable(tableName));
         var tableClass = TableReflection.getTableByJavaFieldName(tableName)
                 .orElseThrow(() -> new RuntimeException("Unknown table " + tableName))
                 .getClass();
@@ -402,7 +403,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                     VAR_NODE_STRATEGY,
                     VAR_NODE_ID_VALUE,
                     targetVarName,
-                    nodeType.getTypeId(),
+                    processedSchema.getNodeConfigurationForTypeOrThrow(nodeType).typeId(),
                     columnName,
                     CodeBlock.of("($1L) -> $1N.$2L()", VAR_ITERATOR, nameMapping.asCamelGet()),
                     javaNameKeyColumns

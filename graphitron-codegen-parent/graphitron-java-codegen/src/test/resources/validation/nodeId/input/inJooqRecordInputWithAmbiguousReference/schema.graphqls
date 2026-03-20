@@ -3,5 +3,5 @@ input FilmFilter @table(name: "FILM") {
 }
 
 type Language implements Node @node @table {
-    id: ID!
+    id: ID! @nodeId
 }

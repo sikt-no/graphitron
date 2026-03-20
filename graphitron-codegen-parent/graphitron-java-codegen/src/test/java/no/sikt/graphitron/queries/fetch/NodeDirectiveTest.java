@@ -49,7 +49,7 @@ public class NodeDirectiveTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "root/default", Set.of(CUSTOMER_QUERY),
                 "queryForQuery_customer(_iv_nodeIdStrategy)",
-                "row(_iv_nodeIdStrategy.createId(\"Customer\", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).mapping",
+                "row(_iv_nodeIdStrategy.createId(\"Customer\", _a_customer.CUSTOMER_ID)).mapping",
                 "SelectField<Customer> queryForQuery_customer(NodeIdStrategy _iv_nodeIdStrategy)"
         );
     }
@@ -59,7 +59,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void nested() {
         assertGeneratedContentContains(
                 "root/nested", Set.of(CUSTOMER_QUERY),
-                "createId(\"Address\", _a_customer_2168032777_address.fields(_a_customer_2168032777_address.getPrimaryKey().getFieldsArray())))" +
+                "createId(\"Address\", _a_customer_2168032777_address.ADDRESS_ID))" +
                         ".mapping(Functions.nullOnAllNull(Address"
         );
     }
@@ -69,7 +69,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customTypeId() {
         assertGeneratedContentContains(
                 "root/customTypeId", Set.of(CUSTOMER_QUERY),
-                ".createId(\"C\", _a_customer.fields("
+                ".createId(\"C\", _a_customer.CUSTOMER_ID)"
         );
     }
 
@@ -123,8 +123,8 @@ public class NodeDirectiveTest extends GeneratorTest {
     void nodeQuery() {
         assertGeneratedContentContains(
                 "nodeQuery/default", Set.of(NODE_QUERY),
-                "nodeIdStrategy.createId(\"Customer\", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())), customerForNode_customer(_iv_nodeIdStrategy)",
-                ".where(_iv_nodeIdStrategy.hasIds(\"Customer\", _mi_id, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())))"
+                "nodeIdStrategy.createId(\"Customer\", _a_customer.CUSTOMER_ID), customerForNode_customer(_iv_nodeIdStrategy)",
+                ".where(_iv_nodeIdStrategy.hasIds(\"Customer\", _mi_id, _a_customer.CUSTOMER_ID))"
         );
     }
 
@@ -133,8 +133,8 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customTypeIdInNodeQuery() {
         assertGeneratedContentContains(
                 "nodeQuery/customTypeId", Set.of(NODE_QUERY),
-                "createId(\"C\", _a_customer.fields(",
-                ".where(_iv_nodeIdStrategy.hasIds(\"C\", _mi_id, _a_customer.fields("
+                "createId(\"C\", _a_customer.CUSTOMER_ID)",
+                ".where(_iv_nodeIdStrategy.hasIds(\"C\", _mi_id, _a_customer.CUSTOMER_ID)"
         );
     }
 

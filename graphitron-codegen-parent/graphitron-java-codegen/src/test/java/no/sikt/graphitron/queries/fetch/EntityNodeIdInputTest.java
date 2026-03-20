@@ -27,7 +27,7 @@ public class EntityNodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("NodeId is handled correctly for entity representations input")
     void inEntitiesQuery() {
         assertGeneratedContentContains("inEntitiesQuery", Set.of(FEDERATION_QUERY),
-                ".where(_iv_nodeIdStrategy.hasIds(\"Customer\", _mi_representations_filtered.stream().map(_iv_it -> (String) _iv_it.get(\"id\")).filter(Objects::nonNull).toList(), _a_customer.fields("
+                ".where(_iv_nodeIdStrategy.hasIds(\"Customer\", _mi_representations_filtered.stream().map(_iv_it -> (String) _iv_it.get(\"id\")).filter(Objects::nonNull).toList(), _a_customer.CUSTOMER_ID)"
         );
     }
 }

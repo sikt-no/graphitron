@@ -2,6 +2,7 @@ package no.sikt.graphitron.codereferences.services;
 
 import no.sikt.graphitron.codereferences.dummyreferences.DummyRecord;
 import no.sikt.graphitron.codereferences.records.CustomerJavaRecord;
+import no.sikt.graphitron.codereferences.records.FilmActorInputJavaRecord;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -18,6 +19,10 @@ public class JavaRecordInputFetchService {
     }
 
     public List<CustomerRecord> customerListed(List<DummyRecord> record) {
+        return null;
+    }
+
+    public String filmActors(List<FilmActorInputJavaRecord> input) {
         return null;
     }
 }

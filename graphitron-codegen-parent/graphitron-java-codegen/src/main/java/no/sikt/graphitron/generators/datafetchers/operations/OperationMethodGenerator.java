@@ -19,7 +19,6 @@ import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
-import no.sikt.graphitron.generators.context.NodeIdReferenceHelpers;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
@@ -28,19 +27,17 @@ import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 
-import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
-import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
-import static no.sikt.graphitron.configuration.GeneratorConfig.validateOverlappingInputFields;
+import static no.sikt.graphitron.configuration.GeneratorConfig.*;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
+import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.resolveColumnNamesForNodeIdField;
 import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodNameForField;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.FUNCTION;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
@@ -367,25 +364,17 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
             var isListed = inputRecord.isIterableWrapped();
             var itemVarName = isListed ? namedIteratorPrefix(inputRecord.getName()) : inputVarName;
 
-            var targetTable = type.getTable().getName();
             for (InputField recordField : type.getFields()) {
                 if (processedSchema.isNodeIdField(recordField)) {
-                    var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(recordField);
+                    var nodeConfiguration = processedSchema.getNodeConfigurationForNodeIdFieldOrThrow(recordField);
                     var unpackedVarName = VariablePrefix.unpackedPrefix(recordField.getName());
 
-                    LinkedList<String> columns;
-                    if (!nodeType.getTable().getName().equalsIgnoreCase(targetTable)) {
-                        var foreignKey = NodeIdReferenceHelpers.getForeignKeyForNodeIdReference(recordField, processedSchema)
-                                .orElseThrow(() -> new RuntimeException("Cannot find foreign key for nodeId field " + recordField.getName() + " in " + type.getName()));
-                        columns = FormatCodeBlocks.getReferenceNodeIdFields(targetTable, nodeType, foreignKey);
-                    } else {
-                        columns = processedSchema.getKeyColumnsForNodeType(nodeType).orElseGet(LinkedList::new);
-                    }
+                    var columns = resolveColumnNamesForNodeIdField(recordField, processedSchema, type.getTable());
 
                     for (int i = 0; i < columns.size(); i++) {
                         tableColumnToInputFieldMappings
                                 .computeIfAbsent(columns.get(i), k -> new ArrayList<>())
-                                .add(FieldToColumnRecord.forNodeIdField(recordField, nodeType.getTypeId(), i, unpackedVarName, columns.get(i)));
+                                .add(FieldToColumnRecord.forNodeIdField(recordField, nodeConfiguration.typeId(), i, unpackedVarName, columns.get(i)));
                     }
                 } else {
                     String jooqColumn = recordField.getUpperCaseName();
@@ -415,7 +404,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                     .toList();
 
             for (InputField nodeIdField : nodeIdFieldsToUnpack) {
-                var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(nodeIdField);
+                var nodeConfiguration = processedSchema.getNodeConfigurationForNodeIdFieldOrThrow(nodeIdField);
                 var unpackedVarName = unpackedPrefix(nodeIdField.getName());
 
                 code.addStatement("var $N = $N.$L() != null ? $N.unpackIdValues($S, $N.$L(), $L) : null",
@@ -423,10 +412,10 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                         itemVarName,
                         nodeIdField.getMappingFromSchemaName().asGet(),
                         VAR_NODE_STRATEGY,
-                        nodeType.getTypeId(),
+                        nodeConfiguration.typeId(),
                         itemVarName,
                         nodeIdField.getMappingFromSchemaName().asGet(),
-                        FormatCodeBlocks.nodeIdColumnsBlock(nodeType));
+                        nodeConfiguration.nodeIdFieldsWithStaticTableInstanceBlock());
             }
 
             for (var entry : overlappingColumns) {

@@ -16,7 +16,7 @@ public class MutationOutputTest extends MutationQueryTest {
         assertGeneratedContentContains("nodeId",
                 "String mutationForMutation",
                 "deleteFrom(CUSTOMER)",
-                ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
+                ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.CUSTOMER_ID))" +
                         ".fetchOne(_iv_it -> _iv_it.into(String.class))"
         );
     }
@@ -38,7 +38,7 @@ public class MutationOutputTest extends MutationQueryTest {
         assertGeneratedContentContains("wrappedNodeId",
                 "CustomerRecord _mi_inRecord, SelectionSet _iv_select)",
                 "deleteFrom(CUSTOMER)",
-                ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
+                ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.CUSTOMER_ID))" +
                         ".fetchOne(_iv_it -> _iv_it.into(String.class))"
         );
     }
@@ -60,7 +60,7 @@ public class MutationOutputTest extends MutationQueryTest {
         assertGeneratedContentContains("nodeIdList",
                 "List<String> mutationForMutation",
                 "deleteFrom(CUSTOMER)",
-                ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
+                ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.CUSTOMER_ID))" +
                         ".fetch(_iv_it -> _iv_it.into(String.class))"
         );
     }
@@ -82,7 +82,7 @@ public class MutationOutputTest extends MutationQueryTest {
         assertGeneratedContentContains("wrappedNodeIdList",
                 "List<String> mutationForMutation",
                 "deleteFrom(CUSTOMER)",
-                ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
+                ".returningResult(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.CUSTOMER_ID))" +
                         ".fetch(_iv_it -> _iv_it.into(String.class))"
         );
     }
@@ -104,7 +104,7 @@ public class MutationOutputTest extends MutationQueryTest {
         assertGeneratedContentContains("tableObject",
                 "CustomerNode mutationForMutation",
                 "deleteFrom(CUSTOMER)",
-                ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
+                ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.CUSTOMER_ID))" +
                         ".mapping(Functions.nullOnAllNull(CustomerNode::new)))" +
                         ".fetchOne(_iv_it -> _iv_it.into(CustomerNode.class))"
         );
@@ -116,7 +116,7 @@ public class MutationOutputTest extends MutationQueryTest {
         assertGeneratedContentContains("wrappedTableObject",
                 "CustomerNode mutationForMutation",
                 "deleteFrom(CUSTOMER)",
-                ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
+                ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.CUSTOMER_ID))" +
                         ".mapping(Functions.nullOnAllNull(CustomerNode::new)))" +
                         ".fetchOne(_iv_it -> _iv_it.into(CustomerNode.class))"
         );
@@ -128,7 +128,7 @@ public class MutationOutputTest extends MutationQueryTest {
         assertGeneratedContentContains("tableObjectList",
                 "List<CustomerNode> mutationForMutation",
                 "deleteFrom(CUSTOMER)",
-                ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
+                ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.CUSTOMER_ID))" +
                         ".mapping(Functions.nullOnAllNull(CustomerNode::new)))" +
                         ".fetch(_iv_it -> _iv_it.into(CustomerNode.class))"
         );
@@ -140,7 +140,7 @@ public class MutationOutputTest extends MutationQueryTest {
         assertGeneratedContentContains("wrappedTableObjectList",
                 "List<CustomerNode> mutationForMutation",
                 "deleteFrom(CUSTOMER)",
-                ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))" +
+                ".returningResult(DSL.row(_iv_nodeIdStrategy.createId(\"CustomerNode\", CUSTOMER.CUSTOMER_ID))" +
                         ".mapping(Functions.nullOnAllNull(CustomerNode::new)))" +
                         ".fetch(_iv_it -> _iv_it.into(CustomerNode.class))"
         );
@@ -161,8 +161,8 @@ public class MutationOutputTest extends MutationQueryTest {
         assertGeneratedContentContains("tableObjectWithSplitQueryReference",
                 "{ return",
                 "DSL.row(DSL.row(CUSTOMER.CUSTOMER_ID).convertFrom(_iv_it -> QueryHelper.intoTableRecord(_iv_it, List.of(CUSTOMER.CUSTOMER_ID)))," +
-                        "_iv_nodeIdStrategy.createId",
-                "getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer"
+                        "_iv_nodeIdStrategy.createId(\"Customer\", CUSTOMER.CUSTOMER_ID))" +
+                        ".mapping(Functions.nullOnAllNull(Customer"
         );
     }
 }

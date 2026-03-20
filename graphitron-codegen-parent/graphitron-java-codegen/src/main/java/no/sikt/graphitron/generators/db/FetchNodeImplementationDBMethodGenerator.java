@@ -16,8 +16,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsEnabled;
+import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asNodeQueryName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
@@ -70,8 +70,9 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
         CodeBlock id;
         CodeBlock whereCondition;
         if (shouldMakeNodeStrategy()) {
-            id = CodeBlock.of("$L,\n$L", createNodeIdBlock(localObject, context.getTargetAlias()), selectBlock);
-            whereCondition = hasIdOrIdsBlock(CodeBlock.of(argumentName), localObject, context.getTargetAlias(), CodeBlock.empty(), true);
+            var nodeConfiguration = processedSchema.getNodeConfigurationForTypeOrThrow(localObject);
+            id = CodeBlock.of("$L,\n$L", createNodeIdBlock(nodeConfiguration, context.getTargetAlias()), selectBlock);
+            whereCondition = hasNodeIdOrIdsBlock(CodeBlock.of(argumentName), nodeConfiguration, context.getTargetAlias(), true);
         } else {
             var hasOrIn = argument.isID()
                     ? CodeBlock.of("hasIds")

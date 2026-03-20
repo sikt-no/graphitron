@@ -20,16 +20,16 @@ public class CustomerDBQueries {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         return _iv_ctx
                 .select(
-                        _iv_nodeIdStrategy.createId("Customer", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())),
+                        _iv_nodeIdStrategy.createId("Customer", _a_customer.CUSTOMER_ID),
                         customerForNode_customer(_iv_nodeIdStrategy)
                 )
                 .from(_a_customer)
-                .where(_iv_nodeIdStrategy.hasIds("Customer", _mi_id, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())))
+                .where(_iv_nodeIdStrategy.hasIds("Customer", _mi_id, _a_customer.CUSTOMER_ID))
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
     private static SelectField<Customer> customerForNode_customer(NodeIdStrategy _iv_nodeIdStrategy) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
-        return DSL.row(_iv_nodeIdStrategy.createId("Customer", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer::new));
+        return DSL.row(_iv_nodeIdStrategy.createId("Customer", _a_customer.CUSTOMER_ID)).mapping(Functions.nullOnAllNull(Customer::new));
     }
 }

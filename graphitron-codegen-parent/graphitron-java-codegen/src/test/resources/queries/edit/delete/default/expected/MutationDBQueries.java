@@ -13,7 +13,7 @@ public class MutationDBQueries {
     public static String mutationForMutation(DSLContext _iv_ctx, NodeIdStrategy _iv_nodeIdStrategy, CustomerRecord _mi_inRecord, SelectionSet _iv_select) {
         return _iv_ctx.deleteFrom(CUSTOMER)
                 .where(CUSTOMER.CUSTOMER_ID.eq(_mi_inRecord.getCustomerId()))
-                .returningResult(_iv_nodeIdStrategy.createId("CustomerNode", CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())))
+                .returningResult(_iv_nodeIdStrategy.createId("CustomerNode", CUSTOMER.CUSTOMER_ID))
                 .fetchOne(_iv_it -> _iv_it.into(String.class));
     }
 }

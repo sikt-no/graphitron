@@ -11,11 +11,9 @@ import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -85,19 +83,19 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
                     .findFirst()
                     .ifPresent(it -> {
                         var recordInputName = inputPrefix(it.getKey());
-                        var inputType = it.getValue();
-                        var nodeType = processedSchema.getNodeTypeForNodeIdField(inputType);
-                        if (nodeType.isPresent()) {
-                            String tableName = nodeType.get().getTable().getName();
-                            var columnNames = getNodeIdKeyColumnNames(nodeType.get().getKeyColumns(), tableName);
-                            if (!columnNames.isEmpty()) {
-                                var isIterable = recordInputs.get(it.getKey()).isIterableWrapped();
-                                code.addIf(isIterable, "$N.forEach($N -> {\n", recordInputName, VAR_ITERATOR);
-                                var variableName = isIterable ? VAR_ITERATOR : recordInputName;
-                                columnNames.forEach(columnName -> code.addStatement("$N.changed($N.$N, true)", variableName, tableName, columnName));
-                                code.addIf(isIterable, "});\n");
-                            }
-                        }
+                        var nodeConfiguration = processedSchema.getNodeConfigurationForNodeIdFieldOrThrow(it.getValue());
+                        var isIterable = recordInputs.get(it.getKey()).isIterableWrapped();
+                        var variableName = isIterable ? VAR_ITERATOR : recordInputName;
+
+                        code.beginControlFlowIf(isIterable, "$N.forEach($N ->", recordInputName, VAR_ITERATOR)
+                                .indentIf(isIterable);
+
+                        nodeConfiguration.keyColumnsJavaNames()
+                                .forEach(columnName -> code.addStatement("$N.changed($N.$N, true)", variableName, nodeConfiguration.targetTable().getName(), columnName));
+
+                        code.unindentIf(isIterable)
+                                .endControlFlowIf(isIterable)
+                                .addStatementIf(isIterable, ")");
                     });
         }
 
@@ -133,16 +131,6 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());
-    }
-
-    private List<String> getNodeIdKeyColumnNames(List<String> keyColumns, String tableName) {
-        if (keyColumns.isEmpty()) {
-            return TableReflection.getPrimaryKeyForTable(tableName)
-                    .map(it -> TableReflection.getJavaFieldNamesForKey(tableName, it))
-                    .orElse(Collections.emptyList());
-        } else  {
-            return keyColumns;
-        }
     }
 
     private Optional<Map.Entry<String, GenerationField>> findNodeIdInJooqRecordInputTypes(String key, InputField field) {

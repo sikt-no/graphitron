@@ -1,11 +1,12 @@
 package no.sikt.graphitron.definitions.interfaces;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphql.federation.fieldsets.FederationFieldSet;
+import no.sikt.graphitron.definitions.helpers.NodeConfiguration;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphql.directives.GenerationDirective;
+import no.sikt.graphql.federation.fieldsets.FederationFieldSet;
 
-import java.util.LinkedList;
+import java.util.Optional;
 
 /**
  * Specifies that this Java object represents a GraphQL object.
@@ -72,11 +73,10 @@ public interface RecordObjectSpecification<T extends GenerationField> extends Ob
      */
     FederationFieldSet getEntityKeys();
 
-    boolean hasNodeDirective();
-
-    String getTypeId();
-
-    boolean hasCustomKeyColumns();
-
-    LinkedList<String> getKeyColumns();
+    default boolean hasNodeDirective() {
+        return false;
+    }
+    default Optional<NodeConfiguration> getNodeConfiguration() {
+        return Optional.empty();
+    }
 }

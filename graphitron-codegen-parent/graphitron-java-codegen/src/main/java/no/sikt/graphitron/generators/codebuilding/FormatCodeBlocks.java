@@ -2,26 +2,23 @@ package no.sikt.graphitron.generators.codebuilding;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
-import no.sikt.graphitron.definitions.interfaces.GenerationField;
+import no.sikt.graphitron.definitions.helpers.NodeConfiguration;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.EnumDefinition;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
-import org.jooq.Field;
-import org.jooq.ForeignKey;
 import org.jooq.Key;
 
 import java.lang.reflect.Method;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
@@ -29,9 +26,9 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGener
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArrayList;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
-import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getKeyFieldsForSourceNodeTable;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
-import static no.sikt.graphitron.mappings.TableReflection.*;
+import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldNamesForKey;
+import static no.sikt.graphitron.mappings.TableReflection.getTableByJavaFieldName;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -710,122 +707,6 @@ public class FormatCodeBlocks {
                 .collect(CodeBlock.joining(", "));
     }
 
-    public static CodeBlock createNodeIdBlock(RecordObjectSpecification<?> obj, String targetAlias) {
-        return CodeBlock.of("$N.createId($S, $L)",
-                VAR_NODE_STRATEGY,
-                obj.getTypeId(),
-                nodeIdColumnsWithAliasBlock(targetAlias, obj)
-        );
-    }
-
-    public static CodeBlock createNodeIdBlockForRecord(RecordObjectSpecification<?> obj, String recordVariableName) {
-        return CodeBlock.of("$N.createId($N, $S, $L)",
-                VAR_NODE_STRATEGY,
-                recordVariableName,
-                obj.getTypeId(),
-                nodeIdColumnsBlock(obj)
-        );
-    }
-
-    public static CodeBlock hasIdBlock(CodeBlock id, RecordObjectSpecification<?> obj, String targetAlias) {
-        return hasIdOrIdsBlock(id, obj, targetAlias, CodeBlock.empty(), false);
-    }
-
-    public static CodeBlock hasIdOrIdsBlock(CodeBlock idOrRecordParamName, RecordObjectSpecification<?> obj, String targetAlias, CodeBlock mappedFkFields, boolean isMultiple) {
-        return CodeBlock.of("$N.$L($S, $L, $L)",
-                VAR_NODE_STRATEGY,
-                isMultiple ? "hasIds" : "hasId",
-                obj.getTypeId(),
-                idOrRecordParamName,
-                mappedFkFields.isEmpty() ? nodeIdColumnsWithAliasBlock(targetAlias, obj) : mappedFkFields
-        );
-    }
-
-    public static CodeBlock nodeIdColumnsBlock(RecordObjectSpecification<?> obj) {
-        if (obj.hasCustomKeyColumns()) {
-            return obj.getKeyColumns().stream().map(it -> CodeBlock.of("$L.$L", staticTableInstanceBlock(obj.getTable().getName()), it))
-                    .collect(CodeBlock.joining(", "));
-        }
-        return getPrimaryKeyFieldsBlock(staticTableInstanceBlock(obj.getTable().getName()));
-    }
-
-    /**
-     * Generates jOOQ column references for a @nodeId field targeting a jOOQ record.
-     * The columns are from the node type's key columns, referenced on the target table.
-     *
-     * @param tableName       The target jOOQ table name
-     * @param nodeType        The node type definition
-     * @param field           The nodeId field
-     * @return CodeBlock with comma-separated column references like "Table.TABLE.COLUMN1, Table.TABLE.COLUMN2"
-     */
-    public static CodeBlock generateNodeIdColumnsBlock(String tableName, ObjectDefinition nodeType, GenerationField field, ProcessedSchema schema) {
-        var tableClass = TableReflection.getTableByJavaFieldName(tableName)
-                .orElseThrow(() -> new RuntimeException("Unknown table " + tableName))
-                .getClass();
-
-        var keyColumnFields = getKeyFieldsForSourceNodeTable(nodeType, field, tableName, schema);
-        List<CodeBlock> columnBlocks = new ArrayList<>();
-        for (var keyColumnField : keyColumnFields) {
-            columnBlocks.add(CodeBlock.of("$T.$N.$N", tableClass, tableName, keyColumnField));
-        }
-
-        return CodeBlock.join(columnBlocks, ", ");
-    }
-
-    public static CodeBlock referenceNodeIdColumnsBlock(RecordObjectSpecification<?> container, RecordObjectSpecification<?> target, ForeignKey<?,?> fk) {
-        return referenceNodeIdColumnsBlock(container, target, fk, staticTableInstanceBlock(container.getTable().getName()));
-    }
-
-    public static CodeBlock referenceNodeIdColumnsBlock(RecordObjectSpecification<?> container, RecordObjectSpecification<?> target, ForeignKey<?,?> fk, CodeBlock tableReference) {
-        return getReferenceNodeIdFields(container.getTable().getName(), target, fk)
-                .stream()
-                .map(it -> tableFieldCodeBlock(tableReference, it))
-                .collect(CodeBlock.joining(", "));
-    }
-
-    public static LinkedList<String> getReferenceNodeIdFields(String targetTable, RecordObjectSpecification<?> targetNodeType, ForeignKey<?,?> fk) {
-        var mapping = new HashMap<String, Field<?>>();
-        var sourceColumns = fk.getFields();
-        var targetColumns = fk.getInverseKey().getFields();
-
-        for (int i = 0; i < sourceColumns.size(); i++) {
-            mapping.put(targetColumns.get(i).getName(), sourceColumns.get(i));
-        }
-
-        var sourceTable = targetNodeType.getTable().getName();
-
-        var targetNodeIdFields = targetNodeType.hasCustomKeyColumns() ? targetNodeType.getKeyColumns()
-                : getPrimaryKeyForTable(sourceTable)
-                .orElseThrow(() -> new IllegalArgumentException("Cannot find primary key for table " + sourceTable)) // This should be validated and never thrown
-                .getFields()
-                .stream()
-                .map(Field::getName)
-                .toList();
-
-        return targetNodeIdFields.stream()
-                .map(it -> mapping.keySet().stream()
-                        .filter(fieldName -> fieldName.equalsIgnoreCase(it)).findFirst()
-                        .orElseThrow(() -> new IllegalArgumentException("Node ID field " + it + " is not found in foreign key " + fk.getName() + "'s fields."))) // Should never be thrown
-                .map(mapping::get)
-                .map(it -> getJavaFieldName(targetTable, it.getName()).orElseThrow())
-                .collect(Collectors.toCollection(LinkedList::new));
-    }
-
-    public static CodeBlock staticTableInstanceBlock(String tableName) {
-        var tableClass = getTableByJavaFieldName(tableName)
-                .orElseThrow(() -> new RuntimeException("Unknown table " + tableName))
-                .getClass();
-        return CodeBlock.of("$T.$N", tableClass, tableName);
-    }
-
-    public static CodeBlock nodeIdColumnsWithAliasBlock(String targetAlias, RecordObjectSpecification<?> obj) {
-        if (obj.hasCustomKeyColumns()) {
-            return obj.getKeyColumns().stream().map(it -> CodeBlock.of("$N.$L", targetAlias, it))
-                    .collect(CodeBlock.joining(", "));
-        }
-        return getPrimaryKeyFieldsWithTableAliasBlock(targetAlias);
-    }
-
     public static CodeBlock getPrimaryKeyFieldsWithTableAliasBlock(String targetAlias) {
         return CodeBlock.of("$N.fields($L)", targetAlias, getPrimaryKeyFieldsBlock(targetAlias));
     }
@@ -845,15 +726,92 @@ public class FormatCodeBlocks {
     }
 
     private static @NotNull CodeBlock getPrimaryKeyFieldsBlock(String target) {
-        return getPrimaryKeyFieldsBlock(CodeBlock.of(target));
-    }
-
-    private static @NotNull CodeBlock getPrimaryKeyFieldsBlock(CodeBlock target) {
         return CodeBlock.of("$L.getPrimaryKey().getFieldsArray()", target);
     }
 
     public static CodeBlock ofTernary(CodeBlock ifExpr, CodeBlock thenExpr, CodeBlock elseExpr) {
         return CodeBlock.of("$L ? $L : $L", ifExpr, thenExpr, elseExpr);
+    }
+
+    public static CodeBlock staticTableInstanceBlock(String tableName) {
+        var tableClass = getTableByJavaFieldName(tableName)
+                .orElseThrow(() -> new RuntimeException("Unknown table " + tableName))
+                .getClass();
+        return CodeBlock.of("$T.$N", tableClass, tableName);
+    }
+
+
+    public static CodeBlock createNodeIdBlock(NodeConfiguration nodeConfiguration, String targetAlias) {
+        return createNodeIdBlock(
+                CodeBlock.of("$S, $L",
+                        nodeConfiguration.typeId(),
+                        nodeConfiguration.nodeIdFieldsWithTableVariableBlock(targetAlias)
+                )
+        );
+    }
+
+    public static CodeBlock createNodeIdBlockForRecord(NodeConfiguration nodeConfiguration, String recordVariableName) {
+        return createNodeIdBlock(
+                CodeBlock.of("$N, $S, $L",
+                        recordVariableName,
+                        nodeConfiguration.typeId(),
+                        nodeConfiguration.nodeIdFieldsWithStaticTableInstanceBlock()
+                )
+        );
+    }
+
+    private static CodeBlock createNodeIdBlock(CodeBlock args) {
+        return CodeBlock.of("$N.createId($L)", VAR_NODE_STRATEGY, args);
+    }
+
+
+    public static CodeBlock hasNodeIdOrIdsBlock(CodeBlock idOrRecordVariable, NodeConfiguration nodeConfiguration, String targetAlias, boolean isMultiple) {
+        return hasNodeIdOrIdsBlock(
+                nodeConfiguration.typeId(),
+                idOrRecordVariable,
+                nodeConfiguration.nodeIdFieldsWithTableVariableBlock(targetAlias),
+                isMultiple
+        );
+    }
+
+    public static CodeBlock hasNodeIdOrIdsBlock(CodeBlock idOrRecordVariable, NodeConfiguration nodeConfiguration, String targetAlias, List<String> overrideKeyCols, boolean isMultiple) {
+        return hasNodeIdOrIdsBlock(
+                nodeConfiguration.typeId(),
+                idOrRecordVariable,
+                tableFieldsBlock(CodeBlock.of("$N", targetAlias), overrideKeyCols),
+                isMultiple
+        );
+    }
+
+    private static CodeBlock hasNodeIdOrIdsBlock(String typeId, CodeBlock idOrRecordVariable, CodeBlock keyColumns, boolean isMultiple) {
+        var args = CodeBlock.of("$S, $L, $L", typeId, idOrRecordVariable, keyColumns);
+        return isMultiple ? hasNodeIdsBlock(args) : hasNodeIdBlock(args);
+    }
+
+    private static CodeBlock hasNodeIdBlock(CodeBlock code) {
+        return CodeBlock.of("$N.hasId($L)", VAR_NODE_STRATEGY, code);
+    }
+
+    private static CodeBlock hasNodeIdsBlock(CodeBlock code) {
+        return CodeBlock.of("$N.hasIds($L)", VAR_NODE_STRATEGY, code);
+    }
+
+    /**
+     * @return CodeBlock with comma-separated table fields using a static table instance resolved from the table name.
+     * Example: {@code Film.FILM.FILM_ID, Film.FILM.LANGUAGE_ID}
+     */
+    public static CodeBlock tableFieldsWithStaticTableInstanceBlock(String tableJavaName, List<String> fieldJavaNames) {
+        return tableFieldsBlock(staticTableInstanceBlock(tableJavaName), fieldJavaNames);
+    }
+
+    /**
+     * @param tableRef The CodeBlock with the table reference. For example a table alias variable, or a static table instance block.
+     * @return CodeBlock with comma-separated table fields from the given table reference code block.
+     */
+    public static CodeBlock tableFieldsBlock(CodeBlock tableRef, List<String> fieldJavaNames) {
+        return fieldJavaNames.stream()
+                .map(it -> tableFieldCodeBlock(tableRef, it))
+                .collect(CodeBlock.joining(", "));
     }
 
     /**
