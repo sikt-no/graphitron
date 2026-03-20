@@ -14,6 +14,7 @@ public class RecordTransformer extends AbstractTransformer {
     }
 
     public List<CustomerRecord> customerInputTableToJOOQRecord(List<CustomerInputTable> _mi_input, String _iv_path) {
+        warningIfArgumentSetMismatchForJooqRecordInput(_mi_input, _iv_path);
         return CustomerInputTableJOOQMapper.toJOOQRecord(_mi_input, _iv_path, this);
     }
 

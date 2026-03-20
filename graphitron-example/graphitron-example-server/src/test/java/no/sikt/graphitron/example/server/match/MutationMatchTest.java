@@ -2,7 +2,7 @@ package no.sikt.graphitron.example.server.match;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.response.ValidatableResponse;
-import no.sikt.graphitron.example.generated.graphitron.resolvers.operations.MutationGeneratedDataFetcher;
+import no.sikt.graphql.helpers.transform.AbstractTransformer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -149,7 +149,7 @@ public class MutationMatchTest extends MatchTestBase {
     @DisplayName("Upsert films with omitted optional field logs warning")
     public void upsertFilmsWithOmittedOptionalFieldLogsWarning() {
         // try-with-resources removes the log handler after the test to avoid leaking handlers across tests
-        try (var logCapture = new LogCapture(MutationGeneratedDataFetcher.class)) {
+        try (var logCapture = new LogCapture(AbstractTransformer.class)) {
             Map<String, Object> variables = Map.of("in", List.of(
                     Map.of("filmId", "55", "languageId", 1, "title", "UPSERT TEST FILM"),
                     Map.of("filmId", "55555", "languageId", 1, "title", "UPSERT TEST FILM 2", "description", "A test film")
@@ -172,7 +172,7 @@ public class MutationMatchTest extends MatchTestBase {
     @DisplayName("Upsert films with all fields provided logs no warnings")
     public void upsertFilmsWithAllFieldsLogsNoWarnings() {
         // try-with-resources removes the log handler after the test to avoid leaking handlers across tests
-        try (var logCapture = new LogCapture(MutationGeneratedDataFetcher.class)) {
+        try (var logCapture = new LogCapture(AbstractTransformer.class)) {
             Map<String, Object> variables = Map.of("in", List.of(
                     Map.of("filmId", "55", "languageId", 1, "title", "UPSERT TEST FILM"),
                     Map.of("filmId", "55555", "languageId", 1, "title", "UPSERT TEST FILM 2")
