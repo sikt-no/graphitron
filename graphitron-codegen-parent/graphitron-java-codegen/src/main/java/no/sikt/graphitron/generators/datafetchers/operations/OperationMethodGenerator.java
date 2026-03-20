@@ -25,17 +25,13 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.GraphitronContext;
 import no.sikt.graphql.schema.ProcessedSchema;
+import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
-import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
-import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
-import static no.sikt.graphitron.configuration.GeneratorConfig.validateOverlappingInputFields;
+import static no.sikt.graphitron.configuration.GeneratorConfig.*;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
+import static no.sikt.graphitron.generators.abstractions.DataFetcherClassGenerator.FILE_NAME_SUFFIX;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
@@ -67,20 +63,51 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
         var builder = getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(getReturnTypeName(target))));
 
+        boolean isMutationWithJdbcBatching = target.hasMutationType() && !isMutationReturningData && localObject.getName().equals(SCHEMA_MUTATION.getName());
+        var jOOQRecordInput = target.getNonReservedArguments().stream().filter(processedSchema::hasJOOQRecord).findFirst();
+        boolean shouldHaveLogWarningOnDifferentArgumentSetForList = target.hasMutationType() && (target.getMutationType().equals(MutationType.UPDATE) || target.getMutationType().equals(MutationType.UPSERT))
+                && jOOQRecordInput.isPresent() && jOOQRecordInput.get().isIterableWrapped();
+
+        CodeBlock argumentCheck = CodeBlock.empty();
+
+        if (shouldHaveLogWarningOnDifferentArgumentSetForList) {
+            var inputFieldName = jOOQRecordInput.get().getName();
+            var varName = inputPrefix(jOOQRecordInput.get().getName());
+            var argIteratorVariable = internalPrefix("argIterator");
+            argumentCheck = CodeBlock.builder()
+                    .beginControlFlow("if ($N.size() > 1)", varName)
+                    .declare("logger", "$T.getLogger($L.class)", LoggerFactory.class, target.getContainerTypeName() + FILE_NAME_SUFFIX)
+                    .beginControlFlow("try")
+                    .declare("firstArgumentSet", "$N.getArgumentsForIndex($S, 0)", VAR_TRANSFORMER, inputFieldName)
+                    .beginControlFlow("for (int $1N = 1; $1N < $2N.size(); $1N++)", argIteratorVariable, varName)
+                    .declare("nextArgumentSet", "$N.getArgumentsForIndex($S, $N)", VAR_TRANSFORMER, inputFieldName, argIteratorVariable)
+                    .beginControlFlow("if (firstArgumentSet.size() != nextArgumentSet.size() || !firstArgumentSet.containsAll(nextArgumentSet))")
+                    .addStatement("logger.warn($S)", "Different argument set for a list of jOOQ record inputs. This query would have caused fields to be nulled out in Graphitron versions v7.1.4 to v8.8.0.")
+                    .addStatement("break")
+                    .endControlFlow()
+                    .endControlFlow()
+                    .nextControlFlow("catch($T e)", Exception.class)
+                    .addStatement("logger.warn($S)", "Checking argument set failed.")
+                    .endControlFlow()
+                    .endControlFlow()
+                    .build();
+
+        }
+
         return builder
                 .beginControlFlow("return $N ->", VAR_ENV)
                 .addCode(extractParams(target))
                 .addCode(declareContextArgs(target))
                 .addCode(transformInputs(target, parser))
                 .addCode(validateInputs(parser))
+                .addCodeIf(isMutationWithJdbcBatching, argumentCheck)
                 .addCode(declareAllServiceClasses(target.getName()))
-                .addCodeIf(!isMutationReturningData && localObject.getName().equals(SCHEMA_MUTATION.getName()),
+                .addCodeIf(isMutationWithJdbcBatching,
                         () -> getMethodCall(target, parser, true))
                 .addCode(methodCall)
                 .endControlFlow("") // Keep this, logic to set semicolon only kicks in if a string is set.
                 .build();
     }
-
     protected CodeBlock getMethodCall(ObjectField target, InputParser parser, boolean isMutatingMethod) {
         var isService = target.hasServiceReference();
         var hasLookup = !isService && LookupHelpers.lookupExists(target, processedSchema);

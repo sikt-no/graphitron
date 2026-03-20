@@ -56,7 +56,27 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "listedInput",
                 ".getCtx(), _mi_inRecordList",
-                "ctx, _mi_inRecordList, _iv_selectionSet)"
+                "ctx, _mi_inRecordList, _iv_selectionSet)",
+
+                """
+                if (_mi_in.size() > 1) {
+                    var logger = LoggerFactory.getLogger(MutationGeneratedDataFetcher.class);
+                    try {
+                        var firstArgumentSet = _iv_transform.getArgumentsForIndex("in", 0);
+                        for (int _iv_argIterator = 1; _iv_argIterator < _mi_in.size(); _iv_argIterator++){
+                            var nextArgumentSet = _iv_transform.getArgumentsForIndex("in", _iv_argIterator);
+
+                            if (firstArgumentSet.size() != nextArgumentSet.size() || !firstArgumentSet.containsAll(nextArgumentSet)) {
+                                logger.warn("Different argument set for a list of jOOQ record inputs. This query would have caused fields to be nulled out in Graphitron versions v7.1.4 to v8.8.0.");
+                                break;
+                            }
+                        }
+                    } catch(Exception e) {
+                        logger.warn("Checking argument set failed.");
+                    }
+                }
+                MutationDBQueries.mutationForMutation(
+                """
         );
     }
 
