@@ -155,7 +155,7 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     void containingNonRecordWrapperWithJavaRecord() {
         assertGeneratedContentContains(
                 "containingNonRecordWrapperWithJavaRecord", Set.of(DUMMY_INPUT_RECORD),
-                "mapperNestedJavaRecord.setDummyRecord(_iv_transform.dummyInputRecordToJavaRecord(_mi_dummyRecord, _iv_pathHere + \"inner/dummyRecord\")"
+                "mapperNestedJavaRecord.setDummyRecord(_iv_transform.dummyInputRecordToJavaRecord(_mi_dummyRecord, _iv_path + \"[\" + _niit_address + \"]/inner/dummyRecord\")"
         );
     }
 
@@ -164,7 +164,7 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     void containingNonRecordWrapperWithJOOQRecord() {
         assertGeneratedContentContains(
                 "containingNonRecordWrapperWithJOOQRecord", Set.of(CUSTOMER_INPUT_TABLE),
-                "mapperNestedJavaRecord.setCustomer(_iv_transform.customerInputTableToJOOQRecord(_mi_customer, _iv_pathHere + \"inner/customer\")"
+                "mapperNestedJavaRecord.setCustomer(_iv_transform.customerInputTableToJOOQRecord(_mi_customer, _iv_path + \"[\" + _niit_address + \"]/inner/customer\")"
         );
     }
 

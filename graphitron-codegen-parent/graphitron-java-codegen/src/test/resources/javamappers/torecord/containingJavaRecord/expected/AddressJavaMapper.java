@@ -21,7 +21,7 @@ public class AddressJavaMapper {
                 var _mo_mapperNestedJavaRecord = new MapperNestedJavaRecord();
                 var _mi_dummyRecord = _nit_address.getDummyRecord();
                 if (_mi_dummyRecord != null && _iv_args.contains(_iv_pathHere + "dummyRecord")) {
-                    _mo_mapperNestedJavaRecord.setDummyRecord(_iv_transform.dummyInputRecordToJavaRecord(_mi_dummyRecord, _iv_pathHere + "dummyRecord"));
+                    _mo_mapperNestedJavaRecord.setDummyRecord(_iv_transform.dummyInputRecordToJavaRecord(_mi_dummyRecord, _iv_path + "[" + _niit_address + "]/dummyRecord"));
                 }
 
                 _mlo_mapperNestedJavaRecord.add(_mo_mapperNestedJavaRecord);

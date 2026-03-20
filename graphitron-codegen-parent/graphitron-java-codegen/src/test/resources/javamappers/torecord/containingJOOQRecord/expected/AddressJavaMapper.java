@@ -21,7 +21,7 @@ public class AddressJavaMapper {
                 var _mo_mapperNestedJavaRecord = new MapperNestedJavaRecord();
                 var _mi_customer = _nit_address.getCustomer();
                 if (_mi_customer != null && _iv_args.contains(_iv_pathHere + "customer")) {
-                    _mo_mapperNestedJavaRecord.setCustomer(_iv_transform.customerInputTableToJOOQRecord(_mi_customer, _iv_pathHere + "customer"));
+                    _mo_mapperNestedJavaRecord.setCustomer(_iv_transform.customerInputTableToJOOQRecord(_mi_customer, _iv_path + "[" + _niit_address + "]/customer"));
                 }
 
                 _mlo_mapperNestedJavaRecord.add(_mo_mapperNestedJavaRecord);

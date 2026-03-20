@@ -1,0 +1,14 @@
+{
+    "data": {
+        "checkFilmFieldPresence": [
+            {
+                "title": "Film With Null Duration",
+                "rentalDurationPresent": true
+            },
+            {
+                "title": "Film Without Duration",
+                "rentalDurationPresent": false
+            }
+        ]
+    }
+}

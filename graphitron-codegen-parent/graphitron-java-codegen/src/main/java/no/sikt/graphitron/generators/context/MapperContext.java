@@ -49,7 +49,7 @@ public class MapperContext {
             noRecordIterability,
             isSimpleIDMode,
             lastInputDeclarationWasIterable;
-    private final String sourceName, targetName, path, indexPath;
+    private final String sourceName, targetName, path, indexPath, lastIterableIndexName;
     private final MethodMapping getSourceMapping, setTargetMapping, lastRecordMapping;
     private final MapperContext previousContext;
     private final ProcessedSchema schema;
@@ -59,6 +59,7 @@ public class MapperContext {
         recursion = 0;
         path = "";
         indexPath = "";
+        lastIterableIndexName = null;
         isIterable = false;
         wasIterable = false;
         lastInputDeclarationWasIterable = true;
@@ -121,6 +122,7 @@ public class MapperContext {
 
         path = getNextPath();
         indexPath = getNextIndexPath();
+        lastIterableIndexName = isIterable ? getIndexName() : previousContext.lastIterableIndexName;
         noRecordIterability = targetIsType && sourceName.isEmpty() && target.isIterableWrapped();
 
         lastInputDeclarationWasIterable = previousContext.lastInputDeclarationWasIterable && !target.isIterableWrapped() || previousContext.isInitContext;
@@ -445,17 +447,16 @@ public class MapperContext {
      * @return CodeBlock for the mapping of a record.
      */
     private CodeBlock transformRecord() {
-        return CodeBlock.of(
-                "$L$L$N + $S$L)",
-                recordTransformPart(
-                        previousContext.hasSourceName() ? getHelperVariableName() : asRecordName(previousContext.getTargetName()),
-                        uncapitalize(targetType.getName())
-                ),
-                CodeBlock.ofIf(shouldMakeNodeStrategy(), "$N, ", VAR_NODE_STRATEGY),
-                VAR_PATH_HERE,
-                path,
-                CodeBlock.ofIf(recordValidationEnabled() && !hasJavaRecordReference && toRecord, ", $N + $S", VAR_PATH_HERE, path) // This one may need more work. Does not actually include indices here, but not sure if needed.
+        var recordPart = recordTransformPart(
+                previousContext.hasSourceName() ? getHelperVariableName() : asRecordName(previousContext.getTargetName()),
+                uncapitalize(targetType.getName())
         );
+        var nodeStrategyPart = CodeBlock.ofIf(shouldMakeNodeStrategy(), "$N, ", VAR_NODE_STRATEGY);
+        var pathPart = toRecord && previousContext.lastIterableIndexName != null
+                ? CodeBlock.of("$N + $S + $N + $S", VAR_PATH_NAME, "[", previousContext.lastIterableIndexName, "]/" + path)
+                : CodeBlock.of("$N + $S", VAR_PATH_HERE, path);
+        var validationPart = CodeBlock.ofIf(recordValidationEnabled() && !hasJavaRecordReference && toRecord, ", $N + $S", VAR_PATH_HERE, path);
+        return CodeBlock.of("$L$L$L$L)", recordPart, nodeStrategyPart, pathPart, validationPart);
     }
 
     private CodeBlock recordTransformPart(String varName, String typeName) {

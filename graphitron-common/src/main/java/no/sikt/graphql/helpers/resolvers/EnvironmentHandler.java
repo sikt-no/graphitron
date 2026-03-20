@@ -10,6 +10,7 @@ import org.jooq.DSLContext;
 import org.jooq.Row;
 
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 /**
@@ -107,27 +108,27 @@ public class EnvironmentHandler {
      * @return A set of argument paths for the specific item, in the same format as getArguments()
      */
     public Set<String> getArgumentsForIndex(String path, int index) {
-        var indexedArgs = select.getArgumentSet();
+        return getArgumentsForIndex(select.getArgumentSet(), arguments, path, index);
+    }
+
+    protected static Set<String> getArgumentsForIndex(Set<String> indexedArgs, Set<String> sharedArgs, String path, int index) {
         var indexPrefix = path + "[" + index + "]";
         var pathHere = path.isEmpty() ? "" : path + "/";
-        var result = new HashSet<String>();
-
-        for (var arg : indexedArgs) {
-            if (arg.startsWith(indexPrefix + "/")) {
-                result.add(pathHere + arg.substring(indexPrefix.length() + 1));
-            }
-        }
+        var result = indexedArgs.stream()
+                .filter(arg -> arg.startsWith(indexPrefix + "/"))
+                .map(arg -> pathHere + arg.substring(indexPrefix.length() + 1))
+                .collect(Collectors.toSet());
 
         // Fallback for single-item case: when the input is not a list in the
         // GraphQL args (e.g., single-item overload wraps in List.of()), the
         // indexed set has no [index] entries. Fall back to the shared set.
         if (result.isEmpty()) {
-            return arguments;
+            return sharedArgs;
         }
         return result;
     }
 
-    private static Set<String> flattenIndexedArgumentKeys(Map<String, Object> arguments, String path) {
+    protected static Set<String> flattenIndexedArgumentKeys(Map<String, Object> arguments, String path) {
         var result = new HashSet<String>();
         for (var arg : arguments.entrySet()) {
             var key = arg.getKey();
