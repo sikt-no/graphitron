@@ -149,9 +149,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 var field = tableFieldCodeBlock(targetTable, inputField.getUpperCaseName());
                 var setValue = val(inputSetValue.getNameWithPath());
                 if (inputField.isNullable()) {
-                    var recordVar = recordInput.isIterableWrapped()
-                            ? CodeBlock.of("$N", VAR_ITERATOR)
-                            : CodeBlock.of("$N", recordInputVariableName);
+                    var recordVar = CodeBlock.of("$N", recordInput.isIterableWrapped() ? VAR_ITERATOR : recordInputVariableName);
                     setValue = ofTernary(
                             CodeBlock.of("$L.changed($L)", recordVar, field),
                             setValue,

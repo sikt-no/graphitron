@@ -456,7 +456,7 @@ public class MapperContext {
                 ? CodeBlock.of("$N + $S + $N + $S", VAR_PATH_NAME, "[", previousContext.lastIterableIndexName, "]/" + path)
                 : CodeBlock.of("$N + $S", VAR_PATH_HERE, path);
         var validationPart = CodeBlock.ofIf(recordValidationEnabled() && !hasJavaRecordReference && toRecord, ", $N + $S", VAR_PATH_HERE, path);
-        return CodeBlock.of("$L$L$L$L)", recordPart, nodeStrategyPart, pathPart, validationPart);
+        return CodeBlock.join(recordPart, nodeStrategyPart, pathPart, validationPart, CodeBlock.of(")"));
     }
 
     private CodeBlock recordTransformPart(String varName, String typeName) {
