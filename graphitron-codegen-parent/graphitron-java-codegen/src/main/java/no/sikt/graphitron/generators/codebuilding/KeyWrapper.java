@@ -72,7 +72,7 @@ public record KeyWrapper(Key<?> key, TypeName tableRecordTypeName) {
      */
     public static LinkedHashMap<String, KeyWrapper> getKeyMapForResolverFields(List<? extends GenerationField> fields, ProcessedSchema schema) {
         return fields.stream()
-                .filter(GenerationTarget::isGeneratedWithResolver)
+                .filter(GenerationTarget::createsDataFetcher)
                 .collect(Collectors.toMap(GenerationField::getName, it ->
                         getKeyForResolverFieldOrThrow(it, schema), (a, b) -> b, LinkedHashMap::new));
     }
