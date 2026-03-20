@@ -741,43 +741,59 @@ public class FormatCodeBlocks {
     }
 
 
-
     public static CodeBlock createNodeIdBlock(NodeConfiguration nodeConfiguration, String targetAlias) {
-        return CodeBlock.of("$N.createId($S, $L)",
-                VAR_NODE_STRATEGY,
-                nodeConfiguration.typeId(),
-                nodeConfiguration.nodeIdFieldsWithTableVariableBlock(targetAlias)
+        return createNodeIdBlock(
+                CodeBlock.of("$S, $L",
+                        nodeConfiguration.typeId(),
+                        nodeConfiguration.nodeIdFieldsWithTableVariableBlock(targetAlias)
+                )
         );
     }
 
     public static CodeBlock createNodeIdBlockForRecord(NodeConfiguration nodeConfiguration, String recordVariableName) {
-        return CodeBlock.of("$N.createId($N, $S, $L)",
-                VAR_NODE_STRATEGY,
-                recordVariableName,
-                nodeConfiguration.typeId(),
-                nodeConfiguration.nodeIdFieldsWithStaticTableInstanceBlock()
+        return createNodeIdBlock(
+                CodeBlock.of("$N, $S, $L",
+                        recordVariableName,
+                        nodeConfiguration.typeId(),
+                        nodeConfiguration.nodeIdFieldsWithStaticTableInstanceBlock()
+                )
         );
     }
 
+    private static CodeBlock createNodeIdBlock(CodeBlock args) {
+        return CodeBlock.of("$N.createId($L)", VAR_NODE_STRATEGY, args);
+    }
 
-    public static CodeBlock hasNodeIdOrIdsBlock(CodeBlock idOrRecordParamName, NodeConfiguration nodeConfiguration, String targetAlias, boolean isMultiple) {
-        return CodeBlock.of("$N.$L($S, $L, $L)",
-                VAR_NODE_STRATEGY,
-                isMultiple ? "hasIds" : "hasId",
+
+    public static CodeBlock hasNodeIdOrIdsBlock(CodeBlock idOrRecordVariable, NodeConfiguration nodeConfiguration, String targetAlias, boolean isMultiple) {
+        return hasNodeIdOrIdsBlock(
                 nodeConfiguration.typeId(),
-                idOrRecordParamName,
-                nodeConfiguration.nodeIdFieldsWithTableVariableBlock(targetAlias)
+                idOrRecordVariable,
+                nodeConfiguration.nodeIdFieldsWithTableVariableBlock(targetAlias),
+                isMultiple
         );
     }
 
-    public static CodeBlock hasNodeIdOrIdsBlock(CodeBlock idOrRecordParamName, NodeConfiguration nodeConfiguration, String targetAlias, List<String> overrideKeyCols, boolean isMultiple) {
-        return CodeBlock.of("$N.$L($S, $L, $L)",
-                VAR_NODE_STRATEGY,
-                isMultiple ? "hasIds" : "hasId",
+    public static CodeBlock hasNodeIdOrIdsBlock(CodeBlock idOrRecordVariable, NodeConfiguration nodeConfiguration, String targetAlias, List<String> overrideKeyCols, boolean isMultiple) {
+        return hasNodeIdOrIdsBlock(
                 nodeConfiguration.typeId(),
-                idOrRecordParamName,
-                 tableFieldsBlock(CodeBlock.of("$N", targetAlias), overrideKeyCols)
+                idOrRecordVariable,
+                tableFieldsBlock(CodeBlock.of("$N", targetAlias), overrideKeyCols),
+                isMultiple
         );
+    }
+
+    private static CodeBlock hasNodeIdOrIdsBlock(String typeId, CodeBlock idOrRecordVariable, CodeBlock keyColumns, boolean isMultiple) {
+        var args = CodeBlock.of("$S, $L, $L", typeId, idOrRecordVariable, keyColumns);
+        return isMultiple ? hasNodeIdsBlock(args) : hasNodeIdBlock(args);
+    }
+
+    private static CodeBlock hasNodeIdBlock(CodeBlock code) {
+        return CodeBlock.of("$N.hasId($L)", VAR_NODE_STRATEGY, code);
+    }
+
+    private static CodeBlock hasNodeIdsBlock(CodeBlock code) {
+        return CodeBlock.of("$N.hasIds($L)", VAR_NODE_STRATEGY, code);
     }
 
     /**
