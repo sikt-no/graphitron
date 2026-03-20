@@ -210,6 +210,31 @@ class EnvironmentHandlerTest {
         }
 
         @Test
+        @DisplayName("nested non-list input via indexed parent path")
+        void nestedNonListInputViaIndexedParentPath() {
+            // Simulates: parent mapper passes "input[0]/folkeregistrertAdresse" to nested mapper.
+            // The nested mapper wraps in List.of() and calls getArgumentsForIndex("input[0]/folkeregistrertAdresse", 0).
+            // There are no "input[0]/folkeregistrertAdresse[0]/..." entries, but there ARE
+            // "input[0]/folkeregistrertAdresse/gate" etc. entries in the indexed set.
+            var indexedArgs = Set.of(
+                    "input",
+                    "input[0]/fornavn",
+                    "input[0]/folkeregistrertAdresse",
+                    "input[0]/folkeregistrertAdresse/gate",
+                    "input[0]/folkeregistrertAdresse/postnummer"
+            );
+            var sharedArgs = Set.of(
+                    "input", "input/fornavn",
+                    "input/folkeregistrertAdresse", "input/folkeregistrertAdresse/gate", "input/folkeregistrertAdresse/postnummer"
+            );
+
+            var result = getArgumentsForIndex(indexedArgs, sharedArgs, "input[0]/folkeregistrertAdresse", 0);
+
+            assertThat(result).contains("input[0]/folkeregistrertAdresse/gate");
+            assertThat(result).contains("input[0]/folkeregistrertAdresse/postnummer");
+        }
+
+        @Test
         @DisplayName("end-to-end: flattenIndexedArgumentKeys feeds getArgumentsForIndex correctly")
         void endToEndWithFlatten() {
             var element0 = new HashMap<String, Object>();

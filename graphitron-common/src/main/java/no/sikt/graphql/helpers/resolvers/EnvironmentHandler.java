@@ -119,6 +119,17 @@ public class EnvironmentHandler {
                 .map(arg -> pathHere + arg.substring(indexPrefix.length() + 1))
                 .collect(Collectors.toSet());
 
+        // Fallback for nested non-list inputs: when a nested mapper receives
+        // an indexed path like "input[0]/address" and wraps it in List.of(),
+        // there are no "input[0]/address[0]/..." entries. Match directly
+        // against the indexed entries under "input[0]/address/".
+        if (result.isEmpty() && path.contains("[")) {
+            var directPrefix = path + "/";
+            result = indexedArgs.stream()
+                    .filter(arg -> arg.startsWith(directPrefix))
+                    .collect(Collectors.toSet());
+        }
+
         // Fallback for single-item case: when the input is not a list in the
         // GraphQL args (e.g., single-item overload wraps in List.of()), the
         // indexed set has no [index] entries. Fall back to the shared set.
