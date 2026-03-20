@@ -1,0 +1,9 @@
+# Listed service returning a @table type. The service only sets the PKs;
+# all other fields are auto-fetched from the database using batch lookup.
+{
+    customerServiceList {
+        name {
+            firstName
+        }
+    }
+}

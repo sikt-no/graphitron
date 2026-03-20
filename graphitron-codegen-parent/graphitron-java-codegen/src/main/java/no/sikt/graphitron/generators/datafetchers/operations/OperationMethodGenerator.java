@@ -42,8 +42,9 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodNameForField;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.FUNCTION;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldNamesForKey;
+import static no.sikt.graphitron.mappings.TableReflection.getPrimaryKeyForTable;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -84,11 +85,16 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
     protected CodeBlock getMethodCall(ObjectField target, InputParser parser, boolean isMutatingMethod) {
         var isService = target.hasServiceReference();
         var hasLookup = !isService && LookupHelpers.lookupExists(target, processedSchema);
+        var isAutoFetch = isServiceReturningTable(target);
 
         var objectToCall = isService ? createServiceDependency(target).getName() : asQueryClass(localObject.getName());
         var methodName = isService ? target.getExternalMethod().getMethodName() : asQueryMethodName(target.getName(), localObject.getName());
         var isRoot = localObject.isOperationRoot();
-        var queryFunction = queryFunction(objectToCall, methodName, parser.getMethodInputNames(true, true, true), !isRoot || hasLookup, !isRoot && !hasLookup, isService);
+
+        // For service-returning-table, build a DB-targeting queryFunction (the service is called separately for key extraction).
+        var queryFunction = isAutoFetch
+                ? queryFunction(asQueryClass(localObject.getName()), asQueryMethodName(target.getName(), localObject.getName()), List.of(), true, true, false)
+                : queryFunction(objectToCall, methodName, parser.getMethodInputNames(true, true, true), !isRoot || hasLookup, !isRoot && !hasLookup, isService);
 
         if (hasLookup) { // Assume all keys are correlated.
             return CodeBlock
@@ -96,6 +102,11 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                     .declare(VAR_LOOKUP_KEYS, LookupHelpers.getLookupKeysAsList(target, processedSchema))
                     .addStatement("return $L.$L($N, $L)", newDataFetcher(), "loadLookup", VAR_LOOKUP_KEYS, queryFunction)
                     .build();
+        }
+
+        // Service returning @table: call service, extract PK, then use standard DataFetcherHelper to batch-fetch from DB.
+        if (isAutoFetch) {
+            return serviceAutoFetchBlock(target, objectToCall, methodName, parser, queryFunction);
         }
 
         if (processedSchema.isOrderedMultiKeyQuery(target)) {
@@ -140,11 +151,11 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         return CodeBlock
                 .builder()
                 .add("return $L.$L($L",
-                     target.hasServiceReference()
-                     ? newServiceDataFetcherWithTransform()
-                     : newDataFetcher(),
-                     getFetcherMethodName(target, localObject),
-                     indentIfMultiline(innerCode))
+                        target.hasServiceReference()
+                                ? newServiceDataFetcherWithTransform()
+                                : newDataFetcher(),
+                        getFetcherMethodName(target, localObject),
+                        indentIfMultiline(innerCode))
                 .addStatement(")")
                 .build();
     }
@@ -192,6 +203,51 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         );
 
         return CodeBlock.of(" $N,\n$L$L$L", VAR_PAGE_SIZE, queryFunction, countFunction, transformWrap);
+    }
+
+    private boolean isServiceReturningTable(ObjectField target) {
+        return target.hasServiceReference()
+                && target.hasImplicitSplitQuery()
+                && processedSchema.hasTableObject(target);
+    }
+
+    /**
+     * Generate code for service-returning-table auto-fetch. Calls the service, extracts the PK as a TableRecord,
+     * then uses the standard DataFetcherHelper to batch-fetch from DB.
+     */
+    private CodeBlock serviceAutoFetchBlock(ObjectField target, String serviceName, String methodName, InputParser parser, CodeBlock dbFunction) {
+        var recordType = processedSchema.getRecordType(target);
+        var table = recordType.getTable();
+        var tableName = table.getName();
+        var pk = getPrimaryKeyForTable(tableName).orElseThrow();
+        var pkFields = getJavaFieldNamesForKey(tableName, pk);
+
+        var fieldList = pkFields.stream()
+                .map(f -> CodeBlock.of("$T.$N.$N", table.getTableClass(), tableName, f))
+                .collect(CodeBlock.joining(", "));
+
+        var serviceCall = CodeBlock.of("$N.$L($L)",
+                servicePrefix(serviceName), methodName,
+                String.join(", ", parser.getMethodInputNames(true, true, true)));
+
+        var isIterable = target.isIterableWrapped();
+        var keyVarName = isIterable ? VAR_SERVICE_KEYS : VAR_SERVICE_KEY;
+        var toTableRecord = CodeBlock.of("$T.intoTableRecord($N, $T.of($L))", QUERY_HELPER.className, isIterable ? VAR_RECORD_ITERATOR : VAR_SERVICE_RESULT, LIST.className, fieldList);
+        var keyValue = isIterable
+                ? CodeBlock.of("$N.stream().map($N -> $L)$L", VAR_SERVICE_RESULT, VAR_RECORD_ITERATOR, toTableRecord, collectToList())
+                : toTableRecord;
+
+        return CodeBlock.builder()
+                .declare(VAR_SERVICE_RESULT, serviceCall)
+                .declare(keyVarName, keyValue)
+                .addStatement(
+                        "return $L.load$L($N, $L)",
+                        newDataFetcher(),
+                        CodeBlock.ofIf(isIterable, "ByResolverKeys"),
+                        keyVarName,
+                        dbFunction
+                )
+                .build();
     }
 
     /**

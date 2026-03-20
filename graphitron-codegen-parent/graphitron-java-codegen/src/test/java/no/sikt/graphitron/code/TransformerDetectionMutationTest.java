@@ -23,7 +23,6 @@ public class TransformerDetectionMutationTest extends AbstractTransformerDetecti
                 "addresses",
                 "mutation",
                 "addressesWrapped",
-                "city",
                 "cityRecord"
         );
     }
@@ -37,8 +36,7 @@ public class TransformerDetectionMutationTest extends AbstractTransformerDetecti
                 "addresses",
                 "mutation",
                 "addressesWrapped",
-                "city",
-                "cityRecord" // TODO: These last two should not be found.
+                "cityRecord"
         );
     }
 

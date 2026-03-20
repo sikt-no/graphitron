@@ -25,10 +25,21 @@ public class CustomerService {
     }
 
     public CustomerRecord customer(HelloWorldInput input) {
-        // We don't have access to nodeIdStrategy here to decode and use customerId
+        // In a real scenario, the service would use the input to perform business logic
+        // (e.g. look up a customer) and return a record with the PK set.
+        // Graphitron then auto-fetches all remaining fields from the database using that PK.
         var customer = new CustomerRecord();
-        customer.setFirstName(input.getName());
+        customer.setCustomerId(1);
         return customer;
+    }
+
+    public List<CustomerRecord> customers() {
+        // Returns records with only the PK set. Graphitron batch-fetches remaining fields from DB.
+        var c1 = new CustomerRecord();
+        c1.setCustomerId(1);
+        var c2 = new CustomerRecord();
+        c2.setCustomerId(2);
+        return List.of(c1, c2);
     }
 
     public List<CustomerRecord> createCustomerEmail() {
@@ -58,10 +69,10 @@ public class CustomerService {
     }
 
     public List<UpdateCustomerEmailResult> updateCustomerEmail(List<UpdateCustomerEmailRecord> input) {
+        // In a real service, this would persist the email update to the database before returning.
+        // The service only needs to return the PK, Graphitron re-fetches the @table fields from DB automatically.
         var customer = new CustomerRecord();
-        UpdateCustomerEmailRecord first = input.get(0);
-        customer.setCustomerId(first.getCustomerId());
-        customer.setEmail(first.getEmail());
+        customer.setCustomerId(input.get(0).getCustomerId());
         return List.of(new UpdateCustomerEmailResult(customer));
     }
 

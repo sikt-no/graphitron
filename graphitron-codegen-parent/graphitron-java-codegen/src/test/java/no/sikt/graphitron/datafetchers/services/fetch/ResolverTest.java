@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.CONTEXT_SERVICE;
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.RESOLVER_FETCH_SERVICE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
@@ -186,5 +188,58 @@ public class ResolverTest extends GeneratorTest {
                 "operation/nestedServiceWithRowResolverKey",
                 "(Row1<Long>) _os_address.getCustomerKey().key().valuesRow(),"
         );
+    }
+
+    @Test
+    @DisplayName("Query service returning table type should auto-fetch from DB via DataFetcherHelper")
+    void returningTableWithAutoFetch() {
+        assertGeneratedContentContains(
+                "operation/returningTableWithAutoFetch", Set.of(CUSTOMER_TABLE),
+                "QueryHelper.intoTableRecord(_iv_serviceResult",
+                "new DataFetcherHelper(_iv_env).load(_iv_serviceKey"
+        );
+    }
+
+    @Test
+    @DisplayName("Query service returning table type should NOT use record-to-graph transform")
+    void returningTableWithAutoFetchShouldNotTransform() {
+        resultDoesNotContain(
+                "operation/returningTableWithAutoFetch", Set.of(CUSTOMER_TABLE),
+                "customerTableRecordToGraphType"
+        );
+    }
+
+    @Test
+    @DisplayName("Listed service returning table type should use loadByResolverKeys for batch auto-fetch")
+    void returningTableListWithAutoFetch() {
+        assertGeneratedContentContains(
+                "operation/returningTableListWithAutoFetch", Set.of(CUSTOMER_TABLE),
+                "new DataFetcherHelper(_iv_env).loadByResolverKeys(_iv_serviceKeys"
+        );
+    }
+
+    @Test
+    @DisplayName("Listed service returning table type should NOT use record-to-graph transform")
+    void returningTableListWithAutoFetchShouldNotTransform() {
+        resultDoesNotContain(
+                "operation/returningTableListWithAutoFetch", Set.of(CUSTOMER_TABLE),
+                "customerTableRecordToGraphType"
+        );
+    }
+
+    @Test
+    @DisplayName("@table field on @record type returned by @service should be implicit @splitQuery")
+    void implicitSplitQueryFromRecord() {
+        var implicit = generateFiles("operation/implicitSplitQueryFromRecord", Set.of(CUSTOMER_TABLE, DUMMY_TYPE_RECORD));
+        var explicit = generateFiles("operation/explicitSplitQueryFromRecord", Set.of(CUSTOMER_TABLE, DUMMY_TYPE_RECORD));
+        assertThat(implicit).as("Implicit @splitQuery should generate same output as explicit @splitQuery").isEqualTo(explicit);
+    }
+
+    @Test
+    @DisplayName("@table field on @record type nested inside a plain wrapper returned by @service should be implicit @splitQuery")
+    void implicitSplitQueryFromWrappedRecord() {
+        var implicit = generateFiles("operation/implicitSplitQueryFromWrappedRecord", Set.of(CUSTOMER_TABLE, DUMMY_TYPE_RECORD));
+        var explicit = generateFiles("operation/explicitSplitQueryFromWrappedRecord", Set.of(CUSTOMER_TABLE, DUMMY_TYPE_RECORD));
+        assertThat(implicit).as("Implicit @splitQuery through wrapper should generate same output as explicit @splitQuery").isEqualTo(explicit);
     }
 }

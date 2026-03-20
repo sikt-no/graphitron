@@ -7,7 +7,10 @@ import no.sikt.graphql.helpers.transform.AbstractTransformer;
 import no.sikt.graphql.relay.ConnectionImpl;
 import org.apache.commons.lang3.tuple.Pair;
 
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.function.Supplier;

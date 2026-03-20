@@ -164,6 +164,8 @@ public class ProcessedSchema {
         (queryType != null ? Stream.concat(nodes, Stream.of(queryType)) : nodes).forEach(this::buildPreviousTableMap);
         interfaces.values().forEach(this::buildPreviousTableMap);
 
+        markImplicitSplitQueryFields();
+
         transformableFields = findTransformableFields();
 
         federationIsImported = LinkDirectiveProcessor.loadFederationImportedDefinitions(typeRegistry) != null;
@@ -1155,6 +1157,44 @@ public class ProcessedSchema {
                 .flatMap(Collection::stream)
                 .filter(it -> !objectWithPreviousTable.containsKey(it.getName()))
                 .forEach(it -> buildPreviousTableMap(it, tableObject, seenObjects, recursion + 1));
+    }
+
+    /**
+     * For @record types reachable from @service fields, mark any @table-typed fields as implicit split queries.
+     * Also marks @service fields that directly return @table types as implicit split queries, so that
+     * the existing resolver-key-based DB fetch infrastructure handles the auto-fetch.
+     * Traverses through plain wrapper types (no @table, no @record) to find nested @record types.
+     */
+    private void markImplicitSplitQueryFields() {
+        objects.values().stream()
+                .flatMap(obj -> obj.getFields().stream())
+                .filter(GenerationSourceField::hasServiceReference)
+                .filter(this::isObject)
+                .forEach(serviceField -> {
+                    if (hasTableObject(serviceField) && !serviceField.hasPagination() && !serviceField.createsDataFetcher()) {
+                        serviceField.markAsImplicitSplitQuery();
+                    }
+                    if (!hasJOOQRecord(serviceField) || hasTableObject(serviceField)) {
+                        markImplicitSplitQueryFields(getObject(serviceField), new HashSet<>());
+                    }
+                });
+    }
+
+    private void markImplicitSplitQueryFields(ObjectDefinition type, Set<String> seen) {
+        if (type == null || !seen.add(type.getName())) {
+            return;
+        }
+        if (type.hasRecordReference()) {
+            type.getFields().stream()
+                    .filter(field -> !field.createsDataFetcher())
+                    .filter(this::hasJOOQRecord)
+                    .forEach(GenerationSourceField::markAsImplicitSplitQuery);
+        }
+        // Recurse into all non-@table object fields to find nested @record/@table types with @table fields.
+        type.getFields().stream()
+                .filter(field -> isObject(field) && !hasJOOQRecord(field) && !field.createsDataFetcher())
+                .map(this::getObject)
+                .forEach(nested -> markImplicitSplitQueryFields(nested, seen));
     }
 
     /**
