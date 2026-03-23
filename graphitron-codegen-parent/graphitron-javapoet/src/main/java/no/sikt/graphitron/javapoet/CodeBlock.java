@@ -127,6 +127,10 @@ public final class CodeBlock {
         return new Builder().add(format, args).build();
     }
 
+    public static CodeBlock ofVar(String variable) {
+        return CodeBlock.of("$N", variable);
+    }
+
     public static CodeBlock ofIf(boolean predicate, String format, Object... args) {
         if (predicate) {
             return of(format, args);
@@ -277,7 +281,7 @@ public final class CodeBlock {
      * would produce {@code String s, Object o, int i}.
      */
     public static CodeBlock join(Iterable<CodeBlock> codeBlocks, String separator) {
-        return StreamSupport.stream(codeBlocks.spliterator(), false).collect(joining(separator));
+        return StreamSupport.stream(codeBlocks.spliterator(), false).filter(it -> !it.isEmpty()).collect(joining(separator));
     }
 
     /**
@@ -292,6 +296,13 @@ public final class CodeBlock {
      */
     public static CodeBlock join(CodeBlock... codeBlocks) {
         return join(List.of(codeBlocks), "");
+    }
+
+    /**
+     * Joins {@code codeBlocks} into a single {@link CodeBlock}.
+     */
+    public static CodeBlock join(String separator, CodeBlock... codeBlocks) {
+        return join(List.of(codeBlocks), separator);
     }
 
     /**
@@ -833,6 +844,21 @@ public final class CodeBlock {
             formatParts.addAll(codeBlock.formatParts);
             args.addAll(codeBlock.args);
             return this;
+        }
+
+        public Builder addIndented(CodeBlock codeBlock) {
+            if (!codeBlock.toString().contains("\n")) {
+                return add(codeBlock);
+            }
+
+            return this
+                    .add("\n")
+                    .indent()
+                    .indent()
+                    .add(codeBlock)
+                    .add("\n")
+                    .unindent()
+                    .unindent();
         }
 
         public Builder addIf(boolean predicate, CodeBlock codeBlock) {
