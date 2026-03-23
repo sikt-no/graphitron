@@ -56,7 +56,7 @@ public class SQLCondition extends CodeReferenceWrapper {
                             "Wrong number of inputs for method '%s' in class '%s'.\nInputs were %s, but expected %s.",
                             methodName,
                             declaringName,
-                            CodeBlock.join(methodInputs, ", ").toString(),
+                            CodeBlock.join(", ", methodInputs).toString(),
                             possibleInputs
                     )
             );

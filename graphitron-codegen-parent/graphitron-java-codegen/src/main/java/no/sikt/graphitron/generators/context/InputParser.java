@@ -4,6 +4,7 @@ import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ExceptionDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
+import no.sikt.graphitron.javapoet.CodeBlocks;
 import no.sikt.graphitron.javapoet.ParameterSpec;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.naming.GraphQLReservedName;
@@ -147,6 +148,13 @@ public class InputParser {
             fieldList.addAll(contextInputNames);
         }
         return fieldList;
+    }
+
+    /**
+     * @return List of all inputs that the field specifies as CodeBlocks.
+     */
+    public CodeBlocks getMethodInputBlocks(boolean includeOrder, boolean includeForwardPagination, boolean includeContextFields) {
+        return CodeBlocks.fromVars(getMethodInputNames(includeOrder, includeForwardPagination, includeContextFields));
     }
 
     /**

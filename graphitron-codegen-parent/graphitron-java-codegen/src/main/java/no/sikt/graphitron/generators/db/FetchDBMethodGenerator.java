@@ -18,10 +18,7 @@ import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.javapoet.*;
 import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -158,7 +155,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                         invokeExternalMethod(
                                 CodeBlock.of("$N", servicePrefix(aliasWrapper.getTableMethod().getClassName().simpleName())),
                                 aliasWrapper.getTableMethod().getMethodName(),
-                                CodeBlock.join(params, ", ")
+                                CodeBlock.join(", ", params)
                         )
                 );
 
@@ -352,7 +349,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         return CodeBlock
                 .builder()
-                .add(wrapRow(CodeBlock.join(rowElements, ",\n")))
+                .add(wrapRow(CodeBlock.join(",\n", rowElements)))
                 .addIf(!mappingContent.isEmpty(), ".mapping($L)", mappingContent)
                 .build();
     }
@@ -511,73 +508,71 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * requires the mapping function to be wrapped with explicit mapping, without type safety.
      */
     private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<? extends GenerationField> fieldsWithoutTable, LinkedHashSet<KeyWrapper> keySet) {
-        var innerMappingCode = new ArrayList<CodeBlock>();
+        var innerMappingCode = CodeBlocks.create();
 
-        int i = 0;
+        int keyIndex = 0;
         for (var key : keySet) {
-            innerMappingCode.add(CodeBlock.of("($T) $N[$L]", key.getTypeName(), VAR_RECORD_ITERATOR, i));
-            i++;
+            innerMappingCode.add("($T) $N[$L]", key.getTypeName(), VAR_RECORD_ITERATOR, keyIndex);
+            keyIndex++;
         }
 
-        for (; i < fieldsWithoutTable.size() + keySet.size(); i++) {
-            var field = fieldsWithoutTable.get(i - keySet.size());
+        for (int i = keySet.size(), f = 0; f < fieldsWithoutTable.size(); i++, f++) {
+            innerMappingCode.add(wrapMapping(context, fieldsWithoutTable.get(f), i));
+        }
 
-            if (processedSchema.isObject(field)) {
-                var typeName = field.isIterableWrapped()
-                        ? ParameterizedTypeName.get(LIST.className, processedSchema.getObject(field).getGraphClassName())
-                        : processedSchema.getObject(field).getGraphClassName();
-                innerMappingCode.add(CodeBlock.of("($T) $N[$L]", typeName, VAR_RECORD_ITERATOR, i));
-            } else if (field.isExternalField()) {
-                JOOQMapping table = processedSchema.getObject(field.getContainerTypeName()).getTable();
+        return CodeBlock.of(
+                "$T.class, $L ->$L",
+                context.getReferenceObject().getGraphClassName(),
+                VAR_RECORD_ITERATOR,
+                indentIfMultiline(CodeBlock.join(mappingFunction, indentIfMultiline(innerMappingCode.join(",\n")), CodeBlock.of("\n)")))
+        );
+    }
 
-                if (table == null) {
-                    throw new IllegalArgumentException("No table found for field " + field.getName());
-                }
+    private CodeBlock wrapMapping(FetchContext context, GenerationField field, int i) {
+        if (processedSchema.isObject(field)) {
+            var typeName = field.isIterableWrapped()
+                    ? ParameterizedTypeName.get(LIST.className, processedSchema.getObject(field).getGraphClassName())
+                    : processedSchema.getObject(field).getGraphClassName();
+            return CodeBlock.of("($T) $N[$L]", typeName, VAR_RECORD_ITERATOR, i);
+        }
 
-                innerMappingCode.add(
-                        CodeBlock.of(
-                                "$L.$L($L).getDataType().convert($N[$L])",
-                                getImportReferenceOfValidExtensionMethod(field, table.getName()),
-                                field.getName(),
-                                context.getTargetAlias(),
-                                VAR_RECORD_ITERATOR,
-                                i
-                        )
-                );
-            } else if (field.isID()) {
-                innerMappingCode.add(CodeBlock.of("($T) $N[$L]", STRING.className, VAR_RECORD_ITERATOR, i));
-            } else if (processedSchema.isEnum(field)) {
-                var enumDefinition = processedSchema.getEnum(field);
-                innerMappingCode.add(CodeBlock.of("($T) $N[$L]", enumDefinition.getGraphClassName(), VAR_RECORD_ITERATOR, i));
-            } else if (field.isIterableWrapped() && isArrayField(context.getTargetTable().getName(), field.getUpperCaseName())) {
-                innerMappingCode.add(CodeBlock.of("($T) $N[$L]", LIST.className, VAR_RECORD_ITERATOR, i));
-            } else {
-                innerMappingCode.add(
-                        CodeBlock.of(
-                                "$L.$N.getDataType().convert($N[$L])",
-                                field.hasFieldReferences() ? context.nextContext(field).renderQuerySource(getLocalTable()) : context.renderQuerySource(getLocalTable()),
-                                field.getUpperCaseName(),
-                                VAR_RECORD_ITERATOR,
-                                i
-                        )
-                );
+        if (field.isExternalField()) {
+            JOOQMapping table = processedSchema.getObject(field.getContainerTypeName()).getTable();
+
+            if (table == null) {
+                throw new IllegalArgumentException("No table found for field " + field.getName());
             }
+
+            return CodeBlock.of(
+                    "$L.$L($L).getDataType().convert($N[$L])",
+                    getImportReferenceOfValidExtensionMethod(field, table.getName()),
+                    field.getName(),
+                    context.getTargetAlias(),
+                    VAR_RECORD_ITERATOR,
+                    i
+            );
         }
 
-        return CodeBlock.builder()
-                .add("$T.class, $L ->\n", context.getReferenceObject().getGraphClassName(), VAR_RECORD_ITERATOR)
-                .indent()
-                .indent()
-                .add(mappingFunction)
-                .indent()
-                .indent()
-                .add(innerMappingCode.stream().collect(CodeBlock.joining(",\n")))
-                .unindent()
-                .unindent()
-                .add("\n)\n")
-                .unindent()
-                .unindent()
-                .build();
+        if (field.isID()) {
+            return CodeBlock.of("($T) $N[$L]", STRING.className, VAR_RECORD_ITERATOR, i);
+        }
+
+        if (processedSchema.isEnum(field)) {
+            var enumDefinition = processedSchema.getEnum(field);
+            return CodeBlock.of("($T) $N[$L]", enumDefinition.getGraphClassName(), VAR_RECORD_ITERATOR, i);
+        }
+
+        if (field.isIterableWrapped() && isArrayField(context.getTargetTable().getName(), field.getUpperCaseName())) {
+            return CodeBlock.of("($T) $N[$L]", LIST.className, VAR_RECORD_ITERATOR, i);
+        }
+
+        return CodeBlock.of(
+                "$L.$N.getDataType().convert($N[$L])",
+                field.hasFieldReferences() ? context.nextContext(field).renderQuerySource(getLocalTable()) : context.renderQuerySource(getLocalTable()),
+                field.getUpperCaseName(),
+                VAR_RECORD_ITERATOR,
+                i
+        );
     }
 
     /**
@@ -664,7 +659,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var objectField = new VirtualSourceField(processedSchema.getObject(fieldObject), fieldObject);
             code.add(generateSelectRow(context.nextContext(objectField)));
         }
-        return CodeBlock.join(code, ",\n");
+        return CodeBlock.join(",\n", code);
     }
 
     /**
@@ -680,14 +675,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                             context.renderQuerySource(getLocalTable()),
                             processedSchema.getInterface(context.getReferenceObjectField()).getDiscriminatorFieldName(),
                             CodeBlock.join(
-                                    processedSchema
+                                    ", ", processedSchema
                                             .getObjects()
                                             .values()
                                             .stream()
                                             .filter(it -> it.implementsInterface(processedSchema.getInterface(context.getReferenceObjectField()).getName()))
                                             .map(it -> CodeBlock.of("$S", it.getDiscriminator()))
-                                            .toList(),
-                                    ", "))
+                                            .toList()
+                            ))
             );
         }
 
@@ -965,14 +960,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add(checks.isEmpty() ? "" : "$L ?\n", checks)
                 .indent()
                 .indent()
-                .add(wrapRow(CodeBlock.join(tupleFieldBlocks, ",\n")))
+                .add(wrapRow(CodeBlock.join(",\n", tupleFieldBlocks)))
                 .add(".in(\n")
                 .indent()
                 .indent()
                 .add("$T.range(0, $N.size()).mapToObj($N ->\n", INT_STREAM.className, argumentInputFieldName, VAR_ITERATOR)
                 .indent()
                 .indent()
-                .add(wrapRow(CodeBlock.join(tupleVariableBlocks, ",\n")))
+                .add(wrapRow(CodeBlock.join(",\n", tupleVariableBlocks)))
                 .unindent()
                 .unindent()
                 .add("\n)")

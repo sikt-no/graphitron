@@ -157,7 +157,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
         }
 
 
-        var valuesContent = indentIfMultiline(CodeBlock.join(setValueMap.values(), ",\n"));
+        var valuesContent = indentIfMultiline(CodeBlock.join(",\n", setValueMap.values()));
 
         if (recordInput.isIterableWrapped())  {
             valuesContent = CodeBlock.builder()
@@ -173,7 +173,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .add("return $N", VAR_CONTEXT)
                 .indent()
                 .indent()
-                .add(".insertInto($N, $L)", targetTable, CodeBlock.join(setValueMap.keySet(), ", "))
+                .add(".insertInto($N, $L)", targetTable, CodeBlock.join(", ", setValueMap.keySet()))
                 .add("\n.$L($L)", recordInput.isIterableWrapped() ? "valuesOfRows" : "values", valuesContent)
                 .unindent()
                 .unindent()

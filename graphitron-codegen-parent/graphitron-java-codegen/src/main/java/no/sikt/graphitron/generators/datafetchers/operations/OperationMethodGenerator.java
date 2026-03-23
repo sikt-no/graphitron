@@ -20,6 +20,7 @@ import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.generators.db.FetchTableRecordDBMethodGenerator;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.CodeBlocks;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.GraphitronContext;
@@ -122,8 +123,8 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
         // For service-returning-table, build a DB-targeting queryFunction (the service is called separately for key extraction).
         var queryFunction = isAutoFetch
-                ? queryFunction(asQueryClass(localObject.getName()), asQueryMethodName(target.getName(), localObject.getName()), List.of(), true, true, false)
-                : queryFunction(objectToCall, methodName, parser.getMethodInputNames(true, true, true), !isRoot || hasLookup, !isRoot && !hasLookup, isService);
+                ? queryFunction(asQueryClass(localObject.getName()), asQueryMethodName(target.getName(), localObject.getName()), CodeBlocks.of(), true, true, false)
+                : queryFunction(objectToCall, methodName, parser.getMethodInputBlocks(true, true, true), !isRoot || hasLookup, !isRoot && !hasLookup, isService);
 
         if (hasLookup) { // Assume all keys are correlated.
             return CodeBlock
@@ -162,72 +163,60 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 getQueryClassName(objectToCall),
                 methodName,
                 asMethodCall(VAR_TRANSFORMER, METHOD_CONTEXT_NAME),
-                CodeBlock.ofIf(shouldMakeNodeStrategy(), ", $L", VAR_NODE_STRATEGY),
-                String.join(", ", parser.getMethodInputNames(true, true, true))
+                CodeBlock.ofIf(shouldMakeNodeStrategy(), ", $N", VAR_NODE_STRATEGY),
+                parser.getMethodInputBlocks(true, true, true).join(", ")
         );
     }
 
     private CodeBlock callQueryBlock(ObjectField target, String objectToCall, String method, InputParser parser, CodeBlock queryFunction) {
-        var innerCode = CodeBlock
-                .builder()
-                .addIf(!localObject.isOperationRoot(), "$L,", asMethodCall(sourcePrefix(localObject.getName()), getDTOGetterMethodNameForField(target)))
+        var innerCode = CodeBlocks
+                .create()
+                .addIf(!localObject.isOperationRoot(), asMethodCall(sourcePrefix(localObject.getName()), getDTOGetterMethodNameForField(target)))
                 .add(callQueryBlockInner(target, objectToCall, method, parser, queryFunction))
-                .build();
-        return CodeBlock
-                .builder()
-                .add("return $L.$L($L",
-                        target.hasServiceReference()
-                                ? newServiceDataFetcherWithTransform()
-                                : newDataFetcher(),
+                .join(", ");
+        return returnWrap(
+                CodeBlock.methodCall(
+                        target.hasServiceReference() ? newServiceDataFetcherWithTransform() : newDataFetcher(),
                         getFetcherMethodName(target, localObject),
-                        indentIfMultiline(innerCode))
-                .addStatement(")")
-                .build();
+                        indentIfMultiline(innerCode)
+                )
+        );
     }
 
     private CodeBlock callQueryBlockInner(ObjectField target, String objectToCall, String method, InputParser parser, CodeBlock queryFunction) {
         if (processedSchema.isDeleteMutationWithReturning(target) || processedSchema.isInsertMutationWithReturning(target)) {
             return !processedSchema.inferDataTargetForMutation(target).map(target::equals).orElse(false) ?
-                    CodeBlock.of("$L,\n$L", queryFunction, wrapMutationOutputFunction(target)) :  queryFunction;
+                    CodeBlock.join(",\n", queryFunction, wrapMutationOutputFunction(target)) : queryFunction;
         }
         if (target.hasMutationType() && target.getMutationType().equals(MutationType.DELETE)) {
-            return CodeBlock.of("$L,\n$L", queryFunction, filterDeleteIDsFunction(target));
+            return CodeBlock.join(",\n", queryFunction, filterDeleteIDsFunction(target));
         }
 
         var object = processedSchema.getObjectOrConnectionNode(target);
         var transformFunction = target.hasServiceReference() && object != null
                 ? transformOutputRecord(object.getName(), object.hasJavaRecordReference())
                 : CodeBlock.empty();
-        var transformWrap = CodeBlock.ofIf(!transformFunction.isEmpty(), ",\n$L", transformFunction);
         if (!target.hasRequiredPaginationFields()) {
             return CodeBlock
                     .builder()
                     .addIf(!localObject.isOperationRoot(), "\n")
-                    .addAll(queryFunction, transformWrap)
+                    .add(CodeBlock.join(",\n", queryFunction, transformFunction))
                     .build();
         }
 
-        var params = new ArrayList<String>();
-        if (!target.hasServiceReference()) {
-            params.add(VAR_CONTEXT);
-        }
-
-        if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            params.add(VAR_NODE_STRATEGY);
-        }
-
-        if (!localObject.isOperationRoot()) {
-            params.add(VAR_RESOLVER_KEYS);
-        }
-        params.addAll(parser.getMethodInputNames(false, false, true));
+        var params = CodeBlocks
+                .create()
+                .addVarIf(!target.hasServiceReference(), VAR_CONTEXT)
+                .addVarIf(GeneratorConfig.shouldMakeNodeStrategy(), VAR_NODE_STRATEGY)
+                .addVarIf(!localObject.isOperationRoot(), VAR_RESOLVER_KEYS)
+                .addAll(parser.getMethodInputBlocks(false, false, true));
 
         var countFunction = CodeBlock.ofIf(
                 target.hasTotalCountFieldInReturnType(processedSchema),
-                ",\n$L",
                 () -> countFunction(objectToCall, method, params, target.hasServiceReference())
         );
 
-        return CodeBlock.of(" $N,\n$L$L$L", VAR_PAGE_SIZE, queryFunction, countFunction, transformWrap);
+        return CodeBlock.join(",\n", CodeBlock.ofVar(VAR_PAGE_SIZE), queryFunction, countFunction, transformFunction);
     }
 
     private boolean isServiceReturningTable(ObjectField target) {
