@@ -80,7 +80,6 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .endControlFlow("") // Keep this, logic to set semicolon only kicks in if a string is set.
                 .build();
     }
-
     protected CodeBlock getMethodCall(ObjectField target, InputParser parser, boolean isMutatingMethod) {
         var isService = target.hasServiceReference();
         var hasLookup = !isService && LookupHelpers.lookupExists(target, processedSchema);

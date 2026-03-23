@@ -11,6 +11,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransf
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_INDEX_PATH;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_PATH_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 
 public class TransformerListMethodGenerator extends TransformerMethodGenerator {
@@ -44,6 +45,7 @@ public class TransformerListMethodGenerator extends TransformerMethodGenerator {
         var useValidation = toRecord && useValidation(type);
         var code = CodeBlock
                 .builder()
+                .addStatementIf(toRecord && !hasReference, "warningIfArgumentSetMismatchForJooqRecordInput($N, $N)", VARIABLE_INPUT, VAR_PATH_NAME)
                 .addStatement(transformCallCode(useValidation, mapperClass, hasReference, toRecord));
 
         if (!useValidation) {

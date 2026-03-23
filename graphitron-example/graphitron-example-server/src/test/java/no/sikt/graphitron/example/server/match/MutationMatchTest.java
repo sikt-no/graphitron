@@ -2,6 +2,7 @@ package no.sikt.graphitron.example.server.match;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.response.ValidatableResponse;
+import no.sikt.graphql.helpers.transform.AbstractTransformer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -10,6 +11,7 @@ import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.Matchers.hasSize;
@@ -144,20 +146,44 @@ public class MutationMatchTest extends MatchTestBase {
     }
 
     @Test
-    @DisplayName("Upsert with list input with optional field")
-    public void upsertFilms() {
-        Map<String, Object> variables = Map.of("in", List.of(
-                Map.of("filmId", "55", "languageId", 1, "title", "UPSERT TEST FILM"),
-                Map.of("filmId", "55555", "languageId", 1, "title", "UPSERT TEST FILM 2", "description", "A test film")
-        ));
+    @DisplayName("Upsert films with omitted optional field logs warning")
+    public void upsertFilmsWithOmittedOptionalFieldLogsWarning() {
+        // try-with-resources removes the log handler after the test to avoid leaking handlers across tests
+        try (var logCapture = new LogCapture(AbstractTransformer.class)) {
+            Map<String, Object> variables = Map.of("in", List.of(
+                    Map.of("filmId", "55", "languageId", 1, "title", "UPSERT TEST FILM"),
+                    Map.of("filmId", "55555", "languageId", 1, "title", "UPSERT TEST FILM 2", "description", "A test film")
+            ));
 
-        getValidatableResponse("mutation_upsert_films.graphql", variables)
-                .rootPath("data")
-                .body("upsertFilms", hasSize(2))
-                .body("upsertFilms[0].title", is("UPSERT TEST FILM"))
-                .body("upsertFilms[0].description", is("A Awe-Inspiring Story of a Feminist And a Cat who must Conquer a Dog in A Monastery")) // Should be unchanged
-                .body("upsertFilms[1].title", is("UPSERT TEST FILM 2"))
-                .body("upsertFilms[1].description", is("A test film"));
+            getValidatableResponse("mutation_upsert_films.graphql", variables)
+                    .rootPath("data")
+                    .body("upsertFilms", hasSize(2))
+                    .body("upsertFilms[0].title", is("UPSERT TEST FILM"))
+                    .body("upsertFilms[0].description", is("A Awe-Inspiring Story of a Feminist And a Cat who must Conquer a Dog in A Monastery")) // Should be unchanged
+                    .body("upsertFilms[1].title", is("UPSERT TEST FILM 2"))
+                    .body("upsertFilms[1].description", is("A test film"));
+
+            assertThat(logCapture.getMessages())
+                    .anyMatch(msg -> msg.contains("Different argument set"));
+        }
+    }
+
+    @Test
+    @DisplayName("Upsert films with all fields provided logs no warnings")
+    public void upsertFilmsWithAllFieldsLogsNoWarnings() {
+        // try-with-resources removes the log handler after the test to avoid leaking handlers across tests
+        try (var logCapture = new LogCapture(AbstractTransformer.class)) {
+            Map<String, Object> variables = Map.of("in", List.of(
+                    Map.of("filmId", "55", "languageId", 1, "title", "UPSERT TEST FILM"),
+                    Map.of("filmId", "55555", "languageId", 1, "title", "UPSERT TEST FILM 2")
+            ));
+
+            getValidatableResponse("mutation_upsert_films.graphql", variables)
+                    .rootPath("data")
+                    .body("upsertFilms", hasSize(2));
+
+            assertThat(logCapture.getWarnings()).isEmpty();
+        }
     }
 
     private void upsertCategories(List<Map<String, String>> input) {
