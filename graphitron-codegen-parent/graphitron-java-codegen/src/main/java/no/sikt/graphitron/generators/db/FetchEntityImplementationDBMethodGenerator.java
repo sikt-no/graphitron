@@ -5,7 +5,7 @@ import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
-import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.generators.context.MethodInputParser;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -50,7 +50,7 @@ public class FetchEntityImplementationDBMethodGenerator extends FetchDBMethodGen
 
         var querySource = context.renderQuerySource(implementation.getTable());
 
-        var parser = new InputParser(virtualReference, processedSchema);
+        var parser = new MethodInputParser(virtualReference, processedSchema);
         var methodInputs = parser.getMethodInputNames(true, false, true);
         if (shouldMakeNodeStrategy()) methodInputs.add(0, VAR_NODE_STRATEGY);
         if (optionalSelectIsEnabled()) methodInputs.add(VAR_SELECT);

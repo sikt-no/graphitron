@@ -775,7 +775,7 @@ public class ProcessedDefinitionsValidator {
             return;
         }
 
-        var parser = new InputParser(field, schema);
+        var parser = new MethodInputParser(field, schema);
         var resolverKeyOffset = field.isRootField() ? 0 : 1;
         var expectedParamCount = resolverKeyOffset + parser.getMethodInputNames(true, true, true).size();
 
