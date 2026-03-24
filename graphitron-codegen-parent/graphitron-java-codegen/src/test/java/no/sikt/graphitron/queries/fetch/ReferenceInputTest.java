@@ -34,11 +34,12 @@ public class ReferenceInputTest extends ReferenceTest {
     }
 
     @Test
-    @DisplayName("Reverse table path")
+    @DisplayName("Reverse table path - uses EXISTS to avoid row duplication from one-to-many LEFT JOIN")
     void tableBackwards() {
         assertGeneratedContentContains(
                 "tableBackwards", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(_a_address_223244161_customer_left"
+                "DSL.exists(DSL.selectOne().from(_a_address_223244161_customer_left).where(",
+                "customer_left.ADDRESS_ID.eq(_a_address.ADDRESS_ID)"
         );
     }
 
@@ -63,11 +64,12 @@ public class ReferenceInputTest extends ReferenceTest {
     }
 
     @Test
-    @DisplayName("Reverse key path")
+    @DisplayName("Reverse key path - uses EXISTS to avoid row duplication from one-to-many LEFT JOIN")
     void keyBackwards() {
         assertGeneratedContentContains(
                 "keyBackwards", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(_a_address_223244161_customer_left"
+                "DSL.exists(DSL.selectOne().from(_a_address_223244161_customer_left).where(",
+                "customer_left.ADDRESS_ID.eq(_a_address.ADDRESS_ID)"
         );
     }
 

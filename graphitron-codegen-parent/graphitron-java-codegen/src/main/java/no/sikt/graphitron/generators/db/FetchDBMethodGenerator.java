@@ -10,9 +10,11 @@ import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
+import no.sikt.graphitron.definitions.mapping.TableRelationType;
 import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
+import no.sikt.graphitron.definitions.sql.SQLJoinType;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
@@ -727,19 +729,29 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var isInRecordInput = processedSchema.isInputType(field.getContainerTypeName()) && processedSchema.hasJOOQRecord(field.getContainerTypeName());
             var checksNotEmpty = !checks.isEmpty()
                     && !(isInRecordInput && processedSchema.isNodeIdField(field)); // Skip null checks for nodeId in jOOQ record inputs in queries
+
+            // Snapshot joinSet and conditionList before iterating to detect new filter-only LEFT JOINs
+            var joinSetBefore = new LinkedHashSet<>(context.getJoinSet());
+            var conditionListSizeBefore = context.getConditionList().size();
+
             var renderedSequence = isInRecordInput ?
                     CodeBlock.of(context.getTargetAlias())
                     :  context.iterateJoinSequenceFor(field).render();
             if (renderedSequence.isEmpty()) {
                 continue;
             }
+            var oneToManyFilterJoin = findOneToManyFilterJoin(context, joinSetBefore, conditionListSizeBefore);
+            oneToManyFilterJoin.ifPresent(context.getJoinSet()::remove);
 
             if (!inputCondition.isOverriddenByAncestors() && !field.hasOverridingCondition()) {
                 if (checksNotEmpty) {
                     conditionBuilder.add(checks + " ? ");
                 }
 
-                conditionBuilder.add(formatCondition(inputCondition, renderedSequence, context));
+                var formattedCondition = oneToManyFilterJoin
+                        .map(join -> wrapConditionInExists(formatCondition(inputCondition, renderedSequence, context), join, context))
+                        .orElseGet(() -> formatCondition(inputCondition, renderedSequence, context));
+                conditionBuilder.add(formattedCondition);
 
                 if (checksNotEmpty) {
                     var fallbackOnFalse = (conditionsShouldFallbackToFalse && inputCondition.isWrappedInList()) || field instanceof VirtualInputField;
@@ -819,6 +831,50 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 field.isIterableWrapped() ? "in" : "eq",
                 name
         );
+    }
+
+    /**
+     * Finds a one-to-many LEFT JOIN that was added to the context's join set by the preceding join sequence iteration.
+     * Such joins cause row duplication and should be removed from the join set and replaced with EXISTS subqueries.
+     * At most one match is possible per filter field, because the detection checks the relation type against the
+     * root table, and multistep reference paths use intermediate tables for subsequent joins.
+     */
+    private Optional<SQLJoinStatement> findOneToManyFilterJoin(FetchContext context, Set<SQLJoinStatement> joinSetBefore, int conditionListSizeBefore) {
+        var hasNewExtraConditions = context.getConditionList().size() > conditionListSizeBefore;
+        if (hasNewExtraConditions || context.getCurrentJoinSequence().isEmpty()) {
+            return Optional.empty();
+        }
+        var rootTableName = context.getCurrentJoinSequence().getLast().getTable().getMappingName();
+        return context.getJoinSet().stream()
+                .filter(join -> !joinSetBefore.contains(join) && join.getJoinType() == SQLJoinType.LEFT && join.getKey() != null)
+                .filter(join -> {
+                    var targetTable = join.getJoinTargetTable().getTable();
+                    if (targetTable == null || rootTableName.equalsIgnoreCase(targetTable.getMappingName())) return false;
+                    var relationType = inferRelationType(rootTableName, targetTable.getMappingName(), join.getKey());
+                    return relationType == TableRelationType.REVERSE_IMPLICIT || relationType == TableRelationType.REVERSE_KEY;
+                })
+                .findFirst();
+    }
+
+    private CodeBlock wrapConditionInExists(CodeBlock filterCondition, SQLJoinStatement join, FetchContext context) {
+        var aliasName = join.getJoinAlias().getAlias().getMappingName();
+        var rootAlias = context.getCurrentJoinSequence().render();
+        var targetTableName = join.getJoinTargetTable().getTable().getMappingName();
+
+        return getKeyFields(join.getKey())
+                .map(fields -> {
+                    var correlation = fields.entrySet().stream()
+                            .map(e -> CodeBlock.of("$L.$L.eq($L.$L)",
+                                    aliasName, getJavaFieldName(targetTableName, e.getKey().getName()).orElseThrow(),
+                                    rootAlias, getJavaFieldName(
+                                            getKeyTargetTableJavaName(join.getKey().getMappingName()).orElseThrow(),
+                                            e.getValue().getName()).orElseThrow()))
+                            .reduce((a, b) -> CodeBlock.of("$L.and($L)", a, b))
+                            .orElseThrow();
+                    return CodeBlock.of("$T.exists($T.selectOne().from($N).where($L.and($L)))",
+                            DSL.className, DSL.className, aliasName, correlation, filterCondition);
+                })
+                .orElse(filterCondition);
     }
 
     private CodeBlock getCheckedNameWithPath(InputCondition condition) {

@@ -558,7 +558,8 @@ public class FetchContext {
                 targetTable,
                 alias,
                 List.of(),
-                isNullable
+                isNullable,
+                keyOverride
         );
     }
 

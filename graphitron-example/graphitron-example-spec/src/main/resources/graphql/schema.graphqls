@@ -28,6 +28,7 @@ type Query {
     filmsWithDescriptionInput(input: [FilmDescriptionInput]): [Film]
 
     languages: [Language] @asConnection
+    languagesFilteredByFilm(filmId: ID @nodeId(typeName: "Film") @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])): [Language] @asConnection
 
     payments(dateTime: LocalDateTime @field(name: "PAYMENT_DATE"), amount: BigDecimal): [Payment] @asConnection
     paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(path: [{table: "RENTAL"}])): [Payment] @asConnection
