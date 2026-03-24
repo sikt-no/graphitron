@@ -102,7 +102,7 @@ public class NodeIdToJooqRecordTest extends GeneratorTest {
     @DisplayName("Listed nodeID field")
     void listedNodeId() {
         assertGeneratedContentContains("listedNodeId", Set.of(CUSTOMER_NODE),
-                "var _mni_id = _iv_args.contains(_iv_pathHere + \"id\") ? _nit_customerInput.getId() : null;",
+                "var _mni_id = _iv_args.hasField(\"id\") ? _nit_customerInput.getId() : null;",
                 "var _mlo_customer = new ArrayList<CustomerRecord>()",
                 "MapperHelper.validateListLengths(_mni_id)",
                 "var _iv_nodeIdListSize = _mni_id != null ? _mni_id.size() : 0;",

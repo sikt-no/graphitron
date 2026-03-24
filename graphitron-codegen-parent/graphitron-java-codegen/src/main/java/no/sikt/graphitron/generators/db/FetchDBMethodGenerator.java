@@ -883,8 +883,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
 
             if (!field.hasOverridingCondition()) {
-                var argumentSelect = CodeBlock.ofIf(field.isNullable(), "$N.getArgumentSet().contains($S + $N + $S)",
-                        VAR_SELECT, condition.getSourceInput().getName() + "[" , VAR_ITERATOR, "]/" + field.getName());
+                var argumentSelect = CodeBlock.ofIf(field.isNullable(), "$N.$L($S, $N, $S)",
+                        VAR_SELECT, METHOD_HAS_ARG_AT_INDEX, condition.getSourceInput().getName(), VAR_ITERATOR, field.getName());
                 var isNullableAndNotVirtual = field.isNullable() && !(field instanceof VirtualInputField);
                 if (processedSchema.isNodeIdField(field)) {
                     tupleVariableBlocks.add(isNullableAndNotVirtual ? ofTernary(argumentSelect, unpacked, trueCondition()) : unpacked);

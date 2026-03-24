@@ -50,5 +50,11 @@ public class VariableNames {
             METHOD_GRAPH_CONTEXT = "getGraphQlContext",
             METHOD_SET_RECORD_ID = "setId",
             METHOD_SET_RECORD_REFERENCE_ID = "setReferenceId",
-            METHOD_ARGS_FOR_INDEX_NAME = "getArgumentsForIndex";
+            VAR_ARG_PRESENCE = internalPrefix("argPresence"),
+            METHOD_ARG_PRESENCE_NAME = "getArgumentPresence",
+            METHOD_HAS_ARG_AT_INDEX = "hasArgumentAtIndex",
+            METHOD_ITEM_AT = "itemAt",
+            METHOD_HAS_FIELD = "hasField",
+            METHOD_CHILD = "child",
+            METHOD_AS_SINGLE_ITEM = "asSingleItem";
 }

@@ -14,15 +14,18 @@ public class RecordTransformer extends AbstractTransformer {
         super(_iv_env);
     }
 
-    public List<DummyTypeRecord> dummyTypeRecordToGraphType(List<IDJavaRecord> _mi_input, String _iv_path) {
+    public List<DummyTypeRecord> dummyTypeRecordToGraphType(List<IDJavaRecord> _mi_input,
+                                                            String _iv_path) {
         return List.of();
     }
 
-    public List<Address> addressToGraphType(List<MapperNestedJavaRecord> _mi_input, String _iv_path) {
+    public List<Address> addressToGraphType(List<MapperNestedJavaRecord> _mi_input,
+                                             String _iv_path) {
         return List.of();
     }
 
-    public DummyTypeRecord dummyTypeRecordToGraphType(IDJavaRecord _mi_input, String _iv_path) {
+    public DummyTypeRecord dummyTypeRecordToGraphType(IDJavaRecord _mi_input,
+                                                       String _iv_path) {
         return null;
     }
 

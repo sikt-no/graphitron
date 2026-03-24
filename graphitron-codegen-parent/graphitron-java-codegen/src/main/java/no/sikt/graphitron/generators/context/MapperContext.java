@@ -237,6 +237,10 @@ public class MapperContext {
         return path;
     }
 
+    public String getFieldName() {
+        return target.getName();
+    }
+
     public String getIndexPath() {
         return indexPath;
     }
@@ -322,7 +326,7 @@ public class MapperContext {
             code.declareIf(createsDataFetchers || isValidation || toRecord, namedIteratorPrefix(sourceName), "$N.get($N)", inputPrefix(sourceName), getIndexName());
 
             if (toRecord && !createsDataFetchers && !isValidation) {
-                code.declare(VAR_ARGS, "$N.$L($N, $N)", VAR_TRANSFORMER, METHOD_ARGS_FOR_INDEX_NAME, VAR_PATH_NAME, getIndexName());
+                code.declare(VAR_ARGS, "$N.$L($N)", VAR_ARG_PRESENCE, METHOD_ITEM_AT, getIndexName());
             }
 
             if (!isValidation) {
@@ -442,9 +446,10 @@ public class MapperContext {
      */
     public CodeBlock transformInputRecord() {
         return CodeBlock.of(
-                "$L$L$S$L)",
+                "$L$L$L$S$L)",
                 recordTransformPart(sourceName, targetType.getName()),
                 CodeBlock.ofIf(shouldMakeNodeStrategy(), "$N, ", VAR_NODE_STRATEGY),
+                CodeBlock.of("$N.$L().$L($S), ", VAR_TRANSFORMER, METHOD_ARG_PRESENCE_NAME, METHOD_CHILD, target.getName()),
                 path,
                 CodeBlock.ofIf(recordValidationEnabled() && !hasJavaRecordReference, ", \"$L\"", indexPath)
         );
@@ -459,11 +464,14 @@ public class MapperContext {
                 uncapitalize(targetType.getName())
         );
         var nodeStrategyPart = CodeBlock.ofIf(shouldMakeNodeStrategy(), "$N, ", VAR_NODE_STRATEGY);
+        var argPresencePart = toRecord
+                ? CodeBlock.of("$N.$L($S), ", VAR_ARGS, METHOD_CHILD, target.getName())
+                : CodeBlock.empty();
         var pathPart = toRecord && previousContext.lastIterableIndexName != null
                 ? CodeBlock.of("$N + $S + $N + $S", VAR_PATH_NAME, "[", previousContext.lastIterableIndexName, "]/" + path)
                 : CodeBlock.of("$N + $S", VAR_PATH_HERE, path);
         var validationPart = CodeBlock.ofIf(recordValidationEnabled() && !hasJavaRecordReference && toRecord, ", $N + $S", VAR_PATH_HERE, path);
-        return CodeBlock.join(recordPart, nodeStrategyPart, pathPart, validationPart, CodeBlock.of(")"));
+        return CodeBlock.join(recordPart, nodeStrategyPart, argPresencePart, pathPart, validationPart, CodeBlock.of(")"));
     }
 
     private CodeBlock recordTransformPart(String varName, String typeName) {

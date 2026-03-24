@@ -99,7 +99,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "operation/withPaginationAndRecord", Set.of(CUSTOMER_CONNECTION, CUSTOMER_INPUT_TABLE),
                 "in = ResolverHelpers.transformDTO(_iv_env.getArgument(\"in\"), CustomerInputTable.class)",
-                "inRecord = _iv_transform.customerInputTableToJOOQRecord(_mi_in, \"in\")",
+                "inRecord = _iv_transform.customerInputTableToJOOQRecord(_mi_in, _iv_transform.getArgumentPresence().child(\"in\"), \"in\")",
                 "resolverFetchService.queryList(_mi_inRecord, _iv_pageSize, _mi_after",
                 "resolverFetchService.countQueryList(_mi_inRecord"
         );
@@ -132,7 +132,7 @@ public class ResolverTest extends GeneratorTest {
     void splitQueryWithPaginationAndRecord() {
         assertGeneratedContentContains(
                 "splitquery/withPaginationAndRecord", Set.of(SPLIT_QUERY_WRAPPER, CUSTOMER_CONNECTION, CUSTOMER_INPUT_TABLE),
-                "inRecord = _iv_transform.customerInputTableToJOOQRecord(_mi_in, \"in\")",
+                "inRecord = _iv_transform.customerInputTableToJOOQRecord(_mi_in, _iv_transform.getArgumentPresence().child(\"in\"), \"in\")",
                 "resolverFetchService.queryMap(_iv_keys, _mi_inRecord, _iv_pageSize, _mi_after",
                 "resolverFetchService.countQueryMap(_iv_keys, _mi_inRecord"
         );

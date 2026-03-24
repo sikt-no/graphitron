@@ -260,6 +260,17 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return CodeBlock that checks whether a field is present in the ArgumentPresence tree.
+     */
+    @NotNull
+    public static CodeBlock argumentPresenceLookup(String fieldName, boolean atResolver) {
+        if (atResolver) {
+            return CodeBlock.of("$L.$L($S)", asMethodCall(VAR_TRANSFORMER, METHOD_ARG_PRESENCE_NAME), METHOD_HAS_FIELD, fieldName);
+        }
+        return CodeBlock.of("$N.$L($S)", VAR_ARGS, METHOD_HAS_FIELD, fieldName);
+    }
+
+    /**
      * @return CodeBlock that sets a value through a mapping.
      */
     @NotNull

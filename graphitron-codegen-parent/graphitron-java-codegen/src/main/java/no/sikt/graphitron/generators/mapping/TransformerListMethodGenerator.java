@@ -27,7 +27,7 @@ public class TransformerListMethodGenerator extends TransformerMethodGenerator {
             return MethodSpec.methodBuilder(methodName).build();
         }
 
-        return getDefaultSpecBuilder(methodName, wrapList(type.asTargetClassName(toRecord)), wrapList(type.asSourceClassName(toRecord)))
+        return getDefaultSpecBuilder(methodName, wrapList(type.asTargetClassName(toRecord)), wrapList(type.asSourceClassName(toRecord)), toRecord)
                 .addParameterIf(toRecord && useValidation(type), STRING.className, VAR_INDEX_PATH)
                 .addCode(getMethodContent(target))
                 .build();

@@ -6,6 +6,7 @@ import graphql.schema.DataFetchingEnvironment;
 import java.lang.String;
 import java.util.List;
 import no.sikt.graphitron.codereferences.records.IDJavaRecord;
+import no.sikt.graphql.helpers.resolvers.ArgumentPresence;
 import no.sikt.graphql.helpers.transform.AbstractTransformer;
 
 public class RecordTransformer extends AbstractTransformer {
@@ -13,11 +14,13 @@ public class RecordTransformer extends AbstractTransformer {
         super(_iv_env);
     }
 
-    public List<IDJavaRecord> dummyInputRecordToJavaRecord(List<DummyInputRecord> _mi_input, String _iv_path) {
-        return DummyInputRecordJavaMapper.toJavaRecord(_mi_input, _iv_path, this);
+    public List<IDJavaRecord> dummyInputRecordToJavaRecord(List<DummyInputRecord> _mi_input,
+                                                           ArgumentPresence _iv_argPresence, String _iv_path) {
+        return DummyInputRecordJavaMapper.toJavaRecord(_mi_input, _iv_argPresence, _iv_path, this);
     }
 
-    public IDJavaRecord dummyInputRecordToJavaRecord(DummyInputRecord _mi_input, String _iv_path) {
-        return dummyInputRecordToJavaRecord(List.of(_mi_input), _iv_path).stream().findFirst().orElse(new IDJavaRecord());
+    public IDJavaRecord dummyInputRecordToJavaRecord(DummyInputRecord _mi_input,
+                                                      ArgumentPresence _iv_argPresence, String _iv_path) {
+        return dummyInputRecordToJavaRecord(List.of(_mi_input), _iv_argPresence.asSingleItem(), _iv_path).stream().findFirst().orElse(new IDJavaRecord());
     }
 }

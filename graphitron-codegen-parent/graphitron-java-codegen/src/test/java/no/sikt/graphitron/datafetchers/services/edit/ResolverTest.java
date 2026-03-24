@@ -124,7 +124,7 @@ public class ResolverTest extends GeneratorTest {
                 "for (int _niit_in0 = 0; _niit_in0 < _mi_in0.size(); _niit_in0++) {" +
                         "var _nit_in0 = _mi_in0.get(_niit_in0);if (_nit_in0 == null) continue;" +
                         "var _mi_in1 = _nit_in0.getIn1();" +
-                        "_mi_in1RecordList.addAll(_iv_transform.customerInputTableToJOOQRecord(_mi_in1, \"in0/in1\"",
+                        "_mi_in1RecordList.addAll(_iv_transform.customerInputTableToJOOQRecord(_mi_in1, _iv_transform.getArgumentPresence().child(\"in1\"), \"in0/in1\"",
                 ".mutation(_mi_in0RecordList, _mi_in1RecordList)"
         );
     }
@@ -135,8 +135,8 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "doubleNestedInputRecord", Set.of(CUSTOMER_INPUT_TABLE),
                 "in0Record = _iv_transform.",
-                "var _mi_in1 = _mi_in0.getIn1();if (_mi_in1 != null) {_mi_in1Record = _iv_transform.wrapper1ToJOOQRecord(_mi_in1, \"in0/in1\");" +
-                        "var _mi_in2 = _mi_in1.getIn2();_mi_in2Record = _iv_transform.customerInputTableToJOOQRecord(_mi_in2, \"in0/in1/in2\"",  // Inconsistent logic, but should work anyway.
+                "var _mi_in1 = _mi_in0.getIn1();if (_mi_in1 != null) {_mi_in1Record = _iv_transform.wrapper1ToJOOQRecord(_mi_in1, _iv_transform.getArgumentPresence().child(\"in1\"), \"in0/in1\");" +
+                        "var _mi_in2 = _mi_in1.getIn2();_mi_in2Record = _iv_transform.customerInputTableToJOOQRecord(_mi_in2, _iv_transform.getArgumentPresence().child(\"in2\"), \"in0/in1/in2\"",  // Inconsistent logic, but should work anyway.
                 ".mutation(_mi_in0Record, _mi_in1Record, _mi_in2Record)"
         );
     }

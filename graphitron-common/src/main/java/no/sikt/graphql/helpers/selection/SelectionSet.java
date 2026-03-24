@@ -2,11 +2,11 @@ package no.sikt.graphql.helpers.selection;
 
 import graphql.schema.DataFetchingFieldSelectionSet;
 import graphql.schema.SelectedField;
+import no.sikt.graphql.helpers.resolvers.ArgumentPresence;
 import org.jooq.Field;
 import org.jooq.SelectField;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -21,8 +21,7 @@ import static org.jooq.impl.DSL.noField;
 public class SelectionSet {
     protected final Set<String> selectionSet;
     private final String prefix;
-    private Map<String, Object> argumentMap;
-    private Set<String> argumentSet;
+    private ArgumentPresence argumentPresence;
 
     public SelectionSet(List<DataFetchingFieldSelectionSet> selectionSets) {
         this.selectionSet = selectionSets.stream()
@@ -61,11 +60,17 @@ public class SelectionSet {
         return selectionSet.stream().anyMatch(it -> it.contains(prefix + path));
     }
 
-    public void setArgumentSet(Set<String> argumentSet) {
-        this.argumentSet = argumentSet;
+    public void setArgumentPresence(ArgumentPresence argumentPresence) {
+        this.argumentPresence = argumentPresence;
     }
 
-    public Set<String> getArgumentSet() {
-        return argumentSet;
+    public ArgumentPresence getArgumentPresence() {
+        return argumentPresence;
+    }
+
+    /** Check if a field is present at a specific list index in the argument presence tree. */
+    public boolean hasArgumentAtIndex(String listName, int index, String fieldName) {
+        return argumentPresence != null
+                && argumentPresence.child(listName).itemAt(index).hasField(fieldName);
     }
 }
