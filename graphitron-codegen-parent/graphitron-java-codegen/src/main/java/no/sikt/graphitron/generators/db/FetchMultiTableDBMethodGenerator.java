@@ -421,7 +421,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                         .stream().map(Field::getName)
                         .map(it -> CodeBlock.of("$N.$L", alias, it.toUpperCase()))
                         .toList()
-                ).ifPresent(it -> code.add(CodeBlock.join(it, ", ")));
+                ).ifPresent(it -> code.add(CodeBlock.join(", ", it)));
 
         return code.build();
     }

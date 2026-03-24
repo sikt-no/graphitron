@@ -591,8 +591,8 @@ public class FormatCodeBlocks {
 
         return CodeBlock.of(
                 "$L, $L",
-                listOf(CodeBlock.join(fromBlocks, ", ")),
-                listOf(CodeBlock.join(toBlocks, ", "))
+                listOf(CodeBlock.join(", ", fromBlocks)),
+                listOf(CodeBlock.join(", ", toBlocks))
         );
     }
 

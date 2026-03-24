@@ -339,7 +339,7 @@ public final class CodeBlockTest {
         codeBlocks.add(CodeBlock.of("$T", ClassName.get("world", "World")));
         codeBlocks.add(CodeBlock.of("need tacos"));
 
-        CodeBlock joined = CodeBlock.join(codeBlocks, " || ");
+        CodeBlock joined = CodeBlock.join(" || ", codeBlocks);
         assertThat(joined.toString()).isEqualTo("\"hello\" || world.World || need tacos");
     }
 

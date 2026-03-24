@@ -128,7 +128,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 methodName,
                 asMethodCall(VAR_TRANSFORMER, METHOD_CONTEXT_NAME),
                 CodeBlock.ofIf(shouldMakeNodeStrategy(), ", $N", VAR_NODE_STRATEGY),
-                CodeBlock.join(parser.getMethodInputBlocks(true, true, true), ", ")
+                CodeBlock.join(", ", parser.getMethodInputBlocks(true, true, true))
         );
     }
 

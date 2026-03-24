@@ -280,7 +280,7 @@ public final class CodeBlock {
      * For example, joining {@code String s}, {@code Object o} and {@code int i} using {@code ", "}
      * would produce {@code String s, Object o, int i}.
      */
-    public static CodeBlock join(Iterable<CodeBlock> codeBlocks, String separator) {
+    public static CodeBlock join(String separator, Iterable<CodeBlock> codeBlocks) {
         return StreamSupport.stream(codeBlocks.spliterator(), false).filter(it -> !it.isEmpty()).collect(joining(separator));
     }
 
@@ -288,21 +288,21 @@ public final class CodeBlock {
      * Joins {@code codeBlocks} into a single {@link CodeBlock}.
      */
     public static CodeBlock join(Iterable<CodeBlock> codeBlocks) {
-        return join(codeBlocks, "");
+        return join("", codeBlocks);
     }
 
     /**
      * Joins {@code codeBlocks} into a single {@link CodeBlock}.
      */
     public static CodeBlock join(CodeBlock... codeBlocks) {
-        return join(List.of(codeBlocks), "");
+        return join("", List.of(codeBlocks));
     }
 
     /**
      * Joins {@code codeBlocks} into a single {@link CodeBlock}.
      */
     public static CodeBlock join(String separator, CodeBlock... codeBlocks) {
-        return join(List.of(codeBlocks), separator);
+        return join(separator, List.of(codeBlocks));
     }
 
     /**

@@ -155,7 +155,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                         invokeExternalMethod(
                                 CodeBlock.of("$N", servicePrefix(aliasWrapper.getTableMethod().getClassName().simpleName())),
                                 aliasWrapper.getTableMethod().getMethodName(),
-                                CodeBlock.join(params, ", ")
+                                CodeBlock.join(", ", params)
                         )
                 );
 
@@ -349,7 +349,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         return CodeBlock
                 .builder()
-                .add(wrapRow(CodeBlock.join(rowElements, ",\n")))
+                .add(wrapRow(CodeBlock.join(",\n", rowElements)))
                 .addIf(!mappingContent.isEmpty(), ".mapping($L)", mappingContent)
                 .build();
     }
@@ -659,7 +659,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var objectField = new VirtualSourceField(processedSchema.getObject(fieldObject), fieldObject);
             code.add(generateSelectRow(context.nextContext(objectField)));
         }
-        return CodeBlock.join(code, ",\n");
+        return CodeBlock.join(",\n", code);
     }
 
     /**
@@ -675,14 +675,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                             context.renderQuerySource(getLocalTable()),
                             processedSchema.getInterface(context.getReferenceObjectField()).getDiscriminatorFieldName(),
                             CodeBlock.join(
-                                    processedSchema
+                                    ", ", processedSchema
                                             .getObjects()
                                             .values()
                                             .stream()
                                             .filter(it -> it.implementsInterface(processedSchema.getInterface(context.getReferenceObjectField()).getName()))
                                             .map(it -> CodeBlock.of("$S", it.getDiscriminator()))
-                                            .toList(),
-                                    ", "))
+                                            .toList()
+                            ))
             );
         }
 
@@ -921,14 +921,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add(checks.isEmpty() ? "" : "$L ?\n", checks)
                 .indent()
                 .indent()
-                .add(wrapRow(CodeBlock.join(tupleFieldBlocks, ",\n")))
+                .add(wrapRow(CodeBlock.join(",\n", tupleFieldBlocks)))
                 .add(".in(\n")
                 .indent()
                 .indent()
                 .add("$T.range(0, $N.size()).mapToObj($N ->\n", INT_STREAM.className, argumentInputFieldName, VAR_ITERATOR)
                 .indent()
                 .indent()
-                .add(wrapRow(CodeBlock.join(tupleVariableBlocks, ",\n")))
+                .add(wrapRow(CodeBlock.join(",\n", tupleVariableBlocks)))
                 .unindent()
                 .unindent()
                 .add("\n)")

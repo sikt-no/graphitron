@@ -150,7 +150,7 @@ public final class CodeBlocks implements Iterable<CodeBlock> {
      * Joins all non-empty blocks with the given separator.
      */
     public CodeBlock join(String separator) {
-        return CodeBlock.join(blocks, separator);
+        return CodeBlock.join(separator, blocks);
     }
 
     /**
