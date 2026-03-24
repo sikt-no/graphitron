@@ -7,6 +7,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_NODE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE_QUERY;
 
 @DisplayName("Node directive input validation - Checks run when building the schema for types with node directive")
 public class NodeIdInputTest extends ValidationTest {
@@ -208,5 +209,14 @@ public class NodeIdInputTest extends ValidationTest {
         assertErrorsContain("lookupInputTypeWithImplicitNodeIdReference", Set.of(CUSTOMER_NODE),
                 "Argument 'input' on 'Query.query' has lookupKey directive, but contains reference field(s): 'LookupInput.customerId'. Lookup on references is not currently supported."
         );
+    }
+
+    @Test
+    @DisplayName("@reference with one-to-many join becomes multi-step when combined with @nodeId, and is rejected")
+    void oneToManyWithImplicitNodeIdStep() {
+        assertErrorsContain("oneToManyWithImplicitNodeIdStep", Set.of(NODE),
+                "Field 'storeId' on 'Query.addresses' has a multi-step @reference path with a one-to-many relationship " +
+                        "from \"ADDRESS\" to \"CUSTOMER\" in a non-final step. This is not currently supported on filter inputs because it causes row duplication. " +
+                        "Use the @condition directive for complex cross-table filtering instead.");
     }
 }

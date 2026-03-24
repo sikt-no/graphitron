@@ -1,0 +1,7 @@
+type Query {
+  query(email: String! @reference(path: [{table: "CUSTOMER", condition: {className: "no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition", method: "email"}}])): Address
+}
+
+type Address @table {
+  id: ID!
+}

@@ -744,19 +744,24 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var isInRecordInput = processedSchema.isInputType(field.getContainerTypeName()) && processedSchema.hasJOOQRecord(field.getContainerTypeName());
             var checksNotEmpty = !checks.isEmpty()
                     && !(isInRecordInput && processedSchema.isNodeIdField(field)); // Skip null checks for nodeId in jOOQ record inputs in queries
+
             var renderedSequence = isInRecordInput ?
                     CodeBlock.of(context.getTargetAlias())
                     :  context.iterateJoinSequenceFor(field).render();
             if (renderedSequence.isEmpty()) {
                 continue;
             }
+            var existsJoin = context.pollExistsJoin();
 
             if (!inputCondition.isOverriddenByAncestors() && !field.hasOverridingCondition()) {
                 if (checksNotEmpty) {
                     conditionBuilder.add(checks + " ? ");
                 }
 
-                conditionBuilder.add(formatCondition(inputCondition, renderedSequence, context));
+                var formattedCondition = existsJoin
+                        .map(it -> wrapConditionInExists(formatCondition(inputCondition, renderedSequence, context), it, context))
+                        .orElseGet(() -> formatCondition(inputCondition, renderedSequence, context));
+                conditionBuilder.add(formattedCondition);
 
                 if (checksNotEmpty) {
                     var fallbackOnFalse = (conditionsShouldFallbackToFalse && inputCondition.isWrappedInList()) || field instanceof VirtualInputField;
@@ -845,6 +850,40 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 field.isIterableWrapped() ? "in" : "eq",
                 name
         );
+    }
+
+    private CodeBlock wrapConditionInExists(CodeBlock filterCondition, FetchContext.ExistsJoin existsJoin, FetchContext context) {
+        var join = existsJoin.join();
+        var aliasName = join.getJoinAlias().getAlias().getMappingName();
+        var rootAlias = context.getCurrentJoinSequence().render();
+
+        var correlation = buildExistsCorrelation(join, aliasName, rootAlias);
+        var innerCondition = Stream.concat(Stream.of(filterCondition), existsJoin.conditions().stream())
+                .reduce((a, b) -> CodeBlock.of("$L.and($L)", a, b))
+                .orElse(filterCondition);
+        return CodeBlock.of("$T.exists($T.selectOne().from($N).where($L.and($L)))",
+                DSL.className, DSL.className, aliasName, correlation, innerCondition);
+    }
+
+    private CodeBlock buildExistsCorrelation(SQLJoinStatement join, String aliasName, CodeBlock rootAlias) {
+        if (join.getKey() != null) {
+            var targetTableName = join.getJoinTargetTable().getTable().getMappingName();
+            return getKeyFields(join.getKey())
+                    .map(fields -> fields.entrySet().stream()
+                            .map(e -> CodeBlock.of("$L.$L.eq($L.$L)",
+                                    aliasName, getJavaFieldName(targetTableName, e.getKey().getName()).orElseThrow(),
+                                    rootAlias, getJavaFieldName(
+                                            getKeyTargetTableJavaName(join.getKey().getMappingName()).orElseThrow(),
+                                            e.getValue().getName()).orElseThrow()))
+                            .reduce((a, b) -> CodeBlock.of("$L.and($L)", a, b))
+                            .orElseThrow())
+                    .orElseThrow(() -> new IllegalStateException("No FK column mapping found for key " + join.getKey().getMappingName()));
+        }
+        // Condition-based joins: reuse the ON condition as correlation
+        return join.getJoinFields().stream()
+                .map(field -> field.toJoinString(join.getJoinSequence(), aliasName))
+                .reduce((a, b) -> CodeBlock.of("$L.and($L)", a, b))
+                .orElseThrow(() -> new IllegalStateException("No join fields found for EXISTS correlation on " + aliasName));
     }
 
     private CodeBlock getCheckedNameWithPath(InputCondition condition) {
@@ -1031,8 +1070,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
                 var innerFields = isMutationWithJDBCBatching ?
                         getPrimaryKeyForTable(processedSchema.getRecordType(inputField).getTable().getName())
-                                .map(it -> it.getFields().stream().map(col -> new VirtualInputField(col.getName(), inputField.getContainerTypeName())).toList())
-                                .orElse(List.of())
+                        .map(it -> it.getFields().stream().map(col -> new VirtualInputField(col.getName(), inputField.getContainerTypeName())).toList())
+                        .orElse(List.of())
                         : processedSchema.getInputType(inputField).getFields();
 
                 inputBuffer.addAll(
