@@ -43,8 +43,6 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodNameForField;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
-import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldNamesForKey;
-import static no.sikt.graphitron.mappings.TableReflection.getPrimaryKeyForTable;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -216,15 +214,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
      * then uses the standard DataFetcherHelper to batch-fetch from DB.
      */
     private CodeBlock serviceAutoFetchBlock(ObjectField target, String serviceName, String methodName, InputParser parser, CodeBlock dbFunction) {
-        var recordType = processedSchema.getRecordType(target);
-        var table = recordType.getTable();
-        var tableName = table.getName();
-        var pk = getPrimaryKeyForTable(tableName).orElseThrow();
-        var pkFields = getJavaFieldNamesForKey(tableName, pk);
-
-        var fieldList = pkFields.stream()
-                .map(f -> CodeBlock.of("$T.$N.$N", table.getTableClass(), tableName, f))
-                .collect(CodeBlock.joining(", "));
+        var recordClassName = processedSchema.getRecordType(target).getRecordClassName();
 
         var serviceCall = CodeBlock.of("$N.$L($L)",
                 servicePrefix(serviceName), methodName,
@@ -232,7 +222,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
         var isIterable = target.isIterableWrapped();
         var keyVarName = isIterable ? VAR_SERVICE_KEYS : VAR_SERVICE_KEY;
-        var toTableRecord = CodeBlock.of("$T.intoTableRecord($N, $T.of($L))", QUERY_HELPER.className, isIterable ? VAR_RECORD_ITERATOR : VAR_SERVICE_RESULT, LIST.className, fieldList);
+        var toTableRecord = extractKeyAsTableRecord(isIterable ? VAR_RECORD_ITERATOR : VAR_SERVICE_RESULT, recordClassName);
         var keyValue = isIterable
                 ? CodeBlock.of("$N.stream().map($N -> $L)$L", VAR_SERVICE_RESULT, VAR_RECORD_ITERATOR, toTableRecord, collectToList())
                 : toTableRecord;

@@ -195,7 +195,7 @@ public class ResolverTest extends GeneratorTest {
     void returningTableWithAutoFetch() {
         assertGeneratedContentContains(
                 "operation/returningTableWithAutoFetch", Set.of(CUSTOMER_TABLE),
-                "QueryHelper.intoTableRecord(_iv_serviceResult",
+                "_iv_serviceResult.key().into(",
                 "new DataFetcherHelper(_iv_env).load(_iv_serviceKey"
         );
     }
