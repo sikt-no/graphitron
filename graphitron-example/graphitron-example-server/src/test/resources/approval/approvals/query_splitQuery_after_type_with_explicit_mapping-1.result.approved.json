@@ -5,13 +5,20 @@
                 "customerId1": 1,
                 "address": {
                     "id": "QWRkcmVzczo1"
-                }
+                },
+                "usernames": [
+                    "user1",
+                    "user2"
+                ]
             },
             {
                 "customerId1": 2,
                 "address": {
                     "id": "QWRkcmVzczo2"
-                }
+                },
+                "usernames": [
+                    
+                ]
             }
         ]
     }

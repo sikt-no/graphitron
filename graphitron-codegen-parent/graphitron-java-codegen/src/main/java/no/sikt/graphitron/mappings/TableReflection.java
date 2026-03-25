@@ -436,6 +436,10 @@ public class TableReflection {
         return getField(table, name).map(Typed::getType);
     }
 
+    public static boolean isArrayField(String tableName, String fieldName) {
+        return getFieldType(tableName, fieldName).map(Class::isArray).orElse(false);
+    }
+
     public static boolean fieldTypeIsCLOB(String table, String name) {
         return getField(table, name)
                 .flatMap(it -> Optional.ofNullable(it.getDataType().getSQLDataType()))
