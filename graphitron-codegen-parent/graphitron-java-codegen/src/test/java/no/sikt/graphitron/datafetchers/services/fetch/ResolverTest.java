@@ -214,6 +214,7 @@ public class ResolverTest extends GeneratorTest {
     void returningTableListWithAutoFetch() {
         assertGeneratedContentContains(
                 "operation/returningTableListWithAutoFetch", Set.of(CUSTOMER_TABLE),
+                "_iv_serviceResult.stream().map(_iv_r -> _iv_r.key().into(",
                 "new DataFetcherHelper(_iv_env).loadByResolverKeys(_iv_serviceKeys"
         );
     }
