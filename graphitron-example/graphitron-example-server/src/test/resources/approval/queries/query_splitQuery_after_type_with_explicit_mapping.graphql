@@ -4,5 +4,6 @@
         address {
             id
         }
+        usernames
     }
 }

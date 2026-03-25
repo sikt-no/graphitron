@@ -125,6 +125,14 @@ public class OutputTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Array field should cast to List in explicit mapping")
+    void arrayFieldOver22() {
+        assertGeneratedContentContains("arrayFieldOver22",
+                ", (List) _iv_r[22])"
+        );
+    }
+
+    @Test
     @DisplayName("Returning string without type wrapping")
     void noWrapping() {
         assertGeneratedContentContains(

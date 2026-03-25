@@ -543,6 +543,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             } else if (processedSchema.isEnum(field)) {
                 var enumDefinition = processedSchema.getEnum(field);
                 innerMappingCode.add(CodeBlock.of("($T) $N[$L]", enumDefinition.getGraphClassName(), VAR_RECORD_ITERATOR, i));
+            } else if (field.isIterableWrapped() && isArrayField(context.getTargetTable().getName(), field.getUpperCaseName())) {
+                innerMappingCode.add(CodeBlock.of("($T) $N[$L]", LIST.className, VAR_RECORD_ITERATOR, i));
             } else {
                 innerMappingCode.add(
                         CodeBlock.of(

@@ -26,4 +26,5 @@ type CustomerManyFields @table(name: "CUSTOMER") {
     customerId21: Int @field(name: "CUSTOMER_ID")
     customerId22: Int @field(name: "CUSTOMER_ID")
     address: Address @splitQuery
+    usernames: [String]
 }
