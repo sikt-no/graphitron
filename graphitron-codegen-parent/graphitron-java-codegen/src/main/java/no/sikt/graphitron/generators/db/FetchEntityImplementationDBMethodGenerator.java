@@ -132,7 +132,7 @@ public class FetchEntityImplementationDBMethodGenerator extends FetchDBMethodGen
                 .build();
         if (processedSchema.isNodeIdField(field)) {
             var code = CodeBlock.of("$L.filter($T::nonNull)$L", streamBlock, OBJECTS.className, collectToList());
-            return hasIdOrIdsBlock(code, implementation, context.getTargetAlias(), CodeBlock.empty(), true);
+            return hasNodeIdOrIdsBlock(code, processedSchema.getNodeConfigurationForTypeOrThrow(implementation), context.getTargetAlias(), true);
         }
 
         return CodeBlock

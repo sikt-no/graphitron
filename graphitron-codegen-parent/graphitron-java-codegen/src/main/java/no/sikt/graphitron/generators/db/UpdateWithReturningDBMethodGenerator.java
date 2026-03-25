@@ -4,6 +4,7 @@ import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.helpers.InputComponents;
 import no.sikt.graphitron.definitions.helpers.InputSetValue;
+import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
@@ -25,7 +26,7 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.inferFie
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
-import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getForeignKeyForNodeIdReference;
+import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
 import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldName;
 
@@ -119,14 +120,7 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
         for (var inputSetValue : setValues) {
             var inputField = inputSetValue.getInput();
             if (processedSchema.isNodeIdField(inputField)) {
-                var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(inputField);
-                var keyColumns = processedSchema.getKeyColumnsForNodeType(nodeType).orElseThrow();
-
-                if (!nodeType.getTable().getName().equalsIgnoreCase(targetTable) || inputField.hasFieldReferences()) {
-                    var key = getForeignKeyForNodeIdReference(inputField, processedSchema)
-                            .orElseThrow(() -> new RuntimeException("Cannot find foreign key for input node ID field " + inputField.formatPath() + " for " + target.formatPath()));
-                    keyColumns = getReferenceNodeIdFields(targetTable, nodeType, key);
-                }
+                var keyColumns = resolveColumnNamesForNodeIdField(inputField, processedSchema, JOOQMapping.fromTable(targetTable));
 
                 for (String keyColumn : keyColumns) {
                     var field = tableFieldCodeBlock(targetTable, getJavaFieldName(targetTable, keyColumn).orElseThrow());

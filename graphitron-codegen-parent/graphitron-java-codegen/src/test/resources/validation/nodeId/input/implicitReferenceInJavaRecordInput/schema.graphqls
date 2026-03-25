@@ -1,0 +1,7 @@
+type Query {
+  filmActors(in: [FilmActorInput]): ID @service(service: {className: "no.sikt.graphitron.codereferences.services.JavaRecordInputFetchService"})
+}
+
+input FilmActorInput @record(record: {className: "no.sikt.graphitron.codereferences.records.FilmActorInputJavaRecord"}) {
+  customerIds: [ID!]! @nodeId(typeName: "CustomerNode") @field(name: "rental")
+}

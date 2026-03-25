@@ -1,16 +1,15 @@
 package no.sikt.graphitron.definitions.objects;
 
-import no.sikt.graphitron.javapoet.ClassName;
 import graphql.language.InterfaceTypeDefinition;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.interfaces.TypeResolverTarget;
-import no.sikt.graphql.federation.fieldsets.FederationFieldSet;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphql.directives.GenerationDirective;
+import no.sikt.graphql.federation.fieldsets.FederationFieldSet;
 
-import java.util.LinkedList;
 import java.util.List;
 
 import static no.sikt.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
@@ -128,25 +127,5 @@ public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeD
     @Override
     public boolean isExplicitlyNotGenerated() {
         return !isGenerated;
-    }
-
-    @Override
-    public boolean hasNodeDirective() {
-        return false;
-    }
-
-    @Override
-    public String getTypeId() {
-        return null;
-    }
-
-    @Override
-    public boolean hasCustomKeyColumns() {
-        return false;
-    }
-
-    @Override
-    public LinkedList<String> getKeyColumns() {
-        return null;
     }
 }

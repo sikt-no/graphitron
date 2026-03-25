@@ -115,7 +115,7 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
 
         String name;
         if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            name = implementation.getTypeId();
+            name = processedSchema.getNodeConfigurationForTypeOrThrow(implementation).typeId();
         } else {
             name = implementationTypeName;
         }

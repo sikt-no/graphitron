@@ -1,46 +1,47 @@
 package no.sikt.graphitron.definitions.objects;
 
-import no.sikt.graphitron.javapoet.ClassName;
 import graphql.language.TypeDefinition;
 import no.sikt.graphitron.configuration.externalreferences.CodeReference;
 import no.sikt.graphitron.definitions.helpers.ClassReference;
+import no.sikt.graphitron.definitions.helpers.NodeConfiguration;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.ObjectSpecification;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
-import no.sikt.graphql.federation.fieldsets.FederationFieldSet;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.generators.codebuilding.NameFormat;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.directives.GenerationDirectiveParam;
+import no.sikt.graphql.federation.fieldsets.FederationFieldSet;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.LinkedHashSet;
-import java.util.LinkedList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldName;
 import static no.sikt.graphitron.mappings.TableReflection.getRequiredFields;
-import static no.sikt.graphql.directives.DirectiveHelpers.*;
+import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
+import static no.sikt.graphql.directives.DirectiveHelpers.getRepeatableDirectiveArgumentString;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.NAME;
-import static no.sikt.graphql.naming.GraphQLReservedName.*;
+import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_KEY;
+import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_KEY_FIELDS;
 
 /**
  * A generalized implementation of {@link ObjectSpecification} for types that can be linked to tables or records.
  */
 public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U extends GenerationField> extends AbstractObjectDefinition<T, U> implements RecordObjectSpecification<U> {
     private final JOOQMapping table;
-    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated, hasKeys, hasNodeDirective, hasCustomTypeId;
+    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated, hasKeys, hasNodeDirective;
     private final ClassReference classReference;
     private final List<U> inputsSortedByNullability;
     private final LinkedHashSet<String> requiredInputs;
     private final FederationFieldSet keys;
-    private final String typeId;
-    private final LinkedList<String> keyColumns;
+    private final NodeConfiguration nodeConfiguration;
 
     public RecordObjectDefinition(T objectDefinition) {
         super(objectDefinition);
@@ -66,13 +67,12 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         keys = hasKeys ? FederationFieldSet.fromString(getRepeatableDirectiveArgumentString(objectDefinition, FEDERATION_KEY.getName(), FEDERATION_KEY_FIELDS.getName())) : null;
 
         hasNodeDirective = objectDefinition.hasDirective(NODE.getName());
-        var typeIdParameter = getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.TYPE_ID);
-        hasCustomTypeId = typeIdParameter.isPresent();
-        typeId = typeIdParameter.orElse(hasTable() ? getName() : null);
-        keyColumns = getOptionalDirectiveArgumentStringList(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.KEY_COLUMNS)
-                .stream()
-                .map(columnName -> getJavaFieldName(getTable().getName(), columnName).orElse(columnName))
-                .collect(Collectors.toCollection(LinkedList::new));
+
+        if (hasNodeDirective) {
+            nodeConfiguration = new NodeConfiguration(objectDefinition, getTable());
+        } else {
+            nodeConfiguration = null;
+        }
     }
 
     @NotNull
@@ -200,21 +200,7 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
     }
 
     @Override
-    public String getTypeId() {
-        return typeId;
-    }
-
-    public boolean hasCustomTypeId() {
-        return hasCustomTypeId;
-    }
-
-    @Override
-    public boolean hasCustomKeyColumns() {
-        return !keyColumns.isEmpty();
-    }
-
-    @Override
-    public LinkedList<String> getKeyColumns() {
-        return keyColumns;
+    public Optional<NodeConfiguration> getNodeConfiguration() {
+        return Optional.ofNullable(nodeConfiguration);
     }
 }

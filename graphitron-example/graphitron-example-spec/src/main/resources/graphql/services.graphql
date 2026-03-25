@@ -76,7 +76,7 @@ If they encode different actor IDs, a conflict error should be thrown.
 input NodeIdConflictInputObject @record(record: {className: "no.sikt.graphitron.example.service.records.NodeIdConflictInput"}){
     name: String
     filmActorId: ID @nodeId(typeName: "FilmActor") @field(name: "filmActor")
-    actorId: ID @nodeId(typeName: "Actor") @field(name: "filmActor")
+    actorId: ID @nodeId(typeName: "Actor") @field(name: "filmActor") @reference(path: [{key: "film_actor__film_actor_actor_id_fkey"}])
 }
 
 """

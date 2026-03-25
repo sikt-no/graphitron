@@ -23,7 +23,6 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.text.similarity.LevenshteinDistance;
 import org.jooq.Field;
 import org.jooq.Key;
-import org.jooq.UniqueKey;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
@@ -36,7 +35,7 @@ import java.util.stream.Stream;
 import static java.util.stream.Collectors.groupingBy;
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
-import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.getForeignKeyForNodeIdReference;
+import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static no.sikt.graphitron.mappings.ReflectionHelpers.getJooqRecordClassForNodeIdInputField;
 import static no.sikt.graphitron.mappings.TableReflection.*;
@@ -140,36 +139,46 @@ public class ProcessedDefinitionsValidator {
         schema.getObjects().values().stream()
                 .filter(ObjectDefinition::hasNodeDirective)
                 .forEach(objectDefinition -> {
-                    if (!objectDefinition.hasTable()) {
+                    var nodeConfiguration = objectDefinition.getNodeConfiguration()
+                            .orElseThrow(() -> new IllegalStateException(String.format( "Node type '%s' is unexpectedly missing node configuration.", objectDefinition.getName())));
+
+                    if (objectDefinition.getTable() == null) {
                         addErrorMessage("Type %s has the %s directive, but is missing the %s directive.",
                                 objectDefinition.getName(), NODE.getName(), TABLE.getName());
                     } else {
-                        var tableFields = getJavaFieldNamesForTable(objectDefinition.getTable().getName());
-                        objectDefinition.getKeyColumns().stream()
+                        if (!objectDefinition.getTable().equals(nodeConfiguration.targetTable())) {
+                            throw new IllegalStateException(String.format(
+                                    "Unexpected mismatch between node configuration table and object table for '%s'. Please report if you have encountered this issue.",
+                                    objectDefinition.getName())
+                            );
+                        }
+
+                        var tableFields = getJavaFieldNamesForTable(nodeConfiguration.targetTable().getName());
+                        nodeConfiguration.keyColumnsJavaNames().stream()
                                 .filter(col -> tableFields.stream().noneMatch(it -> it.equalsIgnoreCase(col)))
                                 .forEach(col -> addErrorMessage(
-                                        " Key column '%s' in node ID for type '%s' does not exist in table '%s'",
+                                        "Key column '%s' in node ID for type '%s' does not exist in table '%s'",
                                         col,
                                         objectDefinition.getName(),
-                                        objectDefinition.getTable().getName())
+                                        nodeConfiguration.targetTable().getName())
                                 );
 
-                        if (getPrimaryOrUniqueKeyMatchingIdFields(objectDefinition).isEmpty()) {
+                        if (getPrimaryOrUniqueKeyMatchingFields(nodeConfiguration.targetTable().getName(), nodeConfiguration.keyColumnsJavaNames()).isEmpty()) {
                             addErrorMessage(
                                     "Key columns in node ID for type '%s' does not match a PK/UK for table '%s'",
                                     objectDefinition.getName(),
-                                    objectDefinition.getTable().getName());
+                                    nodeConfiguration.targetTable().getName());
                         }
                     }
                     if (!objectDefinition.implementsInterface(NODE_TYPE.getName())) {
                         addErrorMessage("Type %s has the %s directive, but does not implement the %s interface.",
                                 objectDefinition.getName(), NODE.getName(), NODE_TYPE.getName());
                     }
-                    if (GeneratorConfig.requireTypeIdOnNode() && !objectDefinition.hasCustomTypeId()) {
+                    if (GeneratorConfig.requireTypeIdOnNode() && !nodeConfiguration.hasCustomTypeId()) {
                         addErrorMessage("Type '%s' has the '%s' directive, but is missing the '%s' parameter which has been configured to be required.",
                                 objectDefinition.getName(), NODE.getName(), TYPE_ID.getName());
                     }
-                    typeIdMap.computeIfAbsent(objectDefinition.getTypeId(), k -> new HashSet<>())
+                    typeIdMap.computeIfAbsent(nodeConfiguration.typeId(), k -> new HashSet<>())
                             .add(objectDefinition.getName());
                 });
 
@@ -181,12 +190,6 @@ public class ProcessedDefinitionsValidator {
                                 String.join(", ", entry.getValue()),
                                 entry.getKey())
                 );
-    }
-
-    private Optional<? extends UniqueKey<?>> getPrimaryOrUniqueKeyMatchingIdFields(ObjectDefinition target) {
-        return !target.hasCustomKeyColumns() ?
-                getPrimaryKeyForTable(target.getTable().getName())
-                : getPrimaryOrUniqueKeyMatchingFields(target.getTable().getName(), target.getKeyColumns());
     }
 
     private void validateNodeId() {
@@ -243,7 +246,7 @@ public class ProcessedDefinitionsValidator {
             return;
         }
 
-        if (field instanceof ObjectField && schema.isNodeIdReferenceField(field)) {
+        if (field instanceof ObjectField && isNodeIdReferenceField((ObjectField) field, schema)) {
             // Only filter object fields because we currently don't have reference validation on input (GGG-209)
             var recordType = Optional
                     .ofNullable(schema.getRecordType(field.getContainerTypeName()))
@@ -298,8 +301,8 @@ public class ProcessedDefinitionsValidator {
                                 .filter(it -> schema.getNodeTypeForNodeIdField(it).isPresent()) // This is validated in checkNodeId
                                 .filter(it -> !schema.getNodeTypeForNodeIdFieldOrThrow(it).getTable().equals(jooqRecordInput.getTable()))
                                 .forEach(it -> {
-                                    validateNodeIdReferenceInRecord(jooqRecordInput.getTable().getName(), it, true);
-                                    getForeignKeyForNodeIdReference(it, schema).ifPresent(foreignKey -> {
+                                    validateNodeIdReferenceInRecord(jooqRecordInput.getTable().getName(), it, true, jooqRecordInput.getTable());
+                                    findForeignKeyForNodeIdField(it, schema, jooqRecordInput.getTable()).ifPresent(foreignKey -> {
                                         if (isUsedInUpdateMutation(jooqRecordInput)) {
                                             getPrimaryKeyForTable(jooqRecordInput.getTable().getName())
                                                     .map(Key::getFields)
@@ -316,10 +319,10 @@ public class ProcessedDefinitionsValidator {
                 );
     }
 
-    private void validateNodeIdReferenceInRecord(String jooqRecordName, GenerationField field, boolean isJooqRecordInput) {
+    private void validateNodeIdReferenceInRecord(String jooqRecordName, GenerationField field, boolean isJooqRecordInput, JOOQMapping currentTable) {
         var inputKind = isJooqRecordInput ? "jOOQ record input" : "Java record input";
 
-        var foreignKeyOptional = getForeignKeyForNodeIdReference(field, schema);
+        var foreignKeyOptional = findForeignKeyForNodeIdField(field, schema, currentTable);
         if (foreignKeyOptional.isEmpty()) {
             addErrorMessage("Cannot find foreign key for node ID field '%s' in %s '%s'.",
                     field.getName(),
@@ -341,7 +344,10 @@ public class ProcessedDefinitionsValidator {
         }
 
         var nodeType = schema.getNodeTypeForNodeIdFieldOrThrow(field);
-        var firstForeignKeyReferencesTargetTable = foreignKey.getInverseKey().getTable().getName().equalsIgnoreCase(nodeType.getTable().getName());
+        var nodeConfig = schema.getNodeConfigurationForNodeIdFieldOrThrow(field);
+        var firstForeignKeyReferencesTargetTable = getTableJavaFieldNameByTableName(foreignKey.getInverseKey().getTable().getName())
+                .orElseThrow()
+                .equalsIgnoreCase(nodeConfig.targetTable().getName());
 
         if (field.getFieldReferences().size() > 1 || (field.hasFieldReferences() && !firstForeignKeyReferencesTargetTable)) {
             addErrorMessage(
@@ -354,7 +360,7 @@ public class ProcessedDefinitionsValidator {
             return;
         }
 
-        var targetKey = getPrimaryOrUniqueKeyMatchingIdFields(nodeType);
+        var targetKey =  getPrimaryOrUniqueKeyMatchingFields(nodeConfig.targetTable().getName(), nodeConfig.keyColumnsJavaNames());
 
         if (targetKey.isPresent() && !targetKey.get().equals(foreignKey.getKey())) {
             addErrorMessage(
@@ -401,7 +407,7 @@ public class ProcessedDefinitionsValidator {
                         .filter(recordClass -> !schema.getNodeTypeForNodeIdFieldOrThrow(it).getTable().getRecordClass().equals(recordClass))
                         .ifPresent(recordClass -> validateNodeIdReferenceInRecord(
                                 TableReflection.getTableJavaFieldNameForRecordClass(recordClass).orElseThrow(),
-                                it, false)));
+                                it, false, JOOQMapping.fromTable(getTableName(recordClass)))));
     }
 
     private void validateTablesAndKeys() {
@@ -1507,7 +1513,7 @@ public class ProcessedDefinitionsValidator {
     private Set<GenerationField> findSubqueryReferenceFieldsForTableObject(GenerationField target, JOOQMapping targetTable, int recursion) {
         recursionCheck(recursion);
 
-        if (target.hasFieldReferences() || schema.isNodeIdReferenceField(target)) {
+        if (target.hasFieldReferences() || isNodeIdReferenceField(target, schema, targetTable)) {
             return Set.of(target);
         }
 
@@ -2061,8 +2067,20 @@ public class ProcessedDefinitionsValidator {
                     .filter(InputField::isLookupKey)
                     .toList();
 
+            JOOQMapping currentTable;
+            var previousTableObject = schema.getPreviousTableObjectForField(field);
+            if (schema.isObject(field.getTypeName()) && schema.getObject(field.getTypeName()).hasTable()) {
+                currentTable = schema.getObject(field.getTypeName()).getTable();
+            } else {
+                if (previousTableObject != null && previousTableObject.hasTable()) {
+                    currentTable = previousTableObject.getTable();
+                } else {
+                    currentTable = null;
+                }
+            }
+
             lookupArguments.stream()
-                    .filter(it -> it.hasFieldReferences() || schema.isNodeIdReferenceInputField(it, field))
+                    .filter(it -> it.hasFieldReferences() || isNodeIdReferenceField(it, schema, currentTable))
                     .forEach(it -> addErrorMessage(
                             "Argument/input field %s has %s directive, but is a reference field. Lookup on references is not currently supported.",
                             it.formatPath(), LOOKUP_KEY.getName()));
@@ -2071,7 +2089,7 @@ public class ProcessedDefinitionsValidator {
                     .filter(schema::isInputType)
                     .forEach(arg -> {
                         var referenceFields = schema.getInputType(arg).getFields().stream()
-                                .filter(it -> it.hasFieldReferences() || schema.isNodeIdReferenceInputField(it, field))
+                                .filter(it -> it.hasFieldReferences() || isNodeIdReferenceField(it, schema, currentTable))
                                 .map(GenerationSourceField::formatPath)
                                 .collect(Collectors.joining(", "));
                         if (!referenceFields.isEmpty()) {
@@ -2103,8 +2121,8 @@ public class ProcessedDefinitionsValidator {
             addErrorMessage("Nested key(s) found in entity type '%s'. This is currently not supported.", entityType.getName());
         }
 
-        for (var compositekey: entityType.getEntityKeys().keys()) {
-            for (var key : compositekey.getKeys()) {
+        for (var compositeKey: entityType.getEntityKeys().keys()) {
+            for (var key : compositeKey.getKeys()) {
                 var matchingField = entityType.getFields().stream()
                         .filter(field -> field.getName().equals(key))
                         .findFirst();
@@ -2112,7 +2130,7 @@ public class ProcessedDefinitionsValidator {
                     var similarFields = findSimilarStringsWithDistance(key, entityType.getFields().stream().map(AbstractField::getName), 6);
                     var suggestion = similarFields.isEmpty() ? "" : String.format(". Did you mean one of: '%s'?", String.join("', '", similarFields.keySet()));
                     addErrorMessage("Entity Key field '%s' was not found in type '%s'%s", key, entityType.getName(), suggestion);
-                } else if (matchingField.get().hasFieldReferences() || schema.isNodeIdReferenceField(matchingField.get())) {
+                } else if (matchingField.get().hasFieldReferences() || isNodeIdReferenceField(matchingField.get(), schema)) {
                     addErrorMessage("Entity Key field '%s' in type '%s' is a reference. This is currently not supported.",
                             key, entityType.getName());
                 }

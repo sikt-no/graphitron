@@ -722,6 +722,13 @@ public final class CodeBlock {
             return this;
         }
 
+        public Builder beginControlFlowIf(boolean predicate, String controlFlow, Object... args) {
+            if (predicate) {
+                beginControlFlow(controlFlow, args);
+            }
+            return this;
+        }
+
         public Builder beginControlFlowIf(boolean predicate) {
             if (predicate) {
                 beginControlFlow("");
@@ -870,8 +877,22 @@ public final class CodeBlock {
             return this;
         }
 
+        public Builder indentIf(boolean predicate) {
+            if (predicate) {
+                indent();
+            }
+            return this;
+        }
+
         public Builder unindent() {
             this.formatParts.add("$<");
+            return this;
+        }
+
+        public Builder unindentIf(boolean predicate) {
+            if (predicate) {
+                unindent();
+            }
             return this;
         }
 

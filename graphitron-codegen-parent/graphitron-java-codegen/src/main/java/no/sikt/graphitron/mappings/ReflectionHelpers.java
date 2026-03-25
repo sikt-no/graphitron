@@ -57,12 +57,16 @@ public class ReflectionHelpers {
      * @return The jOOQ record class, or null if the field is not targeting a jOOQ record field
      */
     public static Optional<Class<? extends UpdatableRecordImpl<?>>> getJooqRecordClassForNodeIdInputField(GenerationField field, ProcessedSchema schema) {
-        if (!schema.isNodeIdField(field)) return Optional.empty();
-        var containerType = schema.getInputType(field.getContainerTypeName());
-        if (containerType == null || !containerType.hasJavaRecordReference()) return Optional.empty();
+        if (!schema.isNodeIdField(field)) {
+            return Optional.empty();
+        }
+        var inputType = schema.getInputType(field.getContainerTypeName());
+        if (inputType == null || !inputType.hasJavaRecordReference()) {
+            return Optional.empty();
+        }
 
-        Class<?> javaRecordClass = containerType.getRecordReference();
+        Class<?> javaRecordClass = inputType.getRecordReference();
         String targetFieldName = field.getJavaRecordMethodMapping(true).getName();
-        return ReflectionHelpers.getJooqRecordClassReturnedFromFieldGetter(javaRecordClass, targetFieldName);
+        return getJooqRecordClassReturnedFromFieldGetter(javaRecordClass, targetFieldName);
     }
 }

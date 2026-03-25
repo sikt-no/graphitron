@@ -26,6 +26,6 @@ public class QueryDBQueries {
 
     private static SelectField<Customer> customersForQuery_customer(NodeIdStrategy _iv_nodeIdStrategy) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
-        return DSL.row(_iv_nodeIdStrategy.createId("Customer", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer::new));
+        return DSL.row(_iv_nodeIdStrategy.createId("Customer", _a_customer.CUSTOMER_ID)).mapping(Functions.nullOnAllNull(Customer::new));
     }
 }

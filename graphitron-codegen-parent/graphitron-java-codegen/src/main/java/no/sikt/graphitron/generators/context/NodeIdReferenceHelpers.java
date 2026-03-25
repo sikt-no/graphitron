@@ -1,88 +1,127 @@
 
 package no.sikt.graphitron.generators.context;
 
+import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.helpers.NodeConfiguration;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.mappings.ReflectionHelpers;
+import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
+import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphql.schema.ProcessedSchema;
+import org.jooq.Field;
 import org.jooq.ForeignKey;
 
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
+import java.util.TreeMap;
+import java.util.stream.IntStream;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.getReferenceNodeIdFields;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.referenceNodeIdColumnsBlock;
 import static no.sikt.graphitron.mappings.TableReflection.findImplicitKey;
-import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
+import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldName;
 
+/**
+ * Utility methods for determining whether a {@literal @}nodeId field is a cross-table reference
+ * and resolving the foreign key and column mappings needed for the generated code.
+ */
 public class NodeIdReferenceHelpers {
 
-    public static Optional<ForeignKey<?,?>> getForeignKeyForNodeIdReference(GenerationField target, ProcessedSchema schema) {
-        if (!schema.isNodeIdField(target) || !schema.hasRecord(target.getContainerTypeName()) || target.getContainerTypeName().equals(SCHEMA_QUERY.getName())) {
+    /**
+     * Determines whether a {@literal @}nodeId field is a reference.
+     * Returns {@code true} when the field has explicit {@literal @}reference directives, or when
+     * its node type's target table differs from {@code currentTable}.
+     *
+     * @param field        the {@literal @}nodeId field
+     * @param schema       the processed schema.
+     * @param currentTable the current table in which the field is currently being resolved, or {@code null} if unknown.
+     * @return {@code true} if the field references a node on a different table.
+     */
+    public static boolean isNodeIdReferenceField(GenerationField field, ProcessedSchema schema, JOOQMapping currentTable) {
+        if (!schema.isNodeIdField(field)) {
+            return false;
+        }
+        if (field.hasFieldReferences()) {
+            return true;
+        }
+        return currentTable != null && !schema.getNodeConfigurationForNodeIdFieldOrThrow(field).targetTable().equals(currentTable);
+    }
+
+    /**
+     * Determines whether a {@literal @}nodeId field is a reference by resolving the current table
+     * from the field's container type or its previous table object.
+     *
+     * @param objectField the {@literal @}nodeId object field
+     * @param schema      the processed schema.
+     * @return {@code true} if the field references a node on a different table than its previous table.
+     * @see #isNodeIdReferenceField(GenerationField, ProcessedSchema, JOOQMapping)
+     */
+    public static boolean isNodeIdReferenceField(ObjectField objectField, ProcessedSchema schema) {
+        var containerType = objectField.getContainerTypeName();
+        var currentTable = schema.isObject(containerType) && schema.getObject(containerType).hasTable()
+                ? schema.getObject(containerType).getTable()
+                : Optional.ofNullable(schema.getPreviousTableObjectForField(objectField))
+                .filter(RecordObjectSpecification::hasTable)
+                .map(RecordObjectSpecification::getTable)
+                .orElse(null);
+        return isNodeIdReferenceField(objectField, schema, currentTable);
+    }
+
+    /**
+     * Returns the Java column names to use for a {@literal @}nodeId field given the current table context.
+     * For references, maps the node's key columns through the foreign key to the current table's columns.
+     * Returns the node configuration's key columns directly if the field is not a reference.
+     *
+     * @param field        the field carrying the {@literal @}nodeId directive.
+     * @param schema       the processed schema.
+     * @param currentTable the current table in which the field is currently being resolved, or {@code null} if unknown.
+     * @return ordered list of Java column names for the key fields.
+     */
+    public static List<String> resolveColumnNamesForNodeIdField(GenerationField field, ProcessedSchema schema, JOOQMapping currentTable) {
+        if (isNodeIdReferenceField(field, schema, currentTable)) {
+            var foreignKey = findForeignKeyForNodeIdField(field, schema, currentTable)
+                    .orElseThrow(() -> new RuntimeException("Cannot find foreign key for nodeId field " + field.formatPath()));
+            return mapKeyColumnsThroughForeignKey(currentTable, schema.getNodeConfigurationForNodeIdFieldOrThrow(field), foreignKey);
+        }
+        return schema.getNodeConfigurationForNodeIdFieldOrThrow(field).keyColumnsJavaNames();
+    }
+
+    /**
+     * Resolves the foreign key connecting {@code currentTable} to the node type's target table
+     * for a {@literal @}nodeId reference field. Returns empty if the field is not a reference.
+     *
+     * @param field        the {@literal @}nodeId field
+     * @param schema       the processed schema.
+     * @param currentTable the current table in which the field is currently being resolved, or {@code null} if unknown.
+     * @return the foreign key, or empty if the field is not a reference.
+     */
+    public static Optional<ForeignKey<?,?>> findForeignKeyForNodeIdField(GenerationField field, ProcessedSchema schema, JOOQMapping currentTable) {
+        if (!isNodeIdReferenceField(field, schema, currentTable)) {
             return Optional.empty();
         }
-        var targetTable = schema.getNodeTypeForNodeIdFieldOrThrow(target).getTable().getName();
+        return resolveForeignKey(field, currentTable, schema.getNodeConfigurationForNodeIdFieldOrThrow(field).targetTable());
+    }
 
-        String previousTable;
-        if (schema.hasJOOQRecord(target.getContainerTypeName())) {
-            previousTable = schema.getRecordType(target.getContainerTypeName()).getTable().getName();
-        } else {
-            var optionalPreviousTable = ReflectionHelpers.getJooqRecordClassForNodeIdInputField(target, schema);
-            if (optionalPreviousTable.isPresent()) {
-                previousTable = TableReflection.getTableJavaFieldNameForRecordClass(optionalPreviousTable.get()).orElseThrow();
-            } else {
-                return Optional.empty();
-            }
-        }
-
-        if (previousTable.equals(targetTable) && target.getFieldReferences().isEmpty()) {
-            return Optional.empty();
-        }
-        return target.getFieldReferences().stream()
+    private static Optional<ForeignKey<?,?>> resolveForeignKey(GenerationField field, JOOQMapping previousTable, JOOQMapping targetTable) {
+        return field.getFieldReferences().stream()
                 .findFirst()
-                .map(fRef -> fRef.hasKey() ? fRef.getKey().getName() : findImplicitKey(previousTable, fRef.getTable().getName()).orElse(null))
-                .stream()
-                .findFirst()
-                .or(() -> findImplicitKey(previousTable, targetTable))
+                .map(fRef -> fRef.hasKey()
+                        ? Optional.of(fRef.getKey().getName())
+                        : findImplicitKey(previousTable.getName(), fRef.getTable().getName()))
+                .orElseGet(() -> findImplicitKey(previousTable.getName(), targetTable.getName()))
                 .flatMap(TableReflection::getForeignKey);
     }
 
-    public static CodeBlock getSourceFieldsForForeignKey(GenerationField target, ProcessedSchema schema, CodeBlock targetAlias) {
-        var key = getForeignKeyForNodeIdReference(target, schema);
+    private static List<String> mapKeyColumnsThroughForeignKey(JOOQMapping currentTable, NodeConfiguration targetNodeConfiguration, ForeignKey<?,?> fk) {
+        var sourceColumns = fk.getFields();
+        var targetColumns = fk.getInverseKey().getFields();
 
-        if (key.isPresent()) {
-            var nodeType = schema.getNodeTypeForNodeIdFieldOrThrow(target);
-            var container = schema.getRecordType(target.getContainerTypeName());
-            return referenceNodeIdColumnsBlock(container, nodeType, key.get(), targetAlias);
-        }
-        return CodeBlock.empty();
+        var mapping = new TreeMap<String, Field<?>>(String.CASE_INSENSITIVE_ORDER);
+        IntStream.range(0, sourceColumns.size())
+                .forEach(i -> mapping.put(targetColumns.get(i).getName(), sourceColumns.get(i)));
+
+        return targetNodeConfiguration.keyColumnsJavaNames().stream()
+                .map(it -> Optional.ofNullable(mapping.get(it))
+                        .orElseThrow(() -> new IllegalArgumentException("Node ID field " + it + " is not found in foreign key " + fk.getName() + "'s fields.")))
+                .map(it -> getJavaFieldName(currentTable.getName(), it.getName()).orElseThrow())
+                .toList();
     }
-
-
-    /**
-     * @param nodeType      The nodeId's type
-     * @param field         The field with the nodeId directive
-     * @param tableName     The target jOOQ table name.
-     * @return Returns the fields that corresponds to the nodeId key columns. For references it returns the source fields.
-     */
-
-    public static List<String> getKeyFieldsForSourceNodeTable(ObjectDefinition nodeType, GenerationField field, String tableName, ProcessedSchema schema) {
-        List<String> keyColumnFields;
-        if (tableName.equals(nodeType.getTable().getName()) && field.getFieldReferences().isEmpty()) {
-            keyColumnFields = schema.getKeyColumnsForNodeType(nodeType).orElseGet(LinkedList::new)
-                    .stream()
-                    .map(it -> TableReflection.getJavaFieldName(tableName, it)
-                            .orElseThrow(() -> new RuntimeException(String.format("Column %s not found in table %s",it, tableName)))
-                    ).toList();
-        } else {
-            var foreignKey = NodeIdReferenceHelpers.getForeignKeyForNodeIdReference(field, schema)
-                    .orElseThrow(() -> new RuntimeException("Cannot find foreign key for nodeId field " + field.getName() + " in " + nodeType.getName()));
-            keyColumnFields = getReferenceNodeIdFields(tableName, nodeType, foreignKey);
-        }
-        return keyColumnFields;
-    }
-
 }
