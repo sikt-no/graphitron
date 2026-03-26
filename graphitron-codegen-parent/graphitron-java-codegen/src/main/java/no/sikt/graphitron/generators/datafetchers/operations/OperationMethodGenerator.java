@@ -19,6 +19,7 @@ import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.CodeBlocks;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.GraphitronContext;
@@ -87,8 +88,8 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
         // For service-returning-table, build a DB-targeting queryFunction (the service is called separately for key extraction).
         var queryFunction = isAutoFetch
-                ? queryFunction(asQueryClass(localObject.getName()), asQueryMethodName(target.getName(), localObject.getName()), List.of(), true, true, false)
-                : queryFunction(objectToCall, methodName, parser.getMethodInputNames(true, true, true), !isRoot || hasLookup, !isRoot && !hasLookup, isService);
+                ? queryFunction(asQueryClass(localObject.getName()), asQueryMethodName(target.getName(), localObject.getName()), CodeBlocks.of(), true, true, false)
+                : queryFunction(objectToCall, methodName, parser.getMethodInputBlocks(true, true, true), !isRoot || hasLookup, !isRoot && !hasLookup, isService);
 
         if (hasLookup) { // Assume all keys are correlated.
             return CodeBlock
@@ -128,23 +129,22 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 methodName,
                 asMethodCall(VAR_TRANSFORMER, METHOD_CONTEXT_NAME),
                 CodeBlock.ofIf(shouldMakeNodeStrategy(), ", $N", VAR_NODE_STRATEGY),
-                CodeBlock.join(", ", parser.getMethodInputBlocks(true, true, true))
+                parser.getMethodInputBlocks(true, true, true).join(", ")
         );
     }
 
     private CodeBlock callQueryBlock(ObjectField target, String objectToCall, String method, InputParser parser, CodeBlock queryFunction) {
-        var innerCode = CodeBlock
-                .builder()
-                .addIf(!localObject.isOperationRoot(), "$L,", asMethodCall(sourcePrefix(localObject.getName()), getDTOGetterMethodNameForField(target)))
-                .add(" $L", callQueryBlockInner(target, objectToCall, method, parser, queryFunction))
-                .build();
-        return CodeBlock.statementOf(
-                "return $L.$L($L)",
-                target.hasServiceReference()
-                        ? newServiceDataFetcherWithTransform()
-                        : newDataFetcher(),
-                getFetcherMethodName(target, localObject),
-                indentIfMultiline(innerCode)
+        var innerCode = CodeBlocks
+                .create()
+                .addIf(!localObject.isOperationRoot(), asMethodCall(sourcePrefix(localObject.getName()), getDTOGetterMethodNameForField(target)))
+                .add(callQueryBlockInner(target, objectToCall, method, parser, queryFunction))
+                .join(", ");
+        return returnWrap(
+                CodeBlock.methodCall(
+                        target.hasServiceReference() ? newServiceDataFetcherWithTransform() : newDataFetcher(),
+                        getFetcherMethodName(target, localObject),
+                        indentIfMultiline(innerCode)
+                )
         );
     }
 
@@ -169,19 +169,12 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                     .build();
         }
 
-        var params = new ArrayList<String>();
-        if (!target.hasServiceReference()) {
-            params.add(VAR_CONTEXT);
-        }
-
-        if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            params.add(VAR_NODE_STRATEGY);
-        }
-
-        if (!localObject.isOperationRoot()) {
-            params.add(VAR_RESOLVER_KEYS);
-        }
-        params.addAll(parser.getMethodInputNames(false, false, true));
+        var params = CodeBlocks
+                .create()
+                .addVarIf(!target.hasServiceReference(), VAR_CONTEXT)
+                .addVarIf(GeneratorConfig.shouldMakeNodeStrategy(), VAR_NODE_STRATEGY)
+                .addVarIf(!localObject.isOperationRoot(), VAR_RESOLVER_KEYS)
+                .addAll(parser.getMethodInputBlocks(false, false, true));
 
         var countFunction = CodeBlock.ofIf(
                 target.hasTotalCountFieldInReturnType(processedSchema),
