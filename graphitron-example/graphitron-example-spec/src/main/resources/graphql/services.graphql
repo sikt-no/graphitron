@@ -163,4 +163,5 @@ type FilmFieldPresence @record(record: {className: "no.sikt.graphitron.example.s
 
 extend type City {
     filmsFromCity: [Film!]! @splitQuery @service(service: {className: "no.sikt.graphitron.example.service.MockService", method: "filmsFromCity"}) # Non-nullable for loadNonNullable approval test
+    filmsFromCityByYear(year: Int @field(name: "RELEASE_YEAR")): [Film] @splitQuery @service(service: {className: "no.sikt.graphitron.example.service.MockService", method: "filmsFromCityByYear"})
 }

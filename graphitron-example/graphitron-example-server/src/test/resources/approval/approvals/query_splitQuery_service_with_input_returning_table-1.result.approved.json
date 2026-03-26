@@ -1,0 +1,32 @@
+{
+    "data": {
+        "cities": {
+            "nodes": [
+                {
+                    "name": "A Corua (La Corua)",
+                    "filmsFromCityByYear": [
+                        {
+                            "title": "Film from service"
+                        }
+                    ]
+                },
+                {
+                    "name": "Abha",
+                    "filmsFromCityByYear": [
+                        {
+                            "title": "Film from service"
+                        }
+                    ]
+                },
+                {
+                    "name": "Abu Dhabi",
+                    "filmsFromCityByYear": [
+                        {
+                            "title": "Film from service"
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}

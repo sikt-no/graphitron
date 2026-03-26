@@ -17,6 +17,11 @@ public class MockService {
     public MockService(DSLContext context) {
     }
 
+    public Map<CityRecord, List<FilmRecord>> filmsFromCityByYear(Set<CityRecord> cityKeys, Integer year) {
+        //in practice the service would do something with year, but this is not important here.
+        return filmsFromCity(cityKeys);
+    }
+
     public Map<CityRecord, List<FilmRecord>> filmsFromCity(Set<CityRecord> cityKeys) {
         return cityKeys.stream().collect(Collectors.toMap(
                 key -> key,
