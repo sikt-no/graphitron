@@ -143,7 +143,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .unindent()
                 .addIf(target.createsDataFetcher(), "\n)")
                 .addIf(target.createsDataFetcher(), () -> CodeBlock.of("\n.from($L)\n", initialContext.renderQuerySource(getLocalTable())))
-                .addIf(target.createsDataFetcher(), () -> formatWhereContents(initialContext, resolverKeyParamName, isRoot, target.createsDataFetcher()))
+                .addIf(target.createsDataFetcher(), () -> formatWhereContents(initialContext, target.createsDataFetcher()))
                 .add(getFetchCodeBlock(target))
                 .unindent()
                 .build();
@@ -355,7 +355,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
     private CodeBlock getSortFieldsMethodCode(ObjectDefinition implementation, FetchContext context, ObjectField queryTarget) {
         var targetAlias = context.getTargetAlias();
-        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, false);
+        var whereBlock = formatWhereContents(context, false);
         String implName = implementation.getName();
 
         // When first reference step is a condition reference without key, we need to join explicitly

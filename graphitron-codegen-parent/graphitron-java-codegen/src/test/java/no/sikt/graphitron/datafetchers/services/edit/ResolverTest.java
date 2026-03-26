@@ -142,11 +142,16 @@ public class ResolverTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("With service that returns a jOOQ record")
+    @DisplayName("With service that returns a jOOQ record, should fetch from DB")
     void returningJOOQRecord() {
         assertGeneratedContentContains(
                 "returningJOOQRecord", Set.of(CUSTOMER_TABLE),
-                ".customerTableRecordToGraphType(_iv_response, \"\")"
+                "_iv_serviceResult.key().into(",
+                "new DataFetcherHelper(_iv_env).load(_iv_serviceKey"
+        );
+        resultDoesNotContain(
+                "returningJOOQRecord", Set.of(CUSTOMER_TABLE),
+                "customerTableRecordToGraphType"
         );
     }
 

@@ -85,7 +85,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     void containingRecords() {
         assertGeneratedContentContains(
                 "containingRecords",
-                "customer = new ArrayList<Customer>();return _mlo_customer"
+                "setAddressKey(_nit_customerRecord.key().into(CustomerRecord.class))"
         );
     }
 

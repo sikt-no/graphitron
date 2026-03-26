@@ -17,6 +17,7 @@ extend type Query {
     customerService: Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
     customerServiceWithJooqRecordInput(input: CustomerInput!): Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
     customerServiceWithJavaRecordInput(input: HelloWorldInputObject!): Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
+    customerServiceList: [Customer] @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customers"})
 
     mockUpdateAddressAndCustomer: MockUpdateAddressAndCustomerPayload @service(service: {className: "no.sikt.graphitron.example.service.MockService"})
 }
@@ -26,15 +27,15 @@ type MockUpdateAddressAndCustomerPayload {
 }
 
 type MockUpdateAddressAndCustomerResult @record(record: {className: "no.sikt.graphitron.example.service.records.MockUpdateAddressAndCustomerResultRecord"}) {
-    customers: [Customer] @splitQuery
-    address: Address @splitQuery
-    extraAddress: Address @field(name: "myAddress") @splitQuery
+    customers: [Customer]
+    address: Address
+    extraAddress: Address @field(name: "myAddress")
 }
 
 type HelloWorldObject @record(record: {className: "no.sikt.graphitron.example.service.records.HelloWorldRecord"}){
     greeting: String
-    film: Film @splitQuery
-    films: [Film] @splitQuery
+    film: Film
+    films: [Film]
     wrapper: CustomerWrapper
 }
 
