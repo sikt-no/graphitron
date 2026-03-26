@@ -1,0 +1,13 @@
+{
+    "data": {
+        "checkOptionalFields": {
+            "results": [
+                {
+                    "title": "Explicit Null",
+                    "rentalDurationStatus": "EXPLICIT_NULL",
+                    "descriptionStatus": "EXPLICIT_NULL"
+                }
+            ]
+        }
+    }
+}
