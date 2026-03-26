@@ -13,7 +13,6 @@ import no.sikt.graphitron.definitions.objects.InputDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks;
-import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
@@ -134,13 +133,9 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
     }
 
     private CodeBlock callQueryBlock(ObjectField target, String objectToCall, String method, InputParser parser, CodeBlock queryFunction) {
-        boolean mapResolverKeyToRow = !localObject.isOperationRoot() && target.hasServiceReference() && target.getExternalMethod().isMethodUsingRowResolverKey();
         var innerCode = CodeBlock
                 .builder()
-                .addIf(mapResolverKeyToRow, () -> CodeBlock.of("($T) ", KeyWrapper.getKeyForResolverFieldOrThrow(target, processedSchema).getRowTypeName()))
-                .addIf(!localObject.isOperationRoot(), "$L", asMethodCall(sourcePrefix(localObject.getName()), getDTOGetterMethodNameForField(target)))
-                .addIf(mapResolverKeyToRow, ".key().valuesRow()")
-                .addIf(!localObject.isOperationRoot(), ",")
+                .addIf(!localObject.isOperationRoot(), "$L,", asMethodCall(sourcePrefix(localObject.getName()), getDTOGetterMethodNameForField(target)))
                 .add(callQueryBlockInner(target, objectToCall, method, parser, queryFunction))
                 .build();
         return CodeBlock
