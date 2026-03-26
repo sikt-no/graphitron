@@ -1018,21 +1018,6 @@ public final class CodeBlock {
             return this;
         }
 
-        public Builder addIndented(CodeBlock codeBlock) {
-            if (!codeBlock.toString().contains("\n")) {
-                return add(codeBlock);
-            }
-
-            return this
-                    .add("\n")
-                    .indent()
-                    .indent()
-                    .add(codeBlock)
-                    .add("\n")
-                    .unindent()
-                    .unindent();
-        }
-
         public Builder addIf(boolean predicate, CodeBlock codeBlock) {
             if (predicate) {
                 add(codeBlock);
