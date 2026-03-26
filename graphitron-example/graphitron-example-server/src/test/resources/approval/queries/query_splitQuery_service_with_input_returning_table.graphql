@@ -1,0 +1,11 @@
+# Non-root service with input argument returning @table type
+{
+  cities(first: 3) {
+    nodes {
+      name
+      filmsFromCityByYear(year: 2006) {
+        title
+      }
+    }
+  }
+}
