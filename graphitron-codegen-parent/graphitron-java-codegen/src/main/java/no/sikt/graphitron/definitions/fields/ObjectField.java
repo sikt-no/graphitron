@@ -106,6 +106,20 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
     }
 
     /**
+     * @return Type construction configuration.
+     */
+    public ConstructSelection getSelectConstruct() {
+        return construct;
+    }
+
+    /**
+     * @return Does this field have a type construction directive set?
+     */
+    public boolean hasSelectConstruct() {
+        return construct != null;
+    }
+
+    /**
      * @return Does this search field use forward pagination?
      * Does its type have the reserved "Connection" suffix?
      */

@@ -1,0 +1,8 @@
+type Customer @table {
+  field: Inner @experimental_constructType(selection: "f0")
+}
+
+type Inner {
+  f0: String
+  f1: String
+}
