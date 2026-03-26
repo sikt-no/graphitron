@@ -1,0 +1,13 @@
+{
+    "data": {
+        "checkOptionalFields": {
+            "results": [
+                {
+                    "title": "With Value",
+                    "rentalDurationStatus": "5",
+                    "descriptionStatus": "A description"
+                }
+            ]
+        }
+    }
+}

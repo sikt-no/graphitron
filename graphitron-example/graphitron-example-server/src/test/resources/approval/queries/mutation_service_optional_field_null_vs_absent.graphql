@@ -1,0 +1,10 @@
+# Verify explicit null vs absent field handling in service operations with Optional Java record fields (GG-407)
+mutation CheckOptionalFields($input: [OptionalFieldServiceInput!]!) {
+    checkOptionalFields(input: $input) {
+        results {
+            title
+            rentalDurationStatus
+            descriptionStatus
+        }
+    }
+}
