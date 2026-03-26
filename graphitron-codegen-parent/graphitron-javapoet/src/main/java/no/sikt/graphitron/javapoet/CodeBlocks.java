@@ -112,6 +112,13 @@ public final class CodeBlocks implements Iterable<CodeBlock> {
     }
 
     /**
+     * Appends a code block built from the given variable only if the predicate is true.
+     */
+    public CodeBlocks addVarIf(boolean predicate, String variable) {
+        return predicate ? add("$N", variable) : this;
+    }
+
+    /**
      * Appends all code blocks from another {@link CodeBlocks}.
      */
     public CodeBlocks addAll(CodeBlocks other) {

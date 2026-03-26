@@ -580,6 +580,32 @@ public final class MethodSpec {
             return this;
         }
 
+        public Builder addCodeAll(Iterable<CodeBlock> codeBlocks) {
+            code.addAll(codeBlocks);
+            return this;
+        }
+
+        public Builder addCodeAll(CodeBlock... codeBlocks) {
+            code.addAll(codeBlocks);
+            return this;
+        }
+
+        public Builder addCodeAllIf(boolean predicate, Iterable<CodeBlock> codeBlocks) {
+            if (predicate) {
+                return addCodeAll(codeBlocks);
+            }
+
+            return this;
+        }
+
+        public Builder addCodeAllIf(boolean predicate, CodeBlock... codeBlocks) {
+            if (predicate) {
+                return addCodeAll(codeBlocks);
+            }
+
+            return this;
+        }
+
         public Builder declare(String name, String format, Object... args) {
             code.declare(name, format, args);
             return this;
@@ -695,6 +721,32 @@ public final class MethodSpec {
         public Builder declareNewIf(boolean predicate, TypeName declareType, String name, CodeBlock params) {
             if (predicate) {
                 declareNew(name, declareType, params);
+            }
+
+            return this;
+        }
+
+        public Builder assign(String name, CodeBlock value) {
+            code.assign(name, value);
+            return this;
+        }
+
+        public Builder assign(String name, String format, Object... args) {
+            code.assign(name, format, args);
+            return this;
+        }
+
+        public Builder assignIf(boolean predicate, String name, CodeBlock value) {
+            if (predicate) {
+                return assign(name, value);
+            }
+
+            return this;
+        }
+
+        public Builder assignIf(boolean predicate, String name, String format, Object... args) {
+            if (predicate) {
+                return assign(name, format, args);
             }
 
             return this;
