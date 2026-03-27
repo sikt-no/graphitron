@@ -260,6 +260,24 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return CodeBlock that checks whether a field is present in the ArgumentPresence tree.
+     * The path may contain slashes for nested non-record wrapper types (e.g. "inner/postalCode"),
+     * in which case intermediate segments are navigated via .child() calls.
+     */
+    @NotNull
+    public static CodeBlock argumentPresenceLookup(String path, boolean atResolver) {
+        var parts = path.split("/");
+        var fieldName = parts[parts.length - 1];
+        CodeBlock base = atResolver
+                ? CodeBlock.of("$L", asMethodCall(VAR_TRANSFORMER, METHOD_ARG_PRESENCE_NAME))
+                : CodeBlock.of("$N", VAR_ARGS);
+        for (int i = 0; i < parts.length - 1; i++) {
+            base = CodeBlock.of("$L.$L($S)", base, METHOD_CHILD, parts[i]);
+        }
+        return CodeBlock.of("$L.$L($S)", base, METHOD_HAS_FIELD, fieldName);
+    }
+
+    /**
      * @return CodeBlock that sets a value through a mapping.
      */
     @NotNull

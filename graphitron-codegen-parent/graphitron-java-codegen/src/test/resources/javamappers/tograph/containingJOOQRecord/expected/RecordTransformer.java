@@ -14,7 +14,8 @@ public class RecordTransformer extends AbstractTransformer {
         super(_iv_env);
     }
 
-    public List<Address> addressToGraphType(List<MapperNestedJavaRecord> _mi_input, String _iv_path) {
+    public List<Address> addressToGraphType(List<MapperNestedJavaRecord> _mi_input,
+                                             String _iv_path) {
         return List.of();
     }
 
@@ -27,7 +28,8 @@ public class RecordTransformer extends AbstractTransformer {
         return null;
     }
 
-    public CustomerTable customerTableRecordToGraphType(CustomerRecord _mi_input, String _iv_path) {
+    public CustomerTable customerTableRecordToGraphType(CustomerRecord _mi_input,
+                                                         String _iv_path) {
         return null;
     }
 }

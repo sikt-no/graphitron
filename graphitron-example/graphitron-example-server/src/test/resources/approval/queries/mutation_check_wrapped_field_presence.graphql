@@ -1,0 +1,8 @@
+# Verify that fields inside a non-record wrapper are correctly mapped via child() navigation in ArgumentPresence
+mutation CheckWrappedFieldPresence($in: [WrappedFieldInput!]!) {
+    checkWrappedFieldPresence(in: $in) {
+        title
+        description
+        rentalDuration
+    }
+}

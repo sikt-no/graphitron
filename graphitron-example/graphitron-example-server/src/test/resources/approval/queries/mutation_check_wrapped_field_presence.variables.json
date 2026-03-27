@@ -1,0 +1,22 @@
+[
+  {
+    "in": [
+      {
+        "title": "Film With All Details",
+        "filmDetails": {
+          "description": "Full description",
+          "rentalDuration": 5
+        }
+      },
+      {
+        "title": "Film With Partial Details",
+        "filmDetails": {
+          "description": "Only description"
+        }
+      },
+      {
+        "title": "Film Without Details"
+      }
+    ]
+  }
+]

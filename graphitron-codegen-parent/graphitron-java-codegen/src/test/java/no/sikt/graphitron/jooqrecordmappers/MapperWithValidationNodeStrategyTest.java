@@ -57,14 +57,14 @@ public class MapperWithValidationNodeStrategyTest extends GeneratorTest {
     void toRecord() {
         assertGeneratedContentContains("toRecord/default", Set.of(CUSTOMER_NODE),
                 // In mapper
-                "toJOOQRecord(List<CustomerInputTable> _mi_customerInputTable, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path, RecordTransformer _iv_transform)",
+                "toJOOQRecord(List<CustomerInputTable> _mi_customerInputTable, NodeIdStrategy _iv_nodeIdStrategy, ArgumentPresence _iv_argPresence, String _iv_path, RecordTransformer _iv_transform)",
                 "nodeIdStrategy.setId(_mo_customerRecord, _nit_customerInputTable.getId(), \"CustomerNode\", Customer.CUSTOMER.CUSTOMER_ID)",
 
                 // In recordtransformer
-                "customerInputTableToJOOQRecord(List<CustomerInputTable> _mi_input, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path, String _iv_indexPath)",
-                "customerInputTableToJOOQRecord(CustomerInputTable _mi_input, NodeIdStrategy _iv_nodeIdStrategy, String _iv_path, String _iv_indexPath)",
-                "customerInputTableToJOOQRecord(List.of(_mi_input), _iv_nodeIdStrategy, _iv_path, _iv_indexPath)",
-                ".toJOOQRecord(_mi_input, _iv_nodeIdStrategy, _iv_path, this)",
+                "customerInputTableToJOOQRecord(List<CustomerInputTable> _mi_input, NodeIdStrategy _iv_nodeIdStrategy, ArgumentPresence _iv_argPresence, String _iv_path, String _iv_indexPath)",
+                "customerInputTableToJOOQRecord(CustomerInputTable _mi_input, NodeIdStrategy _iv_nodeIdStrategy, ArgumentPresence _iv_argPresence, String _iv_path, String _iv_indexPath)",
+                "customerInputTableToJOOQRecord(List.of(_mi_input), _iv_nodeIdStrategy, _iv_argPresence.asSingleItem(), _iv_path, _iv_indexPath)",
+                ".toJOOQRecord(_mi_input, _iv_nodeIdStrategy, _iv_argPresence, _iv_path, this)",
 
                 // validation
                 "validate(List<CustomerRecord> _mi_customerRecord, String _iv_path, RecordTransformer _iv_transform)",

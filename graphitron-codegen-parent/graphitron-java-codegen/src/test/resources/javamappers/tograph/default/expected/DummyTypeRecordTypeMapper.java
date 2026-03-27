@@ -8,8 +8,8 @@ import java.util.List;
 import no.sikt.graphitron.codereferences.records.IDJavaRecord;
 
 public class DummyTypeRecordTypeMapper {
-    public static List<DummyTypeRecord> toGraphType(List<IDJavaRecord> _mi_iDJavaRecord, String _iv_path,
-                                                    RecordTransformer _iv_transform) {
+    public static List<DummyTypeRecord> toGraphType(List<IDJavaRecord> _mi_iDJavaRecord,
+                                                    String _iv_path, RecordTransformer _iv_transform) {
         var _iv_pathHere = _iv_path.isEmpty() ? _iv_path : _iv_path + "/";
         var _iv_select = _iv_transform.getSelect();
         var _mlo_dummyTypeRecord = new ArrayList<DummyTypeRecord>();

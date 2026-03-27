@@ -12,7 +12,7 @@ import no.sikt.graphitron.validation.RecordValidator;
 
 public class CustomerInputTableJOOQMapper {
     public static Set<GraphQLError> validate(List<CustomerRecord> _mi_customerRecord, String _iv_path,
-                                             RecordTransformer _iv_transform) {
+            RecordTransformer _iv_transform) {
         var _iv_pathHere = _iv_path.isEmpty() ? _iv_path : _iv_path + "/";
         var _iv_args = _iv_transform.getArguments();
         var _iv_env = _iv_transform.getEnv();

@@ -1,0 +1,9 @@
+# Verify that nested @record inputs at depth 2+ are correctly mapped
+mutation CheckNestedRecordPresence($in: [NestedRecordOuterInput!]!) {
+    checkNestedRecordPresence(in: $in) {
+        topField
+        middleField
+        deepField
+        deepNumber
+    }
+}

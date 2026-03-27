@@ -70,7 +70,7 @@ public class StrategyNodeServiceTest extends GeneratorTest {
     void withInputJOOQRecord() {
         assertGeneratedContentContains(
                 "withInputJOOQRecord",
-                ".customerNodeInputTableToJOOQRecord(_mi_in, _iv_nodeIdStrategy, \"in\")",
+                ".customerNodeInputTableToJOOQRecord(_mi_in, _iv_nodeIdStrategy, _iv_transform.getArgumentPresence().child(\"in\"), \"in\")",
                 "_iv_serviceResult.key().into(",
                 "new DataFetcherHelper(_iv_env).load(_iv_serviceKey"
         );

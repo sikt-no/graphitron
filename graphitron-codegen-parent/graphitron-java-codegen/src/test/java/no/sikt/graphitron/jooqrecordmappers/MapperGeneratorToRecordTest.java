@@ -44,7 +44,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     void mappedField() {
         assertGeneratedContentContains(
                 "mappedField",
-                "pathHere + \"first\"",
+                "_iv_args.hasField(\"first\")",
                 "customerRecord.setFirstName(_nit_customer.getFirst()"
         );
     }
@@ -54,9 +54,9 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     void twoFields() {
         assertGeneratedContentContains(
                 "twoFields",
-                "pathHere + \"id\"",
+                "_iv_args.hasField(\"id\")",
                 "customerRecord.setId(_nit_customer.getId()",
-                "pathHere + \"first\"",
+                "_iv_args.hasField(\"first\")",
                 "customerRecord.setFirstName(_nit_customer.getFirst()"
         );
     }
@@ -67,7 +67,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "containingNonRecordWrapper",
                 "if (_mi_address_inner != null) {" +
-                        "if (_iv_args.contains(_iv_pathHere + \"inner/postalCode\")) {" +
+                        "if (_iv_args.child(\"inner\").hasField(\"postalCode\")) {" +
                         "_mo_addressRecord.setPostalCode(_mi_address_inner.getPostalCode());}}" +
                         "_mlo_addressRecord.add(_mo_addressRecord)"
         );
@@ -82,7 +82,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
                         "if (_mi_address_inner0 != null) {" +
                         "var _mi_wrapper_inner1 = _mi_address_inner0.getInner1();" +
                         "if (_mi_wrapper_inner1 != null) {" +
-                        "if (_iv_args.contains(_iv_pathHere + \"inner0/inner1/postalCode\")) {" +
+                        "if (_iv_args.child(\"inner0\").child(\"inner1\").hasField(\"postalCode\")) {" +
                         "_mo_addressRecord.setPostalCode(_mi_wrapper_inner1.getPostalCode());"
         );
     }
@@ -96,7 +96,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
                         "if (_mi_address_inner != null) {" +
                         "var _mi_wrapper_inner = _mi_address_inner.getInner();" +
                         "if (_mi_wrapper_inner != null) {" +
-                        "if (_iv_args.contains(_iv_pathHere + \"inner/inner/postalCode\")) {" +
+                        "if (_iv_args.child(\"inner\").child(\"inner\").hasField(\"postalCode\")) {" +
                         "_mo_addressRecord.setPostalCode(_mi_wrapper_inner.getPostalCode()"
         );
     }

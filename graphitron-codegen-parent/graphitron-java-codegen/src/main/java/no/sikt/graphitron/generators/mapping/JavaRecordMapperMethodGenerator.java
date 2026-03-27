@@ -94,7 +94,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 var nullBlock = CodeBlock.ofIf(shouldDeclareVariable, "$N != null && ", varName);
                 fieldCode
                         .declareIf(shouldDeclareVariable, varName, innerContext.getSourceGetCallBlock())
-                        .beginControlFlow("if ($L$L)", nullBlock, selectionSetLookup(innerContext.getPath(), false, toRecord))
+                        .beginControlFlow("if ($L$L)", nullBlock, toRecord ? argumentPresenceLookup(innerContext.getPath(), false) : selectionSetLookup(innerContext.getPath(), false, false))
                         .add(innerCode.build())
                         .endControlFlow()
                         .add("\n");
@@ -205,8 +205,9 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             var listVarName = mapperNodeInputPrefix(field.getName());
             listVarNames.add(listVarName);
             var getterMapping = new MethodMapping(field.getName());
+            var fieldPath = context.getPath().isEmpty() ? field.getName() : context.getPath() + "/" + field.getName();
             code.declare(listVarName,
-                    "$L ? $L : null", FormatCodeBlocks.selectionSetLookup(field.getName(), false, true),
+                    "$L ? $L : null", FormatCodeBlocks.argumentPresenceLookup(fieldPath, false),
                     asMethodCall(inputVar, getterMapping.asGet()));
         }
 
@@ -272,8 +273,9 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
         var inputVar = namedIteratorPrefix(sourceName);
         var getterMapping = new MethodMapping(field.getName());
 
+        var fieldPath = context.getPath().isEmpty() ? field.getName() : context.getPath() + "/" + field.getName();
         return CodeBlock.builder()
-                .beginControlFlow("if ($L)", FormatCodeBlocks.selectionSetLookup(field.getName(), false, true))
+                .beginControlFlow("if ($L)", FormatCodeBlocks.argumentPresenceLookup(fieldPath, false))
                 .declare(VAR_NODE_ID_VALUE, asMethodCall(inputVar, getterMapping.asGet()))
                 .add(
                         wrapNotNull(

@@ -1,0 +1,21 @@
+{
+    "data": {
+        "checkWrappedFieldPresence": [
+            {
+                "title": "Film With All Details",
+                "description": "Full description",
+                "rentalDuration": 5
+            },
+            {
+                "title": "Film With Partial Details",
+                "description": "Only description",
+                "rentalDuration": null
+            },
+            {
+                "title": "Film Without Details",
+                "description": null,
+                "rentalDuration": null
+            }
+        ]
+    }
+}

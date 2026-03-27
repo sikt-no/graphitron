@@ -82,7 +82,7 @@ public class RecordTest extends GeneratorTest {
                 "customerForQuery(DSLContext _iv_ctx, List<CustomerRecord> _mi_inRecordList,",
                 "DSL.row(DSL.trueCondition(), _a_customer.FIRST_NAME).in(",
                 "customer.hasId(_mi_inRecordList.get(_iv_it).getId()),",
-                "_iv_select.getArgumentSet().contains(\"in[\" + _iv_it + \"]/first\") ? DSL.val(_mi_inRecordList.get(_iv_it).getFirstName()) : _a_customer.FIRST_NAME"
+                "_iv_select.hasArgumentAtIndex(\"in\", _iv_it, \"first\") ? DSL.val(_mi_inRecordList.get(_iv_it).getFirstName()) : _a_customer.FIRST_NAME"
         );
     }
 

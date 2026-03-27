@@ -16,7 +16,7 @@ public class MutationGeneratedDataFetcher {
         return _iv_env -> {
             CustomerInputTable _mi_in = ResolverHelpers.transformDTO(_iv_env.getArgument("in"), CustomerInputTable.class);
             var _iv_transform = new RecordTransformer(_iv_env);
-            var _mi_inRecord = _iv_transform.customerInputTableToJOOQRecord(_mi_in, "in");
+            var _mi_inRecord = _iv_transform.customerInputTableToJOOQRecord(_mi_in, _iv_transform.getArgumentPresence().child("in"), "in");
             return new DataFetcherHelper(_iv_env).load((_iv_ctx, _iv_selectionSet) -> MutationDBQueries.mutationForMutation(_iv_ctx, _mi_inRecord, _iv_selectionSet));
         };
     }

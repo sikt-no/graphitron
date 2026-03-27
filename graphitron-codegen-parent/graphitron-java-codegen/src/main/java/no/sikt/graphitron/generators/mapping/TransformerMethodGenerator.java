@@ -40,7 +40,8 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
         return getDefaultSpecBuilder(
                 methodName,
                 wrapListIf(type.asTargetClassName(toRecord), currentSource == null && target.isIterableWrapped()),
-                currentSource != null || !target.hasServiceReference() ? currentSource : target.getExternalMethod().getGenericReturnType()
+                currentSource != null || !target.hasServiceReference() ? currentSource : target.getExternalMethod().getGenericReturnType(),
+                toRecord
         )
                 .addParameterIf(toRecord && useValidation(type), STRING.className, VAR_INDEX_PATH)
                 .addCode(getMethodContent(target))
@@ -71,11 +72,12 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
         }
 
         return CodeBlock.statementOf(
-                "return $N($T.of($N)$L, $N$L).stream().findFirst().orElse($L)",
+                "return $N($T.of($N)$L$L, $N$L).stream().findFirst().orElse($L)",
                 recordTransformMethod(type.getName(), type.hasJavaRecordReference(), toRecord),
                 LIST.className,
                 VARIABLE_INPUT,
                 CodeBlock.ofIf(shouldMakeNodeStrategy(), ", $N", VAR_NODE_STRATEGY),
+                CodeBlock.ofIf(toRecord, ", $N.$L()", VAR_ARG_PRESENCE, METHOD_AS_SINGLE_ITEM),
                 VAR_PATH_NAME,
                 CodeBlock.ofIf(useValidation, ", $N", VAR_INDEX_PATH),
                 toRecord ? CodeBlock.of("new $T()", type.getRecordClassName()) : CodeBlock.of("null")
@@ -84,12 +86,13 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
 
     protected static CodeBlock transformCallCode(boolean useValidation, ClassName mapperClass, boolean hasReference, boolean toRecord) {
         return CodeBlock.of(
-                "$L$T.$L($N,$L $N, this)",
+                "$L$T.$L($N,$L$L $N, this)",
                 useValidation ? CodeBlock.of("var $L = ", VARIABLE_RECORDS) : CodeBlock.of("return "),
                 mapperClass,
                 recordTransformMethod(hasReference, toRecord),
                 VARIABLE_INPUT,
                 CodeBlock.ofIf(shouldMakeNodeStrategy(), " $N,", VAR_NODE_STRATEGY),
+                CodeBlock.ofIf(toRecord, " $N,", VAR_ARG_PRESENCE),
                 VAR_PATH_NAME
         );
     }
@@ -98,10 +101,11 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
         return CodeBlock.of("$N.addAll($T.$L($N, $N, this))", VAR_VALIDATION_ERRORS, mapperClass, recordValidateMethod(), VARIABLE_RECORDS, VAR_INDEX_PATH);
     }
 
-    protected MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType, TypeName source) {
+    protected MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType, TypeName source, boolean toRecord) {
         return getDefaultSpecBuilder(methodName, returnType)
                 .addParameter(source, VARIABLE_INPUT)
                 .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY)
+                .addParameterIf(toRecord, ARGUMENT_PRESENCE.className, VAR_ARG_PRESENCE)
                 .addParameter(STRING.className, VAR_PATH_NAME);
     }
 
