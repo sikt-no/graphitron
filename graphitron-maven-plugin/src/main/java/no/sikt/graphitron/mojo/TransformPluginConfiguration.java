@@ -65,6 +65,12 @@ public class TransformPluginConfiguration {
     private boolean addFeatureFlags = false;
 
     /**
+     * Whether to automatically add the `@key(fields: "id")`-directive to types
+     * implementing the Node interface.
+     */
+    private boolean addKeyDirectiveToNodes = false;
+
+    /**
      * The name of the output schema file for full content (no feature filtering).
      * <p>
      * <b>Note:</b> Only used by the standalone {@code transform} goal.
@@ -154,6 +160,14 @@ public class TransformPluginConfiguration {
         this.addFeatureFlags = addFeatureFlags;
     }
 
+    public boolean isAddKeyDirectiveToNodes() {
+        return addKeyDirectiveToNodes;
+    }
+
+    public void setAddKeyDirectiveToNodes(boolean addKeyDirectiveToNodes) {
+        this.addKeyDirectiveToNodes = addKeyDirectiveToNodes;
+    }
+
     public String getOutputSchema() {
         return outputSchema;
     }
@@ -199,6 +213,7 @@ public class TransformPluginConfiguration {
                 getDirectivesToRemove(),
                 descriptionSuffixForFeatures,
                 addFeatureFlags,
+                addKeyDirectiveToNodes,
                 removeGeneratorDirectives,
                 isRemoveExcludedElements(),
                 expandConnections,
