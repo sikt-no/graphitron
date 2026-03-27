@@ -101,7 +101,7 @@ Fields on the `Query` type. They have no source context. All start a new Graphit
 
 ### Mutation fields — unmapped source, write
 
-Fields on the `Mutation` type. These are the only fields permitted to write to the database. All carry a `LiftConditionSpec` — the return type is always table-mapped (possibly via a wrapper type containing a `TableRecord`).
+Fields on the `Mutation` type. These are the only fields permitted to write to the database. `ServiceMutationField` is the `@service` equivalent — the service method is permitted to mutate.
 
 | Field type | Operation |
 |---|---|
@@ -111,7 +111,9 @@ Fields on the `Mutation` type. These are the only fields permitted to write to t
 | `UpsertMutationField` | `@mutation(typeName: UPSERT)` |
 | `ServiceMutationField` | `@service` — write logic too complex for Graphitron to generate directly |
 
-After the mutation executes, the LiftCondition reconnects the result to the target table and a new Graphitron scope handles the return projection.
+Whether a lift occurs depends on the return type:
+- **Table-mapped return type** → `LiftConditionSpec` on the mutation field; new Graphitron scope handles projection.
+- **Result-mapped return type** → no lift here; lift occurs later via `LiftChildField` on the result-mapped type's fields.
 
 ---
 
@@ -189,13 +191,13 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 
 ### Mutation fields
 
-| Field type | Returns (after lift) |
-|---|---|
-| `InsertMutationField` | Table-mapped (via LiftCondition) |
-| `UpdateMutationField` | Table-mapped (via LiftCondition) |
-| `DeleteMutationField` | Table-mapped (via LiftCondition) |
-| `UpsertMutationField` | Table-mapped (via LiftCondition) |
-| `ServiceMutationField` | Table-mapped (via LiftCondition) |
+| Field type | Return type table-mapped | Return type result-mapped |
+|---|---|---|
+| `InsertMutationField` | LiftCondition on field | Lift via child `LiftChildField`s |
+| `UpdateMutationField` | LiftCondition on field | Lift via child `LiftChildField`s |
+| `DeleteMutationField` | LiftCondition on field | Lift via child `LiftChildField`s |
+| `UpsertMutationField` | LiftCondition on field | Lift via child `LiftChildField`s |
+| `ServiceMutationField` | LiftCondition on field | Lift via child `LiftChildField`s |
 
 ### Child fields — table-mapped source
 
