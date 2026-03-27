@@ -192,7 +192,7 @@ type WrappedFieldResult @record(record: {className: "no.sikt.graphitron.example.
     rentalDuration: Int
 }
 
-# Test types for verifying nested @record inputs at depth 2+ (mirrors the sis opprettStudenter pattern)
+# Test types for verifying nested @record inputs at depth 2+
 input NestedRecordOuterInput @record(record: {className: "no.sikt.graphitron.example.service.records.NestedRecordOuterInput"}) {
     topField: String!
     nested: NestedRecordMiddleInput

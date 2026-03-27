@@ -1,4 +1,4 @@
-# Verify that nested @record inputs at depth 2+ are correctly mapped (mirrors the sis opprettStudenter bug)
+# Verify that nested @record inputs at depth 2+ are correctly mapped
 mutation CheckNestedRecordPresence($in: [NestedRecordOuterInput!]!) {
     checkNestedRecordPresence(in: $in) {
         topField
