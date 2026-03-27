@@ -1,0 +1,11 @@
+[
+  {
+    "input": [{"title": "With Value", "rentalDuration": 5, "description": "A description"}]
+  },
+  {
+    "input": [{"title": "Explicit Null", "rentalDuration": null, "description": null}]
+  },
+  {
+    "input": [{"title": "Omitted Fields"}]
+  }
+]

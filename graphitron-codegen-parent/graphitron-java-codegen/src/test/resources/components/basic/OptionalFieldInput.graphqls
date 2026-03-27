@@ -1,0 +1,5 @@
+input OptionalFieldInput @record(record: {name: "OPTIONAL_FIELD_RECORD"}) {
+  id: ID!
+  name: String
+  rentalDuration: Int = 3
+}
