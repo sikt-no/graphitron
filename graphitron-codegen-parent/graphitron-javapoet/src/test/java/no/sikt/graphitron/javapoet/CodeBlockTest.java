@@ -339,7 +339,7 @@ public final class CodeBlockTest {
         codeBlocks.add(CodeBlock.of("$T", ClassName.get("world", "World")));
         codeBlocks.add(CodeBlock.of("need tacos"));
 
-        CodeBlock joined = CodeBlock.join(codeBlocks, " || ");
+        CodeBlock joined = CodeBlock.join(" || ", codeBlocks);
         assertThat(joined.toString()).isEqualTo("\"hello\" || world.World || need tacos");
     }
 
@@ -382,5 +382,202 @@ public final class CodeBlockTest {
                 .build();
 
         assertThat(block.toString()).isEmpty();
+    }
+
+    @Test
+    public void ternary() {
+        CodeBlock block = CodeBlock.ternary(
+                CodeBlock.of("x != null"),
+                CodeBlock.of("x"),
+                CodeBlock.of("y"));
+        assertThat(block.toString()).isEqualTo("x != null ? x : y");
+    }
+
+    @Test
+    public void ternaryWithTypes() {
+        CodeBlock block = CodeBlock.ternary(
+                CodeBlock.of("$N != null", "value"),
+                CodeBlock.of("$T.of($N)", ClassName.get("java.util", "List"), "value"),
+                CodeBlock.of("$T.of()", ClassName.get("java.util", "List")));
+        assertThat(block.toString()).isEqualTo("value != null ? java.util.List.of(value) : java.util.List.of()");
+    }
+
+    @Test
+    public void ternaryOnBuilder() {
+        CodeBlock block = CodeBlock.builder()
+                .add("var x = ")
+                .ternary(CodeBlock.of("a"), CodeBlock.of("b"), CodeBlock.of("c"))
+                .build();
+        assertThat(block.toString()).isEqualTo("var x = a ? b : c");
+    }
+
+    @Test
+    public void ternaryIfOnBuilder() {
+        CodeBlock withTernary = CodeBlock.builder()
+                .ternaryIf(true, CodeBlock.of("a"), CodeBlock.of("b"), CodeBlock.of("c"))
+                .build();
+        assertThat(withTernary.toString()).isEqualTo("a ? b : c");
+
+        CodeBlock without = CodeBlock.builder()
+                .ternaryIf(false, CodeBlock.of("a"), CodeBlock.of("b"), CodeBlock.of("c"))
+                .build();
+        assertThat(without.isEmpty()).isTrue();
+    }
+
+    @Test
+    public void staticMethodCallNoArgs() {
+        CodeBlock block = CodeBlock.methodCall(ClassName.get("org.jooq", "DSL"), "trueCondition");
+        assertThat(block.toString()).isEqualTo("org.jooq.DSL.trueCondition()");
+    }
+
+    @Test
+    public void staticMethodCallWithArgs() {
+        CodeBlock block = CodeBlock.methodCall(
+                ClassName.get("org.jooq", "DSL"), "select",
+                CodeBlock.of("field1"), CodeBlock.of("field2"));
+        assertThat(block.toString()).isEqualTo("org.jooq.DSL.select(field1, field2)");
+    }
+
+    @Test
+    public void staticMethodCallWithList() {
+        List<CodeBlock> args = List.of(CodeBlock.of("a"), CodeBlock.of("b"), CodeBlock.of("c"));
+        CodeBlock block = CodeBlock.methodCall(ClassName.get("java.util", "List"), "of", args);
+        assertThat(block.toString()).isEqualTo("java.util.List.of(a, b, c)");
+    }
+
+    @Test
+    public void staticMethodCallFiltersEmptyArgs() {
+        CodeBlock block = CodeBlock.methodCall(
+                ClassName.get("org.jooq", "DSL"), "row",
+                CodeBlock.of("field1"), CodeBlock.empty(), CodeBlock.of("field2"));
+        assertThat(block.toString()).isEqualTo("org.jooq.DSL.row(field1, field2)");
+    }
+
+    @Test
+    public void instanceMethodCallNoArgs() {
+        CodeBlock block = CodeBlock.methodCall("myVar", "toString");
+        assertThat(block.toString()).isEqualTo("myVar.toString()");
+    }
+
+    @Test
+    public void instanceMethodCallWithArgs() {
+        CodeBlock block = CodeBlock.methodCall("record", "set",
+                CodeBlock.of("$S", "name"), CodeBlock.of("value"));
+        assertThat(block.toString()).isEqualTo("record.set(\"name\", value)");
+    }
+
+    @Test
+    public void instanceMethodCallWithList() {
+        List<CodeBlock> args = List.of(CodeBlock.of("x"), CodeBlock.of("y"));
+        CodeBlock block = CodeBlock.methodCall("obj", "method", args);
+        assertThat(block.toString()).isEqualTo("obj.method(x, y)");
+    }
+
+    @Test
+    public void methodCallNoArgs() {
+        CodeBlock block = CodeBlock.methodCall("doSomething");
+        assertThat(block.toString()).isEqualTo("doSomething()");
+    }
+
+    @Test
+    public void methodCallWithArgs() {
+        CodeBlock block = CodeBlock.methodCall("process",
+                CodeBlock.of("input"), CodeBlock.of("$S", "config"));
+        assertThat(block.toString()).isEqualTo("process(input, \"config\")");
+    }
+
+    @Test
+    public void methodCallWithList() {
+        List<CodeBlock> args = List.of(CodeBlock.of("a"), CodeBlock.of("b"));
+        CodeBlock block = CodeBlock.methodCall("compute", args);
+        assertThat(block.toString()).isEqualTo("compute(a, b)");
+    }
+
+    @Test
+    public void methodCallFiltersEmptyArgs() {
+        CodeBlock block = CodeBlock.methodCall("foo",
+                CodeBlock.empty(), CodeBlock.of("bar"), CodeBlock.empty());
+        assertThat(block.toString()).isEqualTo("foo(bar)");
+    }
+
+    @Test
+    public void methodCallOnBuilder() {
+        CodeBlock block = CodeBlock.builder()
+                .methodCall(ClassName.get("org.jooq", "DSL"), "select", CodeBlock.of("field1"))
+                .build();
+        assertThat(block.toString()).isEqualTo("org.jooq.DSL.select(field1)");
+    }
+
+    @Test
+    public void instanceMethodCallOnBuilder() {
+        CodeBlock block = CodeBlock.builder()
+                .methodCall("ctx", "configuration")
+                .build();
+        assertThat(block.toString()).isEqualTo("ctx.configuration()");
+    }
+
+    @Test
+    public void localMethodCallOnBuilder() {
+        CodeBlock block = CodeBlock.builder()
+                .methodCall("init", CodeBlock.of("env"))
+                .build();
+        assertThat(block.toString()).isEqualTo("init(env)");
+    }
+
+    @Test
+    public void methodCallSingleArg() {
+        CodeBlock block = CodeBlock.methodCall(
+                ClassName.get("java.util", "Objects"), "requireNonNull",
+                CodeBlock.of("value"));
+        assertThat(block.toString()).isEqualTo("java.util.Objects.requireNonNull(value)");
+    }
+
+    @Test
+    public void methodCallAllEmptyArgs() {
+        CodeBlock block = CodeBlock.methodCall(
+                ClassName.get("org.jooq", "DSL"), "row",
+                CodeBlock.empty(), CodeBlock.empty());
+        assertThat(block.toString()).isEqualTo("org.jooq.DSL.row()");
+    }
+
+    // --- assign ---
+
+    @Test
+    public void assign() {
+        CodeBlock block = CodeBlock.assign("myVar", CodeBlock.of("getValue()"));
+        assertThat(block.toString()).isEqualTo("myVar = getValue();\n");
+    }
+
+    @Test
+    public void assignWithFormat() {
+        CodeBlock block = CodeBlock.assign("result", "$T.of($N)", ClassName.get("java.util", "List"), "items");
+        assertThat(block.toString()).isEqualTo("result = java.util.List.of(items);\n");
+    }
+
+    @Test
+    public void assignOnBuilder() {
+        CodeBlock block = CodeBlock.builder()
+                .assign("x", CodeBlock.of("42"))
+                .assign("y", CodeBlock.of("x + 1"))
+                .build();
+        assertThat(block.toString()).isEqualTo("x = 42;\ny = x + 1;\n");
+    }
+
+    @Test
+    public void assignIfOnBuilder() {
+        CodeBlock block = CodeBlock.builder()
+                .assignIf(true, "x", CodeBlock.of("1"))
+                .assignIf(false, "y", CodeBlock.of("2"))
+                .build();
+        assertThat(block.toString()).isEqualTo("x = 1;\n");
+    }
+
+    @Test
+    public void assignIfWithFormatOnBuilder() {
+        CodeBlock block = CodeBlock.builder()
+                .assignIf(true, "x", "$L + $L", "a", "b")
+                .assignIf(false, "y", "$L", "c")
+                .build();
+        assertThat(block.toString()).isEqualTo("x = a + b;\n");
     }
 }

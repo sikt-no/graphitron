@@ -127,6 +127,10 @@ public final class CodeBlock {
         return new Builder().add(format, args).build();
     }
 
+    public static CodeBlock ofVar(String variable) {
+        return CodeBlock.of("$N", variable);
+    }
+
     public static CodeBlock ofIf(boolean predicate, String format, Object... args) {
         if (predicate) {
             return of(format, args);
@@ -157,6 +161,95 @@ public final class CodeBlock {
             return statementOf(format, args);
         }
         return empty();
+    }
+
+    /**
+     * Creates a ternary expression: {@code condition ? thenExpr : elseExpr}.
+     */
+    public static CodeBlock ternary(CodeBlock condition, CodeBlock thenExpr, CodeBlock elseExpr) {
+        return of("$L ? $L : $L", condition, thenExpr, elseExpr);
+    }
+
+    /**
+     * Creates a static method call: {@code Type.method(arg1, arg2, ...)}.
+     * Empty arguments are filtered out. The type is emitted as {@code $T} for correct import handling.
+     */
+    public static CodeBlock methodCall(TypeName type, String method, CodeBlock... args) {
+        return methodCall(type, method, List.of(args));
+    }
+
+    /**
+     * Creates a static method call with a list of arguments: {@code Type.method(arg1, arg2, ...)}.
+     * Empty arguments are filtered out. The type is emitted as {@code $T} for correct import handling.
+     */
+    public static CodeBlock methodCall(TypeName type, String method, List<CodeBlock> args) {
+        return of("$T.$L($L)", type, method, joinArgs(args));
+    }
+
+    /**
+     * Creates a method call on a code block source: {@code source.method(arg1, arg2, ...)}.
+     * Empty arguments are filtered out. The source is emitted as {@code $L}.
+     */
+    public static CodeBlock methodCall(CodeBlock source, String method, CodeBlock... args) {
+        return methodCall(source, method, List.of(args));
+    }
+
+    /**
+     * Creates a method call on a code block source with a list of arguments: {@code source.method(arg1, arg2, ...)}.
+     * Empty arguments are filtered out. The source is emitted as {@code $L}.
+     */
+    public static CodeBlock methodCall(CodeBlock source, String method, List<CodeBlock> args) {
+        return of("$L.$L($L)", source, method, joinArgs(args));
+    }
+
+    /**
+     * Creates an instance method call: {@code name.method(arg1, arg2, ...)}.
+     * Empty arguments are filtered out. The name is emitted as {@code $N} for name collision avoidance.
+     */
+    public static CodeBlock methodCall(String source, String method, CodeBlock... args) {
+        return methodCall(source, method, List.of(args));
+    }
+
+    /**
+     * Creates an instance method call with a list of arguments: {@code name.method(arg1, arg2, ...)}.
+     * Empty arguments are filtered out. The name is emitted as {@code $N} for name collision avoidance.
+     */
+    public static CodeBlock methodCall(String source, String method, List<CodeBlock> args) {
+        return of("$N.$L($L)", source, method, joinArgs(args));
+    }
+
+    /**
+     * Creates a local method call: {@code method(arg1, arg2, ...)}.
+     * Empty arguments are filtered out.
+     */
+    public static CodeBlock methodCall(String method, CodeBlock... args) {
+        return methodCall(method, List.of(args));
+    }
+
+    /**
+     * Creates a local method call with a list of arguments: {@code method(arg1, arg2, ...)}.
+     * Empty arguments are filtered out.
+     */
+    public static CodeBlock methodCall(String method, List<CodeBlock> args) {
+        return of("$L($L)", method, joinArgs(args));
+    }
+
+    /**
+     * Creates an assignment statement: {@code name = value;}.
+     */
+    public static CodeBlock assign(String name, CodeBlock value) {
+        return new Builder().assign(name, value).build();
+    }
+
+    /**
+     * Creates an assignment statement: {@code name = format;}.
+     */
+    public static CodeBlock assign(String name, String format, Object... args) {
+        return new Builder().assign(name, of(format, args)).build();
+    }
+
+    private static CodeBlock joinArgs(List<CodeBlock> args) {
+        return join(", ", args);
     }
 
     public static CodeBlock declare(String name, String format, Object... args) {
@@ -276,22 +369,29 @@ public final class CodeBlock {
      * For example, joining {@code String s}, {@code Object o} and {@code int i} using {@code ", "}
      * would produce {@code String s, Object o, int i}.
      */
-    public static CodeBlock join(Iterable<CodeBlock> codeBlocks, String separator) {
-        return StreamSupport.stream(codeBlocks.spliterator(), false).collect(joining(separator));
+    public static CodeBlock join(String separator, Iterable<CodeBlock> codeBlocks) {
+        return StreamSupport.stream(codeBlocks.spliterator(), false).filter(it -> !it.isEmpty()).collect(joining(separator));
     }
 
     /**
      * Joins {@code codeBlocks} into a single {@link CodeBlock}.
      */
     public static CodeBlock join(Iterable<CodeBlock> codeBlocks) {
-        return join(codeBlocks, "");
+        return join("", codeBlocks);
     }
 
     /**
      * Joins {@code codeBlocks} into a single {@link CodeBlock}.
      */
     public static CodeBlock join(CodeBlock... codeBlocks) {
-        return join(List.of(codeBlocks), "");
+        return join("", List.of(codeBlocks));
+    }
+
+    /**
+     * Joins {@code codeBlocks} into a single {@link CodeBlock}.
+     */
+    public static CodeBlock join(String separator, CodeBlock... codeBlocks) {
+        return join(separator, List.of(codeBlocks));
     }
 
     /**
@@ -545,6 +645,10 @@ public final class CodeBlock {
             return declare(of("$T", type), name, codeBlock);
         }
 
+        private Builder declare(CodeBlock type, String name, CodeBlock codeBlock) {
+            return addStatement("$L $L = $L", type, uncapitalize(name), codeBlock);
+        }
+
         public Builder declareNew(String name, TypeName declareType) {
             return declare(name, "new $T()", declareType);
         }
@@ -641,8 +745,87 @@ public final class CodeBlock {
             return this;
         }
 
-        private Builder declare(CodeBlock type, String name, CodeBlock codeBlock) {
-            return addStatement("$L $L = $L", type, uncapitalize(name), codeBlock);
+        /**
+         * Adds a ternary expression: {@code condition ? thenExpr : elseExpr}.
+         */
+        public Builder ternary(CodeBlock condition, CodeBlock thenExpr, CodeBlock elseExpr) {
+            return add(CodeBlock.ternary(condition, thenExpr, elseExpr));
+        }
+
+        public Builder ternaryIf(boolean predicate, CodeBlock condition, CodeBlock thenExpr, CodeBlock elseExpr) {
+            if (predicate) {
+                return ternary(condition, thenExpr, elseExpr);
+            }
+            return this;
+        }
+
+        /**
+         * Adds a static method call: {@code Type.method(arg1, arg2, ...)}.
+         */
+        public Builder methodCall(TypeName type, String method, CodeBlock... args) {
+            return methodCall(type, method, List.of(args));
+        }
+
+        public Builder methodCall(TypeName type, String method, List<CodeBlock> args) {
+            return add(CodeBlock.methodCall(type, method, args));
+        }
+
+        /**
+         * Adds a method call on a code block source: {@code source.method(arg1, arg2, ...)}.
+         */
+        public Builder methodCall(CodeBlock source, String method, CodeBlock... args) {
+            return methodCall(source, method, List.of(args));
+        }
+
+        public Builder methodCall(CodeBlock source, String method, List<CodeBlock> args) {
+            return add(CodeBlock.methodCall(source, method, args));
+        }
+
+        /**
+         * Adds an instance method call: {@code name.method(arg1, arg2, ...)}.
+         */
+        public Builder methodCall(String source, String method, CodeBlock... args) {
+            return methodCall(source, method, List.of(args));
+        }
+
+        public Builder methodCall(String source, String method, List<CodeBlock> args) {
+            return add(CodeBlock.methodCall(source, method, args));
+        }
+
+        /**
+         * Adds a local method call: {@code method(arg1, arg2, ...)}.
+         */
+        public Builder methodCall(String method, CodeBlock... args) {
+            return methodCall(method, List.of(args));
+        }
+
+        public Builder methodCall(String method, List<CodeBlock> args) {
+            return add(CodeBlock.methodCall(method, args));
+        }
+
+        /**
+         * Adds an assignment statement: {@code name = value;}.
+         */
+        public Builder assign(String name, CodeBlock value) {
+            return addStatement("$N = $L", name, value);
+        }
+
+        public Builder assign(String name, String format, Object... args) {
+            return assign(name, of(format, args));
+        }
+
+        public Builder assignIf(boolean predicate, String name, CodeBlock value) {
+            if (predicate) {
+                return assign(name, value);
+            }
+            return this;
+        }
+
+        public Builder assignIf(boolean predicate, String name, String format, Object... args) {
+            if (predicate) {
+                return assign(name, format, args);
+            }
+            return this;
         }
 
         private boolean isNoArgPlaceholder(char c) {
