@@ -32,7 +32,7 @@ Conditions are **properties of fields**, not field types.
 | **Filter condition** | Narrows the result set | `@condition` directive, arguments, cursor |
 | **LiftCondition** | Reconnects a result to a target table after a mutation or service call | `@condition` on lift, FK match, or automatic (TableRecord) |
 
-Any field with a table target can carry a reference condition and/or a filter condition. LiftCondition is specific to lift fields and all mutation fields.
+Any field with a table target can carry a reference condition and/or a filter condition. LiftCondition applies to any service field whose return type is table-mapped. If the return type is result-mapped, no lift occurs on the service field itself — it occurs later via `LiftChildField` on the result-mapped type's fields.
 
 ---
 
@@ -95,13 +95,13 @@ Fields on the `Query` type. They have no source context. All start a new Graphit
 
 | Field type | Trigger | Target |
 |---|---|---|
-| `ServiceQueryField` | `@service` | Result-mapped or scalar; private scope |
+| `ServiceQueryField` | `@service` | Private scope. LiftCondition applies if return type is table-mapped; if result-mapped, lift occurs on child fields. |
 
 ---
 
 ### Mutation fields — unmapped source, write
 
-Fields on the `Mutation` type. These are the only fields permitted to write to the database. `ServiceMutationField` is the `@service` equivalent — the service method is permitted to mutate.
+Fields on the `Mutation` type. These are the only fields permitted to write to the database. `ServiceMutationField` is the `@service` equivalent — the service method is permitted to mutate. The same lift rule applies as for all service fields: LiftCondition if return type is table-mapped, otherwise lift occurs on child fields.
 
 | Field type | Operation |
 |---|---|
@@ -110,10 +110,6 @@ Fields on the `Mutation` type. These are the only fields permitted to write to t
 | `DeleteMutationField` | `@mutation(typeName: DELETE)` |
 | `UpsertMutationField` | `@mutation(typeName: UPSERT)` |
 | `ServiceMutationField` | `@service` — write logic too complex for Graphitron to generate directly |
-
-Whether a lift occurs depends on the return type:
-- **Table-mapped return type** → `LiftConditionSpec` on the mutation field; new Graphitron scope handles projection.
-- **Result-mapped return type** → no lift here; lift occurs later via `LiftChildField` on the result-mapped type's fields.
 
 ---
 
@@ -159,7 +155,7 @@ Fields on a `@table` type. They operate within the current Graphitron scope unle
 
 | Field type | Trigger | Description |
 |---|---|---|
-| `ServiceChildField` | `@service`, non-liftable result | Private scope; Graphitron controls the input and can adapt what is passed to the service |
+| `ServiceChildField` | `@service` | Private scope. LiftCondition applies if return type is table-mapped; if result-mapped, lift occurs on child fields. Graphitron controls the input from table-mapped source and can adapt what is passed to the service. |
 | `FieldMethodChildField` | `@externalField` | Static method call; no scope |
 
 ---
@@ -191,13 +187,13 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 
 ### Mutation fields
 
-| Field type | Return type table-mapped | Return type result-mapped |
-|---|---|---|
-| `InsertMutationField` | LiftCondition on field | Lift via child `LiftChildField`s |
-| `UpdateMutationField` | LiftCondition on field | Lift via child `LiftChildField`s |
-| `DeleteMutationField` | LiftCondition on field | Lift via child `LiftChildField`s |
-| `UpsertMutationField` | LiftCondition on field | Lift via child `LiftChildField`s |
-| `ServiceMutationField` | LiftCondition on field | Lift via child `LiftChildField`s |
+| Field type | Operation |
+|---|---|
+| `InsertMutationField` | INSERT |
+| `UpdateMutationField` | UPDATE |
+| `DeleteMutationField` | DELETE |
+| `UpsertMutationField` | UPSERT |
+| `ServiceMutationField` | @service (permitted to write) |
 
 ### Child fields — table-mapped source
 
