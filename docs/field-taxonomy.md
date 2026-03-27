@@ -106,7 +106,7 @@ These are fields on a `@table` type. They operate within the current Graphitron 
 
 | Field type | Description |
 |---|---|
-| `PassThroughChildField` | Target inherits the source table context, producing a level of nesting without a new scope |
+| `NestingChildField` | Target inherits the source table context, producing a level of nesting without a new scope |
 | `ConstructorChildField` | *(planned)* Populates the target object based on constructor mapping |
 
 #### New scope fields
@@ -161,7 +161,7 @@ These are fields on a `@record` type. Graphitron only validates types and genera
 | Single-table Interface | — | `List/ConnSingleTableInterfaceReferenceChildField` |
 | Multi-table Interface | — | `List/ConnMultiTableInterfaceReferenceChildField` |
 | Multi-table Union | — | `List/ConnMultiTableUnionReferenceChildField` |
-| Inherited table | `PassThroughChildField` | — |
+| Inherited table | `NestingChildField` | — |
 | New scope (@splitQuery) | `LookupKeyQueryChildField` | `ChildQueryChildField` |
 | New scope (lift) | `TableRecordServiceChildField` | — |
 | Escape | `ServiceChildField`, `FieldMethodChildField` | — |
