@@ -57,11 +57,47 @@ Fields whose name contains `Query` start a new Graphitron scope.
 ```
 FieldSpec
 ├── RootField
-│   ├── QueryField        (fields on Query)
-│   └── MutationField     (fields on Mutation)
+│   ├── QueryField
+│   │   ├── LookupQueryField
+│   │   ├── List/ConnQueryField
+│   │   ├── RelayNodeLookupQueryField
+│   │   ├── EntityLookupQueryField
+│   │   ├── InterfaceQueryField
+│   │   │   ├── SingleTableInterfaceQueryField
+│   │   │   └── MultiTableInterfaceQueryField
+│   │   ├── UnionQueryField
+│   │   │   └── MultiTableUnionQueryField
+│   │   └── ServiceQueryField
+│   └── MutationField
+│       ├── InsertMutationField
+│       ├── UpdateMutationField
+│       ├── DeleteMutationField
+│       ├── UpsertMutationField
+│       └── ServiceMutationField
 ├── ChildField
 │   ├── TableMappedChildField
+│   │   ├── ColumnChildField
+│   │   ├── ColumnReferenceChildField
+│   │   ├── RelayNodeIdChildField
+│   │   ├── RelayNodeIdReferenceChildField
+│   │   ├── ReferenceChildField
+│   │   ├── List/ConnReferenceChildField
+│   │   ├── InterfaceReferenceChildField
+│   │   │   ├── SingleTableInterfaceReferenceChildField
+│   │   │   └── MultiTableInterfaceReferenceChildField
+│   │   ├── UnionReferenceChildField
+│   │   │   └── MultiTableUnionReferenceChildField
+│   │   ├── NestingChildField
+│   │   ├── ConstructorChildField
+│   │   ├── LookupKeyQueryChildField
+│   │   ├── ChildQueryChildField
+│   │   ├── TableRecordServiceChildField
+│   │   ├── ServiceChildField
+│   │   └── FieldMethodChildField
 │   └── ResultMappedChildField
+│       ├── RecordPropertyChildField
+│       ├── LiftChildField
+│       └── ServiceChildField
 └── UnclassifiedField
 ```
 
@@ -87,9 +123,9 @@ Fields on the `Query` type. They have no source context. All start a new Graphit
 | `List/ConnQueryField` | List or Relay Connection | Table-mapped |
 | `RelayNodeLookupQueryField` | `Query.node(id:)` — Relay spec | Table-mapped via global ID |
 | `EntityLookupQueryField` | `Query._entities(representations:)` — Apollo Federation | Table-mapped |
-| `List/ConnSingleTableInterfaceQueryField` | Target interface has `@table` + `@discriminate`; all implementing types have `@table` + `@discriminator` | Single-table interface |
-| `List/ConnMultiTableInterfaceQueryField` | Target interface has no directives; all implementing types have `@table` | Multi-table interface |
-| `List/ConnMultiTableUnionQueryField` | Target union; all member types have `@table` | Multi-table union |
+| `SingleTableInterfaceQueryField` | Target interface has `@table` + `@discriminate`; all implementing types have `@table` + `@discriminator`. Wrapping (List or Connection) is a spec property. | Single-table interface |
+| `MultiTableInterfaceQueryField` | Target interface has no directives; all implementing types have `@table`. Wrapping (List or Connection) is a spec property. | Multi-table interface |
+| `MultiTableUnionQueryField` | Target union; all member types have `@table`. Wrapping (List or Connection) is a spec property. | Multi-table union |
 
 #### Service mode
 
@@ -132,9 +168,9 @@ Fields on a `@table` type. They operate within the current Graphitron scope unle
 |---|---|
 | `ReferenceChildField` | Single table-mapped object |
 | `List/ConnReferenceChildField` | Collection of table-mapped objects |
-| `List/ConnSingleTableInterfaceReferenceChildField` | Single-table interface (mirrors query variant) |
-| `List/ConnMultiTableInterfaceReferenceChildField` | Multi-table interface (mirrors query variant) |
-| `List/ConnMultiTableUnionReferenceChildField` | Multi-table union (mirrors query variant) |
+| `SingleTableInterfaceReferenceChildField` | Single-table interface (mirrors query variant). Wrapping (List or Connection) is a spec property. |
+| `MultiTableInterfaceReferenceChildField` | Multi-table interface (mirrors query variant). Wrapping (List or Connection) is a spec property. |
+| `MultiTableUnionReferenceChildField` | Multi-table union (mirrors query variant). Wrapping (List or Connection) is a spec property. |
 
 #### Structural fields (in scope)
 
@@ -179,9 +215,9 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 | Target | Single | List / Connection |
 |---|---|---|
 | Table-mapped | `LookupQueryField` | `List/ConnQueryField`, `LookupQueryField` (plural) |
-| Single-table Interface | — | `List/ConnSingleTableInterfaceQueryField` |
-| Multi-table Interface | — | `List/ConnMultiTableInterfaceQueryField` |
-| Multi-table Union | — | `List/ConnMultiTableUnionQueryField` |
+| Single-table Interface | — | `SingleTableInterfaceQueryField` |
+| Multi-table Interface | — | `MultiTableInterfaceQueryField` |
+| Multi-table Union | — | `MultiTableUnionQueryField` |
 | Special | `RelayNodeLookupQueryField`, `EntityLookupQueryField` | — |
 | Service / scalar | `ServiceQueryField` | — |
 
@@ -202,9 +238,9 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 | Scalar (own table) | `ColumnChildField`, `RelayNodeIdChildField` | — |
 | Scalar (via join) | `ColumnReferenceChildField`, `RelayNodeIdReferenceChildField` | — |
 | Table-mapped | `ReferenceChildField` | `List/ConnReferenceChildField` |
-| Single-table Interface | — | `List/ConnSingleTableInterfaceReferenceChildField` |
-| Multi-table Interface | — | `List/ConnMultiTableInterfaceReferenceChildField` |
-| Multi-table Union | — | `List/ConnMultiTableUnionReferenceChildField` |
+| Single-table Interface | — | `SingleTableInterfaceReferenceChildField` |
+| Multi-table Interface | — | `MultiTableInterfaceReferenceChildField` |
+| Multi-table Union | — | `MultiTableUnionReferenceChildField` |
 | Inherited table | `NestingChildField` | — |
 | New scope (@splitQuery) | `LookupKeyQueryChildField` | `ChildQueryChildField` |
 | New scope (lift) | `TableRecordServiceChildField` | — |
