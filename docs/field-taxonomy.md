@@ -121,7 +121,7 @@ These are fields on a `@table` type. They operate within the current Graphitron 
 
 | Field type | Trigger | Description |
 |---|---|---|
-| `ServiceChildField` | `@service`, non-liftable result | Private scope; no SQL from Graphitron |
+| `ServiceChildField` | `@service`, non-liftable result | Private scope; no SQL from Graphitron. When source is table-mapped, Graphitron controls the input and can adapt what is passed to the service. |
 | `FieldMethodChildField` | `@externalField` | Static method call; no scope |
 
 ---
@@ -134,7 +134,7 @@ These are fields on a `@record` type. Graphitron only validates types and genera
 |---|---|
 | `RecordPropertyChildField` | Reads a scalar or nested record property from the result object. Generates a trivial data fetcher. |
 | `LiftChildField` | `@splitQuery` pointing to a table-mapped type. Generates a DataLoader + LiftCondition, starting a new Graphitron scope. |
-| `ServiceChildField` | `@service` on a result-mapped type. New service call; same mechanism as from table-mapped source. |
+| `ServiceChildField` | `@service` on a result-mapped type. New service call; same type as from table-mapped source, but the source context is locked — Graphitron passes through whatever the record carries and cannot adapt the input to the service. |
 
 ---
 
