@@ -91,7 +91,6 @@ FieldSpec
 │   │   ├── ConstructorChildField
 │   │   ├── LookupKeyQueryChildField
 │   │   ├── ChildQueryChildField
-│   │   ├── TableRecordServiceChildField
 │   │   ├── ServiceChildField
 │   │   └── FieldMethodChildField
 │   └── ResultMappedChildField
@@ -185,13 +184,12 @@ Fields on a `@table` type. They operate within the current Graphitron scope unle
 |---|---|---|
 | `LookupKeyQueryChildField` | `@splitQuery` + `@lookupKey` on argument | New scope via DataLoader |
 | `ChildQueryChildField` | `@splitQuery` + list-wrapped table target | New scope via DataLoader |
-| `TableRecordServiceChildField` | `@service` returning a `TableRecord` | New scope via DataLoader + automatic LiftCondition |
 
 #### Escape fields (exit scope, no re-entry)
 
 | Field type | Trigger | Description |
 |---|---|---|
-| `ServiceChildField` | `@service` | Private scope. LiftCondition applies if return type is table-mapped; if result-mapped, lift occurs on child fields. Graphitron controls the input from table-mapped source and can adapt what is passed to the service. |
+| `ServiceChildField` | `@service` | Private scope. LiftCondition applies if return type is table-mapped; if result-mapped, lift occurs on child fields. From table-mapped source, Graphitron controls the input and can adapt what is passed to the service. |
 | `FieldMethodChildField` | `@externalField` | Static method call; no scope |
 
 ---
@@ -243,8 +241,8 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 | Multi-table Union | — | `MultiTableUnionReferenceChildField` |
 | Inherited table | `NestingChildField` | — |
 | New scope (@splitQuery) | `LookupKeyQueryChildField` | `ChildQueryChildField` |
-| New scope (lift) | `TableRecordServiceChildField` | — |
-| Escape | `ServiceChildField`, `FieldMethodChildField` | — |
+| Service | `ServiceChildField` | — |
+| Escape | `FieldMethodChildField` | — |
 | Planned | `ConstructorChildField` | — |
 
 ### Child fields — result-mapped source
