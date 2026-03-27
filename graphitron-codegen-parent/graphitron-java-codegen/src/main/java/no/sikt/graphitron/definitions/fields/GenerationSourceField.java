@@ -6,6 +6,7 @@ import no.sikt.graphitron.configuration.externalreferences.CodeReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
+import no.sikt.graphitron.definitions.helpers.ProcedureCall;
 import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
@@ -44,6 +45,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     private final ServiceWrapper serviceWrapper;
     private final String nodeIdTypeName;
     private final Map<String, TypeName> contextFields;
+    private final ProcedureCall procedureCall;
 
     public GenerationSourceField(T field, FieldType fieldType, String container) {
         super(field, fieldType, container);
@@ -87,6 +89,9 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         nodeIdTypeName = getOptionalDirectiveArgumentString(field, GenerationDirective.NODE_ID, GenerationDirectiveParam.TYPE_NAME)
                 .orElse(null);
         contextFields = findContextFields();
+        procedureCall = field.hasDirective(PROCEDURE_CALL.getName())
+                ? new ProcedureCall(field)
+                : null;
     }
 
     /**
@@ -280,6 +285,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     /**
      * @return Does this field have the @nodeId directive?
      */
+    @Override
     public boolean hasNodeID() {
         return hasNodeID;
     }
@@ -287,14 +293,27 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     /**
      * @return The type name configured in the @nodeId directive
      */
+    @Override
     public Optional<String> getNodeIdTypeName() {
         return Optional.ofNullable(nodeIdTypeName);
     }
 
+    @Override
     public boolean hasTableMethodDirective() {
         return hasTableMethod;
     }
 
+    @Override
+    public ProcedureCall getProcedureCall() {
+        return procedureCall;
+    }
+
+    @Override
+    public boolean hasProcedureCall() {
+        return procedureCall != null;
+    }
+
+    @Override
     public String formatPath() {
         return String.format("'%s.%s'", getContainerTypeName(), getName());
     }

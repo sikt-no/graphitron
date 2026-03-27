@@ -239,6 +239,9 @@ class TableValidator extends AbstractSchemaValidator {
                 validateTableFieldsExist(currentTable, schema.getObject(field).getFields());
                 continue;
             }
+            if (field.hasProcedureCall()) {
+                continue;
+            }
             validateFieldExists(currentTable.getMappingName(), field);
         }
     }

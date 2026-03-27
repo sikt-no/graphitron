@@ -180,6 +180,14 @@ public final class CodeBlock {
     }
 
     /**
+     * Creates a static method call with a list of arguments: {@code Type.method(arg1, arg2, ...)}.
+     * Empty arguments are filtered out. The type is emitted as {@code $T} for correct import handling.
+     */
+    public static CodeBlock methodCall(TypeName type, String method, CodeBlocks args) {
+        return methodCall(type, method, args.join(", "));
+    }
+
+    /**
      * Creates a static method call: {@code Type.method(arg1, arg2, ...)}.
      * Empty arguments are filtered out. The type is emitted as {@code $T} for correct import handling.
      */
@@ -196,6 +204,14 @@ public final class CodeBlock {
     }
 
     /**
+     * Creates a method call on a code block source with a list of arguments: {@code source.method(arg1, arg2, ...)}.
+     * Empty arguments are filtered out. The source is emitted as {@code $L}.
+     */
+    public static CodeBlock methodCall(CodeBlock source, String method, CodeBlocks args) {
+        return methodCall(source, method, args.join(", "));
+    }
+
+    /**
      * Creates a method call on a code block source: {@code source.method(arg1, arg2, ...)}.
      * Empty arguments are filtered out. The source is emitted as {@code $L}.
      */
@@ -209,6 +225,14 @@ public final class CodeBlock {
      */
     public static CodeBlock methodCall(CodeBlock source, String method, List<CodeBlock> args) {
         return of("$L.$L($L)", source, method, joinArgs(args));
+    }
+
+    /**
+     * Creates an instance method call with a list of arguments: {@code name.method(arg1, arg2, ...)}.
+     * Empty arguments are filtered out. The name is emitted as {@code $N} for name collision avoidance.
+     */
+    public static CodeBlock methodCall(String source, String method, CodeBlocks args) {
+        return methodCall(source, method, args.join(", "));
     }
 
     /**

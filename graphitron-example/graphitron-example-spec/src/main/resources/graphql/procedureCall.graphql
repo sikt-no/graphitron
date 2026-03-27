@@ -1,0 +1,8 @@
+extend type Query {
+    inventoriesWithHeldBy(inventoryId: ID! @nodeId(typeName: "InventoryWithHeldBy")): [InventoryWithHeldBy]
+}
+
+type InventoryWithHeldBy implements Node @node @table(name: "INVENTORY") {
+    id: ID! @nodeId
+    inventoryHeldBy: Int @experimental_procedureCall(procedure: "inventory_held_by_customer", arguments: "p_inventory_id: INVENTORY_ID")
+}

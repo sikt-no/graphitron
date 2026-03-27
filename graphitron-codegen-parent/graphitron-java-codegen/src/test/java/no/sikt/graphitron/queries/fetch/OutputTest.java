@@ -494,6 +494,37 @@ public class OutputTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Procedure call with a single column-sourced argument")
+    void procedureCall() {
+        assertGeneratedContentContains("procedureCall", Set.of(CUSTOMER_QUERY),
+                "Routines.inventoryHeldByCustomer(_a_customer.CUSTOMER_ID)"
+        );
+    }
+
+    @Test
+    @DisplayName("Procedure call with multiple arguments in jOOQ declaration order")
+    void procedureCallMultipleArgs() {
+        assertGeneratedContentContains("procedureCallMultipleArgs", Set.of(CUSTOMER_QUERY),
+                "Routines.getCustomerBalance(_a_customer.CUSTOMER_ID, _a_customer.LAST_UPDATE)"
+        );
+    }
+
+    @Test
+    @DisplayName("Procedure call with schema-qualified routine name resolves to the correct schema's Routines class")
+    void procedureCallQualifiedRoutine() {
+        // The fixture points at utils.last_day (not public.last_day), so the generated source must import the
+        // utils Routines class. The invocation in the method body appears with the simple name via the import.
+        var files = generateFiles("procedureCallQualifiedRoutine", Set.of(CUSTOMER_QUERY));
+        var allLines = files.values().stream().flatMap(List::stream).toList();
+        org.assertj.core.api.Assertions.assertThat(allLines)
+                .contains("import no.sikt.graphitron.jooq.generated.testdata.utils.Routines;")
+                .doesNotContain("import no.sikt.graphitron.jooq.generated.testdata.public_.Routines;");
+        assertGeneratedContentContains("procedureCallQualifiedRoutine", Set.of(CUSTOMER_QUERY),
+                "Routines.lastDay(_a_customer.LAST_UPDATE)"
+        );
+    }
+
+    @Test
     @DisplayName("Wrapped table with self-referencing FK and table input")
     void wrappedTableWithSelfReferenceAndTableInput() {
         resultDoesNotContain(

@@ -1,0 +1,7 @@
+type Other @table(name: "ACTOR") {
+  id: ID @field(name: "ACTOR_ID")
+}
+
+type Customer @table {
+  held: Other @experimental_procedureCall(procedure: "inventory_held_by_customer", arguments: "p_inventory_id: CUSTOMER_ID")
+}

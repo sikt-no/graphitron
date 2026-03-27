@@ -1,0 +1,3 @@
+type Mutation {
+  heldBy: ID @experimental_procedureCall(procedure: "inventory_held_by_customer", arguments: "p_inventory_id: INVENTORY_ID")
+}

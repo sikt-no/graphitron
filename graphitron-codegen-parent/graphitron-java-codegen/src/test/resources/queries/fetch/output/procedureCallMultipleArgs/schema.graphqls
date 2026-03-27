@@ -1,0 +1,3 @@
+type Customer @table {
+  balance: BigDecimal @experimental_procedureCall(procedure: "get_customer_balance", arguments: "p_customer_id: CUSTOMER_ID, p_effective_date: LAST_UPDATE")
+}
