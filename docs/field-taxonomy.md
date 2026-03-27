@@ -8,7 +8,7 @@ Every field has a source context — the type on which it is defined. Source con
 
 | Source context | Directive | What Graphitron does |
 |---|---|---|
-| **Unmapped** | *(none — root types: Query, Mutation, Subscription)* | Entry point. No SQL yet. |
+| **Unmapped** | *(none — root types: Query, Mutation)* | Entry point. No SQL yet. |
 | **Table-mapped** | `@table` | Full Graphitron mode: SQL generation, projection, joins. |
 | **Result-mapped** | `@record` | Validation + RuntimeWiring only, until a scope transition. |
 
@@ -30,20 +30,40 @@ Conditions are **properties of fields**, not field types.
 |---|---|---|
 | **Reference condition** | Structural join — how two types are related | `@reference` directive, FK metadata |
 | **Filter condition** | Narrows the result set | `@condition` directive, arguments, cursor |
-| **LiftCondition** | Reconnects a service result to a target table | `@condition` on lift, FK match, or automatic (TableRecord) |
+| **LiftCondition** | Reconnects a result to a target table after a mutation or service call | `@condition` on lift, FK match, or automatic (TableRecord) |
 
-Any field with a table target can carry a reference condition and/or a filter condition. LiftCondition is specific to lift fields.
+Any field with a table target can carry a reference condition and/or a filter condition. LiftCondition is specific to lift fields and all mutation fields.
 
 ---
 
 ## Field Naming Convention
 
-All field types are named by **source context suffix**:
+Field type names encode their source context:
 
-- Fields on root types (unmapped source): `*RootField`
-- Fields on non-root types: `*ChildField`
+- Fields on `Query` → `*QueryField`
+- Fields on `Mutation` → `*MutationField`
+- Fields on non-root types → `*ChildField`
+
+`RootField` exists as a structural intermediate in the hierarchy but does not appear in leaf type names. Subscription is out of scope.
 
 Fields whose name contains `Query` start a new Graphitron scope.
+
+**Only mutation fields are permitted to make changes to the database.** Query and child fields are read-only.
+
+---
+
+## Sealed Interface Hierarchy
+
+```
+FieldSpec
+├── RootField
+│   ├── QueryField        (fields on Query)
+│   └── MutationField     (fields on Mutation)
+├── ChildField
+│   ├── TableMappedChildField
+│   └── ResultMappedChildField
+└── UnclassifiedField
+```
 
 ---
 
@@ -55,33 +75,49 @@ A field that does not match any known type. A schema containing `UnclassifiedFie
 
 ---
 
-### Root fields — unmapped source
+### Query fields — unmapped source, read-only
 
-These are fields on `Query`, `Mutation`, or `Subscription`. They have no source context.
+Fields on the `Query` type. They have no source context. All start a new Graphitron scope or enter service mode.
 
 #### Graphitron scope entry
 
 | Field type | Trigger | Target |
 |---|---|---|
-| `LookupQueryRootField` | `@lookupKey` on an argument | Single or list of table-mapped |
-| `List/ConnQueryRootField` | List or Relay Connection | Table-mapped |
-| `RelayNodeLookupQueryRootField` | `Query.node(id:)` — Relay spec | Table-mapped via global ID |
-| `EntityLookupQueryRootField` | `Query._entities(representations:)` — Apollo Federation | Table-mapped |
-| `List/ConnSingleTableInterfaceQueryRootField` | Target interface has `@table` + `@discriminate`; all implementing types have `@table` + `@discriminator` | Single-table interface |
-| `List/ConnMultiTableInterfaceQueryRootField` | Target interface has no directives; all implementing types have `@table` | Multi-table interface |
-| `List/ConnMultiTableUnionQueryRootField` | Target union; all member types have `@table` | Multi-table union |
+| `LookupQueryField` | `@lookupKey` on an argument | Single or list of table-mapped |
+| `List/ConnQueryField` | List or Relay Connection | Table-mapped |
+| `RelayNodeLookupQueryField` | `Query.node(id:)` — Relay spec | Table-mapped via global ID |
+| `EntityLookupQueryField` | `Query._entities(representations:)` — Apollo Federation | Table-mapped |
+| `List/ConnSingleTableInterfaceQueryField` | Target interface has `@table` + `@discriminate`; all implementing types have `@table` + `@discriminator` | Single-table interface |
+| `List/ConnMultiTableInterfaceQueryField` | Target interface has no directives; all implementing types have `@table` | Multi-table interface |
+| `List/ConnMultiTableUnionQueryField` | Target union; all member types have `@table` | Multi-table union |
 
 #### Service mode
 
 | Field type | Trigger | Target |
 |---|---|---|
-| `ServiceRootField` | `@service` | Result-mapped or scalar; private scope |
+| `ServiceQueryField` | `@service` | Result-mapped or scalar; private scope |
+
+---
+
+### Mutation fields — unmapped source, write
+
+Fields on the `Mutation` type. These are the only fields permitted to write to the database. All carry a `LiftConditionSpec` — the return type is always table-mapped (possibly via a wrapper type containing a `TableRecord`).
+
+| Field type | Operation |
+|---|---|
+| `InsertMutationField` | `@mutation(typeName: INSERT)` |
+| `UpdateMutationField` | `@mutation(typeName: UPDATE)` |
+| `DeleteMutationField` | `@mutation(typeName: DELETE)` |
+| `UpsertMutationField` | `@mutation(typeName: UPSERT)` |
+| `ServiceMutationField` | `@service` — write logic too complex for Graphitron to generate directly |
+
+After the mutation executes, the LiftCondition reconnects the result to the target table and a new Graphitron scope handles the return projection.
 
 ---
 
 ### Child fields — table-mapped source
 
-These are fields on a `@table` type. They operate within the current Graphitron scope unless noted.
+Fields on a `@table` type. They operate within the current Graphitron scope unless noted.
 
 #### Scalar fields (in scope)
 
@@ -98,9 +134,9 @@ These are fields on a `@table` type. They operate within the current Graphitron 
 |---|---|
 | `ReferenceChildField` | Single table-mapped object |
 | `List/ConnReferenceChildField` | Collection of table-mapped objects |
-| `List/ConnSingleTableInterfaceReferenceChildField` | Single-table interface (mirrors root variant) |
-| `List/ConnMultiTableInterfaceReferenceChildField` | Multi-table interface (mirrors root variant) |
-| `List/ConnMultiTableUnionReferenceChildField` | Multi-table union (mirrors root variant) |
+| `List/ConnSingleTableInterfaceReferenceChildField` | Single-table interface (mirrors query variant) |
+| `List/ConnMultiTableInterfaceReferenceChildField` | Multi-table interface (mirrors query variant) |
+| `List/ConnMultiTableUnionReferenceChildField` | Multi-table union (mirrors query variant) |
 
 #### Structural fields (in scope)
 
@@ -121,35 +157,45 @@ These are fields on a `@table` type. They operate within the current Graphitron 
 
 | Field type | Trigger | Description |
 |---|---|---|
-| `ServiceChildField` | `@service`, non-liftable result | Private scope; no SQL from Graphitron. When source is table-mapped, Graphitron controls the input and can adapt what is passed to the service. |
+| `ServiceChildField` | `@service`, non-liftable result | Private scope; Graphitron controls the input and can adapt what is passed to the service |
 | `FieldMethodChildField` | `@externalField` | Static method call; no scope |
 
 ---
 
 ### Child fields — result-mapped source
 
-These are fields on a `@record` type. Graphitron only validates types and generates RuntimeWiring — no SQL is generated — until a scope transition is encountered.
+Fields on a `@record` type. Graphitron only validates types and generates RuntimeWiring — no SQL is generated — until a scope transition is encountered.
 
 | Field type | Description |
 |---|---|
 | `RecordPropertyChildField` | Reads a scalar or nested record property from the result object. Generates a trivial data fetcher. |
 | `LiftChildField` | `@splitQuery` pointing to a table-mapped type. Generates a DataLoader + LiftCondition, starting a new Graphitron scope. |
-| `ServiceChildField` | `@service` on a result-mapped type. New service call; same type as from table-mapped source, but the source context is locked — Graphitron passes through whatever the record carries and cannot adapt the input to the service. |
+| `ServiceChildField` | `@service` — same type as from table-mapped source, but the input is locked to whatever the record carries; Graphitron cannot adapt it. |
 
 ---
 
 ## Field Matrix
 
-### Root fields (unmapped source)
+### Query fields
 
 | Target | Single | List / Connection |
 |---|---|---|
-| Table-mapped | `LookupQueryRootField` | `List/ConnQueryRootField`, `LookupQueryRootField` (plural) |
-| Single-table Interface | — | `List/ConnSingleTableInterfaceQueryRootField` |
-| Multi-table Interface | — | `List/ConnMultiTableInterfaceQueryRootField` |
-| Multi-table Union | — | `List/ConnMultiTableUnionQueryRootField` |
-| Special | `RelayNodeLookupQueryRootField`, `EntityLookupQueryRootField` | — |
-| Service / scalar | `ServiceRootField` | — |
+| Table-mapped | `LookupQueryField` | `List/ConnQueryField`, `LookupQueryField` (plural) |
+| Single-table Interface | — | `List/ConnSingleTableInterfaceQueryField` |
+| Multi-table Interface | — | `List/ConnMultiTableInterfaceQueryField` |
+| Multi-table Union | — | `List/ConnMultiTableUnionQueryField` |
+| Special | `RelayNodeLookupQueryField`, `EntityLookupQueryField` | — |
+| Service / scalar | `ServiceQueryField` | — |
+
+### Mutation fields
+
+| Field type | Returns (after lift) |
+|---|---|
+| `InsertMutationField` | Table-mapped (via LiftCondition) |
+| `UpdateMutationField` | Table-mapped (via LiftCondition) |
+| `DeleteMutationField` | Table-mapped (via LiftCondition) |
+| `UpsertMutationField` | Table-mapped (via LiftCondition) |
+| `ServiceMutationField` | Table-mapped (via LiftCondition) |
 
 ### Child fields — table-mapped source
 
