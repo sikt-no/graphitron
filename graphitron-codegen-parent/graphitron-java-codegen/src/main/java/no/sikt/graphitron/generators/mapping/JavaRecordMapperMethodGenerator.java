@@ -94,7 +94,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 var nullBlock = CodeBlock.ofIf(shouldDeclareVariable, "$N != null && ", varName);
                 fieldCode
                         .declareIf(shouldDeclareVariable, varName, innerContext.getSourceGetCallBlock())
-                        .beginControlFlow("if ($L$L)", nullBlock, toRecord ? argumentPresenceLookup(innerContext.getFieldName(), false) : selectionSetLookup(innerContext.getPath(), false, false))
+                        .beginControlFlow("if ($L$L)", nullBlock, toRecord ? argumentPresenceLookup(innerContext.getPath(), false) : selectionSetLookup(innerContext.getPath(), false, false))
                         .add(innerCode.build())
                         .endControlFlow()
                         .add("\n");

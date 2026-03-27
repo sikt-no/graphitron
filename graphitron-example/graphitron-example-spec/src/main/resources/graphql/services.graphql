@@ -128,6 +128,20 @@ extend type Mutation {
             method: "check"
         }
     )
+    checkWrappedFieldPresence(in: [WrappedFieldInput!]!)
+    : [WrappedFieldResult] @service(
+        service: {
+            className: "no.sikt.graphitron.example.service.WrappedFieldPresenceService",
+            method: "check"
+        }
+    )
+    checkNestedRecordPresence(in: [NestedRecordOuterInput!]!)
+    : [NestedRecordResult] @service(
+        service: {
+            className: "no.sikt.graphitron.example.service.NestedRecordPresenceService",
+            method: "check"
+        }
+    )
 }
 
 type CreateCustomerEmailPayload{
@@ -159,6 +173,46 @@ input FilmInsertWrapper @record(record: {className: "no.sikt.graphitron.example.
 type FilmFieldPresence @record(record: {className: "no.sikt.graphitron.example.service.records.FilmFieldPresence"}) {
     title: String
     rentalDurationPresent: Boolean
+}
+
+# Test types for verifying that non-record wrapper fields are correctly mapped (nested input without @record/@table)
+input WrappedFieldInput @record(record: {className: "no.sikt.graphitron.example.service.records.WrappedFieldInput"}) {
+    title: String!
+    filmDetails: FilmDetailsInput
+}
+
+input FilmDetailsInput {
+    description: String
+    rentalDuration: Int
+}
+
+type WrappedFieldResult @record(record: {className: "no.sikt.graphitron.example.service.records.WrappedFieldResult"}) {
+    title: String
+    description: String
+    rentalDuration: Int
+}
+
+# Test types for verifying nested @record inputs at depth 2+ (mirrors the sis opprettStudenter pattern)
+input NestedRecordOuterInput @record(record: {className: "no.sikt.graphitron.example.service.records.NestedRecordOuterInput"}) {
+    topField: String!
+    nested: NestedRecordMiddleInput
+}
+
+input NestedRecordMiddleInput @record(record: {className: "no.sikt.graphitron.example.service.records.NestedRecordMiddleInput"}) {
+    middleField: String
+    deepNested: NestedRecordDeepInput
+}
+
+input NestedRecordDeepInput @record(record: {className: "no.sikt.graphitron.example.service.records.NestedRecordDeepInput"}) {
+    deepField: String
+    deepNumber: Int
+}
+
+type NestedRecordResult @record(record: {className: "no.sikt.graphitron.example.service.records.NestedRecordResult"}) {
+    topField: String
+    middleField: String
+    deepField: String
+    deepNumber: Int
 }
 
 extend type City {

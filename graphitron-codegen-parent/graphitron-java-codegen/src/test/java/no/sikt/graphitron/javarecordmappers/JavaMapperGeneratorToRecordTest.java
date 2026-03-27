@@ -64,7 +64,7 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
                 "containingNonRecordWrapper",
                 "inner = _nit_address.getInner();" +
                         "if (_mi_inner != null && _iv_args.hasField(\"inner\")) {" +
-                        "if (_iv_args.hasField(\"postalCode\")) {" +
+                        "if (_iv_args.child(\"inner\").hasField(\"postalCode\")) {" +
                         "_mo_mapperAddressJavaRecord.setPostalCode(_mi_inner.getPostalCode());"
         );
     }
@@ -76,8 +76,8 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
                 "containingDoubleNonRecordWrapper",
                         "if (_mi_inner0 != null && _iv_args.hasField(\"inner0\")) {" +
                         "var _mi_inner1 = _mi_inner0.getInner1();" +
-                        "if (_mi_inner1 != null && _iv_args.hasField(\"inner1\")) {" +
-                        "if (_iv_args.hasField(\"postalCode\")) {" +
+                        "if (_mi_inner1 != null && _iv_args.child(\"inner0\").hasField(\"inner1\")) {" +
+                        "if (_iv_args.child(\"inner0\").child(\"inner1\").hasField(\"postalCode\")) {" +
                         "_mo_mapperAddressJavaRecord.setPostalCode(_mi_inner1.getPostalCode());"
         );
     }
@@ -91,8 +91,8 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
                 "inner = itAddress.getInner();" +
                         "if (inner != null && _iv_args.hasField(\"inner\")) {" +
                         "var inner = inner.getInner();" +
-                        "if (inner != null && _iv_args.hasField(\"inner\")) {" +
-                        "if (_iv_args.hasField(\"postalCode\")) {" +
+                        "if (inner != null && _iv_args.child(\"inner\").hasField(\"inner\")) {" +
+                        "if (_iv_args.child(\"inner\").child(\"inner\").hasField(\"postalCode\")) {" +
                         "mapperAddressJavaRecord.setPostalCode(inner.getPostalCode()"
         );
     }

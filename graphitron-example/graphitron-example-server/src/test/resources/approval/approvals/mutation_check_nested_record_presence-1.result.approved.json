@@ -1,0 +1,24 @@
+{
+    "data": {
+        "checkNestedRecordPresence": [
+            {
+                "topField": "All levels provided",
+                "middleField": "Middle value",
+                "deepField": "Deep value",
+                "deepNumber": 42
+            },
+            {
+                "topField": "Only middle level",
+                "middleField": "Middle only",
+                "deepField": null,
+                "deepNumber": null
+            },
+            {
+                "topField": "Top level only",
+                "middleField": null,
+                "deepField": null,
+                "deepNumber": null
+            }
+        ]
+    }
+}

@@ -87,7 +87,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
                     fieldCode.add(
                             CodeBlock
                                     .builder()
-                                    .beginControlFlow("if ($L)", toRecord ? argumentPresenceLookup(innerContext.getFieldName(), false) : selectionSetLookup(innerContext.getPath(), false, false))
+                                    .beginControlFlow("if ($L)", toRecord ? argumentPresenceLookup(innerContext.getPath(), false) : selectionSetLookup(innerContext.getPath(), false, false))
                                     .addIf(isType && previousHadSource, declareBlock)
                                     .add(innerCode.build())
                                     .addIf(isType && previousHadSource && !innerField.createsDataFetcher(), () -> innerContext.getSetMappingBlock(outputPrefix(varName)))

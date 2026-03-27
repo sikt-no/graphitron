@@ -1,0 +1,25 @@
+[
+  {
+    "in": [
+      {
+        "topField": "All levels provided",
+        "nested": {
+          "middleField": "Middle value",
+          "deepNested": {
+            "deepField": "Deep value",
+            "deepNumber": 42
+          }
+        }
+      },
+      {
+        "topField": "Only middle level",
+        "nested": {
+          "middleField": "Middle only"
+        }
+      },
+      {
+        "topField": "Top level only"
+      }
+    ]
+  }
+]

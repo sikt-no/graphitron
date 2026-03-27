@@ -219,6 +219,54 @@ class ArgumentPresenceTest {
         }
 
         @Test
+        @DisplayName("non-record wrapper fields inside a list item require child() navigation")
+        void nonRecordWrapperFieldsRequireChildNavigation() {
+            // Simulates the pattern: input: [{termin: {arstall: 2026, termintype: "VAR"}}]
+            // The generated mapper checks fields inside a non-record wrapper (termin) using
+            // _iv_args.child("termin").hasField("arstall"), NOT _iv_args.hasField("arstall").
+            Map<String, Object> arguments = Map.of(
+                    "input", List.of(
+                            Map.of("termin", Map.of("arstall", 2026, "termintype", "VAR"))
+                    )
+            );
+
+            var presence = ArgumentPresence.build(arguments);
+            var item0 = presence.child("input").itemAt(0);
+
+            // The wrapper field itself is present at the element level
+            assertThat(item0.hasField("termin")).isTrue();
+
+            // Fields inside the wrapper are NOT direct children of the element
+            assertThat(item0.hasField("arstall")).as("arstall is not a direct child of the element").isFalse();
+            assertThat(item0.hasField("termintype")).as("termintype is not a direct child of the element").isFalse();
+
+            // They must be accessed via child() navigation
+            assertThat(item0.child("termin").hasField("arstall")).isTrue();
+            assertThat(item0.child("termin").hasField("termintype")).isTrue();
+        }
+
+        @Test
+        @DisplayName("double-nested non-record wrapper requires chained child() navigation")
+        void doubleNestedNonRecordWrapper() {
+            // Simulates: input: [{outer: {inner: {field: "value"}}}]
+            Map<String, Object> arguments = Map.of(
+                    "input", List.of(
+                            Map.of("outer", Map.of("inner", Map.of("field", "value")))
+                    )
+            );
+
+            var presence = ArgumentPresence.build(arguments);
+            var item0 = presence.child("input").itemAt(0);
+
+            assertThat(item0.hasField("outer")).isTrue();
+            assertThat(item0.hasField("inner")).as("inner is not a direct child of the element").isFalse();
+            assertThat(item0.hasField("field")).as("field is not a direct child of the element").isFalse();
+
+            assertThat(item0.child("outer").hasField("inner")).isTrue();
+            assertThat(item0.child("outer").child("inner").hasField("field")).isTrue();
+        }
+
+        @Test
         @DisplayName("nested non-list input inside a list item")
         void nestedNonListInsideListItem() {
             // Simulates: in: [{fornavn: "Ola", folkeregistrertAdresse: {gate: "Gata 1", postnummer: "0123"}}]
