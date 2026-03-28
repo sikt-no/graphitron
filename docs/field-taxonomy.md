@@ -44,19 +44,20 @@ Every field interacts with the Graphitron scope in two orthogonal dimensions.
 |---|---|---|
 | Root query fields (`TableQueryField`, `LookupQueryField`, etc.) | Creates | Carries |
 | `ServiceQueryField`, `ServiceMutationField` | Creates | Terminates |
-| Mutation fields (`InsertMutationField`, `UpdateMutationField`, `UpsertMutationField`, `ServiceMutationField`) | Creates | Carries |
+| Mutation fields (`InsertMutationField`, `UpdateMutationField`, `UpsertMutationField`) | Creates | Carries |
 | `DeleteMutationField` | Creates | Terminates |
 | `TableReferenceField`, `TableMethodField` | Reuses | Carries |
 | `InterfaceReferenceField`, `UnionReferenceField` | Reuses | Carries |
 | `NestingField` | Reuses | Carries |
 | `ColumnField`, `ColumnReferenceField`, `RelayNodeIdField`, `RelayNodeIdReferenceField` | Reuses | Terminates |
 | `FieldMethodField` | Reuses | Terminates |
+| `ConstructorField` | Reuses | Terminates |
 | `SplitField`, `SplitLookupField` | Creates | Terminates |
 | `ServiceField` | Creates | Terminates |
 | `LiftField` (result-mapped source) | Creates | Carries |
 | `PropertyField` (result-mapped source) | Reuses | Terminates |
 
-LiftCondition applies to any field that Creates + Terminates and has a table-mapped return type.
+LiftCondition applies when a field Terminates and its return type is table-mapped, or when there is no active scope and the return type is table-mapped.
 
 ### Conditions
 
@@ -68,7 +69,7 @@ Conditions are **properties of fields**, not field types.
 | **Filter condition** | Narrows the result set | `@condition` directive, arguments, cursor |
 | **LiftCondition** | Reconnects a result to a target table | `@condition` on lift, FK match, or automatic (TableRecord) |
 
-Any field with a table target can carry a reference condition and/or a filter condition. LiftCondition applies to any field that creates scope and terminates, when the return type is table-mapped. If the return type is result-mapped, lift occurs later via `LiftField` on the result-mapped type's fields.
+Any field with a table target can carry a reference condition and/or a filter condition. LiftCondition applies when a field Terminates and its return type is table-mapped, or when there is no active scope and the return type is table-mapped. If the return type is result-mapped, lift occurs later via `LiftField` on the result-mapped type's fields.
 
 ---
 
@@ -198,7 +199,6 @@ Fields on a `@table` type.
 | `MultiTableInterfaceReferenceField` | Multi-table interface target. Wrapping is a spec property. |
 | `UnionReferenceField` | Union target. Wrapping is a spec property. |
 | `NestingField` | Target inherits the source table context, producing a level of nesting. |
-| `ConstructorField` | *(planned)* Populates the target object based on constructor mapping. |
 
 #### Reuses + Terminates (in-scope, no further projection)
 
@@ -209,6 +209,7 @@ Fields on a `@table` type.
 | `RelayNodeIdField` | Encodes the Relay `Node.id` for the source table row. |
 | `RelayNodeIdReferenceField` | Encodes the Relay `Node.id` for a joined target table row. |
 | `FieldMethodField` | `@externalField` — developer provides a jOOQ `Field<?>` (scalar, `row(...)`, or `multiset(...)`). Included in the current SELECT but Graphitron does not project through it. LiftCondition applies if return type is table-mapped. |
+| `ConstructorField` | *(planned)* Populates the target object based on constructor mapping. Graphitron does not project through it. |
 
 #### Creates + Terminates (new scope, exits current)
 
@@ -227,7 +228,7 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 | Field type | Creates / Reuses | Carries / Terminates | Description |
 |---|---|---|---|
 | `PropertyField` | Reuses | Terminates | Reads a scalar or nested record property. Generates a trivial data fetcher. |
-| `LiftField` | Creates | Carries | `@splitQuery` to a table-mapped type. DataLoader + LiftCondition. New Graphitron scope. |
+| `LiftField` | Creates | Carries | `@splitQuery` on a field with a table-mapped return type. Forces a new scope via DataLoader + LiftCondition. |
 | `ServiceField` | Creates | Terminates | `@service` — input is locked to whatever the record carries; Graphitron cannot adapt it. |
 
 ---
@@ -267,7 +268,7 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 | Scalar (via join) | — | `ColumnReferenceField`, `RelayNodeIdReferenceField` | — |
 | jOOQ Field<?> | — | `FieldMethodField` | — |
 | Service | — | — | `ServiceField` |
-| Planned | `ConstructorField` | — | — |
+| Planned | — | `ConstructorField` | — |
 
 ### Child fields — result-mapped source
 
