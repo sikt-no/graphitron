@@ -76,27 +76,26 @@ FieldSpec
 │       └── ServiceMutationField
 ├── ChildField
 │   ├── TableMappedChildField
-│   │   ├── ColumnChildField
-│   │   ├── ColumnReferenceChildField
-│   │   ├── RelayNodeIdChildField
-│   │   ├── RelayNodeIdReferenceChildField
-│   │   ├── ReferenceChildField
-│   │   ├── List/ConnReferenceChildField
+│   │   ├── ColumnField
+│   │   ├── ColumnReferenceField
+│   │   ├── RelayNodeIdField
+│   │   ├── RelayNodeIdReferenceField
+│   │   ├── TableReferenceField
 │   │   ├── InterfaceReferenceChildField
 │   │   │   ├── SingleTableInterfaceReferenceChildField
 │   │   │   └── MultiTableInterfaceReferenceChildField
 │   │   ├── UnionReferenceChildField
 │   │   │   └── MultiTableUnionReferenceChildField
-│   │   ├── NestingChildField
-│   │   ├── ConstructorChildField
-│   │   ├── LookupKeyQueryChildField
-│   │   ├── ChildQueryChildField
-│   │   ├── ServiceChildField
-│   │   └── FieldMethodChildField
+│   │   ├── NestingField
+│   │   ├── ConstructorField
+│   │   ├── SplitLookupField
+│   │   ├── SplitQueryField
+│   │   ├── ServiceField
+│   │   └── ExternalField
 │   └── ResultMappedChildField
-│       ├── RecordPropertyChildField
-│       ├── LiftChildField
-│       └── ServiceChildField
+│       ├── PropertyField
+│       ├── LiftField
+│       └── ServiceField
 └── UnclassifiedField
 ```
 
@@ -156,17 +155,16 @@ Fields on a `@table` type. They operate within the current Graphitron scope unle
 
 | Field type | Description |
 |---|---|
-| `ColumnChildField` | Bound to a column on the source table |
-| `ColumnReferenceChildField` | Bound to a column on a joined target table |
-| `RelayNodeIdChildField` | Encodes the Relay `Node.id` for the source table row |
-| `RelayNodeIdReferenceChildField` | Encodes the Relay `Node.id` for a joined target table row |
+| `ColumnField` | Bound to a column on the source table |
+| `ColumnReferenceField` | Bound to a column on a joined target table |
+| `RelayNodeIdField` | Encodes the Relay `Node.id` for the source table row |
+| `RelayNodeIdReferenceField` | Encodes the Relay `Node.id` for a joined target table row |
 
 #### Reference fields — object target (in scope)
 
 | Field type | Target |
 |---|---|
-| `ReferenceChildField` | Single table-mapped object |
-| `List/ConnReferenceChildField` | Collection of table-mapped objects |
+| `TableReferenceField` | Table-mapped object. Wrapping (single, List, or Connection) is a spec property. |
 | `SingleTableInterfaceReferenceChildField` | Single-table interface (mirrors query variant). Wrapping (List or Connection) is a spec property. |
 | `MultiTableInterfaceReferenceChildField` | Multi-table interface (mirrors query variant). Wrapping (List or Connection) is a spec property. |
 | `MultiTableUnionReferenceChildField` | Multi-table union (mirrors query variant). Wrapping (List or Connection) is a spec property. |
@@ -175,22 +173,22 @@ Fields on a `@table` type. They operate within the current Graphitron scope unle
 
 | Field type | Description |
 |---|---|
-| `NestingChildField` | Target inherits the source table context, producing a level of nesting without a new scope |
-| `ConstructorChildField` | *(planned)* Populates the target object based on constructor mapping |
+| `NestingField` | Target inherits the source table context, producing a level of nesting without a new scope |
+| `ConstructorField` | *(planned)* Populates the target object based on constructor mapping |
 
 #### New scope fields
 
 | Field type | Trigger | Mechanism |
 |---|---|---|
-| `LookupKeyQueryChildField` | `@splitQuery` + `@lookupKey` on argument | New scope via DataLoader |
-| `ChildQueryChildField` | `@splitQuery` + list-wrapped table target | New scope via DataLoader |
+| `SplitLookupField` | `@splitQuery` + `@lookupKey` on argument | New scope via DataLoader |
+| `SplitQueryField` | `@splitQuery` + list-wrapped table target | New scope via DataLoader |
 
 #### Escape fields (exit scope, no re-entry)
 
 | Field type | Trigger | Description |
 |---|---|---|
-| `ServiceChildField` | `@service` | Private scope. LiftCondition applies if return type is table-mapped; if result-mapped, lift occurs on child fields. From table-mapped source, Graphitron controls the input and can adapt what is passed to the service. |
-| `FieldMethodChildField` | `@externalField` | Static method call; no scope |
+| `ServiceField` | `@service` | Private scope. LiftCondition applies if return type is table-mapped; if result-mapped, lift occurs on child fields. From table-mapped source, Graphitron controls the input and can adapt what is passed to the service. |
+| `ExternalField` | `@externalField` | Static method call; no scope |
 
 ---
 
@@ -200,9 +198,9 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 
 | Field type | Description |
 |---|---|
-| `RecordPropertyChildField` | Reads a scalar or nested record property from the result object. Generates a trivial data fetcher. |
-| `LiftChildField` | `@splitQuery` pointing to a table-mapped type. Generates a DataLoader + LiftCondition, starting a new Graphitron scope. |
-| `ServiceChildField` | `@service` — same type as from table-mapped source, but the input is locked to whatever the record carries; Graphitron cannot adapt it. |
+| `PropertyField` | Reads a scalar or nested record property from the result object. Generates a trivial data fetcher. |
+| `LiftField` | `@splitQuery` pointing to a table-mapped type. Generates a DataLoader + LiftCondition, starting a new Graphitron scope. |
+| `ServiceField` | `@service` — same type as from table-mapped source, but the input is locked to whatever the record carries; Graphitron cannot adapt it. |
 
 ---
 
@@ -233,22 +231,22 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 
 | Target | Single | List / Connection |
 |---|---|---|
-| Scalar (own table) | `ColumnChildField`, `RelayNodeIdChildField` | — |
-| Scalar (via join) | `ColumnReferenceChildField`, `RelayNodeIdReferenceChildField` | — |
-| Table-mapped | `ReferenceChildField` | `List/ConnReferenceChildField` |
+| Scalar (own table) | `ColumnField`, `RelayNodeIdField` | — |
+| Scalar (via join) | `ColumnReferenceField`, `RelayNodeIdReferenceField` | — |
+| Table-mapped | `TableReferenceField` | `TableReferenceField` |
 | Single-table Interface | — | `SingleTableInterfaceReferenceChildField` |
 | Multi-table Interface | — | `MultiTableInterfaceReferenceChildField` |
 | Multi-table Union | — | `MultiTableUnionReferenceChildField` |
-| Inherited table | `NestingChildField` | — |
-| New scope (@splitQuery) | `LookupKeyQueryChildField` | `ChildQueryChildField` |
-| Service | `ServiceChildField` | — |
-| Escape | `FieldMethodChildField` | — |
-| Planned | `ConstructorChildField` | — |
+| Inherited table | `NestingField` | — |
+| New scope (@splitQuery) | `SplitLookupField` | `SplitQueryField` |
+| Service | `ServiceField` | — |
+| Escape | `ExternalField` | — |
+| Planned | `ConstructorField` | — |
 
 ### Child fields — result-mapped source
 
 | Target | Single | List / Connection |
 |---|---|---|
-| Scalar / nested record | `RecordPropertyChildField` | — |
-| Table-mapped (lift) | `LiftChildField` | `LiftChildField` |
-| Service | `ServiceChildField` | — |
+| Scalar / nested record | `PropertyField` | — |
+| Table-mapped (lift) | `LiftField` | `LiftField` |
+| Service | `ServiceField` | — |
