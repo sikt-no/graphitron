@@ -44,7 +44,8 @@ Every field interacts with the Graphitron scope in two orthogonal dimensions.
 |---|---|---|
 | Root query fields (`TableQueryField`, `LookupQueryField`, etc.) | Creates | Carries |
 | `ServiceQueryField`, `ServiceMutationField` | Creates | Terminates |
-| Mutation fields (`InsertMutationField`, etc.) | Creates | Carries |
+| Mutation fields (`InsertMutationField`, `UpdateMutationField`, `UpsertMutationField`, `ServiceMutationField`) | Creates | Carries |
+| `DeleteMutationField` | Creates | Terminates |
 | `TableReferenceField`, `TableMethodField` | Reuses | Carries |
 | `InterfaceReferenceField`, `UnionReferenceField` | Reuses | Carries |
 | `NestingField` | Reuses | Carries |
@@ -157,7 +158,7 @@ Fields on the `Query` type. They have no source context. All create a new Graphi
 |---|---|---|
 | `LookupQueryField` | `@lookupKey` on an argument | Table-mapped, cardinality is spec property |
 | `TableQueryField` | General table query | Table-mapped, cardinality is spec property |
-| `TableMethodQueryField` | `@tableMethod` — developer provides a filtered `Table<?>` matching the target table type. Graphitron handles all projection, ordering, pagination, and nested scopes within the created scope. Preferred over `ServiceQueryField` whenever the logic can be expressed as a filtered table. Cardinality is spec property. |
+| `TableMethodQueryField` | `@tableMethod` — developer provides a filtered `Table<?>` | Table-mapped. Graphitron handles all projection, ordering, pagination, and nested scopes within the created scope. Preferred over `ServiceQueryField` when the logic can be expressed as a filtered table. Cardinality is spec property. |
 | `RelayNodeQueryField` | `Query.node(id:)` — Relay spec | Table-mapped via global ID |
 | `EntityQueryField` | `Query._entities(representations:)` — Apollo Federation | Table-mapped |
 | `SingleTableInterfaceQueryField` | Target interface has `@table` + `@discriminate`; implementing types have `@table` + `@discriminator` | Single-table interface, cardinality is spec property |
@@ -169,9 +170,7 @@ Fields on the `Query` type. They have no source context. All create a new Graphi
 
 ### Mutation fields — unmapped source, write
 
-Fields on the `Mutation` type. These are the only fields permitted to write to the database. `ServiceMutationField` is the `@service` equivalent — the service method is permitted to mutate. The lift rule applies to `InsertMutationField`, `UpdateMutationField`, and `UpsertMutationField`: LiftCondition if return type is table-mapped, otherwise lift occurs on child fields.
-
-All mutation fields can provide access back into the graph via their return type, following the same lift rule: LiftCondition if the return type is table-mapped, lift on child fields if result-mapped.
+Fields on the `Mutation` type. These are the only fields permitted to write to the database. `ServiceMutationField` is the `@service` equivalent — the service method is permitted to mutate. All mutation fields can provide access back into the graph via their return type: LiftCondition if the return type is table-mapped, lift on child fields if result-mapped.
 
 `DeleteMutationField` is the one exception: deleted rows no longer exist in the database, so querying them back is not possible. The return type is therefore a simple confirmation — a success flag, a count, or an ordered echo of the input. Input/output ordering follows plural identifying root field rules so batch deletes are positionally consistent.
 
