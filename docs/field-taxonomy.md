@@ -20,43 +20,35 @@ A Graphitron scope is one SQL statement. Transitions are the key structural even
 |---|---|---|
 | **Enter** | First table-mapped type reached from an unmapped root | New Graphitron scope starts |
 | **Split** | `@splitQuery` on any child field | New scope, connected via DataLoader |
-| **Lift** | Field on a result-mapped type with a table-mapped return type (`@splitQuery` is an error here) | New scope, connected via DataLoader + LiftCondition |
+| **Lift** | `TableReferenceField` (or any Carries field) on a result-mapped type | New scope, connected via DataLoader + LiftCondition. `@splitQuery` is redundant here and an error. |
 
 ### Scope Interaction
 
-Every field interacts with the Graphitron scope in two orthogonal dimensions.
+Every field interacts with the Graphitron scope in two dimensions.
 
-**Creates vs Reuses** — mutually exclusive. Does the field start a new scope or participate in the current one?
+**Creates vs Reuses** is derived from context — it is not an intrinsic property of the field type:
+
+| Context | Creates / Reuses |
+|---|---|
+| Root field (unmapped) | Always Creates |
+| Result-mapped child field | Always Creates — no scope exists to reuse |
+| Table-mapped child field | Reuses by default; `@splitQuery` promotes to Creates |
+| `ServiceField` (any context) | Always Creates — private scope |
+
+**Carries vs Terminates** is intrinsic to the field type — it determines whether child fields can participate in the current scope:
 
 | | Meaning |
 |---|---|
-| **Creates** | Starts a new Graphitron scope (new SQL statement) |
-| **Reuses** | Contributes QueryParts to the current SQL statement |
+| **Carries** | The scope remains available — child fields can participate in the same SQL statement |
+| **Terminates** | Graphitron's projection control ends here — child fields cannot participate in the current scope |
 
-**Carries vs Terminates** — mutually exclusive. What happens to the scope for child fields?
-
-| | Meaning |
+| Field type | Carries / Terminates |
 |---|---|
-| **Carries** | Keeps the current scope available — child fields can participate in the same SQL statement |
-| **Terminates** | Ends Graphitron's projection control for this branch — child fields cannot participate in the current scope |
-
-| Field type | Creates / Reuses | Carries / Terminates |
-|---|---|---|
-| Root query fields (`TableQueryField`, `LookupQueryField`, etc.) | Creates | Carries |
-| `ServiceQueryField`, `ServiceMutationField` | Creates | Terminates |
-| Mutation fields (`InsertMutationField`, `UpdateMutationField`, `UpsertMutationField`) | Creates | Carries |
-| `DeleteMutationField` | Creates | Terminates |
-| `TableReferenceField`, `TableMethodField` | Reuses | Carries |
-| `InterfaceReferenceField`, `UnionReferenceField` | Reuses | Carries |
-| `NestingField` | Reuses | Carries |
-| `ColumnField`, `ColumnReferenceField`, `RelayNodeIdField`, `RelayNodeIdReferenceField` | Reuses | Terminates |
-| `FieldMethodField` | Reuses | Terminates |
-| `ConstructorField` | Reuses | Terminates |
-| `ServiceField` | Creates | Terminates |
-| `LiftField` (result-mapped source) | Creates | Carries |
-| `PropertyField` (result-mapped source) | Reuses | Terminates |
-
-Any Reuses field can be promoted to Creates by applying `@splitQuery` — the field is then backed by a DataLoader instead of a SQL join. A Reuses+Carries field becomes Creates+Carries; a Reuses+Terminates field becomes Creates+Terminates.
+| Root query fields, `InsertMutationField`, `UpdateMutationField`, `UpsertMutationField` | Carries |
+| `DeleteMutationField`, `ServiceQueryField`, `ServiceMutationField` | Terminates |
+| `TableReferenceField`, `TableMethodField`, `InterfaceReferenceField`, `UnionReferenceField`, `NestingField` | Carries |
+| `ColumnField`, `ColumnReferenceField`, `RelayNodeIdField`, `RelayNodeIdReferenceField` | Terminates |
+| `FieldMethodField`, `ConstructorField`, `ServiceField`, `PropertyField` | Terminates |
 
 LiftCondition applies when a field Terminates and its return type is table-mapped, or when there is no active scope and the return type is table-mapped.
 
@@ -72,7 +64,7 @@ Conditions and structural properties are **properties of fields**, not field typ
 | **`@splitQuery`** | Promotes a Reuses field to Creates — DataLoader instead of join | `@splitQuery` directive |
 | **`@lookupKey`** | Enables lookup semantics: strict row-to-key ordering, exact count enforcement, no pagination | `@lookupKey` on an argument |
 
-Any field with a table target can carry a reference condition and/or a filter condition. LiftCondition applies when a field Terminates and its return type is table-mapped, or when there is no active scope and the return type is table-mapped. If the return type is result-mapped, lift occurs later via `LiftField` on the result-mapped type's fields.
+Any field with a table target can carry a reference condition and/or a filter condition. LiftCondition applies when a field Terminates and its return type is table-mapped, or when there is no active scope and the return type is table-mapped. If the return type is result-mapped, lift occurs later when a Carries field on the result-mapped type is reached.
 
 `@splitQuery` and `@lookupKey` are orthogonal. A field can have neither, either, or both.
 
@@ -115,25 +107,21 @@ FieldSpec
 │       ├── UpsertMutationField
 │       └── ServiceMutationField
 ├── ChildField
-│   ├── TableMappedChildField
-│   │   ├── ColumnField
-│   │   ├── ColumnReferenceField
-│   │   ├── RelayNodeIdField
-│   │   ├── RelayNodeIdReferenceField
-│   │   ├── TableReferenceField
-│   │   ├── TableMethodField
-│   │   ├── InterfaceReferenceField
-│   │   │   ├── SingleTableInterfaceReferenceField
-│   │   │   └── MultiTableInterfaceReferenceField
-│   │   ├── UnionReferenceField
-│   │   ├── NestingField
-│   │   ├── ConstructorField
-│   │   ├── ServiceField
-│   │   └── FieldMethodField
-│   └── ResultMappedChildField
-│       ├── PropertyField
-│       ├── LiftField
-│       └── ServiceField
+│   ├── ColumnField
+│   ├── ColumnReferenceField
+│   ├── RelayNodeIdField
+│   ├── RelayNodeIdReferenceField
+│   ├── TableReferenceField
+│   ├── TableMethodField
+│   ├── InterfaceReferenceField
+│   │   ├── SingleTableInterfaceReferenceField
+│   │   └── MultiTableInterfaceReferenceField
+│   ├── UnionReferenceField
+│   ├── NestingField
+│   ├── ConstructorField
+│   ├── ServiceField
+│   ├── FieldMethodField
+│   └── PropertyField
 ├── NotGeneratedField
 └── UnclassifiedField
 ```
@@ -188,51 +176,35 @@ Fields on the `Mutation` type. These are the only fields permitted to write to t
 
 ---
 
-### Child fields — table-mapped source
+### Child fields
 
-Fields on a `@table` type.
+Child fields carry a `sourceContext` property — table-mapped (`@table`) or result-mapped (`@record`). Source context determines Creates/Reuses (see Scope Interaction above). Carries/Terminates is intrinsic to the field type.
 
-#### Reuses + Carries (in-scope, scope available to children)
+`@splitQuery` is valid on any table-mapped child field, promoting it from Reuses to Creates. It is an error on result-mapped child fields — those always Create implicitly. `@lookupKey` adds strict lookup semantics on top of `@splitQuery`.
 
-| Field type | Description |
-|---|---|
-| `TableReferenceField` | Table-mapped target. Graphitron handles projection. Wrapping is a spec property. |
-| `TableMethodField` | `@tableMethod` — developer provides a filtered `Table<?>` matching the target table type. Graphitron joins it using the same reference condition logic as `TableReferenceField`, then handles all projection, ordering, pagination, and nested scopes within the same scope. Preferred over `ServiceField` whenever the logic can be expressed as a filtered table. Wrapping is a spec property. |
-| `SingleTableInterfaceReferenceField` | Single-table interface target. Wrapping is a spec property. |
-| `MultiTableInterfaceReferenceField` | Multi-table interface target. Wrapping is a spec property. |
-| `UnionReferenceField` | Union target. Wrapping is a spec property. |
-| `NestingField` | Target inherits the source table context, producing a level of nesting. |
+#### Carries
 
-#### Reuses + Terminates (in-scope, no further projection)
-
-| Field type | Description |
-|---|---|
-| `ColumnField` | Bound to a column on the source table. |
-| `ColumnReferenceField` | Bound to a column on a joined target table. |
-| `RelayNodeIdField` | Encodes the Relay `Node.id` for the source table row. |
-| `RelayNodeIdReferenceField` | Encodes the Relay `Node.id` for a joined target table row. |
-| `FieldMethodField` | `@externalField` — developer provides a jOOQ `Field<?>` (scalar, `row(...)`, or `multiset(...)`). Included in the current SELECT but Graphitron does not project through it. LiftCondition applies if return type is table-mapped. |
-| `ConstructorField` | *(planned)* A new directive carries the field-to-constructor-parameter mapping. Graphitron does not project through it. |
-
-Any field in the Reuses+Carries or Reuses+Terminates categories above can be promoted to Creates by applying `@splitQuery`. The field is then backed by a DataLoader; child fields participate in the new scope (Carries) or not (Terminates) as before. Adding `@lookupKey` on top of `@splitQuery` enables lookup semantics: strict row-to-key ordering, exact count enforcement, and no pagination.
-
-#### Creates + Terminates (new scope, exits current)
-
-| Field type | Trigger | Mechanism |
+| Field type | Valid source contexts | Description |
 |---|---|---|
-| `ServiceField` | `@service` | Private scope. LiftCondition applies if return type is table-mapped; if result-mapped, lift occurs on child fields. From table-mapped source, Graphitron controls the input and can adapt what is passed to the service. |
+| `TableReferenceField` | Table-mapped, result-mapped | Table-mapped target. Graphitron handles projection, ordering, pagination, and nested scopes. In result-mapped context, always Creates via DataLoader + LiftCondition. Cardinality is a spec property. |
+| `TableMethodField` | Table-mapped, result-mapped | `@tableMethod` — developer provides a filtered `Table<?>`. Graphitron joins it using the same logic as `TableReferenceField`. Preferred over `ServiceField` when the logic can be expressed as a filtered table. Cardinality is a spec property. |
+| `SingleTableInterfaceReferenceField` | Table-mapped, result-mapped | Single-table interface target. Cardinality is a spec property. |
+| `MultiTableInterfaceReferenceField` | Table-mapped, result-mapped | Multi-table interface target. Cardinality is a spec property. |
+| `UnionReferenceField` | Table-mapped, result-mapped | Union target. Cardinality is a spec property. |
+| `NestingField` | Table-mapped | Target inherits the source table context, producing a level of nesting. |
 
----
+#### Terminates
 
-### Child fields — result-mapped source
-
-Fields on a `@record` type. Graphitron only validates types and generates RuntimeWiring — no SQL is generated — until a scope transition is encountered.
-
-| Field type | Creates / Reuses | Carries / Terminates | Description |
-|---|---|---|---|
-| `PropertyField` | Reuses | Terminates | Reads a scalar or nested record property. Generates a trivial data fetcher. |
-| `LiftField` | Creates | Carries | Field with a table-mapped return type on a result-mapped source. Creates a new scope via DataLoader + LiftCondition. Using `@splitQuery` here is an error — there is no active scope to split. |
-| `ServiceField` | Creates | Terminates | `@service` — input is locked to whatever the record carries; Graphitron cannot adapt it. |
+| Field type | Valid source contexts | Description |
+|---|---|---|
+| `ColumnField` | Table-mapped | Bound to a column on the source table. |
+| `ColumnReferenceField` | Table-mapped | Bound to a column on a joined target table. |
+| `RelayNodeIdField` | Table-mapped | Encodes the Relay `Node.id` for the source table row. |
+| `RelayNodeIdReferenceField` | Table-mapped | Encodes the Relay `Node.id` for a joined target table row. |
+| `FieldMethodField` | Table-mapped | `@externalField` — developer provides a jOOQ `Field<?>` (scalar, `row(...)`, or `multiset(...)`). Included in the current SELECT but Graphitron does not project through it. LiftCondition applies if return type is table-mapped. |
+| `ConstructorField` | Table-mapped | *(planned)* A new directive carries the field-to-constructor-parameter mapping. Graphitron does not project through it. |
+| `ServiceField` | Table-mapped, result-mapped | `@service` — always Creates (private scope). From table-mapped source, Graphitron controls the input and can adapt what is passed to the service. From result-mapped source, input is locked to whatever the record carries. LiftCondition applies if return type is table-mapped. |
+| `PropertyField` | Result-mapped | Reads a scalar or nested record property. Generates a trivial data fetcher. No SQL interaction. |
 
 ---
 
@@ -259,26 +231,19 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 | `UpsertMutationField` | UPSERT |
 | `ServiceMutationField` | @service (permitted to write) |
 
-### Child fields — table-mapped source
+### Child fields
 
-Any field in the Reuses+Carries or Reuses+Terminates columns can be promoted to Creates by `@splitQuery`. `@lookupKey` adds lookup semantics on top. `ServiceField` is always Creates+Terminates.
+`@splitQuery` can be applied to any table-mapped Carries field, promoting it to Creates. `@lookupKey` adds lookup semantics on top. `ServiceField` always Creates regardless of source context.
 
-| Target | Reuses+Carries | Reuses+Terminates |
-|---|---|---|
-| Table-mapped | `TableReferenceField`, `TableMethodField` | — |
-| Interface | `SingleTableInterfaceReferenceField`, `MultiTableInterfaceReferenceField` | — |
-| Union | `UnionReferenceField` | — |
-| Inherited table | `NestingField` | — |
-| Scalar (own table) | — | `ColumnField`, `RelayNodeIdField` |
-| Scalar (via join) | — | `ColumnReferenceField`, `RelayNodeIdReferenceField` |
-| jOOQ Field<?> | — | `FieldMethodField` |
-| Service | `ServiceField` (Creates+Terminates) | — |
-| Planned | — | `ConstructorField` |
-
-### Child fields — result-mapped source
-
-| Field type | Creates / Reuses | Carries / Terminates |
-|---|---|---|
-| `PropertyField` | Reuses | Terminates |
-| `LiftField` | Creates | Carries |
-| `ServiceField` | Creates | Terminates |
+| Target | Source context | Carries | Terminates |
+|---|---|---|---|
+| Table-mapped | Table-mapped or result-mapped | `TableReferenceField`, `TableMethodField` | — |
+| Interface | Table-mapped or result-mapped | `SingleTableInterfaceReferenceField`, `MultiTableInterfaceReferenceField` | — |
+| Union | Table-mapped or result-mapped | `UnionReferenceField` | — |
+| Inherited table | Table-mapped | `NestingField` | — |
+| Scalar (own table) | Table-mapped | — | `ColumnField`, `RelayNodeIdField` |
+| Scalar (via join) | Table-mapped | — | `ColumnReferenceField`, `RelayNodeIdReferenceField` |
+| jOOQ Field<?> | Table-mapped | — | `FieldMethodField` |
+| Service | Table-mapped or result-mapped | — | `ServiceField` |
+| Record property | Result-mapped | — | `PropertyField` |
+| Planned | Table-mapped | — | `ConstructorField` |
