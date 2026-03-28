@@ -80,10 +80,10 @@ FieldSpec
 │   │   ├── RelayNodeIdField
 │   │   ├── RelayNodeIdReferenceField
 │   │   ├── TableReferenceField
-│   │   ├── InterfaceReferenceChildField
-│   │   │   ├── SingleTableInterfaceReferenceChildField
-│   │   │   └── MultiTableInterfaceReferenceChildField
-│   │   ├── UnionReferenceChildField
+│   │   ├── InterfaceReferenceField
+│   │   │   ├── SingleTableInterfaceReferenceField
+│   │   │   └── MultiTableInterfaceReferenceField
+│   │   ├── UnionReferenceField
 │   │   ├── NestingField
 │   │   ├── ConstructorField
 │   │   ├── SplitLookupField
@@ -163,9 +163,9 @@ Fields on a `@table` type. They operate within the current Graphitron scope unle
 | Field type | Target |
 |---|---|
 | `TableReferenceField` | Table-mapped object. Wrapping (single, List, or Connection) is a spec property. |
-| `SingleTableInterfaceReferenceChildField` | Single-table interface (mirrors query variant). Wrapping (List or Connection) is a spec property. |
-| `MultiTableInterfaceReferenceChildField` | Multi-table interface (mirrors query variant). Wrapping (List or Connection) is a spec property. |
-| `UnionReferenceChildField` | Union (mirrors query variant). Wrapping (List or Connection) is a spec property. |
+| `SingleTableInterfaceReferenceField` | Single-table interface (mirrors query variant). Wrapping (List or Connection) is a spec property. |
+| `MultiTableInterfaceReferenceField` | Multi-table interface (mirrors query variant). Wrapping (List or Connection) is a spec property. |
+| `UnionReferenceField` | Union (mirrors query variant). Wrapping (List or Connection) is a spec property. |
 
 #### Structural fields (in scope)
 
@@ -232,9 +232,9 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 | Scalar (own table) | `ColumnField`, `RelayNodeIdField` | — |
 | Scalar (via join) | `ColumnReferenceField`, `RelayNodeIdReferenceField` | — |
 | Table-mapped | `TableReferenceField` | `TableReferenceField` |
-| Single-table Interface | — | `SingleTableInterfaceReferenceChildField` |
-| Multi-table Interface | — | `MultiTableInterfaceReferenceChildField` |
-| Multi-table Union | — | `UnionReferenceChildField` |
+| Single-table Interface | — | `SingleTableInterfaceReferenceField` |
+| Multi-table Interface | — | `MultiTableInterfaceReferenceField` |
+| Multi-table Union | — | `UnionReferenceField` |
 | Inherited table | `NestingField` | — |
 | New scope (@splitQuery) | `SplitLookupField` | `SplitQueryField` |
 | Service | `ServiceField` | — |
