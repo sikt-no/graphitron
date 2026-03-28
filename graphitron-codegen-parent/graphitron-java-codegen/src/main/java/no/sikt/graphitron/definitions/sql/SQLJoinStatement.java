@@ -2,6 +2,7 @@ package no.sikt.graphitron.definitions.sql;
 
 import no.sikt.graphitron.definitions.interfaces.JoinElement;
 import no.sikt.graphitron.definitions.mapping.AliasWrapper;
+import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.generators.context.JoinListSequence;
 import no.sikt.graphitron.javapoet.CodeBlock;
 
@@ -17,6 +18,7 @@ public class SQLJoinStatement extends SQLJoin {
     private final String comparableJoinString;
     private final AliasWrapper joinAlias;
     private final CodeBlock joinString;
+    private final JOOQMapping key;
 
     /**
      * @param joinTargetTable The "right" side of a join statement. This is the table to be joined with.
@@ -24,9 +26,20 @@ public class SQLJoinStatement extends SQLJoin {
      * @param nullable What kind of join operation is to be used.
      */
     public SQLJoinStatement(JoinListSequence joinSequence, JoinElement joinTargetTable, AliasWrapper joinAlias, List<SQLJoinField> joinFields, boolean nullable) {
+        this(joinSequence, joinTargetTable, joinAlias, joinFields, nullable, null);
+    }
+
+    /**
+     * @param joinTargetTable The "right" side of a join statement. This is the table to be joined with.
+     * @param joinFields List of any conditions for the join operation.
+     * @param nullable What kind of join operation is to be used.
+     * @param key The foreign key used for this join, if available. Used to generate EXISTS subqueries for filter-only LEFT JOINs.
+     */
+    public SQLJoinStatement(JoinListSequence joinSequence, JoinElement joinTargetTable, AliasWrapper joinAlias, List<SQLJoinField> joinFields, boolean nullable, JOOQMapping key) {
         super(joinSequence, joinFields, nullable);
         this.joinTargetTable = joinTargetTable;
         this.joinAlias = joinAlias;
+        this.key = key;
         joinString = super.toJoinString(joinAlias.getAlias().getMappingName());
         comparableJoinString = joinString.toString();
     }
@@ -50,6 +63,13 @@ public class SQLJoinStatement extends SQLJoin {
      */
     public AliasWrapper getJoinAlias() {
         return joinAlias;
+    }
+
+    /**
+     * @return The foreign key used for this join, or null if not available.
+     */
+    public JOOQMapping getKey() {
+        return key;
     }
 
     /**
