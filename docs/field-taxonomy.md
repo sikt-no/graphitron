@@ -162,15 +162,19 @@ Fields on the `Query` type. They have no source context. All create a new Graphi
 
 ### Mutation fields — unmapped source, write
 
-Fields on the `Mutation` type. These are the only fields permitted to write to the database. `ServiceMutationField` is the `@service` equivalent — the service method is permitted to mutate. The same lift rule applies as for all service fields: LiftCondition if return type is table-mapped, otherwise lift occurs on child fields.
+Fields on the `Mutation` type. These are the only fields permitted to write to the database. `ServiceMutationField` is the `@service` equivalent — the service method is permitted to mutate. The lift rule applies to `InsertMutationField`, `UpdateMutationField`, and `UpsertMutationField`: LiftCondition if return type is table-mapped, otherwise lift occurs on child fields.
 
-| Field type | Operation |
-|---|---|
-| `InsertMutationField` | `@mutation(typeName: INSERT)` |
-| `UpdateMutationField` | `@mutation(typeName: UPDATE)` |
-| `DeleteMutationField` | `@mutation(typeName: DELETE)` |
-| `UpsertMutationField` | `@mutation(typeName: UPSERT)` |
-| `ServiceMutationField` | `@service` — write logic too complex for Graphitron to generate directly |
+All mutation fields can provide access back into the graph via their return type, following the same lift rule: LiftCondition if the return type is table-mapped, lift on child fields if result-mapped.
+
+`DeleteMutationField` is the one exception: deleted rows no longer exist in the database, so querying them back is not possible. The return type is therefore a simple confirmation — a success flag, a count, or an ordered echo of the input. Input/output ordering follows plural identifying root field rules so batch deletes are positionally consistent.
+
+| Field type | Operation | Return |
+|---|---|---|
+| `InsertMutationField` | `@mutation(typeName: INSERT)` | Table-mapped or result-mapped (lift applies) |
+| `UpdateMutationField` | `@mutation(typeName: UPDATE)` | Table-mapped or result-mapped (lift applies) |
+| `DeleteMutationField` | `@mutation(typeName: DELETE)` | Success flag, count, or ordered input echo. No lift. |
+| `UpsertMutationField` | `@mutation(typeName: UPSERT)` | Table-mapped or result-mapped (lift applies) |
+| `ServiceMutationField` | `@service` — write logic too complex for Graphitron to generate directly | Lift rule applies as for all service fields |
 
 ---
 
