@@ -150,7 +150,7 @@ Fields on the `Query` type. They have no source context. All create a new Graphi
 |---|---|---|
 | `LookupQueryField` | `@lookupKey` on an argument | Table-mapped, cardinality is spec property |
 | `TableQueryField` | General table query | Table-mapped, cardinality is spec property |
-| `TableMethodQueryField` | `@tableMethod` — developer provides filtered `Table<?>` | Table-mapped, Graphitron handles projection. Cardinality is spec property. |
+| `TableMethodQueryField` | `@tableMethod` — developer provides a filtered `Table<?>` matching the target table type. Graphitron handles all projection, ordering, pagination, and nested scopes within the created scope. Preferred over `ServiceQueryField` whenever the logic can be expressed as a filtered table. Cardinality is spec property. |
 | `RelayNodeQueryField` | `Query.node(id:)` — Relay spec | Table-mapped via global ID |
 | `EntityQueryField` | `Query._entities(representations:)` — Apollo Federation | Table-mapped |
 | `SingleTableInterfaceQueryField` | Target interface has `@table` + `@discriminate`; implementing types have `@table` + `@discriminator` | Single-table interface, cardinality is spec property |
@@ -183,7 +183,7 @@ Fields on a `@table` type.
 | Field type | Description |
 |---|---|
 | `TableReferenceField` | Table-mapped target. Graphitron handles projection. Wrapping is a spec property. |
-| `TableMethodField` | `@tableMethod` — developer provides filtered `Table<?>` matching target type. Graphitron handles projection and join. Wrapping is a spec property. |
+| `TableMethodField` | `@tableMethod` — developer provides a filtered `Table<?>` matching the target table type. Graphitron joins it using the same reference condition logic as `TableReferenceField`, then handles all projection, ordering, pagination, and nested scopes within the same scope. Preferred over `ServiceField` whenever the logic can be expressed as a filtered table. Wrapping is a spec property. |
 | `SingleTableInterfaceReferenceField` | Single-table interface target. Wrapping is a spec property. |
 | `MultiTableInterfaceReferenceField` | Multi-table interface target. Wrapping is a spec property. |
 | `UnionReferenceField` | Union target. Wrapping is a spec property. |
