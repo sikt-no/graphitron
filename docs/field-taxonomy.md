@@ -66,7 +66,6 @@ FieldSpec
 │   │   │   ├── SingleTableInterfaceQueryField
 │   │   │   └── MultiTableInterfaceQueryField
 │   │   ├── UnionQueryField
-│   │   │   └── MultiTableUnionQueryField
 │   │   └── ServiceQueryField
 │   └── MutationField
 │       ├── InsertMutationField
@@ -85,7 +84,6 @@ FieldSpec
 │   │   │   ├── SingleTableInterfaceReferenceChildField
 │   │   │   └── MultiTableInterfaceReferenceChildField
 │   │   ├── UnionReferenceChildField
-│   │   │   └── MultiTableUnionReferenceChildField
 │   │   ├── NestingField
 │   │   ├── ConstructorField
 │   │   ├── SplitLookupField
@@ -123,7 +121,7 @@ Fields on the `Query` type. They have no source context. All start a new Graphit
 | `EntityLookupQueryField` | `Query._entities(representations:)` — Apollo Federation | Table-mapped |
 | `SingleTableInterfaceQueryField` | Target interface has `@table` + `@discriminate`; all implementing types have `@table` + `@discriminator`. Wrapping (List or Connection) is a spec property. | Single-table interface |
 | `MultiTableInterfaceQueryField` | Target interface has no directives; all implementing types have `@table`. Wrapping (List or Connection) is a spec property. | Multi-table interface |
-| `MultiTableUnionQueryField` | Target union; all member types have `@table`. Wrapping (List or Connection) is a spec property. | Multi-table union |
+| `UnionQueryField` | Target union; all member types have `@table`. Wrapping (List or Connection) is a spec property. | Multi-table union |
 
 #### Service mode
 
@@ -167,7 +165,7 @@ Fields on a `@table` type. They operate within the current Graphitron scope unle
 | `TableReferenceField` | Table-mapped object. Wrapping (single, List, or Connection) is a spec property. |
 | `SingleTableInterfaceReferenceChildField` | Single-table interface (mirrors query variant). Wrapping (List or Connection) is a spec property. |
 | `MultiTableInterfaceReferenceChildField` | Multi-table interface (mirrors query variant). Wrapping (List or Connection) is a spec property. |
-| `MultiTableUnionReferenceChildField` | Multi-table union (mirrors query variant). Wrapping (List or Connection) is a spec property. |
+| `UnionReferenceChildField` | Union (mirrors query variant). Wrapping (List or Connection) is a spec property. |
 
 #### Structural fields (in scope)
 
@@ -213,7 +211,7 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 | Table-mapped | `LookupQueryField` | `List/ConnQueryField`, `LookupQueryField` (plural) |
 | Single-table Interface | — | `SingleTableInterfaceQueryField` |
 | Multi-table Interface | — | `MultiTableInterfaceQueryField` |
-| Multi-table Union | — | `MultiTableUnionQueryField` |
+| Multi-table Union | — | `UnionQueryField` |
 | Special | `RelayNodeLookupQueryField`, `EntityLookupQueryField` | — |
 | Service / scalar | `ServiceQueryField` | — |
 
@@ -236,7 +234,7 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 | Table-mapped | `TableReferenceField` | `TableReferenceField` |
 | Single-table Interface | — | `SingleTableInterfaceReferenceChildField` |
 | Multi-table Interface | — | `MultiTableInterfaceReferenceChildField` |
-| Multi-table Union | — | `MultiTableUnionReferenceChildField` |
+| Multi-table Union | — | `UnionReferenceChildField` |
 | Inherited table | `NestingField` | — |
 | New scope (@splitQuery) | `SplitLookupField` | `SplitQueryField` |
 | Service | `ServiceField` | — |
