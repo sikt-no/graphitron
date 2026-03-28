@@ -209,13 +209,13 @@ Fields on a `@table` type.
 | `RelayNodeIdField` | Encodes the Relay `Node.id` for the source table row. |
 | `RelayNodeIdReferenceField` | Encodes the Relay `Node.id` for a joined target table row. |
 | `FieldMethodField` | `@externalField` — developer provides a jOOQ `Field<?>` (scalar, `row(...)`, or `multiset(...)`). Included in the current SELECT but Graphitron does not project through it. LiftCondition applies if return type is table-mapped. |
-| `ConstructorField` | *(planned)* Populates the target object based on constructor mapping. Graphitron does not project through it. |
+| `ConstructorField` | *(planned)* A new directive carries the field-to-constructor-parameter mapping. Graphitron does not project through it. |
 
 #### Creates + Terminates (new scope, exits current)
 
 | Field type | Trigger | Mechanism |
 |---|---|---|
-| `SplitLookupField` | `@splitQuery` + `@lookupKey` on argument | New scope via DataLoader |
+| `SplitLookupField` | `@splitQuery` + `@lookupKey` on argument | New scope via DataLoader. Plural identifying field: strict rules on row ordering and count, no pagination support. |
 | `SplitField` | `@splitQuery` + table target | New scope via DataLoader |
 | `ServiceField` | `@service` | Private scope. LiftCondition applies if return type is table-mapped; if result-mapped, lift occurs on child fields. From table-mapped source, Graphitron controls the input and can adapt what is passed to the service. |
 
@@ -240,9 +240,9 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 | Target | Cardinality | Field type |
 |---|---|---|
 | Table-mapped | Any | `TableQueryField`, `LookupQueryField` (@lookupKey), `TableMethodQueryField` (@tableMethod) |
-| Single-table Interface | List / Connection | `SingleTableInterfaceQueryField` |
-| Multi-table Interface | List / Connection | `MultiTableInterfaceQueryField` |
-| Union | List / Connection | `UnionQueryField` |
+| Single-table Interface | Any | `SingleTableInterfaceQueryField` |
+| Multi-table Interface | Any | `MultiTableInterfaceQueryField` |
+| Union | Any | `UnionQueryField` |
 | Special | Single | `RelayNodeQueryField`, `EntityQueryField` |
 | Service | Any | `ServiceQueryField` |
 
