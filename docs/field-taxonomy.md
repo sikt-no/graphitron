@@ -87,7 +87,7 @@ FieldSpec
 │   │   ├── NestingField
 │   │   ├── ConstructorField
 │   │   ├── SplitLookupField
-│   │   ├── SplitQueryField
+│   │   ├── SplitField
 │   │   ├── ServiceField
 │   │   └── ExternalField
 │   └── ResultMappedChildField
@@ -179,7 +179,7 @@ Fields on a `@table` type. They operate within the current Graphitron scope unle
 | Field type | Trigger | Mechanism |
 |---|---|---|
 | `SplitLookupField` | `@splitQuery` + `@lookupKey` on argument | New scope via DataLoader |
-| `SplitQueryField` | `@splitQuery` + list-wrapped table target | New scope via DataLoader |
+| `SplitField` | `@splitQuery` + list-wrapped table target | New scope via DataLoader |
 
 #### Escape fields (exit scope, no re-entry)
 
@@ -236,7 +236,7 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 | Multi-table Interface | — | `MultiTableInterfaceReferenceField` |
 | Multi-table Union | — | `UnionReferenceField` |
 | Inherited table | `NestingField` | — |
-| New scope (@splitQuery) | `SplitLookupField` | `SplitQueryField` |
+| New scope (@splitQuery) | `SplitLookupField` | `SplitField` |
 | Service | `ServiceField` | — |
 | Escape | `ExternalField` | — |
 | Planned | `ConstructorField` | — |
