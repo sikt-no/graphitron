@@ -53,7 +53,7 @@ Every field interacts with the Graphitron scope in two orthogonal dimensions.
 | `FieldMethodField` | Reuses | Terminates |
 | `ConstructorField` | Reuses | Terminates |
 | `SplitField` | Creates | Carries |
-| `SplitLookupField` | Creates | Terminates |
+| `SplitLookupField` | Creates | Carries |
 | `ServiceField` | Creates | Terminates |
 | `LiftField` (result-mapped source) | Creates | Carries |
 | `PropertyField` (result-mapped source) | Reuses | Terminates |
@@ -217,12 +217,7 @@ Fields on a `@table` type.
 | Field type | Trigger | Mechanism |
 |---|---|---|
 | `SplitField` | `@splitQuery` + table target | New scope via DataLoader. Child fields participate in the new scope. |
-
-#### Creates + Terminates (new scope, exits current)
-
-| Field type | Trigger | Mechanism |
-|---|---|---|
-| `SplitLookupField` | `@splitQuery` + `@lookupKey` on argument | New scope via DataLoader. Plural identifying field: strict rules on row ordering and count, no pagination support. |
+| `SplitLookupField` | `@splitQuery` + `@lookupKey` on argument | New scope via DataLoader. Plural identifying field: strict rules on row ordering and count, no pagination support. Child fields participate in the new scope. |
 | `ServiceField` | `@service` | Private scope. LiftCondition applies if return type is table-mapped; if result-mapped, lift occurs on child fields. From table-mapped source, Graphitron controls the input and can adapt what is passed to the service. |
 
 ---
@@ -266,7 +261,7 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 
 | Target | Reuses+Carries | Reuses+Terminates | Creates+Carries | Creates+Terminates |
 |---|---|---|---|---|
-| Table-mapped | `TableReferenceField`, `TableMethodField` | — | `SplitField` | `SplitLookupField` |
+| Table-mapped | `TableReferenceField`, `TableMethodField` | — | `SplitField`, `SplitLookupField` | — |
 | Interface | `SingleTableInterfaceReferenceField`, `MultiTableInterfaceReferenceField` | — | — | — |
 | Union | `UnionReferenceField` | — | — | — |
 | Inherited table | `NestingField` | — | — | — |
