@@ -59,7 +59,7 @@ FieldSpec
 ├── RootField
 │   ├── QueryField
 │   │   ├── LookupQueryField
-│   │   ├── List/ConnQueryField
+│   │   ├── TableQueryField
 │   │   ├── RelayNodeLookupQueryField
 │   │   ├── EntityLookupQueryField
 │   │   ├── InterfaceQueryField
@@ -116,7 +116,7 @@ Fields on the `Query` type. They have no source context. All start a new Graphit
 | Field type | Trigger | Target |
 |---|---|---|
 | `LookupQueryField` | `@lookupKey` on an argument | Single or list of table-mapped |
-| `List/ConnQueryField` | List or Relay Connection | Table-mapped |
+| `TableQueryField` | List or Relay Connection | Table-mapped |
 | `RelayNodeLookupQueryField` | `Query.node(id:)` — Relay spec | Table-mapped via global ID |
 | `EntityLookupQueryField` | `Query._entities(representations:)` — Apollo Federation | Table-mapped |
 | `SingleTableInterfaceQueryField` | Target interface has `@table` + `@discriminate`; all implementing types have `@table` + `@discriminator`. Wrapping (List or Connection) is a spec property. | Single-table interface |
@@ -208,7 +208,7 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 
 | Target | Single | List / Connection |
 |---|---|---|
-| Table-mapped | `LookupQueryField` | `List/ConnQueryField`, `LookupQueryField` (plural) |
+| Table-mapped | `LookupQueryField` | `TableQueryField`, `LookupQueryField` (plural) |
 | Single-table Interface | — | `SingleTableInterfaceQueryField` |
 | Multi-table Interface | — | `MultiTableInterfaceQueryField` |
 | Multi-table Union | — | `UnionQueryField` |
