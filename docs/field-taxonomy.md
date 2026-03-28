@@ -19,7 +19,7 @@ A Graphitron scope is one SQL statement. Transitions are the key structural even
 | Transition | Trigger | Mechanism |
 |---|---|---|
 | **Enter** | First table-mapped type reached from an unmapped root | New Graphitron scope starts |
-| **Split** | `@splitQuery` on a table-mapped field | New scope, connected via DataLoader |
+| **Split** | `@splitQuery` on any child field | New scope, connected via DataLoader |
 | **Lift** | Field on a result-mapped type with a table-mapped return type (`@splitQuery` is an error here) | New scope, connected via DataLoader + LiftCondition |
 
 ### Scope Interaction
@@ -52,25 +52,29 @@ Every field interacts with the Graphitron scope in two orthogonal dimensions.
 | `ColumnField`, `ColumnReferenceField`, `RelayNodeIdField`, `RelayNodeIdReferenceField` | Reuses | Terminates |
 | `FieldMethodField` | Reuses | Terminates |
 | `ConstructorField` | Reuses | Terminates |
-| `SplitField` | Creates | Carries |
-| `SplitLookupField` | Creates | Carries |
 | `ServiceField` | Creates | Terminates |
 | `LiftField` (result-mapped source) | Creates | Carries |
 | `PropertyField` (result-mapped source) | Reuses | Terminates |
 
+Any Reuses field can be promoted to Creates by applying `@splitQuery` — the field is then backed by a DataLoader instead of a SQL join. A Reuses+Carries field becomes Creates+Carries; a Reuses+Terminates field becomes Creates+Terminates.
+
 LiftCondition applies when a field Terminates and its return type is table-mapped, or when there is no active scope and the return type is table-mapped.
 
-### Conditions
+### Conditions and structural properties
 
-Conditions are **properties of fields**, not field types.
+Conditions and structural properties are **properties of fields**, not field types.
 
 | Kind | Purpose | Source |
 |---|---|---|
 | **Reference condition** | Structural join — how two types are related | `@reference` directive, FK metadata |
 | **Filter condition** | Narrows the result set | `@condition` directive, arguments, cursor |
 | **LiftCondition** | Reconnects a result to a target table | `@condition` on lift, FK match, or automatic (TableRecord) |
+| **`@splitQuery`** | Promotes a Reuses field to Creates — DataLoader instead of join | `@splitQuery` directive |
+| **`@lookupKey`** | Enables lookup semantics: strict row-to-key ordering, exact count enforcement, no pagination | `@lookupKey` on an argument |
 
 Any field with a table target can carry a reference condition and/or a filter condition. LiftCondition applies when a field Terminates and its return type is table-mapped, or when there is no active scope and the return type is table-mapped. If the return type is result-mapped, lift occurs later via `LiftField` on the result-mapped type's fields.
+
+`@splitQuery` and `@lookupKey` are orthogonal. A field can have neither, either, or both.
 
 ---
 
@@ -124,8 +128,6 @@ FieldSpec
 │   │   ├── UnionReferenceField
 │   │   ├── NestingField
 │   │   ├── ConstructorField
-│   │   ├── SplitLookupField
-│   │   ├── SplitField
 │   │   ├── ServiceField
 │   │   └── FieldMethodField
 │   └── ResultMappedChildField
@@ -212,12 +214,12 @@ Fields on a `@table` type.
 | `FieldMethodField` | `@externalField` — developer provides a jOOQ `Field<?>` (scalar, `row(...)`, or `multiset(...)`). Included in the current SELECT but Graphitron does not project through it. LiftCondition applies if return type is table-mapped. |
 | `ConstructorField` | *(planned)* A new directive carries the field-to-constructor-parameter mapping. Graphitron does not project through it. |
 
-#### Creates + Carries (new scope, available to children)
+Any field in the Reuses+Carries or Reuses+Terminates categories above can be promoted to Creates by applying `@splitQuery`. The field is then backed by a DataLoader; child fields participate in the new scope (Carries) or not (Terminates) as before. Adding `@lookupKey` on top of `@splitQuery` enables lookup semantics: strict row-to-key ordering, exact count enforcement, and no pagination.
+
+#### Creates + Terminates (new scope, exits current)
 
 | Field type | Trigger | Mechanism |
 |---|---|---|
-| `SplitField` | `@splitQuery` + table target | New scope via DataLoader. Child fields participate in the new scope. |
-| `SplitLookupField` | `@splitQuery` + `@lookupKey` on argument | New scope via DataLoader. Plural identifying field: strict rules on row ordering and count, no pagination support. Child fields participate in the new scope. |
 | `ServiceField` | `@service` | Private scope. LiftCondition applies if return type is table-mapped; if result-mapped, lift occurs on child fields. From table-mapped source, Graphitron controls the input and can adapt what is passed to the service. |
 
 ---
@@ -259,17 +261,19 @@ Fields on a `@record` type. Graphitron only validates types and generates Runtim
 
 ### Child fields — table-mapped source
 
-| Target | Reuses+Carries | Reuses+Terminates | Creates+Carries | Creates+Terminates |
-|---|---|---|---|---|
-| Table-mapped | `TableReferenceField`, `TableMethodField` | — | `SplitField`, `SplitLookupField` | — |
-| Interface | `SingleTableInterfaceReferenceField`, `MultiTableInterfaceReferenceField` | — | — | — |
-| Union | `UnionReferenceField` | — | — | — |
-| Inherited table | `NestingField` | — | — | — |
-| Scalar (own table) | — | `ColumnField`, `RelayNodeIdField` | — | — |
-| Scalar (via join) | — | `ColumnReferenceField`, `RelayNodeIdReferenceField` | — | — |
-| jOOQ Field<?> | — | `FieldMethodField` | — | — |
-| Service | — | — | — | `ServiceField` |
-| Planned | — | `ConstructorField` | — | — |
+Any field in the Reuses+Carries or Reuses+Terminates columns can be promoted to Creates by `@splitQuery`. `@lookupKey` adds lookup semantics on top. `ServiceField` is always Creates+Terminates.
+
+| Target | Reuses+Carries | Reuses+Terminates |
+|---|---|---|
+| Table-mapped | `TableReferenceField`, `TableMethodField` | — |
+| Interface | `SingleTableInterfaceReferenceField`, `MultiTableInterfaceReferenceField` | — |
+| Union | `UnionReferenceField` | — |
+| Inherited table | `NestingField` | — |
+| Scalar (own table) | — | `ColumnField`, `RelayNodeIdField` |
+| Scalar (via join) | — | `ColumnReferenceField`, `RelayNodeIdReferenceField` |
+| jOOQ Field<?> | — | `FieldMethodField` |
+| Service | `ServiceField` (Creates+Terminates) | — |
+| Planned | — | `ConstructorField` |
 
 ### Child fields — result-mapped source
 
