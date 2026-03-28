@@ -129,12 +129,19 @@ FieldSpec
 │       ├── PropertyField
 │       ├── LiftField
 │       └── ServiceField
+├── NotGeneratedField
 └── UnclassifiedField
 ```
 
 ---
 
 ## Field Types
+
+### `NotGeneratedField`
+
+A field annotated with `@notGenerated`. Graphitron recognises it, classifies it, and includes it in the spec — but produces no data fetcher and no runtime wiring entry for it. The developer is responsible for registering wiring externally. Valid in any source context.
+
+---
 
 ### `UnclassifiedField`
 
