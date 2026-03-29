@@ -199,8 +199,8 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 |---|---|---|
 | `ColumnField` | Table-mapped | Bound to a column on the source table. |
 | `ColumnReferenceField` | Table-mapped | Bound to a column on a joined target table. |
-| `RelayNodeIdField` | Table-mapped | Encodes the Relay `Node.id` for the source table row. |
-| `RelayNodeIdReferenceField` | Table-mapped | Encodes the Relay `Node.id` for a joined target table row. |
+| `RelayNodeIdField` | Table-mapped | `@nodeId` — encodes a globally unique Relay ID for a row of the source type by composing its key columns (from `@node(keyColumns:...)`). The encoded ID can be passed to `Query.node` to re-fetch this object. The source type must have `@node`. |
+| `RelayNodeIdReferenceField` | Table-mapped | `@nodeId(typeName: ...)` — joins to the target type's table and encodes a globally unique Relay ID for that row. The ID can be passed to `Query.node` to fetch the related object. Requires a join; parallel to `ColumnReferenceField`. |
 | `ComputedField` | Table-mapped | `@computed` — developer provides a jOOQ `Field<?>` (scalar, `row(...)`, or `multiset(...)`). Included in the current SELECT but Graphitron does not project through it. LiftCondition applies if return type is table-mapped. |
 | `ConstructorField` | Table-mapped | *(planned)* A new directive carries the field-to-constructor-parameter mapping. Graphitron does not project through it. |
 | `ServiceField` | Table-mapped, result-mapped | `@service` — always Creates (private scope). From table-mapped source, Graphitron controls the input and can adapt what is passed to the service. From result-mapped source, input is locked to whatever the record carries. LiftCondition applies if return type is table-mapped. |
@@ -241,8 +241,8 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 | Interface | Table-mapped or result-mapped | `SingleTableInterfaceField`, `MultiTableInterfaceField` | — |
 | Union | Table-mapped or result-mapped | `UnionField` | — |
 | Inherited table | Table-mapped | `NestingField` | — |
-| Scalar (own table) | Table-mapped | — | `ColumnField`, `RelayNodeIdField` |
-| Scalar (via join) | Table-mapped | — | `ColumnReferenceField`, `RelayNodeIdReferenceField` |
+| Column (own table) | Table-mapped | — | `ColumnField`, `RelayNodeIdField` |
+| Column (via join) | Table-mapped | — | `ColumnReferenceField`, `RelayNodeIdReferenceField` |
 | jOOQ Field<?> | Table-mapped | — | `ComputedField` |
 | Service | Table-mapped or result-mapped | — | `ServiceField` |
 | Record property | Result-mapped | — | `PropertyField` |
