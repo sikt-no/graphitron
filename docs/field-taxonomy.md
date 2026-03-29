@@ -20,7 +20,7 @@ A Graphitron scope is one SQL statement. Transitions are the key structural even
 |---|---|---|
 | **Enter** | First table-mapped type reached from an unmapped root | New Graphitron scope starts |
 | **Split** | `@splitQuery` on any child field | New scope, connected via DataLoader |
-| **Lift** | `TableReferenceField` (or any Carries field) on a result-mapped type | New scope, connected via DataLoader + LiftCondition. `@splitQuery` is redundant here and an error. |
+| **Lift** | `TableField` (or any Carries field) on a result-mapped type | New scope, connected via DataLoader + LiftCondition. `@splitQuery` is redundant here and an error. |
 
 ### Scope Interaction
 
@@ -46,9 +46,9 @@ Every field interacts with the Graphitron scope in two dimensions.
 |---|---|
 | Root query fields, `InsertMutationField`, `UpdateMutationField`, `UpsertMutationField` | Carries |
 | `DeleteMutationField`, `ServiceQueryField`, `ServiceMutationField` | Terminates |
-| `TableReferenceField`, `TableMethodField`, `InterfaceReferenceField`, `UnionReferenceField`, `NestingField` | Carries |
+| `TableField`, `TableMethodField`, `InterfaceField`, `UnionField`, `NestingField` | Carries |
 | `ColumnField`, `ColumnReferenceField`, `RelayNodeIdField`, `RelayNodeIdReferenceField` | Terminates |
-| `FieldMethodField`, `ConstructorField`, `ServiceField`, `PropertyField` | Terminates |
+| `ComputedField`, `ConstructorField`, `ServiceField`, `PropertyField` | Terminates |
 
 LiftCondition applies when a field Terminates and its return type is table-mapped, or when there is no active scope and the return type is table-mapped.
 
@@ -111,16 +111,16 @@ FieldSpec
 │   ├── ColumnReferenceField
 │   ├── RelayNodeIdField
 │   ├── RelayNodeIdReferenceField
-│   ├── TableReferenceField
+│   ├── TableField
 │   ├── TableMethodField
-│   ├── InterfaceReferenceField
-│   │   ├── SingleTableInterfaceReferenceField
-│   │   └── MultiTableInterfaceReferenceField
-│   ├── UnionReferenceField
+│   ├── InterfaceField
+│   │   ├── SingleTableInterfaceField
+│   │   └── MultiTableInterfaceField
+│   ├── UnionField
 │   ├── NestingField
 │   ├── ConstructorField
 │   ├── ServiceField
-│   ├── FieldMethodField
+│   ├── ComputedField
 │   └── PropertyField
 ├── NotGeneratedField
 └── UnclassifiedField
@@ -186,11 +186,11 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 
 | Field type | Valid source contexts | Description |
 |---|---|---|
-| `TableReferenceField` | Table-mapped, result-mapped | Table-mapped target. Graphitron handles projection, ordering, pagination, and nested scopes. In result-mapped context, always Creates via DataLoader + LiftCondition. Cardinality is a spec property. |
-| `TableMethodField` | Table-mapped, result-mapped | `@tableMethod` — developer provides a filtered `Table<?>`. Graphitron joins it using the same logic as `TableReferenceField`. Preferred over `ServiceField` when the logic can be expressed as a filtered table. Cardinality is a spec property. |
-| `SingleTableInterfaceReferenceField` | Table-mapped, result-mapped | Single-table interface target. Cardinality is a spec property. |
-| `MultiTableInterfaceReferenceField` | Table-mapped, result-mapped | Multi-table interface target. Cardinality is a spec property. |
-| `UnionReferenceField` | Table-mapped, result-mapped | Union target. Cardinality is a spec property. |
+| `TableField` | Table-mapped, result-mapped | Table-mapped target. Graphitron handles projection, ordering, pagination, and nested scopes. In result-mapped context, always Creates via DataLoader + LiftCondition. Cardinality is a spec property. |
+| `TableMethodField` | Table-mapped, result-mapped | `@tableMethod` — developer provides a filtered `Table<?>`. Graphitron joins it using the same logic as `TableField`. Preferred over `ServiceField` when the logic can be expressed as a filtered table. Cardinality is a spec property. |
+| `SingleTableInterfaceField` | Table-mapped, result-mapped | Single-table interface target. Cardinality is a spec property. |
+| `MultiTableInterfaceField` | Table-mapped, result-mapped | Multi-table interface target. Cardinality is a spec property. |
+| `UnionField` | Table-mapped, result-mapped | Union target. Cardinality is a spec property. |
 | `NestingField` | Table-mapped | Target inherits the source table context, producing a level of nesting. |
 
 #### Terminates
@@ -201,7 +201,7 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 | `ColumnReferenceField` | Table-mapped | Bound to a column on a joined target table. |
 | `RelayNodeIdField` | Table-mapped | Encodes the Relay `Node.id` for the source table row. |
 | `RelayNodeIdReferenceField` | Table-mapped | Encodes the Relay `Node.id` for a joined target table row. |
-| `FieldMethodField` | Table-mapped | `@externalField` — developer provides a jOOQ `Field<?>` (scalar, `row(...)`, or `multiset(...)`). Included in the current SELECT but Graphitron does not project through it. LiftCondition applies if return type is table-mapped. |
+| `ComputedField` | Table-mapped | `@computed` — developer provides a jOOQ `Field<?>` (scalar, `row(...)`, or `multiset(...)`). Included in the current SELECT but Graphitron does not project through it. LiftCondition applies if return type is table-mapped. |
 | `ConstructorField` | Table-mapped | *(planned)* A new directive carries the field-to-constructor-parameter mapping. Graphitron does not project through it. |
 | `ServiceField` | Table-mapped, result-mapped | `@service` — always Creates (private scope). From table-mapped source, Graphitron controls the input and can adapt what is passed to the service. From result-mapped source, input is locked to whatever the record carries. LiftCondition applies if return type is table-mapped. |
 | `PropertyField` | Result-mapped | Reads a scalar or nested record property. Generates a trivial data fetcher. No SQL interaction. |
@@ -237,13 +237,13 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 
 | Target | Source context | Carries | Terminates |
 |---|---|---|---|
-| Table-mapped | Table-mapped or result-mapped | `TableReferenceField`, `TableMethodField` | — |
-| Interface | Table-mapped or result-mapped | `SingleTableInterfaceReferenceField`, `MultiTableInterfaceReferenceField` | — |
-| Union | Table-mapped or result-mapped | `UnionReferenceField` | — |
+| Table-mapped | Table-mapped or result-mapped | `TableField`, `TableMethodField` | — |
+| Interface | Table-mapped or result-mapped | `SingleTableInterfaceField`, `MultiTableInterfaceField` | — |
+| Union | Table-mapped or result-mapped | `UnionField` | — |
 | Inherited table | Table-mapped | `NestingField` | — |
 | Scalar (own table) | Table-mapped | — | `ColumnField`, `RelayNodeIdField` |
 | Scalar (via join) | Table-mapped | — | `ColumnReferenceField`, `RelayNodeIdReferenceField` |
-| jOOQ Field<?> | Table-mapped | — | `FieldMethodField` |
+| jOOQ Field<?> | Table-mapped | — | `ComputedField` |
 | Service | Table-mapped or result-mapped | — | `ServiceField` |
 | Record property | Result-mapped | — | `PropertyField` |
 | Planned | Table-mapped | — | `ConstructorField` |
