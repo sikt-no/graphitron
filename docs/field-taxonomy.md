@@ -47,7 +47,7 @@ Every field interacts with the Graphitron scope in two dimensions.
 | Root query fields, `InsertMutationField`, `UpdateMutationField`, `UpsertMutationField` | Carries |
 | `DeleteMutationField`, `ServiceQueryField`, `ServiceMutationField` | Terminates |
 | `TableField`, `TableMethodField`, `InterfaceField`, `UnionField`, `NestingField` | Carries |
-| `ColumnField`, `ColumnReferenceField`, `RelayNodeIdField`, `RelayNodeIdReferenceField` | Terminates |
+| `ColumnField`, `ColumnReferenceField`, `NodeIdField`, `NodeIdReferenceField` | Terminates |
 | `ComputedField`, `ConstructorField`, `ServiceField`, `PropertyField` | Terminates |
 
 LiftCondition applies when a field Terminates and its return type is table-mapped, or when there is no active scope and the return type is table-mapped.
@@ -93,7 +93,7 @@ FieldSpec
 │   │   ├── LookupQueryField
 │   │   ├── TableQueryField
 │   │   ├── TableMethodQueryField
-│   │   ├── RelayNodeQueryField
+│   │   ├── NodeQueryField
 │   │   ├── EntityQueryField
 │   │   ├── InterfaceQueryField
 │   │   │   ├── SingleTableInterfaceQueryField
@@ -109,8 +109,8 @@ FieldSpec
 ├── ChildField
 │   ├── ColumnField
 │   ├── ColumnReferenceField
-│   ├── RelayNodeIdField
-│   ├── RelayNodeIdReferenceField
+│   ├── NodeIdField
+│   ├── NodeIdReferenceField
 │   ├── TableField
 │   ├── TableMethodField
 │   ├── InterfaceField
@@ -151,7 +151,7 @@ Fields on the `Query` type. They have no source context. All create a new Graphi
 | `LookupQueryField` | `@lookupKey` on an argument | Table-mapped, cardinality is spec property |
 | `TableQueryField` | General table query | Table-mapped, cardinality is spec property |
 | `TableMethodQueryField` | `@tableMethod` — developer provides a filtered `Table<?>` | Table-mapped. Graphitron handles all projection, ordering, pagination, and nested scopes within the created scope. Preferred over `ServiceQueryField` when the logic can be expressed as a filtered table. Cardinality is spec property. |
-| `RelayNodeQueryField` | `Query.node(id:)` — Relay spec | Table-mapped via global ID |
+| `NodeQueryField` | `Query.node(id:)` — Relay spec | Table-mapped via global ID |
 | `EntityQueryField` | `Query._entities(representations:)` — Apollo Federation | Table-mapped |
 | `SingleTableInterfaceQueryField` | Target interface has `@table` + `@discriminate`; implementing types have `@table` + `@discriminator` | Single-table interface, cardinality is spec property |
 | `MultiTableInterfaceQueryField` | Target interface has no directives; implementing types have `@table` | Multi-table interface, cardinality is spec property |
@@ -199,8 +199,8 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 |---|---|---|
 | `ColumnField` | Table-mapped | Bound to a column on the source table. |
 | `ColumnReferenceField` | Table-mapped | Bound to a column on a joined target table. |
-| `RelayNodeIdField` | Table-mapped | `@nodeId` — encodes a globally unique Relay ID for a row of the source type by composing its key columns (from `@node(keyColumns:...)`). The encoded ID can be passed to `Query.node` to re-fetch this object. The source type must have `@node`. |
-| `RelayNodeIdReferenceField` | Table-mapped | `@nodeId(typeName: ...)` — joins to the target type's table and encodes a globally unique Relay ID for that row. The ID can be passed to `Query.node` to fetch the related object. Requires a join; parallel to `ColumnReferenceField`. |
+| `NodeIdField` | Table-mapped | `@nodeId` — encodes a globally unique Relay ID for a row of the source type by composing its key columns (from `@node(keyColumns:...)`). The encoded ID can be passed to `Query.node` to re-fetch this object. The source type must have `@node`. |
+| `NodeIdReferenceField` | Table-mapped | `@nodeId(typeName: ...)` — joins to the target type's table and encodes a globally unique Relay ID for that row. The ID can be passed to `Query.node` to fetch the related object. Requires a join; parallel to `ColumnReferenceField`. |
 | `ComputedField` | Table-mapped | `@computed` — developer provides a jOOQ `Field<?>` (scalar, `row(...)`, or `multiset(...)`). Included in the current SELECT but Graphitron does not project through it. LiftCondition applies if return type is table-mapped. |
 | `ConstructorField` | Table-mapped | *(planned)* A new directive carries the field-to-constructor-parameter mapping. Graphitron does not project through it. |
 | `ServiceField` | Table-mapped, result-mapped | `@service` — always Creates (private scope). From table-mapped source, Graphitron controls the input and can adapt what is passed to the service. From result-mapped source, input is locked to whatever the record carries. LiftCondition applies if return type is table-mapped. |
@@ -218,7 +218,7 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 | Single-table Interface | Any | `SingleTableInterfaceQueryField` |
 | Multi-table Interface | Any | `MultiTableInterfaceQueryField` |
 | Union | Any | `UnionQueryField` |
-| Special | Single | `RelayNodeQueryField`, `EntityQueryField` |
+| Special | Single | `NodeQueryField`, `EntityQueryField` |
 | Service | Any | `ServiceQueryField` |
 
 ### Mutation fields
@@ -241,8 +241,8 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 | Interface | Table-mapped or result-mapped | `SingleTableInterfaceField`, `MultiTableInterfaceField` | — |
 | Union | Table-mapped or result-mapped | `UnionField` | — |
 | Inherited table | Table-mapped | `NestingField` | — |
-| Column (own table) | Table-mapped | — | `ColumnField`, `RelayNodeIdField` |
-| Column (via join) | Table-mapped | — | `ColumnReferenceField`, `RelayNodeIdReferenceField` |
+| Column (own table) | Table-mapped | — | `ColumnField`, `NodeIdField` |
+| Column (via join) | Table-mapped | — | `ColumnReferenceField`, `NodeIdReferenceField` |
 | jOOQ Field<?> | Table-mapped | — | `ComputedField` |
 | Service | Table-mapped or result-mapped | — | `ServiceField` |
 | Record property | Result-mapped | — | `PropertyField` |
