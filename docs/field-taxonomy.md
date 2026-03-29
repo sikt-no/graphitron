@@ -95,9 +95,8 @@ FieldSpec
 │   │   ├── TableMethodQueryField
 │   │   ├── NodeQueryField
 │   │   ├── EntityQueryField
+│   │   ├── TableInterfaceQueryField
 │   │   ├── InterfaceQueryField
-│   │   │   ├── SingleTableInterfaceQueryField
-│   │   │   └── MultiTableInterfaceQueryField
 │   │   ├── UnionQueryField
 │   │   └── ServiceQueryField
 │   └── MutationField
@@ -113,9 +112,8 @@ FieldSpec
 │   ├── NodeIdReferenceField
 │   ├── TableField
 │   ├── TableMethodField
+│   ├── TableInterfaceField
 │   ├── InterfaceField
-│   │   ├── SingleTableInterfaceField
-│   │   └── MultiTableInterfaceField
 │   ├── UnionField
 │   ├── NestingField
 │   ├── ConstructorField
@@ -153,8 +151,8 @@ Fields on the `Query` type. They have no source context. All create a new Graphi
 | `TableMethodQueryField` | `@tableMethod` — developer provides a filtered `Table<?>` | Table-mapped. Graphitron handles all projection, ordering, pagination, and nested scopes within the created scope. Preferred over `ServiceQueryField` when the logic can be expressed as a filtered table. Cardinality is spec property. |
 | `NodeQueryField` | `Query.node(id:)` — Relay spec | Table-mapped via global ID |
 | `EntityQueryField` | `Query._entities(representations:)` — Apollo Federation | Table-mapped |
-| `SingleTableInterfaceQueryField` | Target interface has `@table` + `@discriminate`; implementing types have `@table` + `@discriminator` | Single-table interface, cardinality is spec property |
-| `MultiTableInterfaceQueryField` | Target interface has no directives; implementing types have `@table` | Multi-table interface, cardinality is spec property |
+| `TableInterfaceQueryField` | Target interface has `@table` + `@discriminate`; implementing types have `@table` + `@discriminator` | Single-table interface, cardinality is spec property |
+| `InterfaceQueryField` | Target interface has no directives; implementing types have `@table` | Multi-table interface, cardinality is spec property |
 | `UnionQueryField` | Target union; all member types have `@table` | Multi-table union, cardinality is spec property |
 | `ServiceQueryField` | `@service` | Private scope. LiftCondition applies if return type is table-mapped; if result-mapped, lift occurs on child fields. |
 
@@ -188,8 +186,8 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 |---|---|---|
 | `TableField` | Table-mapped, result-mapped | Table-mapped target. Graphitron handles projection, ordering, pagination, and nested scopes. In result-mapped context, always Creates via DataLoader + LiftCondition. Cardinality is a spec property. |
 | `TableMethodField` | Table-mapped, result-mapped | `@tableMethod` — developer provides a filtered `Table<?>`. Graphitron joins it using the same logic as `TableField`. Preferred over `ServiceField` when the logic can be expressed as a filtered table. Cardinality is a spec property. |
-| `SingleTableInterfaceField` | Table-mapped, result-mapped | Single-table interface target. Cardinality is a spec property. |
-| `MultiTableInterfaceField` | Table-mapped, result-mapped | Multi-table interface target. Cardinality is a spec property. |
+| `TableInterfaceField` | Table-mapped, result-mapped | Single-table interface target. Cardinality is a spec property. |
+| `InterfaceField` | Table-mapped, result-mapped | Multi-table interface target. Cardinality is a spec property. |
 | `UnionField` | Table-mapped, result-mapped | Union target. Cardinality is a spec property. |
 | `NestingField` | Table-mapped | Target inherits the source table context, producing a level of nesting. |
 
@@ -215,8 +213,8 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 | Target | Cardinality | Field type |
 |---|---|---|
 | Table-mapped | Any | `TableQueryField`, `LookupQueryField` (@lookupKey), `TableMethodQueryField` (@tableMethod) |
-| Single-table Interface | Any | `SingleTableInterfaceQueryField` |
-| Multi-table Interface | Any | `MultiTableInterfaceQueryField` |
+| Single-table Interface | Any | `TableInterfaceQueryField` |
+| Multi-table Interface | Any | `InterfaceQueryField` |
 | Union | Any | `UnionQueryField` |
 | Special | Single | `NodeQueryField`, `EntityQueryField` |
 | Service | Any | `ServiceQueryField` |
@@ -238,7 +236,7 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 | Target | Source context | Carries | Terminates |
 |---|---|---|---|
 | Table-mapped | Table-mapped or result-mapped | `TableField`, `TableMethodField` | — |
-| Interface | Table-mapped or result-mapped | `SingleTableInterfaceField`, `MultiTableInterfaceField` | — |
+| Interface | Table-mapped or result-mapped | `TableInterfaceField`, `InterfaceField` | — |
 | Union | Table-mapped or result-mapped | `UnionField` | — |
 | Inherited table | Table-mapped | `NestingField` | — |
 | Column (own table) | Table-mapped | — | `ColumnField`, `NodeIdField` |
