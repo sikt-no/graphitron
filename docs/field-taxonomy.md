@@ -4,69 +4,42 @@
 
 ### Source Context
 
-Every field has a source context — the type on which it is defined. Source context determines how much Graphitron can do.
+Every field has a source context — the type on which it is defined.
 
-| Source context | Directive | What Graphitron does |
+| Source context | Directive | What Graphitron generates |
 |---|---|---|
-| **Unmapped** | *(none — root types: Query, Mutation)* | Entry point. No SQL yet. |
-| **Table-mapped** | `@table` | Full Graphitron mode: SQL generation, projection, joins. |
-| **Result-mapped** | `@record` | Validation + RuntimeWiring only, until a scope transition. |
+| **Unmapped** | *(none — Query, Mutation)* | Entry point. No SQL yet. |
+| **Table-mapped** | `@table` | Full SQL generation — queries, joins, projections. |
+| **Result-mapped** | `@record` | Runtime wiring only. Graphitron validates types and wires data fetchers, but generates no SQL until a new scope starts. |
 
-### Scope Transitions
+### Scope
 
-A Graphitron scope is one SQL statement. Transitions are the key structural events.
+A Graphitron scope corresponds to one SQL statement. Fields within a scope contribute to the same query. When a scope boundary is crossed, Graphitron starts a new SQL statement and connects results via a DataLoader.
 
-| Transition | Trigger | Mechanism |
-|---|---|---|
-| **Enter** | First table-mapped type reached from an unmapped root | New Graphitron scope starts |
-| **Split** | `@splitQuery` on any child field | New scope, connected via DataLoader |
-| **Lift** | `TableField` (or any Carries field) on a result-mapped type | New scope, connected via DataLoader + LiftCondition. `@splitQuery` is redundant here and an error. |
+Scope boundaries:
 
-### Scope Interaction
-
-Every field interacts with the Graphitron scope in two dimensions.
-
-**Creates vs Reuses** is derived from context — it is not an intrinsic property of the field type:
-
-| Context | Creates / Reuses |
+| Boundary | Trigger |
 |---|---|
-| Root field (unmapped) | Always Creates |
-| Result-mapped child field | Always Creates — no scope exists to reuse |
-| Table-mapped child field | Reuses by default; `@splitQuery` promotes to Creates |
-| `ServiceField` (any context) | Always Creates — private scope |
+| **Enter** | An unmapped root field reaches a table-mapped type — the first scope starts |
+| **Split** | `@splitQuery` on a child field — new scope via DataLoader |
+| **Lift** | A child field on a result-mapped type has a table-mapped return type — new scope via DataLoader, connected using a LiftCondition |
 
-**Carries vs Terminates** is intrinsic to the field type — it determines whether child fields can participate in the current scope:
+### Conditions
 
-| | Meaning |
-|---|---|
-| **Carries** | The scope remains available — child fields can participate in the same SQL statement |
-| **Terminates** | Graphitron's projection control ends here — child fields cannot participate in the current scope |
-
-| Field type | Carries / Terminates |
-|---|---|
-| Root query fields, `InsertMutationField`, `UpdateMutationField`, `UpsertMutationField` | Carries |
-| `DeleteMutationField`, `ServiceQueryField`, `ServiceMutationField` | Terminates |
-| `TableField`, `TableMethodField`, `InterfaceField`, `UnionField`, `NestingField` | Carries |
-| `ColumnField`, `ColumnReferenceField`, `NodeIdField`, `NodeIdReferenceField` | Terminates |
-| `ComputedField`, `ConstructorField`, `ServiceField`, `PropertyField` | Terminates |
-
-LiftCondition applies when a field Terminates and its return type is table-mapped, or when there is no active scope and the return type is table-mapped.
-
-### Conditions and structural properties
-
-Conditions and structural properties are **properties of fields**, not field types.
+Conditions are properties of fields, not field types.
 
 | Kind | Purpose | Source |
 |---|---|---|
-| **Reference condition** | Structural join — how two types are related | `@reference` directive, FK metadata |
+| **Reference condition** | How two tables are joined | `@reference` directive, FK metadata |
 | **Filter condition** | Narrows the result set | `@condition` directive, arguments, cursor |
-| **LiftCondition** | Reconnects a result to a target table | `@condition` on lift, FK match, or automatic (TableRecord) |
-| **`@splitQuery`** | Promotes a Reuses field to Creates — DataLoader instead of join | `@splitQuery` directive |
-| **`@lookupKey`** | Enables lookup semantics: strict row-to-key ordering, exact count enforcement, no pagination | `@lookupKey` on an argument |
+| **LiftCondition** | Reconnects a result-mapped type back to a target table to start a new scope | FK match, `@condition`, or automatic for `TableRecord` returns |
 
-Any field with a table target can carry a reference condition and/or a filter condition. LiftCondition applies when a field Terminates and its return type is table-mapped, or when there is no active scope and the return type is table-mapped. If the return type is result-mapped, lift occurs later when a Carries field on the result-mapped type is reached.
+### Structural Properties
 
-`@splitQuery` and `@lookupKey` are orthogonal. A field can have neither, either, or both.
+| Property | Effect |
+|---|---|
+| **`@splitQuery`** | Forces a new scope via DataLoader instead of a SQL join. Valid on table-mapped child fields; an error on result-mapped fields, which always start a new scope implicitly. |
+| **`@lookupKey`** | Adds strict lookup semantics: 1:1 row-to-key matching, count enforcement, no pagination. Can be used with or without `@splitQuery`. |
 
 ---
 
@@ -180,18 +153,18 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 
 `@splitQuery` is valid on any table-mapped child field, promoting it from Reuses to Creates. It is an error on result-mapped child fields — those always Create implicitly. `@lookupKey` adds strict lookup semantics on top of `@splitQuery`.
 
-#### Carries
+#### Graphitron projects through these fields
 
 | Field type | Valid source contexts | Description |
 |---|---|---|
-| `TableField` | Table-mapped, result-mapped | Table-mapped target. Graphitron handles projection, ordering, pagination, and nested scopes. In result-mapped context, always Creates via DataLoader + LiftCondition. Cardinality is a spec property. |
+| `TableField` | Table-mapped, result-mapped | Table-mapped target. Graphitron handles projection, ordering, pagination, and nested scopes. In result-mapped context, starts a new scope via DataLoader + LiftCondition. Cardinality is a spec property. |
 | `TableMethodField` | Table-mapped, result-mapped | `@tableMethod` — developer provides a filtered `Table<?>`. Graphitron joins it using the same logic as `TableField`. Preferred over `ServiceField` when the logic can be expressed as a filtered table. Cardinality is a spec property. |
 | `TableInterfaceField` | Table-mapped, result-mapped | Single-table interface target. Cardinality is a spec property. |
 | `InterfaceField` | Table-mapped, result-mapped | Multi-table interface target. Cardinality is a spec property. |
 | `UnionField` | Table-mapped, result-mapped | Union target. Cardinality is a spec property. |
 | `NestingField` | Table-mapped | Target inherits the source table context, producing a level of nesting. |
 
-#### Terminates
+#### Graphitron does not project through these fields
 
 | Field type | Valid source contexts | Description |
 |---|---|---|
