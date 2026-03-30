@@ -204,9 +204,9 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 
 ### Child fields
 
-`@splitQuery` can be applied to any table-mapped Carries field, promoting it to Creates. `@lookupKey` adds lookup semantics on top. `ServiceField` always Creates regardless of source context.
+`@splitQuery` can be applied to any table-mapped field that Graphitron projects through. `@lookupKey` adds strict lookup semantics on top. `ServiceField` always starts a new scope regardless of source context.
 
-| Target | Source context | Carries | Terminates |
+| Target | Source context | Graphitron projects through | Graphitron stops here |
 |---|---|---|---|
 | Table-mapped | Table-mapped or result-mapped | `TableField`, `TableMethodField` | — |
 | Interface | Table-mapped or result-mapped | `TableInterfaceField`, `InterfaceField` | — |
@@ -214,7 +214,72 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 | Inherited table | Table-mapped | `NestingField` | — |
 | Column (own table) | Table-mapped | — | `ColumnField`, `NodeIdField` |
 | Column (via join) | Table-mapped | — | `ColumnReferenceField`, `NodeIdReferenceField` |
-| jOOQ Field<?> | Table-mapped | — | `ComputedField` |
+| SQL expression | Table-mapped | — | `ComputedField` |
 | Service | Table-mapped or result-mapped | — | `ServiceField` |
 | Record property | Result-mapped | — | `PropertyField` |
 | Planned | Table-mapped | — | `ConstructorField` |
+
+---
+
+## Generator Architecture
+
+### Per-type select methods
+
+Every `@table` type generates two select methods and a shared field projection helper. All `TableField`s pointing to that type reuse these methods — the generator's job per field is wiring, not SQL.
+
+```java
+// Starts a new SQL statement. Used by root queries, DataLoaders (split + lift), mutation read-back.
+SelectFinalStep<Record> filmSelect(
+    DSLContext ctx,
+    SelectionSet selectionSet,
+    Condition condition,
+    List<SortField<?>> orderBy
+    // + pagination args for connection types
+)
+
+// Contributes to an existing statement as a multiset subquery.
+// Used by TableField without @splitQuery in table-mapped context.
+Field<Result<Record>> filmNested(
+    SelectionSet selectionSet,
+    Condition condition,
+    List<SortField<?>> orderBy
+)
+
+// Overload for @tableMethod — developer supplies a filtered table.
+Field<Result<Record>> filmNested(
+    Table<FilmRecord> table,
+    SelectionSet selectionSet,
+    Condition condition,
+    List<SortField<?>> orderBy
+)
+
+// Shared projection — maps GraphQL selection to jOOQ columns.
+List<Field<?>> filmFields(SelectionSet selectionSet)
+```
+
+### Field type to method mapping
+
+| Field type | Method |
+|---|---|
+| `TableQueryField` | `filmSelect` |
+| `LookupQueryField` — single | `filmSelect` with key condition |
+| `LookupQueryField` — batch DataLoader | `filmNested` per key (see below) |
+| `TableField` — table-mapped, no `@splitQuery` | `filmNested` |
+| `TableField` — table-mapped, `@splitQuery` | DataLoader → `filmSelect` with batch condition |
+| `TableField` — result-mapped (lift) | DataLoader → `filmSelect` with LiftCondition |
+| `TableMethodField` | `filmNested(developerTable, ...)` overload |
+| `InterfaceField` | Union wrapper over each implementing type's `filmNested` |
+| Mutation read-back | `filmSelect` with LiftCondition |
+
+### LookupQueryField batch mapping
+
+Batch DataLoader lookups use `filmNested` rather than `filmSelect`. Each input key drives one row in the outer query; the nested multiset for that key produces the matching result. This guarantees positional alignment between input keys and output rows without post-hoc sorting — even missing keys produce a row.
+
+```sql
+SELECT key, (SELECT film_fields FROM film WHERE film.id = key)
+FROM (VALUES (1), (2), (3)) AS keys(key)
+```
+
+### InterfaceField union wrapper
+
+`InterfaceField` generates a union wrapper that calls each implementing type's `filmNested` variant and combines the results. The wrapper is itself a multiset subquery, so it can be nested into a parent statement just like any other `filmNested` call.
