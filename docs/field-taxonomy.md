@@ -16,19 +16,15 @@ Every field has a source context — the type on which it is defined.
 
 A Graphitron scope corresponds to one SQL statement. Fields within a scope contribute to the same query. When a scope boundary is crossed, Graphitron starts a new SQL statement and connects results via a DataLoader.
 
-Scope boundaries:
-
 | Boundary | Trigger |
 |---|---|
 | **Enter** | An unmapped root field reaches a table-mapped type — the first scope starts |
-| **Split** | `@splitQuery` on a child field — new scope via DataLoader |
+| **Split** | `@splitQuery` on a `TableField` — new scope via DataLoader |
 | **Lift** | A `TableField` on a result-mapped type — new scope via DataLoader, connected using a LiftCondition |
 
-`@service` fields use a **private scope** — they create their own SQL statement independently and do not participate in any Graphitron-managed scope. Graphitron does not control what the service queries or joins.
+`@service` fields use a **private scope** — they create their own SQL statement independently and do not participate in any Graphitron-managed scope.
 
 ### Conditions
-
-Conditions are properties of fields, not field types.
 
 | Kind | Purpose | Source |
 |---|---|---|
@@ -45,21 +41,9 @@ Conditions are properties of fields, not field types.
 
 ---
 
-## Field Naming Convention
-
-Field type names encode their source context:
-
-- Fields on `Query` → `*QueryField`
-- Fields on `Mutation` → `*MutationField`
-- Fields on non-root types → named by what they do (no suffix)
-
-`RootField` exists as a structural intermediate in the hierarchy but does not appear in leaf type names. Subscription is out of scope.
-
-**Only mutation fields are permitted to make changes to the database.** Query and child fields are read-only.
-
----
-
 ## Sealed Interface Hierarchy
+
+Field names encode source: `*QueryField` (Query), `*MutationField` (Mutation), no suffix (child fields). Only mutation fields may write to the database. Subscription is out of scope.
 
 ```
 FieldSpec
@@ -105,39 +89,35 @@ FieldSpec
 
 ### `NotGeneratedField`
 
-A field annotated with `@notGenerated`. Graphitron recognises it, classifies it, and includes it in the spec — but produces no data fetcher and no runtime wiring entry for it. The developer is responsible for registering wiring externally. Valid in any source context.
-
----
+`@notGenerated` — Graphitron classifies the field and includes it in the spec but produces no data fetcher. The developer registers wiring externally. Valid in any source context.
 
 ### `UnclassifiedField`
 
-A field that does not match any known type. A schema containing `UnclassifiedField`s is invalid — Graphitron terminates with an error identifying which fields need to be fixed. No code is generated.
+A field that does not match any known type. Graphitron terminates with an error. No code is generated.
 
 ---
 
 ### Query fields — unmapped source, read-only
 
-Fields on the `Query` type. They have no source context. All create a new Graphitron scope or enter service mode.
+All create a new Graphitron scope or enter private service scope. Cardinality is a spec property unless noted.
 
 | Field type | Trigger | Target |
 |---|---|---|
-| `LookupQueryField` | `@lookupKey` on an argument | Table-mapped, cardinality is spec property |
-| `TableQueryField` | General table query | Table-mapped, cardinality is spec property |
-| `TableMethodQueryField` | `@tableMethod` — developer provides a filtered `Table<?>` | Table-mapped. Graphitron handles all projection, ordering, pagination, and nested scopes within the created scope. Preferred over `ServiceQueryField` when the logic can be expressed as a filtered table. Cardinality is spec property. |
-| `NodeQueryField` | `Query.node(id:)` — Relay spec | Table-mapped via global ID |
-| `EntityQueryField` | `Query._entities(representations:)` — Apollo Federation | Table-mapped |
-| `TableInterfaceQueryField` | Target interface has `@table` + `@discriminate`; implementing types have `@table` + `@discriminator` | Single-table interface, cardinality is spec property |
-| `InterfaceQueryField` | Target interface has no directives; implementing types have `@table` | Multi-table interface, cardinality is spec property |
-| `UnionQueryField` | Target union; all member types have `@table` | Multi-table union, cardinality is spec property |
-| `ServiceQueryField` | `@service` | Private scope. LiftCondition applies if return type is table-mapped; if result-mapped, lift occurs on child fields. |
+| `LookupQueryField` | `@lookupKey` on an argument | Table-mapped |
+| `TableQueryField` | General table query | Table-mapped |
+| `TableMethodQueryField` | `@tableMethod` — developer provides a filtered `Table<?>` | Table-mapped. Preferred over `ServiceQueryField` when logic fits a filtered table. |
+| `NodeQueryField` | `Query.node(id:)` — Relay spec | Table-mapped via global ID, single |
+| `EntityQueryField` | `Query._entities(representations:)` — Apollo Federation | Table-mapped, single |
+| `TableInterfaceQueryField` | Interface has `@table` + `@discriminate`; implementors have `@table` + `@discriminator` | Single-table interface |
+| `InterfaceQueryField` | Interface has no directives; implementors have `@table` | Multi-table interface |
+| `UnionQueryField` | All union member types have `@table` | Multi-table union |
+| `ServiceQueryField` | `@service` | Private scope. LiftCondition applies if return type is table-mapped; lift on child fields if result-mapped. |
 
 ---
 
 ### Mutation fields — unmapped source, write
 
-Fields on the `Mutation` type. These are the only fields permitted to write to the database. `ServiceMutationField` is the `@service` equivalent — the service method is permitted to mutate. All mutation fields can provide access back into the graph via their return type: LiftCondition if the return type is table-mapped, lift on child fields if result-mapped.
-
-`DeleteMutationField` is the one exception: deleted rows no longer exist in the database, so querying them back is not possible. The return type is therefore a simple confirmation — a success flag, a count, or an ordered echo of the input. Input/output ordering follows plural identifying root field rules so batch deletes are positionally consistent.
+The only fields permitted to write to the database. All support access back into the graph via their return type (LiftCondition if table-mapped, lift on child fields if result-mapped), except `DeleteMutationField` — deleted rows cannot be queried back. Its return is a success flag, count, or ordered input echo; batch ordering follows lookup field rules for positional consistency.
 
 | Field type | Operation | Return |
 |---|---|---|
@@ -145,22 +125,20 @@ Fields on the `Mutation` type. These are the only fields permitted to write to t
 | `UpdateMutationField` | `@mutation(typeName: UPDATE)` | Table-mapped or result-mapped (lift applies) |
 | `DeleteMutationField` | `@mutation(typeName: DELETE)` | Success flag, count, or ordered input echo. No lift. |
 | `UpsertMutationField` | `@mutation(typeName: UPSERT)` | Table-mapped or result-mapped (lift applies) |
-| `ServiceMutationField` | `@service` — write logic too complex for Graphitron to generate directly | Lift rule applies as for all service fields |
+| `ServiceMutationField` | `@service` — write logic too complex for Graphitron to generate | Lift rule applies as for service fields |
 
 ---
 
 ### Child fields
 
-Child fields carry a `sourceContext` property — table-mapped (`@table`) or result-mapped (`@record`). Source context determines whether a field contributes to an existing scope or starts a new one.
-
-`@splitQuery` is valid on `TableField` with table-mapped source context, forcing a new scope via DataLoader instead of a SQL join. It is an error on result-mapped child fields — those always start a new scope implicitly. `@lookupKey` is orthogonal to `@splitQuery` and adds strict lookup semantics regardless.
+Child fields carry a `sourceContext` property — table-mapped or result-mapped — which determines whether the field contributes to an existing scope or starts a new one.
 
 #### Graphitron projects through these fields
 
 | Field type | Valid source contexts | Description |
 |---|---|---|
 | `TableField` | Table-mapped, result-mapped | Table-mapped target. Graphitron handles projection, ordering, pagination, and nested scopes. In result-mapped context, starts a new scope via DataLoader + LiftCondition. Cardinality is a spec property. |
-| `TableMethodField` | Table-mapped, result-mapped | `@tableMethod` — developer provides a filtered `Table<?>`. Graphitron joins it using the same logic as `TableField`. Preferred over `ServiceField` when the logic can be expressed as a filtered table. Cardinality is a spec property. |
+| `TableMethodField` | Table-mapped, result-mapped | `@tableMethod` — developer provides a filtered `Table<?>`. Graphitron joins it using the same logic as `TableField`. Preferred over `ServiceField` when the logic fits a filtered table. Cardinality is a spec property. |
 | `TableInterfaceField` | Table-mapped, result-mapped | Single-table interface target. Cardinality is a spec property. |
 | `InterfaceField` | Table-mapped, result-mapped | Multi-table interface target. Cardinality is a spec property. |
 | `UnionField` | Table-mapped, result-mapped | Union target. Cardinality is a spec property. |
@@ -172,43 +150,20 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 |---|---|---|
 | `ColumnField` | Table-mapped | Bound to a column on the source table. |
 | `ColumnReferenceField` | Table-mapped | Bound to a column on a joined target table. |
-| `NodeIdField` | Table-mapped | `@nodeId` — encodes a globally unique Relay ID for a row of the source type by composing its key columns (from `@node(keyColumns:...)`). The encoded ID can be passed to `Query.node` to re-fetch this object. The source type must have `@node`. |
-| `NodeIdReferenceField` | Table-mapped | `@nodeId(typeName: ...)` — joins to the target type's table and encodes a globally unique Relay ID for that row. The ID can be passed to `Query.node` to fetch the related object. Requires a join; parallel to `ColumnReferenceField`. |
-| `ComputedField` | Table-mapped | `@computed` — developer provides a jOOQ `Field<?>` (scalar, `row(...)`, or `multiset(...)`). Included in the current SELECT but Graphitron does not project through it. LiftCondition applies if return type is table-mapped. |
-| `ConstructorField` | Table-mapped | *(planned)* A new directive carries the field-to-constructor-parameter mapping. Graphitron does not project through it. |
-| `ServiceField` | Table-mapped, result-mapped | `@service` — always Creates (private scope). From table-mapped source, Graphitron controls the input and can adapt what is passed to the service. From result-mapped source, input is locked to whatever the record carries. LiftCondition applies if return type is table-mapped. |
-| `PropertyField` | Result-mapped | Reads a scalar or nested record property. Generates a trivial data fetcher. No SQL interaction. |
+| `NodeIdField` | Table-mapped | `@nodeId` — encodes a globally unique Relay ID from the source type's key columns (`@node(keyColumns:...)`). Can be passed to `Query.node` to re-fetch this object. Source type must have `@node`. |
+| `NodeIdReferenceField` | Table-mapped | `@nodeId(typeName: ...)` — joins to the target type's table and encodes a Relay ID for that row. Parallel to `ColumnReferenceField`. |
+| `ComputedField` | Table-mapped | `@computed` — developer provides a jOOQ `Field<?>` (scalar, `row(...)`, or `multiset(...)`). Included in the SELECT; Graphitron does not project through it. LiftCondition applies if return type is table-mapped. |
+| `ConstructorField` | Table-mapped | *(planned)* A directive carries field-to-constructor-parameter mapping. Graphitron does not project through it. |
+| `ServiceField` | Table-mapped, result-mapped | `@service` — private scope. From table-mapped source, Graphitron controls what is passed to the service. From result-mapped source, input is locked to what the record carries. LiftCondition applies if return type is table-mapped. |
+| `PropertyField` | Result-mapped | Reads a scalar or nested record property. Trivial data fetcher. No SQL interaction. |
 
 ---
 
-## Field Matrix
+## Child Field Matrix
 
-### Query fields
+Quick reference: which field type applies given target and source context.
 
-| Target | Cardinality | Field type |
-|---|---|---|
-| Table-mapped | Any | `TableQueryField`, `LookupQueryField` (@lookupKey), `TableMethodQueryField` (@tableMethod) |
-| Single-table Interface | Any | `TableInterfaceQueryField` |
-| Multi-table Interface | Any | `InterfaceQueryField` |
-| Union | Any | `UnionQueryField` |
-| Special | Single | `NodeQueryField`, `EntityQueryField` |
-| Service | Any | `ServiceQueryField` |
-
-### Mutation fields
-
-| Field type | Operation |
-|---|---|
-| `InsertMutationField` | INSERT |
-| `UpdateMutationField` | UPDATE |
-| `DeleteMutationField` | DELETE |
-| `UpsertMutationField` | UPSERT |
-| `ServiceMutationField` | @service (permitted to write) |
-
-### Child fields
-
-`@splitQuery` can be applied to any table-mapped field that Graphitron projects through. `@lookupKey` adds strict lookup semantics on top. `ServiceField` always starts a new scope regardless of source context.
-
-| Target | Source context | Graphitron projects through | Graphitron stops here |
+| Target | Source context | Projects through | Stops here |
 |---|---|---|---|
 | Table-mapped | Table-mapped or result-mapped | `TableField`, `TableMethodField` | — |
 | Interface | Table-mapped or result-mapped | `TableInterfaceField`, `InterfaceField` | — |
@@ -221,15 +176,17 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 | Record property | Result-mapped | — | `PropertyField` |
 | Planned | Table-mapped | — | `ConstructorField` |
 
+`@splitQuery` is valid on `TableField` with table-mapped source context. `@lookupKey` is orthogonal and can be combined with or without it.
+
 ---
 
 ## Generator Architecture
 
 ### Per-type select methods
 
-Every `@table` type generates a set of static field methods for its nested relationships, analogous to how jOOQ generates static `Field<T>` instances on table types (`FILM.FILM_ID`, `FILM.TITLE`). These return jOOQ `Field<Result<Record>>` (multiset, one-to-many) or `Field<Record>` (row, one-to-one) expressions that can be composed into any SELECT clause.
+Every `@table` type generates static field methods for its nested relationships, analogous to jOOQ's static `Field<T>` instances (`FILM.FILM_ID`, `FILM.TITLE`). These return `Field<Result<Record>>` (multiset, one-to-many) or `Field<Record>` (row, one-to-one) expressions composable into any SELECT clause.
 
-The methods use GraphQL Java's native `SelectedField` — which carries both `getSelectionSet()` (nested field selection) and `getArguments()` (argument values as `Map<String, Object>`) — rather than any flattened argument representation. No custom wrapper is needed.
+Methods use GraphQL Java's native `SelectedField` — which carries both `getSelectionSet()` and `getArguments()` — with no custom wrapper.
 
 ```java
 // Generated on a companion class, e.g. FilmFields
@@ -247,7 +204,7 @@ public static Field<Result<Record>> actors(SelectedField field) {
 public static Field<Record> language(SelectedField field) { ... }
 ```
 
-The shared projection method receives `DataFetchingFieldSelectionSet` and passes each sub-field's `SelectedField` directly:
+The projection method assembles the SELECT list, passing each sub-field's `SelectedField` directly:
 
 ```java
 List<Field<?>> filmFields(DataFetchingFieldSelectionSet sel) {
@@ -259,7 +216,7 @@ List<Field<?>> filmFields(DataFetchingFieldSelectionSet sel) {
 }
 ```
 
-Two scope-establishing methods delegate to `filmFields`. Their `Condition` and `List<SortField<?>>` are for the film query itself, derived from the film field's own arguments at the resolver level:
+Two scope-establishing methods delegate to `filmFields`:
 
 ```java
 // Starts a new SQL statement. Used by root queries, DataLoaders (split + lift), mutation read-back.
@@ -287,7 +244,7 @@ Field<Result<Record>> filmNested(
 )
 ```
 
-Results are jOOQ `Record` types. Scalar fields are accessed via `record.get(TABLE.FIELD)`. Nested fields are accessed via `record.get(nestedField)` where `nestedField` is `Field<Result<Record>>` (multiset) or `Field<Record>` (row).
+Results are jOOQ `Record` types. Scalars via `record.get(TABLE.FIELD)`; nested via `record.get(nestedField)` where `nestedField` is `Field<Result<Record>>` or `Field<Record>`.
 
 ### Field type to method mapping
 
@@ -305,7 +262,7 @@ Results are jOOQ `Record` types. Scalar fields are accessed via `record.get(TABL
 
 ### LookupQueryField batch mapping
 
-Batch DataLoader lookups use `filmNested` rather than `filmSelect`. Each input key drives one row in the outer query; the nested multiset for that key produces the matching result. This guarantees positional alignment between input keys and output rows without post-hoc sorting — even missing keys produce a row.
+Batch DataLoader lookups use `filmNested` rather than `filmSelect`. Each input key drives one row in the outer query; the nested multiset produces the matching result. Positional alignment between input keys and output rows is guaranteed — even missing keys produce a row.
 
 ```sql
 SELECT key, (SELECT film_fields FROM film WHERE film.id = key)
@@ -314,29 +271,23 @@ FROM (VALUES (1), (2), (3)) AS keys(key)
 
 ### InterfaceField union wrapper
 
-`InterfaceField` generates a union wrapper that calls each implementing type's `filmNested` variant and combines the results. The wrapper is itself a multiset subquery, so it can be nested into a parent statement just like any other `filmNested` call.
+`InterfaceField` generates a union wrapper that calls each implementing type's `filmNested` variant. The wrapper is itself a multiset subquery and can be nested into a parent statement like any other `filmNested` call.
 
 ### @defer support
 
-A `TableField` with table-mapped source context follows a check-then-fetch pattern to support `@defer`. The static field method (e.g. `actors(SelectedField)`) produces a named `Field<Result<Record>>` constant — `FILM_ACTORS_FIELD` below — that the parent SELECT uses as a key when embedding the multiset and that the resolver uses to read the result back.
+A `TableField` with table-mapped source context follows a check-then-fetch pattern. The static field method (e.g. `actors(SelectedField)`) produces a named `Field<Result<Record>>` constant — `FILM_ACTORS_FIELD` below — used as the key both when embedding the multiset in the parent SELECT and when reading the result back in the resolver.
 
-1. **Check**: call `record.get(FILM_ACTORS_FIELD)` on the parent jOOQ `Record`. If non-null, the parent pre-fetched the data via `filmNested` — return it immediately.
-2. **Fetch**: if `null`, the field was not included in the parent SELECT — either deferred by the client or being resolved standalone. Call `filmSelect` to start a new query.
+1. **Check**: `record.get(FILM_ACTORS_FIELD)` — non-null means the parent pre-fetched via `filmNested`. Return immediately.
+2. **Fetch**: `null` means the field was not in the parent SELECT (deferred or standalone). Call `filmSelect`.
 
 ```java
 // Generated resolver for Film.actors (TableField, table-mapped, no @splitQuery)
 env -> {
     Record source = env.getSource();
-    Result<Record> actors = source.get(FILM_ACTORS_FIELD); // Field<Result<Record>>
-    if (actors != null) {
-        return actors; // pre-fetched by parent
-    }
+    Result<Record> actors = source.get(FILM_ACTORS_FIELD);
+    if (actors != null) return actors;
     return actorSelect(ctx, env.getSelectionSet(), referenceCondition(source), noOrder);
 }
 ```
 
-`filmNested` is therefore an optimisation — it pre-fetches data in the parent SQL statement. `filmSelect` is the correctness guarantee — every table-mapped `TableField` resolver is self-sufficient.
-
-For `TableField` with result-mapped source context, the resolver is a new data fetcher backed by a DataLoader, so `@defer` is handled naturally — there is no parent jOOQ `Record` to check.
-
-jOOQ naturally distinguishes not-fetched (`null`) from fetched-but-empty (empty `Result<Record>`) for multiset fields, so no custom result type is needed. For `@splitQuery` fields the DataLoader always calls `filmSelect`, so `@defer` is already handled.
+`filmNested` is an optimisation; `filmSelect` is the correctness guarantee. For `TableField` with result-mapped source context, the resolver is a separate data fetcher backed by a DataLoader — no parent record to check. jOOQ naturally distinguishes not-fetched (`null`) from fetched-but-empty (empty `Result<Record>`), so no custom result type is needed.
