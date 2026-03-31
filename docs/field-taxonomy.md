@@ -225,11 +225,37 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 
 ### Per-type select methods
 
-Every `@table` type generates two select methods and a shared field projection helper. All `TableField`s pointing to that type reuse these methods — the generator's job per field is wiring, not SQL. Results are jOOQ `Record` types; scalar fields are accessed via `record.get(TABLE.FIELD)`, nested fields via `record.get(nestedField)` where the nested field is of type `Field<Result<Record>>` (multiset) or `Field<Record>` (single row).
+Every `@table` type generates a set of static field methods for its nested relationships, analogous to how jOOQ generates static `Field<T>` instances on table types (`FILM.FILM_ID`, `FILM.TITLE`). These return jOOQ `Field<Result<Record>>` (multiset, one-to-many) or `Field<Record>` (row, one-to-one) expressions that can be composed into any SELECT clause.
 
 ```java
-// Starts a new SQL statement. Returns a jOOQ select step over Record.
-// Used by root queries, DataLoaders (split + lift), mutation read-back.
+// Generated on a companion class, e.g. FilmFields
+public static Field<Result<Record>> actors(
+    SelectionSet selectionSet,
+    Condition condition,
+    List<SortField<?>> orderBy
+) { ... } // multiset subquery over ACTOR joined via FILM_ACTOR
+
+public static Field<Record> language(
+    SelectionSet selectionSet
+) { ... } // row subquery over LANGUAGE
+```
+
+A shared projection method assembles the SELECT list by calling these conditionally based on the GraphQL selection set:
+
+```java
+List<Field<?>> filmFields(SelectionSet selectionSet) {
+    var fields = new ArrayList<Field<?>>();
+    if (selectionSet.contains("title"))    fields.add(FILM.TITLE);
+    if (selectionSet.contains("actors"))   fields.add(actors(selectionSet.forField("actors"), noCondition(), noOrder()));
+    if (selectionSet.contains("language")) fields.add(language(selectionSet.forField("language")));
+    return fields;
+}
+```
+
+Two scope-establishing methods delegate to `filmFields` for their SELECT clause:
+
+```java
+// Starts a new SQL statement. Used by root queries, DataLoaders (split + lift), mutation read-back.
 SelectFinalStep<Record> filmSelect(
     DSLContext ctx,
     SelectionSet selectionSet,
@@ -254,10 +280,9 @@ Field<Result<Record>> filmNested(
     Condition condition,
     List<SortField<?>> orderBy
 )
-
-// Shared projection — maps GraphQL selection to jOOQ fields for the SELECT clause.
-List<Field<?>> filmFields(SelectionSet selectionSet)
 ```
+
+Results are jOOQ `Record` types. Scalar fields are accessed via `record.get(TABLE.FIELD)`. Nested fields are accessed via `record.get(nestedField)` where `nestedField` is `Field<Result<Record>>` (multiset) or `Field<Record>` (row).
 
 ### Field type to method mapping
 
