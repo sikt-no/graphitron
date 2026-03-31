@@ -69,6 +69,45 @@ The `GraphitronField` sealed interface hierarchy is the Java materialisation of 
 
 **Package:** `no.sikt.graphql.codegen.record.field` (in `graphitron-java-codegen`)
 
+### `GraphitronType`
+
+Every GraphQL named type is classified into a `GraphitronType`. This is where `@table` directive mappings are validated — jOOQ table class exists, discriminator columns are present, etc. — and it is the authoritative source of source context for all fields on that type.
+
+```java
+sealed interface GraphitronType
+    permits TableType, ResultType, RootType,
+            TableInterfaceType, InterfaceType, UnionType {
+    GraphQLNamedType definition();
+    default String name() { return definition().getName(); }
+}
+
+// @table — full SQL generation; @table directive mapping validated here
+record TableType(GraphQLObjectType definition, String jooqTableClass, ...)
+    implements GraphitronType {}
+
+// @record — runtime wiring only, no SQL until a new scope starts
+record ResultType(GraphQLObjectType definition)
+    implements GraphitronType {}
+
+// Query / Mutation — unmapped entry points
+record RootType(GraphQLObjectType definition)
+    implements GraphitronType {}
+
+// interface with @table + @discriminate; implementing types have @table + @discriminator
+record TableInterfaceType(GraphQLInterfaceType definition, String discriminatorColumn, ...)
+    implements GraphitronType {}
+
+// interface with no directives; implementing types have @table
+record InterfaceType(GraphQLInterfaceType definition)
+    implements GraphitronType {}
+
+// union; all member types have @table
+record UnionType(GraphQLUnionType definition)
+    implements GraphitronType {}
+```
+
+### `GraphitronField`
+
 ```java
 sealed interface GraphitronField
     permits RootField, ChildField, NotGeneratedField, UnclassifiedField {
@@ -100,31 +139,36 @@ sealed interface ChildField extends GraphitronField
 
 `GraphQLFieldDefinition` is available on every leaf via `definition()`, giving access to return type, argument definitions, and directives without duplicating that data into the spec. `name()` is derived from it.
 
-Each leaf type is a Java `record` carrying the properties relevant to code generation (table class, FK key constant, condition wrapper class, etc.). Source context (`TABLE_MAPPED` / `RESULT_MAPPED`) is a property on `ChildField`.
+Each leaf type is a Java `record` carrying the properties relevant to code generation (table class, FK key constant, condition wrapper class, etc.). Source context for a `ChildField` is derived from `schema.type(parentTypeName)` — a `TableType` means table-mapped, a `ResultType` means result-mapped.
 
 ### `GraphitronSchema` container
 
-`GraphitronField` instances are stored in a flat map keyed by `FieldCoordinates` — the GraphQL-spec-standardised `(typeName, fieldName)` pair provided by GraphQL Java (`graphql.schema.FieldCoordinates`). This is the same type used as the key in `GraphQLCodeRegistry` for data fetcher registration, so the two maps are parallel by construction.
+`GraphitronSchema` holds both maps. Types are keyed by name (the natural identifier in GraphQL); fields by `FieldCoordinates` — the GraphQL-spec-standardised `(typeName, fieldName)` pair provided by GraphQL Java (`graphql.schema.FieldCoordinates`), the same type used as the key in `GraphQLCodeRegistry`. The two field maps are therefore parallel by construction.
 
 ```java
-record GraphitronSchema(Map<FieldCoordinates, GraphitronField> fields) {
+record GraphitronSchema(
+    Map<String, GraphitronType> types,
+    Map<FieldCoordinates, GraphitronField> fields
+) {
+    GraphitronType type(String name) { return types.get(name); }
 
-    GraphitronField get(FieldCoordinates coordinates) {
+    GraphitronField field(FieldCoordinates coordinates) {
         return fields.get(coordinates);
     }
 
-    GraphitronField get(String typeName, String fieldName) {
+    GraphitronField field(String typeName, String fieldName) {
         return fields.get(FieldCoordinates.coordinates(typeName, fieldName));
     }
 }
 ```
 
-`FieldsSpecBuilder` populates it during schema traversal:
+`FieldsSpecBuilder` populates both maps during schema traversal:
 
 ```java
+types.put(typeName, classifyType(objectType, graphqlSchema));
 fields.put(
     FieldCoordinates.coordinates(typeName, fieldDef.getName()),
-    classify(fieldDef, parentType, graphqlSchema)
+    classifyField(fieldDef, parentType, graphqlSchema)
 );
 ```
 
@@ -132,12 +176,12 @@ The generator drives iteration from `TypeDefinitionRegistry` (types with `@table
 
 ```java
 typeDef.getFieldDefinitions().forEach(fieldDef -> {
-    GraphitronField gField = schema.get(typeDef.getName(), fieldDef.getName());
+    GraphitronField gField = schema.field(typeDef.getName(), fieldDef.getName());
     // switch on gField
 });
 ```
 
-This deliverable is complete when the hierarchy and `GraphitronSchema` compile, and a simple pattern-match over all permits exhaustively covers every leaf.
+This deliverable is complete when the hierarchies and `GraphitronSchema` compile, and a simple pattern-match over all permits exhaustively covers every leaf of both `GraphitronType` and `GraphitronField`.
 
 Once D1 is merged, two streams open up that are fully independent of each other:
 
@@ -462,11 +506,11 @@ Three `@defaultOrder` modes: `index` → `QueryHelper.getSortFields(table, index
 ```
 GraphQLSchema
   │
-  ▼  FieldsSpecBuilder  (schema traversal + FK inference; uses SchemaTraverser; zero JavaPoet)
+  ▼  FieldsSpecBuilder  (schema traversal + FK inference + @table validation; zero JavaPoet)
   │
-  ▼  GraphitronSchema  (Map<FieldCoordinates, GraphitronField>)
+  ▼  GraphitronSchema  (Map<String, GraphitronType> + Map<FieldCoordinates, GraphitronField>)
   │
-  ▼  FieldsCodeGenerator  (iterates TypeDefinitionRegistry; looks up by FieldCoordinates; JavaPoet)
+  ▼  FieldsCodeGenerator  (iterates TypeDefinitionRegistry; looks up by name / FieldCoordinates; JavaPoet)
   │
   ▼  TypeSpec → .java file
 ```
