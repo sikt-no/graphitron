@@ -45,12 +45,21 @@ Each deliverable is a self-contained, reviewable change behind the `recordBasedO
 |---|---|---|
 | 1 | `GraphitronField` skeleton | Sealed interface hierarchy compiling; all field types modelled |
 | 2 | Infrastructure | `GraphitronFetcherFactory`, `getTenantId()`, feature flag |
-| 3 | Scalar fields end-to-end | Working `<TypeName>Fields` + `GraphitronWiring` for scalar-only types |
-| 4 | Inline `TableField` | Nested multiset/row methods; `@defer` check-then-fetch |
-| 5 | `@splitQuery` `TableField` | DataLoader + BatchLoader generation |
-| 6 | `@condition` support | `ConditionWrapperClassGenerator` |
-| 7 | `@service` root fields | `ServiceWrapperClassGenerator` |
-| 8 | Ordering | `@defaultOrder` and `@orderBy` |
+| **Parsing stream** | `FieldsSpecBuilder` — schema → `GraphitronField` | Independent of generating stream |
+| P1 | Scalar parsing | `ColumnField`, `ColumnReferenceField` from schema |
+| P2 | Table child parsing | `TableField`, `TableMethodField`, `NestingField` |
+| P3 | Remaining child parsing | All other `ChildField` leaf types |
+| P4 | Root field parsing | All `QueryField` and `MutationField` leaf types |
+| **Generating stream** | `FieldsCodeGenerator` — `GraphitronField` → Java | Independent of parsing stream |
+| G1 | Scalar generating | `ColumnField`, `ColumnReferenceField` → `wiring()` + `fields()` |
+| G2 | Table child generating | `TableField` (inline + `@splitQuery`) → field methods + DataLoader |
+| G3 | Remaining child generating | All other `ChildField` leaf types → wiring entries |
+| G4 | Root field generating | All `QueryField` and `MutationField` leaf types → DataFetcher methods |
+| **Integration** | Wire streams together | End-to-end per field category |
+| I1 | `FieldsClassGenerator` + `GraphitronWiringClassGenerator` | First working end-to-end output |
+| I2 | `@condition` support | `ConditionWrapperClassGenerator` |
+| I3 | `@service` root fields | `ServiceWrapperClassGenerator` |
+| I4 | Ordering | `@defaultOrder` and `@orderBy` |
 
 ---
 
@@ -91,6 +100,13 @@ sealed interface ChildField extends GraphitronField
 Each leaf type is a Java `record` carrying the properties relevant to code generation (table class, FK key constant, condition wrapper class, etc.). Source context (`TABLE_MAPPED` / `RESULT_MAPPED`) is a property on `ChildField`.
 
 This deliverable is complete when the hierarchy compiles and a simple pattern-match over all permits exhaustively covers every leaf.
+
+Once D1 is merged, two streams open up that are fully independent of each other:
+
+- **Parsing stream** (`FieldsSpecBuilder`): reads a `GraphQLSchema` and produces `GraphitronField` instances. Zero JavaPoet. Tests assert which concrete type is produced and that its properties are populated correctly — one test per leaf type minimum.
+- **Generating stream** (`FieldsCodeGenerator`): consumes hand-crafted `GraphitronField` instances and produces `TypeSpec` via JavaPoet. Zero schema logic. Tests use approval files — one approved file per leaf type minimum.
+
+Neither stream depends on the other. Integration (`FieldsClassGenerator`) connects them.
 
 ---
 
@@ -431,54 +447,94 @@ Wrapper generators (`ConditionWrapperClassGenerator`, `ServiceWrapperClassGenera
 
 ## Testing Strategy
 
-### Level 1 — SpecBuilder tests (AssertJ, no string comparison)
+The two streams have distinct testing approaches. Both must exhaustively cover every `GraphitronField` leaf type — a leaf type with no test in its stream is a gap.
+
+### Parsing stream — `FieldsSpecBuilderTest`
+
+Tests are schema-in, `GraphitronField`-out assertions. No string comparison, no JavaPoet. Every leaf type needs at least one test that:
+1. Assembles a minimal schema containing a field that should produce that leaf type
+2. Runs `FieldsSpecBuilder`
+3. Asserts the correct concrete type was produced and its properties match
 
 ```java
 @Test
-void customerWithSplitQuery() {
+void columnField() {
     GraphQLSchema schema = assembleSchema("""
-        type Customer @table { id: ID!, email: String, orders: [Order] @splitQuery }
-        type Order @table { id: ID! }
-        type Query { customers: [Customer] }
+        type Customer @table { email: String }
+        type Query { customer: Customer }
         """);
-    var fields = FieldsSpecBuilder.buildType(
-        (GraphQLObjectType) schema.getType("Customer"), schema);
-
-    assertThat(fields).satisfiesExactly(
-        f -> assertThat(f).isInstanceOf(ColumnField.class),
-        f -> assertThat(f).isInstanceOf(ColumnField.class),
-        f -> assertThat(f).isInstanceOf(TableField.class)
-                          .extracting("splitQuery").isEqualTo(true)
-    );
+    var fields = FieldsSpecBuilder.buildType(schema.getObjectType("Customer"), schema);
+    assertThat(fields).singleElement().isInstanceOf(ColumnField.class)
+        .extracting("jooqColumn").isEqualTo("EMAIL_ADDRESS");
 }
+
+@Test
+void tableFieldInline() {
+    GraphQLSchema schema = assembleSchema("""
+        type Customer @table { payments: [Payment] }
+        type Payment @table { id: ID! }
+        type Query { customer: Customer }
+        """);
+    var fields = FieldsSpecBuilder.buildType(schema.getObjectType("Customer"), schema);
+    assertThat(fields).singleElement().isInstanceOf(TableField.class)
+        .extracting("splitQuery").isEqualTo(false);
+}
+
+@Test
+void tableFieldSplitQuery() { ... }
+
+@Test
+void serviceQueryField() { ... }
+
+// One test per leaf type in the hierarchy
 ```
 
-### Level 2 — CodeGenerator tests (approval, hand-crafted instances)
+### Generating stream — `FieldsCodeGeneratorTest`
+
+Tests use hand-crafted `GraphitronField` instances — no schema, no `FieldsSpecBuilder`. Output is compared against approved `.java` files. Every leaf type needs at least one approved file.
 
 ```java
 @Test
-void customerFields() {
-    var fields = List.of(
-        new ColumnField("id", "CUSTOMER_ID"),
-        new ColumnField("email", "EMAIL_ADDRESS"),
-        new TableField("payments", ..., false),   // inline
-        new TableField("orders",  ..., true)      // splitQuery
-    );
-    assertGeneratedContentMatches(FieldsCodeGenerator.generate("Customer", fields), "CustomerFields");
+void columnField() {
+    var fields = List.of(new ColumnField("email", "EMAIL_ADDRESS"));
+    assertGeneratedContentMatches(FieldsCodeGenerator.generate("Customer", fields), "CustomerFields_scalar");
 }
+
+@Test
+void tableFieldInline() {
+    var fields = List.of(new TableField("payments", "Payment", "PaymentFields",
+        List.of(new OnKeyJoin("PAYMENT__FK_CUSTOMER_ID")), false, ...));
+    assertGeneratedContentMatches(FieldsCodeGenerator.generate("Customer", fields), "CustomerFields_inline");
+}
+
+@Test
+void tableFieldSplitQuery() { ... }
+
+@Test
+void queryFieldRoot() { ... }
+
+// One approval file per leaf type (or combination that exercises new code paths)
 ```
+
+### Integration — `RecordOutputIntegrationTest`
+
+End-to-end: schema in, generated `.java` source out (or running Quarkus test). Validates that parsing + generating agree. Added per integration deliverable (I1–I4).
 
 ### Test file layout
 
 ```
 src/test/java/.../record/
-  FieldsSpecBuilderTest.java
-  FieldsCodeGeneratorTest.java
-  integration/RecordOutputIntegrationTest.java
+  FieldsSpecBuilderTest.java        ← parsing stream, one test per leaf type
+  FieldsCodeGeneratorTest.java      ← generating stream, one approval per leaf type
+  integration/
+    RecordOutputIntegrationTest.java
 
 src/test/resources/record/
-  CustomerFields.java
+  CustomerFields_scalar.java
+  CustomerFields_inline.java
+  CustomerFields_splitQuery.java
   QueryFields.java
+  // one file per leaf type tested in generating stream
 ```
 
 ---
