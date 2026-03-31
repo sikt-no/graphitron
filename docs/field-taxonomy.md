@@ -227,32 +227,40 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 
 Every `@table` type generates a set of static field methods for its nested relationships, analogous to how jOOQ generates static `Field<T>` instances on table types (`FILM.FILM_ID`, `FILM.TITLE`). These return jOOQ `Field<Result<Record>>` (multiset, one-to-many) or `Field<Record>` (row, one-to-one) expressions that can be composed into any SELECT clause.
 
+Arguments (filter conditions, ordering, pagination) are carried by Graphitron's `SelectionSet` wrapper — it encapsulates both the GraphQL field selection and a flattened set of argument keys (e.g. `"filter/name"`, `"orderBy/field"`), giving access to actual argument values via the underlying `DataFetchingFieldSelectionSet`. Each static field method receives a `SelectionSet` scoped to its sub-field and extracts its own arguments internally.
+
 ```java
 // Generated on a companion class, e.g. FilmFields
-public static Field<Result<Record>> actors(
-    SelectionSet selectionSet,
-    Condition condition,
-    List<SortField<?>> orderBy
-) { ... } // multiset subquery over ACTOR joined via FILM_ACTOR
+public static Field<Result<Record>> actors(SelectionSet selectionSet) {
+    // condition and orderBy extracted from selectionSet internally
+    return DSL.multiset(
+        DSL.select(ActorFields.fields(selectionSet))
+           .from(ACTOR)
+           .join(FILM_ACTOR).on(FILM_ACTOR.ACTOR_ID.eq(ACTOR.ACTOR_ID))
+           .where(FILM_ACTOR.FILM_ID.eq(FILM.FILM_ID).and(actorCondition(selectionSet)))
+           .orderBy(actorOrderBy(selectionSet))
+    ).as("actors");
+}
 
-public static Field<Record> language(
-    SelectionSet selectionSet
-) { ... } // row subquery over LANGUAGE
+public static Field<Record> language(SelectionSet selectionSet) { ... }
 ```
 
-A shared projection method assembles the SELECT list by calling these conditionally based on the GraphQL selection set:
+A shared projection method assembles the SELECT list, passing each sub-field a scoped `SelectionSet`:
 
 ```java
 List<Field<?>> filmFields(SelectionSet selectionSet) {
     var fields = new ArrayList<Field<?>>();
-    if (selectionSet.contains("title"))    fields.add(FILM.TITLE);
-    if (selectionSet.contains("actors"))   fields.add(actors(selectionSet.forField("actors"), noCondition(), noOrder()));
-    if (selectionSet.contains("language")) fields.add(language(selectionSet.forField("language")));
+    if (selectionSet.contains("title"))
+        fields.add(FILM.TITLE);
+    if (selectionSet.contains("actors"))
+        fields.add(actors(selectionSet.forField("actors")));
+    if (selectionSet.contains("language"))
+        fields.add(language(selectionSet.forField("language")));
     return fields;
 }
 ```
 
-Two scope-establishing methods delegate to `filmFields` for their SELECT clause:
+Two scope-establishing methods delegate to `filmFields`. They take an explicit `Condition` and `List<SortField<?>>` for the film query itself — those are derived from the film field's own arguments at the resolver level before calling the method:
 
 ```java
 // Starts a new SQL statement. Used by root queries, DataLoaders (split + lift), mutation read-back.
@@ -265,8 +273,6 @@ SelectFinalStep<Record> filmSelect(
 )
 
 // Contributes to an existing statement as a multiset subquery.
-// Returns Field<Result<Record>> — included in the parent SELECT.
-// Used by TableField without @splitQuery in table-mapped context.
 Field<Result<Record>> filmNested(
     SelectionSet selectionSet,
     Condition condition,
