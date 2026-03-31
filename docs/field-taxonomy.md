@@ -22,7 +22,9 @@ Scope boundaries:
 |---|---|
 | **Enter** | An unmapped root field reaches a table-mapped type — the first scope starts |
 | **Split** | `@splitQuery` on a child field — new scope via DataLoader |
-| **Lift** | A child field on a result-mapped type has a table-mapped return type — new scope via DataLoader, connected using a LiftCondition |
+| **Lift** | A `TableField` on a result-mapped type — new scope via DataLoader, connected using a LiftCondition |
+
+`@service` fields use a **private scope** — they create their own SQL statement independently and do not participate in any Graphitron-managed scope. Graphitron does not control what the service queries or joins.
 
 ### Conditions
 
@@ -38,8 +40,8 @@ Conditions are properties of fields, not field types.
 
 | Property | Effect |
 |---|---|
-| **`@splitQuery`** | Forces a new scope via DataLoader instead of a SQL join. Valid on table-mapped child fields; an error on result-mapped fields, which always start a new scope implicitly. |
-| **`@lookupKey`** | Adds strict lookup semantics: 1:1 row-to-key matching, count enforcement, no pagination. Can be used with or without `@splitQuery`. |
+| **`@splitQuery`** | Forces a new scope via DataLoader instead of a SQL join. Valid on `TableField`; an error on result-mapped fields, which always start a new scope implicitly. |
+| **`@lookupKey`** | Adds strict lookup semantics: 1:1 row-to-key matching, count enforcement, no pagination. Orthogonal to `@splitQuery` — can be used with or without it. |
 
 ---
 
@@ -149,9 +151,9 @@ Fields on the `Mutation` type. These are the only fields permitted to write to t
 
 ### Child fields
 
-Child fields carry a `sourceContext` property — table-mapped (`@table`) or result-mapped (`@record`). Source context determines Creates/Reuses (see Scope Interaction above). Carries/Terminates is intrinsic to the field type.
+Child fields carry a `sourceContext` property — table-mapped (`@table`) or result-mapped (`@record`). Source context determines whether a field contributes to an existing scope or starts a new one.
 
-`@splitQuery` is valid on any table-mapped child field, promoting it from Reuses to Creates. It is an error on result-mapped child fields — those always Create implicitly. `@lookupKey` adds strict lookup semantics on top of `@splitQuery`.
+`@splitQuery` is valid on `TableField` with table-mapped source context, forcing a new scope via DataLoader instead of a SQL join. It is an error on result-mapped child fields — those always start a new scope implicitly. `@lookupKey` is orthogonal to `@splitQuery` and adds strict lookup semantics regardless.
 
 #### Graphitron projects through these fields
 
@@ -316,13 +318,13 @@ FROM (VALUES (1), (2), (3)) AS keys(key)
 
 ### @defer support
 
-Every `TableField` resolver follows a check-then-fetch pattern to support `@defer`:
+A `TableField` with table-mapped source context follows a check-then-fetch pattern to support `@defer`. The static field method (e.g. `actors(SelectedField)`) produces a named `Field<Result<Record>>` constant — `FILM_ACTORS_FIELD` below — that the parent SELECT uses as a key when embedding the multiset and that the resolver uses to read the result back.
 
 1. **Check**: call `record.get(FILM_ACTORS_FIELD)` on the parent jOOQ `Record`. If non-null, the parent pre-fetched the data via `filmNested` — return it immediately.
 2. **Fetch**: if `null`, the field was not included in the parent SELECT — either deferred by the client or being resolved standalone. Call `filmSelect` to start a new query.
 
 ```java
-// Generated resolver for Film.actors (TableField, no @splitQuery)
+// Generated resolver for Film.actors (TableField, table-mapped, no @splitQuery)
 env -> {
     Record source = env.getSource();
     Result<Record> actors = source.get(FILM_ACTORS_FIELD); // Field<Result<Record>>
@@ -333,6 +335,8 @@ env -> {
 }
 ```
 
-`filmNested` is therefore an optimisation — it pre-fetches data in the parent SQL statement. `filmSelect` is the correctness guarantee — every `TableField` resolver is self-sufficient.
+`filmNested` is therefore an optimisation — it pre-fetches data in the parent SQL statement. `filmSelect` is the correctness guarantee — every table-mapped `TableField` resolver is self-sufficient.
+
+For `TableField` with result-mapped source context, the resolver is a new data fetcher backed by a DataLoader, so `@defer` is handled naturally — there is no parent jOOQ `Record` to check.
 
 jOOQ naturally distinguishes not-fetched (`null`) from fetched-but-empty (empty `Result<Record>`) for multiset fields, so no custom result type is needed. For `@splitQuery` fields the DataLoader always calls `filmSelect`, so `@defer` is already handled.
