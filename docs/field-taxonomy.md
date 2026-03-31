@@ -227,46 +227,43 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 
 Every `@table` type generates a set of static field methods for its nested relationships, analogous to how jOOQ generates static `Field<T>` instances on table types (`FILM.FILM_ID`, `FILM.TITLE`). These return jOOQ `Field<Result<Record>>` (multiset, one-to-many) or `Field<Record>` (row, one-to-one) expressions that can be composed into any SELECT clause.
 
-Arguments (filter conditions, ordering, pagination) are carried by Graphitron's `SelectionSet` wrapper — it encapsulates both the GraphQL field selection and a flattened set of argument keys (e.g. `"filter/name"`, `"orderBy/field"`), giving access to actual argument values via the underlying `DataFetchingFieldSelectionSet`. Each static field method receives a `SelectionSet` scoped to its sub-field and extracts its own arguments internally.
+The methods use GraphQL Java's native `SelectedField` — which carries both `getSelectionSet()` (nested field selection) and `getArguments()` (argument values as `Map<String, Object>`) — rather than any flattened argument representation. No custom wrapper is needed.
 
 ```java
 // Generated on a companion class, e.g. FilmFields
-public static Field<Result<Record>> actors(SelectionSet selectionSet) {
-    // condition and orderBy extracted from selectionSet internally
+public static Field<Result<Record>> actors(SelectedField field) {
     return DSL.multiset(
-        DSL.select(ActorFields.fields(selectionSet))
+        DSL.select(ActorFields.fields(field.getSelectionSet()))
            .from(ACTOR)
            .join(FILM_ACTOR).on(FILM_ACTOR.ACTOR_ID.eq(ACTOR.ACTOR_ID))
-           .where(FILM_ACTOR.FILM_ID.eq(FILM.FILM_ID).and(actorCondition(selectionSet)))
-           .orderBy(actorOrderBy(selectionSet))
+           .where(FILM_ACTOR.FILM_ID.eq(FILM.FILM_ID)
+               .and(actorCondition(field.getArguments())))
+           .orderBy(actorOrderBy(field.getArguments()))
     ).as("actors");
 }
 
-public static Field<Record> language(SelectionSet selectionSet) { ... }
+public static Field<Record> language(SelectedField field) { ... }
 ```
 
-A shared projection method assembles the SELECT list, passing each sub-field a scoped `SelectionSet`:
+The shared projection method receives `DataFetchingFieldSelectionSet` and passes each sub-field's `SelectedField` directly:
 
 ```java
-List<Field<?>> filmFields(SelectionSet selectionSet) {
+List<Field<?>> filmFields(DataFetchingFieldSelectionSet sel) {
     var fields = new ArrayList<Field<?>>();
-    if (selectionSet.contains("title"))
-        fields.add(FILM.TITLE);
-    if (selectionSet.contains("actors"))
-        fields.add(actors(selectionSet.forField("actors")));
-    if (selectionSet.contains("language"))
-        fields.add(language(selectionSet.forField("language")));
+    sel.getFields("title").forEach(f -> fields.add(FILM.TITLE));
+    sel.getFields("actors").forEach(f -> fields.add(actors(f)));
+    sel.getFields("language").forEach(f -> fields.add(language(f)));
     return fields;
 }
 ```
 
-Two scope-establishing methods delegate to `filmFields`. They take an explicit `Condition` and `List<SortField<?>>` for the film query itself — those are derived from the film field's own arguments at the resolver level before calling the method:
+Two scope-establishing methods delegate to `filmFields`. Their `Condition` and `List<SortField<?>>` are for the film query itself, derived from the film field's own arguments at the resolver level:
 
 ```java
 // Starts a new SQL statement. Used by root queries, DataLoaders (split + lift), mutation read-back.
 SelectFinalStep<Record> filmSelect(
     DSLContext ctx,
-    SelectionSet selectionSet,
+    DataFetchingFieldSelectionSet selectionSet,
     Condition condition,
     List<SortField<?>> orderBy
     // + pagination args for connection types
@@ -274,7 +271,7 @@ SelectFinalStep<Record> filmSelect(
 
 // Contributes to an existing statement as a multiset subquery.
 Field<Result<Record>> filmNested(
-    SelectionSet selectionSet,
+    DataFetchingFieldSelectionSet selectionSet,
     Condition condition,
     List<SortField<?>> orderBy
 )
@@ -282,7 +279,7 @@ Field<Result<Record>> filmNested(
 // Overload for @tableMethod — developer supplies a filtered table.
 Field<Result<Record>> filmNested(
     Table<FilmRecord> table,
-    SelectionSet selectionSet,
+    DataFetchingFieldSelectionSet selectionSet,
     Condition condition,
     List<SortField<?>> orderBy
 )
