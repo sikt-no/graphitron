@@ -225,10 +225,11 @@ Child fields carry a `sourceContext` property — table-mapped (`@table`) or res
 
 ### Per-type select methods
 
-Every `@table` type generates two select methods and a shared field projection helper. All `TableField`s pointing to that type reuse these methods — the generator's job per field is wiring, not SQL.
+Every `@table` type generates two select methods and a shared field projection helper. All `TableField`s pointing to that type reuse these methods — the generator's job per field is wiring, not SQL. Results are jOOQ `Record` types; scalar fields are accessed via `record.get(TABLE.FIELD)`, nested fields via `record.get(nestedField)` where the nested field is of type `Field<Result<Record>>` (multiset) or `Field<Record>` (single row).
 
 ```java
-// Starts a new SQL statement. Used by root queries, DataLoaders (split + lift), mutation read-back.
+// Starts a new SQL statement. Returns a jOOQ select step over Record.
+// Used by root queries, DataLoaders (split + lift), mutation read-back.
 SelectFinalStep<Record> filmSelect(
     DSLContext ctx,
     SelectionSet selectionSet,
@@ -238,6 +239,7 @@ SelectFinalStep<Record> filmSelect(
 )
 
 // Contributes to an existing statement as a multiset subquery.
+// Returns Field<Result<Record>> — included in the parent SELECT.
 // Used by TableField without @splitQuery in table-mapped context.
 Field<Result<Record>> filmNested(
     SelectionSet selectionSet,
@@ -253,7 +255,7 @@ Field<Result<Record>> filmNested(
     List<SortField<?>> orderBy
 )
 
-// Shared projection — maps GraphQL selection to jOOQ columns.
+// Shared projection — maps GraphQL selection to jOOQ fields for the SELECT clause.
 List<Field<?>> filmFields(SelectionSet selectionSet)
 ```
 
@@ -288,11 +290,21 @@ FROM (VALUES (1), (2), (3)) AS keys(key)
 
 Every `TableField` resolver follows a check-then-fetch pattern to support `@defer`:
 
-1. **Check**: is the field's data already present in the parent result? If so, return it immediately — the parent pre-fetched it via `filmNested`.
-2. **Fetch**: if absent, call `filmSelect` directly. This handles two cases identically: the field was deferred by the client, or it is being resolved standalone.
+1. **Check**: call `record.get(FILM_ACTORS_FIELD)` on the parent jOOQ `Record`. If non-null, the parent pre-fetched the data via `filmNested` — return it immediately.
+2. **Fetch**: if `null`, the field was not included in the parent SELECT — either deferred by the client or being resolved standalone. Call `filmSelect` to start a new query.
 
-`filmNested` is therefore an optimisation — it pre-fetches data in the parent's SQL statement. `filmSelect` is the correctness guarantee — every `TableField` resolver can fetch its own data if needed.
+```java
+// Generated resolver for Film.actors (TableField, no @splitQuery)
+env -> {
+    Record source = env.getSource();
+    Result<Record> actors = source.get(FILM_ACTORS_FIELD); // Field<Result<Record>>
+    if (actors != null) {
+        return actors; // pre-fetched by parent
+    }
+    return actorSelect(ctx, env.getSelectionSet(), referenceCondition(source), noOrder);
+}
+```
 
-For `@splitQuery` fields, the DataLoader always calls `filmSelect`, so `@defer` is handled naturally without special-casing.
+`filmNested` is therefore an optimisation — it pre-fetches data in the parent SQL statement. `filmSelect` is the correctness guarantee — every `TableField` resolver is self-sufficient.
 
-**Result type requirement**: generated result classes must represent nested fields as nullable. `null` means not yet fetched; an empty list means fetched but empty. This distinction is what allows the resolver to know whether to fall back to `filmSelect`.
+jOOQ naturally distinguishes not-fetched (`null`) from fetched-but-empty (empty `Result<Record>`) for multiset fields, so no custom result type is needed. For `@splitQuery` fields the DataLoader always calls `filmSelect`, so `@defer` is already handled.
