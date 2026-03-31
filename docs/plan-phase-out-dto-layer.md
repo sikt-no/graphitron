@@ -72,7 +72,8 @@ The `GraphitronField` sealed interface hierarchy is the Java materialisation of 
 ```java
 sealed interface GraphitronField
     permits RootField, ChildField, NotGeneratedField, UnclassifiedField {
-    String name();
+    GraphQLFieldDefinition definition();
+    default String name() { return definition().getName(); }
 }
 
 sealed interface RootField extends GraphitronField
@@ -97,9 +98,46 @@ sealed interface ChildField extends GraphitronField
             ServiceField, ComputedField, PropertyField {}
 ```
 
+`GraphQLFieldDefinition` is available on every leaf via `definition()`, giving access to return type, argument definitions, and directives without duplicating that data into the spec. `name()` is derived from it.
+
 Each leaf type is a Java `record` carrying the properties relevant to code generation (table class, FK key constant, condition wrapper class, etc.). Source context (`TABLE_MAPPED` / `RESULT_MAPPED`) is a property on `ChildField`.
 
-This deliverable is complete when the hierarchy compiles and a simple pattern-match over all permits exhaustively covers every leaf.
+### `GraphitronSchema` container
+
+`GraphitronField` instances are stored in a flat map keyed by `FieldCoordinates` — the GraphQL-spec-standardised `(typeName, fieldName)` pair provided by GraphQL Java (`graphql.schema.FieldCoordinates`). This is the same type used as the key in `GraphQLCodeRegistry` for data fetcher registration, so the two maps are parallel by construction.
+
+```java
+record GraphitronSchema(Map<FieldCoordinates, GraphitronField> fields) {
+
+    GraphitronField get(FieldCoordinates coordinates) {
+        return fields.get(coordinates);
+    }
+
+    GraphitronField get(String typeName, String fieldName) {
+        return fields.get(FieldCoordinates.coordinates(typeName, fieldName));
+    }
+}
+```
+
+`FieldsSpecBuilder` populates it during schema traversal:
+
+```java
+fields.put(
+    FieldCoordinates.coordinates(typeName, fieldDef.getName()),
+    classify(fieldDef, parentType, graphqlSchema)
+);
+```
+
+The generator drives iteration from `TypeDefinitionRegistry` (types with `@table`) and looks up by coordinates:
+
+```java
+typeDef.getFieldDefinitions().forEach(fieldDef -> {
+    GraphitronField gField = schema.get(typeDef.getName(), fieldDef.getName());
+    // switch on gField
+});
+```
+
+This deliverable is complete when the hierarchy and `GraphitronSchema` compile, and a simple pattern-match over all permits exhaustively covers every leaf.
 
 Once D1 is merged, two streams open up that are fully independent of each other:
 
@@ -426,9 +464,9 @@ GraphQLSchema
   │
   ▼  FieldsSpecBuilder  (schema traversal + FK inference; uses SchemaTraverser; zero JavaPoet)
   │
-  ▼  GraphitronField instances  (sealed hierarchy from Deliverable 1)
+  ▼  GraphitronSchema  (Map<FieldCoordinates, GraphitronField>)
   │
-  ▼  FieldsCodeGenerator  (JavaPoet mapping; zero schema logic)
+  ▼  FieldsCodeGenerator  (iterates TypeDefinitionRegistry; looks up by FieldCoordinates; JavaPoet)
   │
   ▼  TypeSpec → .java file
 ```
@@ -463,8 +501,9 @@ void columnField() {
         type Customer @table { email: String }
         type Query { customer: Customer }
         """);
-    var fields = FieldsSpecBuilder.buildType(schema.getObjectType("Customer"), schema);
-    assertThat(fields).singleElement().isInstanceOf(ColumnField.class)
+    GraphitronSchema result = FieldsSpecBuilder.build(schema);
+    assertThat(result.get("Customer", "email"))
+        .isInstanceOf(ColumnField.class)
         .extracting("jooqColumn").isEqualTo("EMAIL_ADDRESS");
 }
 
@@ -475,8 +514,9 @@ void tableFieldInline() {
         type Payment @table { id: ID! }
         type Query { customer: Customer }
         """);
-    var fields = FieldsSpecBuilder.buildType(schema.getObjectType("Customer"), schema);
-    assertThat(fields).singleElement().isInstanceOf(TableField.class)
+    GraphitronSchema result = FieldsSpecBuilder.build(schema);
+    assertThat(result.get("Customer", "payments"))
+        .isInstanceOf(TableField.class)
         .extracting("splitQuery").isEqualTo(false);
 }
 
