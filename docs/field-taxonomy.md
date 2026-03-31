@@ -283,3 +283,16 @@ FROM (VALUES (1), (2), (3)) AS keys(key)
 ### InterfaceField union wrapper
 
 `InterfaceField` generates a union wrapper that calls each implementing type's `filmNested` variant and combines the results. The wrapper is itself a multiset subquery, so it can be nested into a parent statement just like any other `filmNested` call.
+
+### @defer support
+
+Every `TableField` resolver follows a check-then-fetch pattern to support `@defer`:
+
+1. **Check**: is the field's data already present in the parent result? If so, return it immediately — the parent pre-fetched it via `filmNested`.
+2. **Fetch**: if absent, call `filmSelect` directly. This handles two cases identically: the field was deferred by the client, or it is being resolved standalone.
+
+`filmNested` is therefore an optimisation — it pre-fetches data in the parent's SQL statement. `filmSelect` is the correctness guarantee — every `TableField` resolver can fetch its own data if needed.
+
+For `@splitQuery` fields, the DataLoader always calls `filmSelect`, so `@defer` is handled naturally without special-casing.
+
+**Result type requirement**: generated result classes must represent nested fields as nullable. `null` means not yet fetched; an empty list means fetched but empty. This distinction is what allows the resolver to know whether to fall back to `filmSelect`.
