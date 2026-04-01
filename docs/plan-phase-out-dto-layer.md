@@ -82,8 +82,11 @@ sealed interface GraphitronType
 }
 
 // @table — full SQL generation; @table directive mapping validated here
-record TableType(GraphQLObjectType definition, String jooqTableClass, ...)
-    implements GraphitronType {}
+record TableType(
+    GraphQLObjectType definition,
+    String jooqTableClass,           // class name from @table directive
+    Optional<Table<?>> jooqTable     // loaded via reflection; empty if class not on classpath
+) implements GraphitronType {}
 
 // @record — runtime wiring only, no SQL until a new scope starts
 record ResultType(GraphQLObjectType definition)
@@ -94,8 +97,12 @@ record RootType(GraphQLObjectType definition)
     implements GraphitronType {}
 
 // interface with @table + @discriminate; implementing types have @table + @discriminator
-record TableInterfaceType(GraphQLInterfaceType definition, String discriminatorColumn, ...)
-    implements GraphitronType {}
+record TableInterfaceType(
+    GraphQLInterfaceType definition,
+    String discriminatorColumn,
+    String jooqTableClass,
+    Optional<Table<?>> jooqTable     // loaded via reflection; empty if class not on classpath
+) implements GraphitronType {}
 
 // interface with no directives; implementing types have @table
 record InterfaceType(GraphQLInterfaceType definition)
@@ -162,15 +169,27 @@ record GraphitronSchema(
 }
 ```
 
-`FieldsSpecBuilder` populates both maps during schema traversal:
+`FieldsSpecBuilder` populates both maps during schema traversal. For `TableType` and `TableInterfaceType`, the jOOQ table instance is loaded via reflection — `Optional.empty()` if the class is not on the classpath, which is handled downstream:
 
 ```java
+Optional<Table<?>> loadTable(String className) {
+    try {
+        return Optional.of((Table<?>) Class.forName(className)
+            .getDeclaredConstructor()
+            .newInstance());
+    } catch (Exception e) {
+        return Optional.empty();
+    }
+}
+
 types.put(typeName, classifyType(objectType, graphqlSchema));
 fields.put(
     FieldCoordinates.coordinates(typeName, fieldDef.getName()),
     classifyField(fieldDef, parentType, graphqlSchema)
 );
 ```
+
+When `jooqTable` is present, it provides columns, primary key, and FK metadata directly — used by FK auto-inference in `FieldsCodeGenerator`.
 
 The generator drives iteration from `TypeDefinitionRegistry` (types with `@table`) and looks up by coordinates:
 
