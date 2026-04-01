@@ -3,6 +3,7 @@ package no.sikt.graphitron.record.field;
 import graphql.language.SourceLocation;
 import org.jooq.Field;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -16,11 +17,16 @@ import java.util.Optional;
  *
  * <p>{@code column} is the resolved jOOQ {@link Field} instance, used for type inspection at
  * code-generation time; empty when the column could not be resolved.
+ *
+ * <p>{@code referencePath} is the ordered list of join steps from the source table to the target
+ * column's table, extracted from {@code @reference(path:)}. Required — an empty list is a
+ * validation error.
  */
 public record ColumnReferenceField(
     String name,
     SourceLocation location,
     String columnName,
     String columnJavaName,
-    Optional<Field<?>> column
+    Optional<Field<?>> column,
+    List<ReferencePathElement> referencePath
 ) implements ChildField {}

@@ -3,10 +3,13 @@ package no.sikt.graphitron.record.validation;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.ComputedField;
 import no.sikt.graphitron.record.field.GraphitronField;
+import no.sikt.graphitron.record.field.MethodRef;
+import no.sikt.graphitron.record.field.ReferencePathElement;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inTableTypeSchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
@@ -16,11 +19,24 @@ class ComputedFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID {
+        /** No {@code @reference} — no lift condition; valid when return type is not table-mapped. */
+        NO_PATH {
             public GraphitronField field() {
-                return new ComputedField("fullTitle", null);
+                return new ComputedField("fullTitle", null, List.of());
             }
             public List<String> errors() { return List.of(); }
+        },
+
+        /** Lift condition method present but could not be resolved via reflection. */
+        UNRESOLVED_CONDITION {
+            public GraphitronField field() {
+                return new ComputedField("fullTitle", null, List.of(
+                    new ReferencePathElement(null, null, Optional.of(
+                        new MethodRef("com.example.Conditions.liftCondition", null, null)))));
+            }
+            public List<String> errors() {
+                return List.of("Field 'fullTitle': condition method 'com.example.Conditions.liftCondition' could not be resolved");
+            }
         };
 
         public abstract GraphitronField field();

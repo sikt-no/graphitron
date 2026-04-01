@@ -2,11 +2,14 @@ package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.GraphitronField;
+import no.sikt.graphitron.record.field.MethodRef;
+import no.sikt.graphitron.record.field.ReferencePathElement;
 import no.sikt.graphitron.record.field.TableMethodField;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inTableTypeSchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
@@ -16,11 +19,24 @@ class TableMethodFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID {
+        /** No {@code @reference} — FK auto-inference will be attempted at code-generation time. */
+        NO_PATH {
             public GraphitronField field() {
-                return new TableMethodField("filteredActors", null);
+                return new TableMethodField("filteredActors", null, List.of());
             }
             public List<String> errors() { return List.of(); }
+        },
+
+        /** Condition method present but could not be resolved via reflection. */
+        UNRESOLVED_CONDITION {
+            public GraphitronField field() {
+                return new TableMethodField("filteredActors", null, List.of(
+                    new ReferencePathElement(null, null, Optional.of(
+                        new MethodRef("com.example.Conditions.actorCondition", null, null)))));
+            }
+            public List<String> errors() {
+                return List.of("Field 'filteredActors': condition method 'com.example.Conditions.actorCondition' could not be resolved");
+            }
         };
 
         public abstract GraphitronField field();
