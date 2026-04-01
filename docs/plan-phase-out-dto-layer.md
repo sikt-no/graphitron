@@ -84,8 +84,9 @@ sealed interface GraphitronType
 // @table — full SQL generation; @table directive mapping validated here
 record TableType(
     GraphQLObjectType definition,
-    String jooqTableClass,           // class name from @table directive
-    Optional<Table<?>> jooqTable     // loaded via reflection; empty if class not on classpath
+    String tableName,             // SQL name from @table directive — e.g. "film"
+    String javaFieldName,         // Java field name in generated Tables class — e.g. "FILM"; null if unresolved
+    Optional<Table<?>> table      // jOOQ instance; empty if unresolved
 ) implements GraphitronType {}
 
 // @record — runtime wiring only, no SQL until a new scope starts
@@ -100,8 +101,9 @@ record RootType(GraphQLObjectType definition)
 record TableInterfaceType(
     GraphQLInterfaceType definition,
     String discriminatorColumn,
-    String jooqTableClass,
-    Optional<Table<?>> jooqTable     // loaded via reflection; empty if class not on classpath
+    String tableName,             // SQL name from @table directive
+    String javaFieldName,         // Java field name in generated Tables class; null if unresolved
+    Optional<Table<?>> table      // jOOQ instance; empty if unresolved
 ) implements GraphitronType {}
 
 // interface with no directives; implementing types have @table
@@ -169,27 +171,53 @@ record GraphitronSchema(
 }
 ```
 
-`FieldsSpecBuilder` populates both maps during schema traversal. For `TableType` and `TableInterfaceType`, the jOOQ table instance is loaded via reflection — `Optional.empty()` if the class is not on the classpath, which is handled downstream:
+`FieldsSpecBuilder` populates both maps during schema traversal, using a `JooqCatalog` wrapper to resolve table names.
+
+### `JooqCatalog`
+
+A thin wrapper around jOOQ's `Catalog`. Loads the catalog once via reflection (`DefaultCatalog.DEFAULT_CATALOG`) and provides lazy lookups — no pre-built maps. Each method queries the catalog on demand.
 
 ```java
-Optional<Table<?>> loadTable(String className) {
-    try {
-        return Optional.of((Table<?>) Class.forName(className)
-            .getDeclaredConstructor()
-            .newInstance());
-    } catch (Exception e) {
-        return Optional.empty();
+class JooqCatalog {
+    private final Catalog catalog;
+
+    JooqCatalog(String generatedJooqPackage) {
+        this.catalog = loadDefaultCatalog(generatedJooqPackage);
     }
+
+    /** Find a table by its SQL name. Returns both the Table<?> instance and its Java field name in Tables. */
+    Optional<TableEntry> findTable(String sqlName) {
+        return catalog.schemaStream()
+            .flatMap(schema -> getTablesClass(schema).stream())
+            .flatMap(cls -> Arrays.stream(cls.getFields()))
+            .filter(f -> Table.class.isAssignableFrom(f.getType()))
+            .map(f -> new TableEntry(f.getName(), (Table<?>) getFieldValue(f)))
+            .filter(e -> e.table().getName().equalsIgnoreCase(sqlName))
+            .findFirst();
+    }
+
+    /** Find a foreign key by its SQL name. */
+    Optional<ForeignKey<?, ?>> findForeignKey(String sqlName) { ... }
 }
 
-types.put(typeName, classifyType(objectType, graphqlSchema));
-fields.put(
-    FieldCoordinates.coordinates(typeName, fieldDef.getName()),
-    classifyField(fieldDef, parentType, graphqlSchema)
-);
+record TableEntry(String javaFieldName, Table<?> table) {}
 ```
 
-When `jooqTable` is present, it provides columns, primary key, and FK metadata directly — used by FK auto-inference in `FieldsCodeGenerator`.
+The `@table` directive carries the SQL name — what the schema author writes. The Java field name (e.g. `"FILM"`) is what appears in generated code. Both differ and both are needed, so `TableEntry` returns them together. `FieldsSpecBuilder` then stores both on `TableType`:
+
+```java
+String sqlName = getDirectiveArg(objectType, "table", "name");
+Optional<TableEntry> entry = jooqCatalog.findTable(sqlName);
+
+types.put(typeName, new TableType(
+    objectType,
+    sqlName,
+    entry.map(TableEntry::javaFieldName).orElse(null),
+    entry.map(TableEntry::table)
+));
+```
+
+When `table` is present it provides columns, primary key, and FK metadata — used directly by FK auto-inference. When absent, a downstream validation pass reports the unresolved name.
 
 The generator drives iteration from `TypeDefinitionRegistry` (types with `@table`) and looks up by coordinates:
 
