@@ -16,9 +16,18 @@ class PropertyFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID {
+        /** No {@code @field} — property name defaults to the GraphQL field name. */
+        IMPLICIT_COLUMN {
             public GraphitronField field() {
-                return new PropertyField("titleProp", null);
+                return new PropertyField("titleProp", null, "titleProp");
+            }
+            public List<String> errors() { return List.of(); }
+        },
+
+        /** {@code @field(name: "title")} — explicit property name override. */
+        EXPLICIT_COLUMN {
+            public GraphitronField field() {
+                return new PropertyField("titleProp", null, "title");
             }
             public List<String> errors() { return List.of(); }
         };
