@@ -90,9 +90,13 @@ public final class FieldValidationTestHelper {
         );
     }
 
-    // --- Validation runner ---
+    // --- Validation runners ---
 
     public static List<ValidationError> validate(GraphitronSchema schema) {
         return VALIDATOR.validate(schema);
+    }
+
+    public static List<ValidationError> validate(GraphitronType type) {
+        return VALIDATOR.validate(new GraphitronSchema(Map.of(type.name(), type), Map.of()));
     }
 }

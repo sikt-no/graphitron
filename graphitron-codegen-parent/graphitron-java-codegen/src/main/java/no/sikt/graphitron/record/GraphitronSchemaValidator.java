@@ -71,7 +71,14 @@ public class GraphitronSchemaValidator {
 
     // --- Type validators (stubs — filled in as test classes are added) ---
 
-    private void validateTableType(no.sikt.graphitron.record.type.TableType type, List<ValidationError> errors) {}
+    private void validateTableType(no.sikt.graphitron.record.type.TableType type, List<ValidationError> errors) {
+        if (type.javaFieldName() == null) {
+            errors.add(new ValidationError(
+                "Type '" + type.name() + "': table '" + type.tableName() + "' could not be resolved in the jOOQ catalog",
+                type.definition().getDefinition() != null ? type.definition().getDefinition().getSourceLocation() : null
+            ));
+        }
+    }
     private void validateResultType(no.sikt.graphitron.record.type.ResultType type, List<ValidationError> errors) {}
     private void validateRootType(no.sikt.graphitron.record.type.RootType type, List<ValidationError> errors) {}
     private void validateTableInterfaceType(no.sikt.graphitron.record.type.TableInterfaceType type, List<ValidationError> errors) {}
