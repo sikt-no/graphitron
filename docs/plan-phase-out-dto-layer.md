@@ -84,8 +84,9 @@ sealed interface GraphitronType
 // @table — full SQL generation; @table directive mapping validated here
 record TableType(
     GraphQLObjectType definition,
-    String jooqTableClass,           // class name from @table directive
-    Optional<Table<?>> jooqTable     // loaded via reflection; empty if class not on classpath
+    String tableName,             // SQL name from @table directive — e.g. "film"
+    String javaFieldName,         // Java field name from TableReflection — e.g. "FILM"; null if unresolved
+    Optional<Table<?>> table      // jOOQ instance; empty if not resolved
 ) implements GraphitronType {}
 
 // @record — runtime wiring only, no SQL until a new scope starts
@@ -100,8 +101,9 @@ record RootType(GraphQLObjectType definition)
 record TableInterfaceType(
     GraphQLInterfaceType definition,
     String discriminatorColumn,
-    String jooqTableClass,
-    Optional<Table<?>> jooqTable     // loaded via reflection; empty if class not on classpath
+    String tableName,             // SQL name from @table directive
+    String javaFieldName,         // Java field name from TableReflection; null if unresolved
+    Optional<Table<?>> table      // jOOQ instance; empty if not resolved
 ) implements GraphitronType {}
 
 // interface with no directives; implementing types have @table
@@ -169,27 +171,23 @@ record GraphitronSchema(
 }
 ```
 
-`FieldsSpecBuilder` populates both maps during schema traversal. For `TableType` and `TableInterfaceType`, the jOOQ table instance is loaded via reflection — `Optional.empty()` if the class is not on the classpath, which is handled downstream:
+`FieldsSpecBuilder` populates both maps during schema traversal. For `TableType` and `TableInterfaceType`, the existing `TableReflection` class is used to resolve the jOOQ table. `TableReflection` loads `DefaultCatalog` via reflection, iterates the schema stream to find the generated `Tables` class, and indexes all `Table<?>` static fields in both directions — SQL name → Java field name, and Java field name → `Table<?>` instance.
+
+The `@table` directive carries the SQL table name (e.g. `"film"`), which is what the schema author writes. The Java field name (e.g. `"FILM"`) is what appears in generated code (`FILM.FILM_ID`, `FilmRecord`, etc.). Both are needed and may differ, so both are stored:
 
 ```java
-Optional<Table<?>> loadTable(String className) {
-    try {
-        return Optional.of((Table<?>) Class.forName(className)
-            .getDeclaredConstructor()
-            .newInstance());
-    } catch (Exception e) {
-        return Optional.empty();
-    }
-}
+String tableName    = getDirectiveArg(objectType, "table", "name");
+String javaName     = TableReflection.getTableJavaFieldNameByTableName(tableName).orElse(null);
+Optional<Table<?>> table = TableReflection.getTableByJavaFieldName(javaName);
 
-types.put(typeName, classifyType(objectType, graphqlSchema));
+types.put(typeName, new TableType(objectType, tableName, javaName, table));
 fields.put(
     FieldCoordinates.coordinates(typeName, fieldDef.getName()),
     classifyField(fieldDef, parentType, graphqlSchema)
 );
 ```
 
-When `jooqTable` is present, it provides columns, primary key, and FK metadata directly — used by FK auto-inference in `FieldsCodeGenerator`.
+When `table` is present, it provides columns, primary key, and FK metadata — used directly by FK auto-inference. When absent, validation downstream reports the unresolved table name.
 
 The generator drives iteration from `TypeDefinitionRegistry` (types with `@table`) and looks up by coordinates:
 
