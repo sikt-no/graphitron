@@ -1,0 +1,41 @@
+package no.sikt.graphitron.record.validation;
+
+import no.sikt.graphitron.record.ValidationError;
+import no.sikt.graphitron.record.field.GraphitronField;
+import no.sikt.graphitron.record.field.UnclassifiedField;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+
+import java.util.List;
+
+import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.fieldOf;
+import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inQuerySchema;
+import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.typeRef;
+import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
+import static org.assertj.core.api.Assertions.assertThat;
+
+class UnclassifiedFieldValidationTest {
+
+    enum Case implements ValidatorCase {
+
+        UNCLASSIFIED {
+            public GraphitronField field() {
+                return new UnclassifiedField(fieldOf("unknownField", typeRef("Unknown")));
+            }
+            public List<String> errors() {
+                return List.of("Field 'unknownField': could not be classified — missing or conflicting directives");
+            }
+        };
+
+        public abstract GraphitronField field();
+        public abstract List<String> errors();
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(Case.class)
+    void unclassifiedFieldValidation(Case tc) {
+        assertThat(validate(inQuerySchema("unknownField", tc.field())))
+            .extracting(ValidationError::message)
+            .containsExactlyInAnyOrderElementsOf(tc.errors());
+    }
+}

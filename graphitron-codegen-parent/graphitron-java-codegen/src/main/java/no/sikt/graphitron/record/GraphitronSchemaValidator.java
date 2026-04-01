@@ -81,7 +81,14 @@ public class GraphitronSchemaValidator {
     }
     private void validateResultType(no.sikt.graphitron.record.type.ResultType type, List<ValidationError> errors) {}
     private void validateRootType(no.sikt.graphitron.record.type.RootType type, List<ValidationError> errors) {}
-    private void validateTableInterfaceType(no.sikt.graphitron.record.type.TableInterfaceType type, List<ValidationError> errors) {}
+    private void validateTableInterfaceType(no.sikt.graphitron.record.type.TableInterfaceType type, List<ValidationError> errors) {
+        if (type.javaFieldName() == null) {
+            errors.add(new ValidationError(
+                "Type '" + type.name() + "': table '" + type.tableName() + "' could not be resolved in the jOOQ catalog",
+                type.definition().getDefinition() != null ? type.definition().getDefinition().getSourceLocation() : null
+            ));
+        }
+    }
     private void validateInterfaceType(no.sikt.graphitron.record.type.InterfaceType type, GraphitronSchema schema, List<ValidationError> errors) {}
     private void validateUnionType(no.sikt.graphitron.record.type.UnionType type, GraphitronSchema schema, List<ValidationError> errors) {}
 
@@ -116,5 +123,10 @@ public class GraphitronSchemaValidator {
     private void validateComputedField(no.sikt.graphitron.record.field.ComputedField field, List<ValidationError> errors) {}
     private void validatePropertyField(no.sikt.graphitron.record.field.PropertyField field, List<ValidationError> errors) {}
     private void validateNotGeneratedField(no.sikt.graphitron.record.field.NotGeneratedField field, List<ValidationError> errors) {}
-    private void validateUnclassifiedField(no.sikt.graphitron.record.field.UnclassifiedField field, List<ValidationError> errors) {}
+    private void validateUnclassifiedField(no.sikt.graphitron.record.field.UnclassifiedField field, List<ValidationError> errors) {
+        errors.add(new ValidationError(
+            "Field '" + field.name() + "': could not be classified — missing or conflicting directives",
+            field.definition().getDefinition() != null ? field.definition().getDefinition().getSourceLocation() : null
+        ));
+    }
 }
