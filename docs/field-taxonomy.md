@@ -41,12 +41,28 @@ A Graphitron scope corresponds to one SQL statement. Fields within a scope contr
 
 ---
 
-## Sealed Interface Hierarchy
+## Sealed Interface Hierarchies
+
+### `GraphitronType`
+
+Every named GraphQL type is classified into a `GraphitronType`. This is the Java materialisation of the Source Context table above — it determines what Graphitron generates for a type and is the authoritative source of source context for all fields defined on it.
+
+```
+GraphitronType
+├── TableType          (@table — full SQL generation)
+├── ResultType         (@record — runtime wiring only)
+├── RootType           (Query / Mutation — unmapped entry points)
+├── TableInterfaceType (@table + @discriminate on interface)
+├── InterfaceType      (no directives; implementors have @table)
+└── UnionType          (all member types have @table)
+```
+
+### `GraphitronField`
 
 Field names encode source: `*QueryField` (Query), `*MutationField` (Mutation), no suffix (child fields). Only mutation fields may write to the database. Subscription is out of scope.
 
 ```
-FieldSpec
+GraphitronField
 ├── RootField
 │   ├── QueryField
 │   │   ├── LookupQueryField
@@ -190,28 +206,28 @@ Methods use GraphQL Java's native `SelectedField` — which carries both `getSel
 
 ```java
 // Generated on a companion class, e.g. FilmFields
-public static Field<Result<Record>> actors(SelectedField field) {
+public static Field<Result<Record>> actors(Film film, SelectedField field) {
     return DSL.multiset(
-        DSL.select(ActorFields.fields(field.getSelectionSet()))
+        DSL.select(ActorFields.fields(ACTOR, field.getSelectionSet()))
            .from(ACTOR)
            .join(FILM_ACTOR).on(FILM_ACTOR.ACTOR_ID.eq(ACTOR.ACTOR_ID))
-           .where(FILM_ACTOR.FILM_ID.eq(FILM.FILM_ID)
+           .where(FILM_ACTOR.FILM_ID.eq(film.FILM_ID)
                .and(actorCondition(field.getArguments())))
            .orderBy(actorOrderBy(field.getArguments()))
     ).as("actors");
 }
 
-public static Field<Record> language(SelectedField field) { ... }
+public static Field<Record> language(Film film, SelectedField field) { ... }
 ```
 
-The projection method assembles the SELECT list, passing each sub-field's `SelectedField` directly:
+The projection method assembles the SELECT list, passing each sub-field's `SelectedField` directly. It takes the table alias so that correlated joins and aliased column references are correct:
 
 ```java
-List<Field<?>> filmFields(DataFetchingFieldSelectionSet sel) {
+List<Field<?>> fields(Film film, DataFetchingFieldSelectionSet sel) {
     var fields = new ArrayList<Field<?>>();
-    sel.getFields("title").forEach(f -> fields.add(FILM.TITLE));
-    sel.getFields("actors").forEach(f -> fields.add(actors(f)));
-    sel.getFields("language").forEach(f -> fields.add(language(f)));
+    sel.getFields("title").forEach(f -> fields.add(film.TITLE));
+    sel.getFields("actors").forEach(f -> fields.add(actors(film, f)));
+    sel.getFields("language").forEach(f -> fields.add(language(film, f)));
     return fields;
 }
 ```
