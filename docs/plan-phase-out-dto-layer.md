@@ -576,76 +576,131 @@ Wrapper generators (`ConditionWrapperClassGenerator`, `ServiceWrapperClassGenera
 
 ## Testing Strategy
 
-The two streams have distinct testing approaches. Both must exhaustively cover every `GraphitronField` leaf type — a leaf type with no test in its stream is a gap.
+Three levels, each with a distinct purpose. Every `GraphitronField` and `GraphitronType` leaf type must be covered at Level 1. Gaps at Level 1 are gaps in the specification.
 
-### Parsing stream — `FieldsSpecBuilderTest`
+### Level 1 — Validator unit tests (no schema parsing)
 
-Tests are schema-in, `GraphitronField`-out assertions. No string comparison, no JavaPoet. Every leaf type needs at least one test that:
-1. Assembles a minimal schema containing a field that should produce that leaf type
-2. Runs `FieldsSpecBuilder`
-3. Asserts the correct concrete type was produced and its properties match
+`GraphitronField` and `GraphitronType` instances are constructed directly from GraphQL-Java builder APIs. No `FieldsSpecBuilder`, no schema files. Each test class covers one sealed leaf type; each parameterised case is one rule or one combination of rules.
+
+The shared contract is a `ValidatorCase` interface implemented by every test enum:
+
+```java
+interface ValidatorCase {
+    GraphitronField field();
+    List<String> errors();
+    default boolean isValid() { return errors().isEmpty(); }
+}
+```
+
+Enum constants use per-constant method bodies (abstract method override) so each constant is a self-contained fixture factory — data and expected outcome in one place:
+
+```java
+enum LookupQueryFieldCase implements ValidatorCase {
+
+    SINGLE_NULLABLE {
+        public GraphitronField field() { return lookup(typeRef("Film")); }
+        public List<String> errors() { return List.of(); }
+    },
+    SINGLE_NON_NULL {
+        public GraphitronField field() { return lookup(nonNull(typeRef("Film"))); }
+        public List<String> errors() { return List.of(); }
+    },
+    LIST {
+        public GraphitronField field() { return lookup(list(typeRef("Film"))); }
+        public List<String> errors() { return List.of("must return a single item, not a list"); }
+    },
+    NON_NULL_LIST {
+        public GraphitronField field() { return lookup(nonNull(list(typeRef("Film")))); }
+        public List<String> errors() { return List.of("must return a single item, not a list"); }
+    };
+
+    public abstract GraphitronField field();
+    public abstract List<String> errors();
+
+    static GraphitronField lookup(GraphQLOutputType returnType) {
+        return new LookupQueryField(
+            GraphQLFieldDefinition.newFieldDefinition().name("film").type(returnType).build()
+        );
+    }
+}
+```
+
+The test method is a one-liner. `@EnumSource` filtering splits valid and invalid cases into separate methods when it aids clarity:
+
+```java
+@ParameterizedTest(name = "{0}")
+@EnumSource(LookupQueryFieldCase.class)
+void lookupQueryField(LookupQueryFieldCase tc) {
+    assertThat(validate(tc.field()))
+        .extracting(ValidationError::message)
+        .containsExactlyInAnyOrderElementsOf(tc.errors());
+}
+```
+
+For multi-dimensional combinations (e.g., type directive × field directive → classification), `@CsvSource` with `useHeadersInDisplayName = true` reads as a truth table:
+
+```java
+@CsvSource(useHeadersInDisplayName = true, textBlock = """
+    typeDirective,  fieldDirective,  expectedType
+    @table,         @nodeId,         NodeIdField
+    @table,         @field,          ColumnField
+    @table,         ,                UnclassifiedField
+    ,               @nodeId,         UnclassifiedField
+""")
+```
+
+**Rule**: use `@EnumSource` when constants have behaviour or are reused across test classes; use `@CsvSource` when the data is purely tabular and self-contained to one test method.
+
+### Level 2 — Classification tests (inline schema → `FieldsSpecBuilder`)
+
+Each test defines its own minimal inline schema as a text block — no shared schema. The schema is the documentation; keep it minimal. One canonical representative per leaf type confirms the classifier produces the right concrete type.
 
 ```java
 @Test
 void columnField() {
-    GraphQLSchema schema = assembleSchema("""
+    var result = FieldsSpecBuilder.build(parse("""
         type Customer @table { email: String }
         type Query { customer: Customer }
-        """);
-    GraphitronSchema result = FieldsSpecBuilder.build(schema);
-    assertThat(result.get("Customer", "email"))
-        .isInstanceOf(ColumnField.class)
-        .extracting("jooqColumn").isEqualTo("EMAIL_ADDRESS");
+        """));
+    assertThat(result.get("Customer", "email")).isInstanceOf(ColumnField.class);
 }
+```
 
+Schema mutation (adding directives, wrapping field types) uses the same `remove` + `add(transform(...))` pattern as the schema transformer, via small helpers in `RegistryTestHelper`:
+
+```java
+// Add directive to type or field
+RegistryTestHelper.addDirective(registry, "Film", "@table");
+RegistryTestHelper.addDirective(registry, "Film", "title", "@notGenerated");
+
+// Wrap a field's return type
+RegistryTestHelper.wrapReturnType(registry, "Query", "film", ListType::new);
+RegistryTestHelper.wrapReturnType(registry, "Query", "film", t -> new NonNullType(new ListType(t)));
+```
+
+`RegistryTestHelper.parseDirective(String)` builds the AST directive node by parsing `"type _D @directive {}"` — handles argument forms automatically.
+
+### Level 3 — Error message and source location tests
+
+A small number of end-to-end tests verify that error messages are human-readable, contain the right field/type name, and that `SourceLocation` carries correct line, column, and file path. `SourceLocation.getSourceName()` is populated by `MultiSourceReader` during schema loading (already established in `SchemaReadingHelper`).
+
+```java
 @Test
-void tableFieldInline() {
-    GraphQLSchema schema = assembleSchema("""
-        type Customer @table { payments: [Payment] }
-        type Payment @table { id: ID! }
-        type Query { customer: Customer }
+void errorMessageReferencesSourceLocation() {
+    var errors = validateSchema("""
+        type Query { film(id: ID! @lookupKey): [Film] }
+        type Film @table { id: ID! @nodeId }
         """);
-    GraphitronSchema result = FieldsSpecBuilder.build(schema);
-    assertThat(result.get("Customer", "payments"))
-        .isInstanceOf(TableField.class)
-        .extracting("splitQuery").isEqualTo(false);
+    assertThat(errors).singleElement().satisfies(e -> {
+        assertThat(e.message()).contains("film", "single item");
+        assertThat(e.location().getLine()).isPositive();
+    });
 }
-
-@Test
-void tableFieldSplitQuery() { ... }
-
-@Test
-void serviceQueryField() { ... }
-
-// One test per leaf type in the hierarchy
 ```
 
 ### Generating stream — `FieldsCodeGeneratorTest`
 
 Tests use hand-crafted `GraphitronField` instances — no schema, no `FieldsSpecBuilder`. Output is compared against approved `.java` files. Every leaf type needs at least one approved file.
-
-```java
-@Test
-void columnField() {
-    var fields = List.of(new ColumnField("email", "EMAIL_ADDRESS"));
-    assertGeneratedContentMatches(FieldsCodeGenerator.generate("Customer", fields), "CustomerFields_scalar");
-}
-
-@Test
-void tableFieldInline() {
-    var fields = List.of(new TableField("payments", "Payment", "PaymentFields",
-        List.of(new OnKeyJoin("PAYMENT__FK_CUSTOMER_ID")), false, ...));
-    assertGeneratedContentMatches(FieldsCodeGenerator.generate("Customer", fields), "CustomerFields_inline");
-}
-
-@Test
-void tableFieldSplitQuery() { ... }
-
-@Test
-void queryFieldRoot() { ... }
-
-// One approval file per leaf type (or combination that exercises new code paths)
-```
 
 ### Integration — `RecordOutputIntegrationTest`
 
@@ -655,7 +710,13 @@ End-to-end: schema in, generated `.java` source out (or running Quarkus test). V
 
 ```
 src/test/java/.../record/
-  FieldsSpecBuilderTest.java        ← parsing stream, one test per leaf type
+  validation/
+    ValidatorCase.java              ← shared interface implemented by all test enums
+    LookupQueryFieldValidationTest.java
+    TableQueryFieldValidationTest.java
+    ColumnFieldValidationTest.java
+    // one class per sealed leaf type
+  FieldsSpecBuilderTest.java        ← Level 2: classification, one test per leaf type
   FieldsCodeGeneratorTest.java      ← generating stream, one approval per leaf type
   integration/
     RecordOutputIntegrationTest.java
