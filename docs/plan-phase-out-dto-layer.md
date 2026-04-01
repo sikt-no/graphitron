@@ -67,7 +67,7 @@ Each deliverable is a self-contained, reviewable change behind the `recordBasedO
 
 The `GraphitronField` sealed interface hierarchy is the Java materialisation of the field taxonomy. It is the foundation everything else targets — the spec builder populates it, the code generators consume it.
 
-**Package:** `no.sikt.graphql.codegen.record.field` (in `graphitron-java-codegen`)
+**Packages:** `no.sikt.graphitron.record.field` and `no.sikt.graphitron.record.type` (in `graphitron-java-codegen`)
 
 ### `GraphitronType`
 
@@ -682,7 +682,9 @@ src/test/resources/record/
 | `graphitron-maven-plugin/.../mojo/GenerateMojo.java` | Add `@Parameter recordBasedOutput` |
 | `graphitron-java-codegen/.../generate/GraphQLGenerator.java` | Add new generators when flag is set |
 | `graphitron-java-codegen/.../mappings/JavaPoetClassName.java` | Add `JOOQ_RECORD`, `JOOQ_RESULT`, `LIGHT_DATA_FETCHER`, `GRAPHITRON_FETCHER_FACTORY` |
-| `record/field/GraphitronField.java` + leaf types | **New** — Deliverable 1 |
+| `record/field/GraphitronField.java` + 28 leaf types | **Done** — Deliverable 1 |
+| `record/type/GraphitronType.java` + 6 leaf types | **Done** — Deliverable 1 |
+| `record/GraphitronSchema.java` | **Done** — Deliverable 1 |
 | `record/FieldsSpecBuilder.java` | **New** |
 | `record/FieldsCodeGenerator.java` | **New** |
 | `record/FieldsClassGenerator.java` | **New** |
