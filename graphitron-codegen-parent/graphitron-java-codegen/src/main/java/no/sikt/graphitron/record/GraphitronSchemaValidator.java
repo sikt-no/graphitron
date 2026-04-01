@@ -108,8 +108,22 @@ public class GraphitronSchemaValidator {
     private void validateDeleteMutationField(no.sikt.graphitron.record.field.DeleteMutationField field, List<ValidationError> errors) {}
     private void validateUpsertMutationField(no.sikt.graphitron.record.field.UpsertMutationField field, List<ValidationError> errors) {}
     private void validateServiceMutationField(no.sikt.graphitron.record.field.ServiceMutationField field, List<ValidationError> errors) {}
-    private void validateColumnField(no.sikt.graphitron.record.field.ColumnField field, List<ValidationError> errors) {}
-    private void validateColumnReferenceField(no.sikt.graphitron.record.field.ColumnReferenceField field, List<ValidationError> errors) {}
+    private void validateColumnField(no.sikt.graphitron.record.field.ColumnField field, List<ValidationError> errors) {
+        if (field.columnJavaName() == null) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': column '" + field.columnName() + "' could not be resolved in the jOOQ table",
+                field.location()
+            ));
+        }
+    }
+    private void validateColumnReferenceField(no.sikt.graphitron.record.field.ColumnReferenceField field, List<ValidationError> errors) {
+        if (field.columnJavaName() == null) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': column '" + field.columnName() + "' could not be resolved in the jOOQ table",
+                field.location()
+            ));
+        }
+    }
     private void validateNodeIdField(no.sikt.graphitron.record.field.NodeIdField field, List<ValidationError> errors) {}
     private void validateNodeIdReferenceField(no.sikt.graphitron.record.field.NodeIdReferenceField field, List<ValidationError> errors) {}
     private void validateTableField(no.sikt.graphitron.record.field.TableField field, GraphitronSchema schema, List<ValidationError> errors) {}
