@@ -1,6 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
-/** A mutation field with {@code @service} — write logic too complex for Graphitron to generate directly. */
-public record ServiceMutationField(GraphQLFieldDefinition definition) implements MutationField {}
+/**
+ * A mutation field delegating to a developer-provided service class via {@code @service}.
+ */
+public record ServiceMutationField(String name, SourceLocation location) implements MutationField {}

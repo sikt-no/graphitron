@@ -1,6 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
-/** A root query field triggered by {@code @lookupKey} on an argument. Table-mapped target. */
-public record LookupQueryField(GraphQLFieldDefinition definition) implements QueryField {}
+/**
+ * Triggered by {@code @lookupKey} on one or more arguments.
+ */
+public record LookupQueryField(String name, SourceLocation location) implements QueryField {}

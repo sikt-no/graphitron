@@ -8,10 +8,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.fieldOf;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inQuerySchema;
-import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.list;
-import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.typeRef;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -21,7 +18,7 @@ class TableInterfaceQueryFieldValidationTest {
 
         VALID {
             public GraphitronField field() {
-                return new TableInterfaceQueryField(fieldOf("statuses", list(typeRef("FilmStatus"))));
+                return new TableInterfaceQueryField("statuses", null);
             }
             public List<String> errors() { return List.of(); }
         };

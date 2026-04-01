@@ -1,6 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
-/** A general root query field targeting a table-mapped type. */
-public record TableQueryField(GraphQLFieldDefinition definition) implements QueryField {}
+/**
+ * A root query field whose return type is annotated with {@code @table}.
+ */
+public record TableQueryField(String name, SourceLocation location) implements QueryField {}

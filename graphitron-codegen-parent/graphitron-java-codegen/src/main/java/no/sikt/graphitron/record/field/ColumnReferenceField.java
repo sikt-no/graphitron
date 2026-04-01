@@ -1,6 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
-/** A field bound to a column on a joined target table. Table-mapped source context only. */
-public record ColumnReferenceField(GraphQLFieldDefinition definition) implements ChildField {}
+/**
+ * A field bound to a column on a table joined from the source table.
+ */
+public record ColumnReferenceField(String name, SourceLocation location) implements ChildField {}

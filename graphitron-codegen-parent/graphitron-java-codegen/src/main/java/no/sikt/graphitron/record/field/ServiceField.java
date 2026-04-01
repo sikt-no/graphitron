@@ -1,10 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
 /**
- * {@code @service} on a child field — executes in a private scope. From table-mapped source,
- * Graphitron controls what is passed to the service. From result-mapped source, input is locked
- * to what the record carries. LiftCondition applies if the return type is table-mapped.
+ * A child field delegating to a developer-provided service class via {@code @service}.
  */
-public record ServiceField(GraphQLFieldDefinition definition) implements ChildField {}
+public record ServiceField(String name, SourceLocation location) implements ChildField {}

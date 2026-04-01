@@ -1,6 +1,5 @@
 package no.sikt.graphitron.record.validation;
 
-import graphql.schema.GraphQLInterfaceType;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.type.GraphitronType;
 import no.sikt.graphitron.record.type.InterfaceType;
@@ -18,7 +17,7 @@ class InterfaceTypeValidationTest {
 
         VALID {
             public GraphitronType type() {
-                return new InterfaceType(GraphQLInterfaceType.newInterface().name("Person").build());
+                return new InterfaceType("Person", null);
             }
             public List<String> errors() { return List.of(); }
         };

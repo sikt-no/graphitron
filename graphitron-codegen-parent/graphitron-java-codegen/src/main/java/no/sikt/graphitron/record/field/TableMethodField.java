@@ -1,10 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
 /**
- * {@code @tableMethod} — the developer provides a filtered {@code Table<?>}. Graphitron joins it
- * using the same logic as {@link TableField}. Preferred over {@link ServiceField} when the logic
- * can be expressed as a filtered table.
+ * A child field using {@code @tableMethod} — the developer provides a pre-filtered {@code Table<?>}.
  */
-public record TableMethodField(GraphQLFieldDefinition definition) implements ChildField {}
+public record TableMethodField(String name, SourceLocation location) implements ChildField {}

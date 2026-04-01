@@ -1,9 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
 /**
- * A root query field targeting a multi-table interface — the interface has no directives;
- * implementing types each have {@code @table}.
+ * A root query field whose return type is a multi-table interface.
  */
-public record InterfaceQueryField(GraphQLFieldDefinition definition) implements QueryField {}
+public record InterfaceQueryField(String name, SourceLocation location) implements QueryField {}

@@ -1,9 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
 /**
- * Reads a scalar or nested record property from a result-mapped source. Generates a trivial
- * data fetcher. No SQL interaction. Result-mapped source context only.
+ * A scalar or nested property read from a result-mapped source. No SQL generated.
  */
-public record PropertyField(GraphQLFieldDefinition definition) implements ChildField {}
+public record PropertyField(String name, SourceLocation location) implements ChildField {}

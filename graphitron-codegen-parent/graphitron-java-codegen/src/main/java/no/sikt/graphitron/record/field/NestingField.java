@@ -1,9 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
 /**
- * A field whose target inherits the source table context, producing a level of nesting without
- * a scope boundary. Table-mapped source context only.
+ * A child field that inherits the source table context without introducing a new scope boundary.
  */
-public record NestingField(GraphQLFieldDefinition definition) implements ChildField {}
+public record NestingField(String name, SourceLocation location) implements ChildField {}

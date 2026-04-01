@@ -1,9 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
 /**
- * Planned — a directive carries the field-to-constructor-parameter mapping. Graphitron does
- * not project through it. Table-mapped source context only.
+ * A child field mapped via a constructor parameter on a result record.
  */
-public record ConstructorField(GraphQLFieldDefinition definition) implements ChildField {}
+public record ConstructorField(String name, SourceLocation location) implements ChildField {}

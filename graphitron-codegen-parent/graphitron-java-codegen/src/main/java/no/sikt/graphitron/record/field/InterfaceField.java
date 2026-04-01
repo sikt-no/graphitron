@@ -1,6 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
-/** A field targeting a multi-table interface type. Graphitron projects through it. */
-public record InterfaceField(GraphQLFieldDefinition definition) implements ChildField {}
+/**
+ * A child field whose return type is a multi-table interface.
+ */
+public record InterfaceField(String name, SourceLocation location) implements ChildField {}

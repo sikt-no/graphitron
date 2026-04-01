@@ -1,9 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
 /**
- * A mutation field with {@code @mutation(typeName: DELETE)}. Deleted rows cannot be queried back —
- * the return type is a success flag, count, or ordered input echo. No lift applies.
+ * A mutation field for {@code @mutation(typeName: DELETE)}. Deleted rows are not re-queried.
  */
-public record DeleteMutationField(GraphQLFieldDefinition definition) implements MutationField {}
+public record DeleteMutationField(String name, SourceLocation location) implements MutationField {}

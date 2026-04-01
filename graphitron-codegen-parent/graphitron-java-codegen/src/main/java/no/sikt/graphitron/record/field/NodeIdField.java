@@ -1,10 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
 /**
- * {@code @nodeId} — encodes a globally unique Relay ID from the source type's key columns
- * ({@code @node(keyColumns:...)}). The source type must have {@code @node}.
- * Table-mapped source context only.
+ * An {@code @nodeId} field that encodes a Relay Global ID from the source type's key columns.
  */
-public record NodeIdField(GraphQLFieldDefinition definition) implements ChildField {}
+public record NodeIdField(String name, SourceLocation location) implements ChildField {}

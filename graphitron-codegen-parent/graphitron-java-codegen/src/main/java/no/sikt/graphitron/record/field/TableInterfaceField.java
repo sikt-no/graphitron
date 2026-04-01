@@ -1,6 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
-/** A field targeting a single-table interface type. Graphitron projects through it. */
-public record TableInterfaceField(GraphQLFieldDefinition definition) implements ChildField {}
+/**
+ * A child field whose return type is a single-table interface.
+ */
+public record TableInterfaceField(String name, SourceLocation location) implements ChildField {}

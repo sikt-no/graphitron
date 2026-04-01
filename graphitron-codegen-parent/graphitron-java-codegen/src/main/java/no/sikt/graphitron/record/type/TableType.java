@@ -1,6 +1,6 @@
 package no.sikt.graphitron.record.type;
 
-import graphql.schema.GraphQLObjectType;
+import graphql.language.SourceLocation;
 import org.jooq.Table;
 
 import java.util.Optional;
@@ -12,7 +12,8 @@ import java.util.Optional;
  * {@code table} is empty if the jOOQ class could not be resolved.
  */
 public record TableType(
-    GraphQLObjectType definition,
+    String name,
+    SourceLocation location,
     String tableName,
     String javaFieldName,
     Optional<Table<?>> table

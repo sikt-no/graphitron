@@ -1,10 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
 /**
- * {@code @notGenerated} — Graphitron classifies the field and includes it in the schema model
- * but produces no data fetcher. The developer registers wiring externally.
- * Valid in any source context.
+ * A field annotated with {@code @notGenerated}. Classified but no data fetcher is generated.
  */
-public record NotGeneratedField(GraphQLFieldDefinition definition) implements GraphitronField {}
+public record NotGeneratedField(String name, SourceLocation location) implements GraphitronField {}

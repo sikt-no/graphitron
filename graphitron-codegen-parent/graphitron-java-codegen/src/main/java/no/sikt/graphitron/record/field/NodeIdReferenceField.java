@@ -1,9 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
 /**
- * {@code @nodeId(typeName: ...)} — joins to the target type's table and encodes a Relay ID for
- * that row. Parallel to {@link ColumnReferenceField}. Table-mapped source context only.
+ * An {@code @nodeId(typeName: ...)} field that joins to a target type's table and encodes a Relay Global ID.
  */
-public record NodeIdReferenceField(GraphQLFieldDefinition definition) implements ChildField {}
+public record NodeIdReferenceField(String name, SourceLocation location) implements ChildField {}

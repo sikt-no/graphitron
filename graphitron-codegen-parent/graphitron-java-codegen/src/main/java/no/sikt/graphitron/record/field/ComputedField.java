@@ -1,11 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
 /**
- * {@code @computed} — the developer provides a jOOQ {@code Field<?>} expression (scalar,
- * {@code row(...)}, or {@code multiset(...)}). Included in the SELECT; Graphitron does not
- * project through it. LiftCondition applies if the return type is table-mapped.
- * Table-mapped source context only.
+ * A child field resolved by a developer-provided jOOQ {@code Field<?>} expression via {@code @computed}.
  */
-public record ComputedField(GraphQLFieldDefinition definition) implements ChildField {}
+public record ComputedField(String name, SourceLocation location) implements ChildField {}

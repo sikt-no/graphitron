@@ -1,6 +1,6 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
 /**
  * Classifies every field in a GraphQL schema. The sealed hierarchy mirrors the field taxonomy.
@@ -9,9 +9,8 @@ import graphql.schema.GraphQLFieldDefinition;
 public sealed interface GraphitronField
     permits RootField, ChildField, NotGeneratedField, UnclassifiedField {
 
-    GraphQLFieldDefinition definition();
+    String name();
 
-    default String name() {
-        return definition().getName();
-    }
+    /** SDL source location, or {@code null} for runtime-wired fields with no SDL definition. */
+    SourceLocation location();
 }

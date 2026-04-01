@@ -1,6 +1,6 @@
 package no.sikt.graphitron.record.type;
 
-import graphql.schema.GraphQLInterfaceType;
+import graphql.language.SourceLocation;
 import org.jooq.Table;
 
 import java.util.Optional;
@@ -10,7 +10,8 @@ import java.util.Optional;
  * types have {@code @table} and {@code @discriminator}. Single-table interface pattern.
  */
 public record TableInterfaceType(
-    GraphQLInterfaceType definition,
+    String name,
+    SourceLocation location,
     String discriminatorColumn,
     String tableName,
     String javaFieldName,

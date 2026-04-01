@@ -8,9 +8,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.fieldOf;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inQuerySchema;
-import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.typeRef;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -20,7 +18,7 @@ class UnclassifiedFieldValidationTest {
 
         UNCLASSIFIED {
             public GraphitronField field() {
-                return new UnclassifiedField(fieldOf("unknownField", typeRef("Unknown")));
+                return new UnclassifiedField("unknownField", null);
             }
             public List<String> errors() {
                 return List.of("Field 'unknownField': could not be classified — missing or conflicting directives");

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.record.type;
 
-import graphql.schema.GraphQLNamedType;
+import graphql.language.SourceLocation;
 
 /**
  * Classifies every named GraphQL type. Determines what Graphitron generates for a type
@@ -9,9 +9,8 @@ import graphql.schema.GraphQLNamedType;
 public sealed interface GraphitronType
     permits TableType, ResultType, RootType, TableInterfaceType, InterfaceType, UnionType {
 
-    GraphQLNamedType definition();
+    String name();
 
-    default String name() {
-        return definition().getName();
-    }
+    /** SDL source location, or {@code null} for runtime-wired types with no SDL definition. */
+    SourceLocation location();
 }

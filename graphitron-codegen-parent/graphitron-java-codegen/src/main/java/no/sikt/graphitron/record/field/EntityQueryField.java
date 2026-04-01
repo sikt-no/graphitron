@@ -1,6 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
-/** {@code Query._entities(representations:)} — Apollo Federation entity resolver. */
-public record EntityQueryField(GraphQLFieldDefinition definition) implements QueryField {}
+/**
+ * The {@code Query._entities(representations:)} field for Apollo Federation.
+ */
+public record EntityQueryField(String name, SourceLocation location) implements QueryField {}

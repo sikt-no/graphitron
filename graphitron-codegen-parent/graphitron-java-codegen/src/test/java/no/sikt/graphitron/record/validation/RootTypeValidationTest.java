@@ -8,7 +8,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.objectType;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -18,14 +17,14 @@ class RootTypeValidationTest {
 
         QUERY {
             public GraphitronType type() {
-                return new RootType(objectType("Query"));
+                return new RootType("Query", null);
             }
             public List<String> errors() { return List.of(); }
         },
 
         MUTATION {
             public GraphitronType type() {
-                return new RootType(objectType("Mutation"));
+                return new RootType("Mutation", null);
             }
             public List<String> errors() { return List.of(); }
         };

@@ -1,6 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
-/** A field targeting a union type. Graphitron projects through it. */
-public record UnionField(GraphQLFieldDefinition definition) implements ChildField {}
+/**
+ * A child field whose return type is a union.
+ */
+public record UnionField(String name, SourceLocation location) implements ChildField {}

@@ -1,6 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
-/** A mutation field with {@code @mutation(typeName: UPSERT)}. */
-public record UpsertMutationField(GraphQLFieldDefinition definition) implements MutationField {}
+/**
+ * A mutation field for {@code @mutation(typeName: UPSERT)}.
+ */
+public record UpsertMutationField(String name, SourceLocation location) implements MutationField {}

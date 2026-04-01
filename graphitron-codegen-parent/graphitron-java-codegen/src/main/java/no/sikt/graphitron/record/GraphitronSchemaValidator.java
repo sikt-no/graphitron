@@ -75,7 +75,7 @@ public class GraphitronSchemaValidator {
         if (type.javaFieldName() == null) {
             errors.add(new ValidationError(
                 "Type '" + type.name() + "': table '" + type.tableName() + "' could not be resolved in the jOOQ catalog",
-                type.definition().getDefinition() != null ? type.definition().getDefinition().getSourceLocation() : null
+                type.location()
             ));
         }
     }
@@ -85,7 +85,7 @@ public class GraphitronSchemaValidator {
         if (type.javaFieldName() == null) {
             errors.add(new ValidationError(
                 "Type '" + type.name() + "': table '" + type.tableName() + "' could not be resolved in the jOOQ catalog",
-                type.definition().getDefinition() != null ? type.definition().getDefinition().getSourceLocation() : null
+                type.location()
             ));
         }
     }
@@ -126,7 +126,7 @@ public class GraphitronSchemaValidator {
     private void validateUnclassifiedField(no.sikt.graphitron.record.field.UnclassifiedField field, List<ValidationError> errors) {
         errors.add(new ValidationError(
             "Field '" + field.name() + "': could not be classified — missing or conflicting directives",
-            field.definition().getDefinition() != null ? field.definition().getDefinition().getSourceLocation() : null
+            field.location()
         ));
     }
 }

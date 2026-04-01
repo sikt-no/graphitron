@@ -12,26 +12,20 @@ import java.util.Optional;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import graphql.schema.GraphQLInterfaceType;
-
 class TableInterfaceTypeValidationTest {
-
-    private static GraphQLInterfaceType interfaceType(String name) {
-        return GraphQLInterfaceType.newInterface().name(name).build();
-    }
 
     enum Case implements TypeValidatorCase {
 
         RESOLVED {
             public GraphitronType type() {
-                return new TableInterfaceType(interfaceType("FilmStatus"), "status_type", "film_status", "FILM_STATUS", Optional.empty());
+                return new TableInterfaceType("FilmStatus", null, "status_type", "film_status", "FILM_STATUS", Optional.empty());
             }
             public List<String> errors() { return List.of(); }
         },
 
         UNRESOLVED_TABLE {
             public GraphitronType type() {
-                return new TableInterfaceType(interfaceType("FilmStatus"), "status_type", "film_status", null, Optional.empty());
+                return new TableInterfaceType("FilmStatus", null, "status_type", "film_status", null, Optional.empty());
             }
             public List<String> errors() {
                 return List.of("Type 'FilmStatus': table 'film_status' could not be resolved in the jOOQ catalog");

@@ -1,6 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
-/** A root query field targeting a union type whose member types all have {@code @table}. */
-public record UnionQueryField(GraphQLFieldDefinition definition) implements QueryField {}
+/**
+ * A root query field whose return type is a union.
+ */
+public record UnionQueryField(String name, SourceLocation location) implements QueryField {}

@@ -1,12 +1,6 @@
 package no.sikt.graphitron.record.validation;
 
 import graphql.schema.FieldCoordinates;
-import graphql.schema.GraphQLFieldDefinition;
-import graphql.schema.GraphQLList;
-import graphql.schema.GraphQLNonNull;
-import graphql.schema.GraphQLObjectType;
-import graphql.schema.GraphQLOutputType;
-import graphql.schema.GraphQLTypeReference;
 import no.sikt.graphitron.record.GraphitronSchema;
 import no.sikt.graphitron.record.GraphitronSchemaValidator;
 import no.sikt.graphitron.record.ValidationError;
@@ -33,42 +27,13 @@ public final class FieldValidationTestHelper {
 
     private FieldValidationTestHelper() {}
 
-    // --- Type reference helpers ---
-
-    public static GraphQLTypeReference typeRef(String name) {
-        return new GraphQLTypeReference(name);
-    }
-
-    public static GraphQLList list(GraphQLOutputType type) {
-        return new GraphQLList(type);
-    }
-
-    public static GraphQLNonNull nonNull(GraphQLOutputType type) {
-        return new GraphQLNonNull(type);
-    }
-
-    // --- Field definition helpers ---
-
-    public static GraphQLFieldDefinition fieldOf(String name, GraphQLOutputType type) {
-        return GraphQLFieldDefinition.newFieldDefinition()
-            .name(name)
-            .type(type)
-            .build();
-    }
-
-    // --- Type definition helpers ---
-
-    public static GraphQLObjectType objectType(String name) {
-        return GraphQLObjectType.newObject().name(name).build();
-    }
-
     // --- Schema assembly helpers ---
 
     /**
      * Wraps a single field under "Query" (RootType). Use for all QueryField and MutationField cases.
      */
     public static GraphitronSchema inQuerySchema(String fieldName, GraphitronField field) {
-        return schema(new RootType(objectType("Query")), fieldName, field);
+        return schema(new RootType("Query", null), fieldName, field);
     }
 
     /**
@@ -76,7 +41,7 @@ public final class FieldValidationTestHelper {
      * parent context is table-mapped.
      */
     public static GraphitronSchema inTableTypeSchema(String typeName, String fieldName, GraphitronField field) {
-        var parentType = new TableType(objectType(typeName), typeName.toLowerCase(), typeName.toUpperCase(), Optional.empty());
+        var parentType = new TableType(typeName, null, typeName.toLowerCase(), typeName.toUpperCase(), Optional.empty());
         return schema(parentType, fieldName, field);
     }
 

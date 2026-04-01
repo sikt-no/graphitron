@@ -1,9 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
 /**
- * A root query field with {@code @tableMethod} — the developer provides a filtered {@code Table<?>}.
- * Graphitron handles all projection, ordering, pagination, and nested scopes within the created scope.
+ * A root query field using {@code @tableMethod} — the developer provides a pre-filtered {@code Table<?>}.
  */
-public record TableMethodQueryField(GraphQLFieldDefinition definition) implements QueryField {}
+public record TableMethodQueryField(String name, SourceLocation location) implements QueryField {}

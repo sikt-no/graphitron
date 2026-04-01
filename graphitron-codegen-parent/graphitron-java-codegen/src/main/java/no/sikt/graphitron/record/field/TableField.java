@@ -1,10 +1,8 @@
 package no.sikt.graphitron.record.field;
 
-import graphql.schema.GraphQLFieldDefinition;
+import graphql.language.SourceLocation;
 
 /**
- * A field with a table-mapped target type. Graphitron handles projection, ordering, pagination,
- * and nested scopes. In result-mapped source context, starts a new scope via DataLoader +
- * LiftCondition. {@code @splitQuery} forces a new scope even in table-mapped source context.
+ * A child field whose return type is annotated with {@code @table}.
  */
-public record TableField(GraphQLFieldDefinition definition) implements ChildField {}
+public record TableField(String name, SourceLocation location) implements ChildField {}

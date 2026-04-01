@@ -1,7 +1,5 @@
 package no.sikt.graphitron.record.validation;
 
-import graphql.schema.GraphQLObjectType;
-import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.type.GraphitronType;
 import no.sikt.graphitron.record.type.UnionType;
@@ -19,10 +17,7 @@ class UnionTypeValidationTest {
 
         VALID {
             public GraphitronType type() {
-                return new UnionType(GraphQLUnionType.newUnionType()
-                    .name("SearchResult")
-                    .possibleType(GraphQLObjectType.newObject().name("Film").build())
-                    .build());
+                return new UnionType("SearchResult", null);
             }
             public List<String> errors() { return List.of(); }
         };
