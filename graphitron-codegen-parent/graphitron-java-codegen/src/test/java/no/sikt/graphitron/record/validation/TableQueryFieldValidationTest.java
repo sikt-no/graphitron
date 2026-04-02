@@ -57,7 +57,38 @@ class TableQueryFieldValidationTest {
                 List.of(
                     new OrderByEnumValueSpec("TITLE", new OrderSpec.IndexOrder("IDX_TITLE")),
                     new OrderByEnumValueSpec("ID", new OrderSpec.PrimaryKeyOrder()))),
-            List.of());
+            List.of()),
+
+        DEFAULT_ORDER_UNRESOLVED_INDEX("@defaultOrder references an index that could not be found — validation error",
+            new TableQueryField("films", null,
+                new DefaultOrderSpec(new OrderSpec.UnresolvedIndexOrder("IDX_MISSING"), "ASC"),
+                List.of()),
+            List.of("Field 'films': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
+
+        DEFAULT_ORDER_UNRESOLVED_PRIMARY_KEY("@defaultOrder uses primaryKey but the table has none — validation error",
+            new TableQueryField("films", null,
+                new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "DESC"),
+                List.of()),
+            List.of("Field 'films': primary key could not be resolved — the table may not have one")),
+
+        ORDER_BY_UNRESOLVED_INDEX("@orderBy enum value references an index that could not be found — validation error",
+            new TableQueryField("films", null, null,
+                List.of(new OrderByEnumValueSpec("TITLE", new OrderSpec.UnresolvedIndexOrder("IDX_MISSING")))),
+            List.of("Field 'films': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
+
+        ORDER_BY_UNRESOLVED_PRIMARY_KEY("@orderBy enum value uses primaryKey but the table has none — validation error",
+            new TableQueryField("films", null, null,
+                List.of(new OrderByEnumValueSpec("ID", new OrderSpec.UnresolvedPrimaryKeyOrder()))),
+            List.of("Field 'films': primary key could not be resolved — the table may not have one")),
+
+        ORDER_BY_MULTIPLE_UNRESOLVED("multiple @orderBy enum values with unresolved specs — one error per value",
+            new TableQueryField("films", null, null,
+                List.of(
+                    new OrderByEnumValueSpec("TITLE", new OrderSpec.UnresolvedIndexOrder("IDX_A")),
+                    new OrderByEnumValueSpec("ID", new OrderSpec.UnresolvedPrimaryKeyOrder()))),
+            List.of(
+                "Field 'films': index 'IDX_A' could not be resolved in the jOOQ catalog",
+                "Field 'films': primary key could not be resolved — the table may not have one"));
 
         private final String description;
         private final GraphitronField field;

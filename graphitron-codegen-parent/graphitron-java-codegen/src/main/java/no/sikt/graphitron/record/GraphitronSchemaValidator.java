@@ -104,7 +104,14 @@ public class GraphitronSchemaValidator {
     // --- Field validators (stubs — filled in as test classes are added) ---
 
     private void validateLookupQueryField(no.sikt.graphitron.record.field.LookupQueryField field, List<ValidationError> errors) {}
-    private void validateTableQueryField(no.sikt.graphitron.record.field.TableQueryField field, List<ValidationError> errors) {}
+    private void validateTableQueryField(no.sikt.graphitron.record.field.TableQueryField field, List<ValidationError> errors) {
+        if (field.defaultOrder() != null) {
+            validateOrderSpec(field.name(), field.location(), field.defaultOrder().spec(), errors);
+        }
+        for (var enumValue : field.orderByValues()) {
+            validateOrderSpec(field.name(), field.location(), enumValue.spec(), errors);
+        }
+    }
     private void validateTableMethodQueryField(no.sikt.graphitron.record.field.TableMethodQueryField field, List<ValidationError> errors) {}
     private void validateNodeQueryField(no.sikt.graphitron.record.field.NodeQueryField field, List<ValidationError> errors) {}
     private void validateEntityQueryField(no.sikt.graphitron.record.field.EntityQueryField field, List<ValidationError> errors) {}
@@ -172,6 +179,9 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         }
+        if (field.defaultOrder() != null) {
+            validateOrderSpec(field.name(), field.location(), field.defaultOrder().spec(), errors);
+        }
     }
     private void validateTableMethodField(no.sikt.graphitron.record.field.TableMethodField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
@@ -200,6 +210,20 @@ public class GraphitronSchemaValidator {
             "Field '" + field.name() + "': could not be classified — missing or conflicting directives",
             field.location()
         ));
+    }
+
+    private void validateOrderSpec(String fieldName, SourceLocation location, no.sikt.graphitron.record.field.OrderSpec spec, List<ValidationError> errors) {
+        switch (spec) {
+            case no.sikt.graphitron.record.field.OrderSpec.IndexOrder ignored -> {}
+            case no.sikt.graphitron.record.field.OrderSpec.FieldsOrder ignored -> {}
+            case no.sikt.graphitron.record.field.OrderSpec.PrimaryKeyOrder ignored -> {}
+            case no.sikt.graphitron.record.field.OrderSpec.UnresolvedIndexOrder u -> errors.add(new ValidationError(
+                "Field '" + fieldName + "': index '" + u.indexName() + "' could not be resolved in the jOOQ catalog",
+                location));
+            case no.sikt.graphitron.record.field.OrderSpec.UnresolvedPrimaryKeyOrder ignored -> errors.add(new ValidationError(
+                "Field '" + fieldName + "': primary key could not be resolved — the table may not have one",
+                location));
+        }
     }
 
     private void validateReferencePath(String fieldName, SourceLocation location, List<ReferencePathElement> path, List<ValidationError> errors) {

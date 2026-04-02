@@ -9,21 +9,24 @@ import java.util.List;
  * for that field, in contrast with reference-path conditions (see {@link ReferencePathElement})
  * which affect how tables are joined.
  *
- * <p>The {@code override} flag indicates that this condition should replace any inherited condition
- * rather than combine with it. {@code contextArgs} lists the names of context arguments whose
- * values are threaded through to the condition method.
+ * <p>The {@code override} flag (on the concrete variants) indicates that this condition should
+ * replace any inherited condition rather than combine with it. {@code contextArgs} lists the names
+ * of context arguments whose values are threaded through to the condition method.
  *
  * <ul>
+ *   <li>{@link NoFieldCondition} — no {@code @condition} directive is present on the field
  *   <li>{@link ResolvedFieldCondition} — the condition method was found via reflection
  *   <li>{@link UnresolvedFieldCondition} — the condition method could not be resolved;
  *       the {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error
  * </ul>
  */
 public sealed interface FieldConditionStep
-    permits FieldConditionStep.ResolvedFieldCondition, FieldConditionStep.UnresolvedFieldCondition {
+    permits FieldConditionStep.NoFieldCondition,
+            FieldConditionStep.ResolvedFieldCondition,
+            FieldConditionStep.UnresolvedFieldCondition {
 
-    boolean override();
-    List<String> contextArgs();
+    /** No {@code @condition} directive is present on the field. */
+    record NoFieldCondition() implements FieldConditionStep {}
 
     /** The condition method was successfully resolved via reflection. */
     record ResolvedFieldCondition(
