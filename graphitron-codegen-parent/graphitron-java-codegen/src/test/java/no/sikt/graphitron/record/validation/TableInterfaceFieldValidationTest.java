@@ -1,6 +1,7 @@
 package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
+import no.sikt.graphitron.record.field.FieldCardinality;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.TableInterfaceField;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -17,7 +18,7 @@ class TableInterfaceFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("table interface field — always valid",
-            new TableInterfaceField("status", null),
+            new TableInterfaceField("status", null, new FieldCardinality.Single()),
             List.of());
 
         private final String description;

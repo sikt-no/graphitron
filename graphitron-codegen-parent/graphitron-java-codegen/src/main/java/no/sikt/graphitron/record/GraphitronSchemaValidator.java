@@ -105,19 +105,22 @@ public class GraphitronSchemaValidator {
 
     private void validateLookupQueryField(no.sikt.graphitron.record.field.LookupQueryField field, List<ValidationError> errors) {}
     private void validateTableQueryField(no.sikt.graphitron.record.field.TableQueryField field, List<ValidationError> errors) {
-        if (field.defaultOrder() != null) {
-            validateOrderSpec(field.name(), field.location(), field.defaultOrder().spec(), errors);
-        }
-        for (var enumValue : field.orderByValues()) {
-            validateOrderSpec(field.name(), field.location(), enumValue.spec(), errors);
-        }
+        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
     }
-    private void validateTableMethodQueryField(no.sikt.graphitron.record.field.TableMethodQueryField field, List<ValidationError> errors) {}
+    private void validateTableMethodQueryField(no.sikt.graphitron.record.field.TableMethodQueryField field, List<ValidationError> errors) {
+        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+    }
     private void validateNodeQueryField(no.sikt.graphitron.record.field.NodeQueryField field, List<ValidationError> errors) {}
     private void validateEntityQueryField(no.sikt.graphitron.record.field.EntityQueryField field, List<ValidationError> errors) {}
-    private void validateTableInterfaceQueryField(no.sikt.graphitron.record.field.TableInterfaceQueryField field, List<ValidationError> errors) {}
-    private void validateInterfaceQueryField(no.sikt.graphitron.record.field.InterfaceQueryField field, List<ValidationError> errors) {}
-    private void validateUnionQueryField(no.sikt.graphitron.record.field.UnionQueryField field, List<ValidationError> errors) {}
+    private void validateTableInterfaceQueryField(no.sikt.graphitron.record.field.TableInterfaceQueryField field, List<ValidationError> errors) {
+        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+    }
+    private void validateInterfaceQueryField(no.sikt.graphitron.record.field.InterfaceQueryField field, List<ValidationError> errors) {
+        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+    }
+    private void validateUnionQueryField(no.sikt.graphitron.record.field.UnionQueryField field, List<ValidationError> errors) {
+        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+    }
     private void validateServiceQueryField(no.sikt.graphitron.record.field.ServiceQueryField field, List<ValidationError> errors) {}
     private void validateInsertMutationField(no.sikt.graphitron.record.field.InsertMutationField field, List<ValidationError> errors) {}
     private void validateUpdateMutationField(no.sikt.graphitron.record.field.UpdateMutationField field, List<ValidationError> errors) {}
@@ -179,16 +182,21 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         }
-        if (field.defaultOrder() != null) {
-            validateOrderSpec(field.name(), field.location(), field.defaultOrder().spec(), errors);
-        }
+        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
     }
     private void validateTableMethodField(no.sikt.graphitron.record.field.TableMethodField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
     }
-    private void validateTableInterfaceField(no.sikt.graphitron.record.field.TableInterfaceField field, List<ValidationError> errors) {}
-    private void validateInterfaceField(no.sikt.graphitron.record.field.InterfaceField field, List<ValidationError> errors) {}
-    private void validateUnionField(no.sikt.graphitron.record.field.UnionField field, List<ValidationError> errors) {}
+    private void validateTableInterfaceField(no.sikt.graphitron.record.field.TableInterfaceField field, List<ValidationError> errors) {
+        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+    }
+    private void validateInterfaceField(no.sikt.graphitron.record.field.InterfaceField field, List<ValidationError> errors) {
+        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+    }
+    private void validateUnionField(no.sikt.graphitron.record.field.UnionField field, List<ValidationError> errors) {
+        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+    }
     private void validateNestingField(no.sikt.graphitron.record.field.NestingField field, GraphitronSchema schema, List<ValidationError> errors) {}
     private void validateConstructorField(no.sikt.graphitron.record.field.ConstructorField field, List<ValidationError> errors) {}
     private void validateServiceField(no.sikt.graphitron.record.field.ServiceField field, List<ValidationError> errors) {
@@ -210,6 +218,28 @@ public class GraphitronSchemaValidator {
             "Field '" + field.name() + "': could not be classified — missing or conflicting directives",
             field.location()
         ));
+    }
+
+    private void validateCardinality(String fieldName, SourceLocation location, no.sikt.graphitron.record.field.FieldCardinality cardinality, List<ValidationError> errors) {
+        switch (cardinality) {
+            case no.sikt.graphitron.record.field.FieldCardinality.Single ignored -> {}
+            case no.sikt.graphitron.record.field.FieldCardinality.List l -> {
+                if (l.defaultOrder() != null) {
+                    validateOrderSpec(fieldName, location, l.defaultOrder().spec(), errors);
+                }
+                for (var enumValue : l.orderByValues()) {
+                    validateOrderSpec(fieldName, location, enumValue.spec(), errors);
+                }
+            }
+            case no.sikt.graphitron.record.field.FieldCardinality.Connection c -> {
+                if (c.defaultOrder() != null) {
+                    validateOrderSpec(fieldName, location, c.defaultOrder().spec(), errors);
+                }
+                for (var enumValue : c.orderByValues()) {
+                    validateOrderSpec(fieldName, location, enumValue.spec(), errors);
+                }
+            }
+        }
     }
 
     private void validateOrderSpec(String fieldName, SourceLocation location, no.sikt.graphitron.record.field.OrderSpec spec, List<ValidationError> errors) {

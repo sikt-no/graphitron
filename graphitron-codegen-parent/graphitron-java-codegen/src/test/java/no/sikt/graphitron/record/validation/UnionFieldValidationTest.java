@@ -1,6 +1,7 @@
 package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
+import no.sikt.graphitron.record.field.FieldCardinality;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.UnionField;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -17,7 +18,7 @@ class UnionFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("union field — always valid",
-            new UnionField("result", null),
+            new UnionField("result", null, new FieldCardinality.Single()),
             List.of());
 
         private final String description;

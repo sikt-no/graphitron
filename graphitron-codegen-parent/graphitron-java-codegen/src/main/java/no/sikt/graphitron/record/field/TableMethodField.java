@@ -10,9 +10,12 @@ import java.util.List;
  * <p>{@code referencePath} is the ordered list of join steps extracted from {@code @reference(path:)},
  * used to override FK auto-inference. Empty when no {@code @reference} directive is present —
  * Graphitron will attempt to infer the foreign key automatically.
+ *
+ * <p>{@code cardinality} is the cardinality of this field.
  */
 public record TableMethodField(
     String name,
     SourceLocation location,
-    List<ReferencePathElement> referencePath
+    List<ReferencePathElement> referencePath,
+    FieldCardinality cardinality
 ) implements ChildField {}

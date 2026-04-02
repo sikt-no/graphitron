@@ -4,5 +4,7 @@ import graphql.language.SourceLocation;
 
 /**
  * A child field whose return type is a multi-table interface.
+ *
+ * <p>{@code cardinality} is the cardinality of this field.
  */
-public record InterfaceField(String name, SourceLocation location) implements ChildField {}
+public record InterfaceField(String name, SourceLocation location, FieldCardinality cardinality) implements ChildField {}

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
+import no.sikt.graphitron.record.field.FieldCardinality;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.TableMethodQueryField;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -17,7 +18,7 @@ class TableMethodQueryFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("table method query field — always valid",
-            new TableMethodQueryField("filmsByMethod", null),
+            new TableMethodQueryField("filmsByMethod", null, new FieldCardinality.Single()),
             List.of());
 
         private final String description;

@@ -16,15 +16,15 @@ import java.util.List;
  * {@link FieldConditionStep.NoFieldCondition} when no {@code @condition} is present. The validator
  * reports an error for an {@link FieldConditionStep.UnresolvedFieldCondition}.
  *
- * <p>{@code defaultOrder} carries the parsed {@code @defaultOrder} directive, or {@code null}
- * when the directive is absent. The validator reports an error if the spec contains an unresolved
- * index or primary key (see {@link OrderSpec.UnresolvedIndexOrder} and
- * {@link OrderSpec.UnresolvedPrimaryKeyOrder}).
+ * <p>{@code cardinality} is the cardinality of this field — {@link FieldCardinality.Single} for a
+ * 1:1 join, {@link FieldCardinality.List} for a 1:N join, or {@link FieldCardinality.Connection}
+ * for a Relay paginated list. The validator reports errors for unresolved ordering specs on list
+ * and connection variants.
  */
 public record TableField(
     String name,
     SourceLocation location,
     List<ReferencePathElement> referencePath,
     FieldConditionStep condition,
-    DefaultOrderSpec defaultOrder
+    FieldCardinality cardinality
 ) implements ChildField {}
