@@ -6,6 +6,7 @@ import no.sikt.graphitron.record.GraphitronSchemaValidator;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.type.GraphitronType;
+import no.sikt.graphitron.record.type.NodeDirective;
 import no.sikt.graphitron.record.type.NoNode;
 import no.sikt.graphitron.record.type.ResolvedTable;
 import no.sikt.graphitron.record.type.RootType;
@@ -40,11 +41,23 @@ public final class FieldValidationTestHelper {
     }
 
     /**
-     * Wraps a single field under a TableType parent. Use for ChildField cases where the
-     * parent context is table-mapped.
+     * Wraps a single field under a TableType parent with no {@code @node} directive.
+     * Use for ChildField cases where the parent context is table-mapped.
      */
     public static GraphitronSchema inTableTypeSchema(String typeName, String fieldName, GraphitronField field) {
         var parentType = new TableType(typeName, null, typeName.toLowerCase(), new ResolvedTable(typeName.toUpperCase(), FILM), new NoNode());
+        return schema(parentType, fieldName, field);
+    }
+
+    /**
+     * Wraps a single field under a TableType parent that carries {@code @node} (no explicit
+     * key columns — primary key is used at generation time). Use for {@code NodeIdField} valid
+     * cases where the source type is required to have {@code @node}.
+     */
+    public static GraphitronSchema inNodeTableTypeSchema(String typeName, String fieldName, GraphitronField field) {
+        var parentType = new TableType(typeName, null, typeName.toLowerCase(),
+            new ResolvedTable(typeName.toUpperCase(), FILM),
+            new NodeDirective(null, List.of()));
         return schema(parentType, fieldName, field);
     }
 

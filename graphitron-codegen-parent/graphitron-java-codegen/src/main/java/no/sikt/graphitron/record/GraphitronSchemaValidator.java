@@ -1,6 +1,7 @@
 package no.sikt.graphitron.record;
 
 import graphql.language.SourceLocation;
+import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.ReferencePathElement;
 import no.sikt.graphitron.record.field.FieldConditionStep;
@@ -8,7 +9,10 @@ import no.sikt.graphitron.record.field.UnresolvedColumn;
 import no.sikt.graphitron.record.field.UnresolvedConditionStep;
 import no.sikt.graphitron.record.field.UnresolvedKeyAndConditionStep;
 import no.sikt.graphitron.record.field.UnresolvedKeyStep;
+import no.sikt.graphitron.record.field.UnresolvedNodeType;
 import no.sikt.graphitron.record.type.GraphitronType;
+import no.sikt.graphitron.record.type.NodeDirective;
+import no.sikt.graphitron.record.type.TableType;
 import no.sikt.graphitron.record.type.UnresolvedTable;
 
 import java.util.ArrayList;
@@ -27,7 +31,7 @@ public class GraphitronSchemaValidator {
     public List<ValidationError> validate(GraphitronSchema schema) {
         var errors = new ArrayList<ValidationError>();
         schema.types().values().forEach(type -> validateType(type, schema, errors));
-        schema.fields().forEach((coords, field) -> validateField(field, schema, errors));
+        schema.fields().forEach((coords, field) -> validateField(coords, field, schema, errors));
         return List.copyOf(errors);
     }
 
@@ -42,7 +46,7 @@ public class GraphitronSchemaValidator {
         }
     }
 
-    private void validateField(GraphitronField field, GraphitronSchema schema, List<ValidationError> errors) {
+    private void validateField(FieldCoordinates coords, GraphitronField field, GraphitronSchema schema, List<ValidationError> errors) {
         switch (field) {
             case no.sikt.graphitron.record.field.LookupQueryField f        -> validateLookupQueryField(f, errors);
             case no.sikt.graphitron.record.field.TableQueryField f         -> validateTableQueryField(f, errors);
@@ -60,7 +64,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.record.field.ServiceMutationField f    -> validateServiceMutationField(f, errors);
             case no.sikt.graphitron.record.field.ColumnField f             -> validateColumnField(f, errors);
             case no.sikt.graphitron.record.field.ColumnReferenceField f    -> validateColumnReferenceField(f, errors);
-            case no.sikt.graphitron.record.field.NodeIdField f             -> validateNodeIdField(f, errors);
+            case no.sikt.graphitron.record.field.NodeIdField f             -> validateNodeIdField(coords, f, schema, errors);
             case no.sikt.graphitron.record.field.NodeIdReferenceField f    -> validateNodeIdReferenceField(f, errors);
             case no.sikt.graphitron.record.field.TableField f              -> validateTableField(f, schema, errors);
             case no.sikt.graphitron.record.field.TableMethodField f        -> validateTableMethodField(f, errors);
@@ -173,8 +177,22 @@ public class GraphitronSchemaValidator {
             validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
         }
     }
-    private void validateNodeIdField(no.sikt.graphitron.record.field.NodeIdField field, List<ValidationError> errors) {}
+    private void validateNodeIdField(FieldCoordinates coords, no.sikt.graphitron.record.field.NodeIdField field, GraphitronSchema schema, List<ValidationError> errors) {
+        var parentType = schema.type(coords.getTypeName());
+        if (!(parentType instanceof TableType t && t.node() instanceof NodeDirective)) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': @nodeId requires the containing type to have @node",
+                field.location()
+            ));
+        }
+    }
     private void validateNodeIdReferenceField(no.sikt.graphitron.record.field.NodeIdReferenceField field, List<ValidationError> errors) {
+        if (field.nodeType() instanceof UnresolvedNodeType) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': type '" + field.typeName() + "' does not exist in the schema or does not have @node",
+                field.location()
+            ));
+        }
         if (field.referencePath().isEmpty()) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': @reference path is required",
