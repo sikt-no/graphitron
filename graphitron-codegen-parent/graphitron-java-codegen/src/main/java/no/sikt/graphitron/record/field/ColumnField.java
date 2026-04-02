@@ -12,10 +12,15 @@ import graphql.language.SourceLocation;
  * {@link ResolvedColumn} when the column was found, {@link UnresolvedColumn} when it was not.
  * The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error for
  * {@code UnresolvedColumn}.
+ *
+ * <p>{@code javaNamePresent} is {@code true} when the {@code @field(javaName:)} argument was
+ * supplied. This argument is not supported in record-based output and the validator reports an
+ * error when it is present.
  */
 public record ColumnField(
     String name,
     SourceLocation location,
     String columnName,
-    ColumnStep column
+    ColumnStep column,
+    boolean javaNamePresent
 ) implements ChildField {}

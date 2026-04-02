@@ -3,6 +3,7 @@ package no.sikt.graphitron.record;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.ReferencePathElement;
+import no.sikt.graphitron.record.field.FieldConditionStep;
 import no.sikt.graphitron.record.field.UnresolvedColumn;
 import no.sikt.graphitron.record.field.UnresolvedConditionStep;
 import no.sikt.graphitron.record.field.UnresolvedKeyAndConditionStep;
@@ -71,6 +72,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.record.field.ServiceField f            -> validateServiceField(f, errors);
             case no.sikt.graphitron.record.field.ComputedField f           -> validateComputedField(f, errors);
             case no.sikt.graphitron.record.field.PropertyField f           -> validatePropertyField(f, errors);
+            case no.sikt.graphitron.record.field.MultitableReferenceField f -> validateMultitableReferenceField(f, errors);
             case no.sikt.graphitron.record.field.NotGeneratedField f       -> validateNotGeneratedField(f, errors);
             case no.sikt.graphitron.record.field.UnclassifiedField f       -> validateUnclassifiedField(f, errors);
         }
@@ -122,11 +124,23 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         }
+        if (field.javaNamePresent()) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': @field(javaName:) is not supported in record-based output",
+                field.location()
+            ));
+        }
     }
     private void validateColumnReferenceField(no.sikt.graphitron.record.field.ColumnReferenceField field, List<ValidationError> errors) {
         if (field.column() instanceof UnresolvedColumn) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': column '" + field.columnName() + "' could not be resolved in the jOOQ table",
+                field.location()
+            ));
+        }
+        if (field.javaNamePresent()) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': @field(javaName:) is not supported in record-based output",
                 field.location()
             ));
         }
@@ -152,6 +166,12 @@ public class GraphitronSchemaValidator {
     }
     private void validateTableField(no.sikt.graphitron.record.field.TableField field, GraphitronSchema schema, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        if (field.condition() instanceof FieldConditionStep.UnresolvedFieldCondition u) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': condition method '" + u.qualifiedName() + "' could not be resolved",
+                field.location()
+            ));
+        }
     }
     private void validateTableMethodField(no.sikt.graphitron.record.field.TableMethodField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
@@ -168,6 +188,12 @@ public class GraphitronSchemaValidator {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
     }
     private void validatePropertyField(no.sikt.graphitron.record.field.PropertyField field, List<ValidationError> errors) {}
+    private void validateMultitableReferenceField(no.sikt.graphitron.record.field.MultitableReferenceField field, List<ValidationError> errors) {
+        errors.add(new ValidationError(
+            "Field '" + field.name() + "': @multitableReference is not supported in record-based output",
+            field.location()
+        ));
+    }
     private void validateNotGeneratedField(no.sikt.graphitron.record.field.NotGeneratedField field, List<ValidationError> errors) {}
     private void validateUnclassifiedField(no.sikt.graphitron.record.field.UnclassifiedField field, List<ValidationError> errors) {
         errors.add(new ValidationError(

@@ -10,4 +10,5 @@ public sealed interface ChildField extends GraphitronField
             TableField, TableMethodField,
             TableInterfaceField, InterfaceField, UnionField,
             NestingField, ConstructorField,
-            ServiceField, ComputedField, PropertyField {}
+            ServiceField, ComputedField, PropertyField,
+            MultitableReferenceField {}

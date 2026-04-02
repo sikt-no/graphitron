@@ -7,6 +7,7 @@ import no.sikt.graphitron.record.field.FkStep;
 import no.sikt.graphitron.record.field.FkWithConditionStep;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
+import no.sikt.graphitron.record.field.FieldConditionStep;
 import no.sikt.graphitron.record.field.TableField;
 import no.sikt.graphitron.record.field.UnresolvedConditionStep;
 import no.sikt.graphitron.record.field.UnresolvedKeyAndConditionStep;
@@ -25,39 +26,54 @@ class TableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
-            new TableField("actors", null, List.of()),
+            new TableField("actors", null, List.of(), null),
             List.of()),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
-            new TableField("actors", null, List.of(new FkStep(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY))),
+            new TableField("actors", null, List.of(new FkStep(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY)), null),
             List.of()),
 
-        WITH_FK_AND_CONDITION("FK + resolved condition method",
+        WITH_FK_AND_CONDITION("FK + resolved condition method in reference path",
             new TableField("actors", null, List.of(
                 new FkWithConditionStep(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY,
-                    new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of())))),
+                    new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))), null),
             List.of()),
 
         WITH_CONDITION_ONLY("condition method only — no FK",
             new TableField("actors", null, List.of(
-                new ConditionOnlyStep(new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of())))),
+                new ConditionOnlyStep(new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))), null),
             List.of()),
 
         UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
-            new TableField("actors", null, List.of(new UnresolvedKeyStep("FILM_ACTOR_FK"))),
+            new TableField("actors", null, List.of(new UnresolvedKeyStep("FILM_ACTOR_FK")), null),
             List.of("Field 'actors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog")),
 
         UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection",
             new TableField("actors", null, List.of(
-                new UnresolvedConditionStep("com.example.Conditions.actorCondition"))),
+                new UnresolvedConditionStep("com.example.Conditions.actorCondition")), null),
             List.of("Field 'actors': condition method 'com.example.Conditions.actorCondition' could not be resolved")),
 
         UNRESOLVED_KEY_AND_CONDITION("both key and condition specified, neither could be resolved — two errors",
             new TableField("actors", null, List.of(
-                new UnresolvedKeyAndConditionStep("FILM_ACTOR_FK", "com.example.Conditions.actorCondition"))),
+                new UnresolvedKeyAndConditionStep("FILM_ACTOR_FK", "com.example.Conditions.actorCondition")), null),
             List.of(
                 "Field 'actors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog",
-                "Field 'actors': condition method 'com.example.Conditions.actorCondition' could not be resolved"));
+                "Field 'actors': condition method 'com.example.Conditions.actorCondition' could not be resolved")),
+
+        FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause; no errors",
+            new TableField("actors", null, List.of(), new FieldConditionStep.ResolvedFieldCondition(
+                new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()), false, List.of())),
+            List.of()),
+
+        FIELD_CONDITION_RESOLVED_OVERRIDE("resolved @condition with override:true — no errors",
+            new TableField("actors", null, List.of(), new FieldConditionStep.ResolvedFieldCondition(
+                new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()), true, List.of())),
+            List.of()),
+
+        FIELD_CONDITION_UNRESOLVED("unresolved @condition method on field — validation error",
+            new TableField("actors", null, List.of(), new FieldConditionStep.UnresolvedFieldCondition(
+                "com.example.Conditions.missingCondition", false, List.of())),
+            List.of("Field 'actors': condition method 'com.example.Conditions.missingCondition' could not be resolved"));
 
         private final String description;
         private final GraphitronField field;

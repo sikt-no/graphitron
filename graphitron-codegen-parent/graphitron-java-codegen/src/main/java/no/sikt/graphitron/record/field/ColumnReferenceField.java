@@ -18,11 +18,16 @@ import java.util.List;
  * <p>{@code referencePath} is the ordered list of join steps from the source table to the target
  * column's table, extracted from {@code @reference(path:)}. Required — an empty list is a
  * validation error.
+ *
+ * <p>{@code javaNamePresent} is {@code true} when the {@code @field(javaName:)} argument was
+ * supplied. This argument is not supported in record-based output and the validator reports an
+ * error when it is present.
  */
 public record ColumnReferenceField(
     String name,
     SourceLocation location,
     String columnName,
     ColumnStep column,
-    List<ReferencePathElement> referencePath
+    List<ReferencePathElement> referencePath,
+    boolean javaNamePresent
 ) implements ChildField {}

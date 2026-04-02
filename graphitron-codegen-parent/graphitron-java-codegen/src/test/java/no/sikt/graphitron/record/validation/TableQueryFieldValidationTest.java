@@ -1,7 +1,11 @@
 package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
+import no.sikt.graphitron.record.field.DefaultOrderSpec;
 import no.sikt.graphitron.record.field.GraphitronField;
+import no.sikt.graphitron.record.field.OrderByEnumValueSpec;
+import no.sikt.graphitron.record.field.OrderSpec;
+import no.sikt.graphitron.record.field.SortFieldSpec;
 import no.sikt.graphitron.record.field.TableQueryField;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -16,8 +20,43 @@ class TableQueryFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID("table query field — always valid",
-            new TableQueryField("films", null),
+        VALID("no ordering directives — always valid",
+            new TableQueryField("films", null, null, List.of()),
+            List.of()),
+
+        DEFAULT_ORDER_INDEX("@defaultOrder with index mode — valid",
+            new TableQueryField("films", null,
+                new DefaultOrderSpec(new OrderSpec.IndexOrder("IDX_TITLE"), "ASC"),
+                List.of()),
+            List.of()),
+
+        DEFAULT_ORDER_PRIMARY_KEY("@defaultOrder with primaryKey mode — valid",
+            new TableQueryField("films", null,
+                new DefaultOrderSpec(new OrderSpec.PrimaryKeyOrder(), "DESC"),
+                List.of()),
+            List.of()),
+
+        DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields — valid",
+            new TableQueryField("films", null,
+                new DefaultOrderSpec(
+                    new OrderSpec.FieldsOrder(List.of(new SortFieldSpec("title", null), new SortFieldSpec("film_id", "C"))),
+                    "ASC"),
+                List.of()),
+            List.of()),
+
+        ORDER_BY_INDEX("@orderBy argument with @order(index:) enum values — valid",
+            new TableQueryField("films", null, null,
+                List.of(
+                    new OrderByEnumValueSpec("TITLE", new OrderSpec.IndexOrder("IDX_TITLE")),
+                    new OrderByEnumValueSpec("ID", new OrderSpec.PrimaryKeyOrder()))),
+            List.of()),
+
+        DEFAULT_ORDER_AND_ORDER_BY("@defaultOrder combined with @orderBy argument — valid",
+            new TableQueryField("films", null,
+                new DefaultOrderSpec(new OrderSpec.IndexOrder("IDX_TITLE"), "ASC"),
+                List.of(
+                    new OrderByEnumValueSpec("TITLE", new OrderSpec.IndexOrder("IDX_TITLE")),
+                    new OrderByEnumValueSpec("ID", new OrderSpec.PrimaryKeyOrder()))),
             List.of());
 
         private final String description;
