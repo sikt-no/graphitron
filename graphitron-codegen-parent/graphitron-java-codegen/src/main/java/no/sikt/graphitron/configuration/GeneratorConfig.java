@@ -44,6 +44,7 @@ public class GeneratorConfig {
     private static boolean useJdbcBatchingForInserts = true;
     private static boolean requireTypeIdOnNode = false;
     private static boolean validateOverlappingInputFields = true;
+    private static boolean recordBasedOutput = false;
 
     private static int maxAllowedPageSize;
 
@@ -114,6 +115,7 @@ public class GeneratorConfig {
         globalTransforms = mojo.getGlobalTransforms();
         recordValidation = mojo.getRecordValidation();
         makeNodeStrategy = mojo.makeNodeStrategy();
+        recordBasedOutput = mojo.recordBasedOutput();
         useJdbcBatchingForDeletes = mojo.useJdbcBatchingForDeletes();
         useJdbcBatchingForInserts = mojo.useJdbcBatchingForInserts();
         alwaysUsePrimaryKeyInSplitQueries = true;
@@ -340,6 +342,14 @@ public class GeneratorConfig {
 
     public static void setValidateOverlappingInputFields(boolean validate) {
         validateOverlappingInputFields = validate;
+    }
+
+    public static boolean recordBasedOutput() {
+        return recordBasedOutput;
+    }
+
+    public static void setRecordBasedOutput(boolean enable) {
+        recordBasedOutput = enable;
     }
 
     public static void setUseOptionalSelects(boolean enable) {

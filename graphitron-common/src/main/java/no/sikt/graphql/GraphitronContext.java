@@ -1,7 +1,10 @@
 package no.sikt.graphql;
 
 import graphql.schema.DataFetchingEnvironment;
+import org.jetbrains.annotations.NotNull;
 import org.jooq.DSLContext;
+
+import java.util.Optional;
 
 public interface GraphitronContext {
     /***
@@ -27,4 +30,11 @@ public interface GraphitronContext {
      * @return The name of the DataLoader that should be used
      */
     String getDataLoaderName(DataFetchingEnvironment env);
+
+    /***
+     * Used by Graphitron to isolate DataLoader keys per tenant in multi-tenant deployments.
+     * @param env An object containing information about what is being fetched etc.
+     * @return The tenant identifier, or empty if not applicable
+     */
+    @NotNull Optional<String> getTenantId(DataFetchingEnvironment env);
 }
