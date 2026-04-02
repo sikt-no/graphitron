@@ -1,9 +1,9 @@
 package no.sikt.graphitron.record;
 
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.record.field.FieldConditionStep;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.ReferencePathElement;
-import no.sikt.graphitron.record.field.FieldConditionStep;
 import no.sikt.graphitron.record.field.UnresolvedColumn;
 import no.sikt.graphitron.record.field.UnresolvedConditionStep;
 import no.sikt.graphitron.record.field.UnresolvedKeyAndConditionStep;
@@ -29,23 +29,23 @@ public class GraphitronSchemaValidator {
 
     public List<ValidationError> validate(GraphitronSchema schema) {
         var errors = new ArrayList<ValidationError>();
-        schema.types().values().forEach(type -> validateType(type, schema, errors));
-        schema.fields().values().forEach(field -> validateField(field, schema, errors));
+        schema.types().values().forEach(type -> validateType(type, errors));
+        schema.fields().values().forEach(field -> validateField(field, errors));
         return List.copyOf(errors);
     }
 
-    private void validateType(GraphitronType type, GraphitronSchema schema, List<ValidationError> errors) {
+    private void validateType(GraphitronType type, List<ValidationError> errors) {
         switch (type) {
             case no.sikt.graphitron.record.type.TableType t          -> validateTableType(t, errors);
             case no.sikt.graphitron.record.type.ResultType t         -> validateResultType(t, errors);
             case no.sikt.graphitron.record.type.RootType t           -> validateRootType(t, errors);
             case no.sikt.graphitron.record.type.TableInterfaceType t -> validateTableInterfaceType(t, errors);
-            case no.sikt.graphitron.record.type.InterfaceType t      -> validateInterfaceType(t, schema, errors);
-            case no.sikt.graphitron.record.type.UnionType t          -> validateUnionType(t, schema, errors);
+            case no.sikt.graphitron.record.type.InterfaceType t      -> validateInterfaceType(t, errors);
+            case no.sikt.graphitron.record.type.UnionType t          -> validateUnionType(t, errors);
         }
     }
 
-    private void validateField(GraphitronField field, GraphitronSchema schema, List<ValidationError> errors) {
+    private void validateField(GraphitronField field, List<ValidationError> errors) {
         switch (field) {
             case no.sikt.graphitron.record.field.LookupQueryField f        -> validateLookupQueryField(f, errors);
             case no.sikt.graphitron.record.field.TableQueryField f         -> validateTableQueryField(f, errors);
@@ -65,12 +65,12 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.record.field.ColumnReferenceField f    -> validateColumnReferenceField(f, errors);
             case no.sikt.graphitron.record.field.NodeIdField f             -> validateNodeIdField(f, errors);
             case no.sikt.graphitron.record.field.NodeIdReferenceField f    -> validateNodeIdReferenceField(f, errors);
-            case no.sikt.graphitron.record.field.TableField f              -> validateTableField(f, schema, errors);
+            case no.sikt.graphitron.record.field.TableField f              -> validateTableField(f, errors);
             case no.sikt.graphitron.record.field.TableMethodField f        -> validateTableMethodField(f, errors);
             case no.sikt.graphitron.record.field.TableInterfaceField f     -> validateTableInterfaceField(f, errors);
             case no.sikt.graphitron.record.field.InterfaceField f          -> validateInterfaceField(f, errors);
             case no.sikt.graphitron.record.field.UnionField f              -> validateUnionField(f, errors);
-            case no.sikt.graphitron.record.field.NestingField f            -> validateNestingField(f, schema, errors);
+            case no.sikt.graphitron.record.field.NestingField f            -> validateNestingField(f, errors);
             case no.sikt.graphitron.record.field.ConstructorField f        -> validateConstructorField(f, errors);
             case no.sikt.graphitron.record.field.ServiceField f            -> validateServiceField(f, errors);
             case no.sikt.graphitron.record.field.ComputedField f           -> validateComputedField(f, errors);
@@ -111,8 +111,8 @@ public class GraphitronSchemaValidator {
             ));
         }
     }
-    private void validateInterfaceType(no.sikt.graphitron.record.type.InterfaceType type, GraphitronSchema schema, List<ValidationError> errors) {}
-    private void validateUnionType(no.sikt.graphitron.record.type.UnionType type, GraphitronSchema schema, List<ValidationError> errors) {}
+    private void validateInterfaceType(no.sikt.graphitron.record.type.InterfaceType type, List<ValidationError> errors) {}
+    private void validateUnionType(no.sikt.graphitron.record.type.UnionType type, List<ValidationError> errors) {}
 
     // --- Field validators (stubs — filled in as test classes are added) ---
 
@@ -200,7 +200,7 @@ public class GraphitronSchemaValidator {
             validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
         }
     }
-    private void validateTableField(no.sikt.graphitron.record.field.TableField field, GraphitronSchema schema, List<ValidationError> errors) {
+    private void validateTableField(no.sikt.graphitron.record.field.TableField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
         if (field.condition() instanceof FieldConditionStep.UnresolvedFieldCondition u) {
             errors.add(new ValidationError(
@@ -223,7 +223,7 @@ public class GraphitronSchemaValidator {
     private void validateUnionField(no.sikt.graphitron.record.field.UnionField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.cardinality(), errors);
     }
-    private void validateNestingField(no.sikt.graphitron.record.field.NestingField field, GraphitronSchema schema, List<ValidationError> errors) {}
+    private void validateNestingField(no.sikt.graphitron.record.field.NestingField field, List<ValidationError> errors) {}
     private void validateConstructorField(no.sikt.graphitron.record.field.ConstructorField field, List<ValidationError> errors) {}
     private void validateServiceField(no.sikt.graphitron.record.field.ServiceField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
