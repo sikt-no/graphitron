@@ -18,34 +18,31 @@ class ColumnFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        /** No {@code @field} — column name defaults to the GraphQL field name; column resolved. */
-        RESOLVED_IMPLICIT {
-            public GraphitronField field() {
-                return new ColumnField("title", null, "title", new ResolvedColumn("TITLE", null));
-            }
-            public List<String> errors() { return List.of(); }
-        },
+        RESOLVED_IMPLICIT("no @field — column name defaults to the GraphQL field name",
+            new ColumnField("title", null, "title", new ResolvedColumn("TITLE", null)),
+            List.of()),
 
-        /** {@code @field(name: "film_title")} — explicit column name override; column resolved. */
-        RESOLVED_EXPLICIT {
-            public GraphitronField field() {
-                return new ColumnField("title", null, "film_title", new ResolvedColumn("FILM_TITLE", null));
-            }
-            public List<String> errors() { return List.of(); }
-        },
+        RESOLVED_EXPLICIT("@field(name:) overrides the column name",
+            new ColumnField("title", null, "film_title", new ResolvedColumn("FILM_TITLE", null)),
+            List.of()),
 
-        /** Column name could not be matched to a jOOQ field in the table. */
-        UNRESOLVED_COLUMN {
-            public GraphitronField field() {
-                return new ColumnField("title", null, "title", new UnresolvedColumn());
-            }
-            public List<String> errors() {
-                return List.of("Field 'title': column 'title' could not be resolved in the jOOQ table");
-            }
-        };
+        UNRESOLVED_COLUMN("column name could not be matched to a jOOQ field in the table",
+            new ColumnField("title", null, "title", new UnresolvedColumn()),
+            List.of("Field 'title': column 'title' could not be resolved in the jOOQ table"));
 
-        public abstract GraphitronField field();
-        public abstract List<String> errors();
+        private final String description;
+        private final GraphitronField field;
+        private final List<String> errors;
+
+        Case(String description, GraphitronField field, List<String> errors) {
+            this.description = description;
+            this.field = field;
+            this.errors = errors;
+        }
+
+        @Override public GraphitronField field() { return field; }
+        @Override public List<String> errors() { return errors; }
+        @Override public String toString() { return description; }
     }
 
     @ParameterizedTest(name = "{0}")

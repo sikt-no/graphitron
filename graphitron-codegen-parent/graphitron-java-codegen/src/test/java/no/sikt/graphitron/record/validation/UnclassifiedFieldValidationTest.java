@@ -16,17 +16,23 @@ class UnclassifiedFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        UNCLASSIFIED {
-            public GraphitronField field() {
-                return new UnclassifiedField("unknownField", null);
-            }
-            public List<String> errors() {
-                return List.of("Field 'unknownField': could not be classified — missing or conflicting directives");
-            }
-        };
+        UNCLASSIFIED("field missing or with conflicting directives — classification error",
+            new UnclassifiedField("unknownField", null),
+            List.of("Field 'unknownField': could not be classified — missing or conflicting directives"));
 
-        public abstract GraphitronField field();
-        public abstract List<String> errors();
+        private final String description;
+        private final GraphitronField field;
+        private final List<String> errors;
+
+        Case(String description, GraphitronField field, List<String> errors) {
+            this.description = description;
+            this.field = field;
+            this.errors = errors;
+        }
+
+        @Override public GraphitronField field() { return field; }
+        @Override public List<String> errors() { return errors; }
+        @Override public String toString() { return description; }
     }
 
     @ParameterizedTest(name = "{0}")

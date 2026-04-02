@@ -639,38 +639,36 @@ interface ValidatorCase {
 }
 ```
 
-Enum constants use per-constant method bodies (abstract method override) so each constant is a self-contained fixture factory — data and expected outcome in one place:
+Enum constants carry `(description, field, errors)` constructor arguments. Each constant is a self-contained fixture: the human-readable description drives the `@ParameterizedTest(name = "{0}")` display name via `toString()`, and the field + errors are the test data:
 
 ```java
-enum LookupQueryFieldCase implements ValidatorCase {
+enum Case implements ValidatorCase {
 
-    SINGLE_NULLABLE {
-        public GraphitronField field() { return lookup(typeRef("Film")); }
-        public List<String> errors() { return List.of(); }
-    },
-    SINGLE_NON_NULL {
-        public GraphitronField field() { return lookup(nonNull(typeRef("Film"))); }
-        public List<String> errors() { return List.of(); }
-    },
-    LIST {
-        public GraphitronField field() { return lookup(list(typeRef("Film"))); }
-        public List<String> errors() { return List.of("must return a single item, not a list"); }
-    },
-    NON_NULL_LIST {
-        public GraphitronField field() { return lookup(nonNull(list(typeRef("Film")))); }
-        public List<String> errors() { return List.of("must return a single item, not a list"); }
-    };
+    RESOLVED_IMPLICIT("no @field — column name defaults to the GraphQL field name",
+        new ColumnField("title", null, "title", new ResolvedColumn("TITLE", null)),
+        List.of()),
 
-    public abstract GraphitronField field();
-    public abstract List<String> errors();
+    UNRESOLVED_COLUMN("column name could not be matched to a jOOQ field in the table",
+        new ColumnField("title", null, "title", new UnresolvedColumn()),
+        List.of("Field 'title': column 'title' could not be resolved in the jOOQ table"));
 
-    static GraphitronField lookup(GraphQLOutputType returnType) {
-        return new LookupQueryField(
-            GraphQLFieldDefinition.newFieldDefinition().name("film").type(returnType).build()
-        );
+    private final String description;
+    private final GraphitronField field;
+    private final List<String> errors;
+
+    Case(String description, GraphitronField field, List<String> errors) {
+        this.description = description;
+        this.field = field;
+        this.errors = errors;
     }
+
+    @Override public GraphitronField field() { return field; }
+    @Override public List<String> errors() { return errors; }
+    @Override public String toString() { return description; }
 }
 ```
+
+**Important**: do not share path-element values (e.g. `List.of(new FkStep(...))`) via outer-class static fields — enum constructors run during class initialisation before outer-class statics are guaranteed to be ready. Inline all values directly in each constant's constructor call.
 
 The test method is a one-liner. `@EnumSource` filtering splits valid and invalid cases into separate methods when it aids clarity:
 

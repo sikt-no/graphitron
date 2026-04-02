@@ -18,24 +18,27 @@ class TableTypeValidationTest {
 
     enum Case implements TypeValidatorCase {
 
-        RESOLVED {
-            public GraphitronType type() {
-                return new TableType("Film", null, "film", new ResolvedTable("FILM", FILM));
-            }
-            public List<String> errors() { return List.of(); }
-        },
+        RESOLVED("table name resolved to a jOOQ Table",
+            new TableType("Film", null, "film", new ResolvedTable("FILM", FILM)),
+            List.of()),
 
-        UNRESOLVED_TABLE {
-            public GraphitronType type() {
-                return new TableType("Film", null, "film", new UnresolvedTable());
-            }
-            public List<String> errors() {
-                return List.of("Type 'Film': table 'film' could not be resolved in the jOOQ catalog");
-            }
-        };
+        UNRESOLVED_TABLE("table name could not be matched to a jOOQ table in the catalog",
+            new TableType("Film", null, "film", new UnresolvedTable()),
+            List.of("Type 'Film': table 'film' could not be resolved in the jOOQ catalog"));
 
-        public abstract GraphitronType type();
-        public abstract List<String> errors();
+        private final String description;
+        private final GraphitronType type;
+        private final List<String> errors;
+
+        Case(String description, GraphitronType type, List<String> errors) {
+            this.description = description;
+            this.type = type;
+            this.errors = errors;
+        }
+
+        @Override public GraphitronType type() { return type; }
+        @Override public List<String> errors() { return errors; }
+        @Override public String toString() { return description; }
     }
 
     @ParameterizedTest(name = "{0}")

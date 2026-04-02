@@ -22,55 +22,42 @@ class TableMethodFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        /** No {@code @reference} — FK auto-inference will be attempted at code-generation time. */
-        NO_PATH {
-            public GraphitronField field() {
-                return new TableMethodField("filteredActors", null, List.of());
-            }
-            public List<String> errors() { return List.of(); }
-        },
+        NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
+            new TableMethodField("filteredActors", null, List.of()),
+            List.of()),
 
-        /** Explicit FK path — key resolved. */
-        WITH_FK_PATH {
-            public GraphitronField field() {
-                return new TableMethodField("filteredActors", null, List.of(
-                    new FkStep(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY)));
-            }
-            public List<String> errors() { return List.of(); }
-        },
+        WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
+            new TableMethodField("filteredActors", null, List.of(
+                new FkStep(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY))),
+            List.of()),
 
-        /** Condition only — no FK. */
-        WITH_CONDITION_ONLY {
-            public GraphitronField field() {
-                var condition = new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of());
-                return new TableMethodField("filteredActors", null, List.of(new ConditionOnlyStep(condition)));
-            }
-            public List<String> errors() { return List.of(); }
-        },
+        WITH_CONDITION_ONLY("condition method only — no FK",
+            new TableMethodField("filteredActors", null, List.of(
+                new ConditionOnlyStep(new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of())))),
+            List.of()),
 
-        /** Key name specified but FK could not be found in the jOOQ catalog. */
-        UNRESOLVED_KEY {
-            public GraphitronField field() {
-                return new TableMethodField("filteredActors", null, List.of(new UnresolvedKeyStep("FILM_ACTOR_FK")));
-            }
-            public List<String> errors() {
-                return List.of("Field 'filteredActors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog");
-            }
-        },
+        UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
+            new TableMethodField("filteredActors", null, List.of(new UnresolvedKeyStep("FILM_ACTOR_FK"))),
+            List.of("Field 'filteredActors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog")),
 
-        /** Condition method present but could not be resolved via reflection. */
-        UNRESOLVED_CONDITION {
-            public GraphitronField field() {
-                return new TableMethodField("filteredActors", null, List.of(
-                    new UnresolvedConditionStep("com.example.Conditions.actorCondition")));
-            }
-            public List<String> errors() {
-                return List.of("Field 'filteredActors': condition method 'com.example.Conditions.actorCondition' could not be resolved");
-            }
-        };
+        UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection",
+            new TableMethodField("filteredActors", null, List.of(
+                new UnresolvedConditionStep("com.example.Conditions.actorCondition"))),
+            List.of("Field 'filteredActors': condition method 'com.example.Conditions.actorCondition' could not be resolved"));
 
-        public abstract GraphitronField field();
-        public abstract List<String> errors();
+        private final String description;
+        private final GraphitronField field;
+        private final List<String> errors;
+
+        Case(String description, GraphitronField field, List<String> errors) {
+            this.description = description;
+            this.field = field;
+            this.errors = errors;
+        }
+
+        @Override public GraphitronField field() { return field; }
+        @Override public List<String> errors() { return errors; }
+        @Override public String toString() { return description; }
     }
 
     @ParameterizedTest(name = "{0}")

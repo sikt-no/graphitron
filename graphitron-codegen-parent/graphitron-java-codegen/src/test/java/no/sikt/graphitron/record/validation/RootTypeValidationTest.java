@@ -15,22 +15,27 @@ class RootTypeValidationTest {
 
     enum Case implements TypeValidatorCase {
 
-        QUERY {
-            public GraphitronType type() {
-                return new RootType("Query", null);
-            }
-            public List<String> errors() { return List.of(); }
-        },
+        QUERY("root Query type — always valid",
+            new RootType("Query", null),
+            List.of()),
 
-        MUTATION {
-            public GraphitronType type() {
-                return new RootType("Mutation", null);
-            }
-            public List<String> errors() { return List.of(); }
-        };
+        MUTATION("root Mutation type — always valid",
+            new RootType("Mutation", null),
+            List.of());
 
-        public abstract GraphitronType type();
-        public abstract List<String> errors();
+        private final String description;
+        private final GraphitronType type;
+        private final List<String> errors;
+
+        Case(String description, GraphitronType type, List<String> errors) {
+            this.description = description;
+            this.type = type;
+            this.errors = errors;
+        }
+
+        @Override public GraphitronType type() { return type; }
+        @Override public List<String> errors() { return errors; }
+        @Override public String toString() { return description; }
     }
 
     @ParameterizedTest(name = "{0}")

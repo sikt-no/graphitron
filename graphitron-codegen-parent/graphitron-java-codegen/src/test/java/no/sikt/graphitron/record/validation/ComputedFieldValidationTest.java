@@ -19,36 +19,33 @@ class ComputedFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        /** No {@code @reference} — no lift condition; valid when return type is not table-mapped. */
-        NO_PATH {
-            public GraphitronField field() {
-                return new ComputedField("fullTitle", null, List.of());
-            }
-            public List<String> errors() { return List.of(); }
-        },
+        NO_PATH("no @reference — no lift condition; valid when return type is not table-mapped",
+            new ComputedField("fullTitle", null, List.of()),
+            List.of()),
 
-        /** Lift condition with a resolved method. */
-        WITH_LIFT_CONDITION {
-            public GraphitronField field() {
-                var condition = new MethodRef("com.example.Conditions.liftCondition", "org.jooq.Condition", List.of());
-                return new ComputedField("fullTitle", null, List.of(new ConditionOnlyStep(condition)));
-            }
-            public List<String> errors() { return List.of(); }
-        },
+        WITH_LIFT_CONDITION("lift condition with a resolved method",
+            new ComputedField("fullTitle", null, List.of(
+                new ConditionOnlyStep(new MethodRef("com.example.Conditions.liftCondition", "org.jooq.Condition", List.of())))),
+            List.of()),
 
-        /** Lift condition method present but could not be resolved via reflection. */
-        UNRESOLVED_CONDITION {
-            public GraphitronField field() {
-                return new ComputedField("fullTitle", null, List.of(
-                    new UnresolvedConditionStep("com.example.Conditions.liftCondition")));
-            }
-            public List<String> errors() {
-                return List.of("Field 'fullTitle': condition method 'com.example.Conditions.liftCondition' could not be resolved");
-            }
-        };
+        UNRESOLVED_CONDITION("lift condition method present but could not be resolved via reflection",
+            new ComputedField("fullTitle", null, List.of(
+                new UnresolvedConditionStep("com.example.Conditions.liftCondition"))),
+            List.of("Field 'fullTitle': condition method 'com.example.Conditions.liftCondition' could not be resolved"));
 
-        public abstract GraphitronField field();
-        public abstract List<String> errors();
+        private final String description;
+        private final GraphitronField field;
+        private final List<String> errors;
+
+        Case(String description, GraphitronField field, List<String> errors) {
+            this.description = description;
+            this.field = field;
+            this.errors = errors;
+        }
+
+        @Override public GraphitronField field() { return field; }
+        @Override public List<String> errors() { return errors; }
+        @Override public String toString() { return description; }
     }
 
     @ParameterizedTest(name = "{0}")

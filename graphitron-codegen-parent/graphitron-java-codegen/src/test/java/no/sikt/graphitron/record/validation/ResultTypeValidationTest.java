@@ -15,15 +15,23 @@ class ResultTypeValidationTest {
 
     enum Case implements TypeValidatorCase {
 
-        VALID {
-            public GraphitronType type() {
-                return new ResultType("FilmResult", null);
-            }
-            public List<String> errors() { return List.of(); }
-        };
+        VALID("result type — always valid",
+            new ResultType("FilmResult", null),
+            List.of());
 
-        public abstract GraphitronType type();
-        public abstract List<String> errors();
+        private final String description;
+        private final GraphitronType type;
+        private final List<String> errors;
+
+        Case(String description, GraphitronType type, List<String> errors) {
+            this.description = description;
+            this.type = type;
+            this.errors = errors;
+        }
+
+        @Override public GraphitronType type() { return type; }
+        @Override public List<String> errors() { return errors; }
+        @Override public String toString() { return description; }
     }
 
     @ParameterizedTest(name = "{0}")

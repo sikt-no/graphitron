@@ -16,24 +16,27 @@ class PropertyFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        /** No {@code @field} — property name defaults to the GraphQL field name. */
-        IMPLICIT_COLUMN {
-            public GraphitronField field() {
-                return new PropertyField("titleProp", null, "titleProp");
-            }
-            public List<String> errors() { return List.of(); }
-        },
+        IMPLICIT_COLUMN("no @field — property name defaults to the GraphQL field name",
+            new PropertyField("titleProp", null, "titleProp"),
+            List.of()),
 
-        /** {@code @field(name: "title")} — explicit property name override. */
-        EXPLICIT_COLUMN {
-            public GraphitronField field() {
-                return new PropertyField("titleProp", null, "title");
-            }
-            public List<String> errors() { return List.of(); }
-        };
+        EXPLICIT_COLUMN("@field(name:) overrides the property name",
+            new PropertyField("titleProp", null, "title"),
+            List.of());
 
-        public abstract GraphitronField field();
-        public abstract List<String> errors();
+        private final String description;
+        private final GraphitronField field;
+        private final List<String> errors;
+
+        Case(String description, GraphitronField field, List<String> errors) {
+            this.description = description;
+            this.field = field;
+            this.errors = errors;
+        }
+
+        @Override public GraphitronField field() { return field; }
+        @Override public List<String> errors() { return errors; }
+        @Override public String toString() { return description; }
     }
 
     @ParameterizedTest(name = "{0}")

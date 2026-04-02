@@ -16,15 +16,23 @@ class TableInterfaceQueryFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID {
-            public GraphitronField field() {
-                return new TableInterfaceQueryField("statuses", null);
-            }
-            public List<String> errors() { return List.of(); }
-        };
+        VALID("table interface query field — always valid",
+            new TableInterfaceQueryField("statuses", null),
+            List.of());
 
-        public abstract GraphitronField field();
-        public abstract List<String> errors();
+        private final String description;
+        private final GraphitronField field;
+        private final List<String> errors;
+
+        Case(String description, GraphitronField field, List<String> errors) {
+            this.description = description;
+            this.field = field;
+            this.errors = errors;
+        }
+
+        @Override public GraphitronField field() { return field; }
+        @Override public List<String> errors() { return errors; }
+        @Override public String toString() { return description; }
     }
 
     @ParameterizedTest(name = "{0}")

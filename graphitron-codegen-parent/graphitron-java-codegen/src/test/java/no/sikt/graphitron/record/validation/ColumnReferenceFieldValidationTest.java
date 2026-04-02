@@ -7,7 +7,6 @@ import no.sikt.graphitron.record.field.ConditionOnlyStep;
 import no.sikt.graphitron.record.field.FkStep;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
-import no.sikt.graphitron.record.field.ReferencePathElement;
 import no.sikt.graphitron.record.field.ResolvedColumn;
 import no.sikt.graphitron.record.field.UnresolvedColumn;
 import no.sikt.graphitron.record.field.UnresolvedConditionStep;
@@ -24,99 +23,62 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ColumnReferenceFieldValidationTest {
 
-    /** One FK-only path element: Film → Language via film_language_id_fkey. */
-    private static final List<ReferencePathElement> FK_PATH = List.of(
-        new FkStep(Keys.FILM__FILM_LANGUAGE_ID_FKEY)
-    );
-
-    /** One condition-only path element with a fully resolved condition method. */
-    private static final List<ReferencePathElement> CONDITION_PATH = List.of(
-        new ConditionOnlyStep(new MethodRef("com.example.Conditions.languageCondition", "org.jooq.Condition", List.of()))
-    );
-
     enum Case implements ValidatorCase {
 
-        /** No {@code @field} — column name defaults to the GraphQL field name; column and path resolved. */
-        RESOLVED_IMPLICIT {
-            public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null), FK_PATH);
-            }
-            public List<String> errors() { return List.of(); }
-        },
+        RESOLVED_IMPLICIT("no @field — column name defaults to the GraphQL field name; path resolved via FK",
+            new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null),
+                List.of(new FkStep(Keys.FILM__FILM_LANGUAGE_ID_FKEY))),
+            List.of()),
 
-        /** {@code @field(name: "language_name")} — explicit column name override; column and path resolved. */
-        RESOLVED_EXPLICIT {
-            public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "language_name", new ResolvedColumn("NAME", null), FK_PATH);
-            }
-            public List<String> errors() { return List.of(); }
-        },
+        RESOLVED_EXPLICIT("@field(name:) overrides the column name; path resolved via FK",
+            new ColumnReferenceField("languageName", null, "language_name", new ResolvedColumn("NAME", null),
+                List.of(new FkStep(Keys.FILM__FILM_LANGUAGE_ID_FKEY))),
+            List.of()),
 
-        /** Path with a resolved condition method instead of a FK. */
-        CONDITION_METHOD {
-            public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null), CONDITION_PATH);
-            }
-            public List<String> errors() { return List.of(); }
-        },
+        CONDITION_METHOD("path resolved via condition method instead of a FK",
+            new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null),
+                List.of(new ConditionOnlyStep(new MethodRef("com.example.Conditions.languageCondition", "org.jooq.Condition", List.of())))),
+            List.of()),
 
-        /** Column name could not be matched to a jOOQ field in the joined table. */
-        UNRESOLVED_COLUMN {
-            public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "languageName", new UnresolvedColumn(), FK_PATH);
-            }
-            public List<String> errors() {
-                return List.of("Field 'languageName': column 'languageName' could not be resolved in the jOOQ table");
-            }
-        },
+        UNRESOLVED_COLUMN("column name could not be matched to a jOOQ field in the joined table",
+            new ColumnReferenceField("languageName", null, "languageName", new UnresolvedColumn(),
+                List.of(new FkStep(Keys.FILM__FILM_LANGUAGE_ID_FKEY))),
+            List.of("Field 'languageName': column 'languageName' could not be resolved in the jOOQ table")),
 
-        /** No {@code @reference} directive — path is empty. */
-        MISSING_PATH {
-            public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null), List.of());
-            }
-            public List<String> errors() {
-                return List.of("Field 'languageName': @reference path is required");
-            }
-        },
+        MISSING_PATH("no @reference directive — path is empty",
+            new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null), List.of()),
+            List.of("Field 'languageName': @reference path is required")),
 
-        /** Key name specified but FK could not be found in the jOOQ catalog. */
-        UNRESOLVED_KEY {
-            public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null),
-                    List.of(new UnresolvedKeyStep("FILM_LANGUAGE_FK")));
-            }
-            public List<String> errors() {
-                return List.of("Field 'languageName': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog");
-            }
-        },
+        UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
+            new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null),
+                List.of(new UnresolvedKeyStep("FILM_LANGUAGE_FK"))),
+            List.of("Field 'languageName': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog")),
 
-        /** Condition method present but could not be resolved via reflection. */
-        UNRESOLVED_CONDITION {
-            public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null),
-                    List.of(new UnresolvedConditionStep("com.example.Conditions.languageCondition")));
-            }
-            public List<String> errors() {
-                return List.of("Field 'languageName': condition method 'com.example.Conditions.languageCondition' could not be resolved");
-            }
-        },
+        UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection",
+            new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null),
+                List.of(new UnresolvedConditionStep("com.example.Conditions.languageCondition"))),
+            List.of("Field 'languageName': condition method 'com.example.Conditions.languageCondition' could not be resolved")),
 
-        /** Both key and condition specified, neither could be resolved — two errors reported. */
-        UNRESOLVED_KEY_AND_CONDITION {
-            public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null),
-                    List.of(new UnresolvedKeyAndConditionStep("FILM_LANGUAGE_FK", "com.example.Conditions.languageCondition")));
-            }
-            public List<String> errors() {
-                return List.of(
-                    "Field 'languageName': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog",
-                    "Field 'languageName': condition method 'com.example.Conditions.languageCondition' could not be resolved");
-            }
-        };
+        UNRESOLVED_KEY_AND_CONDITION("both key and condition specified, neither could be resolved — two errors",
+            new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null),
+                List.of(new UnresolvedKeyAndConditionStep("FILM_LANGUAGE_FK", "com.example.Conditions.languageCondition"))),
+            List.of(
+                "Field 'languageName': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog",
+                "Field 'languageName': condition method 'com.example.Conditions.languageCondition' could not be resolved"));
 
-        public abstract GraphitronField field();
-        public abstract List<String> errors();
+        private final String description;
+        private final GraphitronField field;
+        private final List<String> errors;
+
+        Case(String description, GraphitronField field, List<String> errors) {
+            this.description = description;
+            this.field = field;
+            this.errors = errors;
+        }
+
+        @Override public GraphitronField field() { return field; }
+        @Override public List<String> errors() { return errors; }
+        @Override public String toString() { return description; }
     }
 
     @ParameterizedTest(name = "{0}")
