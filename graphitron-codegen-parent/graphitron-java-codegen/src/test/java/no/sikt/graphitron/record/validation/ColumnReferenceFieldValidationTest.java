@@ -8,6 +8,8 @@ import no.sikt.graphitron.record.field.FkStep;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
 import no.sikt.graphitron.record.field.ReferencePathElement;
+import no.sikt.graphitron.record.field.ResolvedColumn;
+import no.sikt.graphitron.record.field.UnresolvedColumn;
 import no.sikt.graphitron.record.field.UnresolvedConditionStep;
 import no.sikt.graphitron.record.field.UnresolvedKeyAndConditionStep;
 import no.sikt.graphitron.record.field.UnresolvedKeyStep;
@@ -15,7 +17,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inTableTypeSchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
@@ -38,7 +39,7 @@ class ColumnReferenceFieldValidationTest {
         /** No {@code @field} — column name defaults to the GraphQL field name; column and path resolved. */
         RESOLVED_IMPLICIT {
             public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "languageName", "NAME", Optional.empty(), FK_PATH);
+                return new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null), FK_PATH);
             }
             public List<String> errors() { return List.of(); }
         },
@@ -46,7 +47,7 @@ class ColumnReferenceFieldValidationTest {
         /** {@code @field(name: "language_name")} — explicit column name override; column and path resolved. */
         RESOLVED_EXPLICIT {
             public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "language_name", "NAME", Optional.empty(), FK_PATH);
+                return new ColumnReferenceField("languageName", null, "language_name", new ResolvedColumn("NAME", null), FK_PATH);
             }
             public List<String> errors() { return List.of(); }
         },
@@ -54,7 +55,7 @@ class ColumnReferenceFieldValidationTest {
         /** Path with a resolved condition method instead of a FK. */
         CONDITION_METHOD {
             public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "languageName", "NAME", Optional.empty(), CONDITION_PATH);
+                return new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null), CONDITION_PATH);
             }
             public List<String> errors() { return List.of(); }
         },
@@ -62,7 +63,7 @@ class ColumnReferenceFieldValidationTest {
         /** Column name could not be matched to a jOOQ field in the joined table. */
         UNRESOLVED_COLUMN {
             public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "languageName", null, Optional.empty(), FK_PATH);
+                return new ColumnReferenceField("languageName", null, "languageName", new UnresolvedColumn(), FK_PATH);
             }
             public List<String> errors() {
                 return List.of("Field 'languageName': column 'languageName' could not be resolved in the jOOQ table");
@@ -72,7 +73,7 @@ class ColumnReferenceFieldValidationTest {
         /** No {@code @reference} directive — path is empty. */
         MISSING_PATH {
             public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "languageName", "NAME", Optional.empty(), List.of());
+                return new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null), List.of());
             }
             public List<String> errors() {
                 return List.of("Field 'languageName': @reference path is required");
@@ -82,7 +83,7 @@ class ColumnReferenceFieldValidationTest {
         /** Key name specified but FK could not be found in the jOOQ catalog. */
         UNRESOLVED_KEY {
             public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "languageName", "NAME", Optional.empty(),
+                return new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null),
                     List.of(new UnresolvedKeyStep("FILM_LANGUAGE_FK")));
             }
             public List<String> errors() {
@@ -93,7 +94,7 @@ class ColumnReferenceFieldValidationTest {
         /** Condition method present but could not be resolved via reflection. */
         UNRESOLVED_CONDITION {
             public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "languageName", "NAME", Optional.empty(),
+                return new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null),
                     List.of(new UnresolvedConditionStep("com.example.Conditions.languageCondition")));
             }
             public List<String> errors() {
@@ -104,7 +105,7 @@ class ColumnReferenceFieldValidationTest {
         /** Both key and condition specified, neither could be resolved — two errors reported. */
         UNRESOLVED_KEY_AND_CONDITION {
             public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "languageName", "NAME", Optional.empty(),
+                return new ColumnReferenceField("languageName", null, "languageName", new ResolvedColumn("NAME", null),
                     List.of(new UnresolvedKeyAndConditionStep("FILM_LANGUAGE_FK", "com.example.Conditions.languageCondition")));
             }
             public List<String> errors() {

@@ -2,13 +2,15 @@ package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.type.GraphitronType;
+import no.sikt.graphitron.record.type.ResolvedTable;
 import no.sikt.graphitron.record.type.TableType;
+import no.sikt.graphitron.record.type.UnresolvedTable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
-import java.util.Optional;
 
+import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -18,14 +20,14 @@ class TableTypeValidationTest {
 
         RESOLVED {
             public GraphitronType type() {
-                return new TableType("Film", null, "film", "FILM", Optional.empty());
+                return new TableType("Film", null, "film", new ResolvedTable("FILM", FILM));
             }
             public List<String> errors() { return List.of(); }
         },
 
         UNRESOLVED_TABLE {
             public GraphitronType type() {
-                return new TableType("Film", null, "film", null, Optional.empty());
+                return new TableType("Film", null, "film", new UnresolvedTable());
             }
             public List<String> errors() {
                 return List.of("Type 'Film': table 'film' could not be resolved in the jOOQ catalog");

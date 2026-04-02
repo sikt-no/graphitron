@@ -3,11 +3,12 @@ package no.sikt.graphitron.record.validation;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.ColumnField;
 import no.sikt.graphitron.record.field.GraphitronField;
+import no.sikt.graphitron.record.field.ResolvedColumn;
+import no.sikt.graphitron.record.field.UnresolvedColumn;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inTableTypeSchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
@@ -20,7 +21,7 @@ class ColumnFieldValidationTest {
         /** No {@code @field} — column name defaults to the GraphQL field name; column resolved. */
         RESOLVED_IMPLICIT {
             public GraphitronField field() {
-                return new ColumnField("title", null, "title", "TITLE", Optional.empty());
+                return new ColumnField("title", null, "title", new ResolvedColumn("TITLE", null));
             }
             public List<String> errors() { return List.of(); }
         },
@@ -28,7 +29,7 @@ class ColumnFieldValidationTest {
         /** {@code @field(name: "film_title")} — explicit column name override; column resolved. */
         RESOLVED_EXPLICIT {
             public GraphitronField field() {
-                return new ColumnField("title", null, "film_title", "FILM_TITLE", Optional.empty());
+                return new ColumnField("title", null, "film_title", new ResolvedColumn("FILM_TITLE", null));
             }
             public List<String> errors() { return List.of(); }
         },
@@ -36,7 +37,7 @@ class ColumnFieldValidationTest {
         /** Column name could not be matched to a jOOQ field in the table. */
         UNRESOLVED_COLUMN {
             public GraphitronField field() {
-                return new ColumnField("title", null, "title", null, Optional.empty());
+                return new ColumnField("title", null, "title", new UnresolvedColumn());
             }
             public List<String> errors() {
                 return List.of("Field 'title': column 'title' could not be resolved in the jOOQ table");

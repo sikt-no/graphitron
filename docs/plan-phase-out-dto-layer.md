@@ -77,51 +77,70 @@ Every GraphQL named type is classified into a `GraphitronType`. This is where `@
 sealed interface GraphitronType
     permits TableType, ResultType, RootType,
             TableInterfaceType, InterfaceType, UnionType {
-    GraphQLNamedType definition();
-    default String name() { return definition().getName(); }
+    String name();
+    SourceLocation location();
 }
 
 // @table — full SQL generation; @table directive mapping validated here
 record TableType(
-    GraphQLObjectType definition,
-    String tableName,             // SQL name from @table directive — e.g. "film"
-    String javaFieldName,         // Java field name in generated Tables class — e.g. "FILM"; null if unresolved
-    Optional<Table<?>> table      // jOOQ instance; empty if unresolved
+    String name,
+    SourceLocation location,
+    String tableName,   // SQL name from @table directive — e.g. "film"
+    TableStep table     // resolved jOOQ table, or unresolved sentinel
 ) implements GraphitronType {}
 
 // @record — runtime wiring only, no SQL until a new scope starts
-record ResultType(GraphQLObjectType definition)
+record ResultType(String name, SourceLocation location)
     implements GraphitronType {}
 
 // Query / Mutation — unmapped entry points
-record RootType(GraphQLObjectType definition)
+record RootType(String name, SourceLocation location)
     implements GraphitronType {}
 
 // interface with @table + @discriminate; implementing types have @table + @discriminator
 record TableInterfaceType(
-    GraphQLInterfaceType definition,
+    String name,
+    SourceLocation location,
     String discriminatorColumn,
-    String tableName,             // SQL name from @table directive
-    String javaFieldName,         // Java field name in generated Tables class; null if unresolved
-    Optional<Table<?>> table      // jOOQ instance; empty if unresolved
+    String tableName,   // SQL name from @table directive
+    TableStep table     // resolved jOOQ table, or unresolved sentinel
 ) implements GraphitronType {}
 
 // interface with no directives; implementing types have @table
-record InterfaceType(GraphQLInterfaceType definition)
+record InterfaceType(String name, SourceLocation location)
     implements GraphitronType {}
 
 // union; all member types have @table
-record UnionType(GraphQLUnionType definition)
+record UnionType(String name, SourceLocation location)
     implements GraphitronType {}
 ```
+
+### `TableStep`
+
+`TableType` and `TableInterfaceType` use a sealed hierarchy to represent the outcome of resolving the `@table` directive value against the jOOQ catalog:
+
+```java
+sealed interface TableStep permits ResolvedTable, UnresolvedTable {}
+
+// jOOQ table class found in catalog
+record ResolvedTable(
+    String javaFieldName,  // field name in generated Tables class — e.g. "FILM"
+    Table<?> table         // jOOQ instance; provides column and FK metadata
+) implements TableStep {}
+
+// SQL name could not be matched; tableName is on the parent record
+record UnresolvedTable() implements TableStep {}
+```
+
+The validator reports an error for `UnresolvedTable`; the code generator only consumes `ResolvedTable`.
 
 ### `GraphitronField`
 
 ```java
 sealed interface GraphitronField
     permits RootField, ChildField, NotGeneratedField, UnclassifiedField {
-    GraphQLFieldDefinition definition();
-    default String name() { return definition().getName(); }
+    String name();
+    SourceLocation location();
 }
 
 sealed interface RootField extends GraphitronField
@@ -146,9 +165,43 @@ sealed interface ChildField extends GraphitronField
             ServiceField, ComputedField, PropertyField {}
 ```
 
-`GraphQLFieldDefinition` is available on every leaf via `definition()`, giving access to return type, argument definitions, and directives without duplicating that data into the spec. `name()` is derived from it.
-
 Each leaf type is a Java `record` carrying the properties relevant to code generation (table class, FK key constant, condition wrapper class, etc.). Source context for a `ChildField` is derived from `schema.type(parentTypeName)` — a `TableType` means table-mapped, a `ResultType` means result-mapped.
+
+### `ColumnStep`
+
+`ColumnField` and `ColumnReferenceField` use a sealed hierarchy to represent the outcome of resolving the field's column name against the jOOQ table:
+
+```java
+sealed interface ColumnStep permits ResolvedColumn, UnresolvedColumn {}
+
+// column found in jOOQ table
+record ResolvedColumn(
+    String javaName,   // field name in generated table class — e.g. "TITLE"
+    Field<?> column    // jOOQ instance; used for type inspection at code-gen time
+) implements ColumnStep {}
+
+// column name could not be matched; columnName is on the parent record
+record UnresolvedColumn() implements ColumnStep {}
+```
+
+### `ReferencePathElement`
+
+`TableField`, `ColumnReferenceField`, `NodeIdReferenceField`, `TableMethodField`, `ServiceField`, and `ComputedField` each carry a `List<ReferencePathElement>` representing the `@reference(path:)` join steps. The sealed hierarchy distinguishes six states:
+
+```java
+sealed interface ReferencePathElement
+    permits FkStep, FkWithConditionStep, ConditionOnlyStep,
+            UnresolvedKeyStep, UnresolvedConditionStep, UnresolvedKeyAndConditionStep {}
+
+record FkStep(ForeignKey<?, ?> key) implements ReferencePathElement {}
+record FkWithConditionStep(ForeignKey<?, ?> key, MethodRef condition) implements ReferencePathElement {}
+record ConditionOnlyStep(MethodRef condition) implements ReferencePathElement {}
+record UnresolvedKeyStep(String keyName) implements ReferencePathElement {}
+record UnresolvedConditionStep(String qualifiedName) implements ReferencePathElement {}
+record UnresolvedKeyAndConditionStep(String keyName, String conditionName) implements ReferencePathElement {}
+```
+
+The validator reports errors for the three `Unresolved*` variants; the code generator only consumes the three resolved variants.
 
 ### `GraphitronSchema` container
 
@@ -160,10 +213,6 @@ record GraphitronSchema(
     Map<FieldCoordinates, GraphitronField> fields
 ) {
     GraphitronType type(String name) { return types.get(name); }
-
-    GraphitronField field(FieldCoordinates coordinates) {
-        return fields.get(coordinates);
-    }
 
     GraphitronField field(String typeName, String fieldName) {
         return fields.get(FieldCoordinates.coordinates(typeName, fieldName));
@@ -203,21 +252,19 @@ class JooqCatalog {
 record TableEntry(String javaFieldName, Table<?> table) {}
 ```
 
-The `@table` directive carries the SQL name — what the schema author writes. The Java field name (e.g. `"FILM"`) is what appears in generated code. Both differ and both are needed, so `TableEntry` returns them together. `FieldsSpecBuilder` then stores both on `TableType`:
+The `@table` directive carries the SQL name — what the schema author writes. The Java field name (e.g. `"FILM"`) is what appears in generated code. Both differ and both are needed, so `TableEntry` returns them together. `FieldsSpecBuilder` then stores both on `TableType` using the `TableStep` sealed hierarchy:
 
 ```java
 String sqlName = getDirectiveArg(objectType, "table", "name");
 Optional<TableEntry> entry = jooqCatalog.findTable(sqlName);
+TableStep tableStep = entry
+    .<TableStep>map(e -> new ResolvedTable(e.javaFieldName(), e.table()))
+    .orElseGet(UnresolvedTable::new);
 
-types.put(typeName, new TableType(
-    objectType,
-    sqlName,
-    entry.map(TableEntry::javaFieldName).orElse(null),
-    entry.map(TableEntry::table)
-));
+types.put(typeName, new TableType(name, location, sqlName, tableStep));
 ```
 
-When `table` is present it provides columns, primary key, and FK metadata — used directly by FK auto-inference. When absent, a downstream validation pass reports the unresolved name.
+When `ResolvedTable` it provides columns, primary key, and FK metadata — used directly by FK auto-inference. When `UnresolvedTable`, a downstream validation pass reports the unresolved name.
 
 The generator drives iteration from `TypeDefinitionRegistry` (types with `@table`) and looks up by coordinates:
 
@@ -744,7 +791,10 @@ src/test/resources/record/
 | `graphitron-java-codegen/.../generate/GraphQLGenerator.java` | Add new generators when flag is set |
 | `graphitron-java-codegen/.../mappings/JavaPoetClassName.java` | Add `JOOQ_RECORD`, `JOOQ_RESULT`, `LIGHT_DATA_FETCHER`, `GRAPHITRON_FETCHER_FACTORY` |
 | `record/field/GraphitronField.java` + 28 leaf types | **Done** — Deliverable 1 |
+| `record/field/ColumnStep.java` + `ResolvedColumn`, `UnresolvedColumn` | **Done** — Deliverable 1 |
+| `record/field/ReferencePathElement.java` + 6 step types | **Done** — Deliverable 1 |
 | `record/type/GraphitronType.java` + 6 leaf types | **Done** — Deliverable 1 |
+| `record/type/TableStep.java` + `ResolvedTable`, `UnresolvedTable` | **Done** — Deliverable 1 |
 | `record/GraphitronSchema.java` | **Done** — Deliverable 1 |
 | `record/FieldsSpecBuilder.java` | **New** |
 | `record/FieldsCodeGenerator.java` | **New** |

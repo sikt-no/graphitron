@@ -20,7 +20,7 @@ public record GraphitronSchema(
     /**
      * Returns the field at the given coordinates, or {@code null} if absent.
      */
-    public GraphitronField get(String typeName, String fieldName) {
+    public GraphitronField field(String typeName, String fieldName) {
         return fields.get(FieldCoordinates.coordinates(typeName, fieldName));
     }
 

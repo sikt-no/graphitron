@@ -6,12 +6,14 @@ import no.sikt.graphitron.record.GraphitronSchemaValidator;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.type.GraphitronType;
+import no.sikt.graphitron.record.type.ResolvedTable;
 import no.sikt.graphitron.record.type.RootType;
 import no.sikt.graphitron.record.type.TableType;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+
+import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
 
 /**
  * Static factory helpers shared by all Level 1 validation test classes.
@@ -41,7 +43,7 @@ public final class FieldValidationTestHelper {
      * parent context is table-mapped.
      */
     public static GraphitronSchema inTableTypeSchema(String typeName, String fieldName, GraphitronField field) {
-        var parentType = new TableType(typeName, null, typeName.toLowerCase(), typeName.toUpperCase(), Optional.empty());
+        var parentType = new TableType(typeName, null, typeName.toLowerCase(), new ResolvedTable(typeName.toUpperCase(), FILM));
         return schema(parentType, fieldName, field);
     }
 
