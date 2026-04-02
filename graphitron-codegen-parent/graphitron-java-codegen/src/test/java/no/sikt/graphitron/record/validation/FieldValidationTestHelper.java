@@ -6,6 +6,7 @@ import no.sikt.graphitron.record.GraphitronSchemaValidator;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.type.GraphitronType;
+import no.sikt.graphitron.record.type.NoNode;
 import no.sikt.graphitron.record.type.ResolvedTable;
 import no.sikt.graphitron.record.type.RootType;
 import no.sikt.graphitron.record.type.TableType;
@@ -43,7 +44,7 @@ public final class FieldValidationTestHelper {
      * parent context is table-mapped.
      */
     public static GraphitronSchema inTableTypeSchema(String typeName, String fieldName, GraphitronField field) {
-        var parentType = new TableType(typeName, null, typeName.toLowerCase(), new ResolvedTable(typeName.toUpperCase(), FILM));
+        var parentType = new TableType(typeName, null, typeName.toLowerCase(), new ResolvedTable(typeName.toUpperCase(), FILM), new NoNode());
         return schema(parentType, fieldName, field);
     }
 

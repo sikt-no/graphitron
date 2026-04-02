@@ -87,6 +87,16 @@ public class GraphitronSchemaValidator {
                 type.location()
             ));
         }
+        if (type.node() instanceof no.sikt.graphitron.record.type.NodeDirective nd) {
+            for (var keyColumn : nd.keyColumns()) {
+                if (keyColumn instanceof no.sikt.graphitron.record.type.UnresolvedKeyColumn u) {
+                    errors.add(new ValidationError(
+                        "Type '" + type.name() + "': key column '" + u.name() + "' in @node could not be resolved in the jOOQ table",
+                        type.location()
+                    ));
+                }
+            }
+        }
     }
     private void validateResultType(no.sikt.graphitron.record.type.ResultType type, List<ValidationError> errors) {}
     private void validateRootType(no.sikt.graphitron.record.type.RootType type, List<ValidationError> errors) {}
