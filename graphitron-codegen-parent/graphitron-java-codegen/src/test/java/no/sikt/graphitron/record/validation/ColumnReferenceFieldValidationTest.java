@@ -1,10 +1,15 @@
 package no.sikt.graphitron.record.validation;
 
+import no.sikt.graphitron.jooq.generated.testdata.public_.Keys;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.ColumnReferenceField;
+import no.sikt.graphitron.record.field.ConditionOnlyStep;
+import no.sikt.graphitron.record.field.FkStep;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
 import no.sikt.graphitron.record.field.ReferencePathElement;
+import no.sikt.graphitron.record.field.UnresolvedConditionStep;
+import no.sikt.graphitron.record.field.UnresolvedKeyStep;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -17,22 +22,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ColumnReferenceFieldValidationTest {
 
-    /** One FK-only path element: table=language, key=FILM_LANGUAGE_FK, no condition. */
+    /** One FK-only path element: Film → Language via film_language_id_fkey. */
     private static final List<ReferencePathElement> FK_PATH = List.of(
-        new ReferencePathElement("language", "FILM_LANGUAGE_FK", Optional.empty())
+        new FkStep(Keys.FILM__FILM_LANGUAGE_ID_FKEY)
     );
 
-    /** One method-only path element with a fully resolved condition method. */
+    /** One condition-only path element with a fully resolved condition method. */
     private static final List<ReferencePathElement> CONDITION_PATH = List.of(
-        new ReferencePathElement(null, null, Optional.of(
-            new MethodRef("com.example.Conditions.languageCondition", "org.jooq.Condition",
-                List.of())))
-    );
-
-    /** One method-only path element where the condition method could not be resolved. */
-    private static final List<ReferencePathElement> UNRESOLVED_CONDITION_PATH = List.of(
-        new ReferencePathElement(null, null, Optional.of(
-            new MethodRef("com.example.Conditions.languageCondition", null, null)))
+        new ConditionOnlyStep(new MethodRef("com.example.Conditions.languageCondition", "org.jooq.Condition", List.of()))
     );
 
     enum Case implements ValidatorCase {
@@ -81,10 +78,22 @@ class ColumnReferenceFieldValidationTest {
             }
         },
 
+        /** Key name specified but FK could not be found in the jOOQ catalog. */
+        UNRESOLVED_KEY {
+            public GraphitronField field() {
+                return new ColumnReferenceField("languageName", null, "languageName", "NAME", Optional.empty(),
+                    List.of(new UnresolvedKeyStep("FILM_LANGUAGE_FK")));
+            }
+            public List<String> errors() {
+                return List.of("Field 'languageName': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog");
+            }
+        },
+
         /** Condition method present but could not be resolved via reflection. */
         UNRESOLVED_CONDITION {
             public GraphitronField field() {
-                return new ColumnReferenceField("languageName", null, "languageName", "NAME", Optional.empty(), UNRESOLVED_CONDITION_PATH);
+                return new ColumnReferenceField("languageName", null, "languageName", "NAME", Optional.empty(),
+                    List.of(new UnresolvedConditionStep("com.example.Conditions.languageCondition")));
             }
             public List<String> errors() {
                 return List.of("Field 'languageName': condition method 'com.example.Conditions.languageCondition' could not be resolved");

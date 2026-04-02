@@ -3,6 +3,8 @@ package no.sikt.graphitron.record;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.ReferencePathElement;
+import no.sikt.graphitron.record.field.UnresolvedConditionStep;
+import no.sikt.graphitron.record.field.UnresolvedKeyStep;
 import no.sikt.graphitron.record.type.GraphitronType;
 
 import java.util.ArrayList;
@@ -131,7 +133,7 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         } else {
-            validateReferencePathMethods(field.name(), field.location(), field.referencePath(), errors);
+            validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
         }
     }
     private void validateNodeIdField(no.sikt.graphitron.record.field.NodeIdField field, List<ValidationError> errors) {}
@@ -142,14 +144,14 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         } else {
-            validateReferencePathMethods(field.name(), field.location(), field.referencePath(), errors);
+            validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
         }
     }
     private void validateTableField(no.sikt.graphitron.record.field.TableField field, GraphitronSchema schema, List<ValidationError> errors) {
-        validateReferencePathMethods(field.name(), field.location(), field.referencePath(), errors);
+        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
     }
     private void validateTableMethodField(no.sikt.graphitron.record.field.TableMethodField field, List<ValidationError> errors) {
-        validateReferencePathMethods(field.name(), field.location(), field.referencePath(), errors);
+        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
     }
     private void validateTableInterfaceField(no.sikt.graphitron.record.field.TableInterfaceField field, List<ValidationError> errors) {}
     private void validateInterfaceField(no.sikt.graphitron.record.field.InterfaceField field, List<ValidationError> errors) {}
@@ -157,10 +159,10 @@ public class GraphitronSchemaValidator {
     private void validateNestingField(no.sikt.graphitron.record.field.NestingField field, GraphitronSchema schema, List<ValidationError> errors) {}
     private void validateConstructorField(no.sikt.graphitron.record.field.ConstructorField field, List<ValidationError> errors) {}
     private void validateServiceField(no.sikt.graphitron.record.field.ServiceField field, List<ValidationError> errors) {
-        validateReferencePathMethods(field.name(), field.location(), field.referencePath(), errors);
+        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
     }
     private void validateComputedField(no.sikt.graphitron.record.field.ComputedField field, List<ValidationError> errors) {
-        validateReferencePathMethods(field.name(), field.location(), field.referencePath(), errors);
+        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
     }
     private void validatePropertyField(no.sikt.graphitron.record.field.PropertyField field, List<ValidationError> errors) {}
     private void validateNotGeneratedField(no.sikt.graphitron.record.field.NotGeneratedField field, List<ValidationError> errors) {}
@@ -171,13 +173,19 @@ public class GraphitronSchemaValidator {
         ));
     }
 
-    private void validateReferencePathMethods(String fieldName, SourceLocation location, List<ReferencePathElement> path, List<ValidationError> errors) {
-        path.stream()
-            .flatMap(e -> e.condition().stream())
-            .filter(m -> m.returnTypeName() == null)
-            .forEach(m -> errors.add(new ValidationError(
-                "Field '" + fieldName + "': condition method '" + m.qualifiedName() + "' could not be resolved",
-                location
-            )));
+    private void validateReferencePath(String fieldName, SourceLocation location, List<ReferencePathElement> path, List<ValidationError> errors) {
+        for (var element : path) {
+            switch (element) {
+                case no.sikt.graphitron.record.field.FkStep ignored -> {}
+                case no.sikt.graphitron.record.field.FkWithConditionStep ignored -> {}
+                case no.sikt.graphitron.record.field.ConditionOnlyStep ignored -> {}
+                case UnresolvedKeyStep u -> errors.add(new ValidationError(
+                    "Field '" + fieldName + "': key '" + u.keyName() + "' could not be resolved in the jOOQ catalog",
+                    location));
+                case UnresolvedConditionStep u -> errors.add(new ValidationError(
+                    "Field '" + fieldName + "': condition method '" + u.qualifiedName() + "' could not be resolved",
+                    location));
+            }
+        }
     }
 }

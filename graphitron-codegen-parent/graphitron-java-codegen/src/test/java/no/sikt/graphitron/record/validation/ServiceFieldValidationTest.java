@@ -1,16 +1,16 @@
 package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
+import no.sikt.graphitron.record.field.ConditionOnlyStep;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
 import no.sikt.graphitron.record.field.ParamInfo;
-import no.sikt.graphitron.record.field.ReferencePathElement;
 import no.sikt.graphitron.record.field.ServiceField;
+import no.sikt.graphitron.record.field.UnresolvedConditionStep;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inTableTypeSchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
@@ -31,10 +31,9 @@ class ServiceFieldValidationTest {
         /** Lift condition with a resolved method. */
         WITH_LIFT_CONDITION {
             public GraphitronField field() {
-                return new ServiceField("externalChild", null, List.of(
-                    new ReferencePathElement(null, null, Optional.of(
-                        new MethodRef("com.example.Conditions.liftCondition", "org.jooq.Condition",
-                            List.of(new ParamInfo("org.jooq.DSLContext", "ctx")))))));
+                var condition = new MethodRef("com.example.Conditions.liftCondition", "org.jooq.Condition",
+                    List.of(new ParamInfo("org.jooq.DSLContext", "ctx")));
+                return new ServiceField("externalChild", null, List.of(new ConditionOnlyStep(condition)));
             }
             public List<String> errors() { return List.of(); }
         },
@@ -43,8 +42,7 @@ class ServiceFieldValidationTest {
         UNRESOLVED_CONDITION {
             public GraphitronField field() {
                 return new ServiceField("externalChild", null, List.of(
-                    new ReferencePathElement(null, null, Optional.of(
-                        new MethodRef("com.example.Conditions.liftCondition", null, null)))));
+                    new UnresolvedConditionStep("com.example.Conditions.liftCondition")));
             }
             public List<String> errors() {
                 return List.of("Field 'externalChild': condition method 'com.example.Conditions.liftCondition' could not be resolved");

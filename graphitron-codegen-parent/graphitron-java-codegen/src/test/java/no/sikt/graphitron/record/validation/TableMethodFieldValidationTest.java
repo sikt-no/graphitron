@@ -1,15 +1,18 @@
 package no.sikt.graphitron.record.validation;
 
+import no.sikt.graphitron.jooq.generated.testdata.public_.Keys;
 import no.sikt.graphitron.record.ValidationError;
+import no.sikt.graphitron.record.field.ConditionOnlyStep;
+import no.sikt.graphitron.record.field.FkStep;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
-import no.sikt.graphitron.record.field.ReferencePathElement;
 import no.sikt.graphitron.record.field.TableMethodField;
+import no.sikt.graphitron.record.field.UnresolvedConditionStep;
+import no.sikt.graphitron.record.field.UnresolvedKeyStep;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inTableTypeSchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
@@ -27,12 +30,39 @@ class TableMethodFieldValidationTest {
             public List<String> errors() { return List.of(); }
         },
 
+        /** Explicit FK path — key resolved. */
+        WITH_FK_PATH {
+            public GraphitronField field() {
+                return new TableMethodField("filteredActors", null, List.of(
+                    new FkStep(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY)));
+            }
+            public List<String> errors() { return List.of(); }
+        },
+
+        /** Condition only — no FK. */
+        WITH_CONDITION_ONLY {
+            public GraphitronField field() {
+                var condition = new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of());
+                return new TableMethodField("filteredActors", null, List.of(new ConditionOnlyStep(condition)));
+            }
+            public List<String> errors() { return List.of(); }
+        },
+
+        /** Key name specified but FK could not be found in the jOOQ catalog. */
+        UNRESOLVED_KEY {
+            public GraphitronField field() {
+                return new TableMethodField("filteredActors", null, List.of(new UnresolvedKeyStep("FILM_ACTOR_FK")));
+            }
+            public List<String> errors() {
+                return List.of("Field 'filteredActors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog");
+            }
+        },
+
         /** Condition method present but could not be resolved via reflection. */
         UNRESOLVED_CONDITION {
             public GraphitronField field() {
                 return new TableMethodField("filteredActors", null, List.of(
-                    new ReferencePathElement(null, null, Optional.of(
-                        new MethodRef("com.example.Conditions.actorCondition", null, null)))));
+                    new UnresolvedConditionStep("com.example.Conditions.actorCondition")));
             }
             public List<String> errors() {
                 return List.of("Field 'filteredActors': condition method 'com.example.Conditions.actorCondition' could not be resolved");

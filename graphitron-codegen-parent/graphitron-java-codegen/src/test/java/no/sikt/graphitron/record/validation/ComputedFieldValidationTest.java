@@ -2,14 +2,14 @@ package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.ComputedField;
+import no.sikt.graphitron.record.field.ConditionOnlyStep;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
-import no.sikt.graphitron.record.field.ReferencePathElement;
+import no.sikt.graphitron.record.field.UnresolvedConditionStep;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inTableTypeSchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
@@ -27,12 +27,20 @@ class ComputedFieldValidationTest {
             public List<String> errors() { return List.of(); }
         },
 
+        /** Lift condition with a resolved method. */
+        WITH_LIFT_CONDITION {
+            public GraphitronField field() {
+                var condition = new MethodRef("com.example.Conditions.liftCondition", "org.jooq.Condition", List.of());
+                return new ComputedField("fullTitle", null, List.of(new ConditionOnlyStep(condition)));
+            }
+            public List<String> errors() { return List.of(); }
+        },
+
         /** Lift condition method present but could not be resolved via reflection. */
         UNRESOLVED_CONDITION {
             public GraphitronField field() {
                 return new ComputedField("fullTitle", null, List.of(
-                    new ReferencePathElement(null, null, Optional.of(
-                        new MethodRef("com.example.Conditions.liftCondition", null, null)))));
+                    new UnresolvedConditionStep("com.example.Conditions.liftCondition")));
             }
             public List<String> errors() {
                 return List.of("Field 'fullTitle': condition method 'com.example.Conditions.liftCondition' could not be resolved");

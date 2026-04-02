@@ -3,17 +3,21 @@ package no.sikt.graphitron.record.field;
 import java.util.List;
 
 /**
- * A resolved reference to a Java method, with reflection data captured at parse time.
+ * A successfully resolved reference to a Java method, with reflection data captured at parse time.
  *
- * <p>{@code qualifiedName} is always set when a condition is present in the schema — it is the
- * fully qualified method name derived from the {@code ExternalCodeReference} input object, e.g.
+ * <p>A {@code MethodRef} only appears inside {@link ConditionOnlyStep} or
+ * {@link FkWithConditionStep} — both of which represent resolved states. All fields are
+ * non-null. Unresolved conditions are represented by {@link UnresolvedConditionStep} instead.
+ *
+ * <p>{@code qualifiedName} is the fully qualified method name derived from the
+ * {@code ExternalCodeReference} input object, e.g.
  * {@code "com.example.CustomerConditions.activeCustomers"}.
  *
  * <p>{@code returnTypeName} is the fully qualified return type of the method (e.g.
- * {@code "org.jooq.Condition"}); {@code null} when the method could not be resolved via reflection.
+ * {@code "org.jooq.Condition"}).
  *
- * <p>{@code params} is the list of parameters in declaration order; {@code null} when the method
- * could not be resolved. An empty list means the method was found and takes no parameters.
+ * <p>{@code params} is the list of parameters in declaration order; an empty list means the
+ * method takes no parameters.
  */
 public record MethodRef(
     String qualifiedName,

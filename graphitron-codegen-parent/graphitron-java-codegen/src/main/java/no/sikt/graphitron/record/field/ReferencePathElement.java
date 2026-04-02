@@ -1,22 +1,22 @@
 package no.sikt.graphitron.record.field;
 
-import java.util.Optional;
-
 /**
- * One step in a {@code @reference} path, corresponding to one {@code ReferenceElement} in the schema.
+ * One resolved step in a {@code @reference} path, corresponding to one {@code ReferenceElement}
+ * in the schema.
  *
- * <p>{@code table} is the SQL name of the intermediate table to join to; {@code null} when not
- * specified (the join target is inferred from the key or from the field's return type).
+ * <p>The sealed hierarchy distinguishes four valid states and two error states:
+ * <ul>
+ *   <li>{@link FkStep} — a jOOQ FK was resolved; no condition.</li>
+ *   <li>{@link FkWithConditionStep} — a jOOQ FK was resolved; a condition method was also resolved.</li>
+ *   <li>{@link ConditionOnlyStep} — a condition method was resolved; no FK (lift conditions).</li>
+ *   <li>{@link UnresolvedKeyStep} — a key name was specified but could not be found in the jOOQ catalog.</li>
+ *   <li>{@link UnresolvedConditionStep} — a condition was specified but the method could not be resolved via reflection.</li>
+ * </ul>
  *
- * <p>{@code key} is the SQL name of the foreign key constant to use; {@code null} when not
- * specified (Graphitron will attempt FK auto-inference between the two tables).
- *
- * <p>{@code condition} is the resolved condition method for this step; empty when no
- * {@code condition} was specified on this element. When present, used to generate the join ON
- * clause (lift conditions have no FK and are method-only).
+ * <p>The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error for
+ * {@code UnresolvedKeyStep} and {@code UnresolvedConditionStep}. The valid variants are consumed
+ * by the code generator.
  */
-public record ReferencePathElement(
-    String table,
-    String key,
-    Optional<MethodRef> condition
-) {}
+public sealed interface ReferencePathElement
+    permits FkStep, FkWithConditionStep, ConditionOnlyStep,
+            UnresolvedKeyStep, UnresolvedConditionStep {}
