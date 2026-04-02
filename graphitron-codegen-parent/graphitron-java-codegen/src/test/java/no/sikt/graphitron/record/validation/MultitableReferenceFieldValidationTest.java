@@ -17,7 +17,7 @@ class MultitableReferenceFieldValidationTest {
     enum Case implements ValidatorCase {
 
         UNSUPPORTED("@multitableReference is not supported in record-based output — always an error",
-            new MultitableReferenceField("languages", null),
+            new MultitableReferenceField("Film", "languages", null),
             List.of("Field 'languages': @multitableReference is not supported in record-based output"));
 
         private final String description;

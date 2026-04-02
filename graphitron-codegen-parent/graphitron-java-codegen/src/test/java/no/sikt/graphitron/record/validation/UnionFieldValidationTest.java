@@ -18,7 +18,7 @@ class UnionFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("union field — always valid",
-            new UnionField("result", null, new FieldCardinality.Single()),
+            new UnionField("Film", "result", null, new FieldCardinality.Single()),
             List.of());
 
         private final String description;

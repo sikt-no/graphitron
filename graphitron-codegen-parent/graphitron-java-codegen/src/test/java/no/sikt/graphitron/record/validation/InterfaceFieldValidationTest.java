@@ -18,7 +18,7 @@ class InterfaceFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("interface field — always valid",
-            new InterfaceField("person", null, new FieldCardinality.Single()),
+            new InterfaceField("Film", "person", null, new FieldCardinality.Single()),
             List.of());
 
         private final String description;

@@ -17,7 +17,7 @@ class InsertMutationFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("insert mutation field — always valid",
-            new InsertMutationField("createFilm", null),
+            new InsertMutationField("Query", "createFilm", null),
             List.of());
 
         private final String description;

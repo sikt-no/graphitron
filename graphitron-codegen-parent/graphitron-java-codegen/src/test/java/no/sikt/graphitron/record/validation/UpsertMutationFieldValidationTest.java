@@ -17,7 +17,7 @@ class UpsertMutationFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("upsert mutation field — always valid",
-            new UpsertMutationField("upsertFilm", null),
+            new UpsertMutationField("Query", "upsertFilm", null),
             List.of());
 
         private final String description;

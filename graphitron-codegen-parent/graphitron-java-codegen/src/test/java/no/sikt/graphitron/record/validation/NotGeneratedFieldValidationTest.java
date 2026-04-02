@@ -17,7 +17,7 @@ class NotGeneratedFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("field marked @notGenerated — always valid, no errors expected",
-            new NotGeneratedField("ignored", null),
+            new NotGeneratedField("Query", "ignored", null),
             List.of());
 
         private final String description;

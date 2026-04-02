@@ -14,6 +14,7 @@ import java.util.List;
  * <p>{@code cardinality} is the cardinality of this field.
  */
 public record TableMethodField(
+    String parentTypeName,
     String name,
     SourceLocation location,
     List<ReferencePathElement> referencePath,

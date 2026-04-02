@@ -5,4 +5,8 @@ import graphql.language.SourceLocation;
 /**
  * Triggered by {@code @lookupKey} on one or more arguments.
  */
-public record LookupQueryField(String name, SourceLocation location) implements QueryField {}
+public record LookupQueryField(
+    String parentTypeName,
+    String name,
+    SourceLocation location
+) implements QueryField {}

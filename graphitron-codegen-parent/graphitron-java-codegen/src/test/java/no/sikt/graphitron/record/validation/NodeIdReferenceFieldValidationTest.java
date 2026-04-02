@@ -23,27 +23,27 @@ class NodeIdReferenceFieldValidationTest {
     enum Case implements ValidatorCase {
 
         WITH_PATH("reference path resolves and node type resolves — no errors",
-            new NodeIdReferenceField("languageId", null, "Language", new ResolvedNodeType(),
+            new NodeIdReferenceField("Film", "languageId", null, "Language", new ResolvedNodeType(),
                 List.of(new FkStep(Keys.FILM__FILM_LANGUAGE_ID_FKEY))),
             List.of()),
 
         MISSING_PATH("no @reference directive — path is empty",
-            new NodeIdReferenceField("languageId", null, "Language", new ResolvedNodeType(),
+            new NodeIdReferenceField("Film", "languageId", null, "Language", new ResolvedNodeType(),
                 List.of()),
             List.of("Field 'languageId': @reference path is required")),
 
         UNRESOLVED_NODE_TYPE("typeName does not resolve to a @node type — one error",
-            new NodeIdReferenceField("languageId", null, "UnknownType", new UnresolvedNodeType(),
+            new NodeIdReferenceField("Film", "languageId", null, "UnknownType", new UnresolvedNodeType(),
                 List.of(new FkStep(Keys.FILM__FILM_LANGUAGE_ID_FKEY))),
             List.of("Field 'languageId': type 'UnknownType' does not exist in the schema or does not have @node")),
 
         UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
-            new NodeIdReferenceField("languageId", null, "Language", new ResolvedNodeType(),
+            new NodeIdReferenceField("Film", "languageId", null, "Language", new ResolvedNodeType(),
                 List.of(new UnresolvedKeyStep("FILM_LANGUAGE_FK"))),
             List.of("Field 'languageId': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog")),
 
         UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection",
-            new NodeIdReferenceField("languageId", null, "Language", new ResolvedNodeType(),
+            new NodeIdReferenceField("Film", "languageId", null, "Language", new ResolvedNodeType(),
                 List.of(new UnresolvedConditionStep("com.example.Conditions.languageCondition"))),
             List.of("Field 'languageId': condition method 'com.example.Conditions.languageCondition' could not be resolved"));
 

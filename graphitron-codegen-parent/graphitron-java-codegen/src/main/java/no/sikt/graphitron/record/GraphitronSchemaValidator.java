@@ -1,7 +1,6 @@
 package no.sikt.graphitron.record;
 
 import graphql.language.SourceLocation;
-import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.ReferencePathElement;
 import no.sikt.graphitron.record.field.FieldConditionStep;
@@ -31,7 +30,7 @@ public class GraphitronSchemaValidator {
     public List<ValidationError> validate(GraphitronSchema schema) {
         var errors = new ArrayList<ValidationError>();
         schema.types().values().forEach(type -> validateType(type, schema, errors));
-        schema.fields().forEach((coords, field) -> validateField(coords, field, schema, errors));
+        schema.fields().values().forEach(field -> validateField(field, schema, errors));
         return List.copyOf(errors);
     }
 
@@ -46,7 +45,7 @@ public class GraphitronSchemaValidator {
         }
     }
 
-    private void validateField(FieldCoordinates coords, GraphitronField field, GraphitronSchema schema, List<ValidationError> errors) {
+    private void validateField(GraphitronField field, GraphitronSchema schema, List<ValidationError> errors) {
         switch (field) {
             case no.sikt.graphitron.record.field.LookupQueryField f        -> validateLookupQueryField(f, errors);
             case no.sikt.graphitron.record.field.TableQueryField f         -> validateTableQueryField(f, errors);
@@ -64,7 +63,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.record.field.ServiceMutationField f    -> validateServiceMutationField(f, errors);
             case no.sikt.graphitron.record.field.ColumnField f             -> validateColumnField(f, errors);
             case no.sikt.graphitron.record.field.ColumnReferenceField f    -> validateColumnReferenceField(f, errors);
-            case no.sikt.graphitron.record.field.NodeIdField f             -> validateNodeIdField(coords, f, schema, errors);
+            case no.sikt.graphitron.record.field.NodeIdField f             -> validateNodeIdField(f, errors);
             case no.sikt.graphitron.record.field.NodeIdReferenceField f    -> validateNodeIdReferenceField(f, errors);
             case no.sikt.graphitron.record.field.TableField f              -> validateTableField(f, schema, errors);
             case no.sikt.graphitron.record.field.TableMethodField f        -> validateTableMethodField(f, errors);
@@ -177,9 +176,8 @@ public class GraphitronSchemaValidator {
             validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
         }
     }
-    private void validateNodeIdField(FieldCoordinates coords, no.sikt.graphitron.record.field.NodeIdField field, GraphitronSchema schema, List<ValidationError> errors) {
-        var parentType = schema.type(coords.getTypeName());
-        if (!(parentType instanceof TableType t && t.node() instanceof NodeDirective)) {
+    private void validateNodeIdField(no.sikt.graphitron.record.field.NodeIdField field, List<ValidationError> errors) {
+        if (field.node() instanceof no.sikt.graphitron.record.type.NoNode) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': @nodeId requires the containing type to have @node",
                 field.location()

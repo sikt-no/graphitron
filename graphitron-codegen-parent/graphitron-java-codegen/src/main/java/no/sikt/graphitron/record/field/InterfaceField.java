@@ -7,4 +7,9 @@ import graphql.language.SourceLocation;
  *
  * <p>{@code cardinality} is the cardinality of this field.
  */
-public record InterfaceField(String name, SourceLocation location, FieldCardinality cardinality) implements ChildField {}
+public record InterfaceField(
+    String parentTypeName,
+    String name,
+    SourceLocation location,
+    FieldCardinality cardinality
+) implements ChildField {}

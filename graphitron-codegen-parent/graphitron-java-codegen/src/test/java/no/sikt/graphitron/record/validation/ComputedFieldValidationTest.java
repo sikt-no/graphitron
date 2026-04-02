@@ -20,16 +20,16 @@ class ComputedFieldValidationTest {
     enum Case implements ValidatorCase {
 
         NO_PATH("no @reference — no lift condition; valid when return type is not table-mapped",
-            new ComputedField("fullTitle", null, List.of()),
+            new ComputedField("Film", "fullTitle", null, List.of()),
             List.of()),
 
         WITH_LIFT_CONDITION("lift condition with a resolved method",
-            new ComputedField("fullTitle", null, List.of(
+            new ComputedField("Film", "fullTitle", null, List.of(
                 new ConditionOnlyStep(new MethodRef("com.example.Conditions.liftCondition", "org.jooq.Condition", List.of())))),
             List.of()),
 
         UNRESOLVED_CONDITION("lift condition method present but could not be resolved via reflection",
-            new ComputedField("fullTitle", null, List.of(
+            new ComputedField("Film", "fullTitle", null, List.of(
                 new UnresolvedConditionStep("com.example.Conditions.liftCondition"))),
             List.of("Field 'fullTitle': condition method 'com.example.Conditions.liftCondition' could not be resolved"));
 

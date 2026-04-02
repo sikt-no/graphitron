@@ -17,7 +17,7 @@ class EntityQueryFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("entity query field — always valid",
-            new EntityQueryField("_entities", null),
+            new EntityQueryField("Query", "_entities", null),
             List.of());
 
         private final String description;

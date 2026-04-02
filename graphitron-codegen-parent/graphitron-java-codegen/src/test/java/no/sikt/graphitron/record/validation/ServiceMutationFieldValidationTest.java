@@ -17,7 +17,7 @@ class ServiceMutationFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("service mutation field — always valid",
-            new ServiceMutationField("externalMutation", null),
+            new ServiceMutationField("Query", "externalMutation", null),
             List.of());
 
         private final String description;

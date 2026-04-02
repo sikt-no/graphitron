@@ -13,6 +13,7 @@ import java.util.List;
  * Empty when no {@code @reference} directive is present.
  */
 public record ServiceField(
+    String parentTypeName,
     String name,
     SourceLocation location,
     List<ReferencePathElement> referencePath

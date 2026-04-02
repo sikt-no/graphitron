@@ -17,11 +17,11 @@ class PropertyFieldValidationTest {
     enum Case implements ValidatorCase {
 
         IMPLICIT_COLUMN("no @field — property name defaults to the GraphQL field name",
-            new PropertyField("titleProp", null, "titleProp"),
+            new PropertyField("Film", "titleProp", null, "titleProp"),
             List.of()),
 
         EXPLICIT_COLUMN("@field(name:) overrides the property name",
-            new PropertyField("titleProp", null, "title"),
+            new PropertyField("Film", "titleProp", null, "title"),
             List.of());
 
         private final String description;

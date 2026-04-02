@@ -5,4 +5,8 @@ import graphql.language.SourceLocation;
 /**
  * A mutation field delegating to a developer-provided service class via {@code @service}.
  */
-public record ServiceMutationField(String name, SourceLocation location) implements MutationField {}
+public record ServiceMutationField(
+    String parentTypeName,
+    String name,
+    SourceLocation location
+) implements MutationField {}

@@ -17,7 +17,7 @@ class NestingFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("nesting field — always valid",
-            new NestingField("nested", null),
+            new NestingField("Film", "nested", null),
             List.of());
 
         private final String description;

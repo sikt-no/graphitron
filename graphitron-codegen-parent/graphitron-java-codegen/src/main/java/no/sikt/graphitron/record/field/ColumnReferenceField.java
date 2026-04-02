@@ -24,6 +24,7 @@ import java.util.List;
  * error when it is present.
  */
 public record ColumnReferenceField(
+    String parentTypeName,
     String name,
     SourceLocation location,
     String columnName,

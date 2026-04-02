@@ -21,6 +21,7 @@ import java.util.List;
  * validation error.
  */
 public record NodeIdReferenceField(
+    String parentTypeName,
     String name,
     SourceLocation location,
     String typeName,

@@ -12,6 +12,7 @@ import graphql.language.SourceLocation;
  * validator reports errors for unresolved ordering specs.
  */
 public record TableQueryField(
+    String parentTypeName,
     String name,
     SourceLocation location,
     FieldCardinality cardinality

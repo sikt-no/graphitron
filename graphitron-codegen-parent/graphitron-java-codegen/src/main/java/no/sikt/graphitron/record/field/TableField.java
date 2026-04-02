@@ -22,6 +22,7 @@ import java.util.List;
  * and connection variants.
  */
 public record TableField(
+    String parentTypeName,
     String name,
     SourceLocation location,
     List<ReferencePathElement> referencePath,

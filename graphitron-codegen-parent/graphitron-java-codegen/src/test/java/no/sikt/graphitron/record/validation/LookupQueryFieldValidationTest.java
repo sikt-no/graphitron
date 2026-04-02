@@ -17,7 +17,7 @@ class LookupQueryFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("lookup query field — always valid",
-            new LookupQueryField("filmById", null),
+            new LookupQueryField("Query", "filmById", null),
             List.of());
 
         private final String description;

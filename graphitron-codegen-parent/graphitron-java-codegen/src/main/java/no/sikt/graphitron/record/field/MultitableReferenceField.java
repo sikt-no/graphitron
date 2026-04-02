@@ -10,6 +10,7 @@ import graphql.language.SourceLocation;
  * classified here.
  */
 public record MultitableReferenceField(
+    String parentTypeName,
     String name,
     SourceLocation location
 ) implements ChildField {}

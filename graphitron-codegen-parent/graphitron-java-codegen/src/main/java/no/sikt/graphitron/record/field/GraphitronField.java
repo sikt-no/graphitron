@@ -9,6 +9,9 @@ import graphql.language.SourceLocation;
 public sealed interface GraphitronField
     permits RootField, ChildField, NotGeneratedField, UnclassifiedField {
 
+    /** The name of the parent GraphQL type that defines this field. */
+    String parentTypeName();
+
     String name();
 
     /** SDL source location, or {@code null} for runtime-wired fields with no SDL definition. */

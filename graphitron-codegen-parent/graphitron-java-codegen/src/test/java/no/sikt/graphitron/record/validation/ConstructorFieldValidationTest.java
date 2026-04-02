@@ -17,7 +17,7 @@ class ConstructorFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("constructor field — always valid",
-            new ConstructorField("constructed", null),
+            new ConstructorField("Film", "constructed", null),
             List.of());
 
         private final String description;

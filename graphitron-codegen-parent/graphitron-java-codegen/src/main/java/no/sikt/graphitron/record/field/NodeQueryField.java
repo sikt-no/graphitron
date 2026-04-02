@@ -5,4 +5,8 @@ import graphql.language.SourceLocation;
 /**
  * The {@code Query.node(id:)} field for Relay Global Object Identification.
  */
-public record NodeQueryField(String name, SourceLocation location) implements QueryField {}
+public record NodeQueryField(
+    String parentTypeName,
+    String name,
+    SourceLocation location
+) implements QueryField {}

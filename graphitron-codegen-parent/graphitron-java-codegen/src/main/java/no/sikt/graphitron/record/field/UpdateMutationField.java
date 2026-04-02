@@ -5,4 +5,8 @@ import graphql.language.SourceLocation;
 /**
  * A mutation field for {@code @mutation(typeName: UPDATE)}.
  */
-public record UpdateMutationField(String name, SourceLocation location) implements MutationField {}
+public record UpdateMutationField(
+    String parentTypeName,
+    String name,
+    SourceLocation location
+) implements MutationField {}

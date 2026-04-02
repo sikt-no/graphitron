@@ -9,6 +9,7 @@ import graphql.language.SourceLocation;
  * the value of {@code @field(name:)} when present, otherwise the GraphQL field name.
  */
 public record PropertyField(
+    String parentTypeName,
     String name,
     SourceLocation location,
     String columnName

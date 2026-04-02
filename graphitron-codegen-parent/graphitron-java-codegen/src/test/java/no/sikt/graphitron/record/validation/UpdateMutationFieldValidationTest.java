@@ -17,7 +17,7 @@ class UpdateMutationFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("update mutation field — always valid",
-            new UpdateMutationField("updateFilm", null),
+            new UpdateMutationField("Query", "updateFilm", null),
             List.of());
 
         private final String description;

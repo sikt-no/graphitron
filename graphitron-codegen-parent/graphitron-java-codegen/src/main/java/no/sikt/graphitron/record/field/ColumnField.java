@@ -18,6 +18,7 @@ import graphql.language.SourceLocation;
  * error when it is present.
  */
 public record ColumnField(
+    String parentTypeName,
     String name,
     SourceLocation location,
     String columnName,

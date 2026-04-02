@@ -18,7 +18,7 @@ class TableInterfaceFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("table interface field — always valid",
-            new TableInterfaceField("status", null, new FieldCardinality.Single()),
+            new TableInterfaceField("Film", "status", null, new FieldCardinality.Single()),
             List.of());
 
         private final String description;

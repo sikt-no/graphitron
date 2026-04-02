@@ -18,7 +18,7 @@ class InterfaceQueryFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("interface query field — always valid",
-            new InterfaceQueryField("persons", null, new FieldCardinality.Single()),
+            new InterfaceQueryField("Query", "persons", null, new FieldCardinality.Single()),
             List.of());
 
         private final String description;

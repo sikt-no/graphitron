@@ -4,12 +4,13 @@ import no.sikt.graphitron.record.GraphitronSchema;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.NodeIdField;
+import no.sikt.graphitron.record.type.NodeDirective;
+import no.sikt.graphitron.record.type.NoNode;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inNodeTableTypeSchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inTableTypeSchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,25 +20,21 @@ class NodeIdFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("parent type has @node — no errors",
-            new NodeIdField("id", null),
-            List.of(),
-            true),
+            new NodeIdField("Film", "id", null, new NodeDirective(null, List.of())),
+            List.of()),
 
         PARENT_LACKS_NODE("parent type has no @node — one error",
-            new NodeIdField("id", null),
-            List.of("Field 'id': @nodeId requires the containing type to have @node"),
-            false);
+            new NodeIdField("Film", "id", null, new NoNode()),
+            List.of("Field 'id': @nodeId requires the containing type to have @node"));
 
         private final String description;
         private final GraphitronField field;
         private final List<String> errors;
-        private final boolean parentHasNode;
 
-        Case(String description, GraphitronField field, List<String> errors, boolean parentHasNode) {
+        Case(String description, GraphitronField field, List<String> errors) {
             this.description = description;
             this.field = field;
             this.errors = errors;
-            this.parentHasNode = parentHasNode;
         }
 
         @Override public GraphitronField field() { return field; }
@@ -45,9 +42,7 @@ class NodeIdFieldValidationTest {
         @Override public String toString() { return description; }
 
         GraphitronSchema schema() {
-            return parentHasNode
-                ? inNodeTableTypeSchema("Film", "id", field)
-                : inTableTypeSchema("Film", "id", field);
+            return inTableTypeSchema("Film", "id", field);
         }
     }
 

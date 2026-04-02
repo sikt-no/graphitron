@@ -17,7 +17,7 @@ class NodeQueryFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("node query field — always valid",
-            new NodeQueryField("node", null),
+            new NodeQueryField("Query", "node", null),
             List.of());
 
         private final String description;

@@ -18,7 +18,7 @@ class UnionQueryFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("union query field — always valid",
-            new UnionQueryField("search", null, new FieldCardinality.Single()),
+            new UnionQueryField("Query", "search", null, new FieldCardinality.Single()),
             List.of());
 
         private final String description;

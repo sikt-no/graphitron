@@ -18,7 +18,7 @@ class TableInterfaceQueryFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("table interface query field — always valid",
-            new TableInterfaceQueryField("statuses", null, new FieldCardinality.Single()),
+            new TableInterfaceQueryField("Query", "statuses", null, new FieldCardinality.Single()),
             List.of());
 
         private final String description;
