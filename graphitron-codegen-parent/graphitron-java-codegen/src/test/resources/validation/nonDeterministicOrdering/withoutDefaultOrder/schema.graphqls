@@ -1,0 +1,11 @@
+type Query {
+    # FILM_LIST is a view without primary key
+    # No @defaultOrder directive — should produce a non-deterministic ordering warning
+    filmLists: [FilmList]
+}
+
+type FilmList @table(name: "FILM_LIST") {
+    title: String
+    description: String
+    category: String
+}

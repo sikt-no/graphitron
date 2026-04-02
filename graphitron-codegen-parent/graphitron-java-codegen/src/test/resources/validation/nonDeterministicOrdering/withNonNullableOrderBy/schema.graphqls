@@ -1,0 +1,24 @@
+type Query {
+    # FILM_LIST is a view without primary key
+    # With non-nullable @orderBy — caller must always provide ordering, no warning expected
+    filmLists(orderBy: FilmListOrderByInput! @orderBy): [FilmList]
+}
+
+type FilmList @table(name: "FILM_LIST") {
+    title: String
+    description: String
+}
+
+input FilmListOrderByInput {
+    orderByField: FilmListOrderByField!
+    direction: OrderDirection!
+}
+
+enum FilmListOrderByField {
+    TITLE @order(index: "idx_title")
+}
+
+enum OrderDirection {
+    ASC
+    DESC
+}

@@ -1,0 +1,8 @@
+type Query {
+    # FILM has a primary key — implicit primary key ordering is deterministic, no warning expected
+    films: [Film]
+}
+
+type Film @table(name: "FILM") {
+    title: String
+}

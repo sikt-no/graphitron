@@ -108,6 +108,7 @@ public class ProcessedDefinitionsValidator {
         validateWrapperTypesWithPreviousTable();
         validateJavaRecordFieldMappings();
         validatePaginatedFieldsHaveOrdering();
+        validateNonDeterministicOrdering();
         validateDefaultOrderNotOnInterfaceOrUnion();
         validateLookupArguments();
         validateEntities();
@@ -1865,6 +1866,47 @@ public class ProcessedDefinitionsValidator {
                                         tableName
                                 );
                             }
+                        }
+                    }
+                });
+    }
+
+    /**
+     * Warns when a generated list field on a table without a primary key has no @defaultOrder directive
+     * and no non-nullable @orderBy argument. In this case the generated query falls back to primary
+     * key ordering, but since the table has no primary key the result set order is non-deterministic.
+     *
+     * <p>Paginated fields are excluded here because they are already covered by the stricter
+     * {@link #validatePaginatedFieldsHaveOrdering()} check that produces an error.
+     * Non-iterable (single-item) fields are excluded because ordering is irrelevant when fetching
+     * a single record.
+     */
+    private void validateNonDeterministicOrdering() {
+        allFields.stream()
+                .filter(field -> !field.hasForwardPagination())
+                .filter(ObjectField::isIterableWrapped)
+                .filter(ObjectField::isGenerated)
+                .filter(field -> {
+                    var recordType = schema.getRecordType(field);
+                    return recordType != null && recordType.hasTable();
+                })
+                .forEach(field -> {
+                    var recordType = schema.getRecordType(field);
+                    var tableName = recordType.getTable().getMappingName();
+                    if (!tableHasPrimaryKey(tableName) && field.getDefaultOrder().isEmpty()) {
+                        var orderByField = field.getOrderField();
+                        var hasNonNullableOrderBy = orderByField.isPresent() && orderByField.get().isNonNullable();
+                        if (!hasNonNullableOrderBy) {
+                            addWarningMessage(
+                                    "Field '%s' in type '%s' has no @%s directive and table '%s' has no primary key. " +
+                                            "Results will have non-deterministic ordering. " +
+                                            "Consider adding @%s to ensure stable ordering.",
+                                    field.getName(),
+                                    field.getContainerTypeName(),
+                                    DEFAULT_ORDER.getName(),
+                                    tableName,
+                                    DEFAULT_ORDER.getName()
+                            );
                         }
                     }
                 });
