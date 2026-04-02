@@ -203,6 +203,53 @@ record UnresolvedKeyAndConditionStep(String keyName, String conditionName) imple
 
 The validator reports errors for the three `Unresolved*` variants; the code generator only consumes the three resolved variants.
 
+### `FieldCardinality`
+
+Ten field types have cardinality as a spec property — it determines the shape of generated SQL and the resolver's return type. These are the five "projects-through" child fields (`TableField`, `TableMethodField`, `TableInterfaceField`, `InterfaceField`, `UnionField`) and five query fields (`TableQueryField`, `TableMethodQueryField`, `TableInterfaceQueryField`, `InterfaceQueryField`, `UnionQueryField`). Fields that are always single by specification — `LookupQueryField`, `NodeQueryField`, `EntityQueryField` — carry no cardinality property.
+
+```java
+sealed interface FieldCardinality
+    permits FieldCardinality.Single, FieldCardinality.List, FieldCardinality.Connection {
+
+    /** 1:1 join — returns one Record (or null). No ordering. */
+    record Single() implements FieldCardinality {}
+
+    /** 1:N — returns Result<Record>. May carry a default sort order; query fields also
+     *  carry the @orderBy enum value specs (empty list for child fields until @orderBy
+     *  is added to child-field support). */
+    record List(
+        DefaultOrderSpec defaultOrder,                       // null when @defaultOrder is absent
+        java.util.List<OrderByEnumValueSpec> orderByValues  // empty for child fields today
+    ) implements FieldCardinality {}
+
+    /** Relay cursor-based paginated list. Cursor/pagination config is TBD — this variant
+     *  will gain additional components (cursor column, totalCount flag, etc.) when
+     *  connection support is implemented. Ordering rules follow List. */
+    record Connection(
+        DefaultOrderSpec defaultOrder,
+        java.util.List<OrderByEnumValueSpec> orderByValues
+        // + cursor/pagination config (TBD)
+    ) implements FieldCardinality {}
+}
+```
+
+The three variants generate structurally different code:
+
+| Variant | Child: SQL expression | Root: fetch call |
+|---|---|---|
+| `Single` | `DSL.field(DSL.select(...))` → `Field<Record>` | `fetchOne()` |
+| `List` | `DSL.multiset(DSL.select(...))` → `Field<Result<Record>>` | `fetch()` |
+| `Connection` | Cursor-filtered SELECT + optional totalCount window | Relay connection wrapper |
+
+`FieldCardinality` replaces the current flat `defaultOrder` field on `TableField` and the standalone `defaultOrder` + `orderByValues` fields on `TableQueryField`. After this migration:
+- `TableField` carries `FieldCardinality cardinality` instead of `DefaultOrderSpec defaultOrder`
+- `TableQueryField` carries `FieldCardinality cardinality` instead of `DefaultOrderSpec defaultOrder` + `List<OrderByEnumValueSpec> orderByValues`
+- The same substitution applies to the other eight affected field types
+
+Cardinality-sensitive validator checks — such as "list field on PK-less table has no `@defaultOrder`" — pattern-match on `field.cardinality()` rather than inspecting the GraphQL return type at validation time, making the spec self-contained.
+
+`FieldConditionStep` (field-level `@condition`) is orthogonal to cardinality. `@splitQuery` on `TableField` is also orthogonal — it changes whether a DataLoader is used but not the SQL shape for the list/connection variants. Both remain separate properties on their respective records.
+
 ### `GraphitronSchema` container
 
 `GraphitronSchema` holds both maps. Types are keyed by name (the natural identifier in GraphQL); fields by `FieldCoordinates` — the GraphQL-spec-standardised `(typeName, fieldName)` pair provided by GraphQL Java (`graphql.schema.FieldCoordinates`), the same type used as the key in `GraphQLCodeRegistry`. The two field maps are therefore parallel by construction.
@@ -398,6 +445,11 @@ Extends `FieldsCodeGenerator` with `TableField` in table-mapped source context (
 
 Each inline `TableField` generates a `public static` method on `CustomerFields`, analogous to jOOQ's static column fields. The method takes the parent table alias (needed for correlated joins) and a `SelectedField` (carries both the nested selection set and any arguments).
 
+The `FieldCardinality` variant on the `TableField` spec drives the return type and SQL expression:
+- `FieldCardinality.List` → `Field<Result<Record>>` via `DSL.multiset(...)`
+- `FieldCardinality.Single` → `Field<Record>` via `DSL.field(DSL.select(...))`
+- `FieldCardinality.Connection` → deferred to connection deliverable
+
 ```java
 public static Field<Result<Record>> payments(Customer customer, SelectedField field) {
     return DSL.multiset(
@@ -552,12 +604,13 @@ public class HelloWorldServiceWrapper {
 ## Deliverable 8: Ordering
 
 `@defaultOrder` and `@orderBy` logic added to root field methods and `@splitQuery` BatchLoaders.
+Both live inside `FieldCardinality.List` (and `FieldCardinality.Connection` when implemented) — only those variants generate `ORDER BY` clauses. `FieldCardinality.Single` fields never get an `ORDER BY`.
 
 ```java
-// @defaultOrder only
+// @defaultOrder only (FieldCardinality.List with non-null defaultOrder, empty orderByValues)
 var orderFields = QueryHelper.getSortFields(_a, "IDX_TITLE", "ASC");
 
-// @orderBy with @defaultOrder fallback
+// @orderBy with @defaultOrder fallback (FieldCardinality.List with both populated)
 var orderFields = orderBy == null
     ? QueryHelper.getSortFields(_a, "IDX_TITLE", "ASC")
     : switch (orderBy.getOrderByField().toString()) {
