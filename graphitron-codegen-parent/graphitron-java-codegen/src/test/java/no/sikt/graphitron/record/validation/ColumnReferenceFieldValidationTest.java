@@ -9,6 +9,7 @@ import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
 import no.sikt.graphitron.record.field.ReferencePathElement;
 import no.sikt.graphitron.record.field.UnresolvedConditionStep;
+import no.sikt.graphitron.record.field.UnresolvedKeyAndConditionStep;
 import no.sikt.graphitron.record.field.UnresolvedKeyStep;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -97,6 +98,19 @@ class ColumnReferenceFieldValidationTest {
             }
             public List<String> errors() {
                 return List.of("Field 'languageName': condition method 'com.example.Conditions.languageCondition' could not be resolved");
+            }
+        },
+
+        /** Both key and condition specified, neither could be resolved — two errors reported. */
+        UNRESOLVED_KEY_AND_CONDITION {
+            public GraphitronField field() {
+                return new ColumnReferenceField("languageName", null, "languageName", "NAME", Optional.empty(),
+                    List.of(new UnresolvedKeyAndConditionStep("FILM_LANGUAGE_FK", "com.example.Conditions.languageCondition")));
+            }
+            public List<String> errors() {
+                return List.of(
+                    "Field 'languageName': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog",
+                    "Field 'languageName': condition method 'com.example.Conditions.languageCondition' could not be resolved");
             }
         };
 

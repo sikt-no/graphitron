@@ -4,6 +4,7 @@ import graphql.language.SourceLocation;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.ReferencePathElement;
 import no.sikt.graphitron.record.field.UnresolvedConditionStep;
+import no.sikt.graphitron.record.field.UnresolvedKeyAndConditionStep;
 import no.sikt.graphitron.record.field.UnresolvedKeyStep;
 import no.sikt.graphitron.record.type.GraphitronType;
 
@@ -185,6 +186,14 @@ public class GraphitronSchemaValidator {
                 case UnresolvedConditionStep u -> errors.add(new ValidationError(
                     "Field '" + fieldName + "': condition method '" + u.qualifiedName() + "' could not be resolved",
                     location));
+                case UnresolvedKeyAndConditionStep u -> {
+                    errors.add(new ValidationError(
+                        "Field '" + fieldName + "': key '" + u.keyName() + "' could not be resolved in the jOOQ catalog",
+                        location));
+                    errors.add(new ValidationError(
+                        "Field '" + fieldName + "': condition method '" + u.conditionName() + "' could not be resolved",
+                        location));
+                }
             }
         }
     }

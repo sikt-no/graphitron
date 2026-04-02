@@ -9,6 +9,7 @@ import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
 import no.sikt.graphitron.record.field.TableField;
 import no.sikt.graphitron.record.field.UnresolvedConditionStep;
+import no.sikt.graphitron.record.field.UnresolvedKeyAndConditionStep;
 import no.sikt.graphitron.record.field.UnresolvedKeyStep;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -77,6 +78,19 @@ class TableFieldValidationTest {
             }
             public List<String> errors() {
                 return List.of("Field 'actors': condition method 'com.example.Conditions.actorCondition' could not be resolved");
+            }
+        },
+
+        /** Both key and condition specified, neither could be resolved — two errors reported. */
+        UNRESOLVED_KEY_AND_CONDITION {
+            public GraphitronField field() {
+                return new TableField("actors", null, List.of(
+                    new UnresolvedKeyAndConditionStep("FILM_ACTOR_FK", "com.example.Conditions.actorCondition")));
+            }
+            public List<String> errors() {
+                return List.of(
+                    "Field 'actors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog",
+                    "Field 'actors': condition method 'com.example.Conditions.actorCondition' could not be resolved");
             }
         };
 

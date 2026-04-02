@@ -11,6 +11,7 @@ package no.sikt.graphitron.record.field;
  *   <li>{@link ConditionOnlyStep} — a condition method was resolved; no FK (lift conditions).</li>
  *   <li>{@link UnresolvedKeyStep} — a key name was specified but could not be found in the jOOQ catalog.</li>
  *   <li>{@link UnresolvedConditionStep} — a condition was specified but the method could not be resolved via reflection.</li>
+ *   <li>{@link UnresolvedKeyAndConditionStep} — both a key name and a condition were specified, but neither could be resolved.</li>
  * </ul>
  *
  * <p>The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error for
@@ -19,4 +20,4 @@ package no.sikt.graphitron.record.field;
  */
 public sealed interface ReferencePathElement
     permits FkStep, FkWithConditionStep, ConditionOnlyStep,
-            UnresolvedKeyStep, UnresolvedConditionStep {}
+            UnresolvedKeyStep, UnresolvedConditionStep, UnresolvedKeyAndConditionStep {}
