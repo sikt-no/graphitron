@@ -48,13 +48,13 @@ Each deliverable is a self-contained, reviewable change behind the `recordBasedO
 | **Parsing stream** | `FieldsSpecBuilder` — schema → `GraphitronField` | Independent of generating stream |
 | P1 | Scalar parsing | `ColumnField`, `ColumnReferenceField` from schema |
 | P2 | Table child parsing | `TableField`, `TableMethodField`, `NestingField` |
-| P3 | Remaining child parsing | All other `ChildField` leaf types |
-| P4 | Root field parsing | All `QueryField` and `MutationField` leaf types |
+| P3 | Remaining child parsing | `NodeIdField`, `NodeIdReferenceField`, `ComputedField`, `PropertyField`, `TableInterfaceField`, `InterfaceField`, `UnionField`, `ServiceField` |
+| P4 | Root field parsing | `LookupQueryField`, `TableQueryField`, `TableMethodQueryField`, `NodeQueryField`, `EntityQueryField`, `TableInterfaceQueryField`, `InterfaceQueryField`, `UnionQueryField`, `ServiceQueryField` |
 | **Generating stream** | `FieldsCodeGenerator` — `GraphitronField` → Java | Independent of parsing stream |
 | G1 | Scalar generating | `ColumnField`, `ColumnReferenceField` → `wiring()` + `fields()` |
 | G2 | Table child generating | `TableField` (inline + `@splitQuery`) → field methods + DataLoader |
-| G3 | Remaining child generating | All other `ChildField` leaf types → wiring entries |
-| G4 | Root field generating | All `QueryField` and `MutationField` leaf types → DataFetcher methods |
+| G3 | Remaining child generating | `NodeIdField`, `NodeIdReferenceField`, `ComputedField`, `PropertyField`, `TableInterfaceField`, `InterfaceField`, `UnionField`, `NestingField`, `TableMethodField`, `ServiceField` → wiring entries |
+| G4 | Root field generating | `TableQueryField`, `LookupQueryField`, `TableMethodQueryField`, `NodeQueryField`, `EntityQueryField`, `TableInterfaceQueryField`, `InterfaceQueryField`, `UnionQueryField`, `ServiceQueryField` → DataFetcher methods |
 | **Integration** | Wire streams together | End-to-end per field category |
 | I1 | `FieldsClassGenerator` + `GraphitronWiringClassGenerator` | First working end-to-end output |
 | I2 | `@condition` support | `ConditionWrapperClassGenerator` |
@@ -166,6 +166,8 @@ sealed interface ChildField extends GraphitronField
 ```
 
 Each leaf type is a Java `record` carrying the properties relevant to code generation (table class, FK key constant, condition wrapper class, etc.). Source context for a `ChildField` is derived from `schema.type(parentTypeName)` — a `TableType` means table-mapped, a `ResultType` means result-mapped.
+
+**`ConstructorField` is planned but not yet implemented.** Until its directive and generation logic are defined, `FieldsSpecBuilder` must classify any field that would otherwise match `ConstructorField` as `UnclassifiedField` — which the validator rejects with a clear error. Recognising a type in the hierarchy without a generation path is a hidden gap; `UnclassifiedField` makes the gap visible and enforced. This note will be removed when the deliverable for `ConstructorField` is added to the sequence.
 
 ### `ColumnStep`
 
@@ -323,6 +325,10 @@ typeDef.getFieldDefinitions().forEach(fieldDef -> {
 ```
 
 This deliverable is complete when the hierarchies and `GraphitronSchema` compile, and a simple pattern-match over all permits exhaustively covers every leaf of both `GraphitronType` and `GraphitronField`.
+
+### Explicitly unsupported: `@multitableReference` / `MultitableReferenceField`
+
+`MultitableReferenceField` exists in the sealed hierarchy as a permanent non-generated leaf. It is classified when a field carries the `@multitableReference` directive, and the validator always reports an error for it — record-based output does not and will not support this directive. This is a deliberate design boundary, not an omission: `@multitableReference` relies on runtime DTO mapping that the record-based pipeline eliminates. Users must convert affected fields to `@service` or an equivalent pattern before enabling `recordBasedOutput`.
 
 Once D1 is merged, two streams open up that are fully independent of each other:
 
@@ -483,7 +489,31 @@ public static List<Field<?>> fields(Customer customer, DataFetchingFieldSelectio
 
 ### `@defer` check-then-fetch wiring
 
-Every inline `TableField` resolver checks whether the parent already fetched the data before issuing a fallback query:
+Every inline `TableField` generates a `private static final` typed field constant used as the key both when embedding the subquery in `fields()` and when reading back the result in `wiring()`. This constant is the alias: it is type-safe, collision-free, and the same value serves both roles.
+
+```java
+// Generated constant — type-safe key for both embed and read-back
+private static final Field<Result<Record>> CUSTOMER_PAYMENTS_FIELD =
+    DSL.field("payments", Result.class);
+
+private static final Field<Record> CUSTOMER_ADDRESS_FIELD =
+    DSL.field("address", Record.class);
+```
+
+`fields()` embeds the subquery under the constant's alias:
+
+```java
+public static List<Field<?>> fields(Customer customer, DataFetchingFieldSelectionSet sel) {
+    var fields = new ArrayList<Field<?>>();
+    fields.add(customer.CUSTOMER_ID);
+    fields.add(customer.EMAIL_ADDRESS);
+    sel.getFields("payments").forEach(f -> fields.add(payments(customer, f).as(CUSTOMER_PAYMENTS_FIELD)));
+    sel.getFields("address").forEach(f ->  fields.add(address(customer, f).as(CUSTOMER_ADDRESS_FIELD)));
+    return fields;
+}
+```
+
+`wiring()` reads back using the same constant — never a raw string:
 
 ```java
 public static TypeRuntimeWiring.Builder wiring() {
@@ -492,7 +522,7 @@ public static TypeRuntimeWiring.Builder wiring() {
         .dataFetcher("email",    GraphitronFetcherFactory.field(CUSTOMER.EMAIL_ADDRESS))
         .dataFetcher("payments", env -> {
             Record source = env.getSource();
-            Result<Record> result = source.get("payments", Result.class);
+            Result<Record> result = source.get(CUSTOMER_PAYMENTS_FIELD);
             if (result != null) return result;
             GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
             return ctx.getDslContext(env)
@@ -503,7 +533,7 @@ public static TypeRuntimeWiring.Builder wiring() {
         })
         .dataFetcher("address", env -> {
             Record source = env.getSource();
-            Record result = source.get("address", Record.class);
+            Record result = source.get(CUSTOMER_ADDRESS_FIELD);
             if (result != null) return result;
             GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
             return ctx.getDslContext(env)
@@ -515,7 +545,7 @@ public static TypeRuntimeWiring.Builder wiring() {
 }
 ```
 
-`fields()` is an optimisation — pre-fetching via parent SELECT. The check-then-fetch resolver is the correctness guarantee.
+`fields()` is an optimisation — pre-fetching via parent SELECT. The check-then-fetch resolver is the correctness guarantee. Using typed `Field<T>` constants rather than raw string aliases prevents alias collisions and makes the null-check type-safe at compile time.
 
 ### FK auto-inference
 
@@ -561,6 +591,44 @@ private static String loaderName(ResultPath path, Optional<String> tenantId) {
     return tenantId.map(id -> id + "/" + normalized).orElse(normalized);
 }
 ```
+
+---
+
+## Deliverable 5b: Remaining `ChildField` types (P3 / G3)
+
+The testing contract requires at least one Level 2 classification test and one Level 3 approved output file per sealed leaf type. The types in P3/G3 are individually named here so gaps are tracked explicitly rather than hidden in a catch-all bucket.
+
+### Parsing (P3) — one classification test each
+
+| Field type | Trigger | Notes |
+|---|---|---|
+| `NodeIdField` | `@nodeId` on table-mapped type | Source type must carry `@node` |
+| `NodeIdReferenceField` | `@nodeId(typeName: ...)` on table-mapped type | Joins to target type's table |
+| `ComputedField` | `@computed` | Developer-supplied jOOQ expression; no projection |
+| `PropertyField` | Field on `@record` result type, no other directive | Scalar or nested record property |
+| `TableInterfaceField` | Return type is a `@table`+`@discriminate` interface | Cardinality applies |
+| `InterfaceField` | Return type is a no-directive interface | Cardinality applies |
+| `UnionField` | Return type is a union | Cardinality applies |
+| `NestingField` | Return type inherits source table context | Table-mapped source only |
+| `TableMethodField` | `@tableMethod` on child field | Cardinality applies |
+| `ServiceField` | `@service` on child field | Table-mapped or result-mapped source |
+
+### Generating (G3) — one approved output file each
+
+Each field type above maps to one wiring entry style. The approved file demonstrates the generated `wiring()` call (and `fields()` addition where applicable) for a minimal schema containing that field type.
+
+| Field type | Wiring output shape |
+|---|---|
+| `NodeIdField` | `GraphitronFetcherFactory.field(...)` with encoded key columns |
+| `NodeIdReferenceField` | Same as `ColumnReferenceField` but encodes as Relay ID |
+| `ComputedField` | `GraphitronFetcherFactory.field(alias)` — reads pre-computed column by alias |
+| `PropertyField` | `GraphitronFetcherFactory.field(...)` on the record property |
+| `TableInterfaceField` | Inline field method returning union-wrapped subquery |
+| `InterfaceField` | Inline field method returning per-implementor union wrapper |
+| `UnionField` | Inline field method returning per-member union wrapper |
+| `NestingField` | Adds a nested `fields()` block; no new SQL scope |
+| `TableMethodField` | Inline field method using developer-supplied filtered table |
+| `ServiceField` | DataLoader for table-mapped source; direct call for result-mapped |
 
 ---
 
@@ -621,6 +689,25 @@ var orderFields = orderBy == null
 ```
 
 Three `@defaultOrder` modes: `index` → `QueryHelper.getSortFields(table, indexName, dir)`, `fields` → explicit `SortField[]`, `primaryKey` → `table.getPrimaryKey().getFieldsArray()`.
+
+---
+
+## Scope and Future Work
+
+### Mutations
+
+The sealed hierarchy models all five mutation field types (`InsertMutationField`, `UpdateMutationField`, `DeleteMutationField`, `UpsertMutationField`, `ServiceMutationField`). None of D3–D8 cover generating them. This is an explicit scope decision for the current phase: the deliverables above establish the read path (queries, inline fields, DataLoaders, conditions, ordering) end-to-end. Mutation generation is deferred to a follow-on phase and will be stated there as its own deliverable sequence. Until then, the validator will report an error for any mutation field encountered when `recordBasedOutput` is enabled.
+
+### Removing the DTO layer
+
+The current plan adds new generators alongside the existing DTO/TypeMapper generators, controlled by the `recordBasedOutput` flag. Once the record-based pipeline achieves full feature parity and the example server passes all approval tests under the flag, a final cleanup deliverable will:
+
+1. Delete DTO generator classes (`DtoClassGenerator` and related)
+2. Delete TypeMapper generator classes
+3. Remove the `recordBasedOutput` flag — record-based output becomes the only path
+4. Update `GraphQLGenerator.getGenerators()` to drop the removed generators
+
+This deliverable is explicitly out of scope for the current phase. The flag and the side-by-side coexistence are intentional transition scaffolding, not permanent architecture.
 
 ---
 
