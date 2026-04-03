@@ -178,7 +178,11 @@ sealed interface ColumnStep permits ResolvedColumn, UnresolvedColumn {}
 
 // column found in jOOQ table
 record ResolvedColumn(
-    String javaName,   // field name in generated table class — e.g. "TITLE"
+    String javaName,   // Java identifier in the generated table class — e.g. "FILM_ID", "TITLE".
+                       // Obtained via reflection on the table instance fields (same pattern as
+                       // TableEntry.javaFieldName), NOT by uppercasing the SQL name. Uppercasing
+                       // is only correct for the default jOOQ naming strategy; a custom
+                       // GeneratorStrategy can produce any identifier, so reflection is required.
     Field<?> column    // jOOQ instance; used for type inspection at code-gen time
 ) implements ColumnStep {}
 
@@ -296,9 +300,28 @@ class JooqCatalog {
 
     /** Find a foreign key by its SQL name. */
     Optional<ForeignKey<?, ?>> findForeignKey(String sqlName) { ... }
+
+    /**
+     * Find a column in a table by its SQL name. Returns both the jOOQ Field instance and its
+     * Java identifier name in the generated table class (e.g. "FILM_ID", "TITLE").
+     *
+     * Uses reflection on the table class's public instance fields — NOT toUpperCase() on the SQL
+     * name. The default jOOQ naming strategy happens to uppercase column names, so toUpperCase()
+     * would work there, but a custom GeneratorStrategy can produce any identifier. Reflecting the
+     * real field name (the same pattern used by findTable for Tables class fields) is required to
+     * honour custom strategies.
+     */
+    Optional<ColumnEntry> findColumn(Table<?> table, String sqlColumnName) {
+        return Arrays.stream(table.getClass().getFields())
+            .filter(f -> Field.class.isAssignableFrom(f.getType()))
+            .map(f -> new ColumnEntry(f.getName(), (Field<?>) instanceFieldValue(f, table)))
+            .filter(e -> sqlColumnName.equalsIgnoreCase(e.column().getName()))
+            .findFirst();
+    }
 }
 
 record TableEntry(String javaFieldName, Table<?> table) {}
+record ColumnEntry(String javaName, Field<?> column) {}
 ```
 
 The `@table` directive carries the SQL name — what the schema author writes. The Java field name (e.g. `"FILM"`) is what appears in generated code. Both differ and both are needed, so `TableEntry` returns them together. `FieldsSpecBuilder` then stores both on `TableType` using the `TableStep` sealed hierarchy:
