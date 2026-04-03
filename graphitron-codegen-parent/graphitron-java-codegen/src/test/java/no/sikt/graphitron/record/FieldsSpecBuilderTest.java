@@ -142,6 +142,21 @@ class FieldsSpecBuilderTest {
     }
 
     @Test
+    void columnReferenceField_withJavaConstantFkName() {
+        var schema = build("""
+            type Film @table(name: "film") {
+              languageName: String @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+            }
+            type Query { film: Film }
+            """);
+        var field = schema.field("Film", "languageName");
+        assertThat(field).isInstanceOf(ColumnReferenceField.class);
+        var ref = (ColumnReferenceField) field;
+        assertThat(ref.referencePath()).hasSize(1);
+        assertThat(ref.referencePath().get(0)).isInstanceOf(FkRef.class);
+    }
+
+    @Test
     void columnReferenceField_withUnknownFk() {
         var schema = build("""
             type Film @table(name: "film") {

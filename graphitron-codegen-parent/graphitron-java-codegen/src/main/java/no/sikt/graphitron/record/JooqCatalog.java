@@ -37,15 +37,37 @@ public class JooqCatalog {
     }
 
     /**
-     * Find a foreign key by its SQL name, searching all table references in the catalog.
+     * Find a foreign key by name, searching all schemas in the catalog.
+     * First tries matching by SQL constraint name (e.g. {@code "film_language_id_fkey"}),
+     * then falls back to matching by the jOOQ-generated Java constant name
+     * (e.g. {@code "FILM__FILM_LANGUAGE_ID_FKEY"}) via reflection on the generated
+     * {@code Keys} class. Both lookups are case-insensitive.
      */
     @SuppressWarnings("unchecked")
-    public Optional<ForeignKey<?, ?>> findForeignKey(String sqlName) {
-        return (Optional<ForeignKey<?, ?>>) (Optional<?>) catalog.schemaStream()
+    public Optional<ForeignKey<?, ?>> findForeignKey(String name) {
+        var bySql = (Optional<ForeignKey<?, ?>>) (Optional<?>) catalog.schemaStream()
             .flatMap(schema -> schema.getTables().stream())
             .flatMap(table -> table.getReferences().stream())
-            .filter(fk -> fk.getName().equalsIgnoreCase(sqlName))
+            .filter(fk -> fk.getName().equalsIgnoreCase(name))
             .findFirst();
+        if (bySql.isPresent()) {
+            return bySql;
+        }
+        return (Optional<ForeignKey<?, ?>>) (Optional<?>) catalog.schemaStream()
+            .flatMap(schema -> keysClass(schema).stream())
+            .flatMap(cls -> Arrays.stream(cls.getFields()))
+            .filter(f -> ForeignKey.class.isAssignableFrom(f.getType()))
+            .filter(f -> f.getName().equalsIgnoreCase(name))
+            .map(f -> fieldValue(f))
+            .findFirst();
+    }
+
+    private Optional<Class<?>> keysClass(Schema schema) {
+        try {
+            return Optional.of(Class.forName(schema.getClass().getPackageName() + ".Keys"));
+        } catch (ClassNotFoundException e) {
+            return Optional.empty();
+        }
     }
 
     /**
