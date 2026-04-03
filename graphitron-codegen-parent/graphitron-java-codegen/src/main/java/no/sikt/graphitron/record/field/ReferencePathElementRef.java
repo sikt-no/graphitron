@@ -8,21 +8,21 @@ import org.jooq.ForeignKey;
  *
  * <p>The sealed hierarchy distinguishes four valid states and two error states:
  * <ul>
- *   <li>{@link FkStep} — a jOOQ FK was resolved; no condition.</li>
- *   <li>{@link FkWithConditionStep} — a jOOQ FK was resolved; a condition method was also resolved.</li>
- *   <li>{@link ConditionOnlyStep} — a condition method was resolved; no FK (lift conditions).</li>
- *   <li>{@link UnresolvedKeyStep} — a key name was specified but could not be found in the jOOQ catalog.</li>
- *   <li>{@link UnresolvedConditionStep} — a condition was specified but the method could not be resolved via reflection.</li>
- *   <li>{@link UnresolvedKeyAndConditionStep} — both a key name and a condition were specified, but neither could be resolved.</li>
+ *   <li>{@link FkRef} — a jOOQ FK was resolved; no condition.</li>
+ *   <li>{@link FkWithConditionRef} — a jOOQ FK was resolved; a condition method was also resolved.</li>
+ *   <li>{@link ConditionOnlyRef} — a condition method was resolved; no FK (lift conditions).</li>
+ *   <li>{@link UnresolvedKeyRef} — a key name was specified but could not be found in the jOOQ catalog.</li>
+ *   <li>{@link UnresolvedConditionRef} — a condition was specified but the method could not be resolved via reflection.</li>
+ *   <li>{@link UnresolvedKeyAndConditionRef} — both a key name and a condition were specified, but neither could be resolved.</li>
  * </ul>
  *
  * <p>The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error for
- * {@code UnresolvedKeyStep} and {@code UnresolvedConditionStep}. The valid variants are consumed
+ * {@code UnresolvedKeyRef} and {@code UnresolvedConditionRef}. The valid variants are consumed
  * by the code generator.
  */
 public sealed interface ReferencePathElementRef
-    permits ReferencePathElementRef.FkStep, ReferencePathElementRef.FkWithConditionStep, ReferencePathElementRef.ConditionOnlyStep,
-            ReferencePathElementRef.UnresolvedKeyStep, ReferencePathElementRef.UnresolvedConditionStep, ReferencePathElementRef.UnresolvedKeyAndConditionStep {
+    permits ReferencePathElementRef.FkRef, ReferencePathElementRef.FkWithConditionRef, ReferencePathElementRef.ConditionOnlyRef,
+            ReferencePathElementRef.UnresolvedKeyRef, ReferencePathElementRef.UnresolvedConditionRef, ReferencePathElementRef.UnresolvedKeyAndConditionRef {
 
     /**
      * A {@link ReferencePathElementRef} where a jOOQ {@link ForeignKey} was successfully resolved.
@@ -30,16 +30,16 @@ public sealed interface ReferencePathElementRef
      * <p>{@code key} is the resolved jOOQ FK instance, used at code-generation time to emit
      * {@code .onKey(key)} join clauses. Use {@code key.getName()} to recover the FK constant name.
      */
-    record FkStep(ForeignKey<?, ?> key) implements ReferencePathElementRef {}
+    record FkRef(ForeignKey<?, ?> key) implements ReferencePathElementRef {}
 
     /**
      * A {@link ReferencePathElementRef} where both a jOOQ {@link ForeignKey} and a condition method
      * were successfully resolved.
      *
-     * <p>{@code key} is the resolved jOOQ FK instance (see {@link FkStep}).
-     * {@code condition} is the resolved condition method (see {@link ConditionOnlyStep}).
+     * <p>{@code key} is the resolved jOOQ FK instance (see {@link FkRef}).
+     * {@code condition} is the resolved condition method (see {@link ConditionOnlyRef}).
      */
-    record FkWithConditionStep(
+    record FkWithConditionRef(
         ForeignKey<?, ?> key,
         MethodRef condition
     ) implements ReferencePathElementRef {}
@@ -54,7 +54,7 @@ public sealed interface ReferencePathElementRef
      * <p>{@code condition} is the resolved condition method; all fields on {@link MethodRef} are
      * guaranteed non-null.
      */
-    record ConditionOnlyStep(MethodRef condition) implements ReferencePathElementRef {}
+    record ConditionOnlyRef(MethodRef condition) implements ReferencePathElementRef {}
 
     /**
      * A {@link ReferencePathElementRef} where a key name was specified in the schema but could not be
@@ -64,7 +64,7 @@ public sealed interface ReferencePathElementRef
      * (e.g. {@code "FILM_ACTOR_FK"}). The {@link no.sikt.graphitron.record.GraphitronSchemaValidator}
      * reports this as an error.
      */
-    record UnresolvedKeyStep(String keyName) implements ReferencePathElementRef {}
+    record UnresolvedKeyRef(String keyName) implements ReferencePathElementRef {}
 
     /**
      * A {@link ReferencePathElementRef} where a condition method was specified in the schema but could
@@ -74,7 +74,7 @@ public sealed interface ReferencePathElementRef
      * (e.g. {@code "com.example.Conditions.activeCustomers"}). The
      * {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports this as an error.
      */
-    record UnresolvedConditionStep(String qualifiedName) implements ReferencePathElementRef {}
+    record UnresolvedConditionRef(String qualifiedName) implements ReferencePathElementRef {}
 
     /**
      * A {@link ReferencePathElementRef} where both a key name and a condition method were specified in
@@ -86,7 +86,7 @@ public sealed interface ReferencePathElementRef
      * <p>The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports both failures as
      * separate errors — one for the unresolved key and one for the unresolved condition.
      */
-    record UnresolvedKeyAndConditionStep(
+    record UnresolvedKeyAndConditionRef(
         String keyName,
         String conditionName
     ) implements ReferencePathElementRef {}

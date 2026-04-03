@@ -2,10 +2,10 @@ package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.ChildField.ComputedField;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyRef;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -25,12 +25,12 @@ class ComputedFieldValidationTest {
 
         WITH_LIFT_CONDITION("lift condition with a resolved method",
             new ComputedField("Film", "fullTitle", null, List.of(
-                new ConditionOnlyStep(new MethodRef("com.example.Conditions.liftCondition", "org.jooq.Condition", List.of())))),
+                new ConditionOnlyRef(new MethodRef("com.example.Conditions.liftCondition", "org.jooq.Condition", List.of())))),
             List.of()),
 
         UNRESOLVED_CONDITION("lift condition method present but could not be resolved via reflection",
             new ComputedField("Film", "fullTitle", null, List.of(
-                new UnresolvedConditionStep("com.example.Conditions.liftCondition"))),
+                new UnresolvedConditionRef("com.example.Conditions.liftCondition"))),
             List.of("Field 'fullTitle': condition method 'com.example.Conditions.liftCondition' could not be resolved"));
 
         private final String description;

@@ -3,15 +3,15 @@ package no.sikt.graphitron.record.validation;
 import no.sikt.graphitron.jooq.generated.testdata.public_.Keys;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.ChildField.ColumnReferenceField;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyStep;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.FkStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
 import no.sikt.graphitron.record.field.ColumnRef.ResolvedColumn;
 import no.sikt.graphitron.record.field.ColumnRef.UnresolvedColumn;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionStep;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionStep;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -27,27 +27,27 @@ class ColumnReferenceFieldValidationTest {
 
         RESOLVED_IMPLICIT("no @field — column name defaults to the GraphQL field name; path resolved via FK",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ResolvedColumn("NAME", null),
-                List.of(new FkStep(Keys.FILM__FILM_LANGUAGE_ID_FKEY)), false),
+                List.of(new FkRef(Keys.FILM__FILM_LANGUAGE_ID_FKEY)), false),
             List.of()),
 
         RESOLVED_EXPLICIT("@field(name:) overrides the column name; path resolved via FK",
             new ColumnReferenceField("Film", "languageName", null, "language_name", new ResolvedColumn("NAME", null),
-                List.of(new FkStep(Keys.FILM__FILM_LANGUAGE_ID_FKEY)), false),
+                List.of(new FkRef(Keys.FILM__FILM_LANGUAGE_ID_FKEY)), false),
             List.of()),
 
         CONDITION_METHOD("path resolved via condition method instead of a FK",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ResolvedColumn("NAME", null),
-                List.of(new ConditionOnlyStep(new MethodRef("com.example.Conditions.languageCondition", "org.jooq.Condition", List.of()))), false),
+                List.of(new ConditionOnlyRef(new MethodRef("com.example.Conditions.languageCondition", "org.jooq.Condition", List.of()))), false),
             List.of()),
 
         UNRESOLVED_COLUMN("column name could not be matched to a jOOQ field in the joined table",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new UnresolvedColumn(),
-                List.of(new FkStep(Keys.FILM__FILM_LANGUAGE_ID_FKEY)), false),
+                List.of(new FkRef(Keys.FILM__FILM_LANGUAGE_ID_FKEY)), false),
             List.of("Field 'languageName': column 'languageName' could not be resolved in the jOOQ table")),
 
         JAVA_NAME_PRESENT("@field(javaName:) is not supported — validation error",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ResolvedColumn("NAME", null),
-                List.of(new FkStep(Keys.FILM__FILM_LANGUAGE_ID_FKEY)), true),
+                List.of(new FkRef(Keys.FILM__FILM_LANGUAGE_ID_FKEY)), true),
             List.of("Field 'languageName': @field(javaName:) is not supported in record-based output")),
 
         MISSING_PATH("no @reference directive — path is empty",
@@ -56,17 +56,17 @@ class ColumnReferenceFieldValidationTest {
 
         UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ResolvedColumn("NAME", null),
-                List.of(new UnresolvedKeyStep("FILM_LANGUAGE_FK")), false),
+                List.of(new UnresolvedKeyRef("FILM_LANGUAGE_FK")), false),
             List.of("Field 'languageName': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog")),
 
         UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ResolvedColumn("NAME", null),
-                List.of(new UnresolvedConditionStep("com.example.Conditions.languageCondition")), false),
+                List.of(new UnresolvedConditionRef("com.example.Conditions.languageCondition")), false),
             List.of("Field 'languageName': condition method 'com.example.Conditions.languageCondition' could not be resolved")),
 
         UNRESOLVED_KEY_AND_CONDITION("both key and condition specified, neither could be resolved — two errors",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ResolvedColumn("NAME", null),
-                List.of(new UnresolvedKeyAndConditionStep("FILM_LANGUAGE_FK", "com.example.Conditions.languageCondition")), false),
+                List.of(new UnresolvedKeyAndConditionRef("FILM_LANGUAGE_FK", "com.example.Conditions.languageCondition")), false),
             List.of(
                 "Field 'languageName': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog",
                 "Field 'languageName': condition method 'com.example.Conditions.languageCondition' could not be resolved"));

@@ -27,9 +27,9 @@ import no.sikt.graphitron.record.field.NodeTypeRef;
 import no.sikt.graphitron.record.field.NodeTypeRef.ResolvedNodeType;
 import no.sikt.graphitron.record.field.NodeTypeRef.UnresolvedNodeType;
 import no.sikt.graphitron.record.field.ColumnRef;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyStep;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.FkStep;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.FkWithConditionStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.FkRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.FkWithConditionRef;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
 import no.sikt.graphitron.record.field.ChildField.MultitableReferenceField;
@@ -38,9 +38,9 @@ import no.sikt.graphitron.record.field.ReferencePathElementRef;
 import no.sikt.graphitron.record.field.ColumnRef.ResolvedColumn;
 import no.sikt.graphitron.record.field.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.record.field.ColumnRef.UnresolvedColumn;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionStep;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionStep;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.record.type.GraphitronType;
 import no.sikt.graphitron.record.type.GraphitronType.InterfaceType;
 import no.sikt.graphitron.record.type.KeyColumnRef;
@@ -333,7 +333,7 @@ public class FieldsSpecBuilder {
         }
         var current = rt.table();
         for (var step : path) {
-            if (step instanceof FkStep fk) {
+            if (step instanceof FkRef fk) {
                 current = fk.key().getKey().getTable();
             } else {
                 return new UnresolvedColumn();
@@ -381,30 +381,30 @@ public class FieldsSpecBuilder {
             String condName = extractConditionQualifiedName(conditionField.get());
             MethodRef resolved = resolveConditionRef(conditionField.get());
             if (fk.isPresent() && resolved != null) {
-                return new FkWithConditionStep(fk.get(), resolved);
+                return new FkWithConditionRef(fk.get(), resolved);
             }
             if (fk.isPresent()) {
-                return new UnresolvedConditionStep(condName);
+                return new UnresolvedConditionRef(condName);
             }
             if (resolved != null) {
-                return new UnresolvedKeyStep(keyName.get());
+                return new UnresolvedKeyRef(keyName.get());
             }
-            return new UnresolvedKeyAndConditionStep(keyName.get(), condName);
+            return new UnresolvedKeyAndConditionRef(keyName.get(), condName);
         }
         if (hasCondition) {
             MethodRef resolved = resolveConditionRef(conditionField.get());
             if (resolved != null) {
-                return new ConditionOnlyStep(resolved);
+                return new ConditionOnlyRef(resolved);
             }
-            return new UnresolvedConditionStep(extractConditionQualifiedName(conditionField.get()));
+            return new UnresolvedConditionRef(extractConditionQualifiedName(conditionField.get()));
         }
-        return new UnresolvedKeyStep("");
+        return new UnresolvedKeyRef("");
     }
 
     private ReferencePathElementRef resolveKey(String keyName) {
         return catalog.findForeignKey(keyName)
-            .<ReferencePathElementRef>map(FkStep::new)
-            .orElseGet(() -> new UnresolvedKeyStep(keyName));
+            .<ReferencePathElementRef>map(FkRef::new)
+            .orElseGet(() -> new UnresolvedKeyRef(keyName));
     }
 
     /**

@@ -2,20 +2,20 @@ package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.jooq.generated.testdata.public_.Keys;
 import no.sikt.graphitron.record.ValidationError;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyRef;
 import no.sikt.graphitron.record.field.DefaultOrderSpec;
 import no.sikt.graphitron.record.field.FieldCardinality;
 import no.sikt.graphitron.record.field.FieldConditionRef;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.FkStep;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.FkWithConditionStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.FkRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.FkWithConditionRef;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
 import no.sikt.graphitron.record.field.OrderSpec;
 import no.sikt.graphitron.record.field.SortFieldSpec;
 import no.sikt.graphitron.record.field.ChildField.TableField;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionStep;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionStep;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -34,32 +34,32 @@ class TableFieldValidationTest {
             List.of()),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
-            new TableField("Film", "actors", null, List.of(new FkStep(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY)), new FieldConditionRef.NoFieldCondition(), new FieldCardinality.Single()),
+            new TableField("Film", "actors", null, List.of(new FkRef(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY)), new FieldConditionRef.NoFieldCondition(), new FieldCardinality.Single()),
             List.of()),
 
         WITH_FK_AND_CONDITION("FK + resolved condition method in reference path",
             new TableField("Film", "actors", null, List.of(
-                new FkWithConditionStep(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY,
+                new FkWithConditionRef(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY,
                     new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))), new FieldConditionRef.NoFieldCondition(), new FieldCardinality.Single()),
             List.of()),
 
         WITH_CONDITION_ONLY("condition method only — no FK",
             new TableField("Film", "actors", null, List.of(
-                new ConditionOnlyStep(new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))), new FieldConditionRef.NoFieldCondition(), new FieldCardinality.Single()),
+                new ConditionOnlyRef(new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))), new FieldConditionRef.NoFieldCondition(), new FieldCardinality.Single()),
             List.of()),
 
         UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
-            new TableField("Film", "actors", null, List.of(new UnresolvedKeyStep("FILM_ACTOR_FK")), new FieldConditionRef.NoFieldCondition(), new FieldCardinality.Single()),
+            new TableField("Film", "actors", null, List.of(new UnresolvedKeyRef("FILM_ACTOR_FK")), new FieldConditionRef.NoFieldCondition(), new FieldCardinality.Single()),
             List.of("Field 'actors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog")),
 
         UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection",
             new TableField("Film", "actors", null, List.of(
-                new UnresolvedConditionStep("com.example.Conditions.actorCondition")), new FieldConditionRef.NoFieldCondition(), new FieldCardinality.Single()),
+                new UnresolvedConditionRef("com.example.Conditions.actorCondition")), new FieldConditionRef.NoFieldCondition(), new FieldCardinality.Single()),
             List.of("Field 'actors': condition method 'com.example.Conditions.actorCondition' could not be resolved")),
 
         UNRESOLVED_KEY_AND_CONDITION("both key and condition specified, neither could be resolved — two errors",
             new TableField("Film", "actors", null, List.of(
-                new UnresolvedKeyAndConditionStep("FILM_ACTOR_FK", "com.example.Conditions.actorCondition")), new FieldConditionRef.NoFieldCondition(), new FieldCardinality.Single()),
+                new UnresolvedKeyAndConditionRef("FILM_ACTOR_FK", "com.example.Conditions.actorCondition")), new FieldConditionRef.NoFieldCondition(), new FieldCardinality.Single()),
             List.of(
                 "Field 'actors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog",
                 "Field 'actors': condition method 'com.example.Conditions.actorCondition' could not be resolved")),

@@ -11,13 +11,13 @@ import no.sikt.graphitron.record.field.NodeTypeRef.ResolvedNodeType;
 import no.sikt.graphitron.record.field.NodeTypeRef.UnresolvedNodeType;
 import no.sikt.graphitron.record.type.NodeRef.NodeDirective;
 import no.sikt.graphitron.record.type.NodeRef.NoNode;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.FkStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.record.field.ChildField.MultitableReferenceField;
 import no.sikt.graphitron.record.field.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.record.field.ColumnRef.ResolvedColumn;
 import no.sikt.graphitron.record.field.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.record.field.ColumnRef.UnresolvedColumn;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
 import no.sikt.graphitron.record.type.GraphitronType.TableType;
 import no.sikt.graphitron.record.type.TableRef.UnresolvedTable;
@@ -138,7 +138,7 @@ class FieldsSpecBuilderTest {
         assertThat(field).isInstanceOf(ColumnReferenceField.class);
         var ref = (ColumnReferenceField) field;
         assertThat(ref.referencePath()).hasSize(1);
-        assertThat(ref.referencePath().get(0)).isInstanceOf(FkStep.class);
+        assertThat(ref.referencePath().get(0)).isInstanceOf(FkRef.class);
     }
 
     @Test
@@ -153,7 +153,7 @@ class FieldsSpecBuilderTest {
         assertThat(field).isInstanceOf(ColumnReferenceField.class);
         var ref = (ColumnReferenceField) field;
         assertThat(ref.referencePath()).hasSize(1);
-        assertThat(ref.referencePath().get(0)).isInstanceOf(UnresolvedKeyStep.class);
+        assertThat(ref.referencePath().get(0)).isInstanceOf(UnresolvedKeyRef.class);
     }
 
     @Test
@@ -295,7 +295,7 @@ class FieldsSpecBuilderTest {
         assertThat(field).isInstanceOf(NodeIdReferenceField.class);
         var ref = (NodeIdReferenceField) field;
         assertThat(ref.referencePath()).hasSize(1);
-        assertThat(ref.referencePath().get(0)).isInstanceOf(FkStep.class);
+        assertThat(ref.referencePath().get(0)).isInstanceOf(FkRef.class);
     }
 
     // ===== Object-type fields are UnclassifiedField (P2+ territory) =====

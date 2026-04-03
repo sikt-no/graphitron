@@ -3,14 +3,14 @@ package no.sikt.graphitron.record;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphitron.record.field.FieldConditionRef;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.FkStep;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.FkWithConditionStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.FkRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.FkWithConditionRef;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.ReferencePathElementRef;
 import no.sikt.graphitron.record.field.ColumnRef.UnresolvedColumn;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionStep;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionStep;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.record.field.NodeTypeRef.UnresolvedNodeType;
 import no.sikt.graphitron.record.type.GraphitronType;
 import no.sikt.graphitron.record.type.NodeRef.NodeDirective;
@@ -248,8 +248,8 @@ public class GraphitronSchemaValidator {
     private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<ReferencePathElementRef> path, String typeName, ResolvedTable targetTable, List<ValidationError> errors) {
         var lastStep = path.getLast();
         ForeignKey<?, ?> fk = switch (lastStep) {
-            case FkStep s             -> s.key();
-            case FkWithConditionStep s -> s.key();
+            case FkRef s             -> s.key();
+            case FkWithConditionRef s -> s.key();
             default                   -> null;
         };
         if (fk == null) {
@@ -349,16 +349,16 @@ public class GraphitronSchemaValidator {
     private void validateReferencePath(String fieldName, SourceLocation location, List<ReferencePathElementRef> path, List<ValidationError> errors) {
         for (var element : path) {
             switch (element) {
-                case no.sikt.graphitron.record.field.ReferencePathElementRef.FkStep ignored -> {}
-                case no.sikt.graphitron.record.field.ReferencePathElementRef.FkWithConditionStep ignored -> {}
-                case no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyStep ignored -> {}
-                case UnresolvedKeyStep u -> errors.add(new ValidationError(
+                case no.sikt.graphitron.record.field.ReferencePathElementRef.FkRef ignored -> {}
+                case no.sikt.graphitron.record.field.ReferencePathElementRef.FkWithConditionRef ignored -> {}
+                case no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyRef ignored -> {}
+                case UnresolvedKeyRef u -> errors.add(new ValidationError(
                     "Field '" + fieldName + "': key '" + u.keyName() + "' could not be resolved in the jOOQ catalog",
                     location));
-                case UnresolvedConditionStep u -> errors.add(new ValidationError(
+                case UnresolvedConditionRef u -> errors.add(new ValidationError(
                     "Field '" + fieldName + "': condition method '" + u.qualifiedName() + "' could not be resolved",
                     location));
-                case UnresolvedKeyAndConditionStep u -> {
+                case UnresolvedKeyAndConditionRef u -> {
                     errors.add(new ValidationError(
                         "Field '" + fieldName + "': key '" + u.keyName() + "' could not be resolved in the jOOQ catalog",
                         location));

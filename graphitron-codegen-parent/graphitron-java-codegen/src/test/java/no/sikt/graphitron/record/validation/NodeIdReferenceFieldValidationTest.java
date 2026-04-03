@@ -3,11 +3,11 @@ package no.sikt.graphitron.record.validation;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.jooq.generated.testdata.public_.Keys;
 import no.sikt.graphitron.record.ValidationError;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.FkStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField;
 import no.sikt.graphitron.record.field.NodeTypeRef.ResolvedNodeType;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionStep;
-import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.record.field.NodeTypeRef.UnresolvedNodeType;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -56,25 +56,25 @@ class NodeIdReferenceFieldValidationTest {
         WITH_EXPLICIT_PATH("explicit FK path leading to the correct table — no errors",
             inTableTypeSchemaWithNodeTarget("Film", FILM, "Language", LANGUAGE, "languageId",
                 new NodeIdReferenceField("Film", "languageId", null, "Language", new ResolvedNodeType(),
-                    List.of(new FkStep(Keys.FILM__FILM_LANGUAGE_ID_FKEY)))),
+                    List.of(new FkRef(Keys.FILM__FILM_LANGUAGE_ID_FKEY)))),
             List.of()),
 
         PATH_WRONG_TABLE("explicit FK path leading to the wrong table — one error",
             inTableTypeSchemaWithNodeTarget("Film", FILM, "Language", LANGUAGE, "languageId",
                 new NodeIdReferenceField("Film", "languageId", null, "Language", new ResolvedNodeType(),
-                    List.of(new FkStep(Keys.FILM__SEQUEL_FKEY)))),
+                    List.of(new FkRef(Keys.FILM__SEQUEL_FKEY)))),
             List.of("Field 'languageId': @reference path does not lead to the table of type 'Language'")),
 
         UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog — one error",
             inTableTypeSchemaWithNodeTarget("Film", FILM, "Language", LANGUAGE, "languageId",
                 new NodeIdReferenceField("Film", "languageId", null, "Language", new ResolvedNodeType(),
-                    List.of(new UnresolvedKeyStep("FILM_LANGUAGE_FK")))),
+                    List.of(new UnresolvedKeyRef("FILM_LANGUAGE_FK")))),
             List.of("Field 'languageId': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog")),
 
         UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection — one error",
             inTableTypeSchemaWithNodeTarget("Film", FILM, "Language", LANGUAGE, "languageId",
                 new NodeIdReferenceField("Film", "languageId", null, "Language", new ResolvedNodeType(),
-                    List.of(new UnresolvedConditionStep("com.example.Conditions.languageCondition")))),
+                    List.of(new UnresolvedConditionRef("com.example.Conditions.languageCondition")))),
             List.of("Field 'languageId': condition method 'com.example.Conditions.languageCondition' could not be resolved"));
 
         private final String description;

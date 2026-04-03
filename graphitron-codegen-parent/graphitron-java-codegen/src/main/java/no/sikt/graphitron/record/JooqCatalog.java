@@ -44,7 +44,8 @@ public class JooqCatalog {
         return (Optional<ForeignKey<?, ?>>) (Optional<?>) catalog.schemaStream()
             .flatMap(schema -> schema.getTables().stream())
             .flatMap(table -> table.getReferences().stream())
-            .filter(fk -> fk.getName().equalsIgnoreCase(sqlName))
+            .filter(fk -> fk.getName().equalsIgnoreCase(sqlName)
+                || (fk.getTable().getName() + "__" + fk.getName()).equalsIgnoreCase(sqlName))
             .findFirst();
     }
 

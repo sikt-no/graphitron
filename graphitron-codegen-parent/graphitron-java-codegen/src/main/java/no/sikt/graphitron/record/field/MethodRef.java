@@ -5,9 +5,9 @@ import java.util.List;
 /**
  * A successfully resolved reference to a Java method, with reflection data captured at parse time.
  *
- * <p>A {@code MethodRef} only appears inside {@link ConditionOnlyStep} or
- * {@link FkWithConditionStep} — both of which represent resolved states. All fields are
- * non-null. Unresolved conditions are represented by {@link UnresolvedConditionStep} instead.
+ * <p>A {@code MethodRef} only appears inside {@link ConditionOnlyRef} or
+ * {@link FkWithConditionRef} — both of which represent resolved states. All fields are
+ * non-null. Unresolved conditions are represented by {@link UnresolvedConditionRef} instead.
  *
  * <p>{@code qualifiedName} is the fully qualified method name derived from the
  * {@code ExternalCodeReference} input object, e.g.
