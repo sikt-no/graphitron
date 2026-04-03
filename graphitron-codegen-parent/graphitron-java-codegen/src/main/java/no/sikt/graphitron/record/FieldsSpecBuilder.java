@@ -3,19 +3,14 @@ package no.sikt.graphitron.record;
 import graphql.language.ArrayValue;
 import graphql.language.EnumTypeDefinition;
 import graphql.language.FieldDefinition;
-import graphql.language.InputObjectTypeDefinition;
-import graphql.language.InterfaceTypeDefinition;
 import graphql.language.ListType;
 import graphql.language.NonNullType;
 import graphql.language.ObjectField;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.ObjectValue;
-import graphql.language.ScalarTypeDefinition;
 import graphql.language.SourceLocation;
 import graphql.language.Type;
-import graphql.language.TypeDefinition;
 import graphql.language.TypeName;
-import graphql.language.UnionTypeDefinition;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.GeneratorConfig;
@@ -42,21 +37,9 @@ import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditi
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.record.type.GraphitronType;
-import no.sikt.graphitron.record.type.GraphitronType.InterfaceType;
-import no.sikt.graphitron.record.type.KeyColumnRef;
-import no.sikt.graphitron.record.type.NodeRef.NoNode;
 import no.sikt.graphitron.record.type.NodeRef.NodeDirective;
-import no.sikt.graphitron.record.type.NodeRef;
-import no.sikt.graphitron.record.type.KeyColumnRef.ResolvedKeyColumn;
 import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
-import no.sikt.graphitron.record.type.GraphitronType.ResultType;
-import no.sikt.graphitron.record.type.GraphitronType.RootType;
-import no.sikt.graphitron.record.type.GraphitronType.TableInterfaceType;
-import no.sikt.graphitron.record.type.TableRef;
 import no.sikt.graphitron.record.type.GraphitronType.TableType;
-import no.sikt.graphitron.record.type.GraphitronType.UnionType;
-import no.sikt.graphitron.record.type.KeyColumnRef.UnresolvedKeyColumn;
-import no.sikt.graphitron.record.type.TableRef.UnresolvedTable;
 import org.jooq.ForeignKey;
 import org.jooq.Table;
 
@@ -67,41 +50,32 @@ import java.util.Optional;
 import java.util.Set;
 
 import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
-import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentStringList;
 import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalObjectFieldByName;
 import static no.sikt.graphql.directives.DirectiveHelpers.stringValueOf;
-import static no.sikt.graphql.directives.GenerationDirective.DISCRIMINATE;
 import static no.sikt.graphql.directives.GenerationDirective.FIELD;
 import static no.sikt.graphql.directives.GenerationDirective.MULTITABLE_REFERENCE;
-import static no.sikt.graphql.directives.GenerationDirective.NODE;
 import static no.sikt.graphql.directives.GenerationDirective.NODE_ID;
 import static no.sikt.graphql.directives.GenerationDirective.NOT_GENERATED;
-import static no.sikt.graphql.directives.GenerationDirective.RECORD;
 import static no.sikt.graphql.directives.GenerationDirective.REFERENCE;
-import static no.sikt.graphql.directives.GenerationDirective.TABLE;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.CONDITION;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.DIRECTION;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.JAVA_NAME;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.KEY;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.KEY_COLUMNS;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.NAME;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.ON;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.PATH;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.TYPE_ID;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.TYPE_NAME;
 
 /**
  * Builds a {@link GraphitronSchema} from a {@link TypeDefinitionRegistry} by classifying every
- * named type and every field into the sealed {@link GraphitronType} and {@link GraphitronField}
- * hierarchies.
+ * field into the sealed {@link GraphitronField} hierarchy.
+ *
+ * <p>Type classification is delegated to {@link TypesSpecBuilder}. Together they form the
+ * directive-reading boundary: the only place in the pipeline that reads schema directives.
+ * Downstream code works exclusively with the produced {@link GraphitronType} and
+ * {@link GraphitronField} values.
  *
  * <p>The Maven plugin calls {@link #build(TypeDefinitionRegistry)} before running
  * {@link GraphitronSchemaValidator#validate(GraphitronSchema)}.
- *
- * <h2>Parsing stream</h2>
- * <p>This class is the <em>parsing stream</em>: it reads schema definitions and produces
- * {@code GraphitronField} instances. It contains no JavaPoet code and no code-generation logic.
- * Tests assert which concrete type is produced for representative schema fragments.
  *
  * <h2>Incremental classification</h2>
  * <p>Fields that are not yet handled by any classification rule are classified as
@@ -112,7 +86,6 @@ import static no.sikt.graphql.directives.GenerationDirectiveParam.TYPE_NAME;
 public class FieldsSpecBuilder {
 
     private static final Set<String> BUILTIN_SCALARS = Set.of("String", "Int", "Float", "Boolean", "ID");
-    private static final Set<String> ROOT_TYPE_NAMES = Set.of("Query", "Mutation", "Subscription");
 
     private final TypeDefinitionRegistry registry;
     private final JooqCatalog catalog;
@@ -133,15 +106,8 @@ public class FieldsSpecBuilder {
     }
 
     private GraphitronSchema buildSchema() {
-        types = new LinkedHashMap<>();
+        types = new TypesSpecBuilder(registry, catalog).build();
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
-
-        registry.types().values().forEach(typeDef -> {
-            var gType = classifyType(typeDef);
-            if (gType != null) {
-                types.put(typeDef.getName(), gType);
-            }
-        });
 
         registry.types().values().stream()
             .filter(t -> t instanceof ObjectTypeDefinition)
@@ -156,88 +122,6 @@ public class FieldsSpecBuilder {
             });
 
         return new GraphitronSchema(types, fields);
-    }
-
-    // ===== Type classification =====
-
-    private GraphitronType classifyType(TypeDefinition<?> typeDef) {
-        if (typeDef instanceof ScalarTypeDefinition
-                || typeDef instanceof EnumTypeDefinition
-                || typeDef instanceof InputObjectTypeDefinition) {
-            return null;
-        }
-
-        String name = typeDef.getName();
-        SourceLocation location = typeDef.getSourceLocation();
-
-        if (typeDef instanceof ObjectTypeDefinition objType) {
-            if (ROOT_TYPE_NAMES.contains(name)) {
-                return new RootType(name, location);
-            }
-            if (objType.hasDirective(TABLE.getName())) {
-                return buildTableType(objType);
-            }
-            if (objType.hasDirective(RECORD.getName())) {
-                return new ResultType(name, location);
-            }
-            return null;
-        }
-        if (typeDef instanceof InterfaceTypeDefinition iface) {
-            if (iface.hasDirective(TABLE.getName()) && iface.hasDirective(DISCRIMINATE.getName())) {
-                return buildTableInterfaceType(iface);
-            }
-            return new InterfaceType(name, location);
-        }
-        if (typeDef instanceof UnionTypeDefinition) {
-            return new UnionType(name, location);
-        }
-        return null;
-    }
-
-    private TableType buildTableType(ObjectTypeDefinition objType) {
-        String name = objType.getName();
-        SourceLocation location = objType.getSourceLocation();
-        String tableName = getOptionalDirectiveArgumentString(objType, TABLE, NAME).orElse(name.toLowerCase());
-        TableRef tableStep = resolveTable(tableName);
-        NodeRef nodeStep = buildNodeStep(objType, tableStep);
-        return new TableType(name, location, tableName, tableStep, nodeStep);
-    }
-
-    private TableInterfaceType buildTableInterfaceType(InterfaceTypeDefinition iface) {
-        String name = iface.getName();
-        SourceLocation location = iface.getSourceLocation();
-        String tableName = getOptionalDirectiveArgumentString(iface, TABLE, NAME).orElse(name.toLowerCase());
-        String discriminatorColumn = getOptionalDirectiveArgumentString(iface, DISCRIMINATE, ON).orElse(null);
-        TableRef tableStep = resolveTable(tableName);
-        return new TableInterfaceType(name, location, discriminatorColumn, tableName, tableStep);
-    }
-
-    private TableRef resolveTable(String sqlName) {
-        return catalog.findTable(sqlName)
-            .<TableRef>map(e -> new ResolvedTable(e.javaFieldName(), e.table()))
-            .orElseGet(UnresolvedTable::new);
-    }
-
-    private NodeRef buildNodeStep(ObjectTypeDefinition objType, TableRef tableStep) {
-        if (!objType.hasDirective(NODE.getName())) {
-            return new NoNode();
-        }
-        String typeId = getOptionalDirectiveArgumentString(objType, NODE, TYPE_ID).orElse(null);
-        List<String> keyColumnNames = getOptionalDirectiveArgumentStringList(objType, NODE, KEY_COLUMNS);
-        Table<?> resolvedTable = tableStep instanceof ResolvedTable rt ? rt.table() : null;
-        List<KeyColumnRef> keyColumns = keyColumnNames.stream()
-            .map(colName -> resolveKeyColumn(colName, resolvedTable))
-            .toList();
-        return new NodeDirective(typeId, keyColumns);
-    }
-
-    private KeyColumnRef resolveKeyColumn(String colName, Table<?> table) {
-        if (table == null) {
-            return new UnresolvedKeyColumn(colName);
-        }
-        return catalog.findColumn(table, colName)
-            .<KeyColumnRef>map(e -> new ResolvedKeyColumn(colName, e.javaName()))
-            .orElseGet(() -> new UnresolvedKeyColumn(colName));
     }
 
     // ===== Field classification =====
