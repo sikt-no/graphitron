@@ -5,6 +5,12 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.record.field.ChildField.ColumnField;
 import no.sikt.graphitron.record.field.ChildField.ColumnReferenceField;
+import no.sikt.graphitron.record.field.ChildField.NodeIdField;
+import no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField;
+import no.sikt.graphitron.record.field.NodeTypeRef.ResolvedNodeType;
+import no.sikt.graphitron.record.field.NodeTypeRef.UnresolvedNodeType;
+import no.sikt.graphitron.record.type.NodeRef.NodeDirective;
+import no.sikt.graphitron.record.type.NodeRef.NoNode;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.FkStep;
 import no.sikt.graphitron.record.field.ChildField.MultitableReferenceField;
 import no.sikt.graphitron.record.field.GraphitronField.NotGeneratedField;
@@ -197,6 +203,99 @@ class FieldsSpecBuilderTest {
             type Query { film: Film }
             """);
         assertThat(schema.field("Film", "other")).isInstanceOf(MultitableReferenceField.class);
+    }
+
+    // ===== NodeIdField =====
+
+    @Test
+    void nodeIdField_noTypeName() {
+        var schema = build("""
+            type Film @table(name: "film") @node(keyColumns: ["film_id"]) {
+              id: ID! @nodeId
+            }
+            type Query { film: Film }
+            """);
+        var field = schema.field("Film", "id");
+        assertThat(field).isInstanceOf(NodeIdField.class);
+        assertThat(((NodeIdField) field).node()).isInstanceOf(NodeDirective.class);
+    }
+
+    @Test
+    void nodeIdField_parentLacksNode_classifiedWithNoNode() {
+        var schema = build("""
+            type Film @table(name: "film") { id: ID! @nodeId }
+            type Query { film: Film }
+            """);
+        var field = schema.field("Film", "id");
+        assertThat(field).isInstanceOf(NodeIdField.class);
+        assertThat(((NodeIdField) field).node()).isInstanceOf(NoNode.class);
+    }
+
+    // ===== NodeIdReferenceField =====
+
+    @Test
+    void nodeIdReferenceField_resolved() {
+        var schema = build("""
+            type Language @table(name: "language") @node(keyColumns: ["language_id"]) {
+              id: ID! @nodeId
+            }
+            type Film @table(name: "film") {
+              languageId: ID! @nodeId(typeName: "Language")
+            }
+            type Query { film: Film }
+            """);
+        var field = schema.field("Film", "languageId");
+        assertThat(field).isInstanceOf(NodeIdReferenceField.class);
+        var ref = (NodeIdReferenceField) field;
+        assertThat(ref.typeName()).isEqualTo("Language");
+        assertThat(ref.nodeType()).isInstanceOf(ResolvedNodeType.class);
+        assertThat(ref.referencePath()).isEmpty();
+    }
+
+    @Test
+    void nodeIdReferenceField_unresolved_typeHasNoNode() {
+        var schema = build("""
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+              languageId: ID! @nodeId(typeName: "Language")
+            }
+            type Query { film: Film }
+            """);
+        var field = schema.field("Film", "languageId");
+        assertThat(field).isInstanceOf(NodeIdReferenceField.class);
+        assertThat(((NodeIdReferenceField) field).nodeType()).isInstanceOf(UnresolvedNodeType.class);
+    }
+
+    @Test
+    void nodeIdReferenceField_unresolved_typeDoesNotExist() {
+        var schema = build("""
+            type Film @table(name: "film") {
+              languageId: ID! @nodeId(typeName: "NoSuchType")
+            }
+            type Query { film: Film }
+            """);
+        var field = schema.field("Film", "languageId");
+        assertThat(field).isInstanceOf(NodeIdReferenceField.class);
+        assertThat(((NodeIdReferenceField) field).nodeType()).isInstanceOf(UnresolvedNodeType.class);
+    }
+
+    @Test
+    void nodeIdReferenceField_withExplicitReferencePath() {
+        var schema = build("""
+            type Language @table(name: "language") @node(keyColumns: ["language_id"]) {
+              id: ID! @nodeId
+            }
+            type Film @table(name: "film") {
+              languageId: ID! @nodeId(typeName: "Language")
+                  @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+            }
+            type Query { film: Film }
+            """);
+        var field = schema.field("Film", "languageId");
+        assertThat(field).isInstanceOf(NodeIdReferenceField.class);
+        var ref = (NodeIdReferenceField) field;
+        assertThat(ref.referencePath()).hasSize(1);
+        assertThat(ref.referencePath().get(0)).isInstanceOf(FkStep.class);
     }
 
     // ===== Object-type fields are UnclassifiedField (P2+ territory) =====

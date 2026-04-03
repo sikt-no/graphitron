@@ -21,6 +21,11 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.record.field.ChildField.ColumnField;
 import no.sikt.graphitron.record.field.ChildField.ColumnReferenceField;
+import no.sikt.graphitron.record.field.ChildField.NodeIdField;
+import no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField;
+import no.sikt.graphitron.record.field.NodeTypeRef;
+import no.sikt.graphitron.record.field.NodeTypeRef.ResolvedNodeType;
+import no.sikt.graphitron.record.field.NodeTypeRef.UnresolvedNodeType;
 import no.sikt.graphitron.record.field.ColumnRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyStep;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.FkStep;
@@ -83,6 +88,7 @@ import static no.sikt.graphql.directives.GenerationDirectiveParam.NAME;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.ON;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.PATH;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.TYPE_ID;
+import static no.sikt.graphql.directives.GenerationDirectiveParam.TYPE_NAME;
 
 /**
  * Builds a {@link GraphitronSchema} from a {@link TypeDefinitionRegistry} by classifying every
@@ -110,6 +116,7 @@ public class FieldsSpecBuilder {
 
     private final TypeDefinitionRegistry registry;
     private final JooqCatalog catalog;
+    private Map<String, GraphitronType> types;
 
     private FieldsSpecBuilder(TypeDefinitionRegistry registry, JooqCatalog catalog) {
         this.registry = registry;
@@ -126,7 +133,7 @@ public class FieldsSpecBuilder {
     }
 
     private GraphitronSchema buildSchema() {
-        var types = new LinkedHashMap<String, GraphitronType>();
+        types = new LinkedHashMap<>();
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
 
         registry.types().values().forEach(typeDef -> {
@@ -261,6 +268,17 @@ public class FieldsSpecBuilder {
             return new UnclassifiedField(parentTypeName, name, location);
         }
 
+        if (fieldDef.hasDirective(NODE_ID.getName())) {
+            Optional<String> typeName = getOptionalDirectiveArgumentString(fieldDef, NODE_ID, TYPE_NAME);
+            if (typeName.isPresent()) {
+                NodeTypeRef nodeType = resolveNodeType(typeName.get());
+                List<ReferencePathElementRef> path = parseReferencePath(fieldDef);
+                return new NodeIdReferenceField(parentTypeName, name, location, typeName.get(), nodeType, path);
+            } else {
+                return new NodeIdField(parentTypeName, name, location, tableType.node());
+            }
+        }
+
         boolean hasFieldDirective = fieldDef.hasDirective(FIELD.getName());
         String columnName = hasFieldDirective
             ? getOptionalDirectiveArgumentString(fieldDef, FIELD, NAME).orElse(name)
@@ -276,6 +294,14 @@ public class FieldsSpecBuilder {
 
         ColumnRef column = resolveColumn(columnName, tableType);
         return new ColumnField(parentTypeName, name, location, columnName, column, javaNamePresent);
+    }
+
+    private NodeTypeRef resolveNodeType(String targetTypeName) {
+        GraphitronType target = types.get(targetTypeName);
+        if (target instanceof TableType tt && tt.node() instanceof NodeDirective) {
+            return new ResolvedNodeType();
+        }
+        return new UnresolvedNodeType();
     }
 
     private boolean isScalarOrEnum(Type<?> type) {
