@@ -17,8 +17,11 @@ import java.util.List;
  * {@code UnresolvedNodeType}.
  *
  * <p>{@code referencePath} is the ordered list of join steps from the source table to the target
- * type's table, extracted from {@code @reference(path:)}. Required — an empty list is a
- * validation error.
+ * type's table, extracted from {@code @reference(path:)}. May be empty when there is exactly one
+ * foreign key between the source and target tables (implicit join). The
+ * {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error when the path is
+ * empty and there is no foreign key or more than one foreign key between the tables. When both a
+ * path and a {@code typeName} are supplied the path must lead to the target type's table.
  */
 public record NodeIdReferenceField(
     String parentTypeName,

@@ -239,11 +239,14 @@ If used as a reference in jOOQ record input types, the primary or unique key the
 """
 directive @nodeId(
   """
-  Name of the type the ID belongs to (case-sensitive). The type must have the @node directive set.
+  Name of the type the ID belongs to (case-sensitive). The type must have the @node directive set
+  and be bound to a database table.
 
-  Only allowed on input fields and arguments (INPUT_FIELD_DEFINITION, ARGUMENT_DEFINITION).
-  On output fields (FIELD_DEFINITION), typeName is not permitted — use @reference on an object
-  field instead to navigate to another type.
+  On output fields (FIELD_DEFINITION), when typeName is provided Graphitron joins from the
+  containing type's table to the named type's table. If there is exactly one foreign key between
+  the two tables the join is implicit and @reference may be omitted. If there is no foreign key or
+  more than one foreign key, add a @reference directive to identify the correct join path. When
+  both typeName and @reference are supplied the path must lead to the named type's table.
 
   This parameter is optional - if omitted, Graphitron will deduce the node type as follows:
   * For object fields without the @reference directive, uses the containing type (if it is a node type)

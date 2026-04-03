@@ -6,10 +6,12 @@ import no.sikt.graphitron.record.GraphitronSchemaValidator;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.type.GraphitronType;
+import no.sikt.graphitron.record.type.NodeDirective;
 import no.sikt.graphitron.record.type.NoNode;
 import no.sikt.graphitron.record.type.ResolvedTable;
 import no.sikt.graphitron.record.type.RootType;
 import no.sikt.graphitron.record.type.TableType;
+import org.jooq.Table;
 
 import java.util.List;
 import java.util.Map;
@@ -46,6 +48,29 @@ public final class FieldValidationTestHelper {
     public static GraphitronSchema inTableTypeSchema(String typeName, String fieldName, GraphitronField field) {
         var parentType = new TableType(typeName, null, typeName.toLowerCase(), new ResolvedTable(typeName.toUpperCase(), FILM), new NoNode());
         return schema(parentType, fieldName, field);
+    }
+
+    /**
+     * Wraps a single field under a TableType parent, with a separate {@code @node}-annotated
+     * TableType as the target of a {@code @nodeId(typeName:)} reference.
+     *
+     * <p>The {@code javaFieldName} for each type is derived from {@code table.getName().toUpperCase()}
+     * (e.g. {@code "film"} → {@code "FILM"}), which must match the field name in the generated
+     * jOOQ {@code Tables} class.
+     */
+    public static GraphitronSchema inTableTypeSchemaWithNodeTarget(
+            String parentTypeName, Table<?> parentTable,
+            String targetTypeName, Table<?> targetTable,
+            String fieldName, GraphitronField field) {
+        var parent = new TableType(parentTypeName, null, parentTable.getName(),
+            new ResolvedTable(parentTable.getName().toUpperCase(), parentTable), new NoNode());
+        var target = new TableType(targetTypeName, null, targetTable.getName(),
+            new ResolvedTable(targetTable.getName().toUpperCase(), targetTable),
+            new NodeDirective(null, List.of()));
+        return new GraphitronSchema(
+            Map.of(parent.name(), parent, target.name(), target),
+            Map.of(FieldCoordinates.coordinates(parentTypeName, fieldName), field)
+        );
     }
 
     /**
