@@ -53,11 +53,8 @@ public class JooqCatalog {
      * instance and its Java field name in the generated table class (e.g. {@code "TITLE"}).
      */
     public Optional<ColumnEntry> findColumn(Table<?> table, String sqlColumnName) {
-        return Arrays.stream(table.getClass().getFields())
-            .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
-            .map(f -> new ColumnEntry(f.getName(), (org.jooq.Field<?>) fieldValue(f)))
-            .filter(e -> e.column().getName().equalsIgnoreCase(sqlColumnName))
-            .findFirst();
+        return Optional.ofNullable(table.field(sqlColumnName))
+            .map(f -> new ColumnEntry(f.getName().toUpperCase(), f));
     }
 
     private Optional<Class<?>> tablesClass(Schema schema) {
