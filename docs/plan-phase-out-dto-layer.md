@@ -22,7 +22,7 @@ Existing wiring pattern: data fetcher generators register wiring info → `Wirin
 
 ### Schema traversal
 
-`FieldsSpecBuilder` operates on a `GraphQLSchema` (not `TypeDefinitionRegistry` AST). The schema is assembled using the same pattern as `SchemaTransformer.assembleSchema()` in `graphitron-schema-transform`:
+`GraphitronSchemaBuilder` operates on a `GraphQLSchema` (not `TypeDefinitionRegistry` AST). The schema is assembled using the same pattern as `SchemaTransformer.assembleSchema()` in `graphitron-schema-transform`:
 
 ```java
 RuntimeWiring runtimeWiring = EchoingWiringFactory.newEchoingWiring(wiring -> {
@@ -33,7 +33,7 @@ RuntimeWiring runtimeWiring = EchoingWiringFactory.newEchoingWiring(wiring -> {
 GraphQLSchema schema = new SchemaGenerator().makeExecutableSchema(typeDefinitionRegistry, runtimeWiring);
 ```
 
-`FieldsSpecBuilder` then uses `new SchemaTraverser().depthFirstFullSchema(visitor, schema)` where the visitor tracks parent type from `context.getParentNode()`.
+`GraphitronSchemaBuilder` then uses `new SchemaTraverser().depthFirstFullSchema(visitor, schema)` where the visitor tracks parent type from `context.getParentNode()`.
 
 ---
 
@@ -45,7 +45,7 @@ Each deliverable is a self-contained, reviewable change behind the `recordBasedO
 |---|---|---|
 | 1 | `GraphitronField` skeleton | Sealed interface hierarchy compiling; all field types modelled |
 | 2 | Infrastructure | `GraphitronFetcherFactory`, `getTenantId()`, feature flag |
-| **Parsing stream** | `FieldsSpecBuilder` — schema → `GraphitronField` | Independent of generating stream |
+| **Parsing stream** | `GraphitronSchemaBuilder` — schema → `GraphitronField` | Independent of generating stream |
 | P1 | Scalar parsing | `ColumnField`, `ColumnReferenceField` from schema |
 | P2 | Table child parsing | `TableField`, `TableMethodField`, `NestingField` |
 | P3 | Remaining child parsing | `NodeIdField`, `NodeIdReferenceField`, `ComputedField`, `PropertyField`, `TableInterfaceField`, `InterfaceField`, `UnionField`, `ServiceField` |
@@ -167,7 +167,7 @@ sealed interface ChildField extends GraphitronField
 
 Each leaf type is a Java `record` carrying the properties relevant to code generation (table class, FK key constant, condition wrapper class, etc.). Source context for a `ChildField` is derived from `schema.type(parentTypeName)` — a `TableType` means table-mapped, a `ResultType` means result-mapped.
 
-**`ConstructorField` is planned but not yet implemented.** Until its directive and generation logic are defined, `FieldsSpecBuilder` must classify any field that would otherwise match `ConstructorField` as `UnclassifiedField` — which the validator rejects with a clear error. Recognising a type in the hierarchy without a generation path is a hidden gap; `UnclassifiedField` makes the gap visible and enforced. This note will be removed when the deliverable for `ConstructorField` is added to the sequence.
+**`ConstructorField` is planned but not yet implemented.** Until its directive and generation logic are defined, `GraphitronSchemaBuilder` must classify any field that would otherwise match `ConstructorField` as `UnclassifiedField` — which the validator rejects with a clear error. Recognising a type in the hierarchy without a generation path is a hidden gap; `UnclassifiedField` makes the gap visible and enforced. This note will be removed when the deliverable for `ConstructorField` is added to the sequence.
 
 ### `ColumnRef`
 
@@ -273,7 +273,7 @@ record GraphitronSchema(
 }
 ```
 
-`FieldsSpecBuilder` populates both maps during schema traversal, using a `JooqCatalog` wrapper to resolve table names.
+`GraphitronSchemaBuilder` populates both maps during schema traversal, using a `JooqCatalog` wrapper to resolve table names.
 
 ### `JooqCatalog`
 
@@ -324,7 +324,7 @@ record TableEntry(String javaFieldName, Table<?> table) {}
 record ColumnEntry(String javaName, Field<?> column) {}
 ```
 
-The `@table` directive carries the SQL name — what the schema author writes. The Java field name (e.g. `"FILM"`) is what appears in generated code. Both differ and both are needed, so `TableEntry` returns them together. `FieldsSpecBuilder` then stores both on `TableType` using the `TableRef` sealed hierarchy:
+The `@table` directive carries the SQL name — what the schema author writes. The Java field name (e.g. `"FILM"`) is what appears in generated code. Both differ and both are needed, so `TableEntry` returns them together. `GraphitronSchemaBuilder` then stores both on `TableType` using the `TableRef` sealed hierarchy:
 
 ```java
 String sqlName = getDirectiveArg(objectType, "table", "name");
@@ -355,7 +355,7 @@ This deliverable is complete when the hierarchies and `GraphitronSchema` compile
 
 Once D1 is merged, two streams open up that are fully independent of each other:
 
-- **Parsing stream** (`FieldsSpecBuilder`): reads a `GraphQLSchema` and produces `GraphitronField` instances. Zero JavaPoet. Tests assert which concrete type is produced and that its properties are populated correctly — one test per leaf type minimum.
+- **Parsing stream** (`GraphitronSchemaBuilder`): reads a `GraphQLSchema` and produces `GraphitronField` instances. Zero JavaPoet. Tests assert which concrete type is produced and that its properties are populated correctly — one test per leaf type minimum.
 - **Generating stream** (`FieldsCodeGenerator`): consumes hand-crafted `GraphitronField` instances and produces `TypeSpec` via JavaPoet. Zero schema logic. Tests use approval files — one approved file per leaf type minimum.
 
 Neither stream depends on the other. Integration (`FieldsClassGenerator`) connects them.
@@ -405,7 +405,7 @@ public class GraphitronFetcherFactory {
 
 ## Deliverable 3: Scalar fields end-to-end
 
-Introduces `FieldsSpecBuilder`, `FieldsCodeGenerator`, `FieldsClassGenerator`, and `GraphitronWiringClassGenerator`. At this stage only `ColumnField` and simple root `TableQueryField` are handled — enough to produce a working end-to-end pipeline for types with no nested fields.
+Introduces `GraphitronSchemaBuilder`, `FieldsCodeGenerator`, `FieldsClassGenerator`, and `GraphitronWiringClassGenerator`. At this stage only `ColumnField` and simple root `TableQueryField` are handled — enough to produce a working end-to-end pipeline for types with no nested fields.
 
 ### Generated `CustomerFields` (scalar-only, non-root)
 
@@ -763,7 +763,7 @@ This deliverable is explicitly out of scope for the current phase. The flag and 
 ```
 GraphQLSchema
   │
-  ▼  FieldsSpecBuilder  (schema traversal + FK inference + @table validation; zero JavaPoet)
+  ▼  GraphitronSchemaBuilder  (schema traversal + FK inference + @table validation; zero JavaPoet)
   │
   ▼  GraphitronSchema  (Map<String, GraphitronType> + Map<FieldCoordinates, GraphitronField>)
   │
@@ -790,7 +790,7 @@ Three levels, each with a distinct purpose. Every `GraphitronField` and `Graphit
 
 ### Level 1 — Validator unit tests (no schema parsing)
 
-`GraphitronField` and `GraphitronType` instances are constructed directly from GraphQL-Java builder APIs. No `FieldsSpecBuilder`, no schema files. Each test class covers one sealed leaf type; each parameterised case is one rule or one combination of rules.
+`GraphitronField` and `GraphitronType` instances are constructed directly from GraphQL-Java builder APIs. No `GraphitronSchemaBuilder`, no schema files. Each test class covers one sealed leaf type; each parameterised case is one rule or one combination of rules.
 
 The shared contract is a `ValidatorCase` interface implemented by every test enum:
 
@@ -859,14 +859,14 @@ For multi-dimensional combinations (e.g., type directive × field directive → 
 
 **Rule**: use `@EnumSource` when constants have behaviour or are reused across test classes; use `@CsvSource` when the data is purely tabular and self-contained to one test method.
 
-### Level 2 — Classification tests (inline schema → `FieldsSpecBuilder`)
+### Level 2 — Classification tests (inline schema → `GraphitronSchemaBuilder`)
 
 Each test defines its own minimal inline schema as a text block — no shared schema. The schema is the documentation; keep it minimal. One canonical representative per leaf type confirms the classifier produces the right concrete type.
 
 ```java
 @Test
 void columnField() {
-    var result = FieldsSpecBuilder.build(parse("""
+    var result = GraphitronSchemaBuilder.build(parse("""
         type Customer @table { email: String }
         type Query { customer: Customer }
         """));
@@ -908,7 +908,7 @@ void errorMessageReferencesSourceLocation() {
 
 ### Generating stream — `FieldsCodeGeneratorTest`
 
-Tests use hand-crafted `GraphitronField` instances — no schema, no `FieldsSpecBuilder`. Output is compared against approved `.java` files. Every leaf type needs at least one approved file.
+Tests use hand-crafted `GraphitronField` instances — no schema, no `GraphitronSchemaBuilder`. Output is compared against approved `.java` files. Every leaf type needs at least one approved file.
 
 ### Integration — `RecordOutputIntegrationTest`
 
@@ -924,7 +924,7 @@ src/test/java/.../record/
     TableQueryFieldValidationTest.java
     ColumnFieldValidationTest.java
     // one class per sealed leaf type
-  FieldsSpecBuilderTest.java        ← Level 2: classification, one test per leaf type
+  GraphitronSchemaBuilderTest.java        ← Level 2: classification, one test per leaf type
   FieldsCodeGeneratorTest.java      ← generating stream, one approval per leaf type
   integration/
     RecordOutputIntegrationTest.java
@@ -957,7 +957,7 @@ src/test/resources/record/
 | `record/type/GraphitronType.java` + 6 leaf types | **Done** — Deliverable 1 |
 | `record/type/TableRef.java` + `ResolvedTable`, `UnresolvedTable` | **Done** — Deliverable 1 |
 | `record/GraphitronSchema.java` | **Done** — Deliverable 1 |
-| `record/FieldsSpecBuilder.java` | **New** |
+| `record/GraphitronSchemaBuilder.java` | **New** |
 | `record/FieldsCodeGenerator.java` | **New** |
 | `record/FieldsClassGenerator.java` | **New** |
 | `record/GraphitronWiringClassGenerator.java` | **New** |

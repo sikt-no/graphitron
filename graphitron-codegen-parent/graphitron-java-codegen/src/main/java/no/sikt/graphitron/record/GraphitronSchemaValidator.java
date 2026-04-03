@@ -26,7 +26,7 @@ import java.util.List;
  * Validates a {@link GraphitronSchema}, collecting all errors rather than failing on the first.
  *
  * <p>Each validation method receives the classified field or type and appends to the shared
- * error list. The Maven plugin calls this after {@code FieldsSpecBuilder.build()} and formats
+ * error list. The Maven plugin calls this after {@code GraphitronSchemaBuilder.build()} and formats
  * the resulting {@link ValidationError} list as compiler-style messages with file and line
  * references.
  */

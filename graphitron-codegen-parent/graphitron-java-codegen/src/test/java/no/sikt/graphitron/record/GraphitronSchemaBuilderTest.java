@@ -31,10 +31,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Level 2 classification tests: each test provides a minimal inline schema text block and asserts
- * that {@link FieldsSpecBuilder} produces the expected {@link no.sikt.graphitron.record.field.GraphitronField}
+ * that {@link GraphitronSchemaBuilder} produces the expected {@link no.sikt.graphitron.record.field.GraphitronField}
  * concrete type. No hand-crafted schema objects — classification logic is tested end-to-end from SDL.
  */
-class FieldsSpecBuilderTest {
+class GraphitronSchemaBuilderTest {
 
     /** Directives schema file on the classpath, provided by graphitron-common. */
     private static final String DIRECTIVES_PATH = "directives.graphqls";
@@ -350,12 +350,12 @@ class FieldsSpecBuilderTest {
 
     /**
      * Parses the given SDL text block together with the Graphitron directive definitions
-     * and builds a {@link GraphitronSchema} via {@link FieldsSpecBuilder}.
+     * and builds a {@link GraphitronSchema} via {@link GraphitronSchemaBuilder}.
      */
     private GraphitronSchema build(String schemaText) {
         String directivesContent = SchemaReadingHelper.fileAsString(
             java.nio.file.Paths.get("../../graphitron-common/src/main/resources/directives.graphqls"));
         TypeDefinitionRegistry registry = new SchemaParser().parse(directivesContent + "\n" + schemaText);
-        return FieldsSpecBuilder.build(registry);
+        return GraphitronSchemaBuilder.build(registry);
     }
 }
