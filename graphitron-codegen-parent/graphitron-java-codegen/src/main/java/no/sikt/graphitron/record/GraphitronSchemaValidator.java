@@ -14,6 +14,7 @@ import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.record.field.NodeTypeRef.UnresolvedNodeType;
 import no.sikt.graphitron.record.type.GraphitronType;
 import no.sikt.graphitron.record.type.NodeRef.NodeDirective;
+import no.sikt.graphitron.record.type.ParticipantRef.UnboundParticipant;
 import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
 import no.sikt.graphitron.record.type.GraphitronType.TableType;
 import no.sikt.graphitron.record.type.TableRef.UnresolvedTable;
@@ -115,9 +116,25 @@ public class GraphitronSchemaValidator {
                 type.location()
             ));
         }
+        validateParticipants(type.name(), type.participants(), errors);
     }
-    private void validateInterfaceType(no.sikt.graphitron.record.type.GraphitronType.InterfaceType type, List<ValidationError> errors) {}
-    private void validateUnionType(no.sikt.graphitron.record.type.GraphitronType.UnionType type, List<ValidationError> errors) {}
+    private void validateInterfaceType(no.sikt.graphitron.record.type.GraphitronType.InterfaceType type, List<ValidationError> errors) {
+        validateParticipants(type.name(), type.participants(), errors);
+    }
+    private void validateUnionType(no.sikt.graphitron.record.type.GraphitronType.UnionType type, List<ValidationError> errors) {
+        validateParticipants(type.name(), type.participants(), errors);
+    }
+
+    private void validateParticipants(String typeName, java.util.List<no.sikt.graphitron.record.type.ParticipantRef> participants, List<ValidationError> errors) {
+        for (var participant : participants) {
+            if (participant instanceof UnboundParticipant u) {
+                errors.add(new ValidationError(
+                    "Type '" + typeName + "': implementing type '" + u.typeName() + "' is not table-bound (missing @table directive)",
+                    null
+                ));
+            }
+        }
+    }
 
     // --- Field validators (stubs — filled in as test classes are added) ---
 

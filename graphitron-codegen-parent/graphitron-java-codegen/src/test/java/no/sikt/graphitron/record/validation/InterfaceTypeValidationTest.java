@@ -3,11 +3,16 @@ package no.sikt.graphitron.record.validation;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.type.GraphitronType;
 import no.sikt.graphitron.record.type.GraphitronType.InterfaceType;
+import no.sikt.graphitron.record.type.ParticipantRef.BoundParticipant;
+import no.sikt.graphitron.record.type.ParticipantRef.UnboundParticipant;
+import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
+import no.sikt.graphitron.record.type.TableRef.UnresolvedTable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
+import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -15,9 +20,33 @@ class InterfaceTypeValidationTest {
 
     enum Case implements TypeValidatorCase {
 
-        VALID("interface type — always valid",
-            new InterfaceType("Person", null),
-            List.of());
+        NO_PARTICIPANTS("interface type with no implementing types — valid",
+            new InterfaceType("Node", null, List.of()),
+            List.of()),
+
+        ALL_BOUND("all implementing types are table-bound — valid",
+            new InterfaceType("Media", null, List.of(
+                new BoundParticipant("Film", new ResolvedTable("FILM", FILM)),
+                new BoundParticipant("Book", new UnresolvedTable())
+            )),
+            List.of()),
+
+        ONE_UNBOUND("one implementing type is not table-bound — error",
+            new InterfaceType("Media", null, List.of(
+                new BoundParticipant("Film", new ResolvedTable("FILM", FILM)),
+                new UnboundParticipant("Description")
+            )),
+            List.of("Type 'Media': implementing type 'Description' is not table-bound (missing @table directive)")),
+
+        ALL_UNBOUND("all implementing types are not table-bound — one error per type",
+            new InterfaceType("Media", null, List.of(
+                new UnboundParticipant("Film"),
+                new UnboundParticipant("Book")
+            )),
+            List.of(
+                "Type 'Media': implementing type 'Film' is not table-bound (missing @table directive)",
+                "Type 'Media': implementing type 'Book' is not table-bound (missing @table directive)"
+            ));
 
         private final String description;
         private final GraphitronType type;

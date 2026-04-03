@@ -59,6 +59,9 @@ import no.sikt.graphitron.record.type.KeyColumnRef.UnresolvedKeyColumn;
 import no.sikt.graphitron.record.type.NodeRef;
 import no.sikt.graphitron.record.type.NodeRef.NoNode;
 import no.sikt.graphitron.record.type.NodeRef.NodeDirective;
+import no.sikt.graphitron.record.type.ParticipantRef;
+import no.sikt.graphitron.record.type.ParticipantRef.BoundParticipant;
+import no.sikt.graphitron.record.type.ParticipantRef.UnboundParticipant;
 import no.sikt.graphitron.record.type.TableRef;
 import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
 import no.sikt.graphitron.record.type.TableRef.UnresolvedTable;
@@ -160,6 +163,7 @@ public class GraphitronSchemaBuilder {
     // ===== Type classification =====
 
     private Map<String, GraphitronType> buildTypes() {
+        // First pass: classify every type (interface/union participants are initially empty).
         var result = new LinkedHashMap<String, GraphitronType>();
         registry.types().values().forEach(typeDef -> {
             var gType = classifyType(typeDef);
@@ -167,7 +171,52 @@ public class GraphitronSchemaBuilder {
                 result.put(typeDef.getName(), gType);
             }
         });
+
+        // Second pass: enrich interface and union types with their participant lists.
+        result.replaceAll((name, type) -> switch (type) {
+            case TableInterfaceType tit -> enrichTableInterfaceType(tit, result);
+            case InterfaceType it       -> enrichInterfaceType(it, result);
+            case UnionType ut           -> enrichUnionType(ut, result);
+            default                     -> type;
+        });
+
         return result;
+    }
+
+    private TableInterfaceType enrichTableInterfaceType(TableInterfaceType type, Map<String, GraphitronType> types) {
+        var participants = implementorsOf(type.name(), types);
+        return new TableInterfaceType(type.name(), type.location(), type.discriminatorColumn(), type.tableName(), type.table(), participants);
+    }
+
+    private InterfaceType enrichInterfaceType(InterfaceType type, Map<String, GraphitronType> types) {
+        var participants = implementorsOf(type.name(), types);
+        return new InterfaceType(type.name(), type.location(), participants);
+    }
+
+    private UnionType enrichUnionType(UnionType type, Map<String, GraphitronType> types) {
+        var unionDef = (UnionTypeDefinition) registry.types().get(type.name());
+        var participants = unionDef.getMemberTypes().stream()
+            .map(memberType -> participantRef(getBaseTypeName(memberType), types))
+            .toList();
+        return new UnionType(type.name(), type.location(), participants);
+    }
+
+    /** Returns one {@link ParticipantRef} for each ObjectTypeDefinition that implements {@code interfaceName}. */
+    private List<ParticipantRef> implementorsOf(String interfaceName, Map<String, GraphitronType> types) {
+        return registry.types().values().stream()
+            .filter(t -> t instanceof ObjectTypeDefinition)
+            .map(t -> (ObjectTypeDefinition) t)
+            .filter(obj -> obj.getImplements().stream()
+                .anyMatch(iface -> getBaseTypeName(iface).equals(interfaceName)))
+            .map(obj -> participantRef(obj.getName(), types))
+            .toList();
+    }
+
+    private ParticipantRef participantRef(String typeName, Map<String, GraphitronType> types) {
+        if (types.get(typeName) instanceof TableType tableType) {
+            return new BoundParticipant(typeName, tableType.table());
+        }
+        return new UnboundParticipant(typeName);
     }
 
     private GraphitronType classifyType(TypeDefinition<?> typeDef) {
@@ -196,10 +245,10 @@ public class GraphitronSchemaBuilder {
             if (iface.hasDirective(DIR_TABLE) && iface.hasDirective(DIR_DISCRIMINATE)) {
                 return buildTableInterfaceType(iface);
             }
-            return new InterfaceType(name, location);
+            return new InterfaceType(name, location, List.of());
         }
         if (typeDef instanceof UnionTypeDefinition) {
-            return new UnionType(name, location);
+            return new UnionType(name, location, List.of());
         }
         return null;
     }
@@ -219,7 +268,7 @@ public class GraphitronSchemaBuilder {
         String tableName = argString(iface, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
         String discriminatorColumn = argString(iface, DIR_DISCRIMINATE, ARG_ON).orElse(null);
         TableRef tableRef = resolveTable(tableName);
-        return new TableInterfaceType(name, location, discriminatorColumn, tableName, tableRef);
+        return new TableInterfaceType(name, location, discriminatorColumn, tableName, tableRef, List.of());
     }
 
     private TableRef resolveTable(String sqlName) {

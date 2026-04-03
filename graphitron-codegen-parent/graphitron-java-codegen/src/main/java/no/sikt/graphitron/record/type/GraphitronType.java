@@ -2,6 +2,8 @@ package no.sikt.graphitron.record.type;
 
 import graphql.language.SourceLocation;
 
+import java.util.List;
+
 /**
  * Classifies every named GraphQL type. Determines what Graphitron generates for a type
  * and is the authoritative source of source context for all fields defined on it.
@@ -63,23 +65,44 @@ public sealed interface GraphitronType
      * {@link TableRef.ResolvedTable} when the table was found, {@link TableRef.UnresolvedTable} when it was not. The
      * {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error for
      * {@code UnresolvedTable}.
+     *
+     * <p>{@code participants} holds one {@link ParticipantRef} per implementing type.
+     * The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error for every
+     * {@link ParticipantRef.UnboundParticipant}.
      */
     record TableInterfaceType(
         String name,
         SourceLocation location,
         String discriminatorColumn,
         String tableName,
-        TableRef table
+        TableRef table,
+        List<ParticipantRef> participants
     ) implements GraphitronType {}
 
     /**
      * An interface with no directives whose implementing types each have {@code @table}.
      * Multi-table interface pattern.
+     *
+     * <p>{@code participants} holds one {@link ParticipantRef} per implementing type.
+     * The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error for every
+     * {@link ParticipantRef.UnboundParticipant}.
      */
-    record InterfaceType(String name, SourceLocation location) implements GraphitronType {}
+    record InterfaceType(
+        String name,
+        SourceLocation location,
+        List<ParticipantRef> participants
+    ) implements GraphitronType {}
 
     /**
      * A union type whose member types all have {@code @table}.
+     *
+     * <p>{@code participants} holds one {@link ParticipantRef} per member type.
+     * The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error for every
+     * {@link ParticipantRef.UnboundParticipant}.
      */
-    record UnionType(String name, SourceLocation location) implements GraphitronType {}
+    record UnionType(
+        String name,
+        SourceLocation location,
+        List<ParticipantRef> participants
+    ) implements GraphitronType {}
 }
