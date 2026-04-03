@@ -3,20 +3,20 @@ package no.sikt.graphitron.record;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphitron.record.field.FieldConditionStep;
-import no.sikt.graphitron.record.field.FkStep;
-import no.sikt.graphitron.record.field.FkWithConditionStep;
+import no.sikt.graphitron.record.field.ReferencePathElement.FkStep;
+import no.sikt.graphitron.record.field.ReferencePathElement.FkWithConditionStep;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.ReferencePathElement;
-import no.sikt.graphitron.record.field.UnresolvedColumn;
-import no.sikt.graphitron.record.field.UnresolvedConditionStep;
-import no.sikt.graphitron.record.field.UnresolvedKeyAndConditionStep;
-import no.sikt.graphitron.record.field.UnresolvedKeyStep;
-import no.sikt.graphitron.record.field.UnresolvedNodeType;
+import no.sikt.graphitron.record.field.ColumnStep.UnresolvedColumn;
+import no.sikt.graphitron.record.field.ReferencePathElement.UnresolvedConditionStep;
+import no.sikt.graphitron.record.field.ReferencePathElement.UnresolvedKeyAndConditionStep;
+import no.sikt.graphitron.record.field.ReferencePathElement.UnresolvedKeyStep;
+import no.sikt.graphitron.record.field.NodeTypeStep.UnresolvedNodeType;
 import no.sikt.graphitron.record.type.GraphitronType;
-import no.sikt.graphitron.record.type.NodeDirective;
-import no.sikt.graphitron.record.type.ResolvedTable;
-import no.sikt.graphitron.record.type.TableType;
-import no.sikt.graphitron.record.type.UnresolvedTable;
+import no.sikt.graphitron.record.type.NodeStep.NodeDirective;
+import no.sikt.graphitron.record.type.TableStep.ResolvedTable;
+import no.sikt.graphitron.record.type.GraphitronType.TableType;
+import no.sikt.graphitron.record.type.TableStep.UnresolvedTable;
 import org.jooq.ForeignKey;
 
 import java.util.ArrayList;
@@ -41,63 +41,63 @@ public class GraphitronSchemaValidator {
 
     private void validateType(GraphitronType type, List<ValidationError> errors) {
         switch (type) {
-            case no.sikt.graphitron.record.type.TableType t          -> validateTableType(t, errors);
-            case no.sikt.graphitron.record.type.ResultType t         -> validateResultType(t, errors);
-            case no.sikt.graphitron.record.type.RootType t           -> validateRootType(t, errors);
-            case no.sikt.graphitron.record.type.TableInterfaceType t -> validateTableInterfaceType(t, errors);
-            case no.sikt.graphitron.record.type.InterfaceType t      -> validateInterfaceType(t, errors);
-            case no.sikt.graphitron.record.type.UnionType t          -> validateUnionType(t, errors);
+            case no.sikt.graphitron.record.type.GraphitronType.TableType t          -> validateTableType(t, errors);
+            case no.sikt.graphitron.record.type.GraphitronType.ResultType t         -> validateResultType(t, errors);
+            case no.sikt.graphitron.record.type.GraphitronType.RootType t           -> validateRootType(t, errors);
+            case no.sikt.graphitron.record.type.GraphitronType.TableInterfaceType t -> validateTableInterfaceType(t, errors);
+            case no.sikt.graphitron.record.type.GraphitronType.InterfaceType t      -> validateInterfaceType(t, errors);
+            case no.sikt.graphitron.record.type.GraphitronType.UnionType t          -> validateUnionType(t, errors);
         }
     }
 
     private void validateField(GraphitronField field, GraphitronSchema schema, List<ValidationError> errors) {
         switch (field) {
-            case no.sikt.graphitron.record.field.LookupQueryField f        -> validateLookupQueryField(f, errors);
-            case no.sikt.graphitron.record.field.TableQueryField f         -> validateTableQueryField(f, errors);
-            case no.sikt.graphitron.record.field.TableMethodQueryField f   -> validateTableMethodQueryField(f, errors);
-            case no.sikt.graphitron.record.field.NodeQueryField f          -> validateNodeQueryField(f, errors);
-            case no.sikt.graphitron.record.field.EntityQueryField f        -> validateEntityQueryField(f, errors);
-            case no.sikt.graphitron.record.field.TableInterfaceQueryField f -> validateTableInterfaceQueryField(f, errors);
-            case no.sikt.graphitron.record.field.InterfaceQueryField f     -> validateInterfaceQueryField(f, errors);
-            case no.sikt.graphitron.record.field.UnionQueryField f         -> validateUnionQueryField(f, errors);
-            case no.sikt.graphitron.record.field.ServiceQueryField f       -> validateServiceQueryField(f, errors);
-            case no.sikt.graphitron.record.field.InsertMutationField f     -> validateInsertMutationField(f, errors);
-            case no.sikt.graphitron.record.field.UpdateMutationField f     -> validateUpdateMutationField(f, errors);
-            case no.sikt.graphitron.record.field.DeleteMutationField f     -> validateDeleteMutationField(f, errors);
-            case no.sikt.graphitron.record.field.UpsertMutationField f     -> validateUpsertMutationField(f, errors);
-            case no.sikt.graphitron.record.field.ServiceMutationField f    -> validateServiceMutationField(f, errors);
-            case no.sikt.graphitron.record.field.ColumnField f             -> validateColumnField(f, errors);
-            case no.sikt.graphitron.record.field.ColumnReferenceField f    -> validateColumnReferenceField(f, errors);
-            case no.sikt.graphitron.record.field.NodeIdField f             -> validateNodeIdField(f, errors);
-            case no.sikt.graphitron.record.field.NodeIdReferenceField f    -> validateNodeIdReferenceField(f, schema, errors);
-            case no.sikt.graphitron.record.field.TableField f              -> validateTableField(f, errors);
-            case no.sikt.graphitron.record.field.TableMethodField f        -> validateTableMethodField(f, errors);
-            case no.sikt.graphitron.record.field.TableInterfaceField f     -> validateTableInterfaceField(f, errors);
-            case no.sikt.graphitron.record.field.InterfaceField f          -> validateInterfaceField(f, errors);
-            case no.sikt.graphitron.record.field.UnionField f              -> validateUnionField(f, errors);
-            case no.sikt.graphitron.record.field.NestingField f            -> validateNestingField(f, errors);
-            case no.sikt.graphitron.record.field.ConstructorField f        -> validateConstructorField(f, errors);
-            case no.sikt.graphitron.record.field.ServiceField f            -> validateServiceField(f, errors);
-            case no.sikt.graphitron.record.field.ComputedField f           -> validateComputedField(f, errors);
-            case no.sikt.graphitron.record.field.PropertyField f           -> validatePropertyField(f, errors);
-            case no.sikt.graphitron.record.field.MultitableReferenceField f -> validateMultitableReferenceField(f, errors);
-            case no.sikt.graphitron.record.field.NotGeneratedField f       -> validateNotGeneratedField(f, errors);
-            case no.sikt.graphitron.record.field.UnclassifiedField f       -> validateUnclassifiedField(f, errors);
+            case no.sikt.graphitron.record.field.QueryField.LookupQueryField f        -> validateLookupQueryField(f, errors);
+            case no.sikt.graphitron.record.field.QueryField.TableQueryField f         -> validateTableQueryField(f, errors);
+            case no.sikt.graphitron.record.field.QueryField.TableMethodQueryField f   -> validateTableMethodQueryField(f, errors);
+            case no.sikt.graphitron.record.field.QueryField.NodeQueryField f          -> validateNodeQueryField(f, errors);
+            case no.sikt.graphitron.record.field.QueryField.EntityQueryField f        -> validateEntityQueryField(f, errors);
+            case no.sikt.graphitron.record.field.QueryField.TableInterfaceQueryField f -> validateTableInterfaceQueryField(f, errors);
+            case no.sikt.graphitron.record.field.QueryField.InterfaceQueryField f     -> validateInterfaceQueryField(f, errors);
+            case no.sikt.graphitron.record.field.QueryField.UnionQueryField f         -> validateUnionQueryField(f, errors);
+            case no.sikt.graphitron.record.field.QueryField.ServiceQueryField f       -> validateServiceQueryField(f, errors);
+            case no.sikt.graphitron.record.field.MutationField.InsertMutationField f     -> validateInsertMutationField(f, errors);
+            case no.sikt.graphitron.record.field.MutationField.UpdateMutationField f     -> validateUpdateMutationField(f, errors);
+            case no.sikt.graphitron.record.field.MutationField.DeleteMutationField f     -> validateDeleteMutationField(f, errors);
+            case no.sikt.graphitron.record.field.MutationField.UpsertMutationField f     -> validateUpsertMutationField(f, errors);
+            case no.sikt.graphitron.record.field.MutationField.ServiceMutationField f    -> validateServiceMutationField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.ColumnField f             -> validateColumnField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.ColumnReferenceField f    -> validateColumnReferenceField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.NodeIdField f             -> validateNodeIdField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField f    -> validateNodeIdReferenceField(f, schema, errors);
+            case no.sikt.graphitron.record.field.ChildField.TableField f              -> validateTableField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.TableMethodField f        -> validateTableMethodField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.TableInterfaceField f     -> validateTableInterfaceField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.InterfaceField f          -> validateInterfaceField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.UnionField f              -> validateUnionField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.NestingField f            -> validateNestingField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.ConstructorField f        -> validateConstructorField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.ServiceField f            -> validateServiceField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.ComputedField f           -> validateComputedField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.PropertyField f           -> validatePropertyField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.MultitableReferenceField f -> validateMultitableReferenceField(f, errors);
+            case no.sikt.graphitron.record.field.GraphitronField.NotGeneratedField f       -> validateNotGeneratedField(f, errors);
+            case no.sikt.graphitron.record.field.GraphitronField.UnclassifiedField f       -> validateUnclassifiedField(f, errors);
         }
     }
 
     // --- Type validators (stubs — filled in as test classes are added) ---
 
-    private void validateTableType(no.sikt.graphitron.record.type.TableType type, List<ValidationError> errors) {
+    private void validateTableType(no.sikt.graphitron.record.type.GraphitronType.TableType type, List<ValidationError> errors) {
         if (type.table() instanceof UnresolvedTable) {
             errors.add(new ValidationError(
                 "Type '" + type.name() + "': table '" + type.tableName() + "' could not be resolved in the jOOQ catalog",
                 type.location()
             ));
         }
-        if (type.node() instanceof no.sikt.graphitron.record.type.NodeDirective nd) {
+        if (type.node() instanceof no.sikt.graphitron.record.type.NodeStep.NodeDirective nd) {
             for (var keyColumn : nd.keyColumns()) {
-                if (keyColumn instanceof no.sikt.graphitron.record.type.UnresolvedKeyColumn u) {
+                if (keyColumn instanceof no.sikt.graphitron.record.type.KeyColumnStep.UnresolvedKeyColumn u) {
                     errors.add(new ValidationError(
                         "Type '" + type.name() + "': key column '" + u.name() + "' in @node could not be resolved in the jOOQ table",
                         type.location()
@@ -106,9 +106,9 @@ public class GraphitronSchemaValidator {
             }
         }
     }
-    private void validateResultType(no.sikt.graphitron.record.type.ResultType type, List<ValidationError> errors) {}
-    private void validateRootType(no.sikt.graphitron.record.type.RootType type, List<ValidationError> errors) {}
-    private void validateTableInterfaceType(no.sikt.graphitron.record.type.TableInterfaceType type, List<ValidationError> errors) {
+    private void validateResultType(no.sikt.graphitron.record.type.GraphitronType.ResultType type, List<ValidationError> errors) {}
+    private void validateRootType(no.sikt.graphitron.record.type.GraphitronType.RootType type, List<ValidationError> errors) {}
+    private void validateTableInterfaceType(no.sikt.graphitron.record.type.GraphitronType.TableInterfaceType type, List<ValidationError> errors) {
         if (type.table() instanceof UnresolvedTable) {
             errors.add(new ValidationError(
                 "Type '" + type.name() + "': table '" + type.tableName() + "' could not be resolved in the jOOQ catalog",
@@ -116,36 +116,36 @@ public class GraphitronSchemaValidator {
             ));
         }
     }
-    private void validateInterfaceType(no.sikt.graphitron.record.type.InterfaceType type, List<ValidationError> errors) {}
-    private void validateUnionType(no.sikt.graphitron.record.type.UnionType type, List<ValidationError> errors) {}
+    private void validateInterfaceType(no.sikt.graphitron.record.type.GraphitronType.InterfaceType type, List<ValidationError> errors) {}
+    private void validateUnionType(no.sikt.graphitron.record.type.GraphitronType.UnionType type, List<ValidationError> errors) {}
 
     // --- Field validators (stubs — filled in as test classes are added) ---
 
-    private void validateLookupQueryField(no.sikt.graphitron.record.field.LookupQueryField field, List<ValidationError> errors) {}
-    private void validateTableQueryField(no.sikt.graphitron.record.field.TableQueryField field, List<ValidationError> errors) {
+    private void validateLookupQueryField(no.sikt.graphitron.record.field.QueryField.LookupQueryField field, List<ValidationError> errors) {}
+    private void validateTableQueryField(no.sikt.graphitron.record.field.QueryField.TableQueryField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.cardinality(), errors);
     }
-    private void validateTableMethodQueryField(no.sikt.graphitron.record.field.TableMethodQueryField field, List<ValidationError> errors) {
+    private void validateTableMethodQueryField(no.sikt.graphitron.record.field.QueryField.TableMethodQueryField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.cardinality(), errors);
     }
-    private void validateNodeQueryField(no.sikt.graphitron.record.field.NodeQueryField field, List<ValidationError> errors) {}
-    private void validateEntityQueryField(no.sikt.graphitron.record.field.EntityQueryField field, List<ValidationError> errors) {}
-    private void validateTableInterfaceQueryField(no.sikt.graphitron.record.field.TableInterfaceQueryField field, List<ValidationError> errors) {
+    private void validateNodeQueryField(no.sikt.graphitron.record.field.QueryField.NodeQueryField field, List<ValidationError> errors) {}
+    private void validateEntityQueryField(no.sikt.graphitron.record.field.QueryField.EntityQueryField field, List<ValidationError> errors) {}
+    private void validateTableInterfaceQueryField(no.sikt.graphitron.record.field.QueryField.TableInterfaceQueryField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.cardinality(), errors);
     }
-    private void validateInterfaceQueryField(no.sikt.graphitron.record.field.InterfaceQueryField field, List<ValidationError> errors) {
+    private void validateInterfaceQueryField(no.sikt.graphitron.record.field.QueryField.InterfaceQueryField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.cardinality(), errors);
     }
-    private void validateUnionQueryField(no.sikt.graphitron.record.field.UnionQueryField field, List<ValidationError> errors) {
+    private void validateUnionQueryField(no.sikt.graphitron.record.field.QueryField.UnionQueryField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.cardinality(), errors);
     }
-    private void validateServiceQueryField(no.sikt.graphitron.record.field.ServiceQueryField field, List<ValidationError> errors) {}
-    private void validateInsertMutationField(no.sikt.graphitron.record.field.InsertMutationField field, List<ValidationError> errors) {}
-    private void validateUpdateMutationField(no.sikt.graphitron.record.field.UpdateMutationField field, List<ValidationError> errors) {}
-    private void validateDeleteMutationField(no.sikt.graphitron.record.field.DeleteMutationField field, List<ValidationError> errors) {}
-    private void validateUpsertMutationField(no.sikt.graphitron.record.field.UpsertMutationField field, List<ValidationError> errors) {}
-    private void validateServiceMutationField(no.sikt.graphitron.record.field.ServiceMutationField field, List<ValidationError> errors) {}
-    private void validateColumnField(no.sikt.graphitron.record.field.ColumnField field, List<ValidationError> errors) {
+    private void validateServiceQueryField(no.sikt.graphitron.record.field.QueryField.ServiceQueryField field, List<ValidationError> errors) {}
+    private void validateInsertMutationField(no.sikt.graphitron.record.field.MutationField.InsertMutationField field, List<ValidationError> errors) {}
+    private void validateUpdateMutationField(no.sikt.graphitron.record.field.MutationField.UpdateMutationField field, List<ValidationError> errors) {}
+    private void validateDeleteMutationField(no.sikt.graphitron.record.field.MutationField.DeleteMutationField field, List<ValidationError> errors) {}
+    private void validateUpsertMutationField(no.sikt.graphitron.record.field.MutationField.UpsertMutationField field, List<ValidationError> errors) {}
+    private void validateServiceMutationField(no.sikt.graphitron.record.field.MutationField.ServiceMutationField field, List<ValidationError> errors) {}
+    private void validateColumnField(no.sikt.graphitron.record.field.ChildField.ColumnField field, List<ValidationError> errors) {
         if (field.column() instanceof UnresolvedColumn) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': column '" + field.columnName() + "' could not be resolved in the jOOQ table",
@@ -159,7 +159,7 @@ public class GraphitronSchemaValidator {
             ));
         }
     }
-    private void validateColumnReferenceField(no.sikt.graphitron.record.field.ColumnReferenceField field, List<ValidationError> errors) {
+    private void validateColumnReferenceField(no.sikt.graphitron.record.field.ChildField.ColumnReferenceField field, List<ValidationError> errors) {
         if (field.column() instanceof UnresolvedColumn) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': column '" + field.columnName() + "' could not be resolved in the jOOQ table",
@@ -181,15 +181,15 @@ public class GraphitronSchemaValidator {
             validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
         }
     }
-    private void validateNodeIdField(no.sikt.graphitron.record.field.NodeIdField field, List<ValidationError> errors) {
-        if (field.node() instanceof no.sikt.graphitron.record.type.NoNode) {
+    private void validateNodeIdField(no.sikt.graphitron.record.field.ChildField.NodeIdField field, List<ValidationError> errors) {
+        if (field.node() instanceof no.sikt.graphitron.record.type.NodeStep.NoNode) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': @nodeId requires the containing type to have @node",
                 field.location()
             ));
         }
     }
-    private void validateNodeIdReferenceField(no.sikt.graphitron.record.field.NodeIdReferenceField field, GraphitronSchema schema, List<ValidationError> errors) {
+    private void validateNodeIdReferenceField(no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField field, GraphitronSchema schema, List<ValidationError> errors) {
         if (field.nodeType() instanceof UnresolvedNodeType) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': type '" + field.typeName() + "' does not exist in the schema or does not have @node",
@@ -264,7 +264,7 @@ public class GraphitronSchemaValidator {
             ));
         }
     }
-    private void validateTableField(no.sikt.graphitron.record.field.TableField field, List<ValidationError> errors) {
+    private void validateTableField(no.sikt.graphitron.record.field.ChildField.TableField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
         if (field.condition() instanceof FieldConditionStep.UnresolvedFieldCondition u) {
             errors.add(new ValidationError(
@@ -274,36 +274,36 @@ public class GraphitronSchemaValidator {
         }
         validateCardinality(field.name(), field.location(), field.cardinality(), errors);
     }
-    private void validateTableMethodField(no.sikt.graphitron.record.field.TableMethodField field, List<ValidationError> errors) {
+    private void validateTableMethodField(no.sikt.graphitron.record.field.ChildField.TableMethodField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
         validateCardinality(field.name(), field.location(), field.cardinality(), errors);
     }
-    private void validateTableInterfaceField(no.sikt.graphitron.record.field.TableInterfaceField field, List<ValidationError> errors) {
+    private void validateTableInterfaceField(no.sikt.graphitron.record.field.ChildField.TableInterfaceField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.cardinality(), errors);
     }
-    private void validateInterfaceField(no.sikt.graphitron.record.field.InterfaceField field, List<ValidationError> errors) {
+    private void validateInterfaceField(no.sikt.graphitron.record.field.ChildField.InterfaceField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.cardinality(), errors);
     }
-    private void validateUnionField(no.sikt.graphitron.record.field.UnionField field, List<ValidationError> errors) {
+    private void validateUnionField(no.sikt.graphitron.record.field.ChildField.UnionField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.cardinality(), errors);
     }
-    private void validateNestingField(no.sikt.graphitron.record.field.NestingField field, List<ValidationError> errors) {}
-    private void validateConstructorField(no.sikt.graphitron.record.field.ConstructorField field, List<ValidationError> errors) {}
-    private void validateServiceField(no.sikt.graphitron.record.field.ServiceField field, List<ValidationError> errors) {
+    private void validateNestingField(no.sikt.graphitron.record.field.ChildField.NestingField field, List<ValidationError> errors) {}
+    private void validateConstructorField(no.sikt.graphitron.record.field.ChildField.ConstructorField field, List<ValidationError> errors) {}
+    private void validateServiceField(no.sikt.graphitron.record.field.ChildField.ServiceField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
     }
-    private void validateComputedField(no.sikt.graphitron.record.field.ComputedField field, List<ValidationError> errors) {
+    private void validateComputedField(no.sikt.graphitron.record.field.ChildField.ComputedField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
     }
-    private void validatePropertyField(no.sikt.graphitron.record.field.PropertyField field, List<ValidationError> errors) {}
-    private void validateMultitableReferenceField(no.sikt.graphitron.record.field.MultitableReferenceField field, List<ValidationError> errors) {
+    private void validatePropertyField(no.sikt.graphitron.record.field.ChildField.PropertyField field, List<ValidationError> errors) {}
+    private void validateMultitableReferenceField(no.sikt.graphitron.record.field.ChildField.MultitableReferenceField field, List<ValidationError> errors) {
         errors.add(new ValidationError(
             "Field '" + field.name() + "': @multitableReference is not supported in record-based output",
             field.location()
         ));
     }
-    private void validateNotGeneratedField(no.sikt.graphitron.record.field.NotGeneratedField field, List<ValidationError> errors) {}
-    private void validateUnclassifiedField(no.sikt.graphitron.record.field.UnclassifiedField field, List<ValidationError> errors) {
+    private void validateNotGeneratedField(no.sikt.graphitron.record.field.GraphitronField.NotGeneratedField field, List<ValidationError> errors) {}
+    private void validateUnclassifiedField(no.sikt.graphitron.record.field.GraphitronField.UnclassifiedField field, List<ValidationError> errors) {
         errors.add(new ValidationError(
             "Field '" + field.name() + "': could not be classified — missing or conflicting directives",
             field.location()
@@ -349,9 +349,9 @@ public class GraphitronSchemaValidator {
     private void validateReferencePath(String fieldName, SourceLocation location, List<ReferencePathElement> path, List<ValidationError> errors) {
         for (var element : path) {
             switch (element) {
-                case no.sikt.graphitron.record.field.FkStep ignored -> {}
-                case no.sikt.graphitron.record.field.FkWithConditionStep ignored -> {}
-                case no.sikt.graphitron.record.field.ConditionOnlyStep ignored -> {}
+                case no.sikt.graphitron.record.field.ReferencePathElement.FkStep ignored -> {}
+                case no.sikt.graphitron.record.field.ReferencePathElement.FkWithConditionStep ignored -> {}
+                case no.sikt.graphitron.record.field.ReferencePathElement.ConditionOnlyStep ignored -> {}
                 case UnresolvedKeyStep u -> errors.add(new ValidationError(
                     "Field '" + fieldName + "': key '" + u.keyName() + "' could not be resolved in the jOOQ catalog",
                     location));

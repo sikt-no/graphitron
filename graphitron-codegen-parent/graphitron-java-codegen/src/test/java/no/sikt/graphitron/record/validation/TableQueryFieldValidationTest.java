@@ -7,7 +7,7 @@ import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.OrderByEnumValueSpec;
 import no.sikt.graphitron.record.field.OrderSpec;
 import no.sikt.graphitron.record.field.SortFieldSpec;
-import no.sikt.graphitron.record.field.TableQueryField;
+import no.sikt.graphitron.record.field.QueryField.TableQueryField;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 

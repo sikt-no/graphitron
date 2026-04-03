@@ -6,11 +6,11 @@ import no.sikt.graphitron.record.GraphitronSchemaValidator;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.type.GraphitronType;
-import no.sikt.graphitron.record.type.NodeDirective;
-import no.sikt.graphitron.record.type.NoNode;
-import no.sikt.graphitron.record.type.ResolvedTable;
-import no.sikt.graphitron.record.type.RootType;
-import no.sikt.graphitron.record.type.TableType;
+import no.sikt.graphitron.record.type.NodeStep.NodeDirective;
+import no.sikt.graphitron.record.type.NodeStep.NoNode;
+import no.sikt.graphitron.record.type.TableStep.ResolvedTable;
+import no.sikt.graphitron.record.type.GraphitronType.RootType;
+import no.sikt.graphitron.record.type.GraphitronType.TableType;
 import org.jooq.Table;
 
 import java.util.List;

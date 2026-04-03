@@ -2,16 +2,16 @@ package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.jooq.generated.testdata.public_.Keys;
 import no.sikt.graphitron.record.ValidationError;
-import no.sikt.graphitron.record.field.ColumnReferenceField;
-import no.sikt.graphitron.record.field.ConditionOnlyStep;
-import no.sikt.graphitron.record.field.FkStep;
+import no.sikt.graphitron.record.field.ChildField.ColumnReferenceField;
+import no.sikt.graphitron.record.field.ReferencePathElement.ConditionOnlyStep;
+import no.sikt.graphitron.record.field.ReferencePathElement.FkStep;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
-import no.sikt.graphitron.record.field.ResolvedColumn;
-import no.sikt.graphitron.record.field.UnresolvedColumn;
-import no.sikt.graphitron.record.field.UnresolvedConditionStep;
-import no.sikt.graphitron.record.field.UnresolvedKeyAndConditionStep;
-import no.sikt.graphitron.record.field.UnresolvedKeyStep;
+import no.sikt.graphitron.record.field.ColumnStep.ResolvedColumn;
+import no.sikt.graphitron.record.field.ColumnStep.UnresolvedColumn;
+import no.sikt.graphitron.record.field.ReferencePathElement.UnresolvedConditionStep;
+import no.sikt.graphitron.record.field.ReferencePathElement.UnresolvedKeyAndConditionStep;
+import no.sikt.graphitron.record.field.ReferencePathElement.UnresolvedKeyStep;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 

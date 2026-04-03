@@ -3,9 +3,9 @@ package no.sikt.graphitron.record.validation;
 import no.sikt.graphitron.record.GraphitronSchema;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.GraphitronField;
-import no.sikt.graphitron.record.field.NodeIdField;
-import no.sikt.graphitron.record.type.NodeDirective;
-import no.sikt.graphitron.record.type.NoNode;
+import no.sikt.graphitron.record.field.ChildField.NodeIdField;
+import no.sikt.graphitron.record.type.NodeStep.NodeDirective;
+import no.sikt.graphitron.record.type.NodeStep.NoNode;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 

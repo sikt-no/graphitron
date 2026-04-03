@@ -3,7 +3,7 @@ package no.sikt.graphitron.record.validation;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.FieldCardinality;
 import no.sikt.graphitron.record.field.GraphitronField;
-import no.sikt.graphitron.record.field.TableInterfaceField;
+import no.sikt.graphitron.record.field.ChildField.TableInterfaceField;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 

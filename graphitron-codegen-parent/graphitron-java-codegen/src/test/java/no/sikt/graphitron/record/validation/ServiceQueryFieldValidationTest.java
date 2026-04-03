@@ -2,7 +2,7 @@ package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.GraphitronField;
-import no.sikt.graphitron.record.field.ServiceQueryField;
+import no.sikt.graphitron.record.field.QueryField.ServiceQueryField;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 

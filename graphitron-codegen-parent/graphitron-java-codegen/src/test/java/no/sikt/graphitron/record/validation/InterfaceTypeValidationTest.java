@@ -2,7 +2,7 @@ package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.type.GraphitronType;
-import no.sikt.graphitron.record.type.InterfaceType;
+import no.sikt.graphitron.record.type.GraphitronType.InterfaceType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 

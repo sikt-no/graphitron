@@ -1,7 +1,9 @@
 package no.sikt.graphitron.record.type;
 
+import java.util.List;
+
 /**
- * Represents whether a {@link TableType} carries a {@code @node} directive.
+ * Represents whether a {@link GraphitronType.TableType} carries a {@code @node} directive.
  *
  * <p>The sealed hierarchy distinguishes two states:
  * <ul>
@@ -11,4 +13,24 @@ package no.sikt.graphitron.record.type;
  *       jOOQ table via a {@link KeyColumnStep}.</li>
  * </ul>
  */
-public sealed interface NodeStep permits NoNode, NodeDirective {}
+public sealed interface NodeStep permits NodeStep.NoNode, NodeStep.NodeDirective {
+
+    /**
+     * A {@link NodeStep} indicating that the type has no {@code @node} directive.
+     */
+    record NoNode() implements NodeStep {}
+
+    /**
+     * A {@link NodeStep} indicating that the type carries a {@code @node} directive.
+     *
+     * <p>{@code typeId} is the value of the {@code typeId} argument, or {@code null} when
+     * the argument was omitted.
+     *
+     * <p>{@code keyColumns} is the resolved list of {@code keyColumns} argument entries. Each
+     * entry is either a {@link KeyColumnStep.ResolvedKeyColumn} (column found in the jOOQ table)
+     * or a {@link KeyColumnStep.UnresolvedKeyColumn} (column name could not be matched). An empty
+     * list means the argument was omitted, in which case the primary key is used at
+     * code-generation time.
+     */
+    record NodeDirective(String typeId, List<KeyColumnStep> keyColumns) implements NodeStep {}
+}
