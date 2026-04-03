@@ -50,11 +50,16 @@ public class JooqCatalog {
 
     /**
      * Find a column in a table by its SQL name. Returns both the jOOQ {@link org.jooq.Field}
-     * instance and its Java field name in the generated table class (e.g. {@code "TITLE"}).
+     * instance and its Java field name in the generated table class (e.g. {@code "FILM_ID"}).
+     * Uses reflection to read the actual Java identifier name, which respects custom jOOQ
+     * naming strategies rather than assuming a plain {@code toUpperCase()} transformation.
      */
     public Optional<ColumnEntry> findColumn(Table<?> table, String sqlColumnName) {
-        return Optional.ofNullable(table.field(sqlColumnName))
-            .map(f -> new ColumnEntry(f.getName().toUpperCase(), f));
+        return Arrays.stream(table.getClass().getFields())
+            .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
+            .map(f -> new ColumnEntry(f.getName(), (org.jooq.Field<?>) instanceFieldValue(f, table)))
+            .filter(e -> sqlColumnName.equalsIgnoreCase(e.column().getName()))
+            .findFirst();
     }
 
     private Optional<Class<?>> tablesClass(Schema schema) {
@@ -68,6 +73,14 @@ public class JooqCatalog {
     private static Object fieldValue(Field f) {
         try {
             return f.get(null);
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static Object instanceFieldValue(Field f, Object instance) {
+        try {
+            return f.get(instance);
         } catch (IllegalAccessException e) {
             throw new RuntimeException(e);
         }
