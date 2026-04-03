@@ -6,7 +6,7 @@ import java.util.List;
  * The outcome of resolving a field-level {@code @condition} directive.
  *
  * <p>A field-level condition adds a {@code WHERE} (or {@code AND}) clause to the query generated
- * for that field, in contrast with reference-path conditions (see {@link ReferencePathElement})
+ * for that field, in contrast with reference-path conditions (see {@link ReferencePathElementRef})
  * which affect how tables are joined.
  *
  * <p>The {@code override} flag (on the concrete variants) indicates that this condition should
@@ -20,25 +20,25 @@ import java.util.List;
  *       the {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error
  * </ul>
  */
-public sealed interface FieldConditionStep
-    permits FieldConditionStep.NoFieldCondition,
-            FieldConditionStep.ResolvedFieldCondition,
-            FieldConditionStep.UnresolvedFieldCondition {
+public sealed interface FieldConditionRef
+    permits FieldConditionRef.NoFieldCondition,
+            FieldConditionRef.ResolvedFieldCondition,
+            FieldConditionRef.UnresolvedFieldCondition {
 
     /** No {@code @condition} directive is present on the field. */
-    record NoFieldCondition() implements FieldConditionStep {}
+    record NoFieldCondition() implements FieldConditionRef {}
 
     /** The condition method was successfully resolved via reflection. */
     record ResolvedFieldCondition(
         MethodRef method,
         boolean override,
         List<String> contextArgs
-    ) implements FieldConditionStep {}
+    ) implements FieldConditionRef {}
 
     /** The condition method could not be resolved. {@code qualifiedName} is the raw value from the directive. */
     record UnresolvedFieldCondition(
         String qualifiedName,
         boolean override,
         List<String> contextArgs
-    ) implements FieldConditionStep {}
+    ) implements FieldConditionRef {}
 }

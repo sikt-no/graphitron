@@ -86,7 +86,7 @@ record TableType(
     String name,
     SourceLocation location,
     String tableName,   // SQL name from @table directive — e.g. "film"
-    TableStep table     // resolved jOOQ table, or unresolved sentinel
+    TableRef table     // resolved jOOQ table, or unresolved sentinel
 ) implements GraphitronType {}
 
 // @record — runtime wiring only, no SQL until a new scope starts
@@ -103,7 +103,7 @@ record TableInterfaceType(
     SourceLocation location,
     String discriminatorColumn,
     String tableName,   // SQL name from @table directive
-    TableStep table     // resolved jOOQ table, or unresolved sentinel
+    TableRef table     // resolved jOOQ table, or unresolved sentinel
 ) implements GraphitronType {}
 
 // interface with no directives; implementing types have @table
@@ -115,21 +115,21 @@ record UnionType(String name, SourceLocation location)
     implements GraphitronType {}
 ```
 
-### `TableStep`
+### `TableRef`
 
 `TableType` and `TableInterfaceType` use a sealed hierarchy to represent the outcome of resolving the `@table` directive value against the jOOQ catalog:
 
 ```java
-sealed interface TableStep permits ResolvedTable, UnresolvedTable {}
+sealed interface TableRef permits ResolvedTable, UnresolvedTable {}
 
 // jOOQ table class found in catalog
 record ResolvedTable(
     String javaFieldName,  // field name in generated Tables class — e.g. "FILM"
     Table<?> table         // jOOQ instance; provides column and FK metadata
-) implements TableStep {}
+) implements TableRef {}
 
 // SQL name could not be matched; tableName is on the parent record
-record UnresolvedTable() implements TableStep {}
+record UnresolvedTable() implements TableRef {}
 ```
 
 The validator reports an error for `UnresolvedTable`; the code generator only consumes `ResolvedTable`.
@@ -169,12 +169,12 @@ Each leaf type is a Java `record` carrying the properties relevant to code gener
 
 **`ConstructorField` is planned but not yet implemented.** Until its directive and generation logic are defined, `FieldsSpecBuilder` must classify any field that would otherwise match `ConstructorField` as `UnclassifiedField` — which the validator rejects with a clear error. Recognising a type in the hierarchy without a generation path is a hidden gap; `UnclassifiedField` makes the gap visible and enforced. This note will be removed when the deliverable for `ConstructorField` is added to the sequence.
 
-### `ColumnStep`
+### `ColumnRef`
 
 `ColumnField` and `ColumnReferenceField` use a sealed hierarchy to represent the outcome of resolving the field's column name against the jOOQ table:
 
 ```java
-sealed interface ColumnStep permits ResolvedColumn, UnresolvedColumn {}
+sealed interface ColumnRef permits ResolvedColumn, UnresolvedColumn {}
 
 // column found in jOOQ table
 record ResolvedColumn(
@@ -184,27 +184,27 @@ record ResolvedColumn(
                        // is only correct for the default jOOQ naming strategy; a custom
                        // GeneratorStrategy can produce any identifier, so reflection is required.
     Field<?> column    // jOOQ instance; used for type inspection at code-gen time
-) implements ColumnStep {}
+) implements ColumnRef {}
 
 // column name could not be matched; columnName is on the parent record
-record UnresolvedColumn() implements ColumnStep {}
+record UnresolvedColumn() implements ColumnRef {}
 ```
 
-### `ReferencePathElement`
+### `ReferencePathElementRef`
 
-`TableField`, `ColumnReferenceField`, `NodeIdReferenceField`, `TableMethodField`, `ServiceField`, and `ComputedField` each carry a `List<ReferencePathElement>` representing the `@reference(path:)` join steps. The sealed hierarchy distinguishes six states:
+`TableField`, `ColumnReferenceField`, `NodeIdReferenceField`, `TableMethodField`, `ServiceField`, and `ComputedField` each carry a `List<ReferencePathElementRef>` representing the `@reference(path:)` join steps. The sealed hierarchy distinguishes six states:
 
 ```java
-sealed interface ReferencePathElement
+sealed interface ReferencePathElementRef
     permits FkStep, FkWithConditionStep, ConditionOnlyStep,
             UnresolvedKeyStep, UnresolvedConditionStep, UnresolvedKeyAndConditionStep {}
 
-record FkStep(ForeignKey<?, ?> key) implements ReferencePathElement {}
-record FkWithConditionStep(ForeignKey<?, ?> key, MethodRef condition) implements ReferencePathElement {}
-record ConditionOnlyStep(MethodRef condition) implements ReferencePathElement {}
-record UnresolvedKeyStep(String keyName) implements ReferencePathElement {}
-record UnresolvedConditionStep(String qualifiedName) implements ReferencePathElement {}
-record UnresolvedKeyAndConditionStep(String keyName, String conditionName) implements ReferencePathElement {}
+record FkStep(ForeignKey<?, ?> key) implements ReferencePathElementRef {}
+record FkWithConditionStep(ForeignKey<?, ?> key, MethodRef condition) implements ReferencePathElementRef {}
+record ConditionOnlyStep(MethodRef condition) implements ReferencePathElementRef {}
+record UnresolvedKeyStep(String keyName) implements ReferencePathElementRef {}
+record UnresolvedConditionStep(String qualifiedName) implements ReferencePathElementRef {}
+record UnresolvedKeyAndConditionStep(String keyName, String conditionName) implements ReferencePathElementRef {}
 ```
 
 The validator reports errors for the three `Unresolved*` variants; the code generator only consumes the three resolved variants.
@@ -254,7 +254,7 @@ The three variants generate structurally different code:
 
 Cardinality-sensitive validator checks — such as "list field on PK-less table has no `@defaultOrder`" — pattern-match on `field.cardinality()` rather than inspecting the GraphQL return type at validation time, making the spec self-contained.
 
-`FieldConditionStep` (field-level `@condition`) is orthogonal to cardinality. `@splitQuery` on `TableField` is also orthogonal — it changes whether a DataLoader is used but not the SQL shape for the list/connection variants. Both remain separate properties on their respective records.
+`FieldConditionRef` (field-level `@condition`) is orthogonal to cardinality. `@splitQuery` on `TableField` is also orthogonal — it changes whether a DataLoader is used but not the SQL shape for the list/connection variants. Both remain separate properties on their respective records.
 
 ### `GraphitronSchema` container
 
@@ -324,13 +324,13 @@ record TableEntry(String javaFieldName, Table<?> table) {}
 record ColumnEntry(String javaName, Field<?> column) {}
 ```
 
-The `@table` directive carries the SQL name — what the schema author writes. The Java field name (e.g. `"FILM"`) is what appears in generated code. Both differ and both are needed, so `TableEntry` returns them together. `FieldsSpecBuilder` then stores both on `TableType` using the `TableStep` sealed hierarchy:
+The `@table` directive carries the SQL name — what the schema author writes. The Java field name (e.g. `"FILM"`) is what appears in generated code. Both differ and both are needed, so `TableEntry` returns them together. `FieldsSpecBuilder` then stores both on `TableType` using the `TableRef` sealed hierarchy:
 
 ```java
 String sqlName = getDirectiveArg(objectType, "table", "name");
 Optional<TableEntry> entry = jooqCatalog.findTable(sqlName);
-TableStep tableStep = entry
-    .<TableStep>map(e -> new ResolvedTable(e.javaFieldName(), e.table()))
+TableRef tableStep = entry
+    .<TableRef>map(e -> new ResolvedTable(e.javaFieldName(), e.table()))
     .orElseGet(UnresolvedTable::new);
 
 types.put(typeName, new TableType(name, location, sqlName, tableStep));
@@ -952,10 +952,10 @@ src/test/resources/record/
 | `graphitron-java-codegen/.../generate/GraphQLGenerator.java` | Add new generators when flag is set |
 | `graphitron-java-codegen/.../mappings/JavaPoetClassName.java` | Add `JOOQ_RECORD`, `JOOQ_RESULT`, `LIGHT_DATA_FETCHER`, `GRAPHITRON_FETCHER_FACTORY` |
 | `record/field/GraphitronField.java` + 28 leaf types | **Done** — Deliverable 1 |
-| `record/field/ColumnStep.java` + `ResolvedColumn`, `UnresolvedColumn` | **Done** — Deliverable 1 |
-| `record/field/ReferencePathElement.java` + 6 step types | **Done** — Deliverable 1 |
+| `record/field/ColumnRef.java` + `ResolvedColumn`, `UnresolvedColumn` | **Done** — Deliverable 1 |
+| `record/field/ReferencePathElementRef.java` + 6 step types | **Done** — Deliverable 1 |
 | `record/type/GraphitronType.java` + 6 leaf types | **Done** — Deliverable 1 |
-| `record/type/TableStep.java` + `ResolvedTable`, `UnresolvedTable` | **Done** — Deliverable 1 |
+| `record/type/TableRef.java` + `ResolvedTable`, `UnresolvedTable` | **Done** — Deliverable 1 |
 | `record/GraphitronSchema.java` | **Done** — Deliverable 1 |
 | `record/FieldsSpecBuilder.java` | **New** |
 | `record/FieldsCodeGenerator.java` | **New** |

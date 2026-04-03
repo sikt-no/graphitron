@@ -15,23 +15,23 @@ import org.jooq.Field;
  *       {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports this as an error.</li>
  * </ul>
  */
-public sealed interface ColumnStep permits ColumnStep.ResolvedColumn, ColumnStep.UnresolvedColumn {
+public sealed interface ColumnRef permits ColumnRef.ResolvedColumn, ColumnRef.UnresolvedColumn {
 
     /**
-     * A {@link ColumnStep} where the column was successfully resolved in the jOOQ table.
+     * A {@link ColumnRef} where the column was successfully resolved in the jOOQ table.
      *
      * <p>{@code javaName} is the Java field name in the jOOQ table class (e.g. {@code "TITLE"}
      * for {@code FILM.TITLE}). {@code column} is the resolved jOOQ {@link Field} instance, used
      * for type inspection at code-generation time.
      */
-    record ResolvedColumn(String javaName, Field<?> column) implements ColumnStep {}
+    record ResolvedColumn(String javaName, Field<?> column) implements ColumnRef {}
 
     /**
-     * A {@link ColumnStep} where the column name could not be matched to any field in the jOOQ table.
+     * A {@link ColumnRef} where the column name could not be matched to any field in the jOOQ table.
      *
      * <p>The column name that failed to resolve is available on the parent record
      * (e.g. {@link ChildField.ColumnField#columnName()}). The
      * {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports this as an error.
      */
-    record UnresolvedColumn() implements ColumnStep {}
+    record UnresolvedColumn() implements ColumnRef {}
 }

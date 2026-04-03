@@ -20,20 +20,20 @@ import org.jooq.ForeignKey;
  * {@code UnresolvedKeyStep} and {@code UnresolvedConditionStep}. The valid variants are consumed
  * by the code generator.
  */
-public sealed interface ReferencePathElement
-    permits ReferencePathElement.FkStep, ReferencePathElement.FkWithConditionStep, ReferencePathElement.ConditionOnlyStep,
-            ReferencePathElement.UnresolvedKeyStep, ReferencePathElement.UnresolvedConditionStep, ReferencePathElement.UnresolvedKeyAndConditionStep {
+public sealed interface ReferencePathElementRef
+    permits ReferencePathElementRef.FkStep, ReferencePathElementRef.FkWithConditionStep, ReferencePathElementRef.ConditionOnlyStep,
+            ReferencePathElementRef.UnresolvedKeyStep, ReferencePathElementRef.UnresolvedConditionStep, ReferencePathElementRef.UnresolvedKeyAndConditionStep {
 
     /**
-     * A {@link ReferencePathElement} where a jOOQ {@link ForeignKey} was successfully resolved.
+     * A {@link ReferencePathElementRef} where a jOOQ {@link ForeignKey} was successfully resolved.
      *
      * <p>{@code key} is the resolved jOOQ FK instance, used at code-generation time to emit
      * {@code .onKey(key)} join clauses. Use {@code key.getName()} to recover the FK constant name.
      */
-    record FkStep(ForeignKey<?, ?> key) implements ReferencePathElement {}
+    record FkStep(ForeignKey<?, ?> key) implements ReferencePathElementRef {}
 
     /**
-     * A {@link ReferencePathElement} where both a jOOQ {@link ForeignKey} and a condition method
+     * A {@link ReferencePathElementRef} where both a jOOQ {@link ForeignKey} and a condition method
      * were successfully resolved.
      *
      * <p>{@code key} is the resolved jOOQ FK instance (see {@link FkStep}).
@@ -42,10 +42,10 @@ public sealed interface ReferencePathElement
     record FkWithConditionStep(
         ForeignKey<?, ?> key,
         MethodRef condition
-    ) implements ReferencePathElement {}
+    ) implements ReferencePathElementRef {}
 
     /**
-     * A {@link ReferencePathElement} where a condition method was successfully resolved and no
+     * A {@link ReferencePathElementRef} where a condition method was successfully resolved and no
      * jOOQ FK is involved.
      *
      * <p>Used for lift conditions on {@code @service} and {@code @computed} fields, where the
@@ -54,30 +54,30 @@ public sealed interface ReferencePathElement
      * <p>{@code condition} is the resolved condition method; all fields on {@link MethodRef} are
      * guaranteed non-null.
      */
-    record ConditionOnlyStep(MethodRef condition) implements ReferencePathElement {}
+    record ConditionOnlyStep(MethodRef condition) implements ReferencePathElementRef {}
 
     /**
-     * A {@link ReferencePathElement} where a key name was specified in the schema but could not be
+     * A {@link ReferencePathElementRef} where a key name was specified in the schema but could not be
      * found in the jOOQ catalog.
      *
      * <p>{@code keyName} is the SQL name of the foreign key constant as written in the schema
      * (e.g. {@code "FILM_ACTOR_FK"}). The {@link no.sikt.graphitron.record.GraphitronSchemaValidator}
      * reports this as an error.
      */
-    record UnresolvedKeyStep(String keyName) implements ReferencePathElement {}
+    record UnresolvedKeyStep(String keyName) implements ReferencePathElementRef {}
 
     /**
-     * A {@link ReferencePathElement} where a condition method was specified in the schema but could
+     * A {@link ReferencePathElementRef} where a condition method was specified in the schema but could
      * not be resolved via reflection.
      *
      * <p>{@code qualifiedName} is the fully qualified method name as written in the schema
      * (e.g. {@code "com.example.Conditions.activeCustomers"}). The
      * {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports this as an error.
      */
-    record UnresolvedConditionStep(String qualifiedName) implements ReferencePathElement {}
+    record UnresolvedConditionStep(String qualifiedName) implements ReferencePathElementRef {}
 
     /**
-     * A {@link ReferencePathElement} where both a key name and a condition method were specified in
+     * A {@link ReferencePathElementRef} where both a key name and a condition method were specified in
      * the schema, but neither could be resolved.
      *
      * <p>{@code keyName} is the SQL name of the foreign key constant as written in the schema.
@@ -89,5 +89,5 @@ public sealed interface ReferencePathElement
     record UnresolvedKeyAndConditionStep(
         String keyName,
         String conditionName
-    ) implements ReferencePathElement {}
+    ) implements ReferencePathElementRef {}
 }

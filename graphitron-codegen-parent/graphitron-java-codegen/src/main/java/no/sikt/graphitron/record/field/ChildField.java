@@ -1,7 +1,11 @@
 package no.sikt.graphitron.record.field;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.record.type.NodeStep;
+import no.sikt.graphitron.record.type.NodeRef;
+import no.sikt.graphitron.record.field.ColumnRef;
+import no.sikt.graphitron.record.field.FieldConditionRef;
+import no.sikt.graphitron.record.field.NodeTypeRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef;
 
 import java.util.List;
 
@@ -25,7 +29,7 @@ public sealed interface ChildField extends GraphitronField
      * the directive is present, otherwise the GraphQL field name.
      *
      * <p>{@code column} is the outcome of resolving {@code columnName} against the jOOQ table:
-     * {@link ColumnStep.ResolvedColumn} when the column was found, {@link ColumnStep.UnresolvedColumn}
+     * {@link ColumnRef.ResolvedColumn} when the column was found, {@link ColumnRef.UnresolvedColumn}
      * when it was not. The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an
      * error for {@code UnresolvedColumn}.
      *
@@ -38,7 +42,7 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         String columnName,
-        ColumnStep column,
+        ColumnRef column,
         boolean javaNamePresent
     ) implements ChildField {}
 
@@ -49,7 +53,7 @@ public sealed interface ChildField extends GraphitronField
      * the directive is present, otherwise the GraphQL field name.
      *
      * <p>{@code column} is the outcome of resolving {@code columnName} against the jOOQ table:
-     * {@link ColumnStep.ResolvedColumn} when the column was found, {@link ColumnStep.UnresolvedColumn}
+     * {@link ColumnRef.ResolvedColumn} when the column was found, {@link ColumnRef.UnresolvedColumn}
      * when it was not. The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an
      * error for {@code UnresolvedColumn}.
      *
@@ -66,8 +70,8 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         String columnName,
-        ColumnStep column,
-        List<ReferencePathElement> referencePath,
+        ColumnRef column,
+        List<ReferencePathElementRef> referencePath,
         boolean javaNamePresent
     ) implements ChildField {}
 
@@ -77,15 +81,15 @@ public sealed interface ChildField extends GraphitronField
      * <p>{@code parentTypeName} is the name of the containing GraphQL type.
      *
      * <p>{@code node} is the parent type's {@code @node} step: a
-     * {@link NodeStep.NodeDirective} carrying the optional {@code typeId} and
+     * {@link NodeRef.NodeDirective} carrying the optional {@code typeId} and
      * the list of key columns when {@code @node} is present, or
-     * {@link NodeStep.NoNode} when it is absent (a validation error).
+     * {@link NodeRef.NoNode} when it is absent (a validation error).
      */
     record NodeIdField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        NodeStep node
+        NodeRef node
     ) implements ChildField {}
 
     /**
@@ -95,8 +99,8 @@ public sealed interface ChildField extends GraphitronField
      * (e.g. {@code "Film"}). It identifies which type's {@code @node} key columns are encoded in the ID.
      *
      * <p>{@code nodeType} is the outcome of resolving {@code typeName} against the classified schema:
-     * {@link NodeTypeStep.ResolvedNodeType} when the named type exists and carries {@code @node},
-     * {@link NodeTypeStep.UnresolvedNodeType} when it does not. The
+     * {@link NodeTypeRef.ResolvedNodeType} when the named type exists and carries {@code @node},
+     * {@link NodeTypeRef.UnresolvedNodeType} when it does not. The
      * {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error for
      * {@code UnresolvedNodeType}.
      *
@@ -112,8 +116,8 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         String typeName,
-        NodeTypeStep nodeType,
-        List<ReferencePathElement> referencePath
+        NodeTypeRef nodeType,
+        List<ReferencePathElementRef> referencePath
     ) implements ChildField {}
 
     /**
@@ -124,8 +128,8 @@ public sealed interface ChildField extends GraphitronField
      * Graphitron will attempt to infer the foreign key automatically.
      *
      * <p>{@code condition} is the resolved or unresolved field-level {@code @condition} directive, or
-     * {@link FieldConditionStep.NoFieldCondition} when no {@code @condition} is present. The validator
-     * reports an error for an {@link FieldConditionStep.UnresolvedFieldCondition}.
+     * {@link FieldConditionRef.NoFieldCondition} when no {@code @condition} is present. The validator
+     * reports an error for an {@link FieldConditionRef.UnresolvedFieldCondition}.
      *
      * <p>{@code cardinality} is the cardinality of this field — {@link FieldCardinality.Single} for a
      * 1:1 join, {@link FieldCardinality.List} for a 1:N join, or {@link FieldCardinality.Connection}
@@ -136,8 +140,8 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        List<ReferencePathElement> referencePath,
-        FieldConditionStep condition,
+        List<ReferencePathElementRef> referencePath,
+        FieldConditionRef condition,
         FieldCardinality cardinality
     ) implements ChildField {}
 
@@ -154,7 +158,7 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        List<ReferencePathElement> referencePath,
+        List<ReferencePathElementRef> referencePath,
         FieldCardinality cardinality
     ) implements ChildField {}
 
@@ -224,7 +228,7 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        List<ReferencePathElement> referencePath
+        List<ReferencePathElementRef> referencePath
     ) implements ChildField {}
 
     /**
@@ -239,7 +243,7 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        List<ReferencePathElement> referencePath
+        List<ReferencePathElementRef> referencePath
     ) implements ChildField {}
 
     /**

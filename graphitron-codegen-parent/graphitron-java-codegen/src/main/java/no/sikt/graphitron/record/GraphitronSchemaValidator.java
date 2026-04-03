@@ -2,21 +2,21 @@ package no.sikt.graphitron.record;
 
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.mappings.TableReflection;
-import no.sikt.graphitron.record.field.FieldConditionStep;
-import no.sikt.graphitron.record.field.ReferencePathElement.FkStep;
-import no.sikt.graphitron.record.field.ReferencePathElement.FkWithConditionStep;
+import no.sikt.graphitron.record.field.FieldConditionRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.FkStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.FkWithConditionStep;
 import no.sikt.graphitron.record.field.GraphitronField;
-import no.sikt.graphitron.record.field.ReferencePathElement;
-import no.sikt.graphitron.record.field.ColumnStep.UnresolvedColumn;
-import no.sikt.graphitron.record.field.ReferencePathElement.UnresolvedConditionStep;
-import no.sikt.graphitron.record.field.ReferencePathElement.UnresolvedKeyAndConditionStep;
-import no.sikt.graphitron.record.field.ReferencePathElement.UnresolvedKeyStep;
-import no.sikt.graphitron.record.field.NodeTypeStep.UnresolvedNodeType;
+import no.sikt.graphitron.record.field.ReferencePathElementRef;
+import no.sikt.graphitron.record.field.ColumnRef.UnresolvedColumn;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyStep;
+import no.sikt.graphitron.record.field.NodeTypeRef.UnresolvedNodeType;
 import no.sikt.graphitron.record.type.GraphitronType;
-import no.sikt.graphitron.record.type.NodeStep.NodeDirective;
-import no.sikt.graphitron.record.type.TableStep.ResolvedTable;
+import no.sikt.graphitron.record.type.NodeRef.NodeDirective;
+import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
 import no.sikt.graphitron.record.type.GraphitronType.TableType;
-import no.sikt.graphitron.record.type.TableStep.UnresolvedTable;
+import no.sikt.graphitron.record.type.TableRef.UnresolvedTable;
 import org.jooq.ForeignKey;
 
 import java.util.ArrayList;
@@ -95,9 +95,9 @@ public class GraphitronSchemaValidator {
                 type.location()
             ));
         }
-        if (type.node() instanceof no.sikt.graphitron.record.type.NodeStep.NodeDirective nd) {
+        if (type.node() instanceof no.sikt.graphitron.record.type.NodeRef.NodeDirective nd) {
             for (var keyColumn : nd.keyColumns()) {
-                if (keyColumn instanceof no.sikt.graphitron.record.type.KeyColumnStep.UnresolvedKeyColumn u) {
+                if (keyColumn instanceof no.sikt.graphitron.record.type.KeyColumnRef.UnresolvedKeyColumn u) {
                     errors.add(new ValidationError(
                         "Type '" + type.name() + "': key column '" + u.name() + "' in @node could not be resolved in the jOOQ table",
                         type.location()
@@ -182,7 +182,7 @@ public class GraphitronSchemaValidator {
         }
     }
     private void validateNodeIdField(no.sikt.graphitron.record.field.ChildField.NodeIdField field, List<ValidationError> errors) {
-        if (field.node() instanceof no.sikt.graphitron.record.type.NodeStep.NoNode) {
+        if (field.node() instanceof no.sikt.graphitron.record.type.NodeRef.NoNode) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': @nodeId requires the containing type to have @node",
                 field.location()
@@ -245,7 +245,7 @@ public class GraphitronSchemaValidator {
         return null;
     }
 
-    private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<ReferencePathElement> path, String typeName, ResolvedTable targetTable, List<ValidationError> errors) {
+    private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<ReferencePathElementRef> path, String typeName, ResolvedTable targetTable, List<ValidationError> errors) {
         var lastStep = path.getLast();
         ForeignKey<?, ?> fk = switch (lastStep) {
             case FkStep s             -> s.key();
@@ -266,7 +266,7 @@ public class GraphitronSchemaValidator {
     }
     private void validateTableField(no.sikt.graphitron.record.field.ChildField.TableField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
-        if (field.condition() instanceof FieldConditionStep.UnresolvedFieldCondition u) {
+        if (field.condition() instanceof FieldConditionRef.UnresolvedFieldCondition u) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': condition method '" + u.qualifiedName() + "' could not be resolved",
                 field.location()
@@ -346,12 +346,12 @@ public class GraphitronSchemaValidator {
         }
     }
 
-    private void validateReferencePath(String fieldName, SourceLocation location, List<ReferencePathElement> path, List<ValidationError> errors) {
+    private void validateReferencePath(String fieldName, SourceLocation location, List<ReferencePathElementRef> path, List<ValidationError> errors) {
         for (var element : path) {
             switch (element) {
-                case no.sikt.graphitron.record.field.ReferencePathElement.FkStep ignored -> {}
-                case no.sikt.graphitron.record.field.ReferencePathElement.FkWithConditionStep ignored -> {}
-                case no.sikt.graphitron.record.field.ReferencePathElement.ConditionOnlyStep ignored -> {}
+                case no.sikt.graphitron.record.field.ReferencePathElementRef.FkStep ignored -> {}
+                case no.sikt.graphitron.record.field.ReferencePathElementRef.FkWithConditionStep ignored -> {}
+                case no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyStep ignored -> {}
                 case UnresolvedKeyStep u -> errors.add(new ValidationError(
                     "Field '" + fieldName + "': key '" + u.keyName() + "' could not be resolved in the jOOQ catalog",
                     location));

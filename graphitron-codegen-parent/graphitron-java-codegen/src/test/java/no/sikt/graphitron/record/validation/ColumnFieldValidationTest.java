@@ -3,8 +3,8 @@ package no.sikt.graphitron.record.validation;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.ChildField.ColumnField;
 import no.sikt.graphitron.record.field.GraphitronField;
-import no.sikt.graphitron.record.field.ColumnStep.ResolvedColumn;
-import no.sikt.graphitron.record.field.ColumnStep.UnresolvedColumn;
+import no.sikt.graphitron.record.field.ColumnRef.ResolvedColumn;
+import no.sikt.graphitron.record.field.ColumnRef.UnresolvedColumn;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 

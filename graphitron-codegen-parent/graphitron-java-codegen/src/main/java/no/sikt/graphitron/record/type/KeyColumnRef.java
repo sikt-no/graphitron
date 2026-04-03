@@ -13,22 +13,22 @@ package no.sikt.graphitron.record.type;
  *       reports this as an error.</li>
  * </ul>
  */
-public sealed interface KeyColumnStep permits KeyColumnStep.ResolvedKeyColumn, KeyColumnStep.UnresolvedKeyColumn {
+public sealed interface KeyColumnRef permits KeyColumnRef.ResolvedKeyColumn, KeyColumnRef.UnresolvedKeyColumn {
 
     /**
-     * A {@link KeyColumnStep} where the column was successfully resolved in the jOOQ table.
+     * A {@link KeyColumnRef} where the column was successfully resolved in the jOOQ table.
      *
      * <p>{@code name} is the SQL column name as written in the directive (e.g. {@code "film_id"}).
      * {@code javaName} is the Java field name in the jOOQ table class (e.g. {@code "FILM_ID"}).
      */
-    record ResolvedKeyColumn(String name, String javaName) implements KeyColumnStep {}
+    record ResolvedKeyColumn(String name, String javaName) implements KeyColumnRef {}
 
     /**
-     * A {@link KeyColumnStep} where the SQL column name could not be matched to any field in
+     * A {@link KeyColumnRef} where the SQL column name could not be matched to any field in
      * the jOOQ table.
      *
      * <p>{@code name} is the SQL column name as written in the directive that failed to resolve.
      * The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports this as an error.
      */
-    record UnresolvedKeyColumn(String name) implements KeyColumnStep {}
+    record UnresolvedKeyColumn(String name) implements KeyColumnRef {}
 }

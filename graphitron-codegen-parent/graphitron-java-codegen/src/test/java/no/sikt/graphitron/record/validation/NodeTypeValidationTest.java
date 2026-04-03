@@ -2,13 +2,13 @@ package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.type.GraphitronType;
-import no.sikt.graphitron.record.type.KeyColumnStep;
-import no.sikt.graphitron.record.type.NodeStep.NodeDirective;
-import no.sikt.graphitron.record.type.NodeStep.NoNode;
-import no.sikt.graphitron.record.type.KeyColumnStep.ResolvedKeyColumn;
-import no.sikt.graphitron.record.type.TableStep.ResolvedTable;
+import no.sikt.graphitron.record.type.KeyColumnRef;
+import no.sikt.graphitron.record.type.NodeRef.NodeDirective;
+import no.sikt.graphitron.record.type.NodeRef.NoNode;
+import no.sikt.graphitron.record.type.KeyColumnRef.ResolvedKeyColumn;
+import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
 import no.sikt.graphitron.record.type.GraphitronType.TableType;
-import no.sikt.graphitron.record.type.KeyColumnStep.UnresolvedKeyColumn;
+import no.sikt.graphitron.record.type.KeyColumnRef.UnresolvedKeyColumn;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 

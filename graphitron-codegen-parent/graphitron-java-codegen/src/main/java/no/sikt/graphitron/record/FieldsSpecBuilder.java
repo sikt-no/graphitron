@@ -21,37 +21,37 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.record.field.ChildField.ColumnField;
 import no.sikt.graphitron.record.field.ChildField.ColumnReferenceField;
-import no.sikt.graphitron.record.field.ColumnStep;
-import no.sikt.graphitron.record.field.ReferencePathElement.ConditionOnlyStep;
-import no.sikt.graphitron.record.field.ReferencePathElement.FkStep;
-import no.sikt.graphitron.record.field.ReferencePathElement.FkWithConditionStep;
+import no.sikt.graphitron.record.field.ColumnRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.FkStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.FkWithConditionStep;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
 import no.sikt.graphitron.record.field.ChildField.MultitableReferenceField;
 import no.sikt.graphitron.record.field.GraphitronField.NotGeneratedField;
-import no.sikt.graphitron.record.field.ReferencePathElement;
-import no.sikt.graphitron.record.field.ColumnStep.ResolvedColumn;
+import no.sikt.graphitron.record.field.ReferencePathElementRef;
+import no.sikt.graphitron.record.field.ColumnRef.ResolvedColumn;
 import no.sikt.graphitron.record.field.GraphitronField.UnclassifiedField;
-import no.sikt.graphitron.record.field.ColumnStep.UnresolvedColumn;
-import no.sikt.graphitron.record.field.ReferencePathElement.UnresolvedConditionStep;
-import no.sikt.graphitron.record.field.ReferencePathElement.UnresolvedKeyAndConditionStep;
-import no.sikt.graphitron.record.field.ReferencePathElement.UnresolvedKeyStep;
+import no.sikt.graphitron.record.field.ColumnRef.UnresolvedColumn;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyStep;
 import no.sikt.graphitron.record.type.GraphitronType;
 import no.sikt.graphitron.record.type.GraphitronType.InterfaceType;
-import no.sikt.graphitron.record.type.KeyColumnStep;
-import no.sikt.graphitron.record.type.NodeStep.NoNode;
-import no.sikt.graphitron.record.type.NodeStep.NodeDirective;
-import no.sikt.graphitron.record.type.NodeStep;
-import no.sikt.graphitron.record.type.KeyColumnStep.ResolvedKeyColumn;
-import no.sikt.graphitron.record.type.TableStep.ResolvedTable;
+import no.sikt.graphitron.record.type.KeyColumnRef;
+import no.sikt.graphitron.record.type.NodeRef.NoNode;
+import no.sikt.graphitron.record.type.NodeRef.NodeDirective;
+import no.sikt.graphitron.record.type.NodeRef;
+import no.sikt.graphitron.record.type.KeyColumnRef.ResolvedKeyColumn;
+import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
 import no.sikt.graphitron.record.type.GraphitronType.ResultType;
 import no.sikt.graphitron.record.type.GraphitronType.RootType;
 import no.sikt.graphitron.record.type.GraphitronType.TableInterfaceType;
-import no.sikt.graphitron.record.type.TableStep;
+import no.sikt.graphitron.record.type.TableRef;
 import no.sikt.graphitron.record.type.GraphitronType.TableType;
 import no.sikt.graphitron.record.type.GraphitronType.UnionType;
-import no.sikt.graphitron.record.type.KeyColumnStep.UnresolvedKeyColumn;
-import no.sikt.graphitron.record.type.TableStep.UnresolvedTable;
+import no.sikt.graphitron.record.type.KeyColumnRef.UnresolvedKeyColumn;
+import no.sikt.graphitron.record.type.TableRef.UnresolvedTable;
 import org.jooq.ForeignKey;
 import org.jooq.Table;
 
@@ -191,8 +191,8 @@ public class FieldsSpecBuilder {
         String name = objType.getName();
         SourceLocation location = objType.getSourceLocation();
         String tableName = getOptionalDirectiveArgumentString(objType, TABLE, NAME).orElse(name.toLowerCase());
-        TableStep tableStep = resolveTable(tableName);
-        NodeStep nodeStep = buildNodeStep(objType, tableStep);
+        TableRef tableStep = resolveTable(tableName);
+        NodeRef nodeStep = buildNodeStep(objType, tableStep);
         return new TableType(name, location, tableName, tableStep, nodeStep);
     }
 
@@ -201,35 +201,35 @@ public class FieldsSpecBuilder {
         SourceLocation location = iface.getSourceLocation();
         String tableName = getOptionalDirectiveArgumentString(iface, TABLE, NAME).orElse(name.toLowerCase());
         String discriminatorColumn = getOptionalDirectiveArgumentString(iface, DISCRIMINATE, ON).orElse(null);
-        TableStep tableStep = resolveTable(tableName);
+        TableRef tableStep = resolveTable(tableName);
         return new TableInterfaceType(name, location, discriminatorColumn, tableName, tableStep);
     }
 
-    private TableStep resolveTable(String sqlName) {
+    private TableRef resolveTable(String sqlName) {
         return catalog.findTable(sqlName)
-            .<TableStep>map(e -> new ResolvedTable(e.javaFieldName(), e.table()))
+            .<TableRef>map(e -> new ResolvedTable(e.javaFieldName(), e.table()))
             .orElseGet(UnresolvedTable::new);
     }
 
-    private NodeStep buildNodeStep(ObjectTypeDefinition objType, TableStep tableStep) {
+    private NodeRef buildNodeStep(ObjectTypeDefinition objType, TableRef tableStep) {
         if (!objType.hasDirective(NODE.getName())) {
             return new NoNode();
         }
         String typeId = getOptionalDirectiveArgumentString(objType, NODE, TYPE_ID).orElse(null);
         List<String> keyColumnNames = getOptionalDirectiveArgumentStringList(objType, NODE, KEY_COLUMNS);
         Table<?> resolvedTable = tableStep instanceof ResolvedTable rt ? rt.table() : null;
-        List<KeyColumnStep> keyColumns = keyColumnNames.stream()
+        List<KeyColumnRef> keyColumns = keyColumnNames.stream()
             .map(colName -> resolveKeyColumn(colName, resolvedTable))
             .toList();
         return new NodeDirective(typeId, keyColumns);
     }
 
-    private KeyColumnStep resolveKeyColumn(String colName, Table<?> table) {
+    private KeyColumnRef resolveKeyColumn(String colName, Table<?> table) {
         if (table == null) {
             return new UnresolvedKeyColumn(colName);
         }
         return catalog.findColumn(table, colName)
-            .<KeyColumnStep>map(e -> new ResolvedKeyColumn(colName, e.javaName()))
+            .<KeyColumnRef>map(e -> new ResolvedKeyColumn(colName, e.javaName()))
             .orElseGet(() -> new UnresolvedKeyColumn(colName));
     }
 
@@ -269,12 +269,12 @@ public class FieldsSpecBuilder {
             && getOptionalDirectiveArgumentString(fieldDef, FIELD, JAVA_NAME).isPresent();
 
         if (fieldDef.hasDirective(REFERENCE.getName())) {
-            List<ReferencePathElement> path = parseReferencePath(fieldDef);
-            ColumnStep column = resolveColumnForReference(columnName, path, tableType);
+            List<ReferencePathElementRef> path = parseReferencePath(fieldDef);
+            ColumnRef column = resolveColumnForReference(columnName, path, tableType);
             return new ColumnReferenceField(parentTypeName, name, location, columnName, column, path, javaNamePresent);
         }
 
-        ColumnStep column = resolveColumn(columnName, tableType);
+        ColumnRef column = resolveColumn(columnName, tableType);
         return new ColumnField(parentTypeName, name, location, columnName, column, javaNamePresent);
     }
 
@@ -294,14 +294,14 @@ public class FieldsSpecBuilder {
         };
     }
 
-    private ColumnStep resolveColumn(String columnName, TableType tableType) {
+    private ColumnRef resolveColumn(String columnName, TableType tableType) {
         if (!(tableType.table() instanceof ResolvedTable resolvedTable)) {
             return new UnresolvedColumn();
         }
         return resolveColumnInTable(columnName, resolvedTable.table());
     }
 
-    private ColumnStep resolveColumnForReference(String columnName, List<ReferencePathElement> path, TableType sourceType) {
+    private ColumnRef resolveColumnForReference(String columnName, List<ReferencePathElementRef> path, TableType sourceType) {
         if (!(sourceType.table() instanceof ResolvedTable rt)) {
             return new UnresolvedColumn();
         }
@@ -316,15 +316,15 @@ public class FieldsSpecBuilder {
         return resolveColumnInTable(columnName, current);
     }
 
-    private ColumnStep resolveColumnInTable(String columnName, Table<?> table) {
+    private ColumnRef resolveColumnInTable(String columnName, Table<?> table) {
         return catalog.findColumn(table, columnName)
-            .<ColumnStep>map(e -> new ResolvedColumn(e.javaName(), e.column()))
+            .<ColumnRef>map(e -> new ResolvedColumn(e.javaName(), e.column()))
             .orElseGet(UnresolvedColumn::new);
     }
 
     // ===== Reference path parsing =====
 
-    private List<ReferencePathElement> parseReferencePath(FieldDefinition fieldDef) {
+    private List<ReferencePathElementRef> parseReferencePath(FieldDefinition fieldDef) {
         var directive = fieldDef.getDirectives(REFERENCE.getName()).stream().findFirst().orElse(null);
         if (directive == null) return List.of();
 
@@ -340,7 +340,7 @@ public class FieldsSpecBuilder {
             .toList();
     }
 
-    private ReferencePathElement parsePathElement(ObjectValue element) {
+    private ReferencePathElementRef parsePathElement(ObjectValue element) {
         Optional<ObjectField> keyField = getOptionalObjectFieldByName(element.getObjectFields(), KEY);
         Optional<ObjectField> conditionField = getOptionalObjectFieldByName(element.getObjectFields(), CONDITION);
 
@@ -375,9 +375,9 @@ public class FieldsSpecBuilder {
         return new UnresolvedKeyStep("");
     }
 
-    private ReferencePathElement resolveKey(String keyName) {
+    private ReferencePathElementRef resolveKey(String keyName) {
         return catalog.findForeignKey(keyName)
-            .<ReferencePathElement>map(FkStep::new)
+            .<ReferencePathElementRef>map(FkStep::new)
             .orElseGet(() -> new UnresolvedKeyStep(keyName));
     }
 

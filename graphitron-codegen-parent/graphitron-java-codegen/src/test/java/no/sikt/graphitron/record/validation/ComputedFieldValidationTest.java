@@ -2,10 +2,10 @@ package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.ChildField.ComputedField;
-import no.sikt.graphitron.record.field.ReferencePathElement.ConditionOnlyStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyStep;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
-import no.sikt.graphitron.record.field.ReferencePathElement.UnresolvedConditionStep;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionStep;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
