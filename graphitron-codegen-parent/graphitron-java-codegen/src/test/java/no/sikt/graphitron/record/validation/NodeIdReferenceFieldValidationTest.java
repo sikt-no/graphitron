@@ -22,30 +22,38 @@ class NodeIdReferenceFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        WITH_PATH("reference path resolves and node type resolves — no errors",
+        WITH_PATH("reference path resolves and node type resolves — typeName on output not allowed",
             new NodeIdReferenceField("Film", "languageId", null, "Language", new ResolvedNodeType(),
                 List.of(new FkStep(Keys.FILM__FILM_LANGUAGE_ID_FKEY))),
-            List.of()),
+            List.of("Field 'languageId': @nodeId(typeName:) is not allowed on output type fields; use @reference on an object field instead")),
 
-        MISSING_PATH("no @reference directive — path is empty",
+        MISSING_PATH("no @reference directive — two errors",
             new NodeIdReferenceField("Film", "languageId", null, "Language", new ResolvedNodeType(),
                 List.of()),
-            List.of("Field 'languageId': @reference path is required")),
+            List.of(
+                "Field 'languageId': @nodeId(typeName:) is not allowed on output type fields; use @reference on an object field instead",
+                "Field 'languageId': @reference path is required")),
 
-        UNRESOLVED_NODE_TYPE("typeName does not resolve to a @node type — one error",
+        UNRESOLVED_NODE_TYPE("typeName does not resolve to a @node type — two errors",
             new NodeIdReferenceField("Film", "languageId", null, "UnknownType", new UnresolvedNodeType(),
                 List.of(new FkStep(Keys.FILM__FILM_LANGUAGE_ID_FKEY))),
-            List.of("Field 'languageId': type 'UnknownType' does not exist in the schema or does not have @node")),
+            List.of(
+                "Field 'languageId': @nodeId(typeName:) is not allowed on output type fields; use @reference on an object field instead",
+                "Field 'languageId': type 'UnknownType' does not exist in the schema or does not have @node")),
 
-        UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
+        UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog — two errors",
             new NodeIdReferenceField("Film", "languageId", null, "Language", new ResolvedNodeType(),
                 List.of(new UnresolvedKeyStep("FILM_LANGUAGE_FK"))),
-            List.of("Field 'languageId': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog")),
+            List.of(
+                "Field 'languageId': @nodeId(typeName:) is not allowed on output type fields; use @reference on an object field instead",
+                "Field 'languageId': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog")),
 
-        UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection",
+        UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection — two errors",
             new NodeIdReferenceField("Film", "languageId", null, "Language", new ResolvedNodeType(),
                 List.of(new UnresolvedConditionStep("com.example.Conditions.languageCondition"))),
-            List.of("Field 'languageId': condition method 'com.example.Conditions.languageCondition' could not be resolved"));
+            List.of(
+                "Field 'languageId': @nodeId(typeName:) is not allowed on output type fields; use @reference on an object field instead",
+                "Field 'languageId': condition method 'com.example.Conditions.languageCondition' could not be resolved"));
 
         private final String description;
         private final GraphitronField field;

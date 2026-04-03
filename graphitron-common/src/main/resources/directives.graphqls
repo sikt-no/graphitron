@@ -241,6 +241,10 @@ directive @nodeId(
   """
   Name of the type the ID belongs to (case-sensitive). The type must have the @node directive set.
 
+  Only allowed on input fields and arguments (INPUT_FIELD_DEFINITION, ARGUMENT_DEFINITION).
+  On output fields (FIELD_DEFINITION), typeName is not permitted — use @reference on an object
+  field instead to navigate to another type.
+
   This parameter is optional - if omitted, Graphitron will deduce the node type as follows:
   * For object fields without the @reference directive, uses the containing type (if it is a node type)
   * For fields with the @reference directive or jOOQ record input fields, uses the node type with the same table (if unambiguous)

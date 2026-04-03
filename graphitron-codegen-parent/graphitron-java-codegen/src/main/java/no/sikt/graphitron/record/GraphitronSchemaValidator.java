@@ -185,6 +185,10 @@ public class GraphitronSchemaValidator {
         }
     }
     private void validateNodeIdReferenceField(no.sikt.graphitron.record.field.NodeIdReferenceField field, List<ValidationError> errors) {
+        errors.add(new ValidationError(
+            "Field '" + field.name() + "': @nodeId(typeName:) is not allowed on output type fields; use @reference on an object field instead",
+            field.location()
+        ));
         if (field.nodeType() instanceof UnresolvedNodeType) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': type '" + field.typeName() + "' does not exist in the schema or does not have @node",
