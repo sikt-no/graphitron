@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Level 2 classification tests: each test provides a minimal inline schema text block and asserts
@@ -344,6 +345,17 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """);
         assertThat(((TableType) schema.type("Film")).tableName()).isEqualTo("film");
+    }
+
+    // ===== Registry validation =====
+
+    @Test
+    void build_throwsWhenDirectiveMissingFromRegistry() {
+        // Build a registry that has no Graphitron directive definitions at all.
+        TypeDefinitionRegistry registry = new SchemaParser().parse("type Query { x: String }");
+        assertThatThrownBy(() -> GraphitronSchemaBuilder.build(registry))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("@");
     }
 
     // ===== Helper =====

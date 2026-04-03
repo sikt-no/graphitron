@@ -1,17 +1,22 @@
 package no.sikt.graphitron.record;
 
 import graphql.language.ArrayValue;
+import graphql.language.DirectiveDefinition;
+import graphql.language.DirectivesContainer;
 import graphql.language.EnumTypeDefinition;
 import graphql.language.FieldDefinition;
 import graphql.language.InputObjectTypeDefinition;
+import graphql.language.InputValueDefinition;
 import graphql.language.InterfaceTypeDefinition;
 import graphql.language.ListType;
 import graphql.language.NonNullType;
+import graphql.language.NullValue;
 import graphql.language.ObjectField;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.ObjectValue;
 import graphql.language.ScalarTypeDefinition;
 import graphql.language.SourceLocation;
+import graphql.language.StringValue;
 import graphql.language.Type;
 import graphql.language.TypeDefinition;
 import graphql.language.TypeName;
@@ -65,30 +70,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-
-import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
-import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentStringList;
-import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalObjectFieldByName;
-import static no.sikt.graphql.directives.DirectiveHelpers.stringValueOf;
-import static no.sikt.graphql.directives.GenerationDirective.DISCRIMINATE;
-import static no.sikt.graphql.directives.GenerationDirective.FIELD;
-import static no.sikt.graphql.directives.GenerationDirective.MULTITABLE_REFERENCE;
-import static no.sikt.graphql.directives.GenerationDirective.NODE;
-import static no.sikt.graphql.directives.GenerationDirective.NODE_ID;
-import static no.sikt.graphql.directives.GenerationDirective.NOT_GENERATED;
-import static no.sikt.graphql.directives.GenerationDirective.RECORD;
-import static no.sikt.graphql.directives.GenerationDirective.REFERENCE;
-import static no.sikt.graphql.directives.GenerationDirective.TABLE;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.CONDITION;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.DIRECTION;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.JAVA_NAME;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.KEY;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.KEY_COLUMNS;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.NAME;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.ON;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.PATH;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.TYPE_ID;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.TYPE_NAME;
+import java.util.stream.Collectors;
 
 /**
  * Builds a {@link GraphitronSchema} from a {@link TypeDefinitionRegistry} by classifying every
@@ -114,6 +96,29 @@ public class GraphitronSchemaBuilder {
     private static final Set<String> ROOT_TYPE_NAMES = Set.of("Query", "Mutation", "Subscription");
     private static final Set<String> BUILTIN_SCALARS = Set.of("String", "Int", "Float", "Boolean", "ID");
 
+    // Directive names — these are the ground truth for what this builder reads from the schema.
+    // They are validated against the TypeDefinitionRegistry at build time (see validateDirectiveSchema).
+    private static final String DIR_TABLE = "table";
+    private static final String DIR_RECORD = "record";
+    private static final String DIR_DISCRIMINATE = "discriminate";
+    private static final String DIR_NODE = "node";
+    private static final String DIR_NOT_GENERATED = "notGenerated";
+    private static final String DIR_MULTITABLE_REFERENCE = "multitableReference";
+    private static final String DIR_NODE_ID = "nodeId";
+    private static final String DIR_FIELD = "field";
+    private static final String DIR_REFERENCE = "reference";
+
+    // Argument names for the directives above.
+    private static final String ARG_NAME = "name";
+    private static final String ARG_ON = "on";
+    private static final String ARG_TYPE_ID = "typeId";
+    private static final String ARG_KEY_COLUMNS = "keyColumns";
+    private static final String ARG_TYPE_NAME = "typeName";
+    private static final String ARG_JAVA_NAME = "javaName";
+    private static final String ARG_PATH = "path";
+    private static final String ARG_KEY = "key";
+    private static final String ARG_CONDITION = "condition";
+
     private final TypeDefinitionRegistry registry;
     private final JooqCatalog catalog;
     private Map<String, GraphitronType> types;
@@ -133,6 +138,7 @@ public class GraphitronSchemaBuilder {
     }
 
     private GraphitronSchema buildSchema() {
+        validateDirectiveSchema();
         types = buildTypes();
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
 
@@ -178,16 +184,16 @@ public class GraphitronSchemaBuilder {
             if (ROOT_TYPE_NAMES.contains(name)) {
                 return new RootType(name, location);
             }
-            if (objType.hasDirective(TABLE.getName())) {
+            if (objType.hasDirective(DIR_TABLE)) {
                 return buildTableType(objType);
             }
-            if (objType.hasDirective(RECORD.getName())) {
+            if (objType.hasDirective(DIR_RECORD)) {
                 return new ResultType(name, location);
             }
             return null;
         }
         if (typeDef instanceof InterfaceTypeDefinition iface) {
-            if (iface.hasDirective(TABLE.getName()) && iface.hasDirective(DISCRIMINATE.getName())) {
+            if (iface.hasDirective(DIR_TABLE) && iface.hasDirective(DIR_DISCRIMINATE)) {
                 return buildTableInterfaceType(iface);
             }
             return new InterfaceType(name, location);
@@ -201,7 +207,7 @@ public class GraphitronSchemaBuilder {
     private TableType buildTableType(ObjectTypeDefinition objType) {
         String name = objType.getName();
         SourceLocation location = objType.getSourceLocation();
-        String tableName = getOptionalDirectiveArgumentString(objType, TABLE, NAME).orElse(name.toLowerCase());
+        String tableName = argString(objType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
         TableRef tableRef = resolveTable(tableName);
         NodeRef nodeRef = buildNodeRef(objType, tableRef);
         return new TableType(name, location, tableName, tableRef, nodeRef);
@@ -210,8 +216,8 @@ public class GraphitronSchemaBuilder {
     private TableInterfaceType buildTableInterfaceType(InterfaceTypeDefinition iface) {
         String name = iface.getName();
         SourceLocation location = iface.getSourceLocation();
-        String tableName = getOptionalDirectiveArgumentString(iface, TABLE, NAME).orElse(name.toLowerCase());
-        String discriminatorColumn = getOptionalDirectiveArgumentString(iface, DISCRIMINATE, ON).orElse(null);
+        String tableName = argString(iface, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
+        String discriminatorColumn = argString(iface, DIR_DISCRIMINATE, ARG_ON).orElse(null);
         TableRef tableRef = resolveTable(tableName);
         return new TableInterfaceType(name, location, discriminatorColumn, tableName, tableRef);
     }
@@ -223,11 +229,11 @@ public class GraphitronSchemaBuilder {
     }
 
     private NodeRef buildNodeRef(ObjectTypeDefinition objType, TableRef tableRef) {
-        if (!objType.hasDirective(NODE.getName())) {
+        if (!objType.hasDirective(DIR_NODE)) {
             return new NoNode();
         }
-        String typeId = getOptionalDirectiveArgumentString(objType, NODE, TYPE_ID).orElse(null);
-        List<String> keyColumnNames = getOptionalDirectiveArgumentStringList(objType, NODE, KEY_COLUMNS);
+        String typeId = argString(objType, DIR_NODE, ARG_TYPE_ID).orElse(null);
+        List<String> keyColumnNames = argStringList(objType, DIR_NODE, ARG_KEY_COLUMNS);
         Table<?> resolvedTable = tableRef instanceof ResolvedTable rt ? rt.table() : null;
         List<KeyColumnRef> keyColumns = keyColumnNames.stream()
             .map(colName -> resolveKeyColumn(colName, resolvedTable))
@@ -250,10 +256,10 @@ public class GraphitronSchemaBuilder {
         String name = fieldDef.getName();
         SourceLocation location = fieldDef.getSourceLocation();
 
-        if (fieldDef.hasDirective(NOT_GENERATED.getName())) {
+        if (fieldDef.hasDirective(DIR_NOT_GENERATED)) {
             return new NotGeneratedField(parentTypeName, name, location);
         }
-        if (fieldDef.hasDirective(MULTITABLE_REFERENCE.getName())) {
+        if (fieldDef.hasDirective(DIR_MULTITABLE_REFERENCE)) {
             return new MultitableReferenceField(parentTypeName, name, location);
         }
 
@@ -272,8 +278,8 @@ public class GraphitronSchemaBuilder {
             return new UnclassifiedField(parentTypeName, name, location);
         }
 
-        if (fieldDef.hasDirective(NODE_ID.getName())) {
-            Optional<String> typeName = getOptionalDirectiveArgumentString(fieldDef, NODE_ID, TYPE_NAME);
+        if (fieldDef.hasDirective(DIR_NODE_ID)) {
+            Optional<String> typeName = argString(fieldDef, DIR_NODE_ID, ARG_TYPE_NAME);
             if (typeName.isPresent()) {
                 NodeTypeRef nodeType = resolveNodeType(typeName.get());
                 List<ReferencePathElementRef> path = parseReferencePath(fieldDef);
@@ -283,14 +289,14 @@ public class GraphitronSchemaBuilder {
             }
         }
 
-        boolean hasFieldDirective = fieldDef.hasDirective(FIELD.getName());
+        boolean hasFieldDirective = fieldDef.hasDirective(DIR_FIELD);
         String columnName = hasFieldDirective
-            ? getOptionalDirectiveArgumentString(fieldDef, FIELD, NAME).orElse(name)
+            ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
         boolean javaNamePresent = hasFieldDirective
-            && getOptionalDirectiveArgumentString(fieldDef, FIELD, JAVA_NAME).isPresent();
+            && argString(fieldDef, DIR_FIELD, ARG_JAVA_NAME).isPresent();
 
-        if (fieldDef.hasDirective(REFERENCE.getName())) {
+        if (fieldDef.hasDirective(DIR_REFERENCE)) {
             List<ReferencePathElementRef> path = parseReferencePath(fieldDef);
             ColumnRef column = resolveColumnForReference(columnName, path, tableType);
             return new ColumnReferenceField(parentTypeName, name, location, columnName, column, path, javaNamePresent);
@@ -355,10 +361,10 @@ public class GraphitronSchemaBuilder {
     // ===== Reference path parsing =====
 
     private List<ReferencePathElementRef> parseReferencePath(FieldDefinition fieldDef) {
-        var directive = fieldDef.getDirectives(REFERENCE.getName()).stream().findFirst().orElse(null);
+        var directive = fieldDef.getDirectives(DIR_REFERENCE).stream().findFirst().orElse(null);
         if (directive == null) return List.of();
 
-        var pathArg = directive.getArgument(PATH.getName());
+        var pathArg = directive.getArgument(ARG_PATH);
         if (pathArg == null) return List.of();
 
         var pathValue = pathArg.getValue();
@@ -371,10 +377,10 @@ public class GraphitronSchemaBuilder {
     }
 
     private ReferencePathElementRef parsePathElement(ObjectValue element) {
-        Optional<ObjectField> keyField = getOptionalObjectFieldByName(element.getObjectFields(), KEY);
-        Optional<ObjectField> conditionField = getOptionalObjectFieldByName(element.getObjectFields(), CONDITION);
+        Optional<ObjectField> keyField = objectFieldByName(element.getObjectFields(), ARG_KEY);
+        Optional<ObjectField> conditionField = objectFieldByName(element.getObjectFields(), ARG_CONDITION);
 
-        Optional<String> keyName = keyField.map(f -> stringValueOf(f));
+        Optional<String> keyName = keyField.map(f -> ((StringValue) f.getValue()).getValue());
         boolean hasCondition = conditionField.isPresent();
 
         if (keyName.isPresent() && !hasCondition) {
@@ -421,10 +427,87 @@ public class GraphitronSchemaBuilder {
 
     private String extractConditionQualifiedName(ObjectField conditionField) {
         if (conditionField.getValue() instanceof ObjectValue ov) {
-            return getOptionalObjectFieldByName(ov.getObjectFields(), NAME)
-                .map(f -> stringValueOf(f))
+            return objectFieldByName(ov.getObjectFields(), ARG_NAME)
+                .map(f -> ((StringValue) f.getValue()).getValue())
                 .orElse("unknown");
         }
         return "unknown";
+    }
+
+    // ===== Directive reading helpers =====
+
+    /**
+     * Returns the stripped String value of a directive argument, if present.
+     * This is the internal replacement for the enum-based {@code DirectiveHelpers} methods.
+     */
+    private Optional<String> argString(DirectivesContainer<?> container, String directive, String arg) {
+        var dirs = container.getDirectives(directive);
+        if (dirs == null || dirs.isEmpty()) return Optional.empty();
+        var argument = dirs.get(0).getArgument(arg);
+        if (argument == null) return Optional.empty();
+        return argument.getValue() instanceof StringValue sv
+            ? Optional.of(sv.getValue().strip())
+            : Optional.empty();
+    }
+
+    /**
+     * Returns the String values of a list directive argument, or an empty list if absent.
+     */
+    private List<String> argStringList(DirectivesContainer<?> container, String directive, String arg) {
+        var dirs = container.getDirectives(directive);
+        if (dirs == null || dirs.isEmpty()) return List.of();
+        var argument = dirs.get(0).getArgument(arg);
+        if (argument == null) return List.of();
+        var value = argument.getValue();
+        if (value instanceof StringValue sv) return List.of(sv.getValue().strip());
+        if (value instanceof ArrayValue av) {
+            return av.getValues().stream()
+                .map(v -> v instanceof NullValue ? null : ((StringValue) v).getValue().strip())
+                .collect(Collectors.toList());
+        }
+        return List.of();
+    }
+
+    /**
+     * Finds a named field in a list of object fields.
+     */
+    private Optional<ObjectField> objectFieldByName(List<ObjectField> fields, String name) {
+        return fields.stream().filter(f -> f.getName().equals(name)).findFirst();
+    }
+
+    // ===== Registry validation =====
+
+    /**
+     * Validates that every directive name and argument name used by this builder actually exists
+     * in the loaded {@link TypeDefinitionRegistry}. Throws {@link IllegalStateException} if the
+     * registry is out of sync with the constants declared in this class.
+     */
+    private void validateDirectiveSchema() {
+        var defs = registry.getDirectiveDefinitions();
+        assertDirective(defs, DIR_TABLE, ARG_NAME);
+        assertDirective(defs, DIR_RECORD);
+        assertDirective(defs, DIR_DISCRIMINATE, ARG_ON);
+        assertDirective(defs, DIR_NODE, ARG_TYPE_ID, ARG_KEY_COLUMNS);
+        assertDirective(defs, DIR_NOT_GENERATED);
+        assertDirective(defs, DIR_MULTITABLE_REFERENCE);
+        assertDirective(defs, DIR_NODE_ID, ARG_TYPE_NAME);
+        assertDirective(defs, DIR_FIELD, ARG_NAME, ARG_JAVA_NAME);
+        assertDirective(defs, DIR_REFERENCE, ARG_PATH);
+    }
+
+    private void assertDirective(Map<String, DirectiveDefinition> defs, String name, String... args) {
+        var def = defs.get(name);
+        if (def == null) {
+            throw new IllegalStateException("Expected directive @" + name + " in schema but it was not found.");
+        }
+        var argNames = def.getInputValueDefinitions().stream()
+            .map(InputValueDefinition::getName)
+            .collect(Collectors.toSet());
+        for (var arg : args) {
+            if (!argNames.contains(arg)) {
+                throw new IllegalStateException(
+                    "Expected argument '" + arg + "' on directive @" + name + " but it was not found.");
+            }
+        }
     }
 }

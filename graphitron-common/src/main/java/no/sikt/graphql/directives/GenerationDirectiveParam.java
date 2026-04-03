@@ -3,7 +3,10 @@ package no.sikt.graphql.directives;
 /**
  * Contains all the available directive parameters.
  * This must match what is defined in the Graphitron directive schema.
+ *
+ * @deprecated New code should not use this enum. See {@link GenerationDirective} for details.
  */
+@Deprecated(forRemoval = true)
 public enum GenerationDirectiveParam {
     KEY("key"),
     NAME("name"),
