@@ -18,7 +18,7 @@ import graphql.language.TypeName;
 import graphql.language.UnionTypeDefinition;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.mappings.TableReflection;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.record.field.ChildField.ColumnField;
 import no.sikt.graphitron.record.field.ChildField.ColumnReferenceField;
 import no.sikt.graphitron.record.field.ColumnStep;
@@ -53,6 +53,7 @@ import no.sikt.graphitron.record.type.GraphitronType.UnionType;
 import no.sikt.graphitron.record.type.KeyColumnStep.UnresolvedKeyColumn;
 import no.sikt.graphitron.record.type.TableStep.UnresolvedTable;
 import org.jooq.ForeignKey;
+import org.jooq.Table;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -108,9 +109,11 @@ public class FieldsSpecBuilder {
     private static final Set<String> ROOT_TYPE_NAMES = Set.of("Query", "Mutation", "Subscription");
 
     private final TypeDefinitionRegistry registry;
+    private final JooqCatalog catalog;
 
-    private FieldsSpecBuilder(TypeDefinitionRegistry registry) {
+    private FieldsSpecBuilder(TypeDefinitionRegistry registry, JooqCatalog catalog) {
         this.registry = registry;
+        this.catalog = catalog;
     }
 
     /**
@@ -119,7 +122,7 @@ public class FieldsSpecBuilder {
      * definitions.
      */
     public static GraphitronSchema build(TypeDefinitionRegistry registry) {
-        return new FieldsSpecBuilder(registry).buildSchema();
+        return new FieldsSpecBuilder(registry, new JooqCatalog(GeneratorConfig.getGeneratedJooqPackage())).buildSchema();
     }
 
     private GraphitronSchema buildSchema() {
@@ -203,9 +206,8 @@ public class FieldsSpecBuilder {
     }
 
     private TableStep resolveTable(String sqlName) {
-        return TableReflection.getTableJavaFieldNameByTableName(sqlName)
-            .flatMap(jfn -> TableReflection.getTableByJavaFieldName(jfn)
-                .map(t -> (TableStep) new ResolvedTable(jfn, t)))
+        return catalog.findTable(sqlName)
+            .<TableStep>map(e -> new ResolvedTable(e.javaFieldName(), e.table()))
             .orElseGet(UnresolvedTable::new);
     }
 
@@ -215,19 +217,19 @@ public class FieldsSpecBuilder {
         }
         String typeId = getOptionalDirectiveArgumentString(objType, NODE, TYPE_ID).orElse(null);
         List<String> keyColumnNames = getOptionalDirectiveArgumentStringList(objType, NODE, KEY_COLUMNS);
-        String resolvedSqlTableName = tableStep instanceof ResolvedTable rt ? rt.table().getName() : null;
+        Table<?> resolvedTable = tableStep instanceof ResolvedTable rt ? rt.table() : null;
         List<KeyColumnStep> keyColumns = keyColumnNames.stream()
-            .map(colName -> resolveKeyColumn(colName, resolvedSqlTableName))
+            .map(colName -> resolveKeyColumn(colName, resolvedTable))
             .toList();
         return new NodeDirective(typeId, keyColumns);
     }
 
-    private KeyColumnStep resolveKeyColumn(String colName, String sqlTableName) {
-        if (sqlTableName == null) {
+    private KeyColumnStep resolveKeyColumn(String colName, Table<?> table) {
+        if (table == null) {
             return new UnresolvedKeyColumn(colName);
         }
-        return TableReflection.getJavaFieldName(sqlTableName, colName)
-            .<KeyColumnStep>map(javaName -> new ResolvedKeyColumn(colName, javaName))
+        return catalog.findColumn(table, colName)
+            .<KeyColumnStep>map(e -> new ResolvedKeyColumn(colName, e.javaName()))
             .orElseGet(() -> new UnresolvedKeyColumn(colName));
     }
 
@@ -296,7 +298,7 @@ public class FieldsSpecBuilder {
         if (!(tableType.table() instanceof ResolvedTable resolvedTable)) {
             return new UnresolvedColumn();
         }
-        return resolveColumnInTable(columnName, resolvedTable.javaFieldName());
+        return resolveColumnInTable(columnName, resolvedTable.table());
     }
 
     private ColumnStep resolveColumnForReference(String columnName, List<ReferencePathElement> path, TableType sourceType) {
@@ -311,19 +313,12 @@ public class FieldsSpecBuilder {
                 return new UnresolvedColumn();
             }
         }
-        String targetSqlName = current.getName();
-        return TableReflection.getTableJavaFieldNameByTableName(targetSqlName)
-            .map(targetJavaName -> resolveColumnInTable(columnName, targetJavaName))
-            .orElseGet(UnresolvedColumn::new);
+        return resolveColumnInTable(columnName, current);
     }
 
-    private ColumnStep resolveColumnInTable(String columnName, String tableJavaFieldName) {
-        return TableReflection.getField(tableJavaFieldName, columnName)
-            .<ColumnStep>map(col -> {
-                String javaName = TableReflection.getJavaFieldName(tableJavaFieldName, columnName)
-                    .orElse(columnName.toUpperCase());
-                return new ResolvedColumn(javaName, col);
-            })
+    private ColumnStep resolveColumnInTable(String columnName, Table<?> table) {
+        return catalog.findColumn(table, columnName)
+            .<ColumnStep>map(e -> new ResolvedColumn(e.javaName(), e.column()))
             .orElseGet(UnresolvedColumn::new);
     }
 
@@ -356,7 +351,7 @@ public class FieldsSpecBuilder {
             return resolveKey(keyName.get());
         }
         if (keyName.isPresent()) {
-            Optional<ForeignKey<?, ?>> fk = TableReflection.getForeignKey(keyName.get());
+            Optional<ForeignKey<?, ?>> fk = catalog.findForeignKey(keyName.get());
             String condName = extractConditionQualifiedName(conditionField.get());
             MethodRef resolved = resolveConditionRef(conditionField.get());
             if (fk.isPresent() && resolved != null) {
@@ -381,7 +376,7 @@ public class FieldsSpecBuilder {
     }
 
     private ReferencePathElement resolveKey(String keyName) {
-        return TableReflection.getForeignKey(keyName)
+        return catalog.findForeignKey(keyName)
             .<ReferencePathElement>map(FkStep::new)
             .orElseGet(() -> new UnresolvedKeyStep(keyName));
     }
