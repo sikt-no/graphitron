@@ -130,7 +130,7 @@ class FieldsSpecBuilderTest {
     void columnReferenceField_withKnownFk() {
         var schema = build("""
             type Film @table(name: "film") {
-              languageName: String @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+              languageName: String @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query { film: Film }
             """);
@@ -173,7 +173,7 @@ class FieldsSpecBuilderTest {
         var schema = build("""
             type Film @table(name: "film") {
               languageName: String @field(name: "name")
-                  @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+                  @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query { film: Film }
             """);
@@ -287,7 +287,7 @@ class FieldsSpecBuilderTest {
             }
             type Film @table(name: "film") {
               languageId: ID! @nodeId(typeName: "Language")
-                  @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+                  @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query { film: Film }
             """);
