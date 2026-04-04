@@ -47,6 +47,37 @@ The graphitron-maven-plugin provides:
 - **generate-code**: Generate Java code from GraphQL schemas
 - **transform**: Transform schemas (Apollo Federation, Relay connections, feature flags)
 
+## Environment Setup (Agent Sessions)
+
+### Maven
+
+Maven 3.9.11 is at `/opt/maven`. Java 21 is the default JVM. Both are pre-configured — no installation needed.
+
+`~/.m2/settings.xml` is pre-populated with an HTTPS proxy configuration (session-scoped credentials). Do not edit or regenerate this file; Maven dependency resolution works out of the box.
+
+`JAVA_TOOL_OPTIONS` is also pre-set with matching proxy settings, so `java` commands pick up the proxy automatically.
+
+Run tests normally:
+
+```bash
+mvn test -pl :graphitron-java-codegen
+mvn install                          # full build, all modules
+```
+
+### Docker (TestContainers)
+
+`service docker start` fails in this environment due to ulimit restrictions. Start the daemon directly instead:
+
+```bash
+dockerd --host=unix:///var/run/docker.sock > /tmp/dockerd.log 2>&1 &
+sleep 3   # wait for daemon to finish initialising
+docker ps  # verify it's running
+```
+
+Docker must be running before any test that uses TestContainers (e.g. the Sakila database integration tests). Unit tests in `graphitron-java-codegen` do **not** require Docker.
+
+---
+
 ## Common Development Commands
 
 ```bash
