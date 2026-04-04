@@ -4,6 +4,7 @@ import graphql.language.ArrayValue;
 import graphql.language.DirectiveDefinition;
 import graphql.language.DirectivesContainer;
 import graphql.language.EnumTypeDefinition;
+import graphql.language.EnumValue;
 import graphql.language.FieldDefinition;
 import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
@@ -21,6 +22,8 @@ import graphql.language.Type;
 import graphql.language.TypeDefinition;
 import graphql.language.TypeName;
 import graphql.language.UnionTypeDefinition;
+import no.sikt.graphitron.configuration.ErrorHandlerType;
+import no.sikt.graphitron.record.type.ErrorHandlerSpec;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.GeneratorConfig;
@@ -47,6 +50,7 @@ import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditi
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.record.type.GraphitronType;
+import no.sikt.graphitron.record.type.GraphitronType.ErrorType;
 import no.sikt.graphitron.record.type.GraphitronType.InterfaceType;
 import no.sikt.graphitron.record.type.GraphitronType.ResultType;
 import no.sikt.graphitron.record.type.GraphitronType.RootType;
@@ -110,6 +114,7 @@ public class GraphitronSchemaBuilder {
     private static final String DIR_NODE_ID = "nodeId";
     private static final String DIR_FIELD = "field";
     private static final String DIR_REFERENCE = "reference";
+    private static final String DIR_ERROR = "error";
 
     // Argument names for the directives above.
     private static final String ARG_NAME = "name";
@@ -121,6 +126,14 @@ public class GraphitronSchemaBuilder {
     private static final String ARG_PATH = "path";
     private static final String ARG_KEY = "key";
     private static final String ARG_CONDITION = "condition";
+    // Argument names for @error / ErrorHandler input fields.
+    private static final String ARG_HANDLERS = "handlers";
+    private static final String ARG_HANDLER = "handler";
+    private static final String ARG_CLASS_NAME = "className";
+    private static final String ARG_CODE = "code";
+    private static final String ARG_SQL_STATE = "sqlState";
+    private static final String ARG_MATCHES = "matches";
+    private static final String ARG_DESCRIPTION = "description";
 
     private final TypeDefinitionRegistry registry;
     private final JooqCatalog catalog;
@@ -239,6 +252,9 @@ public class GraphitronSchemaBuilder {
             if (objType.hasDirective(DIR_RECORD)) {
                 return new ResultType(name, location);
             }
+            if (objType.hasDirective(DIR_ERROR)) {
+                return buildErrorType(objType);
+            }
             return null;
         }
         if (typeDef instanceof InterfaceTypeDefinition iface) {
@@ -288,6 +304,43 @@ public class GraphitronSchemaBuilder {
             .map(colName -> resolveKeyColumn(colName, resolvedTable))
             .toList();
         return new NodeDirective(typeId, keyColumns);
+    }
+
+    private ErrorType buildErrorType(ObjectTypeDefinition objType) {
+        String name = objType.getName();
+        SourceLocation location = objType.getSourceLocation();
+        var dirs = objType.getDirectives(DIR_ERROR);
+        var handlersArg = dirs.get(0).getArgument(ARG_HANDLERS);
+        var value = handlersArg.getValue();
+        List<?> items = value instanceof ArrayValue av ? av.getValues() : List.of(value);
+        List<ErrorHandlerSpec> handlers = items.stream()
+            .filter(v -> v instanceof ObjectValue)
+            .map(v -> parseErrorHandlerSpec((ObjectValue) v))
+            .toList();
+        return new ErrorType(name, location, handlers);
+    }
+
+    private ErrorHandlerSpec parseErrorHandlerSpec(ObjectValue ov) {
+        var fields = ov.getObjectFields();
+        ErrorHandlerType handlerType = objectFieldByName(fields, ARG_HANDLER)
+            .map(f -> ErrorHandlerType.valueOf(((EnumValue) f.getValue()).getName()))
+            .orElseThrow(() -> new IllegalStateException("Missing required 'handler' field in @error handler"));
+        String className = objectFieldByName(fields, ARG_CLASS_NAME)
+            .map(f -> ((StringValue) f.getValue()).getValue().strip())
+            .orElse(null);
+        String code = objectFieldByName(fields, ARG_CODE)
+            .map(f -> ((StringValue) f.getValue()).getValue().strip())
+            .orElse(null);
+        String sqlState = objectFieldByName(fields, ARG_SQL_STATE)
+            .map(f -> ((StringValue) f.getValue()).getValue().strip())
+            .orElse(null);
+        String matches = objectFieldByName(fields, ARG_MATCHES)
+            .map(f -> ((StringValue) f.getValue()).getValue().strip())
+            .orElse(null);
+        String description = objectFieldByName(fields, ARG_DESCRIPTION)
+            .map(f -> ((StringValue) f.getValue()).getValue().strip())
+            .orElse(null);
+        return new ErrorHandlerSpec(handlerType, className, code, sqlState, matches, description);
     }
 
     private KeyColumnRef resolveKeyColumn(String colName, Table<?> table) {
@@ -542,6 +595,7 @@ public class GraphitronSchemaBuilder {
         assertDirective(defs, DIR_NODE_ID, ARG_TYPE_NAME);
         assertDirective(defs, DIR_FIELD, ARG_NAME, ARG_JAVA_NAME);
         assertDirective(defs, DIR_REFERENCE, ARG_PATH);
+        assertDirective(defs, DIR_ERROR, ARG_HANDLERS);
     }
 
     private void assertDirective(Map<String, DirectiveDefinition> defs, String name, String... args) {

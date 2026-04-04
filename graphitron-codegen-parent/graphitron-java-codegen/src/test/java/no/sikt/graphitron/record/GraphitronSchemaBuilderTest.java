@@ -3,6 +3,7 @@ package no.sikt.graphitron.record;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.configuration.ErrorHandlerType;
 import no.sikt.graphitron.record.field.ChildField.ColumnField;
 import no.sikt.graphitron.record.field.ChildField.ColumnReferenceField;
 import no.sikt.graphitron.record.field.ChildField.NodeIdField;
@@ -18,6 +19,7 @@ import no.sikt.graphitron.record.field.ColumnRef.ResolvedColumn;
 import no.sikt.graphitron.record.field.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.record.field.ColumnRef.UnresolvedColumn;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
+import no.sikt.graphitron.record.type.GraphitronType.ErrorType;
 import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
 import no.sikt.graphitron.record.type.GraphitronType.TableType;
 import no.sikt.graphitron.record.type.TableRef.UnresolvedTable;
@@ -345,6 +347,70 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """);
         assertThat(((TableType) schema.type("Film")).table().tableName()).isEqualTo("film");
+    }
+
+    // ===== ErrorType =====
+
+    @Test
+    void errorType_generic_capturesHandlerType_and_className() {
+        var schema = build("""
+            type MyError @error(handlers: [{handler: GENERIC, className: "com.example.MyException"}]) {
+                message: String
+            }
+            type Query { x: String }
+            """);
+        assertThat(schema.type("MyError")).isInstanceOf(ErrorType.class);
+        var errorType = (ErrorType) schema.type("MyError");
+        assertThat(errorType.handlers()).hasSize(1);
+        var handler = errorType.handlers().get(0);
+        assertThat(handler.handlerType()).isEqualTo(ErrorHandlerType.GENERIC);
+        assertThat(handler.className()).isEqualTo("com.example.MyException");
+    }
+
+    @Test
+    void errorType_database_capturesOptionalFields() {
+        var schema = build("""
+            type DbError @error(handlers: [{handler: DATABASE, sqlState: "23503", code: "1234", description: "FK violation"}]) {
+                message: String
+            }
+            type Query { x: String }
+            """);
+        var errorType = (ErrorType) schema.type("DbError");
+        var handler = errorType.handlers().get(0);
+        assertThat(handler.handlerType()).isEqualTo(ErrorHandlerType.DATABASE);
+        assertThat(handler.className()).isNull();
+        assertThat(handler.sqlState()).isEqualTo("23503");
+        assertThat(handler.code()).isEqualTo("1234");
+        assertThat(handler.description()).isEqualTo("FK violation");
+    }
+
+    @Test
+    void errorType_capturesMatchesField() {
+        var schema = build("""
+            type MatchError @error(handlers: [{handler: GENERIC, className: "com.example.Ex", matches: "duplicate"}]) {
+                message: String
+            }
+            type Query { x: String }
+            """);
+        var handler = ((ErrorType) schema.type("MatchError")).handlers().get(0);
+        assertThat(handler.matches()).isEqualTo("duplicate");
+    }
+
+    @Test
+    void errorType_capturesMultipleHandlers() {
+        var schema = build("""
+            type MultiError @error(handlers: [
+                {handler: GENERIC, className: "com.example.Ex1"},
+                {handler: DATABASE, sqlState: "23505"}
+            ]) {
+                message: String
+            }
+            type Query { x: String }
+            """);
+        var errorType = (ErrorType) schema.type("MultiError");
+        assertThat(errorType.handlers()).hasSize(2);
+        assertThat(errorType.handlers().get(0).handlerType()).isEqualTo(ErrorHandlerType.GENERIC);
+        assertThat(errorType.handlers().get(1).handlerType()).isEqualTo(ErrorHandlerType.DATABASE);
     }
 
     // ===== Registry validation =====

@@ -10,7 +10,8 @@ import java.util.List;
  */
 public sealed interface GraphitronType
     permits GraphitronType.TableType, GraphitronType.ResultType, GraphitronType.RootType,
-            GraphitronType.TableInterfaceType, GraphitronType.InterfaceType, GraphitronType.UnionType {
+            GraphitronType.TableInterfaceType, GraphitronType.InterfaceType, GraphitronType.UnionType,
+            GraphitronType.ErrorType {
 
     String name();
 
@@ -101,5 +102,17 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         List<ParticipantRef> participants
+    ) implements GraphitronType {}
+
+    /**
+     * An object type annotated with {@code @error}. Maps Java exceptions to GraphQL error responses.
+     *
+     * <p>{@code handlers} holds one {@link ErrorHandlerSpec} per entry in the {@code handlers}
+     * argument of the {@code @error} directive.
+     */
+    record ErrorType(
+        String name,
+        SourceLocation location,
+        List<ErrorHandlerSpec> handlers
     ) implements GraphitronType {}
 }

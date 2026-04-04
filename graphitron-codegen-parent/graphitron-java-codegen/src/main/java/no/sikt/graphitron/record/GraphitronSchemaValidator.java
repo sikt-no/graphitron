@@ -48,6 +48,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.record.type.GraphitronType.TableInterfaceType t -> validateTableInterfaceType(t, errors);
             case no.sikt.graphitron.record.type.GraphitronType.InterfaceType t      -> validateInterfaceType(t, errors);
             case no.sikt.graphitron.record.type.GraphitronType.UnionType t          -> validateUnionType(t, errors);
+            case no.sikt.graphitron.record.type.GraphitronType.ErrorType t          -> {} // no structural validation needed
         }
     }
 
