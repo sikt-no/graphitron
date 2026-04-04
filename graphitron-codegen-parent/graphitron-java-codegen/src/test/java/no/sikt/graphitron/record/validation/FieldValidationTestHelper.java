@@ -16,8 +16,6 @@ import org.jooq.Table;
 import java.util.List;
 import java.util.Map;
 
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
-
 /**
  * Static factory helpers shared by all Level 1 validation test classes.
  *
@@ -42,18 +40,14 @@ public final class FieldValidationTestHelper {
     }
 
     /**
-     * Wraps a single field under "Mutation" (RootType). Use for MutationField cases.
-     */
-    public static GraphitronSchema inMutationSchema(String fieldName, GraphitronField field) {
-        return schema(new RootType("Mutation", null), fieldName, field);
-    }
-
-    /**
      * Wraps a single field under a TableType parent with no {@code @node} directive.
-     * Use for ChildField cases where the parent context is table-mapped.
+     * Use when the validator needs access to the parent type's table metadata (e.g.
+     * {@link no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField} FK resolution).
+     * For fields where the validator reads only the field itself, prefer
+     * {@link #validate(GraphitronField)}.
      */
     public static GraphitronSchema inTableTypeSchema(String typeName, String fieldName, GraphitronField field) {
-        var parentType = new TableType(typeName, null, new ResolvedTable(typeName.toLowerCase(), typeName.toUpperCase(), FILM), new NoNode());
+        var parentType = new TableType(typeName, null, new ResolvedTable(typeName.toLowerCase(), typeName.toUpperCase(), null), new NoNode());
         return schema(parentType, fieldName, field);
     }
 
@@ -110,5 +104,25 @@ public final class FieldValidationTestHelper {
 
     public static List<ValidationError> validate(GraphitronType type) {
         return VALIDATOR.validate(new GraphitronSchema(Map.of(type.name(), type), Map.of()));
+    }
+
+    /**
+     * Validates a single field without requiring a hand-assembled schema.
+     *
+     * <p>For the vast majority of field types, the validator only inspects the field's own
+     * properties — {@code parentTypeName}, {@code name}, {@code location}, and the data
+     * fields specific to each leaf type. The parent type in the schema is not consulted.
+     * Two exceptions require explicit schema context and must use a different helper:
+     * <ul>
+     *   <li>{@link no.sikt.graphitron.record.field.QueryField.TableQueryField} — the validator
+     *       looks up the return type to check primary-key presence; use
+     *       {@link #inQuerySchemaWithReturnType}.</li>
+     *   <li>{@link no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField} — the
+     *       validator looks up the {@code @node}-annotated target type; use
+     *       {@link #inTableTypeSchemaWithNodeTarget}.</li>
+     * </ul>
+     */
+    public static List<ValidationError> validate(GraphitronField field) {
+        return validate(schema(new RootType(field.parentTypeName(), null), field.name(), field));
     }
 }

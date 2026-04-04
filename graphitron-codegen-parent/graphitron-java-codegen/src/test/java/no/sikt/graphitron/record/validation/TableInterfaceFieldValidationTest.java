@@ -11,7 +11,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inTableTypeSchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -51,7 +50,7 @@ class TableInterfaceFieldValidationTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(Case.class)
     void tableInterfaceFieldValidation(Case tc) {
-        assertThat(validate(inTableTypeSchema("Film", "status", tc.field())))
+        assertThat(validate(tc.field()))
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());
     }

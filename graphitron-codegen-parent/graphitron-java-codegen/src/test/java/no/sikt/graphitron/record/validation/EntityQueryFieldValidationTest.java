@@ -8,7 +8,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inQuerySchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -38,7 +37,7 @@ class EntityQueryFieldValidationTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(Case.class)
     void entityQueryFieldValidation(Case tc) {
-        assertThat(validate(inQuerySchema("_entities", tc.field())))
+        assertThat(validate(tc.field()))
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());
     }

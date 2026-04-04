@@ -8,7 +8,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inMutationSchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -38,7 +37,7 @@ class UpdateMutationFieldValidationTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(Case.class)
     void updateMutationFieldValidation(Case tc) {
-        assertThat(validate(inMutationSchema("updateFilm", tc.field())))
+        assertThat(validate(tc.field()))
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());
     }

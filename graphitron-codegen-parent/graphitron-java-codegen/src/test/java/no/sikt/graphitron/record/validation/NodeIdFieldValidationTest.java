@@ -1,6 +1,5 @@
 package no.sikt.graphitron.record.validation;
 
-import no.sikt.graphitron.record.GraphitronSchema;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.ChildField.NodeIdField;
@@ -11,7 +10,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inTableTypeSchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -40,16 +38,12 @@ class NodeIdFieldValidationTest {
         @Override public GraphitronField field() { return field; }
         @Override public List<String> errors() { return errors; }
         @Override public String toString() { return description; }
-
-        GraphitronSchema schema() {
-            return inTableTypeSchema("Film", "id", field);
-        }
     }
 
     @ParameterizedTest(name = "{0}")
     @EnumSource(Case.class)
     void nodeIdFieldValidation(Case tc) {
-        assertThat(validate(tc.schema()))
+        assertThat(validate(tc.field()))
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());
     }
