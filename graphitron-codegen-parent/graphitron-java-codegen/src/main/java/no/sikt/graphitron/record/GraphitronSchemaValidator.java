@@ -142,7 +142,15 @@ public class GraphitronSchemaValidator {
     private void validateLookupQueryField(no.sikt.graphitron.record.field.QueryField.LookupQueryField field, List<ValidationError> errors) {}
     private void validateTableQueryField(no.sikt.graphitron.record.field.QueryField.TableQueryField field, GraphitronSchema schema, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.cardinality(), errors);
-        validateDeterministicOrdering(field.name(), field.location(), field.cardinality(), field.returnTypeName(), schema, errors);
+        var returnType = schema.type(field.returnTypeName());
+        if (returnType == null) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': return type '" + field.returnTypeName() + "' does not exist in the schema",
+                field.location()
+            ));
+            return;
+        }
+        validateDeterministicOrdering(field.name(), field.location(), field.cardinality(), returnType, errors);
     }
 
     /**
@@ -152,7 +160,7 @@ public class GraphitronSchemaValidator {
      */
     private void validateDeterministicOrdering(
             String fieldName, SourceLocation location, no.sikt.graphitron.record.field.FieldCardinality cardinality,
-            String returnTypeName, GraphitronSchema schema, List<ValidationError> errors) {
+            no.sikt.graphitron.record.type.GraphitronType returnType, List<ValidationError> errors) {
         boolean needsCheck = switch (cardinality) {
             case no.sikt.graphitron.record.field.FieldCardinality.List l ->
                 l.defaultOrder() == null && l.orderByValues().isEmpty();
@@ -161,8 +169,6 @@ public class GraphitronSchemaValidator {
             default -> false;
         };
         if (!needsCheck) return;
-
-        var returnType = schema.type(returnTypeName);
         if (!(returnType instanceof no.sikt.graphitron.record.type.GraphitronType.TableType tableType)) return;
         if (!(tableType.table() instanceof ResolvedTable resolved)) return;
         if (resolved.table().getPrimaryKey() != null) return;
