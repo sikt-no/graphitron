@@ -93,7 +93,7 @@ class GraphitronSchemaBuilderTest {
     @Test
     void columnField_javaNamePresent() {
         var schema = build("""
-            type Film @table(name: "film") { title: String @field(javaName: "getTitle") }
+            type Film @table(name: "film") { title: String @field(name: "title", javaName: "getTitle") }
             type Query { film: Film }
             """);
         var field = schema.field("Film", "title");

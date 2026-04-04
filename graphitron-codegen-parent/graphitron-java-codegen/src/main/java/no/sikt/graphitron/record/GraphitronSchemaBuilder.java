@@ -4,8 +4,6 @@ import graphql.language.ArrayValue;
 import graphql.language.BooleanValue;
 import graphql.language.EnumValue;
 import graphql.language.NullValue;
-import graphql.language.ObjectField;
-import graphql.language.ObjectValue;
 import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.schema.FieldCoordinates;
@@ -345,34 +343,27 @@ public class GraphitronSchemaBuilder {
         var dir = objType.getAppliedDirective(DIR_ERROR);
         var handlersArg = dir.getArgument(ARG_HANDLERS);
         Object value = handlersArg.getValue();
-        List<?> items = value instanceof ArrayValue av ? av.getValues() : List.of(value);
+        List<?> items = value instanceof List<?> l ? l : List.of(value);
         List<ErrorHandlerSpec> handlers = items.stream()
-            .filter(v -> v instanceof ObjectValue)
-            .map(v -> parseErrorHandlerSpec((ObjectValue) v))
+            .filter(v -> v instanceof Map)
+            .map(v -> parseErrorHandlerSpec(asMap(v)))
             .toList();
         return new ErrorType(name, location, handlers);
     }
 
-    private ErrorHandlerSpec parseErrorHandlerSpec(ObjectValue ov) {
-        var fields = ov.getObjectFields();
-        ErrorHandlerType handlerType = objectFieldByName(fields, ARG_HANDLER)
-            .map(f -> ErrorHandlerType.valueOf(((EnumValue) f.getValue()).getName()))
-            .orElseThrow(() -> new IllegalStateException("Missing required 'handler' field in @error handler"));
-        String className = objectFieldByName(fields, ARG_CLASS_NAME)
-            .map(f -> ((StringValue) f.getValue()).getValue().strip())
-            .orElse(null);
-        String code = objectFieldByName(fields, ARG_CODE)
-            .map(f -> ((StringValue) f.getValue()).getValue().strip())
-            .orElse(null);
-        String sqlState = objectFieldByName(fields, ARG_SQL_STATE)
-            .map(f -> ((StringValue) f.getValue()).getValue().strip())
-            .orElse(null);
-        String matches = objectFieldByName(fields, ARG_MATCHES)
-            .map(f -> ((StringValue) f.getValue()).getValue().strip())
-            .orElse(null);
-        String description = objectFieldByName(fields, ARG_DESCRIPTION)
-            .map(f -> ((StringValue) f.getValue()).getValue().strip())
-            .orElse(null);
+    private ErrorHandlerSpec parseErrorHandlerSpec(Map<String, Object> item) {
+        Object handlerRaw = item.get(ARG_HANDLER);
+        ErrorHandlerType handlerType = handlerRaw != null
+            ? ErrorHandlerType.valueOf(handlerRaw.toString())
+            : null;
+        if (handlerType == null) {
+            throw new IllegalStateException("Missing required 'handler' field in @error handler");
+        }
+        String className = Optional.ofNullable(item.get(ARG_CLASS_NAME)).map(Object::toString).map(String::strip).orElse(null);
+        String code = Optional.ofNullable(item.get(ARG_CODE)).map(Object::toString).map(String::strip).orElse(null);
+        String sqlState = Optional.ofNullable(item.get(ARG_SQL_STATE)).map(Object::toString).map(String::strip).orElse(null);
+        String matches = Optional.ofNullable(item.get(ARG_MATCHES)).map(Object::toString).map(String::strip).orElse(null);
+        String description = Optional.ofNullable(item.get(ARG_DESCRIPTION)).map(Object::toString).map(String::strip).orElse(null);
         return new ErrorHandlerSpec(handlerType, className, code, sqlState, matches, description);
     }
 
@@ -477,10 +468,10 @@ public class GraphitronSchemaBuilder {
         var fieldsArg = dir.getArgument(ARG_FIELDS);
         if (fieldsArg != null) {
             Object value = fieldsArg.getValue();
-            List<?> items = value instanceof ArrayValue av ? av.getValues() : List.of(value);
+            List<?> items = value instanceof List<?> l ? l : List.of(value);
             var sortFields = items.stream()
-                .filter(v -> v instanceof ObjectValue)
-                .map(v -> parseSortFieldSpec((ObjectValue) v))
+                .filter(v -> v instanceof Map)
+                .map(v -> parseSortFieldSpec(asMap(v)))
                 .toList();
             return new DefaultOrderSpec(new OrderSpec.FieldsOrder(sortFields), direction);
         }
@@ -488,15 +479,14 @@ public class GraphitronSchemaBuilder {
         return null;
     }
 
-    private SortFieldSpec parseSortFieldSpec(ObjectValue ov) {
-        var fields = ov.getObjectFields();
+    private SortFieldSpec parseSortFieldSpec(Map<String, Object> item) {
         // FieldSort uses `name` (database field name) and `collate` (optional collation).
-        String columnName = objectFieldByName(fields, ARG_SORT_FIELD_NAME)
-            .map(f -> ((StringValue) f.getValue()).getValue().strip())
-            .orElseThrow(() -> new IllegalStateException("Missing required 'name' in FieldSort"));
-        String collation = objectFieldByName(fields, ARG_COLLATE)
-            .map(f -> ((StringValue) f.getValue()).getValue().strip())
-            .orElse(null);
+        Object nameRaw = item.get(ARG_SORT_FIELD_NAME);
+        if (nameRaw == null) {
+            throw new IllegalStateException("Missing required 'name' in FieldSort");
+        }
+        String columnName = nameRaw.toString().strip();
+        String collation = Optional.ofNullable(item.get(ARG_COLLATE)).map(Object::toString).map(String::strip).orElse(null);
         return new SortFieldSpec(columnName, collation);
     }
 
@@ -626,28 +616,31 @@ public class GraphitronSchemaBuilder {
         if (pathArg == null) return List.of();
 
         Object pathValue = pathArg.getValue();
-        var elements = pathValue instanceof ArrayValue av ? av.getValues() : List.of(pathValue);
+        List<?> elements = pathValue instanceof List<?> l ? l : List.of(pathValue);
 
         return elements.stream()
-            .filter(v -> v instanceof ObjectValue)
-            .map(v -> parsePathElement((ObjectValue) v))
+            .filter(v -> v instanceof Map)
+            .map(v -> parsePathElement(asMap(v)))
             .toList();
     }
 
-    private ReferencePathElementRef parsePathElement(ObjectValue element) {
-        Optional<ObjectField> keyField = objectFieldByName(element.getObjectFields(), ARG_KEY);
-        Optional<ObjectField> conditionField = objectFieldByName(element.getObjectFields(), ARG_CONDITION);
+    private ReferencePathElementRef parsePathElement(Map<String, Object> element) {
+        Object keyRaw = element.get(ARG_KEY);
+        Object conditionRaw = element.get(ARG_CONDITION);
 
-        Optional<String> keyName = keyField.map(f -> ((StringValue) f.getValue()).getValue());
-        boolean hasCondition = conditionField.isPresent();
+        Optional<String> keyName = Optional.ofNullable(keyRaw)
+            .map(Object::toString)
+            .filter(s -> !s.isBlank());
+        boolean hasCondition = conditionRaw instanceof Map;
 
         if (keyName.isPresent() && !hasCondition) {
             return resolveKey(keyName.get());
         }
         if (keyName.isPresent()) {
             Optional<ForeignKey<?, ?>> fk = catalog.findForeignKey(keyName.get());
-            String condName = extractConditionQualifiedName(conditionField.get());
-            MethodRef resolved = resolveConditionRef(conditionField.get());
+            Map<String, Object> condMap = hasCondition ? asMap(conditionRaw) : Map.of();
+            String condName = extractConditionQualifiedName(condMap);
+            MethodRef resolved = resolveConditionRef(condMap);
             if (fk.isPresent() && resolved != null) {
                 return new FkWithConditionRef(fk.get(), resolved);
             }
@@ -660,11 +653,12 @@ public class GraphitronSchemaBuilder {
             return new UnresolvedKeyAndConditionRef(keyName.get(), condName);
         }
         if (hasCondition) {
-            MethodRef resolved = resolveConditionRef(conditionField.get());
+            Map<String, Object> condMap = asMap(conditionRaw);
+            MethodRef resolved = resolveConditionRef(condMap);
             if (resolved != null) {
                 return new ConditionOnlyRef(resolved);
             }
-            return new UnresolvedConditionRef(extractConditionQualifiedName(conditionField.get()));
+            return new UnresolvedConditionRef(extractConditionQualifiedName(condMap));
         }
         return new UnresolvedKeyRef("");
     }
@@ -679,17 +673,13 @@ public class GraphitronSchemaBuilder {
      * Condition resolution via reflection is implemented in a later deliverable (P3).
      * Returns {@code null} to signal that the condition is unresolved.
      */
-    private MethodRef resolveConditionRef(ObjectField conditionField) {
+    private MethodRef resolveConditionRef(Map<String, Object> conditionMap) {
         return null;
     }
 
-    private String extractConditionQualifiedName(ObjectField conditionField) {
-        if (conditionField.getValue() instanceof ObjectValue ov) {
-            return objectFieldByName(ov.getObjectFields(), ARG_NAME)
-                .map(f -> ((StringValue) f.getValue()).getValue())
-                .orElse("unknown");
-        }
-        return "unknown";
+    private String extractConditionQualifiedName(Map<String, Object> conditionMap) {
+        Object name = conditionMap.get(ARG_NAME);
+        return name != null ? name.toString() : "unknown";
     }
 
     // ===== Directive reading helpers =====
@@ -735,10 +725,12 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * Finds a named field in a list of object fields.
+     * Casts an object to a {@code Map<String, Object>}. Used when processing input object values
+     * returned by {@link GraphQLAppliedDirectiveArgument#getValue()} after graphql-java coercion.
      */
-    private Optional<ObjectField> objectFieldByName(List<ObjectField> fields, String name) {
-        return fields.stream().filter(f -> f.getName().equals(name)).findFirst();
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> asMap(Object v) {
+        return (Map<String, Object>) v;
     }
 
     // ===== Registry validation =====
