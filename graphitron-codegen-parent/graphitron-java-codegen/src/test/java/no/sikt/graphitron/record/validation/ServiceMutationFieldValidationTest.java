@@ -8,7 +8,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inQuerySchema;
+import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inMutationSchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,7 +17,7 @@ class ServiceMutationFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("service mutation field — always valid",
-            new ServiceMutationField("Query", "externalMutation", null),
+            new ServiceMutationField("Mutation", "externalMutation", null),
             List.of());
 
         private final String description;
@@ -38,7 +38,7 @@ class ServiceMutationFieldValidationTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(Case.class)
     void serviceMutationFieldValidation(Case tc) {
-        assertThat(validate(inQuerySchema("externalMutation", tc.field())))
+        assertThat(validate(inMutationSchema("externalMutation", tc.field())))
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());
     }

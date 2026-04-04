@@ -1,8 +1,10 @@
 package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
+import no.sikt.graphitron.record.field.DefaultOrderSpec;
 import no.sikt.graphitron.record.field.FieldCardinality;
 import no.sikt.graphitron.record.field.GraphitronField;
+import no.sikt.graphitron.record.field.OrderSpec;
 import no.sikt.graphitron.record.field.QueryField.TableInterfaceQueryField;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -17,9 +19,19 @@ class TableInterfaceQueryFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID("table interface query field — always valid",
+        VALID("single cardinality — valid",
             new TableInterfaceQueryField("Query", "statuses", null, new FieldCardinality.Single()),
-            List.of());
+            List.of()),
+
+        LIST_UNRESOLVED_INDEX("list cardinality: @defaultOrder references an index that could not be found — validation error",
+            new TableInterfaceQueryField("Query", "statuses", null,
+                new FieldCardinality.List(new DefaultOrderSpec(new OrderSpec.UnresolvedIndexOrder("IDX_MISSING"), "ASC"), List.of())),
+            List.of("Field 'statuses': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
+
+        LIST_UNRESOLVED_PRIMARY_KEY("list cardinality: @defaultOrder uses primaryKey but the table has none — validation error",
+            new TableInterfaceQueryField("Query", "statuses", null,
+                new FieldCardinality.List(new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "ASC"), List.of())),
+            List.of("Field 'statuses': primary key could not be resolved — the table may not have one"));
 
         private final String description;
         private final GraphitronField field;

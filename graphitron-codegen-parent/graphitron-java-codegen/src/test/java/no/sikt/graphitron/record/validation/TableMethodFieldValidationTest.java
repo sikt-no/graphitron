@@ -9,6 +9,7 @@ import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
 import no.sikt.graphitron.record.field.ChildField.TableMethodField;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -44,7 +45,14 @@ class TableMethodFieldValidationTest {
         UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection",
             new TableMethodField("Film", "filteredActors", null, List.of(
                 new UnresolvedConditionRef("com.example.Conditions.actorCondition")), new FieldCardinality.Single()),
-            List.of("Field 'filteredActors': condition method 'com.example.Conditions.actorCondition' could not be resolved"));
+            List.of("Field 'filteredActors': condition method 'com.example.Conditions.actorCondition' could not be resolved")),
+
+        UNRESOLVED_KEY_AND_CONDITION("both key and condition specified, neither could be resolved — two errors",
+            new TableMethodField("Film", "filteredActors", null, List.of(
+                new UnresolvedKeyAndConditionRef("FILM_ACTOR_FK", "com.example.Conditions.actorCondition")), new FieldCardinality.Single()),
+            List.of(
+                "Field 'filteredActors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog",
+                "Field 'filteredActors': condition method 'com.example.Conditions.actorCondition' could not be resolved"));
 
         private final String description;
         private final GraphitronField field;

@@ -6,12 +6,12 @@ import no.sikt.graphitron.record.type.GraphitronType.UnionType;
 import no.sikt.graphitron.record.type.ParticipantRef.BoundParticipant;
 import no.sikt.graphitron.record.type.ParticipantRef.UnboundParticipant;
 import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
-import no.sikt.graphitron.record.type.TableRef.UnresolvedTable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
+import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.CATEGORY;
 import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,7 +27,7 @@ class UnionTypeValidationTest {
         ALL_BOUND("all member types are table-bound — valid",
             new UnionType("SearchResult", null, List.of(
                 new BoundParticipant("Film", new ResolvedTable("film", "FILM", FILM)),
-                new BoundParticipant("Category", new UnresolvedTable("category"))
+                new BoundParticipant("Category", new ResolvedTable("category", "CATEGORY", CATEGORY))
             )),
             List.of()),
 

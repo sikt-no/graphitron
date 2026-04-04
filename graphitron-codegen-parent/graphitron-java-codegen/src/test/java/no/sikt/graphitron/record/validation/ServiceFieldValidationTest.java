@@ -7,6 +7,8 @@ import no.sikt.graphitron.record.field.MethodRef;
 import no.sikt.graphitron.record.field.ParamInfo;
 import no.sikt.graphitron.record.field.ChildField.ServiceField;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
+import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -33,7 +35,19 @@ class ServiceFieldValidationTest {
         UNRESOLVED_CONDITION("lift condition method present but could not be resolved via reflection",
             new ServiceField("Film", "externalChild", null, List.of(
                 new UnresolvedConditionRef("com.example.Conditions.liftCondition"))),
-            List.of("Field 'externalChild': condition method 'com.example.Conditions.liftCondition' could not be resolved"));
+            List.of("Field 'externalChild': condition method 'com.example.Conditions.liftCondition' could not be resolved")),
+
+        UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
+            new ServiceField("Film", "externalChild", null, List.of(
+                new UnresolvedKeyRef("FILM_ACTOR_FK"))),
+            List.of("Field 'externalChild': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog")),
+
+        UNRESOLVED_KEY_AND_CONDITION("both key and condition specified, neither could be resolved — two errors",
+            new ServiceField("Film", "externalChild", null, List.of(
+                new UnresolvedKeyAndConditionRef("FILM_ACTOR_FK", "com.example.Conditions.liftCondition"))),
+            List.of(
+                "Field 'externalChild': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog",
+                "Field 'externalChild': condition method 'com.example.Conditions.liftCondition' could not be resolved"));
 
         private final String description;
         private final GraphitronField field;

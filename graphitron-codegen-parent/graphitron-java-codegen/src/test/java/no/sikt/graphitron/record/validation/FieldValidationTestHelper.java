@@ -35,10 +35,17 @@ public final class FieldValidationTestHelper {
     // --- Schema assembly helpers ---
 
     /**
-     * Wraps a single field under "Query" (RootType). Use for all QueryField and MutationField cases.
+     * Wraps a single field under "Query" (RootType). Use for QueryField cases.
      */
     public static GraphitronSchema inQuerySchema(String fieldName, GraphitronField field) {
         return schema(new RootType("Query", null), fieldName, field);
+    }
+
+    /**
+     * Wraps a single field under "Mutation" (RootType). Use for MutationField cases.
+     */
+    public static GraphitronSchema inMutationSchema(String fieldName, GraphitronField field) {
+        return schema(new RootType("Mutation", null), fieldName, field);
     }
 
     /**

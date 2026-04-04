@@ -1,8 +1,10 @@
 package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
+import no.sikt.graphitron.record.field.DefaultOrderSpec;
 import no.sikt.graphitron.record.field.FieldCardinality;
 import no.sikt.graphitron.record.field.GraphitronField;
+import no.sikt.graphitron.record.field.OrderSpec;
 import no.sikt.graphitron.record.field.ChildField.UnionField;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -17,9 +19,19 @@ class UnionFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID("union field — always valid",
+        VALID("single cardinality — valid",
             new UnionField("Film", "result", null, new FieldCardinality.Single()),
-            List.of());
+            List.of()),
+
+        LIST_UNRESOLVED_INDEX("list cardinality: @defaultOrder references an index that could not be found — validation error",
+            new UnionField("Film", "result", null,
+                new FieldCardinality.List(new DefaultOrderSpec(new OrderSpec.UnresolvedIndexOrder("IDX_MISSING"), "ASC"), List.of())),
+            List.of("Field 'result': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
+
+        LIST_UNRESOLVED_PRIMARY_KEY("list cardinality: @defaultOrder uses primaryKey but the table has none — validation error",
+            new UnionField("Film", "result", null,
+                new FieldCardinality.List(new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "ASC"), List.of())),
+            List.of("Field 'result': primary key could not be resolved — the table may not have one"));
 
         private final String description;
         private final GraphitronField field;

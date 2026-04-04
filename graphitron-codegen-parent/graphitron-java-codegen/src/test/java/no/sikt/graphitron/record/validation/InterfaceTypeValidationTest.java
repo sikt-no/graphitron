@@ -6,12 +6,12 @@ import no.sikt.graphitron.record.type.GraphitronType.InterfaceType;
 import no.sikt.graphitron.record.type.ParticipantRef.BoundParticipant;
 import no.sikt.graphitron.record.type.ParticipantRef.UnboundParticipant;
 import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
-import no.sikt.graphitron.record.type.TableRef.UnresolvedTable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
+import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.ACTOR;
 import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,7 +27,7 @@ class InterfaceTypeValidationTest {
         ALL_BOUND("all implementing types are table-bound — valid",
             new InterfaceType("Media", null, List.of(
                 new BoundParticipant("Film", new ResolvedTable("film", "FILM", FILM)),
-                new BoundParticipant("Book", new UnresolvedTable("book"))
+                new BoundParticipant("Actor", new ResolvedTable("actor", "ACTOR", ACTOR))
             )),
             List.of()),
 

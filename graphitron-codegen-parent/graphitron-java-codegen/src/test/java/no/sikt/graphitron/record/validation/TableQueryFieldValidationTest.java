@@ -11,12 +11,14 @@ import no.sikt.graphitron.record.field.QueryField.TableQueryField;
 import no.sikt.graphitron.record.type.GraphitronType.TableType;
 import no.sikt.graphitron.record.type.NodeRef.NoNode;
 import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
 import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
+import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inQuerySchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inQuerySchemaWithReturnType;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -99,7 +101,23 @@ class TableQueryFieldValidationTest {
                         new OrderByEnumValueSpec("ID", new OrderSpec.UnresolvedPrimaryKeyOrder())))),
             List.of(
                 "Field 'films': index 'IDX_A' could not be resolved in the jOOQ catalog",
-                "Field 'films': primary key could not be resolved — the table may not have one"));
+                "Field 'films': primary key could not be resolved — the table may not have one")),
+
+        CONNECTION_DEFAULT_ORDER_UNRESOLVED_INDEX("connection cardinality: @defaultOrder references an index that could not be found — validation error",
+            new TableQueryField("Query", "films", null, "Film",
+                new FieldCardinality.Connection(new DefaultOrderSpec(new OrderSpec.UnresolvedIndexOrder("IDX_MISSING"), "ASC"), List.of())),
+            List.of("Field 'films': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
+
+        CONNECTION_DEFAULT_ORDER_UNRESOLVED_PRIMARY_KEY("connection cardinality: @defaultOrder uses primaryKey but the table has none — validation error",
+            new TableQueryField("Query", "films", null, "Film",
+                new FieldCardinality.Connection(new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "DESC"), List.of())),
+            List.of("Field 'films': primary key could not be resolved — the table may not have one")),
+
+        CONNECTION_ORDER_BY_UNRESOLVED_INDEX("connection cardinality: @orderBy enum value references an unresolved index — validation error",
+            new TableQueryField("Query", "films", null, "Film",
+                new FieldCardinality.Connection(null,
+                    List.of(new OrderByEnumValueSpec("TITLE", new OrderSpec.UnresolvedIndexOrder("IDX_MISSING"))))),
+            List.of("Field 'films': index 'IDX_MISSING' could not be resolved in the jOOQ catalog"));
 
         private final String description;
         private final GraphitronField field;
@@ -122,5 +140,15 @@ class TableQueryFieldValidationTest {
         assertThat(validate(inQuerySchemaWithReturnType("films", tc.field(), FILM_TYPE)))
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());
+    }
+
+    @Test
+    void unknownReturnType() {
+        // returnTypeName references a type absent from the schema — schema invariant violation
+        var field = new TableQueryField("Query", "films", null, "UnknownType",
+            new FieldCardinality.List(null, List.of()));
+        assertThat(validate(inQuerySchema("films", field)))
+            .extracting(ValidationError::message)
+            .containsExactly("Field 'films': return type 'UnknownType' does not exist in the schema");
     }
 }

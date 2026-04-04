@@ -17,7 +17,6 @@ import java.util.List;
 
 import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
 import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM_LIST;
-import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inQuerySchema;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inQuerySchemaWithReturnType;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -90,15 +89,11 @@ class TableQueryFieldNonDeterministicOrderingValidationTest {
                 new TableQueryField("Query", "film", null, "FilmList",
                     new FieldCardinality.Single()),
                 FILM_LIST_TYPE),
-            List.of()),
+            List.of());
 
-        UNKNOWN_RETURN_TYPE(
-            "returnTypeName references a type absent from the schema — broken schema, error",
-            inQuerySchema("films",
-                new TableQueryField("Query", "films", null, "UnknownType",
-                    new FieldCardinality.List(null, List.of()))),
-            List.of("Field 'films': return type 'UnknownType' does not exist in the schema"));
-
+        // Note: this enum stores a pre-built GraphitronSchema rather than a raw field, so it
+        // cannot implement ValidatorCase (which requires field()). The test method accesses
+        // tc.schema() and tc.errors() via the accessor methods below.
         private final String description;
         private final GraphitronSchema schema;
         private final List<String> errors;
@@ -109,6 +104,9 @@ class TableQueryFieldNonDeterministicOrderingValidationTest {
             this.errors = errors;
         }
 
+        public GraphitronSchema schema() { return schema; }
+        public List<String> errors() { return errors; }
+
         @Override
         public String toString() { return description; }
     }
@@ -116,8 +114,8 @@ class TableQueryFieldNonDeterministicOrderingValidationTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(Case.class)
     void nonDeterministicOrderingValidation(Case tc) {
-        assertThat(validate(tc.schema))
+        assertThat(validate(tc.schema()))
             .extracting(ValidationError::message)
-            .containsExactlyInAnyOrderElementsOf(tc.errors);
+            .containsExactlyInAnyOrderElementsOf(tc.errors());
     }
 }

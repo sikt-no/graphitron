@@ -104,6 +104,16 @@ class TableFieldValidationTest {
         DEFAULT_ORDER_UNRESOLVED_PRIMARY_KEY("@defaultOrder uses primaryKey but the table has none — validation error",
             new TableField("Film", "actors", null, List.of(), new FieldConditionRef.NoFieldCondition(), false,
                 new FieldCardinality.List(new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "ASC"), List.of())),
+            List.of("Field 'actors': primary key could not be resolved — the table may not have one")),
+
+        CONNECTION_DEFAULT_ORDER_UNRESOLVED_INDEX("connection cardinality: @defaultOrder references an index that could not be found — validation error",
+            new TableField("Film", "actors", null, List.of(), new FieldConditionRef.NoFieldCondition(), false,
+                new FieldCardinality.Connection(new DefaultOrderSpec(new OrderSpec.UnresolvedIndexOrder("IDX_MISSING"), "ASC"), List.of())),
+            List.of("Field 'actors': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
+
+        CONNECTION_DEFAULT_ORDER_UNRESOLVED_PRIMARY_KEY("connection cardinality: @defaultOrder uses primaryKey but the table has none — validation error",
+            new TableField("Film", "actors", null, List.of(), new FieldConditionRef.NoFieldCondition(), false,
+                new FieldCardinality.Connection(new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "ASC"), List.of())),
             List.of("Field 'actors': primary key could not be resolved — the table may not have one"));
 
         private final String description;
