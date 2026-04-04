@@ -78,17 +78,19 @@ Every GraphQL named type is classified into a `GraphitronType`. This is where `@
 ```java
 sealed interface GraphitronType
     permits TableType, ResultType, RootType,
-            TableInterfaceType, InterfaceType, UnionType {
+            TableInterfaceType, InterfaceType, UnionType, ErrorType {
     String name();
     SourceLocation location();
 }
 
-// @table — full SQL generation; @table directive mapping validated here
+// @table — full SQL generation; @table directive mapping validated here.
+// The SQL table name is accessible via table.tableName() on both ResolvedTable and UnresolvedTable.
+// node captures whether @node is present: NoNode when absent, NodeDirective when present.
 record TableType(
     String name,
     SourceLocation location,
-    String tableName,   // SQL name from @table directive — e.g. "film"
-    TableRef table     // resolved jOOQ table, or unresolved sentinel
+    TableRef table,    // resolved jOOQ table, or unresolved sentinel; carries SQL name
+    NodeRef node       // @node directive tracking; NoNode when absent
 ) implements GraphitronType {}
 
 // @record — runtime wiring only, no SQL until a new scope starts
@@ -100,21 +102,35 @@ record RootType(String name, SourceLocation location)
     implements GraphitronType {}
 
 // interface with @table + @discriminate; implementing types have @table + @discriminator
+// SQL table name is accessible via table.tableName().
 record TableInterfaceType(
     String name,
     SourceLocation location,
     String discriminatorColumn,
-    String tableName,   // SQL name from @table directive
-    TableRef table     // resolved jOOQ table, or unresolved sentinel
+    TableRef table,                    // resolved jOOQ table, or unresolved sentinel; carries SQL name
+    List<ParticipantRef> participants  // one per implementing type
 ) implements GraphitronType {}
 
 // interface with no directives; implementing types have @table
-record InterfaceType(String name, SourceLocation location)
-    implements GraphitronType {}
+record InterfaceType(
+    String name,
+    SourceLocation location,
+    List<ParticipantRef> participants  // one per implementing type
+) implements GraphitronType {}
 
 // union; all member types have @table
-record UnionType(String name, SourceLocation location)
-    implements GraphitronType {}
+record UnionType(
+    String name,
+    SourceLocation location,
+    List<ParticipantRef> participants  // one per member type
+) implements GraphitronType {}
+
+// @error — maps Java exceptions to GraphQL error responses
+record ErrorType(
+    String name,
+    SourceLocation location,
+    List<ErrorHandlerSpec> handlers
+) implements GraphitronType {}
 ```
 
 ### `TableRef`
@@ -122,16 +138,20 @@ record UnionType(String name, SourceLocation location)
 `TableType` and `TableInterfaceType` use a sealed hierarchy to represent the outcome of resolving the `@table` directive value against the jOOQ catalog:
 
 ```java
-sealed interface TableRef permits ResolvedTable, UnresolvedTable {}
+sealed interface TableRef permits ResolvedTable, UnresolvedTable {
+    /** The raw SQL table name from the @table directive (e.g. "film"). Always available. */
+    String tableName();
+}
 
 // jOOQ table class found in catalog
 record ResolvedTable(
+    String tableName,      // raw SQL name from @table directive — e.g. "film"
     String javaFieldName,  // field name in generated Tables class — e.g. "FILM"
     Table<?> table         // jOOQ instance; provides column and FK metadata
 ) implements TableRef {}
 
-// SQL name could not be matched; tableName is on the parent record
-record UnresolvedTable() implements TableRef {}
+// SQL name could not be matched to any class in the jOOQ catalog
+record UnresolvedTable(String tableName) implements TableRef {}
 ```
 
 The validator reports an error for `UnresolvedTable`; the code generator only consumes `ResolvedTable`.
@@ -251,7 +271,7 @@ The three variants generate structurally different code:
 
 `FieldCardinality` replaces the current flat `defaultOrder` field on `TableField` and the standalone `defaultOrder` + `orderByValues` fields on `TableQueryField`. After this migration:
 - `TableField` carries `FieldCardinality cardinality` instead of `DefaultOrderSpec defaultOrder`
-- `TableQueryField` carries `FieldCardinality cardinality` instead of `DefaultOrderSpec defaultOrder` + `List<OrderByEnumValueSpec> orderByValues`
+- `TableQueryField` carries `FieldCardinality cardinality` instead of `DefaultOrderSpec defaultOrder` + `List<OrderByEnumValueSpec> orderByValues`, and additionally carries `String returnTypeName` so the validator can look up the return type's jOOQ table for PK-based non-deterministic ordering checks
 - The same substitution applies to the other eight affected field types
 
 Cardinality-sensitive validator checks — such as "list field on PK-less table has no `@defaultOrder`" — pattern-match on `field.cardinality()` rather than inspecting the GraphQL return type at validation time, making the spec self-contained.
@@ -331,14 +351,14 @@ The `@table` directive carries the SQL name — what the schema author writes. T
 ```java
 String sqlName = getDirectiveArg(objectType, "table", "name");
 Optional<TableEntry> entry = jooqCatalog.findTable(sqlName);
-TableRef tableStep = entry
-    .<TableRef>map(e -> new ResolvedTable(e.javaFieldName(), e.table()))
-    .orElseGet(UnresolvedTable::new);
+TableRef tableRef = entry
+    .<TableRef>map(e -> new ResolvedTable(sqlName, e.javaFieldName(), e.table()))
+    .orElseGet(() -> new UnresolvedTable(sqlName));
 
-types.put(typeName, new TableType(name, location, sqlName, tableStep));
+types.put(typeName, new TableType(name, location, tableRef, node));
 ```
 
-When `ResolvedTable` it provides columns, primary key, and FK metadata — used directly by FK auto-inference. When `UnresolvedTable`, a downstream validation pass reports the unresolved name.
+`tableName` is carried on both `ResolvedTable` and `UnresolvedTable` so callers can always retrieve it via `TableRef.tableName()` without having to reach into the parent type record. When `ResolvedTable` it provides columns, primary key, and FK metadata — used directly by FK auto-inference. When `UnresolvedTable`, a downstream validation pass reports the unresolved name.
 
 The generator drives iteration from `TypeDefinitionRegistry` (types with `@table`) and looks up by coordinates:
 
