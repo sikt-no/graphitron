@@ -33,7 +33,7 @@ RuntimeWiring runtimeWiring = EchoingWiringFactory.newEchoingWiring(wiring -> {
 GraphQLSchema schema = new SchemaGenerator().makeExecutableSchema(typeDefinitionRegistry, runtimeWiring);
 ```
 
-`GraphitronSchemaBuilder` then uses `new SchemaTraverser().depthFirstFullSchema(visitor, schema)` where the visitor tracks parent type from `context.getParentNode()`.
+`GraphitronSchemaBuilder` then iterates `schema.getAllTypesAsList()` to classify types, and a second pass over each `GraphQLObjectType`'s `getFieldDefinitions()` to classify fields. Interface and union participant lists are populated in a separate enrichment pass after the initial type classification.
 
 ---
 
@@ -47,7 +47,7 @@ Each deliverable is a self-contained, reviewable change behind the `recordBasedO
 | 2 | Infrastructure | `GraphitronFetcherFactory`, `getTenantId()`, feature flag |
 | **Parsing stream** | `GraphitronSchemaBuilder` — schema → `GraphitronField` | Independent of generating stream |
 | P1 ✓ | Scalar parsing | `ColumnField`, `ColumnReferenceField`, `NodeIdField`, `NodeIdReferenceField`, `NotGeneratedField`, `ErrorType` — done |
-| P2 | Table child parsing | `TableField`, `TableMethodField`, `NestingField` |
+| P2 ✓ | Table child parsing | `TableField`, `TableMethodField`, `NestingField` |
 | P3 | Remaining child parsing | `ComputedField`, `PropertyField`, `TableInterfaceField`, `InterfaceField`, `UnionField`, `ServiceField` |
 | P4 | Field arguments + input types | `InputType` in `GraphitronType`; argument list on field records |
 | P5 | Root field parsing | `LookupQueryField`, `TableQueryField`, `TableMethodQueryField`, `NodeQueryField`, `EntityQueryField`, `TableInterfaceQueryField`, `InterfaceQueryField`, `UnionQueryField`, `ServiceQueryField`, all `MutationField` variants |
@@ -198,15 +198,15 @@ record UnresolvedColumn() implements ColumnRef {}
 
 ```java
 sealed interface ReferencePathElementRef
-    permits FkStep, FkWithConditionStep, ConditionOnlyStep,
-            UnresolvedKeyStep, UnresolvedConditionStep, UnresolvedKeyAndConditionStep {}
+    permits FkRef, FkWithConditionRef, ConditionOnlyRef,
+            UnresolvedKeyRef, UnresolvedConditionRef, UnresolvedKeyAndConditionRef {}
 
-record FkStep(ForeignKey<?, ?> key) implements ReferencePathElementRef {}
-record FkWithConditionStep(ForeignKey<?, ?> key, MethodRef condition) implements ReferencePathElementRef {}
-record ConditionOnlyStep(MethodRef condition) implements ReferencePathElementRef {}
-record UnresolvedKeyStep(String keyName) implements ReferencePathElementRef {}
-record UnresolvedConditionStep(String qualifiedName) implements ReferencePathElementRef {}
-record UnresolvedKeyAndConditionStep(String keyName, String conditionName) implements ReferencePathElementRef {}
+record FkRef(ForeignKey<?, ?> key) implements ReferencePathElementRef {}
+record FkWithConditionRef(ForeignKey<?, ?> key, MethodRef condition) implements ReferencePathElementRef {}
+record ConditionOnlyRef(MethodRef condition) implements ReferencePathElementRef {}
+record UnresolvedKeyRef(String keyName) implements ReferencePathElementRef {}
+record UnresolvedConditionRef(String qualifiedName) implements ReferencePathElementRef {}
+record UnresolvedKeyAndConditionRef(String keyName, String conditionName) implements ReferencePathElementRef {}
 ```
 
 The validator reports errors for the three `Unresolved*` variants; the code generator only consumes the three resolved variants.

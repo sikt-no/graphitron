@@ -2,31 +2,33 @@ package no.sikt.graphitron.record;
 
 import graphql.language.ArrayValue;
 import graphql.language.BooleanValue;
-import graphql.language.DirectiveDefinition;
-import graphql.language.DirectivesContainer;
-import graphql.language.EnumTypeDefinition;
 import graphql.language.EnumValue;
-import graphql.language.FieldDefinition;
-import graphql.language.InputObjectTypeDefinition;
-import graphql.language.InputValueDefinition;
-import graphql.language.InterfaceTypeDefinition;
-import graphql.language.ListType;
-import graphql.language.NonNullType;
 import graphql.language.NullValue;
 import graphql.language.ObjectField;
-import graphql.language.ObjectTypeDefinition;
 import graphql.language.ObjectValue;
-import graphql.language.ScalarTypeDefinition;
 import graphql.language.SourceLocation;
 import graphql.language.StringValue;
-import graphql.language.Type;
-import graphql.language.TypeDefinition;
-import graphql.language.TypeName;
-import graphql.language.UnionTypeDefinition;
+import graphql.schema.FieldCoordinates;
+import graphql.schema.GraphQLAppliedDirective;
+import graphql.schema.GraphQLAppliedDirectiveArgument;
+import graphql.schema.GraphQLArgument;
+import graphql.schema.GraphQLDirectiveContainer;
+import graphql.schema.GraphQLEnumType;
+import graphql.schema.GraphQLFieldDefinition;
+import graphql.schema.GraphQLInputObjectType;
+import graphql.schema.GraphQLInterfaceType;
+import graphql.schema.GraphQLNamedType;
+import graphql.schema.GraphQLObjectType;
+import graphql.schema.GraphQLScalarType;
+import graphql.schema.GraphQLSchema;
+import graphql.schema.GraphQLTypeUtil;
+import graphql.schema.GraphQLUnionType;
+import graphql.schema.idl.EchoingWiringFactory;
+import graphql.schema.idl.ScalarInfo;
+import graphql.schema.idl.SchemaGenerator;
+import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.ErrorHandlerType;
 import no.sikt.graphitron.record.type.ErrorHandlerSpec;
-import graphql.schema.FieldCoordinates;
-import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.record.field.ChildField.ColumnField;
 import no.sikt.graphitron.record.field.ChildField.ColumnReferenceField;
@@ -110,10 +112,9 @@ import java.util.stream.Collectors;
 public class GraphitronSchemaBuilder {
 
     private static final Set<String> ROOT_TYPE_NAMES = Set.of("Query", "Mutation", "Subscription");
-    private static final Set<String> BUILTIN_SCALARS = Set.of("String", "Int", "Float", "Boolean", "ID");
 
     // Directive names — these are the ground truth for what this builder reads from the schema.
-    // They are validated against the TypeDefinitionRegistry at build time (see validateDirectiveSchema).
+    // They are validated against the assembled GraphQLSchema at build time (see validateDirectiveSchema).
     private static final String DIR_TABLE = "table";
     private static final String DIR_RECORD = "record";
     private static final String DIR_DISCRIMINATE = "discriminate";
@@ -143,8 +144,8 @@ public class GraphitronSchemaBuilder {
     private static final String ARG_FIELDS = "fields";
     private static final String ARG_PRIMARY_KEY = "primaryKey";
     private static final String ARG_DIRECTION = "direction";
-    private static final String ARG_SORT_FIELD = "field";
-    private static final String ARG_COLLATION = "collation";
+    private static final String ARG_SORT_FIELD_NAME = "name";    // FieldSort.name (database field name)
+    private static final String ARG_COLLATE = "collate";         // FieldSort.collate (collation string)
     // Argument names for @error / ErrorHandler input fields.
     private static final String ARG_HANDLERS = "handlers";
     private static final String ARG_HANDLER = "handler";
@@ -154,12 +155,12 @@ public class GraphitronSchemaBuilder {
     private static final String ARG_MATCHES = "matches";
     private static final String ARG_DESCRIPTION = "description";
 
-    private final TypeDefinitionRegistry registry;
+    private final GraphQLSchema schema;
     private final JooqCatalog catalog;
     private Map<String, GraphitronType> types;
 
-    private GraphitronSchemaBuilder(TypeDefinitionRegistry registry, JooqCatalog catalog) {
-        this.registry = registry;
+    private GraphitronSchemaBuilder(GraphQLSchema schema, JooqCatalog catalog) {
+        this.schema = schema;
         this.catalog = catalog;
     }
 
@@ -167,9 +168,23 @@ public class GraphitronSchemaBuilder {
      * Classifies all types and fields in {@code registry} and returns the resulting
      * {@link GraphitronSchema}. The registry must already include the Graphitron directive
      * definitions.
+     *
+     * <p>The registry is assembled into a {@link GraphQLSchema} using
+     * {@link EchoingWiringFactory} (same pattern as
+     * {@code SchemaTransformer.assembleSchema()}) so that type resolution, interface
+     * linkage, and directive coercion are all handled by graphql-java rather than
+     * re-implemented at the AST level.
      */
     public static GraphitronSchema build(TypeDefinitionRegistry registry) {
-        return new GraphitronSchemaBuilder(registry, new JooqCatalog(GeneratorConfig.getGeneratedJooqPackage())).buildSchema();
+        var runtimeWiring = EchoingWiringFactory.newEchoingWiring(wiring ->
+            registry.scalars().forEach((name, v) -> {
+                if (!ScalarInfo.isGraphqlSpecifiedScalar(name)) {
+                    wiring.scalar(EchoingWiringFactory.fakeScalar(name));
+                }
+            })
+        );
+        var assembled = new SchemaGenerator().makeExecutableSchema(registry, runtimeWiring);
+        return new GraphitronSchemaBuilder(assembled, new JooqCatalog(GeneratorConfig.getGeneratedJooqPackage())).buildSchema();
     }
 
     private GraphitronSchema buildSchema() {
@@ -177,9 +192,9 @@ public class GraphitronSchemaBuilder {
         types = buildTypes();
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
 
-        registry.types().values().stream()
-            .filter(t -> t instanceof ObjectTypeDefinition)
-            .map(t -> (ObjectTypeDefinition) t)
+        schema.getAllTypesAsList().stream()
+            .filter(t -> t instanceof GraphQLObjectType && !t.getName().startsWith("__"))
+            .map(t -> (GraphQLObjectType) t)
             .forEach(objType -> {
                 var parentType = types.get(objType.getName());
                 if (parentType == null) return;
@@ -197,12 +212,14 @@ public class GraphitronSchemaBuilder {
     private Map<String, GraphitronType> buildTypes() {
         // First pass: classify every type (interface/union participants are initially empty).
         var result = new LinkedHashMap<String, GraphitronType>();
-        registry.types().values().forEach(typeDef -> {
-            var gType = classifyType(typeDef);
-            if (gType != null) {
-                result.put(typeDef.getName(), gType);
-            }
-        });
+        schema.getAllTypesAsList().stream()
+            .filter(t -> !t.getName().startsWith("__"))
+            .forEach(namedType -> {
+                var gType = classifyType(namedType);
+                if (gType != null) {
+                    result.put(namedType.getName(), gType);
+                }
+            });
 
         // Second pass: enrich interface and union types with their participant lists.
         result.replaceAll((name, type) -> switch (type) {
@@ -226,20 +243,17 @@ public class GraphitronSchemaBuilder {
     }
 
     private UnionType enrichUnionType(UnionType type, Map<String, GraphitronType> types) {
-        var unionDef = (UnionTypeDefinition) registry.types().get(type.name());
-        var participants = unionDef.getMemberTypes().stream()
-            .map(memberType -> participantRef(getBaseTypeName(memberType), types))
+        var unionType = (GraphQLUnionType) schema.getType(type.name());
+        var participants = unionType.getTypes().stream()
+            .map(memberType -> participantRef(memberType.getName(), types))
             .toList();
         return new UnionType(type.name(), type.location(), participants);
     }
 
-    /** Returns one {@link ParticipantRef} for each ObjectTypeDefinition that implements {@code interfaceName}. */
+    /** Returns one {@link ParticipantRef} for each type that implements {@code interfaceName}. */
     private List<ParticipantRef> implementorsOf(String interfaceName, Map<String, GraphitronType> types) {
-        return registry.types().values().stream()
-            .filter(t -> t instanceof ObjectTypeDefinition)
-            .map(t -> (ObjectTypeDefinition) t)
-            .filter(obj -> obj.getImplements().stream()
-                .anyMatch(iface -> getBaseTypeName(iface).equals(interfaceName)))
+        var iface = (GraphQLInterfaceType) schema.getType(interfaceName);
+        return schema.getImplementations(iface).stream()
             .map(obj -> participantRef(obj.getName(), types))
             .toList();
     }
@@ -251,55 +265,55 @@ public class GraphitronSchemaBuilder {
         return new UnboundParticipant(typeName);
     }
 
-    private GraphitronType classifyType(TypeDefinition<?> typeDef) {
-        if (typeDef instanceof ScalarTypeDefinition
-                || typeDef instanceof EnumTypeDefinition
-                || typeDef instanceof InputObjectTypeDefinition) {
+    private GraphitronType classifyType(GraphQLNamedType namedType) {
+        if (namedType instanceof GraphQLScalarType
+                || namedType instanceof GraphQLEnumType
+                || namedType instanceof GraphQLInputObjectType) {
             return null;
         }
 
-        String name = typeDef.getName();
-        SourceLocation location = typeDef.getSourceLocation();
+        String name = namedType.getName();
+        SourceLocation location = locationOf(namedType);
 
-        if (typeDef instanceof ObjectTypeDefinition objType) {
+        if (namedType instanceof GraphQLObjectType objType) {
             if (ROOT_TYPE_NAMES.contains(name)) {
                 return new RootType(name, location);
             }
-            if (objType.hasDirective(DIR_TABLE)) {
+            if (objType.hasAppliedDirective(DIR_TABLE)) {
                 return buildTableType(objType);
             }
-            if (objType.hasDirective(DIR_RECORD)) {
+            if (objType.hasAppliedDirective(DIR_RECORD)) {
                 return new ResultType(name, location);
             }
-            if (objType.hasDirective(DIR_ERROR)) {
+            if (objType.hasAppliedDirective(DIR_ERROR)) {
                 return buildErrorType(objType);
             }
             return null;
         }
-        if (typeDef instanceof InterfaceTypeDefinition iface) {
-            if (iface.hasDirective(DIR_TABLE) && iface.hasDirective(DIR_DISCRIMINATE)) {
+        if (namedType instanceof GraphQLInterfaceType iface) {
+            if (iface.hasAppliedDirective(DIR_TABLE) && iface.hasAppliedDirective(DIR_DISCRIMINATE)) {
                 return buildTableInterfaceType(iface);
             }
             return new InterfaceType(name, location, List.of());
         }
-        if (typeDef instanceof UnionTypeDefinition) {
+        if (namedType instanceof GraphQLUnionType) {
             return new UnionType(name, location, List.of());
         }
         return null;
     }
 
-    private TableType buildTableType(ObjectTypeDefinition objType) {
+    private TableType buildTableType(GraphQLObjectType objType) {
         String name = objType.getName();
-        SourceLocation location = objType.getSourceLocation();
+        SourceLocation location = locationOf(objType);
         String tableName = argString(objType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
         TableRef tableRef = resolveTable(tableName);
         NodeRef nodeRef = buildNodeRef(objType, tableRef);
         return new TableType(name, location, tableRef, nodeRef);
     }
 
-    private TableInterfaceType buildTableInterfaceType(InterfaceTypeDefinition iface) {
+    private TableInterfaceType buildTableInterfaceType(GraphQLInterfaceType iface) {
         String name = iface.getName();
-        SourceLocation location = iface.getSourceLocation();
+        SourceLocation location = locationOf(iface);
         String tableName = argString(iface, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
         String discriminatorColumn = argString(iface, DIR_DISCRIMINATE, ARG_ON).orElse(null);
         TableRef tableRef = resolveTable(tableName);
@@ -312,8 +326,8 @@ public class GraphitronSchemaBuilder {
             .orElseGet(() -> new UnresolvedTable(sqlName));
     }
 
-    private NodeRef buildNodeRef(ObjectTypeDefinition objType, TableRef tableRef) {
-        if (!objType.hasDirective(DIR_NODE)) {
+    private NodeRef buildNodeRef(GraphQLObjectType objType, TableRef tableRef) {
+        if (!objType.hasAppliedDirective(DIR_NODE)) {
             return new NoNode();
         }
         String typeId = argString(objType, DIR_NODE, ARG_TYPE_ID).orElse(null);
@@ -325,12 +339,12 @@ public class GraphitronSchemaBuilder {
         return new NodeDirective(typeId, keyColumns);
     }
 
-    private ErrorType buildErrorType(ObjectTypeDefinition objType) {
+    private ErrorType buildErrorType(GraphQLObjectType objType) {
         String name = objType.getName();
-        SourceLocation location = objType.getSourceLocation();
-        var dirs = objType.getDirectives(DIR_ERROR);
-        var handlersArg = dirs.get(0).getArgument(ARG_HANDLERS);
-        var value = handlersArg.getValue();
+        SourceLocation location = locationOf(objType);
+        var dir = objType.getAppliedDirective(DIR_ERROR);
+        var handlersArg = dir.getArgument(ARG_HANDLERS);
+        Object value = handlersArg.getValue();
         List<?> items = value instanceof ArrayValue av ? av.getValues() : List.of(value);
         List<ErrorHandlerSpec> handlers = items.stream()
             .filter(v -> v instanceof ObjectValue)
@@ -373,23 +387,23 @@ public class GraphitronSchemaBuilder {
      * ({@code TableInterfaceField}, {@code InterfaceField}, {@code UnionField}, {@code ServiceField},
      * {@code ComputedField}) are added in P3.
      */
-    private GraphitronField classifyObjectReturnChildField(FieldDefinition fieldDef, String parentTypeName) {
+    private GraphitronField classifyObjectReturnChildField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
         String name = fieldDef.getName();
-        SourceLocation location = fieldDef.getSourceLocation();
-        String returnTypeName = getBaseTypeName(fieldDef.getType());
+        SourceLocation location = locationOf(fieldDef);
+        String returnTypeName = baseTypeName(fieldDef);
         GraphitronType returnType = types.get(returnTypeName);
 
         if (returnType instanceof TableType) {
             return new TableField(parentTypeName, name, location,
                 parseReferencePath(fieldDef),
                 new FieldConditionRef.NoFieldCondition(),
-                fieldDef.hasDirective(DIR_SPLIT_QUERY),
+                fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY),
                 buildCardinality(fieldDef));
         }
 
-        // NestingField: a plain object type in the registry with no Graphitron classification.
+        // NestingField: a plain object type in the schema with no Graphitron classification.
         // Its fields are resolved from the same table context as the parent.
-        if (registry.types().get(returnTypeName) instanceof ObjectTypeDefinition && returnType == null) {
+        if (schema.getType(returnTypeName) instanceof GraphQLObjectType && returnType == null) {
             return new NestingField(parentTypeName, name, location);
         }
 
@@ -407,25 +421,17 @@ public class GraphitronSchemaBuilder {
      * <p>{@code @orderBy} enum value specs are not populated here — that is deferred to P4
      * (field argument modeling).
      */
-    private FieldCardinality buildCardinality(FieldDefinition fieldDef) {
-        String returnTypeName = getBaseTypeName(fieldDef.getType());
+    private FieldCardinality buildCardinality(GraphQLFieldDefinition fieldDef) {
+        String returnTypeName = baseTypeName(fieldDef);
         DefaultOrderSpec defaultOrder = parseDefaultOrderSpec(fieldDef);
 
         if (returnTypeName.endsWith("Connection")) {
             return new FieldCardinality.Connection(defaultOrder, List.of());
         }
-        if (isListType(fieldDef.getType())) {
+        if (GraphQLTypeUtil.isList(GraphQLTypeUtil.unwrapNonNull(fieldDef.getType()))) {
             return new FieldCardinality.List(defaultOrder, List.of());
         }
         return new FieldCardinality.Single();
-    }
-
-    private boolean isListType(Type<?> type) {
-        return switch (type) {
-            case ListType ignored -> true;
-            case NonNullType t -> isListType(t.getType());
-            default -> false;
-        };
     }
 
     /**
@@ -437,33 +443,40 @@ public class GraphitronSchemaBuilder {
      * is later resolved against the jOOQ catalog by the validator. For {@code fields:} the spec is
      * fully resolved at parse time.
      */
-    private DefaultOrderSpec parseDefaultOrderSpec(FieldDefinition fieldDef) {
-        if (!fieldDef.hasDirective(DIR_DEFAULT_ORDER)) return null;
-        var dir = fieldDef.getDirectives(DIR_DEFAULT_ORDER).get(0);
+    private DefaultOrderSpec parseDefaultOrderSpec(GraphQLFieldDefinition fieldDef) {
+        if (!fieldDef.hasAppliedDirective(DIR_DEFAULT_ORDER)) return null;
+        var dir = fieldDef.getAppliedDirective(DIR_DEFAULT_ORDER);
 
-        String direction = Optional.ofNullable(dir.getArgument(ARG_DIRECTION))
-            .filter(a -> a.getValue() instanceof EnumValue)
-            .map(a -> ((EnumValue) a.getValue()).getName())
-            .orElse("ASC");
-
-        Optional<String> index = Optional.ofNullable(dir.getArgument(ARG_INDEX))
-            .filter(a -> a.getValue() instanceof StringValue)
-            .map(a -> ((StringValue) a.getValue()).getValue().strip());
-        if (index.isPresent()) {
-            return new DefaultOrderSpec(new OrderSpec.IndexOrder(index.get()), direction);
+        // direction has a default of ASC in the directive; absent arg means ASC.
+        var dirArg = dir.getArgument(ARG_DIRECTION);
+        String direction = "ASC";
+        if (dirArg != null) {
+            Object dirVal = dirArg.getValue();
+            if (dirVal instanceof EnumValue ev) direction = ev.getName();
+            else if (dirVal instanceof String s) direction = s;
         }
 
-        boolean primaryKey = Optional.ofNullable(dir.getArgument(ARG_PRIMARY_KEY))
-            .filter(a -> a.getValue() instanceof BooleanValue)
-            .map(a -> ((BooleanValue) a.getValue()).isValue())
-            .orElse(false);
+        var indexArg = dir.getArgument(ARG_INDEX);
+        if (indexArg != null) {
+            Object indexVal = indexArg.getValue();
+            String indexName = indexVal instanceof StringValue sv ? sv.getValue().strip()
+                : indexVal instanceof String s ? s.strip() : null;
+            if (indexName != null) {
+                return new DefaultOrderSpec(new OrderSpec.IndexOrder(indexName), direction);
+            }
+        }
+
+        var pkArg = dir.getArgument(ARG_PRIMARY_KEY);
+        boolean primaryKey = pkArg != null && (
+            pkArg.getValue() instanceof BooleanValue bv ? bv.isValue()
+            : Boolean.TRUE.equals(pkArg.getValue()));
         if (primaryKey) {
             return new DefaultOrderSpec(new OrderSpec.PrimaryKeyOrder(), direction);
         }
 
         var fieldsArg = dir.getArgument(ARG_FIELDS);
         if (fieldsArg != null) {
-            var value = fieldsArg.getValue();
+            Object value = fieldsArg.getValue();
             List<?> items = value instanceof ArrayValue av ? av.getValues() : List.of(value);
             var sortFields = items.stream()
                 .filter(v -> v instanceof ObjectValue)
@@ -477,10 +490,11 @@ public class GraphitronSchemaBuilder {
 
     private SortFieldSpec parseSortFieldSpec(ObjectValue ov) {
         var fields = ov.getObjectFields();
-        String columnName = objectFieldByName(fields, ARG_SORT_FIELD)
+        // FieldSort uses `name` (database field name) and `collate` (optional collation).
+        String columnName = objectFieldByName(fields, ARG_SORT_FIELD_NAME)
             .map(f -> ((StringValue) f.getValue()).getValue().strip())
-            .orElseThrow(() -> new IllegalStateException("Missing required 'field' in FieldSort"));
-        String collation = objectFieldByName(fields, ARG_COLLATION)
+            .orElseThrow(() -> new IllegalStateException("Missing required 'name' in FieldSort"));
+        String collation = objectFieldByName(fields, ARG_COLLATE)
             .map(f -> ((StringValue) f.getValue()).getValue().strip())
             .orElse(null);
         return new SortFieldSpec(columnName, collation);
@@ -497,14 +511,14 @@ public class GraphitronSchemaBuilder {
 
     // ===== Field classification =====
 
-    private GraphitronField classifyField(FieldDefinition fieldDef, String parentTypeName, GraphitronType parentType) {
+    private GraphitronField classifyField(GraphQLFieldDefinition fieldDef, String parentTypeName, GraphitronType parentType) {
         String name = fieldDef.getName();
-        SourceLocation location = fieldDef.getSourceLocation();
+        SourceLocation location = locationOf(fieldDef);
 
-        if (fieldDef.hasDirective(DIR_NOT_GENERATED)) {
+        if (fieldDef.hasAppliedDirective(DIR_NOT_GENERATED)) {
             return new NotGeneratedField(parentTypeName, name, location);
         }
-        if (fieldDef.hasDirective(DIR_MULTITABLE_REFERENCE)) {
+        if (fieldDef.hasAppliedDirective(DIR_MULTITABLE_REFERENCE)) {
             return new MultitableReferenceField(parentTypeName, name, location);
         }
 
@@ -515,21 +529,21 @@ public class GraphitronSchemaBuilder {
         return new UnclassifiedField(parentTypeName, name, location);
     }
 
-    private GraphitronField classifyChildFieldOnTableType(FieldDefinition fieldDef, String parentTypeName, TableType tableType) {
+    private GraphitronField classifyChildFieldOnTableType(GraphQLFieldDefinition fieldDef, String parentTypeName, TableType tableType) {
         String name = fieldDef.getName();
-        SourceLocation location = fieldDef.getSourceLocation();
+        SourceLocation location = locationOf(fieldDef);
 
-        if (fieldDef.hasDirective(DIR_TABLE_METHOD)) {
+        if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
             return new TableMethodField(parentTypeName, name, location,
                 parseReferencePath(fieldDef),
                 buildCardinality(fieldDef));
         }
 
-        if (!isScalarOrEnum(fieldDef.getType())) {
+        if (!isScalarOrEnum(fieldDef)) {
             return classifyObjectReturnChildField(fieldDef, parentTypeName);
         }
 
-        if (fieldDef.hasDirective(DIR_NODE_ID)) {
+        if (fieldDef.hasAppliedDirective(DIR_NODE_ID)) {
             Optional<String> typeName = argString(fieldDef, DIR_NODE_ID, ARG_TYPE_NAME);
             if (typeName.isPresent()) {
                 NodeTypeRef nodeType = resolveNodeType(typeName.get());
@@ -540,14 +554,14 @@ public class GraphitronSchemaBuilder {
             }
         }
 
-        boolean hasFieldDirective = fieldDef.hasDirective(DIR_FIELD);
+        boolean hasFieldDirective = fieldDef.hasAppliedDirective(DIR_FIELD);
         String columnName = hasFieldDirective
             ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
         boolean javaNamePresent = hasFieldDirective
             && argString(fieldDef, DIR_FIELD, ARG_JAVA_NAME).isPresent();
 
-        if (fieldDef.hasDirective(DIR_REFERENCE)) {
+        if (fieldDef.hasAppliedDirective(DIR_REFERENCE)) {
             List<ReferencePathElementRef> path = parseReferencePath(fieldDef);
             ColumnRef column = resolveColumnForReference(columnName, path, tableType);
             return new ColumnReferenceField(parentTypeName, name, location, columnName, column, path, javaNamePresent);
@@ -565,20 +579,13 @@ public class GraphitronSchemaBuilder {
         return new UnresolvedNodeType();
     }
 
-    private boolean isScalarOrEnum(Type<?> type) {
-        String typeName = getBaseTypeName(type);
-        return BUILTIN_SCALARS.contains(typeName)
-            || registry.scalars().containsKey(typeName)
-            || registry.types().get(typeName) instanceof EnumTypeDefinition;
+    private boolean isScalarOrEnum(GraphQLFieldDefinition fieldDef) {
+        var baseType = GraphQLTypeUtil.unwrapAll(fieldDef.getType());
+        return baseType instanceof GraphQLScalarType || baseType instanceof GraphQLEnumType;
     }
 
-    private String getBaseTypeName(Type<?> type) {
-        return switch (type) {
-            case TypeName t -> t.getName();
-            case NonNullType t -> getBaseTypeName(t.getType());
-            case ListType t -> getBaseTypeName(t.getType());
-            default -> "";
-        };
+    private String baseTypeName(GraphQLFieldDefinition fieldDef) {
+        return ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(fieldDef.getType())).getName();
     }
 
     private ColumnRef resolveColumn(String columnName, TableType tableType) {
@@ -611,14 +618,14 @@ public class GraphitronSchemaBuilder {
 
     // ===== Reference path parsing =====
 
-    private List<ReferencePathElementRef> parseReferencePath(FieldDefinition fieldDef) {
-        var directive = fieldDef.getDirectives(DIR_REFERENCE).stream().findFirst().orElse(null);
+    private List<ReferencePathElementRef> parseReferencePath(GraphQLFieldDefinition fieldDef) {
+        var directive = fieldDef.getAppliedDirective(DIR_REFERENCE);
         if (directive == null) return List.of();
 
         var pathArg = directive.getArgument(ARG_PATH);
         if (pathArg == null) return List.of();
 
-        var pathValue = pathArg.getValue();
+        Object pathValue = pathArg.getValue();
         var elements = pathValue instanceof ArrayValue av ? av.getValues() : List.of(pathValue);
 
         return elements.stream()
@@ -688,32 +695,40 @@ public class GraphitronSchemaBuilder {
     // ===== Directive reading helpers =====
 
     /**
-     * Returns the stripped String value of a directive argument, if present.
-     * This is the internal replacement for the enum-based {@code DirectiveHelpers} methods.
+     * Returns the stripped String value of an applied directive argument, if present.
+     * Handles both literal {@link StringValue} (as stored by {@link SchemaGenerator}) and
+     * already-coerced {@link String} values (defensive for future graphql-java versions).
      */
-    private Optional<String> argString(DirectivesContainer<?> container, String directive, String arg) {
-        var dirs = container.getDirectives(directive);
-        if (dirs == null || dirs.isEmpty()) return Optional.empty();
-        var argument = dirs.get(0).getArgument(arg);
+    private Optional<String> argString(GraphQLDirectiveContainer container, String directive, String arg) {
+        var dir = container.getAppliedDirective(directive);
+        if (dir == null) return Optional.empty();
+        var argument = dir.getArgument(arg);
         if (argument == null) return Optional.empty();
-        return argument.getValue() instanceof StringValue sv
-            ? Optional.of(sv.getValue().strip())
-            : Optional.empty();
+        Object value = argument.getValue();
+        if (value instanceof StringValue sv) return Optional.of(sv.getValue().strip());
+        if (value instanceof String s) return Optional.of(s.strip());
+        return Optional.empty();
     }
 
     /**
-     * Returns the String values of a list directive argument, or an empty list if absent.
+     * Returns the String values of a list applied-directive argument, or an empty list if absent.
      */
-    private List<String> argStringList(DirectivesContainer<?> container, String directive, String arg) {
-        var dirs = container.getDirectives(directive);
-        if (dirs == null || dirs.isEmpty()) return List.of();
-        var argument = dirs.get(0).getArgument(arg);
+    private List<String> argStringList(GraphQLDirectiveContainer container, String directive, String arg) {
+        var dir = container.getAppliedDirective(directive);
+        if (dir == null) return List.of();
+        var argument = dir.getArgument(arg);
         if (argument == null) return List.of();
-        var value = argument.getValue();
+        Object value = argument.getValue();
         if (value instanceof StringValue sv) return List.of(sv.getValue().strip());
+        if (value instanceof String s) return List.of(s.strip());
         if (value instanceof ArrayValue av) {
             return av.getValues().stream()
                 .map(v -> v instanceof NullValue ? null : ((StringValue) v).getValue().strip())
+                .collect(Collectors.toList());
+        }
+        if (value instanceof List<?> list) {
+            return list.stream()
+                .map(v -> v == null ? null : v.toString().strip())
                 .collect(Collectors.toList());
         }
         return List.of();
@@ -730,33 +745,32 @@ public class GraphitronSchemaBuilder {
 
     /**
      * Validates that every directive name and argument name used by this builder actually exists
-     * in the loaded {@link TypeDefinitionRegistry}. Throws {@link IllegalStateException} if the
-     * registry is out of sync with the constants declared in this class.
+     * in the assembled {@link GraphQLSchema}. Throws {@link IllegalStateException} if the
+     * schema is out of sync with the constants declared in this class.
      */
     private void validateDirectiveSchema() {
-        var defs = registry.getDirectiveDefinitions();
-        assertDirective(defs, DIR_TABLE, ARG_NAME);
-        assertDirective(defs, DIR_RECORD);
-        assertDirective(defs, DIR_DISCRIMINATE, ARG_ON);
-        assertDirective(defs, DIR_NODE, ARG_TYPE_ID, ARG_KEY_COLUMNS);
-        assertDirective(defs, DIR_NOT_GENERATED);
-        assertDirective(defs, DIR_MULTITABLE_REFERENCE);
-        assertDirective(defs, DIR_NODE_ID, ARG_TYPE_NAME);
-        assertDirective(defs, DIR_FIELD, ARG_NAME, ARG_JAVA_NAME);
-        assertDirective(defs, DIR_REFERENCE, ARG_PATH);
-        assertDirective(defs, DIR_ERROR, ARG_HANDLERS);
-        assertDirective(defs, DIR_TABLE_METHOD);
-        assertDirective(defs, DIR_DEFAULT_ORDER);
-        assertDirective(defs, DIR_SPLIT_QUERY);
+        assertDirective(DIR_TABLE, ARG_NAME);
+        assertDirective(DIR_RECORD);
+        assertDirective(DIR_DISCRIMINATE, ARG_ON);
+        assertDirective(DIR_NODE, ARG_TYPE_ID, ARG_KEY_COLUMNS);
+        assertDirective(DIR_NOT_GENERATED);
+        assertDirective(DIR_MULTITABLE_REFERENCE);
+        assertDirective(DIR_NODE_ID, ARG_TYPE_NAME);
+        assertDirective(DIR_FIELD, ARG_NAME, ARG_JAVA_NAME);
+        assertDirective(DIR_REFERENCE, ARG_PATH);
+        assertDirective(DIR_ERROR, ARG_HANDLERS);
+        assertDirective(DIR_TABLE_METHOD);
+        assertDirective(DIR_DEFAULT_ORDER);
+        assertDirective(DIR_SPLIT_QUERY);
     }
 
-    private void assertDirective(Map<String, DirectiveDefinition> defs, String name, String... args) {
-        var def = defs.get(name);
+    private void assertDirective(String name, String... args) {
+        var def = schema.getDirective(name);
         if (def == null) {
             throw new IllegalStateException("Expected directive @" + name + " in schema but it was not found.");
         }
-        var argNames = def.getInputValueDefinitions().stream()
-            .map(InputValueDefinition::getName)
+        var argNames = def.getArguments().stream()
+            .map(GraphQLArgument::getName)
             .collect(Collectors.toSet());
         for (var arg : args) {
             if (!argNames.contains(arg)) {
@@ -764,5 +778,37 @@ public class GraphitronSchemaBuilder {
                     "Expected argument '" + arg + "' on directive @" + name + " but it was not found.");
             }
         }
+    }
+
+    // ===== Source location helpers =====
+
+    private static SourceLocation locationOf(GraphQLObjectType type) {
+        var def = type.getDefinition();
+        return def != null ? def.getSourceLocation() : null;
+    }
+
+    private static SourceLocation locationOf(GraphQLInterfaceType type) {
+        var def = type.getDefinition();
+        return def != null ? def.getSourceLocation() : null;
+    }
+
+    private static SourceLocation locationOf(GraphQLUnionType type) {
+        var def = type.getDefinition();
+        return def != null ? def.getSourceLocation() : null;
+    }
+
+    private static SourceLocation locationOf(GraphQLFieldDefinition field) {
+        var def = field.getDefinition();
+        return def != null ? def.getSourceLocation() : null;
+    }
+
+    /** Dispatches to the correct overload for any {@link GraphQLNamedType}. */
+    private static SourceLocation locationOf(GraphQLNamedType namedType) {
+        return switch (namedType) {
+            case GraphQLObjectType t    -> locationOf(t);
+            case GraphQLInterfaceType t -> locationOf(t);
+            case GraphQLUnionType t     -> locationOf(t);
+            default                     -> null;
+        };
     }
 }

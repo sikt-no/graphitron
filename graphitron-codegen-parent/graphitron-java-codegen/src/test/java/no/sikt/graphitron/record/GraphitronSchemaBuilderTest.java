@@ -342,6 +342,49 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
+    void tableField_conditionIsAlwaysNoFieldCondition() {
+        // @condition support is deferred to P3; until then condition is always NoFieldCondition.
+        var schema = build("""
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { film: Film }
+            """);
+        var tf = (TableField) schema.field("Film", "language");
+        assertThat(tf.condition()).isInstanceOf(FieldConditionRef.NoFieldCondition.class);
+    }
+
+    @Test
+    void tableField_multiStepReferencePath() {
+        var schema = build("""
+            type City @table(name: "city") { name: String }
+            type Film @table(name: "film") {
+                city: City @reference(path: [{key: "film_language_id_fkey"}, {key: "NO_SUCH_FK"}])
+            }
+            type Query { film: Film }
+            """);
+        var tf = (TableField) schema.field("Film", "city");
+        assertThat(tf.referencePath()).hasSize(2);
+        assertThat(tf.referencePath().get(0)).isInstanceOf(FkRef.class);
+        assertThat(tf.referencePath().get(1)).isInstanceOf(UnresolvedKeyRef.class);
+    }
+
+    @Test
+    void tableField_connection_withDefaultOrder_index() {
+        var schema = build("""
+            type ActorConnection @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+                actors: ActorConnection @defaultOrder(index: "idx_actor_name")
+            }
+            type Query { film: Film }
+            """);
+        var cardinality = (FieldCardinality.Connection) ((TableField) schema.field("Film", "actors")).cardinality();
+        assertThat(cardinality.defaultOrder()).isNotNull();
+        assertThat(cardinality.defaultOrder().spec()).isInstanceOf(OrderSpec.IndexOrder.class);
+    }
+
+    @Test
     void tableField_listReturnType() {
         var schema = build("""
             type Actor @table(name: "actor") { name: String }
@@ -422,7 +465,7 @@ class GraphitronSchemaBuilderTest {
         var schema = build("""
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
-                actors: [Actor!]! @defaultOrder(fields: [{field: "last_name", collation: "C"}, {field: "first_name"}])
+                actors: [Actor!]! @defaultOrder(fields: [{name: "last_name", collate: "C"}, {name: "first_name"}])
             }
             type Query { film: Film }
             """);
@@ -455,7 +498,7 @@ class GraphitronSchemaBuilderTest {
         var schema = build("""
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
-                language: Language @tableMethod(tableMethodReference: {className: "com.example.Foo", methodName: "get"})
+                language: Language @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
             }
             type Query { film: Film }
             """);
@@ -469,12 +512,28 @@ class GraphitronSchemaBuilderTest {
         var schema = build("""
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
-                actors: [Actor!]! @tableMethod(tableMethodReference: {className: "com.example.Foo", methodName: "get"})
+                actors: [Actor!]! @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
             }
             type Query { film: Film }
             """);
         assertThat(((TableMethodField) schema.field("Film", "actors")).cardinality())
             .isInstanceOf(FieldCardinality.List.class);
+    }
+
+    @Test
+    void tableMethodField_withReferencePath() {
+        var schema = build("""
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language
+                    @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
+                    @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { film: Film }
+            """);
+        var field = (TableMethodField) schema.field("Film", "language");
+        assertThat(field.referencePath()).hasSize(1);
+        assertThat(field.referencePath().get(0)).isInstanceOf(FkRef.class);
     }
 
     // ===== NestingField =====
@@ -487,6 +546,30 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """);
         assertThat(schema.field("Film", "details")).isInstanceOf(NestingField.class);
+    }
+
+    @Test
+    void nestingField_listOfPlainObjectType() {
+        var schema = build("""
+            type Tag { label: String }
+            type Film @table(name: "film") { tags: [Tag!]! }
+            type Query { film: Film }
+            """);
+        assertThat(schema.field("Film", "tags")).isInstanceOf(NestingField.class);
+    }
+
+    // ===== Field on non-table-mapped parent =====
+
+    @Test
+    void unclassifiedField_onResultTypeParent() {
+        // @record types are ResultType; their fields are not yet classified (P3+).
+        var schema = build("""
+            type FilmDetails @record { title: String }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """);
+        assertThat(schema.field("FilmDetails", "title"))
+            .isInstanceOf(UnclassifiedField.class);
     }
 
     // ===== Type classification =====
