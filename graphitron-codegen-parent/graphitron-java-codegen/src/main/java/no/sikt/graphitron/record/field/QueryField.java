@@ -23,6 +23,10 @@ public sealed interface QueryField extends RootField
     /**
      * A root query field whose return type is annotated with {@code @table}.
      *
+     * <p>{@code returnTypeName} is the GraphQL type name of the return type (e.g. {@code "Film"}).
+     * The validator uses this to look up the return type's jOOQ table and detect non-deterministic
+     * ordering (list cardinality with no {@code @defaultOrder} and a PK-less table).
+     *
      * <p>{@code cardinality} is the cardinality of this field — {@link FieldCardinality.Single} for a
      * single-item lookup, {@link FieldCardinality.List} for a list result, or
      * {@link FieldCardinality.Connection} for a Relay paginated list. For list and connection variants,
@@ -33,6 +37,7 @@ public sealed interface QueryField extends RootField
         String parentTypeName,
         String name,
         SourceLocation location,
+        String returnTypeName,
         FieldCardinality cardinality
     ) implements QueryField {}
 

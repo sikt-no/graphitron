@@ -74,6 +74,18 @@ public final class FieldValidationTestHelper {
     }
 
     /**
+     * Wraps a single QueryField under "Query" with a separate named return type visible to the
+     * validator. Use when the validator needs to look up properties of the return type (e.g. PK
+     * presence for non-deterministic ordering checks).
+     */
+    public static GraphitronSchema inQuerySchemaWithReturnType(String fieldName, GraphitronField field, GraphitronType returnType) {
+        return new GraphitronSchema(
+            Map.of("Query", new RootType("Query", null), returnType.name(), returnType),
+            Map.of(FieldCoordinates.coordinates("Query", fieldName), field)
+        );
+    }
+
+    /**
      * General schema assembly: one parent type, one field at the given coordinate.
      */
     public static GraphitronSchema schema(GraphitronType parentType, String fieldName, GraphitronField field) {

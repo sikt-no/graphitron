@@ -55,7 +55,7 @@ public class GraphitronSchemaValidator {
     private void validateField(GraphitronField field, GraphitronSchema schema, List<ValidationError> errors) {
         switch (field) {
             case no.sikt.graphitron.record.field.QueryField.LookupQueryField f        -> validateLookupQueryField(f, errors);
-            case no.sikt.graphitron.record.field.QueryField.TableQueryField f         -> validateTableQueryField(f, errors);
+            case no.sikt.graphitron.record.field.QueryField.TableQueryField f         -> validateTableQueryField(f, schema, errors);
             case no.sikt.graphitron.record.field.QueryField.TableMethodQueryField f   -> validateTableMethodQueryField(f, errors);
             case no.sikt.graphitron.record.field.QueryField.NodeQueryField f          -> validateNodeQueryField(f, errors);
             case no.sikt.graphitron.record.field.QueryField.EntityQueryField f        -> validateEntityQueryField(f, errors);
@@ -140,8 +140,38 @@ public class GraphitronSchemaValidator {
     // --- Field validators (stubs — filled in as test classes are added) ---
 
     private void validateLookupQueryField(no.sikt.graphitron.record.field.QueryField.LookupQueryField field, List<ValidationError> errors) {}
-    private void validateTableQueryField(no.sikt.graphitron.record.field.QueryField.TableQueryField field, List<ValidationError> errors) {
+    private void validateTableQueryField(no.sikt.graphitron.record.field.QueryField.TableQueryField field, GraphitronSchema schema, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+        validateDeterministicOrdering(field.name(), field.location(), field.cardinality(), field.returnTypeName(), schema, errors);
+    }
+
+    /**
+     * Warns when a list or connection field returns rows from a PK-less table with no
+     * {@code @defaultOrder} and no {@code @orderBy} enum values. Without a primary key or explicit
+     * ordering, the result order is non-deterministic across pages and repeated calls.
+     */
+    private void validateDeterministicOrdering(
+            String fieldName, SourceLocation location, no.sikt.graphitron.record.field.FieldCardinality cardinality,
+            String returnTypeName, GraphitronSchema schema, List<ValidationError> errors) {
+        boolean needsCheck = switch (cardinality) {
+            case no.sikt.graphitron.record.field.FieldCardinality.List l ->
+                l.defaultOrder() == null && l.orderByValues().isEmpty();
+            case no.sikt.graphitron.record.field.FieldCardinality.Connection c ->
+                c.defaultOrder() == null && c.orderByValues().isEmpty();
+            default -> false;
+        };
+        if (!needsCheck) return;
+
+        var returnType = schema.type(returnTypeName);
+        if (!(returnType instanceof no.sikt.graphitron.record.type.GraphitronType.TableType tableType)) return;
+        if (!(tableType.table() instanceof ResolvedTable resolved)) return;
+        if (resolved.table().getPrimaryKey() != null) return;
+
+        errors.add(new ValidationError(
+            "Field '" + fieldName + "': table '" + resolved.table().getName()
+                + "' has no @defaultOrder directive and no primary key — result ordering is non-deterministic",
+            location
+        ));
     }
     private void validateTableMethodQueryField(no.sikt.graphitron.record.field.QueryField.TableMethodQueryField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.cardinality(), errors);
