@@ -46,7 +46,7 @@ public final class FieldValidationTestHelper {
      * Use for ChildField cases where the parent context is table-mapped.
      */
     public static GraphitronSchema inTableTypeSchema(String typeName, String fieldName, GraphitronField field) {
-        var parentType = new TableType(typeName, null, typeName.toLowerCase(), new ResolvedTable(typeName.toUpperCase(), FILM), new NoNode());
+        var parentType = new TableType(typeName, null, new ResolvedTable(typeName.toLowerCase(), typeName.toUpperCase(), FILM), new NoNode());
         return schema(parentType, fieldName, field);
     }
 
@@ -62,10 +62,10 @@ public final class FieldValidationTestHelper {
             String parentTypeName, Table<?> parentTable,
             String targetTypeName, Table<?> targetTable,
             String fieldName, GraphitronField field) {
-        var parent = new TableType(parentTypeName, null, parentTable.getName(),
-            new ResolvedTable(parentTable.getName().toUpperCase(), parentTable), new NoNode());
-        var target = new TableType(targetTypeName, null, targetTable.getName(),
-            new ResolvedTable(targetTable.getName().toUpperCase(), targetTable),
+        var parent = new TableType(parentTypeName, null,
+            new ResolvedTable(parentTable.getName(), parentTable.getName().toUpperCase(), parentTable), new NoNode());
+        var target = new TableType(targetTypeName, null,
+            new ResolvedTable(targetTable.getName(), targetTable.getName().toUpperCase(), targetTable),
             new NodeDirective(null, List.of()));
         return new GraphitronSchema(
             Map.of(parent.name(), parent, target.name(), target),

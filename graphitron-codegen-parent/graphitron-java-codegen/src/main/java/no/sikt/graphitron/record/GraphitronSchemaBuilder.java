@@ -185,7 +185,7 @@ public class GraphitronSchemaBuilder {
 
     private TableInterfaceType enrichTableInterfaceType(TableInterfaceType type, Map<String, GraphitronType> types) {
         var participants = implementorsOf(type.name(), types);
-        return new TableInterfaceType(type.name(), type.location(), type.discriminatorColumn(), type.tableName(), type.table(), participants);
+        return new TableInterfaceType(type.name(), type.location(), type.discriminatorColumn(), type.table(), participants);
     }
 
     private InterfaceType enrichInterfaceType(InterfaceType type, Map<String, GraphitronType> types) {
@@ -259,7 +259,7 @@ public class GraphitronSchemaBuilder {
         String tableName = argString(objType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
         TableRef tableRef = resolveTable(tableName);
         NodeRef nodeRef = buildNodeRef(objType, tableRef);
-        return new TableType(name, location, tableName, tableRef, nodeRef);
+        return new TableType(name, location, tableRef, nodeRef);
     }
 
     private TableInterfaceType buildTableInterfaceType(InterfaceTypeDefinition iface) {
@@ -268,13 +268,13 @@ public class GraphitronSchemaBuilder {
         String tableName = argString(iface, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
         String discriminatorColumn = argString(iface, DIR_DISCRIMINATE, ARG_ON).orElse(null);
         TableRef tableRef = resolveTable(tableName);
-        return new TableInterfaceType(name, location, discriminatorColumn, tableName, tableRef, List.of());
+        return new TableInterfaceType(name, location, discriminatorColumn, tableRef, List.of());
     }
 
     private TableRef resolveTable(String sqlName) {
         return catalog.findTable(sqlName)
-            .<TableRef>map(e -> new ResolvedTable(e.javaFieldName(), e.table()))
-            .orElseGet(UnresolvedTable::new);
+            .<TableRef>map(e -> new ResolvedTable(sqlName, e.javaFieldName(), e.table()))
+            .orElseGet(() -> new UnresolvedTable(sqlName));
     }
 
     private NodeRef buildNodeRef(ObjectTypeDefinition objType, TableRef tableRef) {

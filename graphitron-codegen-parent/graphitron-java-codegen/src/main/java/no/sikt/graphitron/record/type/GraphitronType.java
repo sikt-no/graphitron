@@ -20,13 +20,12 @@ public sealed interface GraphitronType
     /**
      * A type annotated with {@code @table}. Full SQL generation applies.
      *
-     * <p>{@code tableName} is the SQL name from the directive (e.g. {@code "film"}).
-     *
-     * <p>{@code table} is the outcome of resolving {@code tableName} against the jOOQ catalog:
-     * {@link TableRef.ResolvedTable} when the table was found (carrying the Java field name and the jOOQ
-     * {@link org.jooq.Table} instance), {@link TableRef.UnresolvedTable} when it was not. The
-     * {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error for
-     * {@code UnresolvedTable}.
+     * <p>{@code table} is the outcome of resolving the {@code @table} directive's SQL name against
+     * the jOOQ catalog: {@link TableRef.ResolvedTable} when the table was found (carrying the SQL
+     * name, Java field name and the jOOQ {@link org.jooq.Table} instance),
+     * {@link TableRef.UnresolvedTable} when it was not (carrying the SQL name that failed to
+     * resolve). The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error
+     * for {@code UnresolvedTable}.
      *
      * <p>{@code node} captures whether a {@code @node} directive is present: {@link NodeRef.NoNode} when
      * absent, {@link NodeRef.NodeDirective} when present (carrying the optional {@code typeId} and the
@@ -39,7 +38,6 @@ public sealed interface GraphitronType
     record TableType(
         String name,
         SourceLocation location,
-        String tableName,
         TableRef table,
         NodeRef node
     ) implements GraphitronType {}
@@ -59,10 +57,10 @@ public sealed interface GraphitronType
      * An interface annotated with {@code @table} and {@code @discriminate}, where implementing
      * types have {@code @table} and {@code @discriminator}. Single-table interface pattern.
      *
-     * <p>{@code tableName} is the SQL name from the directive.
-     *
-     * <p>{@code table} is the outcome of resolving {@code tableName} against the jOOQ catalog:
-     * {@link TableRef.ResolvedTable} when the table was found, {@link TableRef.UnresolvedTable} when it was not. The
+     * <p>{@code table} is the outcome of resolving the {@code @table} directive's SQL name against
+     * the jOOQ catalog: {@link TableRef.ResolvedTable} when the table was found,
+     * {@link TableRef.UnresolvedTable} when it was not. The SQL name is always available via
+     * {@link TableRef#tableName()}. The
      * {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error for
      * {@code UnresolvedTable}.
      *
@@ -74,7 +72,6 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         String discriminatorColumn,
-        String tableName,
         TableRef table,
         List<ParticipantRef> participants
     ) implements GraphitronType {}

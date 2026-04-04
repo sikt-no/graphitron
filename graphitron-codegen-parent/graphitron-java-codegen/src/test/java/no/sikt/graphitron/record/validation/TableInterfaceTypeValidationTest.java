@@ -21,34 +21,34 @@ class TableInterfaceTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         RESOLVED("table name resolved — no implementing types",
-            new TableInterfaceType("FilmStatus", null, "status_type", "film_status", new ResolvedTable("FILM_STATUS", FILM), List.of()),
+            new TableInterfaceType("FilmStatus", null, "status_type", new ResolvedTable("film_status", "FILM_STATUS", FILM), List.of()),
             List.of()),
 
         UNRESOLVED_TABLE("table name could not be matched to a jOOQ table in the catalog",
-            new TableInterfaceType("FilmStatus", null, "status_type", "film_status", new UnresolvedTable(), List.of()),
+            new TableInterfaceType("FilmStatus", null, "status_type", new UnresolvedTable("film_status"), List.of()),
             List.of("Type 'FilmStatus': table 'film_status' could not be resolved in the jOOQ catalog")),
 
         RESOLVED_WITH_BOUND_PARTICIPANTS("resolved table with table-bound implementing types — valid",
-            new TableInterfaceType("FilmStatus", null, "status_type", "film_status",
-                new ResolvedTable("FILM_STATUS", FILM),
+            new TableInterfaceType("FilmStatus", null, "status_type",
+                new ResolvedTable("film_status", "FILM_STATUS", FILM),
                 List.of(
-                    new BoundParticipant("NewFilm", new ResolvedTable("FILM", FILM)),
-                    new BoundParticipant("OldFilm", new ResolvedTable("FILM", FILM))
+                    new BoundParticipant("NewFilm", new ResolvedTable("film", "FILM", FILM)),
+                    new BoundParticipant("OldFilm", new ResolvedTable("film", "FILM", FILM))
                 )),
             List.of()),
 
         UNBOUND_PARTICIPANT("one implementing type is not table-bound — error",
-            new TableInterfaceType("FilmStatus", null, "status_type", "film_status",
-                new ResolvedTable("FILM_STATUS", FILM),
+            new TableInterfaceType("FilmStatus", null, "status_type",
+                new ResolvedTable("film_status", "FILM_STATUS", FILM),
                 List.of(
-                    new BoundParticipant("NewFilm", new ResolvedTable("FILM", FILM)),
+                    new BoundParticipant("NewFilm", new ResolvedTable("film", "FILM", FILM)),
                     new UnboundParticipant("FilmDescription")
                 )),
             List.of("Type 'FilmStatus': implementing type 'FilmDescription' is not table-bound (missing @table directive)")),
 
         UNRESOLVED_TABLE_AND_UNBOUND_PARTICIPANT("unresolved table and unbound implementing type — two errors",
-            new TableInterfaceType("FilmStatus", null, "status_type", "film_status",
-                new UnresolvedTable(),
+            new TableInterfaceType("FilmStatus", null, "status_type",
+                new UnresolvedTable("film_status"),
                 List.of(new UnboundParticipant("FilmDescription"))),
             List.of(
                 "Type 'FilmStatus': table 'film_status' could not be resolved in the jOOQ catalog",

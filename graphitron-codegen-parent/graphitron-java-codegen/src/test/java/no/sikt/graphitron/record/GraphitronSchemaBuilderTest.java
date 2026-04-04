@@ -344,7 +344,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table { title: String }
             type Query { film: Film }
             """);
-        assertThat(((TableType) schema.type("Film")).tableName()).isEqualTo("film");
+        assertThat(((TableType) schema.type("Film")).table().tableName()).isEqualTo("film");
     }
 
     // ===== Registry validation =====

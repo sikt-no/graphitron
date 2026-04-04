@@ -20,43 +20,43 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class NodeTypeValidationTest {
 
-    private static final ResolvedTable RESOLVED_FILM = new ResolvedTable("FILM", FILM);
+    private static final ResolvedTable RESOLVED_FILM = new ResolvedTable("film", "FILM", FILM);
 
     enum Case implements TypeValidatorCase {
 
         NO_NODE("no @node directive — NoNode step, no errors",
-            new TableType("Film", null, "film", RESOLVED_FILM, new NoNode()),
+            new TableType("Film", null, RESOLVED_FILM, new NoNode()),
             List.of()),
 
         NODE_NO_KEY_COLUMNS("@node with no keyColumns argument — empty list, no errors",
-            new TableType("Film", null, "film", RESOLVED_FILM,
+            new TableType("Film", null, RESOLVED_FILM,
                 new NodeDirective(null, List.of())),
             List.of()),
 
         NODE_WITH_TYPE_ID("@node with typeId and no keyColumns — no errors",
-            new TableType("Film", null, "film", RESOLVED_FILM,
+            new TableType("Film", null, RESOLVED_FILM,
                 new NodeDirective("film", List.of())),
             List.of()),
 
         NODE_WITH_RESOLVED_KEY_COLUMN("@node with a key column resolved in the jOOQ table — no errors",
-            new TableType("Film", null, "film", RESOLVED_FILM,
+            new TableType("Film", null, RESOLVED_FILM,
                 new NodeDirective(null, List.of(new ResolvedKeyColumn("film_id", "FILM_ID")))),
             List.of()),
 
         NODE_WITH_UNRESOLVED_KEY_COLUMN("@node with a key column not found in the jOOQ table — one error",
-            new TableType("Film", null, "film", RESOLVED_FILM,
+            new TableType("Film", null, RESOLVED_FILM,
                 new NodeDirective(null, List.of(new UnresolvedKeyColumn("bad_col")))),
             List.of("Type 'Film': key column 'bad_col' in @node could not be resolved in the jOOQ table")),
 
         NODE_WITH_MIXED_KEY_COLUMNS("@node with one resolved and one unresolved key column — one error",
-            new TableType("Film", null, "film", RESOLVED_FILM,
+            new TableType("Film", null, RESOLVED_FILM,
                 new NodeDirective(null, List.of(
                     new ResolvedKeyColumn("film_id", "FILM_ID"),
                     new UnresolvedKeyColumn("bad_col")))),
             List.of("Type 'Film': key column 'bad_col' in @node could not be resolved in the jOOQ table")),
 
         NODE_WITH_MULTIPLE_UNRESOLVED_KEY_COLUMNS("@node with multiple unresolved key columns — one error per column",
-            new TableType("Film", null, "film", RESOLVED_FILM,
+            new TableType("Film", null, RESOLVED_FILM,
                 new NodeDirective(null, List.of(
                     new UnresolvedKeyColumn("bad_col1"),
                     new UnresolvedKeyColumn("bad_col2")))),

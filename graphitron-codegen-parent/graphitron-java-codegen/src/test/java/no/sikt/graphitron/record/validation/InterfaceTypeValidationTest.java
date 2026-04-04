@@ -26,14 +26,14 @@ class InterfaceTypeValidationTest {
 
         ALL_BOUND("all implementing types are table-bound — valid",
             new InterfaceType("Media", null, List.of(
-                new BoundParticipant("Film", new ResolvedTable("FILM", FILM)),
-                new BoundParticipant("Book", new UnresolvedTable())
+                new BoundParticipant("Film", new ResolvedTable("film", "FILM", FILM)),
+                new BoundParticipant("Book", new UnresolvedTable("book"))
             )),
             List.of()),
 
         ONE_UNBOUND("one implementing type is not table-bound — error",
             new InterfaceType("Media", null, List.of(
-                new BoundParticipant("Film", new ResolvedTable("FILM", FILM)),
+                new BoundParticipant("Film", new ResolvedTable("film", "FILM", FILM)),
                 new UnboundParticipant("Description")
             )),
             List.of("Type 'Media': implementing type 'Description' is not table-bound (missing @table directive)")),

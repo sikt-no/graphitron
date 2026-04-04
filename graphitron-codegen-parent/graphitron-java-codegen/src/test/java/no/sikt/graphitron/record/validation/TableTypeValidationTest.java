@@ -20,11 +20,11 @@ class TableTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         RESOLVED("table name resolved to a jOOQ Table",
-            new TableType("Film", null, "film", new ResolvedTable("FILM", FILM), new NoNode()),
+            new TableType("Film", null, new ResolvedTable("film", "FILM", FILM), new NoNode()),
             List.of()),
 
         UNRESOLVED_TABLE("table name could not be matched to a jOOQ table in the catalog",
-            new TableType("Film", null, "film", new UnresolvedTable(), new NoNode()),
+            new TableType("Film", null, new UnresolvedTable("film"), new NoNode()),
             List.of("Type 'Film': table 'film' could not be resolved in the jOOQ catalog"));
 
         private final String description;

@@ -92,7 +92,7 @@ public class GraphitronSchemaValidator {
     private void validateTableType(no.sikt.graphitron.record.type.GraphitronType.TableType type, List<ValidationError> errors) {
         if (type.table() instanceof UnresolvedTable) {
             errors.add(new ValidationError(
-                "Type '" + type.name() + "': table '" + type.tableName() + "' could not be resolved in the jOOQ catalog",
+                "Type '" + type.name() + "': table '" + type.table().tableName() + "' could not be resolved in the jOOQ catalog",
                 type.location()
             ));
         }
@@ -112,7 +112,7 @@ public class GraphitronSchemaValidator {
     private void validateTableInterfaceType(no.sikt.graphitron.record.type.GraphitronType.TableInterfaceType type, List<ValidationError> errors) {
         if (type.table() instanceof UnresolvedTable) {
             errors.add(new ValidationError(
-                "Type '" + type.name() + "': table '" + type.tableName() + "' could not be resolved in the jOOQ catalog",
+                "Type '" + type.name() + "': table '" + type.table().tableName() + "' could not be resolved in the jOOQ catalog",
                 type.location()
             ));
         }
