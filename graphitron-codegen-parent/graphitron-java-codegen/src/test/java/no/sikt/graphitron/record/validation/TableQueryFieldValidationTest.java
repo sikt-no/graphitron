@@ -8,16 +8,24 @@ import no.sikt.graphitron.record.field.OrderByEnumValueSpec;
 import no.sikt.graphitron.record.field.OrderSpec;
 import no.sikt.graphitron.record.field.SortFieldSpec;
 import no.sikt.graphitron.record.field.QueryField.TableQueryField;
+import no.sikt.graphitron.record.type.GraphitronType.TableType;
+import no.sikt.graphitron.record.type.NodeRef.NoNode;
+import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inQuerySchema;
+import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
+import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.inQuerySchemaWithReturnType;
 import static no.sikt.graphitron.record.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class TableQueryFieldValidationTest {
+
+    /** Return type used for all cases — {@code film} has a primary key so no non-deterministic ordering error. */
+    private static final TableType FILM_TYPE =
+        new TableType("Film", null, new ResolvedTable("film", "FILM", FILM), new NoNode());
 
     enum Case implements ValidatorCase {
 
@@ -111,7 +119,7 @@ class TableQueryFieldValidationTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(Case.class)
     void tableQueryFieldValidation(Case tc) {
-        assertThat(validate(inQuerySchema("films", tc.field())))
+        assertThat(validate(inQuerySchemaWithReturnType("films", tc.field(), FILM_TYPE)))
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());
     }
