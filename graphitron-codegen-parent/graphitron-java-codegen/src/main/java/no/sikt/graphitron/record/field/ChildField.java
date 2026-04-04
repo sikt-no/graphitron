@@ -131,6 +131,9 @@ public sealed interface ChildField extends GraphitronField
      * {@link FieldConditionRef.NoFieldCondition} when no {@code @condition} is present. The validator
      * reports an error for an {@link FieldConditionRef.UnresolvedFieldCondition}.
      *
+     * <p>{@code splitQuery} is {@code true} when the {@code @splitQuery} directive is present. This
+     * causes Graphitron to use a DataLoader instead of an inline subquery.
+     *
      * <p>{@code cardinality} is the cardinality of this field — {@link FieldCardinality.Single} for a
      * 1:1 join, {@link FieldCardinality.List} for a 1:N join, or {@link FieldCardinality.Connection}
      * for a Relay paginated list. The validator reports errors for unresolved ordering specs on list
@@ -142,6 +145,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         List<ReferencePathElementRef> referencePath,
         FieldConditionRef condition,
+        boolean splitQuery,
         FieldCardinality cardinality
     ) implements ChildField {}
 

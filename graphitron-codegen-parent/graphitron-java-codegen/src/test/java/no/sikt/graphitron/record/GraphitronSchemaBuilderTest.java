@@ -5,6 +5,13 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.ErrorHandlerType;
 import no.sikt.graphitron.record.field.ChildField.ColumnField;
+import no.sikt.graphitron.record.field.ChildField.NestingField;
+import no.sikt.graphitron.record.field.ChildField.TableField;
+import no.sikt.graphitron.record.field.ChildField.TableMethodField;
+import no.sikt.graphitron.record.field.DefaultOrderSpec;
+import no.sikt.graphitron.record.field.FieldCardinality;
+import no.sikt.graphitron.record.field.FieldConditionRef;
+import no.sikt.graphitron.record.field.OrderSpec;
 import no.sikt.graphitron.record.field.ChildField.ColumnReferenceField;
 import no.sikt.graphitron.record.field.ChildField.NodeIdField;
 import no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField;
@@ -316,16 +323,170 @@ class GraphitronSchemaBuilderTest {
         assertThat(ref.referencePath().get(0)).isInstanceOf(FkRef.class);
     }
 
-    // ===== Object-type fields are UnclassifiedField (P2+ territory) =====
+    // ===== TableField =====
 
     @Test
-    void objectReturnType_producesUnclassifiedField() {
+    void tableField_singleReturnType() {
         var schema = build("""
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") { language: Language }
             type Query { film: Film }
             """);
-        assertThat(schema.field("Film", "language")).isInstanceOf(UnclassifiedField.class);
+        var field = schema.field("Film", "language");
+        assertThat(field).isInstanceOf(TableField.class);
+        var tf = (TableField) field;
+        assertThat(tf.cardinality()).isInstanceOf(FieldCardinality.Single.class);
+        assertThat(tf.splitQuery()).isFalse();
+        assertThat(tf.condition()).isInstanceOf(FieldConditionRef.NoFieldCondition.class);
+        assertThat(tf.referencePath()).isEmpty();
+    }
+
+    @Test
+    void tableField_listReturnType() {
+        var schema = build("""
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") { actors: [Actor!]! }
+            type Query { film: Film }
+            """);
+        assertThat(schema.field("Film", "actors")).isInstanceOf(TableField.class);
+        assertThat(((TableField) schema.field("Film", "actors")).cardinality())
+            .isInstanceOf(FieldCardinality.List.class);
+    }
+
+    @Test
+    void tableField_connectionReturnType() {
+        var schema = build("""
+            type ActorConnection @table(name: "actor") { name: String }
+            type Film @table(name: "film") { actors: ActorConnection }
+            type Query { film: Film }
+            """);
+        assertThat(schema.field("Film", "actors")).isInstanceOf(TableField.class);
+        assertThat(((TableField) schema.field("Film", "actors")).cardinality())
+            .isInstanceOf(FieldCardinality.Connection.class);
+    }
+
+    @Test
+    void tableField_splitQuery() {
+        var schema = build("""
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") { actors: [Actor!]! @splitQuery }
+            type Query { film: Film }
+            """);
+        assertThat(((TableField) schema.field("Film", "actors")).splitQuery()).isTrue();
+    }
+
+    @Test
+    void tableField_withReferencePath() {
+        var schema = build("""
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { film: Film }
+            """);
+        var tf = (TableField) schema.field("Film", "language");
+        assertThat(tf.referencePath()).hasSize(1);
+        assertThat(tf.referencePath().get(0)).isInstanceOf(FkRef.class);
+    }
+
+    @Test
+    void tableField_defaultOrder_index() {
+        var schema = build("""
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @defaultOrder(index: "idx_actor_name")
+            }
+            type Query { film: Film }
+            """);
+        var cardinality = (FieldCardinality.List) ((TableField) schema.field("Film", "actors")).cardinality();
+        assertThat(cardinality.defaultOrder()).isNotNull();
+        assertThat(cardinality.defaultOrder().spec()).isInstanceOf(OrderSpec.IndexOrder.class);
+        assertThat(((OrderSpec.IndexOrder) cardinality.defaultOrder().spec()).indexName()).isEqualTo("idx_actor_name");
+    }
+
+    @Test
+    void tableField_defaultOrder_primaryKey() {
+        var schema = build("""
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @defaultOrder(primaryKey: true)
+            }
+            type Query { film: Film }
+            """);
+        var cardinality = (FieldCardinality.List) ((TableField) schema.field("Film", "actors")).cardinality();
+        assertThat(cardinality.defaultOrder().spec()).isInstanceOf(OrderSpec.PrimaryKeyOrder.class);
+    }
+
+    @Test
+    void tableField_defaultOrder_fields() {
+        var schema = build("""
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @defaultOrder(fields: [{field: "last_name", collation: "C"}, {field: "first_name"}])
+            }
+            type Query { film: Film }
+            """);
+        var cardinality = (FieldCardinality.List) ((TableField) schema.field("Film", "actors")).cardinality();
+        var fieldsOrder = (OrderSpec.FieldsOrder) cardinality.defaultOrder().spec();
+        assertThat(fieldsOrder.fields()).hasSize(2);
+        assertThat(fieldsOrder.fields().get(0).columnName()).isEqualTo("last_name");
+        assertThat(fieldsOrder.fields().get(0).collation()).isEqualTo("C");
+        assertThat(fieldsOrder.fields().get(1).columnName()).isEqualTo("first_name");
+        assertThat(fieldsOrder.fields().get(1).collation()).isNull();
+    }
+
+    @Test
+    void tableField_defaultOrder_direction_desc() {
+        var schema = build("""
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @defaultOrder(primaryKey: true, direction: DESC)
+            }
+            type Query { film: Film }
+            """);
+        var cardinality = (FieldCardinality.List) ((TableField) schema.field("Film", "actors")).cardinality();
+        assertThat(cardinality.defaultOrder().direction()).isEqualTo("DESC");
+    }
+
+    // ===== TableMethodField =====
+
+    @Test
+    void tableMethodField_singleReturn() {
+        var schema = build("""
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language @tableMethod(tableMethodReference: {className: "com.example.Foo", methodName: "get"})
+            }
+            type Query { film: Film }
+            """);
+        var field = schema.field("Film", "language");
+        assertThat(field).isInstanceOf(TableMethodField.class);
+        assertThat(((TableMethodField) field).cardinality()).isInstanceOf(FieldCardinality.Single.class);
+    }
+
+    @Test
+    void tableMethodField_listReturn() {
+        var schema = build("""
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @tableMethod(tableMethodReference: {className: "com.example.Foo", methodName: "get"})
+            }
+            type Query { film: Film }
+            """);
+        assertThat(((TableMethodField) schema.field("Film", "actors")).cardinality())
+            .isInstanceOf(FieldCardinality.List.class);
+    }
+
+    // ===== NestingField =====
+
+    @Test
+    void nestingField_plainObjectType() {
+        var schema = build("""
+            type FilmDetails { title: String description: String }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """);
+        assertThat(schema.field("Film", "details")).isInstanceOf(NestingField.class);
     }
 
     // ===== Type classification =====

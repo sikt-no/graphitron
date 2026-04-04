@@ -46,10 +46,12 @@ Each deliverable is a self-contained, reviewable change behind the `recordBasedO
 | 1 | `GraphitronField` skeleton | Sealed interface hierarchy compiling; all field types modelled |
 | 2 | Infrastructure | `GraphitronFetcherFactory`, `getTenantId()`, feature flag |
 | **Parsing stream** | `GraphitronSchemaBuilder` — schema → `GraphitronField` | Independent of generating stream |
-| P1 | Scalar parsing | `ColumnField`, `ColumnReferenceField` from schema |
+| P1 ✓ | Scalar parsing | `ColumnField`, `ColumnReferenceField`, `NodeIdField`, `NodeIdReferenceField`, `NotGeneratedField`, `ErrorType` — done |
 | P2 | Table child parsing | `TableField`, `TableMethodField`, `NestingField` |
-| P3 | Remaining child parsing | `NodeIdField`, `NodeIdReferenceField`, `ComputedField`, `PropertyField`, `TableInterfaceField`, `InterfaceField`, `UnionField`, `ServiceField` |
-| P4 | Root field parsing | `LookupQueryField`, `TableQueryField`, `TableMethodQueryField`, `NodeQueryField`, `EntityQueryField`, `TableInterfaceQueryField`, `InterfaceQueryField`, `UnionQueryField`, `ServiceQueryField` |
+| P3 | Remaining child parsing | `ComputedField`, `PropertyField`, `TableInterfaceField`, `InterfaceField`, `UnionField`, `ServiceField` |
+| P4 | Field arguments + input types | `InputType` in `GraphitronType`; argument list on field records |
+| P5 | Root field parsing | `LookupQueryField`, `TableQueryField`, `TableMethodQueryField`, `NodeQueryField`, `EntityQueryField`, `TableInterfaceQueryField`, `InterfaceQueryField`, `UnionQueryField`, `ServiceQueryField`, all `MutationField` variants |
+| P4 is a prerequisite for P5. Field arguments must be classified before root fields can be fully specified, because root-field records carry their argument lists. Input types must be in `GraphitronType` before the validator can check argument type references. P4 does not depend on P2 or P3. |
 | **Generating stream** | `FieldsCodeGenerator` — `GraphitronField` → Java | Independent of parsing stream |
 | G1 | Scalar generating | `ColumnField`, `ColumnReferenceField` → `wiring()` + `fields()` |
 | G2 | Table child generating | `TableField` (inline + `@splitQuery`) → field methods + DataLoader |
@@ -359,6 +361,72 @@ Once D1 is merged, two streams open up that are fully independent of each other:
 - **Generating stream** (`FieldsCodeGenerator`): consumes hand-crafted `GraphitronField` instances and produces `TypeSpec` via JavaPoet. Zero schema logic. Tests use approval files — one approved file per leaf type minimum.
 
 Neither stream depends on the other. Integration (`FieldsClassGenerator`) connects them.
+
+---
+
+## Parsing stream — P4: Field arguments and input types
+
+**Prerequisite:** P2 and P3 do not need to be done first. P4 must be done before P5.
+
+Field arguments on query and mutation fields are what drive filter conditions, pagination, lookup keys, and service context bindings. Until the builder captures them, root-field records carry no useful data for code generation. Input types are the GraphQL types of those arguments — they must appear in `GraphitronType` so the validator can check references and generators can inspect their fields.
+
+### `InputType` in `GraphitronType`
+
+`InputObjectTypeDefinition` is currently discarded in `classifyType()`. Add a new variant:
+
+```java
+record InputType(
+    String name,
+    SourceLocation location,
+    List<InputFieldSpec> fields
+) implements GraphitronType {}
+```
+
+Each `InputFieldSpec` captures the field name, its GraphQL type string, and directive markers that generators need:
+
+```java
+record InputFieldSpec(
+    String name,
+    String typeName,           // base type name (unwrapped)
+    boolean nonNull,
+    boolean list,
+    boolean lookupKey,         // @lookupKey present
+    boolean orderBy            // @orderBy present on this field
+) {}
+```
+
+`@field(name:, javaName:)` on input fields is also captured here (column name override, Java name override) when present. Directives not needed for generation are ignored.
+
+### Argument list on field records
+
+Every field type that can carry GraphQL arguments gains a `List<ArgumentSpec> arguments` property. This applies to all root fields (P5) and to child fields that accept arguments (primarily `TableField` for pagination/ordering, `ServiceField` for context args).
+
+```java
+record ArgumentSpec(
+    String name,
+    String typeName,       // base type name (unwrapped)
+    boolean nonNull,
+    boolean list,
+    boolean lookupKey,     // @lookupKey present
+    boolean orderBy,       // @orderBy present
+    boolean conditionArg   // @condition present on this argument
+) {}
+```
+
+`contextArguments` from `@service` and `@tableMethod` directives (a `[String!]` list of `GraphQLContext` key names) are captured separately as `List<String> contextArguments` on `ServiceQueryField`, `ServiceMutationField`, `ServiceField`, `TableMethodQueryField`, and `TableMethodField`.
+
+### Validation
+
+The validator gains checks for:
+- Every `ArgumentSpec.typeName` that is not a built-in scalar must resolve to a type in `GraphitronSchema.types()` (either an `InputType`, scalar, or enum).
+- Every `InputFieldSpec.typeName` with the same constraint.
+- `@lookupKey` and `@orderBy` must not appear on non-scalar argument/field types.
+
+### What P4 does not include
+
+- Condition resolution via reflection (`@condition` on `ARGUMENT_DEFINITION`) — still deferred to P3 of the original deliverable sequence (the "P3" in the `resolveConditionRef` comment in `GraphitronSchemaBuilder`).
+- Default value capture — not needed for current generators.
+- Relay pagination argument names (`first`, `after`, `last`, `before`) are captured as ordinary `ArgumentSpec` entries; the `FieldCardinality.Connection` variant identifies the field as paginated, not the presence of specific argument names.
 
 ---
 

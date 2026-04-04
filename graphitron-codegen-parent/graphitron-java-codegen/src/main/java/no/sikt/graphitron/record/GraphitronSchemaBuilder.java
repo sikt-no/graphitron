@@ -1,6 +1,7 @@
 package no.sikt.graphitron.record;
 
 import graphql.language.ArrayValue;
+import graphql.language.BooleanValue;
 import graphql.language.DirectiveDefinition;
 import graphql.language.DirectivesContainer;
 import graphql.language.EnumTypeDefinition;
@@ -30,8 +31,16 @@ import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.record.field.ChildField.ColumnField;
 import no.sikt.graphitron.record.field.ChildField.ColumnReferenceField;
 import no.sikt.graphitron.record.field.ChildField.MultitableReferenceField;
+import no.sikt.graphitron.record.field.ChildField.NestingField;
 import no.sikt.graphitron.record.field.ChildField.NodeIdField;
 import no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField;
+import no.sikt.graphitron.record.field.ChildField.TableField;
+import no.sikt.graphitron.record.field.ChildField.TableMethodField;
+import no.sikt.graphitron.record.field.DefaultOrderSpec;
+import no.sikt.graphitron.record.field.FieldCardinality;
+import no.sikt.graphitron.record.field.FieldConditionRef;
+import no.sikt.graphitron.record.field.OrderSpec;
+import no.sikt.graphitron.record.field.SortFieldSpec;
 import no.sikt.graphitron.record.field.ColumnRef;
 import no.sikt.graphitron.record.field.ColumnRef.ResolvedColumn;
 import no.sikt.graphitron.record.field.ColumnRef.UnresolvedColumn;
@@ -115,6 +124,9 @@ public class GraphitronSchemaBuilder {
     private static final String DIR_FIELD = "field";
     private static final String DIR_REFERENCE = "reference";
     private static final String DIR_ERROR = "error";
+    private static final String DIR_TABLE_METHOD = "tableMethod";
+    private static final String DIR_DEFAULT_ORDER = "defaultOrder";
+    private static final String DIR_SPLIT_QUERY = "splitQuery";
 
     // Argument names for the directives above.
     private static final String ARG_NAME = "name";
@@ -126,6 +138,13 @@ public class GraphitronSchemaBuilder {
     private static final String ARG_PATH = "path";
     private static final String ARG_KEY = "key";
     private static final String ARG_CONDITION = "condition";
+    // Argument names for @defaultOrder.
+    private static final String ARG_INDEX = "index";
+    private static final String ARG_FIELDS = "fields";
+    private static final String ARG_PRIMARY_KEY = "primaryKey";
+    private static final String ARG_DIRECTION = "direction";
+    private static final String ARG_SORT_FIELD = "field";
+    private static final String ARG_COLLATION = "collation";
     // Argument names for @error / ErrorHandler input fields.
     private static final String ARG_HANDLERS = "handlers";
     private static final String ARG_HANDLER = "handler";
@@ -343,6 +362,130 @@ public class GraphitronSchemaBuilder {
         return new ErrorHandlerSpec(handlerType, className, code, sqlState, matches, description);
     }
 
+    // ===== Object-return child field classification (P2+) =====
+
+    /**
+     * Classifies a child field on a {@link TableType} parent whose return type is an object, interface,
+     * or union — not a scalar or enum. Called after the {@code @tableMethod} check in
+     * {@link #classifyChildFieldOnTableType}.
+     *
+     * <p>P2 handles {@link TableField} and {@link NestingField}. Remaining variants
+     * ({@code TableInterfaceField}, {@code InterfaceField}, {@code UnionField}, {@code ServiceField},
+     * {@code ComputedField}) are added in P3.
+     */
+    private GraphitronField classifyObjectReturnChildField(FieldDefinition fieldDef, String parentTypeName) {
+        String name = fieldDef.getName();
+        SourceLocation location = fieldDef.getSourceLocation();
+        String returnTypeName = getBaseTypeName(fieldDef.getType());
+        GraphitronType returnType = types.get(returnTypeName);
+
+        if (returnType instanceof TableType) {
+            return new TableField(parentTypeName, name, location,
+                parseReferencePath(fieldDef),
+                new FieldConditionRef.NoFieldCondition(),
+                fieldDef.hasDirective(DIR_SPLIT_QUERY),
+                buildCardinality(fieldDef));
+        }
+
+        // NestingField: a plain object type in the registry with no Graphitron classification.
+        // Its fields are resolved from the same table context as the parent.
+        if (registry.types().get(returnTypeName) instanceof ObjectTypeDefinition && returnType == null) {
+            return new NestingField(parentTypeName, name, location);
+        }
+
+        return new UnclassifiedField(parentTypeName, name, location);
+    }
+
+    // ===== Cardinality helpers =====
+
+    /**
+     * Builds a {@link FieldCardinality} from the return type shape of the field and any
+     * {@code @defaultOrder} directive. A type name ending in {@code "Connection"} produces
+     * {@link FieldCardinality.Connection}; a list-wrapped type produces {@link FieldCardinality.List};
+     * anything else produces {@link FieldCardinality.Single}.
+     *
+     * <p>{@code @orderBy} enum value specs are not populated here — that is deferred to P4
+     * (field argument modeling).
+     */
+    private FieldCardinality buildCardinality(FieldDefinition fieldDef) {
+        String returnTypeName = getBaseTypeName(fieldDef.getType());
+        DefaultOrderSpec defaultOrder = parseDefaultOrderSpec(fieldDef);
+
+        if (returnTypeName.endsWith("Connection")) {
+            return new FieldCardinality.Connection(defaultOrder, List.of());
+        }
+        if (isListType(fieldDef.getType())) {
+            return new FieldCardinality.List(defaultOrder, List.of());
+        }
+        return new FieldCardinality.Single();
+    }
+
+    private boolean isListType(Type<?> type) {
+        return switch (type) {
+            case ListType ignored -> true;
+            case NonNullType t -> isListType(t.getType());
+            default -> false;
+        };
+    }
+
+    /**
+     * Parses the {@code @defaultOrder} directive on a field into a {@link DefaultOrderSpec}, or
+     * returns {@code null} when the directive is absent.
+     *
+     * <p>For {@code index:} and {@code primaryKey:} variants the resulting {@link OrderSpec} is
+     * a lookup-based spec ({@link OrderSpec.IndexOrder} / {@link OrderSpec.PrimaryKeyOrder}) that
+     * is later resolved against the jOOQ catalog by the validator. For {@code fields:} the spec is
+     * fully resolved at parse time.
+     */
+    private DefaultOrderSpec parseDefaultOrderSpec(FieldDefinition fieldDef) {
+        if (!fieldDef.hasDirective(DIR_DEFAULT_ORDER)) return null;
+        var dir = fieldDef.getDirectives(DIR_DEFAULT_ORDER).get(0);
+
+        String direction = Optional.ofNullable(dir.getArgument(ARG_DIRECTION))
+            .filter(a -> a.getValue() instanceof EnumValue)
+            .map(a -> ((EnumValue) a.getValue()).getName())
+            .orElse("ASC");
+
+        Optional<String> index = Optional.ofNullable(dir.getArgument(ARG_INDEX))
+            .filter(a -> a.getValue() instanceof StringValue)
+            .map(a -> ((StringValue) a.getValue()).getValue().strip());
+        if (index.isPresent()) {
+            return new DefaultOrderSpec(new OrderSpec.IndexOrder(index.get()), direction);
+        }
+
+        boolean primaryKey = Optional.ofNullable(dir.getArgument(ARG_PRIMARY_KEY))
+            .filter(a -> a.getValue() instanceof BooleanValue)
+            .map(a -> ((BooleanValue) a.getValue()).isValue())
+            .orElse(false);
+        if (primaryKey) {
+            return new DefaultOrderSpec(new OrderSpec.PrimaryKeyOrder(), direction);
+        }
+
+        var fieldsArg = dir.getArgument(ARG_FIELDS);
+        if (fieldsArg != null) {
+            var value = fieldsArg.getValue();
+            List<?> items = value instanceof ArrayValue av ? av.getValues() : List.of(value);
+            var sortFields = items.stream()
+                .filter(v -> v instanceof ObjectValue)
+                .map(v -> parseSortFieldSpec((ObjectValue) v))
+                .toList();
+            return new DefaultOrderSpec(new OrderSpec.FieldsOrder(sortFields), direction);
+        }
+
+        return null;
+    }
+
+    private SortFieldSpec parseSortFieldSpec(ObjectValue ov) {
+        var fields = ov.getObjectFields();
+        String columnName = objectFieldByName(fields, ARG_SORT_FIELD)
+            .map(f -> ((StringValue) f.getValue()).getValue().strip())
+            .orElseThrow(() -> new IllegalStateException("Missing required 'field' in FieldSort"));
+        String collation = objectFieldByName(fields, ARG_COLLATION)
+            .map(f -> ((StringValue) f.getValue()).getValue().strip())
+            .orElse(null);
+        return new SortFieldSpec(columnName, collation);
+    }
+
     private KeyColumnRef resolveKeyColumn(String colName, Table<?> table) {
         if (table == null) {
             return new UnresolvedKeyColumn(colName);
@@ -376,8 +519,14 @@ public class GraphitronSchemaBuilder {
         String name = fieldDef.getName();
         SourceLocation location = fieldDef.getSourceLocation();
 
+        if (fieldDef.hasDirective(DIR_TABLE_METHOD)) {
+            return new TableMethodField(parentTypeName, name, location,
+                parseReferencePath(fieldDef),
+                buildCardinality(fieldDef));
+        }
+
         if (!isScalarOrEnum(fieldDef.getType())) {
-            return new UnclassifiedField(parentTypeName, name, location);
+            return classifyObjectReturnChildField(fieldDef, parentTypeName);
         }
 
         if (fieldDef.hasDirective(DIR_NODE_ID)) {
@@ -596,6 +745,9 @@ public class GraphitronSchemaBuilder {
         assertDirective(defs, DIR_FIELD, ARG_NAME, ARG_JAVA_NAME);
         assertDirective(defs, DIR_REFERENCE, ARG_PATH);
         assertDirective(defs, DIR_ERROR, ARG_HANDLERS);
+        assertDirective(defs, DIR_TABLE_METHOD);
+        assertDirective(defs, DIR_DEFAULT_ORDER);
+        assertDirective(defs, DIR_SPLIT_QUERY);
     }
 
     private void assertDirective(Map<String, DirectiveDefinition> defs, String name, String... args) {
