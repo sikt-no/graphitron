@@ -536,7 +536,7 @@ public class GraphitronSchemaBuilder {
         if (fieldDef.hasAppliedDirective(DIR_NODE_ID)) {
             Optional<String> typeName = argString(fieldDef, DIR_NODE_ID, ARG_TYPE_NAME);
             if (typeName.isPresent()) {
-                NodeTypeRef nodeType = resolveNodeType(typeName.get());
+                NodeTypeRef nodeType = resolveNodeType(typeName.get(), tableType);
                 List<ReferencePathElementRef> path = parseReferencePath(fieldDef);
                 return new NodeIdReferenceField(parentTypeName, name, location, typeName.get(), nodeType, path);
             } else {
@@ -561,10 +561,12 @@ public class GraphitronSchemaBuilder {
         return new ColumnField(parentTypeName, name, location, columnName, column, javaNamePresent);
     }
 
-    private NodeTypeRef resolveNodeType(String targetTypeName) {
+    private NodeTypeRef resolveNodeType(String targetTypeName, TableType parentType) {
         GraphitronType target = types.get(targetTypeName);
         if (target instanceof TableType tt && tt.node() instanceof NodeDirective) {
-            return new ResolvedNodeType();
+            ResolvedTable targetTable = tt.table() instanceof ResolvedTable rt ? rt : null;
+            ResolvedTable parentTable = parentType.table() instanceof ResolvedTable rt ? rt : null;
+            return new ResolvedNodeType(targetTable, parentTable);
         }
         return new UnresolvedNodeType();
     }

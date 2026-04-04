@@ -11,7 +11,9 @@ import no.sikt.graphitron.record.field.ColumnRef.UnresolvedColumn;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
+import no.sikt.graphitron.record.field.NodeTypeRef.ResolvedNodeType;
 import no.sikt.graphitron.record.field.NodeTypeRef.UnresolvedNodeType;
+import no.sikt.graphitron.record.field.ReturnTypeRef;
 import no.sikt.graphitron.record.type.GraphitronType;
 import no.sikt.graphitron.record.type.NodeRef.NodeDirective;
 import no.sikt.graphitron.record.type.ParticipantRef.UnboundParticipant;
@@ -19,6 +21,7 @@ import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
 import no.sikt.graphitron.record.type.GraphitronType.TableType;
 import no.sikt.graphitron.record.type.TableRef.UnresolvedTable;
 import org.jooq.ForeignKey;
+import org.jooq.Table;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,7 +39,7 @@ public class GraphitronSchemaValidator {
     public List<ValidationError> validate(GraphitronSchema schema) {
         var errors = new ArrayList<ValidationError>();
         schema.types().values().forEach(type -> validateType(type, errors));
-        schema.fields().values().forEach(field -> validateField(field, schema, errors));
+        schema.fields().values().forEach(field -> validateField(field, errors));
         return List.copyOf(errors);
     }
 
@@ -52,10 +55,10 @@ public class GraphitronSchemaValidator {
         }
     }
 
-    private void validateField(GraphitronField field, GraphitronSchema schema, List<ValidationError> errors) {
+    private void validateField(GraphitronField field, List<ValidationError> errors) {
         switch (field) {
             case no.sikt.graphitron.record.field.QueryField.LookupQueryField f        -> validateLookupQueryField(f, errors);
-            case no.sikt.graphitron.record.field.QueryField.TableQueryField f         -> validateTableQueryField(f, schema, errors);
+            case no.sikt.graphitron.record.field.QueryField.TableQueryField f         -> validateTableQueryField(f, errors);
             case no.sikt.graphitron.record.field.QueryField.TableMethodQueryField f   -> validateTableMethodQueryField(f, errors);
             case no.sikt.graphitron.record.field.QueryField.NodeQueryField f          -> validateNodeQueryField(f, errors);
             case no.sikt.graphitron.record.field.QueryField.EntityQueryField f        -> validateEntityQueryField(f, errors);
@@ -71,7 +74,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.record.field.ChildField.ColumnField f             -> validateColumnField(f, errors);
             case no.sikt.graphitron.record.field.ChildField.ColumnReferenceField f    -> validateColumnReferenceField(f, errors);
             case no.sikt.graphitron.record.field.ChildField.NodeIdField f             -> validateNodeIdField(f, errors);
-            case no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField f    -> validateNodeIdReferenceField(f, schema, errors);
+            case no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField f    -> validateNodeIdReferenceField(f, errors);
             case no.sikt.graphitron.record.field.ChildField.TableField f              -> validateTableField(f, errors);
             case no.sikt.graphitron.record.field.ChildField.TableMethodField f        -> validateTableMethodField(f, errors);
             case no.sikt.graphitron.record.field.ChildField.TableInterfaceField f     -> validateTableInterfaceField(f, errors);
@@ -140,27 +143,29 @@ public class GraphitronSchemaValidator {
     // --- Field validators (stubs — filled in as test classes are added) ---
 
     private void validateLookupQueryField(no.sikt.graphitron.record.field.QueryField.LookupQueryField field, List<ValidationError> errors) {}
-    private void validateTableQueryField(no.sikt.graphitron.record.field.QueryField.TableQueryField field, GraphitronSchema schema, List<ValidationError> errors) {
+    private void validateTableQueryField(no.sikt.graphitron.record.field.QueryField.TableQueryField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.cardinality(), errors);
-        var returnType = schema.type(field.returnTypeName());
-        if (returnType == null) {
-            errors.add(new ValidationError(
-                "Field '" + field.name() + "': return type '" + field.returnTypeName() + "' does not exist in the schema",
+        switch (field.returnType()) {
+            case ReturnTypeRef.UnresolvedReturnType u -> errors.add(new ValidationError(
+                "Field '" + field.name() + "': return type '" + u.returnTypeName() + "' does not exist in the schema",
                 field.location()
             ));
-            return;
+            case ReturnTypeRef.ResolvedReturnType r -> validateDeterministicOrdering(field.name(), field.location(), field.cardinality(), r.table(), errors);
         }
-        validateDeterministicOrdering(field.name(), field.location(), field.cardinality(), returnType, errors);
     }
 
     /**
      * Warns when a list or connection field returns rows from a PK-less table with no
      * {@code @defaultOrder} and no {@code @orderBy} enum values. Without a primary key or explicit
      * ordering, the result order is non-deterministic across pages and repeated calls.
+     *
+     * <p>{@code table} may be null when the return type's table is unresolved — in that case
+     * the check is skipped and the unresolved table is reported by the type validator.
      */
     private void validateDeterministicOrdering(
             String fieldName, SourceLocation location, no.sikt.graphitron.record.field.FieldCardinality cardinality,
-            no.sikt.graphitron.record.type.GraphitronType returnType, List<ValidationError> errors) {
+            Table<?> table, List<ValidationError> errors) {
+        if (table == null) return;
         boolean needsCheck = switch (cardinality) {
             case no.sikt.graphitron.record.field.FieldCardinality.List l ->
                 l.defaultOrder() == null && l.orderByValues().isEmpty();
@@ -169,12 +174,10 @@ public class GraphitronSchemaValidator {
             default -> false;
         };
         if (!needsCheck) return;
-        if (!(returnType instanceof no.sikt.graphitron.record.type.GraphitronType.TableType tableType)) return;
-        if (!(tableType.table() instanceof ResolvedTable resolved)) return;
-        if (resolved.table().getPrimaryKey() != null) return;
+        if (table.getPrimaryKey() != null) return;
 
         errors.add(new ValidationError(
-            "Field '" + fieldName + "': table '" + resolved.table().getName()
+            "Field '" + fieldName + "': table '" + table.getName()
                 + "' has no @defaultOrder directive and no primary key — result ordering is non-deterministic",
             location
         ));
@@ -243,60 +246,53 @@ public class GraphitronSchemaValidator {
             ));
         }
     }
-    private void validateNodeIdReferenceField(no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField field, GraphitronSchema schema, List<ValidationError> errors) {
-        if (field.nodeType() instanceof UnresolvedNodeType) {
-            errors.add(new ValidationError(
-                "Field '" + field.name() + "': type '" + field.typeName() + "' does not exist in the schema or does not have @node",
-                field.location()
-            ));
-            validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
-            return;
-        }
-
-        // nodeType is ResolvedNodeType — look up the target type to get its jOOQ table
-        var targetResolvedTable = resolvedTableFor(schema.type(field.typeName()));
-        if (targetResolvedTable == null) {
-            // Target type is not yet table-resolved; other validators will report that error
-            validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
-            return;
-        }
-
-        if (field.referencePath().isEmpty()) {
-            // Implicit join: exactly one FK must exist between parent and target tables
-            var parentResolvedTable = resolvedTableFor(schema.type(field.parentTypeName()));
-            if (parentResolvedTable != null) {
-                int fkCount = TableReflection.getNumberOfForeignKeysBetweenTables(
-                    parentResolvedTable.javaFieldName(), targetResolvedTable.javaFieldName());
-                if (fkCount == 0) {
-                    errors.add(new ValidationError(
-                        "Field '" + field.name() + "': no foreign key found between tables '"
-                            + parentResolvedTable.table().getName() + "' and '"
-                            + targetResolvedTable.table().getName()
-                            + "'; add a @reference directive to specify the join path",
-                        field.location()
-                    ));
-                } else if (fkCount > 1) {
-                    errors.add(new ValidationError(
-                        "Field '" + field.name() + "': multiple foreign keys found between tables '"
-                            + parentResolvedTable.table().getName() + "' and '"
-                            + targetResolvedTable.table().getName()
-                            + "'; add a @reference directive to specify the join path",
-                        field.location()
-                    ));
+    private void validateNodeIdReferenceField(no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField field, List<ValidationError> errors) {
+        switch (field.nodeType()) {
+            case UnresolvedNodeType ignored -> {
+                errors.add(new ValidationError(
+                    "Field '" + field.name() + "': type '" + field.typeName() + "' does not exist in the schema or does not have @node",
+                    field.location()
+                ));
+                validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+            }
+            case ResolvedNodeType r -> {
+                var targetTable = r.targetTable();
+                if (targetTable == null) {
+                    // Target type's table is unresolved; other validators will report that error
+                    validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+                    return;
+                }
+                if (field.referencePath().isEmpty()) {
+                    // Implicit join: exactly one FK must exist between parent and target tables
+                    var parentTable = r.parentTable();
+                    if (parentTable != null) {
+                        int fkCount = TableReflection.getNumberOfForeignKeysBetweenTables(
+                            parentTable.javaFieldName(), targetTable.javaFieldName());
+                        if (fkCount == 0) {
+                            errors.add(new ValidationError(
+                                "Field '" + field.name() + "': no foreign key found between tables '"
+                                    + parentTable.table().getName() + "' and '"
+                                    + targetTable.table().getName()
+                                    + "'; add a @reference directive to specify the join path",
+                                field.location()
+                            ));
+                        } else if (fkCount > 1) {
+                            errors.add(new ValidationError(
+                                "Field '" + field.name() + "': multiple foreign keys found between tables '"
+                                    + parentTable.table().getName() + "' and '"
+                                    + targetTable.table().getName()
+                                    + "'; add a @reference directive to specify the join path",
+                                field.location()
+                            ));
+                        }
+                    }
+                } else {
+                    // Explicit reference path: validate steps and check it leads to the target type's table
+                    validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+                    validateReferenceLeadsToType(field.name(), field.location(), field.referencePath(), field.typeName(), targetTable, errors);
                 }
             }
-        } else {
-            // Explicit reference path: validate steps and check it leads to the TypeName's table
-            validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
-            validateReferenceLeadsToType(field.name(), field.location(), field.referencePath(), field.typeName(), targetResolvedTable, errors);
         }
-    }
-
-    private static ResolvedTable resolvedTableFor(GraphitronType type) {
-        if (type instanceof TableType t && t.table() instanceof ResolvedTable rt) {
-            return rt;
-        }
-        return null;
     }
 
     private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<ReferencePathElementRef> path, String typeName, ResolvedTable targetTable, List<ValidationError> errors) {
