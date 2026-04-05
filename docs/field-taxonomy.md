@@ -115,19 +115,19 @@ A field that does not match any known type. Graphitron terminates with an error.
 
 ### Query fields — unmapped source, read-only
 
-All create a new Graphitron scope or enter private service scope. Five carry a `FieldCardinality` spec property (Single / List / Connection); fields noted as always-single do not.
+All create a new Graphitron scope or enter private service scope. Five carry a wrapper spec property (Single / List / Connection) inside their `returnType`; fields noted as always-single do not.
 
-| Field type | Trigger | Target | Cardinality |
+| Field type | Trigger | Target | Wrapper |
 |---|---|---|---|
-| `LookupQueryField` | `@lookupKey` on an argument | Table-mapped | Always single (no `FieldCardinality` property) |
-| `TableQueryField` | General table query | Table-mapped | `FieldCardinality` property |
-| `TableMethodQueryField` | `@tableMethod` — developer provides a filtered `Table<?>` | Table-mapped. Preferred over `ServiceQueryField` when logic fits a filtered table. | `FieldCardinality` property |
-| `NodeQueryField` | `Query.node(id:)` — Relay spec | Table-mapped via global ID | Always single (no `FieldCardinality` property) |
-| `EntityQueryField` | `Query._entities(representations:)` — Apollo Federation | Table-mapped | Always single (no `FieldCardinality` property) |
-| `TableInterfaceQueryField` | Interface has `@table` + `@discriminate`; implementors have `@table` + `@discriminator` | Single-table interface | `FieldCardinality` property |
-| `InterfaceQueryField` | Interface has no directives; implementors have `@table` | Multi-table interface | `FieldCardinality` property |
-| `UnionQueryField` | All union member types have `@table` | Multi-table union | `FieldCardinality` property |
-| `ServiceQueryField` | `@service` | Private scope. LiftCondition applies if return type is table-mapped; lift on child fields if result-mapped. | No `FieldCardinality` property |
+| `LookupQueryField` | `@lookupKey` on an argument | Table-mapped | Always single |
+| `TableQueryField` | General table query | Table-mapped | Single / List / Connection |
+| `TableMethodQueryField` | `@tableMethod` — developer provides a filtered `Table<?>` | Table-mapped. Preferred over `ServiceQueryField` when logic fits a filtered table. | Single / List / Connection |
+| `NodeQueryField` | `Query.node(id:)` — Relay spec | Table-mapped via global ID | Always single |
+| `EntityQueryField` | `Query._entities(representations:)` — Apollo Federation | Table-mapped | Always single |
+| `TableInterfaceQueryField` | Interface has `@table` + `@discriminate`; implementors have `@table` + `@discriminator` | Single-table interface | Single / List / Connection |
+| `InterfaceQueryField` | Interface has no directives; implementors have `@table` | Multi-table interface | Single / List / Connection |
+| `UnionQueryField` | All union member types have `@table` | Multi-table union | Single / List / Connection |
+| `ServiceQueryField` | `@service` | Private scope. LiftCondition applies if return type is table-mapped; lift on child fields if result-mapped. | Always single |
 
 ---
 
@@ -153,11 +153,11 @@ Child fields carry a `sourceContext` property — table-mapped or result-mapped 
 
 | Field type | Valid source contexts | Description |
 |---|---|---|
-| `TableField` | Table-mapped, result-mapped | Table-mapped target. Graphitron handles projection, ordering, pagination, and nested scopes. In result-mapped context, starts a new scope via DataLoader + LiftCondition. Cardinality is a `FieldCardinality` spec property. |
-| `TableMethodField` | Table-mapped, result-mapped | `@tableMethod` — developer provides a filtered `Table<?>`. Graphitron joins it using the same logic as `TableField`. Preferred over `ServiceField` when the logic fits a filtered table. Cardinality is a `FieldCardinality` spec property. |
-| `TableInterfaceField` | Table-mapped, result-mapped | Single-table interface target. Cardinality is a `FieldCardinality` spec property. |
-| `InterfaceField` | Table-mapped, result-mapped | Multi-table interface target. Cardinality is a `FieldCardinality` spec property. |
-| `UnionField` | Table-mapped, result-mapped | Union target. Cardinality is a `FieldCardinality` spec property. |
+| `TableField` | Table-mapped, result-mapped | Table-mapped target. Graphitron handles projection, ordering, pagination, and nested scopes. In result-mapped context, starts a new scope via DataLoader + LiftCondition. Wrapper (Single / List / Connection) embedded in `returnType`. |
+| `TableMethodField` | Table-mapped, result-mapped | `@tableMethod` — developer provides a filtered `Table<?>`. Graphitron joins it using the same logic as `TableField`. Preferred over `ServiceField` when the logic fits a filtered table. Wrapper embedded in `returnType`. |
+| `TableInterfaceField` | Table-mapped, result-mapped | Single-table interface target. Wrapper embedded in `returnType`. |
+| `InterfaceField` | Table-mapped, result-mapped | Multi-table interface target. Wrapper embedded in `returnType`. |
+| `UnionField` | Table-mapped, result-mapped | Union target. Wrapper embedded in `returnType`. |
 | `NestingField` | Table-mapped | Target inherits the source table context, producing a level of nesting. |
 
 #### Graphitron does not project through these fields
