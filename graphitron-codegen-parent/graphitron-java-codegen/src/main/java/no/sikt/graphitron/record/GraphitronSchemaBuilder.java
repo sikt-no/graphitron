@@ -33,12 +33,18 @@ import no.sikt.graphitron.record.type.ErrorHandlerSpec;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.record.field.ChildField.ColumnField;
 import no.sikt.graphitron.record.field.ChildField.ColumnReferenceField;
+import no.sikt.graphitron.record.field.ChildField.ComputedField;
+import no.sikt.graphitron.record.field.ChildField.InterfaceField;
 import no.sikt.graphitron.record.field.ChildField.MultitableReferenceField;
 import no.sikt.graphitron.record.field.ChildField.NestingField;
 import no.sikt.graphitron.record.field.ChildField.NodeIdField;
 import no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField;
+import no.sikt.graphitron.record.field.ChildField.PropertyField;
+import no.sikt.graphitron.record.field.ChildField.ServiceField;
 import no.sikt.graphitron.record.field.ChildField.TableField;
+import no.sikt.graphitron.record.field.ChildField.TableInterfaceField;
 import no.sikt.graphitron.record.field.ChildField.TableMethodField;
+import no.sikt.graphitron.record.field.ChildField.UnionField;
 import no.sikt.graphitron.record.field.DefaultOrderSpec;
 import no.sikt.graphitron.record.field.FieldWrapper;
 import no.sikt.graphitron.record.field.FieldConditionRef;
@@ -130,6 +136,8 @@ public class GraphitronSchemaBuilder {
     private static final String DIR_TABLE_METHOD = "tableMethod";
     private static final String DIR_DEFAULT_ORDER = "defaultOrder";
     private static final String DIR_SPLIT_QUERY = "splitQuery";
+    private static final String DIR_SERVICE = "service";
+    private static final String DIR_EXTERNAL_FIELD = "externalField";
 
     // Argument names for the directives above.
     private static final String ARG_NAME = "name";
@@ -401,6 +409,21 @@ public class GraphitronSchemaBuilder {
                 fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY));
         }
 
+        if (elementType instanceof TableInterfaceType) {
+            return new TableInterfaceField(parentTypeName, name, location,
+                resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+        }
+
+        if (elementType instanceof InterfaceType) {
+            return new InterfaceField(parentTypeName, name, location,
+                resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+        }
+
+        if (elementType instanceof UnionType) {
+            return new UnionField(parentTypeName, name, location,
+                resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+        }
+
         // NestingField: a plain object type in the schema with no Graphitron classification.
         // Its fields are resolved from the same table context as the parent.
         if (schema.getType(elementTypeName) instanceof GraphQLObjectType && elementType == null) {
@@ -570,13 +593,48 @@ public class GraphitronSchemaBuilder {
         if (parentType instanceof TableType tableType) {
             return classifyChildFieldOnTableType(fieldDef, parentTypeName, tableType);
         }
+        if (parentType instanceof ResultType) {
+            return classifyChildFieldOnResultType(fieldDef, parentTypeName);
+        }
 
         return new UnclassifiedField(parentTypeName, name, location);
+    }
+
+    private GraphitronField classifyChildFieldOnResultType(GraphQLFieldDefinition fieldDef, String parentTypeName) {
+        String name = fieldDef.getName();
+        SourceLocation location = locationOf(fieldDef);
+
+        if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
+            String rawTypeName = baseTypeName(fieldDef);
+            String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
+            return new ServiceField(parentTypeName, name, location,
+                resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
+                parseReferencePath(fieldDef));
+        }
+
+        String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
+            ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
+            : name;
+        return new PropertyField(parentTypeName, name, location, columnName);
     }
 
     private GraphitronField classifyChildFieldOnTableType(GraphQLFieldDefinition fieldDef, String parentTypeName, TableType tableType) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
+
+        if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
+            String rawTypeName = baseTypeName(fieldDef);
+            String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
+            return new ServiceField(parentTypeName, name, location,
+                resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
+                parseReferencePath(fieldDef));
+        }
+
+        if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) {
+            return new ComputedField(parentTypeName, name, location,
+                resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)),
+                parseReferencePath(fieldDef));
+        }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
             String rawTypeName = baseTypeName(fieldDef);
@@ -819,6 +877,8 @@ public class GraphitronSchemaBuilder {
         assertDirective(DIR_TABLE_METHOD);
         assertDirective(DIR_DEFAULT_ORDER);
         assertDirective(DIR_SPLIT_QUERY);
+        assertDirective(DIR_SERVICE);
+        assertDirective(DIR_EXTERNAL_FIELD);
     }
 
     private void assertDirective(String name, String... args) {

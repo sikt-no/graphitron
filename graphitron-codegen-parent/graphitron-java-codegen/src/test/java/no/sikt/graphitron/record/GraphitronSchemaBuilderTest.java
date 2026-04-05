@@ -6,19 +6,24 @@ import no.sikt.graphitron.configuration.ErrorHandlerType;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.record.field.ChildField.ColumnField;
 import no.sikt.graphitron.record.field.ChildField.ColumnReferenceField;
+import no.sikt.graphitron.record.field.ChildField.ComputedField;
+import no.sikt.graphitron.record.field.ChildField.InterfaceField;
 import no.sikt.graphitron.record.field.ChildField.MultitableReferenceField;
 import no.sikt.graphitron.record.field.ChildField.NestingField;
 import no.sikt.graphitron.record.field.ChildField.NodeIdField;
 import no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField;
+import no.sikt.graphitron.record.field.ChildField.PropertyField;
+import no.sikt.graphitron.record.field.ChildField.ServiceField;
 import no.sikt.graphitron.record.field.ChildField.TableField;
+import no.sikt.graphitron.record.field.ChildField.TableInterfaceField;
 import no.sikt.graphitron.record.field.ChildField.TableMethodField;
+import no.sikt.graphitron.record.field.ChildField.UnionField;
 import no.sikt.graphitron.record.field.ColumnRef.ResolvedColumn;
 import no.sikt.graphitron.record.field.ColumnRef.UnresolvedColumn;
 import no.sikt.graphitron.record.field.DefaultOrderSpec;
 import no.sikt.graphitron.record.field.FieldWrapper;
 import no.sikt.graphitron.record.field.FieldConditionRef;
 import no.sikt.graphitron.record.field.GraphitronField.NotGeneratedField;
-import no.sikt.graphitron.record.field.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.record.field.NodeTypeRef.ResolvedNodeType;
 import no.sikt.graphitron.record.field.NodeTypeRef.UnresolvedNodeType;
 import no.sikt.graphitron.record.field.OrderSpec;
@@ -702,17 +707,159 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== Fields on non-table-mapped parents =====
+    // ===== ServiceField =====
+
+    enum ServiceFieldCase {
+        ON_TABLE_TYPE(
+            "@service on a @table parent → ServiceField",
+            """
+            type Film @table(name: "film") {
+                rating: String @service(service: {className: "com.example.RatingSvc", method: "get"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "rating")).isInstanceOf(ServiceField.class)),
+
+        TABLE_TYPE_RETURN(
+            "@service on @table parent returning another @table type → ServiceField with TableBoundReturnType",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language @service(service: {className: "com.example.Svc", method: "get"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (ServiceField) schema.field("Film", "language");
+                assertThat(f.returnType()).isInstanceOf(no.sikt.graphitron.record.field.ReturnTypeRef.TableBoundReturnType.class);
+                assertThat(f.returnType().returnTypeName()).isEqualTo("Language");
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        ServiceFieldCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(ServiceFieldCase.class)
+    void serviceFieldClassification(ServiceFieldCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== ComputedField =====
+
+    enum ComputedFieldCase {
+        SCALAR_RETURN(
+            "@externalField on a @table parent → ComputedField",
+            """
+            type Film @table(name: "film") { rating: String @externalField }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "rating")).isInstanceOf(ComputedField.class));
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        ComputedFieldCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(ComputedFieldCase.class)
+    void computedFieldClassification(ComputedFieldCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== TableInterfaceField / InterfaceField / UnionField =====
+
+    enum InterfaceUnionFieldCase {
+        TABLE_INTERFACE_FIELD(
+            "field returning a @table+@discriminate interface → TableInterfaceField",
+            """
+            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+            type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+            type Actor @table(name: "actor") { media: MediaItem }
+            type Query { actor: Actor }
+            """,
+            schema -> assertThat(schema.field("Actor", "media")).isInstanceOf(TableInterfaceField.class)),
+
+        INTERFACE_FIELD(
+            "field returning a plain interface (no @table) → InterfaceField",
+            """
+            interface Named { name: String }
+            type Language implements Named @table(name: "language") { name: String }
+            type Film @table(name: "film") { language: Named }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "language")).isInstanceOf(InterfaceField.class)),
+
+        UNION_FIELD(
+            "field returning a union → UnionField",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") { title: String }
+            union MediaItem = Language | Film
+            type Actor @table(name: "actor") { media: MediaItem }
+            type Query { actor: Actor }
+            """,
+            schema -> assertThat(schema.field("Actor", "media")).isInstanceOf(UnionField.class));
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        InterfaceUnionFieldCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(InterfaceUnionFieldCase.class)
+    void interfaceUnionFieldClassification(InterfaceUnionFieldCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== Fields on non-table-mapped parents (ResultType / @record) =====
 
     enum NonTableParentCase {
-        UNCLASSIFIED_ON_RESULT_TYPE(
-            "@record (ResultType) parent — fields are UnclassifiedField, not ColumnField (P3+ work)",
+        PROPERTY_FIELD_ON_RESULT_TYPE(
+            "@record (ResultType) parent — scalar field → PropertyField using field name as columnName",
             """
             type FilmDetails @record { title: String }
             type Film @table(name: "film") { details: FilmDetails }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("FilmDetails", "title")).isInstanceOf(UnclassifiedField.class));
+            schema -> {
+                var f = (PropertyField) schema.field("FilmDetails", "title");
+                assertThat(f.columnName()).isEqualTo("title");
+            }),
+
+        PROPERTY_FIELD_EXPLICIT_NAME(
+            "@record parent + @field(name:) — PropertyField uses the explicit column name",
+            """
+            type FilmDetails @record { title: String @field(name: "film_title") }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (PropertyField) schema.field("FilmDetails", "title");
+                assertThat(f.columnName()).isEqualTo("film_title");
+            }),
+
+        SERVICE_FIELD_ON_RESULT_TYPE(
+            "@record parent + @service → ServiceField",
+            """
+            type FilmDetails @record { rating: String @service(service: {className: "com.example.RatingSvc", method: "get"}) }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("FilmDetails", "rating")).isInstanceOf(ServiceField.class));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
