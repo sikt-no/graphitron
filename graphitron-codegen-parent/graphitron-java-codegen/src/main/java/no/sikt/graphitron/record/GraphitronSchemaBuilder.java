@@ -400,14 +400,13 @@ public class GraphitronSchemaBuilder {
         boolean nonNull = type instanceof GraphQLNonNull;
         boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
         String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
-        boolean lookupKey = field.hasAppliedDirective(DIR_LOOKUP_KEY);
         boolean orderBy = field.hasAppliedDirective(DIR_ORDER_BY);
         boolean hasFieldDir = field.hasAppliedDirective(DIR_FIELD);
         String columnName = hasFieldDir
             ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
         boolean javaNamePresent = hasFieldDir && argString(field, DIR_FIELD, ARG_JAVA_NAME).isPresent();
-        return new InputFieldSpec(name, typeName, nonNull, list, lookupKey, orderBy, columnName, javaNamePresent);
+        return new InputFieldSpec(name, typeName, nonNull, list, orderBy, columnName, javaNamePresent);
     }
 
     private ErrorHandlerSpec parseErrorHandlerSpec(Map<String, Object> item) {

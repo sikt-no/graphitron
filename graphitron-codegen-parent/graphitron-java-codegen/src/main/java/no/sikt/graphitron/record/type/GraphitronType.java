@@ -120,7 +120,7 @@ public sealed interface GraphitronType
      * A GraphQL input object type. Carries the field list that generators and validators inspect.
      *
      * <p>{@code fields} holds one {@link InputFieldSpec} per field in the input type, including
-     * directive markers ({@code @lookupKey}, {@code @orderBy}) that generators need. Fields
+     * directive markers ({@code @orderBy}) that generators need. Fields
      * annotated with {@code @notGenerated} are excluded.
      *
      * <p>The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error for each

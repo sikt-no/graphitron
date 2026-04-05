@@ -34,18 +34,18 @@ class InputTypeValidationTest {
 
         SCALAR_FIELDS_NO_ERRORS("input type with only built-in scalars — no errors",
             new InputType("FilmInput", null, List.of(
-                new InputFieldSpec("title", "String", true, false, false, false, "title", false),
-                new InputFieldSpec("year", "Int", false, false, false, false, "year", false))),
+                new InputFieldSpec("title", "String", true, false, false, "title", false),
+                new InputFieldSpec("year", "Int", false, false, false, "year", false))),
             List.of()),
 
         UNKNOWN_TYPE_ERROR("input field referencing a type not in the schema — error",
             new InputType("FilmInput", null, List.of(
-                new InputFieldSpec("status", "FilmStatus", false, false, false, false, "status", false))),
+                new InputFieldSpec("status", "FilmStatus", false, false, false, "status", false))),
             List.of("Input type 'FilmInput': field 'status' references unknown type 'FilmStatus'")),
 
         KNOWN_INPUT_TYPE_NO_ERROR("input field referencing another InputType in the schema — no error",
             new InputType("CreateFilmInput", null, List.of(
-                new InputFieldSpec("translation", "TranslationInput", false, false, false, false, "translation", false))),
+                new InputFieldSpec("translation", "TranslationInput", false, false, false, "translation", false))),
             Map.of("TranslationInput", new InputType("TranslationInput", null, List.of())),
             List.of()),
 

@@ -22,7 +22,6 @@ public record InputFieldSpec(
     String typeName,
     boolean nonNull,
     boolean list,
-    boolean lookupKey,
     boolean orderBy,
     String columnName,
     boolean javaNamePresent

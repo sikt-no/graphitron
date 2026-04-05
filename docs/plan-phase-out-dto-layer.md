@@ -433,13 +433,15 @@ record InputFieldSpec(
     String typeName,           // base type name (unwrapped)
     boolean nonNull,
     boolean list,
-    boolean orderBy            // @orderBy present on this field
+    boolean orderBy,           // @orderBy present on this field
+    String columnName,         // value of @field(name:), or the GraphQL field name if absent
+    boolean javaNamePresent    // true when @field(javaName:) was present (deprecated — warning only)
 ) {}
 ```
 
-> **`@lookupKey` is not stored per field or per argument.** Its presence anywhere in the argument tree (direct args or nested input fields) classifies the *root field* as a `LookupQueryField`. Once that classification is made, `@lookupKey` carries no further per-argument semantic — all arguments on a lookup field participate equally in lookup semantics. Storing it in `InputFieldSpec` or `ArgumentSpec` would mislead generator authors into treating `@lookupKey` args differently from non-`@lookupKey` args, which is wrong.
+> **`@lookupKey` is not stored in `InputFieldSpec` or `ArgumentSpec`.** `hasLookupKeyAnywhere()` checks the live GraphQL schema (not the classified `InputFieldSpec` data) to decide whether a root Query field is a `LookupQueryField`. Once classified, `@lookupKey` carries no further semantic — all arguments on a lookup field participate equally.
 
-`@field(name:, javaName:)` on input fields is also captured here (column name override, Java name override) when present. Directives not needed for generation are ignored.
+`@field(javaName:)` is deprecated. Its presence is recorded as `javaNamePresent: boolean` so the validator can emit a deprecation warning. The value is not stored. `@field(name:)` (column name override) is stored in `columnName`.
 
 ### Argument list on field records
 
@@ -459,6 +461,16 @@ record ArgumentSpec(
 > `lookupKey` is absent — see note under `InputFieldSpec` above.
 
 `contextArguments` from `@service` and `@tableMethod` directives (a `[String!]` list of `GraphQLContext` key names) are captured separately as `List<String> contextArguments` on `ServiceQueryField`, `ServiceMutationField`, `ServiceField`, `TableMethodQueryField`, and `TableMethodField`.
+
+The `ExternalCodeReference` input object from `@service(service:)` and `@tableMethod(tableMethodReference:)` is stored as an `ExternalRef`:
+
+```java
+record ExternalRef(String className, String methodName) {}
+```
+
+`className` may be a short name (if the class is configured in the plugin's `externalReferences`) or a FQCN. `methodName` is `null` when omitted. Each of `ServiceQueryField`, `ServiceMutationField`, `ServiceField`, `TableMethodQueryField`, and `TableMethodField` carries this as `serviceRef` or `tableMethodRef` respectively.
+
+All `MutationField` variants carry `List<ArgumentSpec> arguments`. `ServiceMutationField` additionally carries `serviceRef: ExternalRef` and `List<String> contextArguments`.
 
 ### Validation
 
