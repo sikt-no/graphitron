@@ -12,6 +12,13 @@ package no.sikt.graphitron.record.field;
  * {@code ID}) are always valid. Any other {@code typeName} must resolve to a type in
  * {@link no.sikt.graphitron.record.GraphitronSchema#types()}.
  *
+ * <p>When the enclosing field is a {@link no.sikt.graphitron.record.field.QueryField.LookupQueryField},
+ * all arguments — regardless of whether {@code @lookupKey} appeared on them — participate equally
+ * in the lookup semantics (list args are positionally correlated; scalar args are broadcast).
+ * {@code @lookupKey} is a field-level classifier only: its presence on any argument in the arg
+ * tree causes the field to be classified as a {@code LookupQueryField}. There is no per-argument
+ * semantic distinction.
+ *
  * <p>{@code conditionArg} is {@code true} when the {@code @condition} directive is present on
  * this argument. Resolution of the condition method is deferred.
  */
@@ -20,7 +27,6 @@ public record ArgumentSpec(
     String typeName,
     boolean nonNull,
     boolean list,
-    boolean lookupKey,
     boolean orderBy,
     boolean conditionArg
 ) {}

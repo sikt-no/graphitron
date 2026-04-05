@@ -5,6 +5,8 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.ErrorHandlerType;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.record.field.ChildField.ColumnField;
+import no.sikt.graphitron.record.field.MutationField;
+import no.sikt.graphitron.record.field.QueryField;
 import no.sikt.graphitron.record.field.ChildField.ColumnReferenceField;
 import no.sikt.graphitron.record.field.ChildField.ComputedField;
 import no.sikt.graphitron.record.field.ChildField.InterfaceField;
@@ -914,7 +916,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         TABLE_FIELD_LOOKUP_KEY_ARG(
-            "@lookupKey on argument — lookupKey flag is true",
+            "@lookupKey on a child-field argument — argument is captured, field remains TableField",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
@@ -925,7 +927,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (no.sikt.graphitron.record.field.ChildField.TableField) schema.field("Film", "actor");
                 assertThat(f.arguments()).hasSize(1);
-                assertThat(f.arguments().get(0).lookupKey()).isTrue();
+                assertThat(f.arguments().get(0).name()).isEqualTo("id");
                 assertThat(f.arguments().get(0).orderBy()).isFalse();
             }),
 
@@ -1187,6 +1189,192 @@ class GraphitronSchemaBuilderTest {
         assertThatThrownBy(() -> GraphitronSchemaBuilder.build(registry))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("@");
+    }
+
+    // ===== P5: Root field classification =====
+
+    enum RootFieldCase {
+
+        LOOKUP_QUERY_FIELD(
+            "field with @lookupKey arg → LookupQueryField",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { filmById(id: [ID] @lookupKey): Film }
+            """,
+            schema -> {
+                assertThat(schema.field("Query", "filmById")).isInstanceOf(QueryField.LookupQueryField.class);
+                var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
+                assertThat(f.arguments()).hasSize(1);
+                assertThat(f.arguments().get(0).name()).isEqualTo("id");
+                assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
+            }),
+
+        LOOKUP_NESTED_IN_INPUT(
+            "@lookupKey nested in input type → field still classified as LookupQueryField",
+            """
+            input FilmKey { id: ID @lookupKey }
+            type Film @table(name: "film") { title: String }
+            type Query { filmByKey(key: [FilmKey]): Film }
+            """,
+            schema -> assertThat(schema.field("Query", "filmByKey")).isInstanceOf(QueryField.LookupQueryField.class)),
+
+        TABLE_QUERY_FIELD(
+            "field returning @table type → TableQueryField",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { films: [Film!]! }
+            """,
+            schema -> assertThat(schema.field("Query", "films")).isInstanceOf(QueryField.TableQueryField.class)),
+
+        TABLE_QUERY_FIELD_WITH_ARGS(
+            "table query field captures arguments",
+            """
+            type Film @table(name: "film") { title: String }
+            enum FilmOrder { TITLE }
+            type Query { films(orderBy: FilmOrder @orderBy): [Film!]! }
+            """,
+            schema -> {
+                var f = (QueryField.TableQueryField) schema.field("Query", "films");
+                assertThat(f.arguments()).hasSize(1);
+                assertThat(f.arguments().get(0).orderBy()).isTrue();
+            }),
+
+        TABLE_METHOD_QUERY_FIELD(
+            "@tableMethod on root field → TableMethodQueryField",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                filteredFilms: [Film!]!
+                    @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"}, contextArguments: ["tenantId"])
+            }
+            """,
+            schema -> {
+                assertThat(schema.field("Query", "filteredFilms")).isInstanceOf(QueryField.TableMethodQueryField.class);
+                var f = (QueryField.TableMethodQueryField) schema.field("Query", "filteredFilms");
+                assertThat(f.contextArguments()).containsExactly("tenantId");
+            }),
+
+        NODE_QUERY_FIELD(
+            "field named 'node' → NodeQueryField",
+            """
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") { id: ID! title: String }
+            type Query { node(id: ID!): Node }
+            """,
+            schema -> assertThat(schema.field("Query", "node")).isInstanceOf(QueryField.NodeQueryField.class)),
+
+        ENTITY_QUERY_FIELD(
+            "field named '_entities' → EntityQueryField",
+            """
+            scalar _Any
+            union _Entity = Film
+            type Film @table(name: "film") { title: String }
+            type Query { _entities(representations: [_Any!]!): [_Entity]! }
+            """,
+            schema -> assertThat(schema.field("Query", "_entities")).isInstanceOf(QueryField.EntityQueryField.class)),
+
+        TABLE_INTERFACE_QUERY_FIELD(
+            "field returning table-interface type → TableInterfaceQueryField",
+            """
+            interface Named @table(name: "named") @discriminate(on: "type") { name: String }
+            type Film implements Named @table(name: "film") { name: String }
+            type Query { named: Named }
+            """,
+            schema -> assertThat(schema.field("Query", "named")).isInstanceOf(QueryField.TableInterfaceQueryField.class)),
+
+        INTERFACE_QUERY_FIELD(
+            "field returning plain interface → InterfaceQueryField",
+            """
+            interface Named { name: String }
+            type Film implements Named @table(name: "film") { name: String }
+            type Query { named: Named }
+            """,
+            schema -> assertThat(schema.field("Query", "named")).isInstanceOf(QueryField.InterfaceQueryField.class)),
+
+        UNION_QUERY_FIELD(
+            "field returning union → UnionQueryField",
+            """
+            type Film @table(name: "film") { title: String }
+            type Actor @table(name: "actor") { name: String }
+            union SearchResult = Film | Actor
+            type Query { search: SearchResult }
+            """,
+            schema -> assertThat(schema.field("Query", "search")).isInstanceOf(QueryField.UnionQueryField.class)),
+
+        SERVICE_QUERY_FIELD(
+            "@service on root query field → ServiceQueryField",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                externalFilm: Film @service(service: {className: "com.example.Svc", method: "get"})
+            }
+            """,
+            schema -> {
+                assertThat(schema.field("Query", "externalFilm")).isInstanceOf(QueryField.ServiceQueryField.class);
+                var f = (QueryField.ServiceQueryField) schema.field("Query", "externalFilm");
+                assertThat(f.contextArguments()).isEmpty();
+            }),
+
+        INSERT_MUTATION_FIELD(
+            "@mutation(typeName: INSERT) → InsertMutationField",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilm: Film @mutation(typeName: INSERT) }
+            """,
+            schema -> assertThat(schema.field("Mutation", "createFilm")).isInstanceOf(MutationField.InsertMutationField.class)),
+
+        UPDATE_MUTATION_FIELD(
+            "@mutation(typeName: UPDATE) → UpdateMutationField",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { updateFilm: Film @mutation(typeName: UPDATE) }
+            """,
+            schema -> assertThat(schema.field("Mutation", "updateFilm")).isInstanceOf(MutationField.UpdateMutationField.class)),
+
+        DELETE_MUTATION_FIELD(
+            "@mutation(typeName: DELETE) → DeleteMutationField",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { deleteFilm: Film @mutation(typeName: DELETE) }
+            """,
+            schema -> assertThat(schema.field("Mutation", "deleteFilm")).isInstanceOf(MutationField.DeleteMutationField.class)),
+
+        UPSERT_MUTATION_FIELD(
+            "@mutation(typeName: UPSERT) → UpsertMutationField",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { upsertFilm: Film @mutation(typeName: UPSERT) }
+            """,
+            schema -> assertThat(schema.field("Mutation", "upsertFilm")).isInstanceOf(MutationField.UpsertMutationField.class)),
+
+        SERVICE_MUTATION_FIELD(
+            "@service on mutation field → ServiceMutationField",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+                externalMutation: Film @service(service: {className: "com.example.Svc", method: "run"})
+            }
+            """,
+            schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.ServiceMutationField.class));
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        RootFieldCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(RootFieldCase.class)
+    void rootFieldClassification(RootFieldCase tc) {
+        tc.assertions.accept(build(tc.sdl));
     }
 
     // ===== Helper =====

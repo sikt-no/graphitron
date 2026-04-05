@@ -64,15 +64,15 @@ public class GraphitronSchemaValidator {
 
     private void validateField(GraphitronField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         switch (field) {
-            case no.sikt.graphitron.record.field.QueryField.LookupQueryField f        -> validateLookupQueryField(f, errors);
-            case no.sikt.graphitron.record.field.QueryField.TableQueryField f         -> validateTableQueryField(f, errors);
+            case no.sikt.graphitron.record.field.QueryField.LookupQueryField f        -> validateLookupQueryField(f, types, errors);
+            case no.sikt.graphitron.record.field.QueryField.TableQueryField f         -> validateTableQueryField(f, types, errors);
             case no.sikt.graphitron.record.field.QueryField.TableMethodQueryField f   -> validateTableMethodQueryField(f, errors);
             case no.sikt.graphitron.record.field.QueryField.NodeQueryField f          -> validateNodeQueryField(f, errors);
             case no.sikt.graphitron.record.field.QueryField.EntityQueryField f        -> validateEntityQueryField(f, errors);
             case no.sikt.graphitron.record.field.QueryField.TableInterfaceQueryField f -> validateTableInterfaceQueryField(f, errors);
             case no.sikt.graphitron.record.field.QueryField.InterfaceQueryField f     -> validateInterfaceQueryField(f, errors);
             case no.sikt.graphitron.record.field.QueryField.UnionQueryField f         -> validateUnionQueryField(f, errors);
-            case no.sikt.graphitron.record.field.QueryField.ServiceQueryField f       -> validateServiceQueryField(f, errors);
+            case no.sikt.graphitron.record.field.QueryField.ServiceQueryField f       -> validateServiceQueryField(f, types, errors);
             case no.sikt.graphitron.record.field.MutationField.InsertMutationField f     -> validateInsertMutationField(f, errors);
             case no.sikt.graphitron.record.field.MutationField.UpdateMutationField f     -> validateUpdateMutationField(f, errors);
             case no.sikt.graphitron.record.field.MutationField.DeleteMutationField f     -> validateDeleteMutationField(f, errors);
@@ -163,9 +163,32 @@ public class GraphitronSchemaValidator {
 
     // --- Field validators (stubs — filled in as test classes are added) ---
 
-    private void validateLookupQueryField(no.sikt.graphitron.record.field.QueryField.LookupQueryField field, List<ValidationError> errors) {}
-    private void validateTableQueryField(no.sikt.graphitron.record.field.QueryField.TableQueryField field, List<ValidationError> errors) {
+    private void validateLookupQueryField(no.sikt.graphitron.record.field.QueryField.LookupQueryField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        if (!(field.returnType().wrapper() instanceof no.sikt.graphitron.record.field.FieldWrapper.Single)) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': lookup fields must return a single object, not a list or connection",
+                field.location()
+            ));
+        }
+        for (var arg : field.arguments()) {
+            if (arg.orderBy()) {
+                errors.add(new ValidationError(
+                    "Field '" + field.name() + "': @orderBy is not valid on a lookup field",
+                    field.location()
+                ));
+            }
+            if (arg.conditionArg()) {
+                errors.add(new ValidationError(
+                    "Field '" + field.name() + "': @condition is not valid on a lookup field",
+                    field.location()
+                ));
+            }
+        }
+        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
+    }
+    private void validateTableQueryField(no.sikt.graphitron.record.field.QueryField.TableQueryField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
         switch (field.returnType()) {
             case ReturnTypeRef.UnresolvedReturnType u -> errors.add(new ValidationError(
                 "Field '" + field.name() + "': return type '" + u.returnTypeName() + "' does not exist in the schema",
@@ -219,7 +242,9 @@ public class GraphitronSchemaValidator {
     private void validateUnionQueryField(no.sikt.graphitron.record.field.QueryField.UnionQueryField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
-    private void validateServiceQueryField(no.sikt.graphitron.record.field.QueryField.ServiceQueryField field, List<ValidationError> errors) {}
+    private void validateServiceQueryField(no.sikt.graphitron.record.field.QueryField.ServiceQueryField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
+    }
     private void validateInsertMutationField(no.sikt.graphitron.record.field.MutationField.InsertMutationField field, List<ValidationError> errors) {}
     private void validateUpdateMutationField(no.sikt.graphitron.record.field.MutationField.UpdateMutationField field, List<ValidationError> errors) {}
     private void validateDeleteMutationField(no.sikt.graphitron.record.field.MutationField.DeleteMutationField field, List<ValidationError> errors) {}

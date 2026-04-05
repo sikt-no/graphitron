@@ -18,7 +18,9 @@ class ServiceQueryFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("service query field — always valid",
-            new ServiceQueryField("Query", "externalData", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true))),
+            new ServiceQueryField("Query", "externalData", null,
+                new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)),
+                List.of(), List.of()),
             List.of());
 
         private final String description;

@@ -2,6 +2,8 @@ package no.sikt.graphitron.record.field;
 
 import graphql.language.SourceLocation;
 
+import java.util.List;
+
 /**
  * A field on the {@code Query} type. Read-only. All create a new scope or enter private service scope.
  */
@@ -12,16 +14,27 @@ public sealed interface QueryField extends RootField
             QueryField.ServiceQueryField {
 
     /**
-     * Triggered by {@code @lookupKey} on one or more arguments.
+     * Triggered by {@code @lookupKey} on one or more arguments (including nested inside input types).
+     *
+     * <p>All arguments participate equally in lookup semantics: list arguments are positionally
+     * correlated (must all be the same length), and scalar arguments are broadcast (replicated to
+     * fill the batch). The {@code @lookupKey} directive is a field-level classifier only — there is
+     * no per-argument semantic distinction between arguments that carry it and those that do not.
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema.
+     * schema. Must carry a {@link FieldWrapper.Single} wrapper — lookup fields return one result per
+     * key. The validator reports an error for list or connection wrappers.
+     *
+     * <p>{@code arguments} is the full list of arguments on the field. The validator rejects any
+     * argument with {@code orderBy=true} or {@code conditionArg=true}, as those directives are
+     * incompatible with lookup semantics.
      */
     record LookupQueryField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType
+        ReturnTypeRef returnType,
+        List<ArgumentSpec> arguments
     ) implements QueryField {}
 
     /**
@@ -35,12 +48,17 @@ public sealed interface QueryField extends RootField
      * used to detect non-deterministic ordering (list or connection with no {@code @defaultOrder}
      * and a PK-less table). The validator reports errors for unresolved ordering specs on list and
      * connection variants.
+     *
+     * <p>{@code arguments} is the full list of arguments on the field (e.g. {@code @orderBy},
+     * {@code @condition}, pagination arguments). The validator checks that any referenced input
+     * types exist in the classified schema.
      */
     record TableQueryField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType
+        ReturnTypeRef returnType,
+        List<ArgumentSpec> arguments
     ) implements QueryField {}
 
     /**
@@ -48,12 +66,16 @@ public sealed interface QueryField extends RootField
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
      * schema, with the {@link FieldWrapper} embedded.
+     *
+     * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
+     * of the {@code @tableMethod} directive, used to pass external context into the method.
      */
     record TableMethodQueryField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType
+        ReturnTypeRef returnType,
+        List<String> contextArguments
     ) implements QueryField {}
 
     /**
@@ -126,11 +148,19 @@ public sealed interface QueryField extends RootField
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
      * schema.
+     *
+     * <p>{@code arguments} is the full list of arguments on the field. The validator checks that
+     * any referenced input types exist in the classified schema.
+     *
+     * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
+     * of the {@code @service} directive.
      */
     record ServiceQueryField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType
+        ReturnTypeRef returnType,
+        List<ArgumentSpec> arguments,
+        List<String> contextArguments
     ) implements QueryField {}
 }

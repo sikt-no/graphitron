@@ -47,6 +47,8 @@ import no.sikt.graphitron.record.field.ChildField.TableField;
 import no.sikt.graphitron.record.field.ChildField.TableInterfaceField;
 import no.sikt.graphitron.record.field.ChildField.TableMethodField;
 import no.sikt.graphitron.record.field.ChildField.UnionField;
+import no.sikt.graphitron.record.field.MutationField;
+import no.sikt.graphitron.record.field.QueryField;
 import no.sikt.graphitron.record.field.DefaultOrderSpec;
 import no.sikt.graphitron.record.field.FieldWrapper;
 import no.sikt.graphitron.record.field.FieldConditionRef;
@@ -145,6 +147,7 @@ public class GraphitronSchemaBuilder {
     private static final String DIR_LOOKUP_KEY = "lookupKey";
     private static final String DIR_ORDER_BY = "orderBy";
     private static final String DIR_CONDITION = "condition";
+    private static final String DIR_MUTATION = "mutation";
 
     // Argument names for the directives above.
     private static final String ARG_CONTEXT_ARGUMENTS = "contextArguments";
@@ -630,6 +633,9 @@ public class GraphitronSchemaBuilder {
             return new MultitableReferenceField(parentTypeName, name, location);
         }
 
+        if (parentType instanceof RootType) {
+            return classifyRootField(fieldDef, parentTypeName);
+        }
         if (parentType instanceof TableType tableType) {
             return classifyChildFieldOnTableType(fieldDef, parentTypeName, tableType);
         }
@@ -638,6 +644,146 @@ public class GraphitronSchemaBuilder {
         }
 
         return new UnclassifiedField(parentTypeName, name, location);
+    }
+
+    // ===== Root field classification (P5) =====
+
+    private GraphitronField classifyRootField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
+        if (parentTypeName.equals("Mutation")) {
+            return classifyMutationField(fieldDef, parentTypeName);
+        }
+        if (parentTypeName.equals("Query")) {
+            return classifyQueryField(fieldDef, parentTypeName);
+        }
+        return new UnclassifiedField(parentTypeName, fieldDef.getName(), locationOf(fieldDef));
+    }
+
+    private GraphitronField classifyQueryField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
+        String name = fieldDef.getName();
+        SourceLocation location = locationOf(fieldDef);
+
+        if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
+            String rawTypeName = baseTypeName(fieldDef);
+            String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
+            return new QueryField.ServiceQueryField(parentTypeName, name, location,
+                resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
+                parseArguments(fieldDef),
+                parseContextArguments(fieldDef, DIR_SERVICE));
+        }
+
+        if (name.equals("_entities")) {
+            return new QueryField.EntityQueryField(parentTypeName, name, location,
+                resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
+        }
+
+        if (name.equals("node")) {
+            return new QueryField.NodeQueryField(parentTypeName, name, location,
+                resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
+        }
+
+        if (hasLookupKeyAnywhere(fieldDef)) {
+            return new QueryField.LookupQueryField(parentTypeName, name, location,
+                resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)),
+                parseArguments(fieldDef));
+        }
+
+        if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
+            String rawTypeName = baseTypeName(fieldDef);
+            String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
+            return new QueryField.TableMethodQueryField(parentTypeName, name, location,
+                resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
+                parseContextArguments(fieldDef, DIR_TABLE_METHOD));
+        }
+
+        String rawTypeName = baseTypeName(fieldDef);
+        String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
+        GraphitronType elementType = types.get(elementTypeName);
+
+        if (elementType instanceof TableType) {
+            return new QueryField.TableQueryField(parentTypeName, name, location,
+                resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
+                parseArguments(fieldDef));
+        }
+        if (elementType instanceof TableInterfaceType) {
+            return new QueryField.TableInterfaceQueryField(parentTypeName, name, location,
+                resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+        }
+        if (elementType instanceof InterfaceType) {
+            return new QueryField.InterfaceQueryField(parentTypeName, name, location,
+                resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+        }
+        if (elementType instanceof UnionType) {
+            return new QueryField.UnionQueryField(parentTypeName, name, location,
+                resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+        }
+
+        return new UnclassifiedField(parentTypeName, name, location);
+    }
+
+    private GraphitronField classifyMutationField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
+        String name = fieldDef.getName();
+        SourceLocation location = locationOf(fieldDef);
+
+        if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
+            return new MutationField.ServiceMutationField(parentTypeName, name, location,
+                resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
+        }
+
+        if (fieldDef.hasAppliedDirective(DIR_MUTATION)) {
+            String typeName = getMutationTypeName(fieldDef);
+            if (typeName != null) {
+                String rawReturn = baseTypeName(fieldDef);
+                ReturnTypeRef returnType = resolveReturnType(rawReturn, buildWrapper(fieldDef));
+                return switch (typeName) {
+                    case "INSERT" -> new MutationField.InsertMutationField(parentTypeName, name, location, returnType);
+                    case "UPDATE" -> new MutationField.UpdateMutationField(parentTypeName, name, location, returnType);
+                    case "DELETE" -> new MutationField.DeleteMutationField(parentTypeName, name, location, returnType);
+                    case "UPSERT" -> new MutationField.UpsertMutationField(parentTypeName, name, location, returnType);
+                    default       -> new UnclassifiedField(parentTypeName, name, location);
+                };
+            }
+        }
+
+        return new UnclassifiedField(parentTypeName, name, location);
+    }
+
+    /**
+     * Returns {@code true} when {@code @lookupKey} appears on any direct argument of the field,
+     * or on any field within an input-type argument (recursively). This is the field-level
+     * classification signal — which specific argument carries it has no semantic significance.
+     */
+    private boolean hasLookupKeyAnywhere(GraphQLFieldDefinition fieldDef) {
+        for (var arg : fieldDef.getArguments()) {
+            if (arg.hasAppliedDirective(DIR_LOOKUP_KEY)) return true;
+            String argTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(arg.getType())).getName();
+            if (schema.getType(argTypeName) instanceof GraphQLInputObjectType inputType) {
+                if (inputTypeHasLookupKey(inputType, 0)) return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean inputTypeHasLookupKey(GraphQLInputObjectType inputType, int depth) {
+        if (depth > 10) return false; // guard against pathological nesting
+        for (var field : inputType.getFieldDefinitions()) {
+            if (field.hasAppliedDirective(DIR_LOOKUP_KEY)) return true;
+            String fieldTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(field.getType())).getName();
+            if (schema.getType(fieldTypeName) instanceof GraphQLInputObjectType nested) {
+                if (inputTypeHasLookupKey(nested, depth + 1)) return true;
+            }
+        }
+        return false;
+    }
+
+    private String getMutationTypeName(GraphQLFieldDefinition fieldDef) {
+        var dir = fieldDef.getAppliedDirective(DIR_MUTATION);
+        if (dir == null) return null;
+        var arg = dir.getArgument(ARG_TYPE_NAME);
+        if (arg == null) return null;
+        Object value = arg.getValue();
+        if (value instanceof EnumValue ev) return ev.getName();
+        if (value instanceof String s) return s;
+        return null;
     }
 
     private GraphitronField classifyChildFieldOnResultType(GraphQLFieldDefinition fieldDef, String parentTypeName) {
@@ -790,10 +936,9 @@ public class GraphitronSchemaBuilder {
         boolean nonNull = type instanceof GraphQLNonNull;
         boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
         String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
-        boolean lookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
         boolean orderBy = arg.hasAppliedDirective(DIR_ORDER_BY);
         boolean conditionArg = arg.hasAppliedDirective(DIR_CONDITION);
-        return new ArgumentSpec(arg.getName(), typeName, nonNull, list, lookupKey, orderBy, conditionArg);
+        return new ArgumentSpec(arg.getName(), typeName, nonNull, list, orderBy, conditionArg);
     }
 
     /**
@@ -958,6 +1103,7 @@ public class GraphitronSchemaBuilder {
         assertDirective(DIR_LOOKUP_KEY);
         assertDirective(DIR_ORDER_BY);
         assertDirective(DIR_CONDITION);
+        assertDirective(DIR_MUTATION, ARG_TYPE_NAME);
     }
 
     private void assertDirective(String name, String... args) {

@@ -57,24 +57,24 @@ class ArgumentValidationTest {
             List.of()),
 
         BUILTIN_SCALAR_ARG("argument with built-in scalar type — no errors",
-            tableField(List.of(new ArgumentSpec("limit", "Int", false, false, false, false, false))),
+            tableField(List.of(new ArgumentSpec("limit", "Int", false, false, false, false))),
             Map.of(),
             List.of()),
 
         KNOWN_INPUT_TYPE_ARG("argument referencing a known InputType — no errors",
-            tableField(List.of(new ArgumentSpec("filter", "FilmFilter", false, false, false, false, false))),
+            tableField(List.of(new ArgumentSpec("filter", "FilmFilter", false, false, false, false))),
             Map.of("FilmFilter", new InputType("FilmFilter", null, List.of())),
             List.of()),
 
         UNKNOWN_TYPE_ARG("argument referencing an unknown type — validation error",
-            tableField(List.of(new ArgumentSpec("status", "FilmStatus", false, false, false, false, false))),
+            tableField(List.of(new ArgumentSpec("status", "FilmStatus", false, false, false, false))),
             Map.of(),
             List.of("Field 'actors': argument 'status' references unknown type 'FilmStatus'")),
 
         MULTIPLE_ARGS_ONE_UNKNOWN("two arguments, one unknown — one error",
             tableField(List.of(
-                new ArgumentSpec("limit", "Int", false, false, false, false, false),
-                new ArgumentSpec("status", "FilmStatus", false, false, false, false, false))),
+                new ArgumentSpec("limit", "Int", false, false, false, false),
+                new ArgumentSpec("status", "FilmStatus", false, false, false, false))),
             Map.of(),
             List.of("Field 'actors': argument 'status' references unknown type 'FilmStatus'"));
 
