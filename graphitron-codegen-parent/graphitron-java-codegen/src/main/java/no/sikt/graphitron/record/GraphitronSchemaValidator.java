@@ -25,6 +25,11 @@ import org.jooq.Table;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import no.sikt.graphitron.record.field.ArgumentSpec;
+import no.sikt.graphitron.record.type.InputFieldSpec;
 
 /**
  * Validates a {@link GraphitronSchema}, collecting all errors rather than failing on the first.
@@ -37,13 +42,14 @@ import java.util.List;
 public class GraphitronSchemaValidator {
 
     public List<ValidationError> validate(GraphitronSchema schema) {
+        var types = schema.types();
         var errors = new ArrayList<ValidationError>();
-        schema.types().values().forEach(type -> validateType(type, errors));
-        schema.fields().values().forEach(field -> validateField(field, errors));
+        types.values().forEach(type -> validateType(type, types, errors));
+        schema.fields().values().forEach(field -> validateField(field, types, errors));
         return List.copyOf(errors);
     }
 
-    private void validateType(GraphitronType type, List<ValidationError> errors) {
+    private void validateType(GraphitronType type, Map<String, GraphitronType> types, List<ValidationError> errors) {
         switch (type) {
             case no.sikt.graphitron.record.type.GraphitronType.TableType t          -> validateTableType(t, errors);
             case no.sikt.graphitron.record.type.GraphitronType.ResultType t         -> validateResultType(t, errors);
@@ -52,10 +58,11 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.record.type.GraphitronType.InterfaceType t      -> validateInterfaceType(t, errors);
             case no.sikt.graphitron.record.type.GraphitronType.UnionType t          -> validateUnionType(t, errors);
             case no.sikt.graphitron.record.type.GraphitronType.ErrorType t          -> {} // no structural validation needed
+            case no.sikt.graphitron.record.type.GraphitronType.InputType t          -> validateInputType(t, types, errors);
         }
     }
 
-    private void validateField(GraphitronField field, List<ValidationError> errors) {
+    private void validateField(GraphitronField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         switch (field) {
             case no.sikt.graphitron.record.field.QueryField.LookupQueryField f        -> validateLookupQueryField(f, errors);
             case no.sikt.graphitron.record.field.QueryField.TableQueryField f         -> validateTableQueryField(f, errors);
@@ -75,14 +82,14 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.record.field.ChildField.ColumnReferenceField f    -> validateColumnReferenceField(f, errors);
             case no.sikt.graphitron.record.field.ChildField.NodeIdField f             -> validateNodeIdField(f, errors);
             case no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField f    -> validateNodeIdReferenceField(f, errors);
-            case no.sikt.graphitron.record.field.ChildField.TableField f              -> validateTableField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.TableField f              -> validateTableField(f, types, errors);
             case no.sikt.graphitron.record.field.ChildField.TableMethodField f        -> validateTableMethodField(f, errors);
             case no.sikt.graphitron.record.field.ChildField.TableInterfaceField f     -> validateTableInterfaceField(f, errors);
             case no.sikt.graphitron.record.field.ChildField.InterfaceField f          -> validateInterfaceField(f, errors);
             case no.sikt.graphitron.record.field.ChildField.UnionField f              -> validateUnionField(f, errors);
             case no.sikt.graphitron.record.field.ChildField.NestingField f            -> validateNestingField(f, errors);
             case no.sikt.graphitron.record.field.ChildField.ConstructorField f        -> validateConstructorField(f, errors);
-            case no.sikt.graphitron.record.field.ChildField.ServiceField f            -> validateServiceField(f, errors);
+            case no.sikt.graphitron.record.field.ChildField.ServiceField f            -> validateServiceField(f, types, errors);
             case no.sikt.graphitron.record.field.ChildField.ComputedField f           -> validateComputedField(f, errors);
             case no.sikt.graphitron.record.field.ChildField.PropertyField f           -> validatePropertyField(f, errors);
             case no.sikt.graphitron.record.field.ChildField.MultitableReferenceField f -> validateMultitableReferenceField(f, errors);
@@ -127,6 +134,20 @@ public class GraphitronSchemaValidator {
     }
     private void validateUnionType(no.sikt.graphitron.record.type.GraphitronType.UnionType type, List<ValidationError> errors) {
         validateParticipants(type.name(), type.participants(), errors);
+    }
+
+    private static final Set<String> BUILTIN_SCALARS =
+        Set.of("String", "Int", "Float", "Boolean", "ID");
+
+    private void validateInputType(no.sikt.graphitron.record.type.GraphitronType.InputType type, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        for (var field : type.fields()) {
+            if (!BUILTIN_SCALARS.contains(field.typeName()) && !types.containsKey(field.typeName())) {
+                errors.add(new ValidationError(
+                    "Input type '" + type.name() + "': field '" + field.name() + "' references unknown type '" + field.typeName() + "'",
+                    type.location()
+                ));
+            }
+        }
     }
 
     private void validateParticipants(String typeName, java.util.List<no.sikt.graphitron.record.type.ParticipantRef> participants, List<ValidationError> errors) {
@@ -322,7 +343,7 @@ public class GraphitronSchemaValidator {
             ));
         }
     }
-    private void validateTableField(no.sikt.graphitron.record.field.ChildField.TableField field, List<ValidationError> errors) {
+    private void validateTableField(no.sikt.graphitron.record.field.ChildField.TableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
         if (field.condition() instanceof FieldConditionRef.UnresolvedFieldCondition u) {
             errors.add(new ValidationError(
@@ -331,6 +352,7 @@ public class GraphitronSchemaValidator {
             ));
         }
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateTableMethodField(no.sikt.graphitron.record.field.ChildField.TableMethodField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
@@ -347,8 +369,9 @@ public class GraphitronSchemaValidator {
     }
     private void validateNestingField(no.sikt.graphitron.record.field.ChildField.NestingField field, List<ValidationError> errors) {}
     private void validateConstructorField(no.sikt.graphitron.record.field.ChildField.ConstructorField field, List<ValidationError> errors) {}
-    private void validateServiceField(no.sikt.graphitron.record.field.ChildField.ServiceField field, List<ValidationError> errors) {
+    private void validateServiceField(no.sikt.graphitron.record.field.ChildField.ServiceField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateComputedField(no.sikt.graphitron.record.field.ChildField.ComputedField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
@@ -366,6 +389,17 @@ public class GraphitronSchemaValidator {
             "Field '" + field.name() + "': could not be classified — missing or conflicting directives",
             field.location()
         ));
+    }
+
+    private void validateArguments(String fieldName, SourceLocation location, List<ArgumentSpec> arguments, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        for (var arg : arguments) {
+            if (!BUILTIN_SCALARS.contains(arg.typeName()) && !types.containsKey(arg.typeName())) {
+                errors.add(new ValidationError(
+                    "Field '" + fieldName + "': argument '" + arg.name() + "' references unknown type '" + arg.typeName() + "'",
+                    location
+                ));
+            }
+        }
     }
 
     private void validateCardinality(String fieldName, SourceLocation location, no.sikt.graphitron.record.field.FieldWrapper cardinality, List<ValidationError> errors) {

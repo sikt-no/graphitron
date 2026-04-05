@@ -16,6 +16,7 @@ import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLDirectiveContainer;
 import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLFieldDefinition;
+import graphql.schema.GraphQLInputObjectField;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInterfaceType;
 import graphql.schema.GraphQLNamedType;
@@ -33,6 +34,7 @@ import no.sikt.graphitron.record.type.ErrorHandlerSpec;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.record.field.ChildField.ColumnField;
 import no.sikt.graphitron.record.field.ChildField.ColumnReferenceField;
+import no.sikt.graphitron.record.field.ArgumentSpec;
 import no.sikt.graphitron.record.field.ChildField.ComputedField;
 import no.sikt.graphitron.record.field.ChildField.InterfaceField;
 import no.sikt.graphitron.record.field.ChildField.MultitableReferenceField;
@@ -70,8 +72,10 @@ import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndC
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.record.type.GraphitronType;
 import no.sikt.graphitron.record.type.GraphitronType.ErrorType;
+import no.sikt.graphitron.record.type.GraphitronType.InputType;
 import no.sikt.graphitron.record.type.GraphitronType.InterfaceType;
 import no.sikt.graphitron.record.type.GraphitronType.ResultType;
+import no.sikt.graphitron.record.type.InputFieldSpec;
 import no.sikt.graphitron.record.type.GraphitronType.RootType;
 import no.sikt.graphitron.record.type.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.record.type.GraphitronType.TableType;
@@ -138,8 +142,12 @@ public class GraphitronSchemaBuilder {
     private static final String DIR_SPLIT_QUERY = "splitQuery";
     private static final String DIR_SERVICE = "service";
     private static final String DIR_EXTERNAL_FIELD = "externalField";
+    private static final String DIR_LOOKUP_KEY = "lookupKey";
+    private static final String DIR_ORDER_BY = "orderBy";
+    private static final String DIR_CONDITION = "condition";
 
     // Argument names for the directives above.
+    private static final String ARG_CONTEXT_ARGUMENTS = "contextArguments";
     private static final String ARG_NAME = "name";
     private static final String ARG_ON = "on";
     private static final String ARG_TYPE_ID = "typeId";
@@ -277,9 +285,12 @@ public class GraphitronSchemaBuilder {
 
     private GraphitronType classifyType(GraphQLNamedType namedType) {
         if (namedType instanceof GraphQLScalarType
-                || namedType instanceof GraphQLEnumType
-                || namedType instanceof GraphQLInputObjectType) {
+                || namedType instanceof GraphQLEnumType) {
             return null;
+        }
+
+        if (namedType instanceof GraphQLInputObjectType inputType) {
+            return buildInputType(inputType);
         }
 
         String name = namedType.getName();
@@ -363,6 +374,34 @@ public class GraphitronSchemaBuilder {
         return new ErrorType(name, location, handlers);
     }
 
+    private InputType buildInputType(GraphQLInputObjectType inputType) {
+        String name = inputType.getName();
+        SourceLocation location = locationOf(inputType);
+        List<InputFieldSpec> fields = inputType.getFieldDefinitions().stream()
+            .filter(f -> !f.hasAppliedDirective(DIR_NOT_GENERATED))
+            .map(this::buildInputFieldSpec)
+            .toList();
+        return new InputType(name, location, fields);
+    }
+
+    private InputFieldSpec buildInputFieldSpec(GraphQLInputObjectField field) {
+        String name = field.getName();
+        GraphQLType type = field.getType();
+        boolean nonNull = type instanceof GraphQLNonNull;
+        boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
+        String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
+        boolean lookupKey = field.hasAppliedDirective(DIR_LOOKUP_KEY);
+        boolean orderBy = field.hasAppliedDirective(DIR_ORDER_BY);
+        boolean hasFieldDir = field.hasAppliedDirective(DIR_FIELD);
+        String columnName = hasFieldDir
+            ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
+            : name;
+        String javaName = hasFieldDir
+            ? argString(field, DIR_FIELD, ARG_JAVA_NAME).orElse(null)
+            : null;
+        return new InputFieldSpec(name, typeName, nonNull, list, lookupKey, orderBy, columnName, javaName);
+    }
+
     private ErrorHandlerSpec parseErrorHandlerSpec(Map<String, Object> item) {
         Object handlerRaw = item.get(ARG_HANDLER);
         ErrorHandlerType handlerType = handlerRaw != null
@@ -406,7 +445,8 @@ public class GraphitronSchemaBuilder {
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
                 parseReferencePath(fieldDef),
                 new FieldConditionRef.NoFieldCondition(),
-                fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY));
+                fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY),
+                parseArguments(fieldDef));
         }
 
         if (elementType instanceof TableInterfaceType) {
@@ -609,7 +649,9 @@ public class GraphitronSchemaBuilder {
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             return new ServiceField(parentTypeName, name, location,
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
-                parseReferencePath(fieldDef));
+                parseReferencePath(fieldDef),
+                parseArguments(fieldDef),
+                parseContextArguments(fieldDef, DIR_SERVICE));
         }
 
         String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
@@ -627,7 +669,9 @@ public class GraphitronSchemaBuilder {
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             return new ServiceField(parentTypeName, name, location,
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
-                parseReferencePath(fieldDef));
+                parseReferencePath(fieldDef),
+                parseArguments(fieldDef),
+                parseContextArguments(fieldDef, DIR_SERVICE));
         }
 
         if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) {
@@ -641,7 +685,8 @@ public class GraphitronSchemaBuilder {
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             return new TableMethodField(parentTypeName, name, location,
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
-                parseReferencePath(fieldDef));
+                parseReferencePath(fieldDef),
+                parseContextArguments(fieldDef, DIR_TABLE_METHOD));
         }
 
         if (!isScalarOrEnum(fieldDef)) {
@@ -727,6 +772,37 @@ public class GraphitronSchemaBuilder {
         return catalog.findColumn(table, columnName)
             .<ColumnRef>map(e -> new ResolvedColumn(e.javaName(), e.column()))
             .orElseGet(UnresolvedColumn::new);
+    }
+
+    // ===== Argument parsing =====
+
+    /**
+     * Parses every argument on {@code fieldDef} into an {@link ArgumentSpec}.
+     */
+    private List<ArgumentSpec> parseArguments(GraphQLFieldDefinition fieldDef) {
+        return fieldDef.getArguments().stream()
+            .map(this::buildArgumentSpec)
+            .toList();
+    }
+
+    private ArgumentSpec buildArgumentSpec(GraphQLArgument arg) {
+        GraphQLType type = arg.getType();
+        boolean nonNull = type instanceof GraphQLNonNull;
+        boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
+        String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
+        boolean lookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
+        boolean orderBy = arg.hasAppliedDirective(DIR_ORDER_BY);
+        boolean conditionArg = arg.hasAppliedDirective(DIR_CONDITION);
+        return new ArgumentSpec(arg.getName(), typeName, nonNull, list, lookupKey, orderBy, conditionArg);
+    }
+
+    /**
+     * Returns the {@code contextArguments} list from the {@code @service} or {@code @tableMethod}
+     * directive on {@code fieldDef}, or an empty list when the directive is absent or the argument
+     * is not set.
+     */
+    private List<String> parseContextArguments(GraphQLFieldDefinition fieldDef, String directiveName) {
+        return argStringList(fieldDef, directiveName, ARG_CONTEXT_ARGUMENTS);
     }
 
     // ===== Reference path parsing =====
@@ -879,6 +955,9 @@ public class GraphitronSchemaBuilder {
         assertDirective(DIR_SPLIT_QUERY);
         assertDirective(DIR_SERVICE);
         assertDirective(DIR_EXTERNAL_FIELD);
+        assertDirective(DIR_LOOKUP_KEY);
+        assertDirective(DIR_ORDER_BY);
+        assertDirective(DIR_CONDITION);
     }
 
     private void assertDirective(String name, String... args) {
@@ -916,6 +995,11 @@ public class GraphitronSchemaBuilder {
 
     private static SourceLocation locationOf(GraphQLFieldDefinition field) {
         var def = field.getDefinition();
+        return def != null ? def.getSourceLocation() : null;
+    }
+
+    private static SourceLocation locationOf(GraphQLInputObjectType type) {
+        var def = type.getDefinition();
         return def != null ? def.getSourceLocation() : null;
     }
 

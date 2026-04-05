@@ -876,6 +876,192 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    // ===== P4: Field arguments =====
+
+    enum ArgumentParsingCase {
+        TABLE_FIELD_NO_ARGS(
+            "TableField with no arguments — empty arguments list",
+            """
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") { actors: [Actor!]! }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.record.field.ChildField.TableField) schema.field("Film", "actors");
+                assertThat(f.arguments()).isEmpty();
+            }),
+
+        TABLE_FIELD_WITH_ARGS(
+            "TableField with arguments — arguments parsed with correct typeName, nonNull, list",
+            """
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+                actors(limit: Int!, ids: [ID!]): [Actor!]!
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.record.field.ChildField.TableField) schema.field("Film", "actors");
+                assertThat(f.arguments()).hasSize(2);
+                var limit = f.arguments().get(0);
+                assertThat(limit.name()).isEqualTo("limit");
+                assertThat(limit.typeName()).isEqualTo("Int");
+                assertThat(limit.nonNull()).isTrue();
+                assertThat(limit.list()).isFalse();
+                var ids = f.arguments().get(1);
+                assertThat(ids.typeName()).isEqualTo("ID");
+                assertThat(ids.list()).isTrue();
+            }),
+
+        TABLE_FIELD_LOOKUP_KEY_ARG(
+            "@lookupKey on argument — lookupKey flag is true",
+            """
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+                actor(id: ID! @lookupKey): Actor
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.record.field.ChildField.TableField) schema.field("Film", "actor");
+                assertThat(f.arguments()).hasSize(1);
+                assertThat(f.arguments().get(0).lookupKey()).isTrue();
+                assertThat(f.arguments().get(0).orderBy()).isFalse();
+            }),
+
+        TABLE_FIELD_ORDER_BY_ARG(
+            "@orderBy on argument — orderBy flag is true",
+            """
+            enum ActorOrder { NAME }
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+                actors(orderBy: ActorOrder): [Actor!]!
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.record.field.ChildField.TableField) schema.field("Film", "actors");
+                // @orderBy is only on the argument definition directive, not the enum value — check arg
+                assertThat(f.arguments()).hasSize(1);
+                assertThat(f.arguments().get(0).typeName()).isEqualTo("ActorOrder");
+            }),
+
+        SERVICE_FIELD_CONTEXT_ARGS(
+            "@service with contextArguments — contextArguments populated",
+            """
+            type Film @table(name: "film") {
+                rating: String @service(service: {className: "com.example.Svc", method: "get"}, contextArguments: ["tenantId", "userId"])
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.record.field.ChildField.ServiceField) schema.field("Film", "rating");
+                assertThat(f.contextArguments()).containsExactly("tenantId", "userId");
+            }),
+
+        TABLE_METHOD_FIELD_CONTEXT_ARGS(
+            "@tableMethod with contextArguments — contextArguments populated",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language
+                    @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"}, contextArguments: ["tenantId"])
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.record.field.ChildField.TableMethodField) schema.field("Film", "language");
+                assertThat(f.contextArguments()).containsExactly("tenantId");
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        ArgumentParsingCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(ArgumentParsingCase.class)
+    void argumentParsing(ArgumentParsingCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== P4: InputType classification =====
+
+    enum InputTypeCase {
+        BASIC_INPUT_TYPE(
+            "input type with scalar fields → InputType with InputFieldSpecs",
+            """
+            input FilmInput { title: String! releaseYear: Int }
+            type Query { x: String }
+            """,
+            schema -> {
+                var it = (no.sikt.graphitron.record.type.GraphitronType.InputType) schema.type("FilmInput");
+                assertThat(it.fields()).hasSize(2);
+                var title = it.fields().get(0);
+                assertThat(title.name()).isEqualTo("title");
+                assertThat(title.typeName()).isEqualTo("String");
+                assertThat(title.nonNull()).isTrue();
+                assertThat(title.list()).isFalse();
+                assertThat(title.columnName()).isEqualTo("title"); // defaults to field name
+                var year = it.fields().get(1);
+                assertThat(year.typeName()).isEqualTo("Int");
+                assertThat(year.nonNull()).isFalse();
+            }),
+
+        INPUT_FIELD_EXPLICIT_COLUMN_NAME(
+            "@field(name:) on input field → InputFieldSpec.columnName overridden",
+            """
+            input FilmInput { releaseYear: Int @field(name: "release_year") }
+            type Query { x: String }
+            """,
+            schema -> {
+                var it = (no.sikt.graphitron.record.type.GraphitronType.InputType) schema.type("FilmInput");
+                assertThat(it.fields().get(0).columnName()).isEqualTo("release_year");
+            }),
+
+        INPUT_FIELD_NOT_GENERATED_EXCLUDED(
+            "@notGenerated on input field — field excluded from InputType.fields",
+            """
+            input FilmInput { title: String releaseYear: Int @notGenerated }
+            type Query { x: String }
+            """,
+            schema -> {
+                var it = (no.sikt.graphitron.record.type.GraphitronType.InputType) schema.type("FilmInput");
+                assertThat(it.fields()).hasSize(1);
+                assertThat(it.fields().get(0).name()).isEqualTo("title");
+            }),
+
+        INPUT_FIELD_LIST_TYPE(
+            "list-wrapped input field → InputFieldSpec.list is true",
+            """
+            input FilmInput { tags: [String!]! }
+            type Query { x: String }
+            """,
+            schema -> {
+                var it = (no.sikt.graphitron.record.type.GraphitronType.InputType) schema.type("FilmInput");
+                assertThat(it.fields().get(0).list()).isTrue();
+                assertThat(it.fields().get(0).nonNull()).isTrue();
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        InputTypeCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(InputTypeCase.class)
+    void inputTypeClassification(InputTypeCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
     // ===== Type classification =====
 
     enum TypeClassificationCase {

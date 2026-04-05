@@ -11,7 +11,7 @@ import java.util.List;
 public sealed interface GraphitronType
     permits GraphitronType.TableType, GraphitronType.ResultType, GraphitronType.RootType,
             GraphitronType.TableInterfaceType, GraphitronType.InterfaceType, GraphitronType.UnionType,
-            GraphitronType.ErrorType {
+            GraphitronType.ErrorType, GraphitronType.InputType {
 
     String name();
 
@@ -114,5 +114,21 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         List<ErrorHandlerSpec> handlers
+    ) implements GraphitronType {}
+
+    /**
+     * A GraphQL input object type. Carries the field list that generators and validators inspect.
+     *
+     * <p>{@code fields} holds one {@link InputFieldSpec} per field in the input type, including
+     * directive markers ({@code @lookupKey}, {@code @orderBy}) that generators need. Fields
+     * annotated with {@code @notGenerated} are excluded.
+     *
+     * <p>The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error for each
+     * field whose {@link InputFieldSpec#typeName()} does not resolve to a known type in the schema.
+     */
+    record InputType(
+        String name,
+        SourceLocation location,
+        List<InputFieldSpec> fields
     ) implements GraphitronType {}
 }
