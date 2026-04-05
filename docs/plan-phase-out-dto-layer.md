@@ -75,249 +75,81 @@ The `GraphitronField` sealed interface hierarchy is the Java materialisation of 
 
 Every GraphQL named type is classified into a `GraphitronType`. This is where `@table` directive mappings are validated — jOOQ table class exists, discriminator columns are present, etc. — and it is the authoritative source of source context for all fields on that type.
 
-```java
-sealed interface GraphitronType
-    permits TableType, ResultType, RootType,
-            TableInterfaceType, InterfaceType, UnionType, ErrorType, InputType {
-    String name();
-    SourceLocation location();
-}
+See [`GraphitronType.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/type/GraphitronType.java). The eight variants are:
 
-// @table — full SQL generation; @table directive mapping validated here.
-// The SQL table name is accessible via table.tableName() on both ResolvedTable and UnresolvedTable.
-// node captures whether @node is present: NoNode when absent, NodeDirective when present.
-record TableType(
-    String name,
-    SourceLocation location,
-    TableRef table,    // resolved jOOQ table, or unresolved sentinel; carries SQL name
-    NodeRef node       // @node directive tracking; NoNode when absent
-) implements GraphitronType {}
-
-// @record — runtime wiring only, no SQL until a new scope starts
-record ResultType(String name, SourceLocation location)
-    implements GraphitronType {}
-
-// Query / Mutation — unmapped entry points
-record RootType(String name, SourceLocation location)
-    implements GraphitronType {}
-
-// interface with @table + @discriminate; implementing types have @table + @discriminator
-// SQL table name is accessible via table.tableName().
-record TableInterfaceType(
-    String name,
-    SourceLocation location,
-    String discriminatorColumn,
-    TableRef table,                    // resolved jOOQ table, or unresolved sentinel; carries SQL name
-    List<ParticipantRef> participants  // one per implementing type
-) implements GraphitronType {}
-
-// interface with no directives; implementing types have @table
-record InterfaceType(
-    String name,
-    SourceLocation location,
-    List<ParticipantRef> participants  // one per implementing type
-) implements GraphitronType {}
-
-// union; all member types have @table
-record UnionType(
-    String name,
-    SourceLocation location,
-    List<ParticipantRef> participants  // one per member type
-) implements GraphitronType {}
-
-// @error — maps Java exceptions to GraphQL error responses
-record ErrorType(
-    String name,
-    SourceLocation location,
-    List<ErrorHandlerSpec> handlers
-) implements GraphitronType {}
-
-// GraphQL input object type; fields and their directive markers
-record InputType(
-    String name,
-    SourceLocation location,
-    List<InputFieldSpec> fields
-) implements GraphitronType {}
-```
+| Variant | Trigger | Key fields |
+|---|---|---|
+| `TableType` | `@table` directive | `TableRef table`, `NodeRef node` |
+| `ResultType` | `@record` directive | Runtime wiring only; no SQL until a new scope starts |
+| `RootType` | `Query` / `Mutation` type | Entry points; no directive required |
+| `TableInterfaceType` | `@table` + `@discriminate` | `discriminatorColumn`, `TableRef table`, `List<ParticipantRef>` |
+| `InterfaceType` | Interface without `@table` | `List<ParticipantRef>` (each member carries `@table`) |
+| `UnionType` | GraphQL union | `List<ParticipantRef>` (all members carry `@table`) |
+| `ErrorType` | `@error` directive | `List<ErrorHandlerSpec>` — maps Java exceptions to error responses |
+| `InputType` | GraphQL input object | `List<InputFieldSpec>` for argument inspection |
 
 ### `TableRef`
 
-`TableType` and `TableInterfaceType` use a sealed hierarchy to represent the outcome of resolving the `@table` directive value against the jOOQ catalog:
-
-```java
-sealed interface TableRef permits ResolvedTable, UnresolvedTable {
-    /** The raw SQL table name from the @table directive (e.g. "film"). Always available. */
-    String tableName();
-}
-
-// jOOQ table class found in catalog
-record ResolvedTable(
-    String tableName,      // raw SQL name from @table directive — e.g. "film"
-    String javaFieldName,  // field name in generated Tables class — e.g. "FILM"
-    Table<?> table         // jOOQ instance; provides column and FK metadata
-) implements TableRef {}
-
-// SQL name could not be matched to any class in the jOOQ catalog
-record UnresolvedTable(String tableName) implements TableRef {}
-```
-
-The validator reports an error for `UnresolvedTable`; the code generator only consumes `ResolvedTable`.
+See [`TableRef.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/type/TableRef.java). `TableType` and `TableInterfaceType` use a two-variant sealed hierarchy (`ResolvedTable`, `UnresolvedTable`) for the outcome of matching the `@table` directive's SQL name against the jOOQ catalog. `tableName()` is present on both so callers never need to pattern-match just to retrieve the SQL name. `ResolvedTable` additionally carries the jOOQ `Table<?>` instance (columns, primary key, FK metadata) and the Java field name in the generated `Tables` class. The validator reports an error for `UnresolvedTable`; the code generator only consumes `ResolvedTable`.
 
 ### `ParticipantRef`
 
-Each implementing or member type of an interface or union is represented by a `ParticipantRef`:
-
-```java
-sealed interface ParticipantRef permits BoundParticipant, UnboundParticipant {
-    String typeName();
-}
-
-// implementing/member type carries @table
-record BoundParticipant(
-    String typeName,
-    TableRef table,
-    String discriminatorValue  // value from @discriminator(value:); null when absent
-) implements ParticipantRef {}
-
-// implementing/member type does not carry @table — validator reports an error
-record UnboundParticipant(String typeName) implements ParticipantRef {}
-```
-
-`discriminatorValue` is used by the type resolver generator for `TableInterfaceType` and `UnionType` to map a discriminator column value to a concrete Java type.
+See [`ParticipantRef.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/type/ParticipantRef.java). Each implementing or member type of an interface or union is represented as `BoundParticipant` (carries `@table` + the `TableRef`) or `UnboundParticipant` (does not — validator reports an error). `BoundParticipant.discriminatorValue` (from `@discriminator(value:)`, `null` when absent) is used by the type resolver generator to map a discriminator column value to a concrete Java type.
 
 ### `GraphitronField`
 
-```java
-sealed interface GraphitronField
-    permits RootField, ChildField, NotGeneratedField, UnclassifiedField {
-    String name();
-    SourceLocation location();
-}
-
-sealed interface RootField extends GraphitronField
-    permits QueryField, MutationField {}
-
-sealed interface QueryField extends RootField
-    permits LookupQueryField, TableQueryField, TableMethodQueryField,
-            NodeQueryField, EntityQueryField,
-            TableInterfaceQueryField, InterfaceQueryField, UnionQueryField,
-            ServiceQueryField {}
-
-sealed interface MutationField extends RootField
-    permits InsertMutationField, UpdateMutationField, DeleteMutationField,
-            UpsertMutationField, ServiceMutationField {}
-
-sealed interface ChildField extends GraphitronField
-    permits ColumnField, ColumnReferenceField,
-            NodeIdField, NodeIdReferenceField,
-            TableField, TableMethodField,
-            TableInterfaceField, InterfaceField, UnionField,
-            NestingField, ConstructorField,
-            ServiceField, ComputedField, PropertyField,
-            MultitableReferenceField {}
-```
+See [`GraphitronField.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/GraphitronField.java), [`QueryField.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/QueryField.java), [`MutationField.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/MutationField.java), [`ChildField.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/ChildField.java), [`RootField.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/RootField.java). The four top-level permits are `RootField`, `ChildField`, `NotGeneratedField`, and `UnclassifiedField`. `RootField` splits into `QueryField` (9 variants) and `MutationField` (5 variants). `ChildField` has 14 variants covering every table/result/service/property mapping pattern.
 
 Each leaf type is a Java `record` carrying the properties relevant to code generation (table class, FK key constant, condition wrapper class, etc.). Source context for a `ChildField` is derived from `schema.type(parentTypeName)` — a `TableType` means table-mapped, a `ResultType` means result-mapped.
 
-**`ConstructorField` is planned but not yet implemented.** Until its directive and generation logic are defined, `GraphitronSchemaBuilder` must classify any field that would otherwise match `ConstructorField` as `UnclassifiedField` — which the validator rejects with a clear error. Recognising a type in the hierarchy without a generation path is a hidden gap; `UnclassifiedField` makes the gap visible and enforced. This note will be removed when the deliverable for `ConstructorField` is added to the sequence.
+**`ConstructorField` is planned but not yet implemented.** Until its directive and generation logic are defined, `GraphitronSchemaBuilder` classifies any field that would otherwise match `ConstructorField` as `UnclassifiedField` — which the validator rejects with a clear error. Recognising a type in the hierarchy without a generation path is a hidden gap; `UnclassifiedField` makes the gap visible and enforced. This note will be removed when the deliverable for `ConstructorField` is added to the sequence.
 
 ### `ColumnRef`
 
-`ColumnField` and `ColumnReferenceField` use a sealed hierarchy to represent the outcome of resolving the field's column name against the jOOQ table:
-
-```java
-sealed interface ColumnRef permits ResolvedColumn, UnresolvedColumn {}
-
-// column found in jOOQ table
-record ResolvedColumn(
-    String javaName,   // Java identifier in the generated table class — e.g. "FILM_ID", "TITLE".
-                       // Obtained via reflection on the table instance fields (same pattern as
-                       // TableEntry.javaFieldName), NOT by uppercasing the SQL name. Uppercasing
-                       // is only correct for the default jOOQ naming strategy; a custom
-                       // GeneratorStrategy can produce any identifier, so reflection is required.
-    Field<?> column    // jOOQ instance; used for type inspection at code-gen time
-) implements ColumnRef {}
-
-// column name could not be matched; columnName is on the parent record
-record UnresolvedColumn() implements ColumnRef {}
-```
+See [`ColumnRef.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/ColumnRef.java). `ColumnField` and `ColumnReferenceField` use a two-variant sealed hierarchy (`ResolvedColumn`, `UnresolvedColumn`) for the outcome of matching the SQL column name against the jOOQ table. `ResolvedColumn.javaName` is the Java identifier in the generated table class (e.g. `"FILM_ID"`), obtained via reflection — **not** by uppercasing the SQL name. Uppercasing only works for the default jOOQ naming strategy; a custom `GeneratorStrategy` can produce any identifier. `UnresolvedColumn` carries no data — the column name is on the parent `ColumnField` or `ColumnReferenceField` record.
 
 ### `ReferencePathElementRef`
 
-`TableField`, `ColumnReferenceField`, `NodeIdReferenceField`, `TableMethodField`, `ServiceField`, and `ComputedField` each carry a `List<ReferencePathElementRef>` representing the `@reference(path:)` join steps. The sealed hierarchy distinguishes six states:
+See [`ReferencePathElementRef.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/ReferencePathElementRef.java). `TableField`, `ColumnReferenceField`, `NodeIdReferenceField`, `TableMethodField`, `ServiceField`, and `ComputedField` each carry a `List<ReferencePathElementRef>` representing the `@reference(path:)` join steps. Six variants:
 
-```java
-sealed interface ReferencePathElementRef
-    permits FkRef, FkWithConditionRef, ConditionOnlyRef,
-            UnresolvedKeyRef, UnresolvedConditionRef, UnresolvedKeyAndConditionRef {}
-
-record FkRef(ForeignKey<?, ?> key) implements ReferencePathElementRef {}
-record FkWithConditionRef(ForeignKey<?, ?> key, MethodRef condition) implements ReferencePathElementRef {}
-record ConditionOnlyRef(MethodRef condition) implements ReferencePathElementRef {}
-record UnresolvedKeyRef(String keyName) implements ReferencePathElementRef {}
-record UnresolvedConditionRef(String qualifiedName) implements ReferencePathElementRef {}
-record UnresolvedKeyAndConditionRef(String keyName, String conditionName) implements ReferencePathElementRef {}
-```
+| Variant | FK resolved | Condition resolved |
+|---|---|---|
+| `FkRef` | yes | — |
+| `FkWithConditionRef` | yes | yes |
+| `ConditionOnlyRef` | — | yes |
+| `UnresolvedKeyRef` | no | — |
+| `UnresolvedConditionRef` | — | no |
+| `UnresolvedKeyAndConditionRef` | no | no |
 
 The validator reports errors for the three `Unresolved*` variants; the code generator only consumes the three resolved variants.
 
 ### `ReturnTypeRef`
 
-Every non-scalar field has a return type name that must be resolved against the classified schema. The outcome is captured in `ReturnTypeRef`, which also embeds the `FieldWrapper` describing how the element type is wrapped. Together they form a complete description of a field's declared GraphQL return type — e.g. `[Film!]!` is `TableBoundReturnType("Film", filmTable, List(false, false, ...))` and `Film` is `TableBoundReturnType("Film", filmTable, Single(true))`.
+See [`ReturnTypeRef.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/ReturnTypeRef.java). Every non-scalar field's return type is resolved against the classified schema and stored as a `ReturnTypeRef`, which also embeds the `FieldWrapper`. Together they form a complete description of the declared GraphQL return type — e.g. `[Film!]!` becomes `TableBoundReturnType("Film", filmTable, List(false, false, ...))` and `Film` becomes `TableBoundReturnType("Film", filmTable, Single(true))`.
 
-```java
-sealed interface ReturnTypeRef permits TableBoundReturnType, OtherReturnType, UnresolvedReturnType {
-    String returnTypeName();
+Two variants:
+- `TableBoundReturnType` — the named type exists and is a `TableType`; carries the `TableRef` for FK/path validation.
+- `OtherReturnType` — the named type exists but is not table-backed (result type, interface, union, scalar, enum, or unclassified). Also used as the fallback for directive-argument string values that may not appear in the classified `types` map.
 
-    /** The wrapper around the element type. */
-    FieldWrapper wrapper();
+There is no `UnresolvedReturnType`. graphql-java validates all field-level type references at schema assembly; any unknown return type causes schema loading to fail before the builder runs.
 
-    /** Type exists and is a TableType. table carries the @table resolution outcome. */
-    record TableBoundReturnType(String returnTypeName, TableRef table, FieldWrapper wrapper) implements ReturnTypeRef {}
+### `NodeTypeRef`
 
-    /** Type exists but is not a table-backed type (result type, interface, union). */
-    record OtherReturnType(String returnTypeName, FieldWrapper wrapper) implements ReturnTypeRef {}
+See [`NodeTypeRef.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/NodeTypeRef.java). Used only by `NodeIdReferenceField` to capture the resolution outcome of the `@nodeId(typeName:)` directive argument. Because this is a string-typed directive argument (not a field-level type reference), graphql-java does **not** validate it — the type name may genuinely not exist in the schema. Three variants enable distinct error messages:
 
-    /** Type name does not exist in the schema. Validator reports an error. */
-    record UnresolvedReturnType(String returnTypeName, FieldWrapper wrapper) implements ReturnTypeRef {}
-}
-```
+| Variant | Meaning |
+|---|---|
+| `ResolvedNodeType` | Type exists, has `@node`; carries the `NodeDirective` for ID encoding |
+| `NoNodeDirectiveType` | Type exists but lacks `@node` |
+| `NotFoundNodeType` | Type name does not match any type in the schema |
+
+The builder checks `schema.getType(targetTypeName)` first (live GraphQL schema) to distinguish `NotFoundNodeType` from `NoNodeDirectiveType`, then consults the classified `types` map for `@node`.
 
 ### `FieldWrapper`
 
-`FieldWrapper` models how a field's element type is wrapped in the GraphQL type system. It is always embedded inside `ReturnTypeRef` — callers access it via `returnType.wrapper()`.
-
-All fields in GraphQL can be list-wrapped and non-null-wrapped. Connection is a wrapper abstraction — semantically equivalent to a list wrapper but using the Relay `edges.node` structure rather than a bare `[T]`. Both list and connection carry optional ordering configuration.
+See [`FieldWrapper.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/FieldWrapper.java). `FieldWrapper` models how a field's element type is wrapped in the GraphQL type system. It is always embedded inside `ReturnTypeRef` — callers access it via `returnType.wrapper()`. Three variants: `Single`, `List`, `Connection`.
 
 Connection detection is **structural**, not name-based: the return type is checked for an `edges` field whose element type has a `node` field. `connectionElementTypeName()` navigates `edges.node` to find the actual element type — the `returnTypeName` on `TableBoundReturnType` is always the element type, never the connection wrapper type.
-
-```java
-sealed interface FieldWrapper permits Single, List, Connection {
-
-    /** Returns one instance (or null). */
-    record Single(boolean nullable) implements FieldWrapper {}
-
-    /** Returns zero-or-more instances. May carry a default sort order; query fields also
-     *  carry @orderBy enum value specs (empty list for child fields). */
-    record List(
-        boolean listNullable,
-        boolean itemNullable,
-        DefaultOrderSpec defaultOrder,                       // null when @defaultOrder is absent
-        java.util.List<OrderByEnumValueSpec> orderByValues  // empty for child fields today
-    ) implements FieldWrapper {}
-
-    /** Relay cursor-based paginated list. Cursor/pagination config TBD — this variant will
-     *  gain additional components when connection support is implemented. Ordering rules
-     *  follow List. */
-    record Connection(
-        boolean connectionNullable,
-        boolean itemNullable,
-        DefaultOrderSpec defaultOrder,
-        java.util.List<OrderByEnumValueSpec> orderByValues
-        // + cursor/pagination config (TBD)
-    ) implements FieldWrapper {}
-}
-```
 
 The three variants generate structurally different code:
 
@@ -333,94 +165,13 @@ Fields that carry `returnType` but are always single by specification — `Looku
 
 ### `GraphitronSchema` container
 
-`GraphitronSchema` holds both maps. Types are keyed by name (the natural identifier in GraphQL); fields by `FieldCoordinates` — the GraphQL-spec-standardised `(typeName, fieldName)` pair provided by GraphQL Java (`graphql.schema.FieldCoordinates`), the same type used as the key in `GraphQLCodeRegistry`. The two field maps are therefore parallel by construction.
-
-```java
-record GraphitronSchema(
-    Map<String, GraphitronType> types,
-    Map<FieldCoordinates, GraphitronField> fields
-) {
-    GraphitronType type(String name) { return types.get(name); }
-
-    GraphitronField field(String typeName, String fieldName) {
-        return fields.get(FieldCoordinates.coordinates(typeName, fieldName));
-    }
-}
-```
+See [`GraphitronSchema.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/GraphitronSchema.java). A two-field record holding the `types` map (keyed by name) and the `fields` map (keyed by `FieldCoordinates` — the GraphQL-spec-standardised `(typeName, fieldName)` pair from `graphql.schema.FieldCoordinates`, the same type used in `GraphQLCodeRegistry`). Convenience accessors `type(name)` and `field(typeName, fieldName)` avoid repetitive map boilerplate.
 
 `GraphitronSchemaBuilder` populates both maps during schema traversal, using a `JooqCatalog` wrapper to resolve table names.
 
 ### `JooqCatalog`
 
-A thin wrapper around jOOQ's `Catalog`. Loads the catalog once via reflection (`DefaultCatalog.DEFAULT_CATALOG`) and provides lazy lookups — no pre-built maps. Each method queries the catalog on demand.
-
-```java
-class JooqCatalog {
-    private final Catalog catalog;
-
-    JooqCatalog(String generatedJooqPackage) {
-        this.catalog = loadDefaultCatalog(generatedJooqPackage);
-    }
-
-    /** Find a table by its SQL name. Returns both the Table<?> instance and its Java field name in Tables. */
-    Optional<TableEntry> findTable(String sqlName) {
-        return catalog.schemaStream()
-            .flatMap(schema -> getTablesClass(schema).stream())
-            .flatMap(cls -> Arrays.stream(cls.getFields()))
-            .filter(f -> Table.class.isAssignableFrom(f.getType()))
-            .map(f -> new TableEntry(f.getName(), (Table<?>) getFieldValue(f)))
-            .filter(e -> e.table().getName().equalsIgnoreCase(sqlName))
-            .findFirst();
-    }
-
-    /** Find a foreign key by its SQL name. */
-    Optional<ForeignKey<?, ?>> findForeignKey(String sqlName) { ... }
-
-    /**
-     * Find a column in a table by its SQL name. Returns both the jOOQ Field instance and its
-     * Java identifier name in the generated table class (e.g. "FILM_ID", "TITLE").
-     *
-     * Uses reflection on the table class's public instance fields — NOT toUpperCase() on the SQL
-     * name. The default jOOQ naming strategy happens to uppercase column names, so toUpperCase()
-     * would work there, but a custom GeneratorStrategy can produce any identifier. Reflecting the
-     * real field name (the same pattern used by findTable for Tables class fields) is required to
-     * honour custom strategies.
-     */
-    Optional<ColumnEntry> findColumn(Table<?> table, String sqlColumnName) {
-        return Arrays.stream(table.getClass().getFields())
-            .filter(f -> Field.class.isAssignableFrom(f.getType()))
-            .map(f -> new ColumnEntry(f.getName(), (Field<?>) instanceFieldValue(f, table)))
-            .filter(e -> sqlColumnName.equalsIgnoreCase(e.column().getName()))
-            .findFirst();
-    }
-}
-
-record TableEntry(String javaFieldName, Table<?> table) {}
-record ColumnEntry(String javaName, Field<?> column) {}
-```
-
-The `@table` directive carries the SQL name — what the schema author writes. The Java field name (e.g. `"FILM"`) is what appears in generated code. Both differ and both are needed, so `TableEntry` returns them together. `GraphitronSchemaBuilder` then stores both on `TableType` using the `TableRef` sealed hierarchy:
-
-```java
-String sqlName = getDirectiveArg(objectType, "table", "name");
-Optional<TableEntry> entry = jooqCatalog.findTable(sqlName);
-TableRef tableRef = entry
-    .<TableRef>map(e -> new ResolvedTable(sqlName, e.javaFieldName(), e.table()))
-    .orElseGet(() -> new UnresolvedTable(sqlName));
-
-types.put(typeName, new TableType(name, location, tableRef, node));
-```
-
-`tableName` is carried on both `ResolvedTable` and `UnresolvedTable` so callers can always retrieve it via `TableRef.tableName()` without having to reach into the parent type record. When `ResolvedTable` it provides columns, primary key, and FK metadata — used directly by FK auto-inference. When `UnresolvedTable`, a downstream validation pass reports the unresolved name.
-
-The generator drives iteration from `TypeDefinitionRegistry` (types with `@table`) and looks up by coordinates:
-
-```java
-typeDef.getFieldDefinitions().forEach(fieldDef -> {
-    GraphitronField gField = schema.field(typeDef.getName(), fieldDef.getName());
-    // switch on gField
-});
-```
+See [`JooqCatalog.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/JooqCatalog.java). A thin wrapper around jOOQ's `Catalog`. Loads the catalog once via reflection (`DefaultCatalog.DEFAULT_CATALOG`) and provides lazy lookups for tables (`findTable`), foreign keys (`findForeignKey`), and columns (`findColumn`) — no pre-built maps. All lookups are case-insensitive SQL name matches. Column and table Java field names are obtained via reflection on the generated table/`Tables` class fields (not by uppercasing the SQL name), which is required to honour custom jOOQ `GeneratorStrategy` implementations.
 
 This deliverable is complete when the hierarchies and `GraphitronSchema` compile, and a simple pattern-match over all permits exhaustively covers every leaf of both `GraphitronType` and `GraphitronField`.
 
@@ -445,69 +196,25 @@ Field arguments on query and mutation fields are what drive filter conditions, p
 
 ### `InputType` in `GraphitronType`
 
-`InputObjectTypeDefinition` is currently discarded in `classifyType()`. Add a new variant:
-
-```java
-record InputType(
-    String name,
-    SourceLocation location,
-    List<InputFieldSpec> fields
-) implements GraphitronType {}
-```
-
-Each `InputFieldSpec` captures the field name, its GraphQL type string, and directive markers that generators need:
-
-```java
-record InputFieldSpec(
-    String name,
-    String typeName,           // base type name (unwrapped)
-    boolean nonNull,
-    boolean list,
-    boolean orderBy,           // @orderBy present on this field
-    String columnName,         // value of @field(name:), or the GraphQL field name if absent
-    boolean javaNamePresent    // true when @field(javaName:) was present (deprecated — warning only)
-) {}
-```
+See [`InputFieldSpec.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/type/InputFieldSpec.java). `InputObjectTypeDefinition` is classified into `InputType` (one of the eight `GraphitronType` variants). Each `InputFieldSpec` captures the field name, its GraphQL type string, and directive markers that generators need.
 
 > **`@lookupKey` is not stored in `InputFieldSpec` or `ArgumentSpec`.** `hasLookupKeyAnywhere()` checks the live GraphQL schema (not the classified `InputFieldSpec` data) to decide whether a root Query field is a `LookupQueryField`. Once classified, `@lookupKey` carries no further semantic — all arguments on a lookup field participate equally.
 
-`@field(javaName:)` is deprecated. Its presence is recorded as `javaNamePresent: boolean` so the validator can emit a deprecation warning. The value is not stored. `@field(name:)` (column name override) is stored in `columnName`.
+`@field(javaName:)` is deprecated. Its presence is recorded as `javaNamePresent: boolean` so the validator can emit a deprecation error. The value is not stored. `@field(name:)` (column name override) is stored in `columnName`.
 
 ### Argument list on field records
 
-Every field type that can carry GraphQL arguments gains a `List<ArgumentSpec> arguments` property. This applies to all root fields (P5) and to child fields that accept arguments (primarily `TableField` for pagination/ordering, `ServiceField` for context args).
+See [`ArgumentSpec.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/ArgumentSpec.java) and [`ExternalRef.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/ExternalRef.java). Every field type that can carry GraphQL arguments has a `List<ArgumentSpec> arguments` property. This applies to all root fields (P5) and to child fields that accept arguments (primarily `TableField` for pagination/ordering, `ServiceField` for context args).
 
-```java
-record ArgumentSpec(
-    String name,
-    String typeName,       // base type name (unwrapped)
-    boolean nonNull,
-    boolean list,
-    boolean orderBy,       // @orderBy present
-    boolean conditionArg   // @condition present on this argument
-) {}
-```
+> `lookupKey` is absent from `ArgumentSpec` — see note under `InputFieldSpec` above.
 
-> `lookupKey` is absent — see note under `InputFieldSpec` above.
-
-`contextArguments` from `@service` and `@tableMethod` directives (a `[String!]` list of `GraphQLContext` key names) are captured separately as `List<String> contextArguments` on `ServiceQueryField`, `ServiceMutationField`, `ServiceField`, `TableMethodQueryField`, and `TableMethodField`.
-
-The `ExternalCodeReference` input object from `@service(service:)` and `@tableMethod(tableMethodReference:)` is stored as an `ExternalRef`:
-
-```java
-record ExternalRef(String className, String methodName) {}
-```
-
-`className` may be a short name (if the class is configured in the plugin's `externalReferences`) or a FQCN. `methodName` is `null` when omitted. Each of `ServiceQueryField`, `ServiceMutationField`, `ServiceField`, `TableMethodQueryField`, and `TableMethodField` carries this as `serviceRef` or `tableMethodRef` respectively.
+`contextArguments` from `@service` and `@tableMethod` directives (a `[String!]` list of `GraphQLContext` key names) are captured separately as `List<String> contextArguments` on `ServiceQueryField`, `ServiceMutationField`, `ServiceField`, `TableMethodQueryField`, and `TableMethodField`. The `ExternalCodeReference` input object from `@service(service:)` and `@tableMethod(tableMethodReference:)` is stored as an `ExternalRef` with `className` (short name or FQCN) and nullable `methodName`. Each of those five field types carries it as `serviceRef` or `tableMethodRef` respectively.
 
 All `MutationField` variants carry `List<ArgumentSpec> arguments`. `ServiceMutationField` additionally carries `serviceRef: ExternalRef` and `List<String> contextArguments`.
 
 ### Validation
 
-The validator gains checks for:
-- Every `ArgumentSpec.typeName` that is not a built-in scalar must resolve to a type in `GraphitronSchema.types()` (either an `InputType`, scalar, or enum).
-- Every `InputFieldSpec.typeName` with the same constraint.
-- `@orderBy` must not appear on non-scalar argument/field types.
+The validator checks `@orderBy` must not appear on non-scalar argument/field types. Type-existence checks for `ArgumentSpec.typeName` and `InputFieldSpec.typeName` are not needed: graphql-java validates all argument and input-field type references at schema assembly, so any unknown type name prevents schema loading before the builder runs.
 
 ### What P4 does not include
 
