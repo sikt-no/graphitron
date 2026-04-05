@@ -26,13 +26,19 @@ import no.sikt.graphitron.record.field.DefaultOrderSpec;
 import no.sikt.graphitron.record.field.FieldWrapper;
 import no.sikt.graphitron.record.field.FieldConditionRef;
 import no.sikt.graphitron.record.field.GraphitronField.NotGeneratedField;
+import no.sikt.graphitron.record.field.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.record.field.NodeTypeRef;
 import no.sikt.graphitron.record.field.NodeTypeRef.ResolvedNodeType;
 import no.sikt.graphitron.record.field.OrderSpec;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.record.type.GraphitronType.ErrorType;
+import no.sikt.graphitron.record.type.GraphitronType.InputType;
+import no.sikt.graphitron.record.type.GraphitronType.InterfaceType;
+import no.sikt.graphitron.record.type.GraphitronType.ResultType;
+import no.sikt.graphitron.record.type.GraphitronType.RootType;
 import no.sikt.graphitron.record.type.GraphitronType.TableType;
+import no.sikt.graphitron.record.type.GraphitronType.UnionType;
 import no.sikt.graphitron.record.type.NodeRef.NodeDirective;
 import no.sikt.graphitron.record.type.NodeRef.NoNode;
 import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
@@ -1374,6 +1380,274 @@ class GraphitronSchemaBuilderTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(RootFieldCase.class)
     void rootFieldClassification(RootFieldCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== UnclassifiedField =====
+
+    enum UnclassifiedFieldCase {
+
+        CHILD_FIELD_ON_TABLE_TYPE_RETURNING_RESULT_TYPE(
+            "field on @table type returning a @record type with no directive → UnclassifiedField (ConstructorField not yet supported)",
+            """
+            type FilmDetails @record { rating: String }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "details")).isInstanceOf(UnclassifiedField.class)),
+
+        QUERY_FIELD_RETURNING_UNCLASSIFIED_TYPE(
+            "query field returning a type with no Graphitron directive → UnclassifiedField",
+            """
+            type Untyped { value: String }
+            type Query { data: Untyped }
+            """,
+            schema -> assertThat(schema.field("Query", "data")).isInstanceOf(UnclassifiedField.class)),
+
+        MUTATION_FIELD_WITHOUT_DIRECTIVE(
+            "mutation field without @mutation or @service → UnclassifiedField",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { doStuff: Film }
+            """,
+            schema -> assertThat(schema.field("Mutation", "doStuff")).isInstanceOf(UnclassifiedField.class)),
+
+        CHILD_FIELD_ON_UNCLASSIFIED_PARENT_TYPE(
+            "field on a type with no Graphitron directive is not classified (type excluded from schema)",
+            """
+            type Untyped { value: String }
+            type Query { data: Untyped }
+            """,
+            schema -> assertThat(schema.field("Untyped", "value")).isNull());
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        UnclassifiedFieldCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(UnclassifiedFieldCase.class)
+    void unclassifiedFieldClassification(UnclassifiedFieldCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== Type directive precedence =====
+
+    enum TypeDirectivePrecedenceCase {
+
+        TABLE_WINS_OVER_RECORD(
+            "@table takes precedence over @record when both are present",
+            """
+            type Film @table(name: "film") @record { title: String }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.type("Film")).isInstanceOf(TableType.class)),
+
+        TABLE_WINS_OVER_ERROR(
+            "@table takes precedence over @error when both are present",
+            """
+            type Film @table(name: "film") @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) { title: String }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.type("Film")).isInstanceOf(TableType.class)),
+
+        RECORD_WINS_OVER_ERROR(
+            "@record takes precedence over @error when both are present",
+            """
+            type Hybrid @record @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) { value: String }
+            type Query { x: String }
+            """,
+            schema -> assertThat(schema.type("Hybrid")).isInstanceOf(ResultType.class));
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        TypeDirectivePrecedenceCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(TypeDirectivePrecedenceCase.class)
+    void typeDirectivePrecedence(TypeDirectivePrecedenceCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== Child field directive precedence =====
+
+    enum ChildFieldDirectivePrecedenceCase {
+
+        SERVICE_WINS_OVER_EXTERNAL_FIELD(
+            "@service takes precedence over @externalField on child field of @table type",
+            """
+            type Film @table(name: "film") {
+                title: String @service(service: {className: "com.example.Svc", method: "get"}) @externalField
+            }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "title")).isInstanceOf(ServiceField.class)),
+
+        SERVICE_WINS_OVER_TABLE_METHOD(
+            "@service takes precedence over @tableMethod on child field of @table type",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language
+                    @service(service: {className: "com.example.Svc", method: "get"})
+                    @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "language")).isInstanceOf(ServiceField.class)),
+
+        SERVICE_WINS_OVER_NODE_ID(
+            "@service takes precedence over @nodeId on child field of @table type",
+            """
+            type Film @table(name: "film") {
+                id: String @service(service: {className: "com.example.Svc", method: "get"}) @nodeId
+            }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "id")).isInstanceOf(ServiceField.class)),
+
+        EXTERNAL_FIELD_WINS_OVER_TABLE_METHOD(
+            "@externalField takes precedence over @tableMethod on child field of @table type",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language
+                    @externalField
+                    @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "language")).isInstanceOf(ComputedField.class)),
+
+        NODE_ID_WINS_OVER_REFERENCE(
+            "@nodeId takes precedence over @reference on a scalar field",
+            """
+            type Film @table(name: "film") @node {
+                id: ID! @nodeId @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "id")).isInstanceOf(NodeIdField.class)),
+
+        NOT_GENERATED_WINS_OVER_ALL(
+            "@notGenerated takes precedence over any other directive",
+            """
+            type Film @table(name: "film") {
+                title: String @notGenerated @service(service: {className: "com.example.Svc", method: "get"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "title")).isInstanceOf(NotGeneratedField.class)),
+
+        MULTITABLE_REFERENCE_WINS_OVER_CHILD_CLASSIFICATION(
+            "@multitableReference takes precedence over child field classification",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language @multitableReference @service(service: {className: "com.example.Svc", method: "get"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "language")).isInstanceOf(MultitableReferenceField.class));
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        ChildFieldDirectivePrecedenceCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(ChildFieldDirectivePrecedenceCase.class)
+    void childFieldDirectivePrecedence(ChildFieldDirectivePrecedenceCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== Query field directive precedence =====
+
+    enum QueryFieldDirectivePrecedenceCase {
+
+        SERVICE_WINS_OVER_LOOKUP_KEY(
+            "@service takes precedence over @lookupKey on query field",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                film(id: ID @lookupKey): Film
+                    @service(service: {className: "com.example.Svc", method: "get"})
+            }
+            """,
+            schema -> assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.ServiceQueryField.class)),
+
+        SERVICE_WINS_OVER_TABLE_METHOD(
+            "@service takes precedence over @tableMethod on query field",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                film: Film
+                    @service(service: {className: "com.example.Svc", method: "get"})
+                    @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
+            }
+            """,
+            schema -> assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.ServiceQueryField.class)),
+
+        LOOKUP_KEY_WINS_OVER_TABLE_METHOD(
+            "@lookupKey takes precedence over @tableMethod on query field",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                film(id: ID @lookupKey): Film
+                    @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
+            }
+            """,
+            schema -> assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.LookupQueryField.class)),
+
+        SERVICE_WINS_OVER_TABLE_RETURN_TYPE(
+            "@service takes precedence over @table return type classification",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                film: Film @service(service: {className: "com.example.Svc", method: "get"})
+            }
+            """,
+            schema -> assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.ServiceQueryField.class)),
+
+        SERVICE_WINS_ON_MUTATION(
+            "@service takes precedence over @mutation on mutation field",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+                createFilm: Film
+                    @service(service: {className: "com.example.Svc", method: "run"})
+                    @mutation(typeName: INSERT)
+            }
+            """,
+            schema -> assertThat(schema.field("Mutation", "createFilm")).isInstanceOf(MutationField.ServiceMutationField.class));
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        QueryFieldDirectivePrecedenceCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(QueryFieldDirectivePrecedenceCase.class)
+    void queryFieldDirectivePrecedence(QueryFieldDirectivePrecedenceCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 
