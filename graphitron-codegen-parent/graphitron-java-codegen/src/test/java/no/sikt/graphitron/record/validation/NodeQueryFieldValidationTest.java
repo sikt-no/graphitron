@@ -3,6 +3,7 @@ package no.sikt.graphitron.record.validation;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.QueryField.NodeQueryField;
+import no.sikt.graphitron.record.field.FieldWrapper;
 import no.sikt.graphitron.record.field.ReturnTypeRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -17,7 +18,7 @@ class NodeQueryFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("node query field — always valid",
-            new NodeQueryField("Query", "node", null, new ReturnTypeRef.OtherReturnType("Film")),
+            new NodeQueryField("Query", "node", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true))),
             List.of());
 
         private final String description;

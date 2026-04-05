@@ -28,40 +28,32 @@ public sealed interface QueryField extends RootField
      * A root query field whose return type is annotated with {@code @table}.
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema. {@link ReturnTypeRef.TableBoundReturnType} carries the {@link no.sikt.graphitron.record.type.TableRef}
-     * when the return type's table is resolved — used to detect non-deterministic ordering (list
-     * cardinality with no {@code @defaultOrder} and a PK-less table).
-     * {@link ReturnTypeRef.UnresolvedReturnType} means the return type name does not exist in the
-     * schema; the validator reports an error.
-     *
-     * <p>{@code cardinality} is the cardinality of this field — {@link FieldWrapper.Single} for a
-     * single-item lookup, {@link FieldWrapper.List} for a list result, or
-     * {@link FieldWrapper.Connection} for a Relay paginated list. For list and connection variants,
-     * {@code defaultOrder} and {@code orderByValues} are carried inside the cardinality record. The
-     * validator reports errors for unresolved ordering specs.
+     * schema, with the {@link FieldWrapper} embedded — {@link FieldWrapper.Single} for a single-item
+     * lookup, {@link FieldWrapper.List} for a list result, or {@link FieldWrapper.Connection} for a
+     * Relay paginated list. {@link ReturnTypeRef.TableBoundReturnType} carries the
+     * {@link no.sikt.graphitron.record.type.TableRef} when the return type's table is resolved —
+     * used to detect non-deterministic ordering (list or connection with no {@code @defaultOrder}
+     * and a PK-less table). The validator reports errors for unresolved ordering specs on list and
+     * connection variants.
      */
     record TableQueryField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
-        FieldWrapper cardinality
+        ReturnTypeRef returnType
     ) implements QueryField {}
 
     /**
      * A root query field using {@code @tableMethod} — the developer provides a pre-filtered {@code Table<?>}.
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema.
-     *
-     * <p>{@code cardinality} is the cardinality of this field.
+     * schema, with the {@link FieldWrapper} embedded.
      */
     record TableMethodQueryField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
-        FieldWrapper cardinality
+        ReturnTypeRef returnType
     ) implements QueryField {}
 
     /**
@@ -94,48 +86,39 @@ public sealed interface QueryField extends RootField
      * A root query field whose return type is a single-table interface ({@code @table} + {@code @discriminate}).
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema.
-     *
-     * <p>{@code cardinality} is the cardinality of this field.
+     * schema, with the {@link FieldWrapper} embedded.
      */
     record TableInterfaceQueryField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
-        FieldWrapper cardinality
+        ReturnTypeRef returnType
     ) implements QueryField {}
 
     /**
      * A root query field whose return type is a multi-table interface.
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema.
-     *
-     * <p>{@code cardinality} is the cardinality of this field.
+     * schema, with the {@link FieldWrapper} embedded.
      */
     record InterfaceQueryField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
-        FieldWrapper cardinality
+        ReturnTypeRef returnType
     ) implements QueryField {}
 
     /**
      * A root query field whose return type is a union.
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema.
-     *
-     * <p>{@code cardinality} is the cardinality of this field.
+     * schema, with the {@link FieldWrapper} embedded.
      */
     record UnionQueryField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
-        FieldWrapper cardinality
+        ReturnTypeRef returnType
     ) implements QueryField {}
 
     /**

@@ -411,7 +411,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var tf = (TableField) schema.field("Film", "language");
-                assertThat(tf.cardinality()).isInstanceOf(FieldWrapper.Single.class);
+                assertThat(tf.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
                 assertThat(tf.splitQuery()).isFalse();
                 assertThat(tf.condition()).isInstanceOf(FieldConditionRef.NoFieldCondition.class);
                 assertThat(tf.referencePath()).isEmpty();
@@ -424,7 +424,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { actors: [Actor!]! }
             type Query { film: Film }
             """,
-            schema -> assertThat(((TableField) schema.field("Film", "actors")).cardinality())
+            schema -> assertThat(((TableField) schema.field("Film", "actors")).returnType().wrapper())
                 .isInstanceOf(FieldWrapper.List.class)),
 
         CONNECTION_RETURN_TYPE(
@@ -438,7 +438,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var tf = (TableField) schema.field("Film", "actors");
-                assertThat(tf.cardinality()).isInstanceOf(FieldWrapper.Connection.class);
+                assertThat(tf.returnType().wrapper()).isInstanceOf(FieldWrapper.Connection.class);
                 assertThat(tf.returnType()).isInstanceOf(no.sikt.graphitron.record.field.ReturnTypeRef.TableBoundReturnType.class);
                 assertThat(tf.returnType().returnTypeName()).isEqualTo("Actor");
             }),
@@ -505,7 +505,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).cardinality();
+                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
                 assertThat(cardinality.defaultOrder()).isNotNull();
                 var spec = (OrderSpec.IndexOrder) cardinality.defaultOrder().spec();
                 assertThat(spec.indexName()).isEqualTo("idx_actor_name");
@@ -521,7 +521,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).cardinality();
+                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
                 assertThat(cardinality.defaultOrder().spec()).isInstanceOf(OrderSpec.PrimaryKeyOrder.class);
             }),
 
@@ -535,7 +535,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).cardinality();
+                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
                 var fieldsOrder = (OrderSpec.FieldsOrder) cardinality.defaultOrder().spec();
                 assertThat(fieldsOrder.fields()).hasSize(2);
                 assertThat(fieldsOrder.fields().get(0).columnName()).isEqualTo("last_name");
@@ -554,7 +554,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).cardinality();
+                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
                 assertThat(cardinality.defaultOrder().direction()).isEqualTo("DESC");
             }),
 
@@ -570,7 +570,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldWrapper.Connection) ((TableField) schema.field("Film", "actors")).cardinality();
+                var cardinality = (FieldWrapper.Connection) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
                 assertThat(cardinality.defaultOrder()).isNotNull();
                 assertThat(cardinality.defaultOrder().spec()).isInstanceOf(OrderSpec.IndexOrder.class);
             });
@@ -602,7 +602,7 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(((TableMethodField) schema.field("Film", "language")).cardinality())
+            schema -> assertThat(((TableMethodField) schema.field("Film", "language")).returnType().wrapper())
                 .isInstanceOf(FieldWrapper.Single.class)),
 
         LIST_RETURN(
@@ -614,7 +614,7 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(((TableMethodField) schema.field("Film", "actors")).cardinality())
+            schema -> assertThat(((TableMethodField) schema.field("Film", "actors")).returnType().wrapper())
                 .isInstanceOf(FieldWrapper.List.class)),
 
         CONNECTION_RETURN(
@@ -630,7 +630,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var tf = (TableMethodField) schema.field("Film", "actors");
-                assertThat(tf.cardinality()).isInstanceOf(FieldWrapper.Connection.class);
+                assertThat(tf.returnType().wrapper()).isInstanceOf(FieldWrapper.Connection.class);
                 assertThat(tf.returnType().returnTypeName()).isEqualTo("Actor");
             }),
 

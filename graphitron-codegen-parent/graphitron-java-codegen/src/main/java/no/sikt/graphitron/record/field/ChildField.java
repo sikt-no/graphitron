@@ -138,8 +138,10 @@ public sealed interface ChildField extends GraphitronField
      * A child field whose return type is annotated with {@code @table}.
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema. Always a {@link ReturnTypeRef.TableBoundReturnType} when the return type is found as a
-     * table-backed type, or {@link ReturnTypeRef.UnresolvedReturnType} when it does not exist.
+     * schema, with the {@link FieldWrapper} embedded — {@link FieldWrapper.Single} for a 1:1 join,
+     * {@link FieldWrapper.List} for a 1:N join, or {@link FieldWrapper.Connection} for a Relay
+     * paginated list. The validator reports errors for unresolved ordering specs on list and
+     * connection variants.
      *
      * <p>{@code referencePath} is the ordered list of join steps extracted from {@code @reference(path:)},
      * used to override FK auto-inference. Empty when no {@code @reference} directive is present —
@@ -151,11 +153,6 @@ public sealed interface ChildField extends GraphitronField
      *
      * <p>{@code splitQuery} is {@code true} when the {@code @splitQuery} directive is present. This
      * causes Graphitron to use a DataLoader instead of an inline subquery.
-     *
-     * <p>{@code cardinality} is the cardinality of this field — {@link FieldWrapper.Single} for a
-     * 1:1 join, {@link FieldWrapper.List} for a 1:N join, or {@link FieldWrapper.Connection}
-     * for a Relay paginated list. The validator reports errors for unresolved ordering specs on list
-     * and connection variants.
      */
     record TableField(
         String parentTypeName,
@@ -164,77 +161,64 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef returnType,
         List<ReferencePathElementRef> referencePath,
         FieldConditionRef condition,
-        boolean splitQuery,
-        FieldWrapper cardinality
+        boolean splitQuery
     ) implements ChildField {}
 
     /**
      * A child field using {@code @tableMethod} — the developer provides a pre-filtered {@code Table<?>}.
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema.
+     * schema, with the {@link FieldWrapper} embedded.
      *
      * <p>{@code referencePath} is the ordered list of join steps extracted from {@code @reference(path:)},
      * used to override FK auto-inference. Empty when no {@code @reference} directive is present —
      * Graphitron will attempt to infer the foreign key automatically.
-     *
-     * <p>{@code cardinality} is the cardinality of this field.
      */
     record TableMethodField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        List<ReferencePathElementRef> referencePath,
-        FieldWrapper cardinality
+        List<ReferencePathElementRef> referencePath
     ) implements ChildField {}
 
     /**
      * A child field whose return type is a single-table interface.
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema.
-     *
-     * <p>{@code cardinality} is the cardinality of this field.
+     * schema, with the {@link FieldWrapper} embedded.
      */
     record TableInterfaceField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
-        FieldWrapper cardinality
+        ReturnTypeRef returnType
     ) implements ChildField {}
 
     /**
      * A child field whose return type is a multi-table interface.
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema.
-     *
-     * <p>{@code cardinality} is the cardinality of this field.
+     * schema, with the {@link FieldWrapper} embedded.
      */
     record InterfaceField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
-        FieldWrapper cardinality
+        ReturnTypeRef returnType
     ) implements ChildField {}
 
     /**
      * A child field whose return type is a union.
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema.
-     *
-     * <p>{@code cardinality} is the cardinality of this field.
+     * schema, with the {@link FieldWrapper} embedded.
      */
     record UnionField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
-        FieldWrapper cardinality
+        ReturnTypeRef returnType
     ) implements ChildField {}
 
     /**

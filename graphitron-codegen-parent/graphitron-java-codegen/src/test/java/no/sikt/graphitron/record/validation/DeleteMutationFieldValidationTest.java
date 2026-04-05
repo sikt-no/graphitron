@@ -2,6 +2,7 @@ package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.MutationField.DeleteMutationField;
+import no.sikt.graphitron.record.field.FieldWrapper;
 import no.sikt.graphitron.record.field.ReturnTypeRef;
 import no.sikt.graphitron.record.field.GraphitronField;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -17,7 +18,7 @@ class DeleteMutationFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("delete mutation field — always valid",
-            new DeleteMutationField("Mutation", "deleteFilm", null, new ReturnTypeRef.OtherReturnType("Film")),
+            new DeleteMutationField("Mutation", "deleteFilm", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true))),
             List.of());
 
         private final String description;

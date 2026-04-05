@@ -395,18 +395,17 @@ public class GraphitronSchemaBuilder {
 
         if (elementType instanceof TableType) {
             return new TableField(parentTypeName, name, location,
-                resolveReturnType(elementTypeName),
+                resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
                 parseReferencePath(fieldDef),
                 new FieldConditionRef.NoFieldCondition(),
-                fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY),
-                buildWrapper(fieldDef));
+                fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY));
         }
 
         // NestingField: a plain object type in the schema with no Graphitron classification.
         // Its fields are resolved from the same table context as the parent.
         if (schema.getType(elementTypeName) instanceof GraphQLObjectType && elementType == null) {
             return new NestingField(parentTypeName, name, location,
-                new ReturnTypeRef.UnresolvedReturnType(elementTypeName));
+                new ReturnTypeRef.UnresolvedReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
         return new UnclassifiedField(parentTypeName, name, location);
@@ -583,9 +582,8 @@ public class GraphitronSchemaBuilder {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             return new TableMethodField(parentTypeName, name, location,
-                resolveReturnType(elementTypeName),
-                parseReferencePath(fieldDef),
-                buildWrapper(fieldDef));
+                resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
+                parseReferencePath(fieldDef));
         }
 
         if (!isScalarOrEnum(fieldDef)) {
@@ -595,7 +593,7 @@ public class GraphitronSchemaBuilder {
         if (fieldDef.hasAppliedDirective(DIR_NODE_ID)) {
             Optional<String> typeName = argString(fieldDef, DIR_NODE_ID, ARG_TYPE_NAME);
             if (typeName.isPresent()) {
-                ReturnTypeRef targetType = resolveReturnType(typeName.get());
+                ReturnTypeRef targetType = resolveReturnType(typeName.get(), new FieldWrapper.Single(true));
                 ResolvedTable parentTable = tableType.table() instanceof ResolvedTable rt ? rt : null;
                 NodeTypeRef nodeType = resolveNodeType(typeName.get());
                 List<ReferencePathElementRef> path = parseReferencePath(fieldDef);
@@ -622,11 +620,11 @@ public class GraphitronSchemaBuilder {
         return new ColumnField(parentTypeName, name, location, columnName, column, javaNamePresent);
     }
 
-    private ReturnTypeRef resolveReturnType(String targetTypeName) {
+    private ReturnTypeRef resolveReturnType(String targetTypeName, FieldWrapper wrapper) {
         GraphitronType target = types.get(targetTypeName);
-        if (target instanceof TableType tt) return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tt.table());
-        if (target != null) return new ReturnTypeRef.OtherReturnType(targetTypeName);
-        return new ReturnTypeRef.UnresolvedReturnType(targetTypeName);
+        if (target instanceof TableType tt) return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tt.table(), wrapper);
+        if (target != null) return new ReturnTypeRef.OtherReturnType(targetTypeName, wrapper);
+        return new ReturnTypeRef.UnresolvedReturnType(targetTypeName, wrapper);
     }
 
     private NodeTypeRef resolveNodeType(String targetTypeName) {

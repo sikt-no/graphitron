@@ -144,7 +144,7 @@ public class GraphitronSchemaValidator {
 
     private void validateLookupQueryField(no.sikt.graphitron.record.field.QueryField.LookupQueryField field, List<ValidationError> errors) {}
     private void validateTableQueryField(no.sikt.graphitron.record.field.QueryField.TableQueryField field, List<ValidationError> errors) {
-        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
         switch (field.returnType()) {
             case ReturnTypeRef.UnresolvedReturnType u -> errors.add(new ValidationError(
                 "Field '" + field.name() + "': return type '" + u.returnTypeName() + "' does not exist in the schema",
@@ -152,7 +152,7 @@ public class GraphitronSchemaValidator {
             ));
             case ReturnTypeRef.TableBoundReturnType tb -> {
                 if (tb.table() instanceof ResolvedTable rt) {
-                    validateDeterministicOrdering(field.name(), field.location(), field.cardinality(), rt.table(), errors);
+                    validateDeterministicOrdering(field.name(), field.location(), tb.wrapper(), rt.table(), errors);
                 }
                 // UnresolvedTable: type validator reports the unresolved table; skip ordering check
             }
@@ -185,18 +185,18 @@ public class GraphitronSchemaValidator {
         ));
     }
     private void validateTableMethodQueryField(no.sikt.graphitron.record.field.QueryField.TableMethodQueryField field, List<ValidationError> errors) {
-        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateNodeQueryField(no.sikt.graphitron.record.field.QueryField.NodeQueryField field, List<ValidationError> errors) {}
     private void validateEntityQueryField(no.sikt.graphitron.record.field.QueryField.EntityQueryField field, List<ValidationError> errors) {}
     private void validateTableInterfaceQueryField(no.sikt.graphitron.record.field.QueryField.TableInterfaceQueryField field, List<ValidationError> errors) {
-        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateInterfaceQueryField(no.sikt.graphitron.record.field.QueryField.InterfaceQueryField field, List<ValidationError> errors) {
-        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateUnionQueryField(no.sikt.graphitron.record.field.QueryField.UnionQueryField field, List<ValidationError> errors) {
-        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateServiceQueryField(no.sikt.graphitron.record.field.QueryField.ServiceQueryField field, List<ValidationError> errors) {}
     private void validateInsertMutationField(no.sikt.graphitron.record.field.MutationField.InsertMutationField field, List<ValidationError> errors) {}
@@ -330,20 +330,20 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         }
-        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateTableMethodField(no.sikt.graphitron.record.field.ChildField.TableMethodField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
-        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateTableInterfaceField(no.sikt.graphitron.record.field.ChildField.TableInterfaceField field, List<ValidationError> errors) {
-        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateInterfaceField(no.sikt.graphitron.record.field.ChildField.InterfaceField field, List<ValidationError> errors) {
-        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateUnionField(no.sikt.graphitron.record.field.ChildField.UnionField field, List<ValidationError> errors) {
-        validateCardinality(field.name(), field.location(), field.cardinality(), errors);
+        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateNestingField(no.sikt.graphitron.record.field.ChildField.NestingField field, List<ValidationError> errors) {}
     private void validateConstructorField(no.sikt.graphitron.record.field.ChildField.ConstructorField field, List<ValidationError> errors) {}

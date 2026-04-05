@@ -8,6 +8,7 @@ import no.sikt.graphitron.record.field.OrderByEnumValueSpec;
 import no.sikt.graphitron.record.field.OrderSpec;
 import no.sikt.graphitron.record.field.ReturnTypeRef;
 import no.sikt.graphitron.record.field.QueryField.TableQueryField;
+import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -28,50 +29,50 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TableQueryFieldNonDeterministicOrderingValidationTest {
 
     /** Resolved return type backed by {@code film_list} (a view — no primary key). */
-    private static final ReturnTypeRef FILM_LIST_RETURN = new ReturnTypeRef.TableBoundReturnType("FilmList", new no.sikt.graphitron.record.type.TableRef.ResolvedTable("film_list", "FILM_LIST", FILM_LIST));
+    private static ReturnTypeRef filmListReturn(FieldWrapper wrapper) {
+        return new ReturnTypeRef.TableBoundReturnType("FilmList", new ResolvedTable("film_list", "FILM_LIST", FILM_LIST), wrapper);
+    }
 
     /** Resolved return type backed by {@code film} (has a primary key). */
-    private static final ReturnTypeRef FILM_RETURN = new ReturnTypeRef.TableBoundReturnType("Film", new no.sikt.graphitron.record.type.TableRef.ResolvedTable("film", "FILM", FILM));
+    private static ReturnTypeRef filmReturn(FieldWrapper wrapper) {
+        return new ReturnTypeRef.TableBoundReturnType("Film", new ResolvedTable("film", "FILM", FILM), wrapper);
+    }
 
     enum Case implements ValidatorCase {
 
         PKLESS_TABLE_NO_ORDER(
             "list field on PK-less table with no @defaultOrder and no @orderBy — non-deterministic error",
-            new TableQueryField("Query", "films", null, FILM_LIST_RETURN,
-                new FieldWrapper.List(true, true, null, List.of())),
+            new TableQueryField("Query", "films", null, filmListReturn(new FieldWrapper.List(true, true, null, List.of()))),
             List.of("Field 'films': table 'film_list' has no @defaultOrder directive and no primary key — result ordering is non-deterministic")),
 
         CONNECTION_PKLESS_TABLE_NO_ORDER(
             "connection field on PK-less table with no @defaultOrder and no @orderBy — non-deterministic error",
-            new TableQueryField("Query", "films", null, FILM_LIST_RETURN,
-                new FieldWrapper.Connection(true, true, null, List.of())),
+            new TableQueryField("Query", "films", null, filmListReturn(new FieldWrapper.Connection(true, true, null, List.of()))),
             List.of("Field 'films': table 'film_list' has no @defaultOrder directive and no primary key — result ordering is non-deterministic")),
 
         PKLESS_TABLE_WITH_DEFAULT_ORDER(
             "list field on PK-less table with @defaultOrder — ordering guaranteed, no error",
-            new TableQueryField("Query", "films", null, FILM_LIST_RETURN,
-                new FieldWrapper.List(true, true, 
+            new TableQueryField("Query", "films", null, filmListReturn(
+                new FieldWrapper.List(true, true,
                     new DefaultOrderSpec(new OrderSpec.FieldsOrder(List.of()), "ASC"),
-                    List.of())),
+                    List.of()))),
             List.of()),
 
         PKLESS_TABLE_WITH_ORDER_BY(
             "list field on PK-less table with @orderBy enum values — ordering configurable, no error",
-            new TableQueryField("Query", "films", null, FILM_LIST_RETURN,
+            new TableQueryField("Query", "films", null, filmListReturn(
                 new FieldWrapper.List(true, true, null,
-                    List.of(new OrderByEnumValueSpec("TITLE", new OrderSpec.FieldsOrder(List.of()))))),
+                    List.of(new OrderByEnumValueSpec("TITLE", new OrderSpec.FieldsOrder(List.of())))))),
             List.of()),
 
         TABLE_WITH_PK_NO_ORDER(
             "list field on table with primary key, no @defaultOrder — PK provides determinism, no error",
-            new TableQueryField("Query", "films", null, FILM_RETURN,
-                new FieldWrapper.List(true, true, null, List.of())),
+            new TableQueryField("Query", "films", null, filmReturn(new FieldWrapper.List(true, true, null, List.of()))),
             List.of()),
 
         SINGLE_CARDINALITY(
             "single cardinality field on PK-less table — ordering irrelevant, no error",
-            new TableQueryField("Query", "film", null, FILM_LIST_RETURN,
-                new FieldWrapper.Single(true)),
+            new TableQueryField("Query", "film", null, filmListReturn(new FieldWrapper.Single(true))),
             List.of());
 
         private final String description;

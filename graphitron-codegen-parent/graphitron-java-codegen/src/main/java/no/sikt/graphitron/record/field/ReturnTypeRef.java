@@ -4,7 +4,13 @@ import no.sikt.graphitron.record.type.TableRef;
 
 /**
  * Outcome of resolving the return type name of a field against the classified
- * {@link no.sikt.graphitron.record.GraphitronSchema}.
+ * {@link no.sikt.graphitron.record.GraphitronSchema}, combined with the
+ * {@link FieldWrapper} that describes how the element type is wrapped (single, list, or connection).
+ *
+ * <p>Together, {@code returnTypeName} + {@code wrapper} fully describe a field's declared GraphQL
+ * return type: e.g. {@code [Film!]!} is
+ * {@code TableBoundReturnType("Film", filmTable, List(false, false, ...))} and
+ * {@code Film} is {@code TableBoundReturnType("Film", filmTable, Single(true))}.
  *
  * <p>{@link TableBoundReturnType} — the named type exists and is a
  * {@link no.sikt.graphitron.record.type.GraphitronType.TableType}. {@code table} carries the
@@ -25,21 +31,24 @@ public sealed interface ReturnTypeRef permits ReturnTypeRef.TableBoundReturnType
 
     String returnTypeName();
 
+    /** The wrapper around the element type — {@link FieldWrapper.Single}, {@link FieldWrapper.List}, or {@link FieldWrapper.Connection}. */
+    FieldWrapper wrapper();
+
     /**
      * The return type was found in the schema as a
      * {@link no.sikt.graphitron.record.type.GraphitronType.TableType}.
      * {@code table} is the outcome of resolving the type's {@code @table} directive.
      */
-    record TableBoundReturnType(String returnTypeName, TableRef table) implements ReturnTypeRef {}
+    record TableBoundReturnType(String returnTypeName, TableRef table, FieldWrapper wrapper) implements ReturnTypeRef {}
 
     /**
      * The return type was found in the schema but is not a table-backed type.
      */
-    record OtherReturnType(String returnTypeName) implements ReturnTypeRef {}
+    record OtherReturnType(String returnTypeName, FieldWrapper wrapper) implements ReturnTypeRef {}
 
     /**
      * The return type name does not correspond to any classified type in the schema.
      * The validator reports an error.
      */
-    record UnresolvedReturnType(String returnTypeName) implements ReturnTypeRef {}
+    record UnresolvedReturnType(String returnTypeName, FieldWrapper wrapper) implements ReturnTypeRef {}
 }
