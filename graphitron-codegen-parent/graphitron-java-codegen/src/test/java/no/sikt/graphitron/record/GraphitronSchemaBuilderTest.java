@@ -1436,28 +1436,31 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== Type directive precedence =====
+    // ===== Type directive mutual exclusivity =====
+    // @table, @record, and @error are mutually exclusive — no priority between them.
+    // These tests document the builder's fallback behavior (first if/else match wins)
+    // when this constraint is violated. The builder should ideally produce a validation error.
 
-    enum TypeDirectivePrecedenceCase {
+    enum TypeDirectiveConflictCase {
 
-        TABLE_WINS_OVER_RECORD(
-            "@table takes precedence over @record when both are present",
+        TABLE_AND_RECORD_CONFLICT(
+            "@table and @record are mutually exclusive — builder falls back to @table (if/else order)",
             """
             type Film @table(name: "film") @record { title: String }
             type Query { film: Film }
             """,
             schema -> assertThat(schema.type("Film")).isInstanceOf(TableType.class)),
 
-        TABLE_WINS_OVER_ERROR(
-            "@table takes precedence over @error when both are present",
+        TABLE_AND_ERROR_CONFLICT(
+            "@table and @error are mutually exclusive — builder falls back to @table (if/else order)",
             """
             type Film @table(name: "film") @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) { title: String }
             type Query { film: Film }
             """,
             schema -> assertThat(schema.type("Film")).isInstanceOf(TableType.class)),
 
-        RECORD_WINS_OVER_ERROR(
-            "@record takes precedence over @error when both are present",
+        RECORD_AND_ERROR_CONFLICT(
+            "@record and @error are mutually exclusive — builder falls back to @record (if/else order)",
             """
             type Hybrid @record @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) { value: String }
             type Query { x: String }
@@ -1466,7 +1469,7 @@ class GraphitronSchemaBuilderTest {
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
-        TypeDirectivePrecedenceCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+        TypeDirectiveConflictCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
             this.sdl = sdl;
             this.assertions = assertions;
         }
@@ -1474,17 +1477,20 @@ class GraphitronSchemaBuilderTest {
     }
 
     @ParameterizedTest(name = "{0}")
-    @EnumSource(TypeDirectivePrecedenceCase.class)
-    void typeDirectivePrecedence(TypeDirectivePrecedenceCase tc) {
+    @EnumSource(TypeDirectiveConflictCase.class)
+    void typeDirectiveConflict(TypeDirectiveConflictCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== Child field directive precedence =====
+    // ===== Child field directive mutual exclusivity =====
+    // @service, @externalField, @tableMethod, (@nodeId || @reference), @notGenerated, and
+    // @multitableReference are mutually exclusive. @nodeId and @reference CAN be combined.
+    // These tests document the builder's fallback behavior when this constraint is violated.
 
-    enum ChildFieldDirectivePrecedenceCase {
+    enum ChildFieldDirectiveConflictCase {
 
-        SERVICE_WINS_OVER_EXTERNAL_FIELD(
-            "@service takes precedence over @externalField on child field of @table type",
+        SERVICE_AND_EXTERNAL_FIELD_CONFLICT(
+            "@service and @externalField are mutually exclusive — builder falls back to @service",
             """
             type Film @table(name: "film") {
                 title: String @service(service: {className: "com.example.Svc", method: "get"}) @externalField
@@ -1493,8 +1499,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Film", "title")).isInstanceOf(ServiceField.class)),
 
-        SERVICE_WINS_OVER_TABLE_METHOD(
-            "@service takes precedence over @tableMethod on child field of @table type",
+        SERVICE_AND_TABLE_METHOD_CONFLICT(
+            "@service and @tableMethod are mutually exclusive — builder falls back to @service",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -1506,8 +1512,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Film", "language")).isInstanceOf(ServiceField.class)),
 
-        SERVICE_WINS_OVER_NODE_ID(
-            "@service takes precedence over @nodeId on child field of @table type",
+        SERVICE_AND_NODE_ID_CONFLICT(
+            "@service and @nodeId are mutually exclusive — builder falls back to @service",
             """
             type Film @table(name: "film") {
                 id: String @service(service: {className: "com.example.Svc", method: "get"}) @nodeId
@@ -1516,8 +1522,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Film", "id")).isInstanceOf(ServiceField.class)),
 
-        EXTERNAL_FIELD_WINS_OVER_TABLE_METHOD(
-            "@externalField takes precedence over @tableMethod on child field of @table type",
+        EXTERNAL_FIELD_AND_TABLE_METHOD_CONFLICT(
+            "@externalField and @tableMethod are mutually exclusive — builder falls back to @externalField",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -1529,18 +1535,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Film", "language")).isInstanceOf(ComputedField.class)),
 
-        NODE_ID_WINS_OVER_REFERENCE(
-            "@nodeId takes precedence over @reference on a scalar field",
-            """
-            type Film @table(name: "film") @node {
-                id: ID! @nodeId @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            type Query { film: Film }
-            """,
-            schema -> assertThat(schema.field("Film", "id")).isInstanceOf(NodeIdField.class)),
-
-        NOT_GENERATED_WINS_OVER_ALL(
-            "@notGenerated takes precedence over any other directive",
+        NOT_GENERATED_AND_SERVICE_CONFLICT(
+            "@notGenerated and @service are mutually exclusive — builder falls back to @notGenerated",
             """
             type Film @table(name: "film") {
                 title: String @notGenerated @service(service: {className: "com.example.Svc", method: "get"})
@@ -1549,8 +1545,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Film", "title")).isInstanceOf(NotGeneratedField.class)),
 
-        MULTITABLE_REFERENCE_WINS_OVER_CHILD_CLASSIFICATION(
-            "@multitableReference takes precedence over child field classification",
+        MULTITABLE_REFERENCE_AND_SERVICE_CONFLICT(
+            "@multitableReference and @service are mutually exclusive — builder falls back to @multitableReference",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -1562,7 +1558,7 @@ class GraphitronSchemaBuilderTest {
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
-        ChildFieldDirectivePrecedenceCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+        ChildFieldDirectiveConflictCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
             this.sdl = sdl;
             this.assertions = assertions;
         }
@@ -1570,17 +1566,20 @@ class GraphitronSchemaBuilderTest {
     }
 
     @ParameterizedTest(name = "{0}")
-    @EnumSource(ChildFieldDirectivePrecedenceCase.class)
-    void childFieldDirectivePrecedence(ChildFieldDirectivePrecedenceCase tc) {
+    @EnumSource(ChildFieldDirectiveConflictCase.class)
+    void childFieldDirectiveConflict(ChildFieldDirectiveConflictCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== Query field directive precedence =====
+    // ===== Query/mutation field directive mutual exclusivity =====
+    // Query fields: @service, @lookupKey, @tableMethod are mutually exclusive.
+    // Mutation fields: @service, @mutation are mutually exclusive.
+    // These tests document the builder's fallback behavior when this constraint is violated.
 
-    enum QueryFieldDirectivePrecedenceCase {
+    enum QueryFieldDirectiveConflictCase {
 
-        SERVICE_WINS_OVER_LOOKUP_KEY(
-            "@service takes precedence over @lookupKey on query field",
+        SERVICE_AND_LOOKUP_KEY_CONFLICT(
+            "@service and @lookupKey are mutually exclusive on query — builder falls back to @service",
             """
             type Film @table(name: "film") { title: String }
             type Query {
@@ -1590,8 +1589,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.ServiceQueryField.class)),
 
-        SERVICE_WINS_OVER_TABLE_METHOD(
-            "@service takes precedence over @tableMethod on query field",
+        SERVICE_AND_TABLE_METHOD_CONFLICT(
+            "@service and @tableMethod are mutually exclusive on query — builder falls back to @service",
             """
             type Film @table(name: "film") { title: String }
             type Query {
@@ -1602,8 +1601,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.ServiceQueryField.class)),
 
-        LOOKUP_KEY_WINS_OVER_TABLE_METHOD(
-            "@lookupKey takes precedence over @tableMethod on query field",
+        LOOKUP_KEY_AND_TABLE_METHOD_CONFLICT(
+            "@lookupKey and @tableMethod are mutually exclusive on query — builder falls back to @lookupKey",
             """
             type Film @table(name: "film") { title: String }
             type Query {
@@ -1613,8 +1612,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.LookupQueryField.class)),
 
-        SERVICE_WINS_OVER_TABLE_RETURN_TYPE(
-            "@service takes precedence over @table return type classification",
+        SERVICE_AND_TABLE_RETURN_TYPE_CONFLICT(
+            "@service and @table return type are mutually exclusive on query — builder falls back to @service",
             """
             type Film @table(name: "film") { title: String }
             type Query {
@@ -1623,8 +1622,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.ServiceQueryField.class)),
 
-        SERVICE_WINS_ON_MUTATION(
-            "@service takes precedence over @mutation on mutation field",
+        SERVICE_AND_MUTATION_CONFLICT(
+            "@service and @mutation are mutually exclusive on mutation — builder falls back to @service",
             """
             type Film @table(name: "film") { title: String }
             type Query { x: String }
@@ -1638,7 +1637,7 @@ class GraphitronSchemaBuilderTest {
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
-        QueryFieldDirectivePrecedenceCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+        QueryFieldDirectiveConflictCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
             this.sdl = sdl;
             this.assertions = assertions;
         }
@@ -1646,8 +1645,8 @@ class GraphitronSchemaBuilderTest {
     }
 
     @ParameterizedTest(name = "{0}")
-    @EnumSource(QueryFieldDirectivePrecedenceCase.class)
-    void queryFieldDirectivePrecedence(QueryFieldDirectivePrecedenceCase tc) {
+    @EnumSource(QueryFieldDirectiveConflictCase.class)
+    void queryFieldDirectiveConflict(QueryFieldDirectiveConflictCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 

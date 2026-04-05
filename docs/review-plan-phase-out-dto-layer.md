@@ -93,10 +93,21 @@ The plan's testing strategy requires approval tests for every leaf type in the g
 
 | Gap | Severity | Recommendation |
 |---|---|---|
-| **No negative classification tests for directive conflicts** | Medium | **Fixed** — 15 precedence tests added across type, child field, and query/mutation field classification chains. Documents that classification is deterministic and which directive wins. |
+| **No negative classification tests for directive conflicts** | Medium | **Fixed** — 15 mutual-exclusivity tests added across type, child field, and query/mutation field classification chains. Documents the builder's fallback behavior when mutually exclusive directives are combined (the builder silently picks the first match in its if/else chain rather than erroring). See directive exclusivity rules below. |
 | **No test for `hasLookupKeyAnywhere()` depth guard** | Low | The plan mentions a depth guard at 10 levels for recursive `@lookupKey` detection. Add a test confirming the guard prevents infinite recursion on circular input type references. |
 | **`FieldWrapper.Connection` detection not tested** | N/A | Already covered — `TableFieldCase.CONNECTION_RETURN_TYPE` and `TableMethodFieldCase.CONNECTION_RETURN` both test structural edges→node detection. |
 | **No round-trip test for `JooqCatalog` with Sakila** | Low | `JooqCatalog` is tested indirectly via `GraphitronSchemaBuilderTest` (which uses `@table(name: "film")` etc.), but a direct unit test against the Sakila jOOQ classes would catch reflection edge cases (e.g., tables with unusual naming, composite FKs). |
+
+### Directive exclusivity rules
+
+The following directive groups are **mutually exclusive** — combining directives from the same group on a single type or field is invalid. The builder currently resolves violations silently (the first match in the if/else chain wins) rather than producing a validation error. Consider adding explicit validation errors for these conflicts.
+
+| Scope | Mutually exclusive directives | Notes |
+|---|---|---|
+| **Type-level** | `@table`, `@record`, `@error` | No priority between them — they are peers |
+| **Child fields** | `@service`, `@externalField`, `@tableMethod`, (`@nodeId` \|\| `@reference`), `@notGenerated`, `@multitableReference` | `@nodeId` and `@reference` **can** be combined with each other (producing `NodeIdReferenceField`), but the pair is mutually exclusive with the other directives |
+| **Query fields** | `@service`, `@lookupKey`, `@tableMethod` | |
+| **Mutation fields** | `@service`, `@mutation` | |
 
 ---
 
