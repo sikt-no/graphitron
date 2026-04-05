@@ -80,10 +80,10 @@ These are all straightforward additions. None of them block the generating strea
 
 ### Level 2 (Classification tests) — 2 gaps
 
-| Gap | Severity | Recommendation |
+| Gap | Severity | Status |
 |---|---|---|
-| **`ConstructorField` has no classification test** | Medium | The plan says the builder classifies it as `UnclassifiedField` (since the directive isn't defined yet). Add a test in `GraphitronSchemaBuilderTest` that confirms a field which *would* be a `ConstructorField` is classified as `UnclassifiedField` with the expected validator error. This documents the intentional gap. |
-| **`UnclassifiedField` has no classification test** | Medium | Add a test confirming that a field on a `@table` type with no recognized directive pattern falls through to `UnclassifiedField`. Currently only tested via direct construction in `UnclassifiedFieldValidationTest`. |
+| **`ConstructorField` has no classification test** | Medium | **Fixed** — `UnclassifiedFieldCase.CHILD_FIELD_ON_TABLE_TYPE_RETURNING_RESULT_TYPE` confirms the intentional fallthrough. |
+| **`UnclassifiedField` has no classification test** | Medium | **Fixed** — 4 cases added: result-type child, untyped query return, bare mutation, unclassified parent. |
 
 ### Level 3 (Generating stream) — entirely missing
 
@@ -93,9 +93,9 @@ The plan's testing strategy requires approval tests for every leaf type in the g
 
 | Gap | Severity | Recommendation |
 |---|---|---|
-| **No negative classification tests for directive conflicts** | Medium | Add tests for invalid directive combinations that should produce errors: e.g., `@table` + `@record` on the same type, `@nodeId` + `@service` on the same field, `@splitQuery` on a non-`TableField`. These are boundary conditions the builder must handle. |
+| **No negative classification tests for directive conflicts** | Medium | **Fixed** — 15 precedence tests added across type, child field, and query/mutation field classification chains. Documents that classification is deterministic and which directive wins. |
 | **No test for `hasLookupKeyAnywhere()` depth guard** | Low | The plan mentions a depth guard at 10 levels for recursive `@lookupKey` detection. Add a test confirming the guard prevents infinite recursion on circular input type references. |
-| **`FieldWrapper.Connection` detection not tested** | Medium | The plan describes structural detection (edges→node pattern) for connection fields. Verify `GraphitronSchemaBuilderTest` has a case that classifies a connection-wrapped `TableField` with the correct `FieldWrapper.Connection` wrapper. The `TableFieldCase` enum has 11 cases — check if any test connection detection specifically. |
+| **`FieldWrapper.Connection` detection not tested** | N/A | Already covered — `TableFieldCase.CONNECTION_RETURN_TYPE` and `TableMethodFieldCase.CONNECTION_RETURN` both test structural edges→node detection. |
 | **No round-trip test for `JooqCatalog` with Sakila** | Low | `JooqCatalog` is tested indirectly via `GraphitronSchemaBuilderTest` (which uses `@table(name: "film")` etc.), but a direct unit test against the Sakila jOOQ classes would catch reflection edge cases (e.g., tables with unusual naming, composite FKs). |
 
 ---
@@ -122,6 +122,6 @@ The plan's testing strategy requires approval tests for every leaf type in the g
 | Implementation (D1 + parsing) | **Excellent** | Complete, well-structured, uses records and sealed types correctly |
 | Infrastructure (D2) | **Incomplete** | Feature flag and context methods not yet wired; can wait until generator is ready |
 | Testing (L1 validators) | **Very good** | 40+ test files, 1 minor gap (ErrorType) |
-| Testing (L2 classification) | **Very good** | 26/28 leaf types, 2 gaps (ConstructorField, UnclassifiedField) |
+| Testing (L2 classification) | **Complete** | 28/28 leaf types covered; precedence documented via 15 conflict tests |
 | Testing (L3 generation) | **Not started** | Expected — generating stream not built yet |
 | Plan clarity | **Good** | Minor naming issues (@defer), executor strategy undocumented |
