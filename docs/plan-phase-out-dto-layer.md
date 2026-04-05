@@ -231,33 +231,61 @@ record UnresolvedKeyAndConditionRef(String keyName, String conditionName) implem
 
 The validator reports errors for the three `Unresolved*` variants; the code generator only consumes the three resolved variants.
 
-### `FieldCardinality`
+### `ReturnTypeRef`
 
-Ten field types have cardinality as a spec property — it determines the shape of generated SQL and the resolver's return type. These are the five "projects-through" child fields (`TableField`, `TableMethodField`, `TableInterfaceField`, `InterfaceField`, `UnionField`) and five query fields (`TableQueryField`, `TableMethodQueryField`, `TableInterfaceQueryField`, `InterfaceQueryField`, `UnionQueryField`). Fields that are always single by specification — `LookupQueryField`, `NodeQueryField`, `EntityQueryField` — carry no cardinality property.
+Every non-scalar field has a return type name that must be resolved against the classified schema. The outcome is captured in `ReturnTypeRef`, which also embeds the `FieldWrapper` describing how the element type is wrapped. Together they form a complete description of a field's declared GraphQL return type — e.g. `[Film!]!` is `TableBoundReturnType("Film", filmTable, List(false, false, ...))` and `Film` is `TableBoundReturnType("Film", filmTable, Single(true))`.
 
 ```java
-sealed interface FieldCardinality
-    permits FieldCardinality.Single, FieldCardinality.List, FieldCardinality.Connection {
+sealed interface ReturnTypeRef permits TableBoundReturnType, OtherReturnType, UnresolvedReturnType {
+    String returnTypeName();
 
-    /** 1:1 join — returns one Record (or null). No ordering. */
-    record Single() implements FieldCardinality {}
+    /** The wrapper around the element type. */
+    FieldWrapper wrapper();
 
-    /** 1:N — returns Result<Record>. May carry a default sort order; query fields also
-     *  carry the @orderBy enum value specs (empty list for child fields until @orderBy
-     *  is added to child-field support). */
+    /** Type exists and is a TableType. table carries the @table resolution outcome. */
+    record TableBoundReturnType(String returnTypeName, TableRef table, FieldWrapper wrapper) implements ReturnTypeRef {}
+
+    /** Type exists but is not a table-backed type (result type, interface, union). */
+    record OtherReturnType(String returnTypeName, FieldWrapper wrapper) implements ReturnTypeRef {}
+
+    /** Type name does not exist in the schema. Validator reports an error. */
+    record UnresolvedReturnType(String returnTypeName, FieldWrapper wrapper) implements ReturnTypeRef {}
+}
+```
+
+### `FieldWrapper`
+
+`FieldWrapper` models how a field's element type is wrapped in the GraphQL type system. It is always embedded inside `ReturnTypeRef` — callers access it via `returnType.wrapper()`.
+
+All fields in GraphQL can be list-wrapped and non-null-wrapped. Connection is a wrapper abstraction — semantically equivalent to a list wrapper but using the Relay `edges.node` structure rather than a bare `[T]`. Both list and connection carry optional ordering configuration.
+
+Connection detection is **structural**, not name-based: the return type is checked for an `edges` field whose element type has a `node` field. `connectionElementTypeName()` navigates `edges.node` to find the actual element type — the `returnTypeName` on `TableBoundReturnType` is always the element type, never the connection wrapper type.
+
+```java
+sealed interface FieldWrapper permits Single, List, Connection {
+
+    /** Returns one instance (or null). */
+    record Single(boolean nullable) implements FieldWrapper {}
+
+    /** Returns zero-or-more instances. May carry a default sort order; query fields also
+     *  carry @orderBy enum value specs (empty list for child fields). */
     record List(
+        boolean listNullable,
+        boolean itemNullable,
         DefaultOrderSpec defaultOrder,                       // null when @defaultOrder is absent
         java.util.List<OrderByEnumValueSpec> orderByValues  // empty for child fields today
-    ) implements FieldCardinality {}
+    ) implements FieldWrapper {}
 
-    /** Relay cursor-based paginated list. Cursor/pagination config is TBD — this variant
-     *  will gain additional components (cursor column, totalCount flag, etc.) when
-     *  connection support is implemented. Ordering rules follow List. */
+    /** Relay cursor-based paginated list. Cursor/pagination config TBD — this variant will
+     *  gain additional components when connection support is implemented. Ordering rules
+     *  follow List. */
     record Connection(
+        boolean connectionNullable,
+        boolean itemNullable,
         DefaultOrderSpec defaultOrder,
         java.util.List<OrderByEnumValueSpec> orderByValues
         // + cursor/pagination config (TBD)
-    ) implements FieldCardinality {}
+    ) implements FieldWrapper {}
 }
 ```
 
@@ -269,14 +297,9 @@ The three variants generate structurally different code:
 | `List` | `DSL.multiset(DSL.select(...))` → `Field<Result<Record>>` | `fetch()` |
 | `Connection` | Cursor-filtered SELECT + optional totalCount window | Relay connection wrapper |
 
-`FieldCardinality` replaces the current flat `defaultOrder` field on `TableField` and the standalone `defaultOrder` + `orderByValues` fields on `TableQueryField`. After this migration:
-- `TableField` carries `FieldCardinality cardinality` instead of `DefaultOrderSpec defaultOrder`
-- `TableQueryField` carries `FieldCardinality cardinality` instead of `DefaultOrderSpec defaultOrder` + `List<OrderByEnumValueSpec> orderByValues`, and additionally carries `String returnTypeName` so the validator can look up the return type's jOOQ table for PK-based non-deterministic ordering checks
-- The same substitution applies to the other eight affected field types
+Fields that carry `returnType` but are always single by specification — `LookupQueryField`, `NodeQueryField`, `EntityQueryField`, `NestingField`, `ConstructorField`, `ServiceField`, `ComputedField`, all `MutationField` variants — still embed a `FieldWrapper` inside their `ReturnTypeRef` (always `Single`). Fields that can be single, list, or connection — `TableField`, `TableMethodField`, `TableInterfaceField`, `InterfaceField`, `UnionField`, and their query equivalents — derive the wrapper from the GraphQL field definition at parse time.
 
-Cardinality-sensitive validator checks — such as "list field on PK-less table has no `@defaultOrder`" — pattern-match on `field.cardinality()` rather than inspecting the GraphQL return type at validation time, making the spec self-contained.
-
-`FieldConditionRef` (field-level `@condition`) is orthogonal to cardinality. `@splitQuery` on `TableField` is also orthogonal — it changes whether a DataLoader is used but not the SQL shape for the list/connection variants. Both remain separate properties on their respective records.
+`FieldConditionRef` (field-level `@condition`) is orthogonal to the wrapper. `@splitQuery` on `TableField` is also orthogonal — it changes whether a DataLoader is used but not the SQL shape. Both remain separate properties on their respective records.
 
 ### `GraphitronSchema` container
 
@@ -446,7 +469,7 @@ The validator gains checks for:
 
 - Condition resolution via reflection (`@condition` on `ARGUMENT_DEFINITION`) — still deferred to P3 of the original deliverable sequence (the "P3" in the `resolveConditionRef` comment in `GraphitronSchemaBuilder`).
 - Default value capture — not needed for current generators.
-- Relay pagination argument names (`first`, `after`, `last`, `before`) are captured as ordinary `ArgumentSpec` entries; the `FieldCardinality.Connection` variant identifies the field as paginated, not the presence of specific argument names.
+- Relay pagination argument names (`first`, `after`, `last`, `before`) are captured as ordinary `ArgumentSpec` entries; the `FieldWrapper.Connection` wrapper identifies the field as paginated, not the presence of specific argument names.
 
 ---
 
@@ -562,10 +585,10 @@ Extends `FieldsCodeGenerator` with `TableField` in table-mapped source context (
 
 Each inline `TableField` generates a `public static` method on `CustomerFields`, analogous to jOOQ's static column fields. The method takes the parent table alias (needed for correlated joins) and a `SelectedField` (carries both the nested selection set and any arguments).
 
-The `FieldCardinality` variant on the `TableField` spec drives the return type and SQL expression:
-- `FieldCardinality.List` → `Field<Result<Record>>` via `DSL.multiset(...)`
-- `FieldCardinality.Single` → `Field<Record>` via `DSL.field(DSL.select(...))`
-- `FieldCardinality.Connection` → deferred to connection deliverable
+The `FieldWrapper` variant on the `TableField` spec (accessed via `returnType.wrapper()`) drives the return type and SQL expression:
+- `FieldWrapper.List` → `Field<Result<Record>>` via `DSL.multiset(...)`
+- `FieldWrapper.Single` → `Field<Record>` via `DSL.field(DSL.select(...))`
+- `FieldWrapper.Connection` → deferred to connection deliverable
 
 ```java
 public static Field<Result<Record>> payments(Customer customer, SelectedField field) {
@@ -783,13 +806,13 @@ public class HelloWorldServiceWrapper {
 ## Deliverable 8: Ordering
 
 `@defaultOrder` and `@orderBy` logic added to root field methods and `@splitQuery` BatchLoaders.
-Both live inside `FieldCardinality.List` (and `FieldCardinality.Connection` when implemented) — only those variants generate `ORDER BY` clauses. `FieldCardinality.Single` fields never get an `ORDER BY`.
+Both live inside `FieldWrapper.List` (and `FieldWrapper.Connection` when implemented) — only those variants generate `ORDER BY` clauses. `FieldWrapper.Single` fields never get an `ORDER BY`.
 
 ```java
-// @defaultOrder only (FieldCardinality.List with non-null defaultOrder, empty orderByValues)
+// @defaultOrder only (FieldWrapper.List with non-null defaultOrder, empty orderByValues)
 var orderFields = QueryHelper.getSortFields(_a, "IDX_TITLE", "ASC");
 
-// @orderBy with @defaultOrder fallback (FieldCardinality.List with both populated)
+// @orderBy with @defaultOrder fallback (FieldWrapper.List with both populated)
 var orderFields = orderBy == null
     ? QueryHelper.getSortFields(_a, "IDX_TITLE", "ASC")
     : switch (orderBy.getOrderByField().toString()) {
