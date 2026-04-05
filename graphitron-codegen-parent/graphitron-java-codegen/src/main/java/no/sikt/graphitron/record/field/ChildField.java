@@ -152,8 +152,8 @@ public sealed interface ChildField extends GraphitronField
      * <p>{@code splitQuery} is {@code true} when the {@code @splitQuery} directive is present. This
      * causes Graphitron to use a DataLoader instead of an inline subquery.
      *
-     * <p>{@code cardinality} is the cardinality of this field — {@link FieldCardinality.Single} for a
-     * 1:1 join, {@link FieldCardinality.List} for a 1:N join, or {@link FieldCardinality.Connection}
+     * <p>{@code cardinality} is the cardinality of this field — {@link FieldWrapper.Single} for a
+     * 1:1 join, {@link FieldWrapper.List} for a 1:N join, or {@link FieldWrapper.Connection}
      * for a Relay paginated list. The validator reports errors for unresolved ordering specs on list
      * and connection variants.
      */
@@ -165,7 +165,7 @@ public sealed interface ChildField extends GraphitronField
         List<ReferencePathElementRef> referencePath,
         FieldConditionRef condition,
         boolean splitQuery,
-        FieldCardinality cardinality
+        FieldWrapper cardinality
     ) implements ChildField {}
 
     /**
@@ -186,7 +186,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef returnType,
         List<ReferencePathElementRef> referencePath,
-        FieldCardinality cardinality
+        FieldWrapper cardinality
     ) implements ChildField {}
 
     /**
@@ -202,7 +202,7 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        FieldCardinality cardinality
+        FieldWrapper cardinality
     ) implements ChildField {}
 
     /**
@@ -218,7 +218,7 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        FieldCardinality cardinality
+        FieldWrapper cardinality
     ) implements ChildField {}
 
     /**
@@ -234,7 +234,7 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        FieldCardinality cardinality
+        FieldWrapper cardinality
     ) implements ChildField {}
 
     /**

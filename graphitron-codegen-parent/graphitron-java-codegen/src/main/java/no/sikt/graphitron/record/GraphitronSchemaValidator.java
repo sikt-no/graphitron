@@ -166,12 +166,12 @@ public class GraphitronSchemaValidator {
      * ordering, the result order is non-deterministic across pages and repeated calls.
      */
     private void validateDeterministicOrdering(
-            String fieldName, SourceLocation location, no.sikt.graphitron.record.field.FieldCardinality cardinality,
+            String fieldName, SourceLocation location, no.sikt.graphitron.record.field.FieldWrapper cardinality,
             Table<?> table, List<ValidationError> errors) {
         boolean needsCheck = switch (cardinality) {
-            case no.sikt.graphitron.record.field.FieldCardinality.List l ->
+            case no.sikt.graphitron.record.field.FieldWrapper.List l ->
                 l.defaultOrder() == null && l.orderByValues().isEmpty();
-            case no.sikt.graphitron.record.field.FieldCardinality.Connection c ->
+            case no.sikt.graphitron.record.field.FieldWrapper.Connection c ->
                 c.defaultOrder() == null && c.orderByValues().isEmpty();
             default -> false;
         };
@@ -368,10 +368,10 @@ public class GraphitronSchemaValidator {
         ));
     }
 
-    private void validateCardinality(String fieldName, SourceLocation location, no.sikt.graphitron.record.field.FieldCardinality cardinality, List<ValidationError> errors) {
+    private void validateCardinality(String fieldName, SourceLocation location, no.sikt.graphitron.record.field.FieldWrapper cardinality, List<ValidationError> errors) {
         switch (cardinality) {
-            case no.sikt.graphitron.record.field.FieldCardinality.Single ignored -> {}
-            case no.sikt.graphitron.record.field.FieldCardinality.List l -> {
+            case no.sikt.graphitron.record.field.FieldWrapper.Single ignored -> {}
+            case no.sikt.graphitron.record.field.FieldWrapper.List l -> {
                 if (l.defaultOrder() != null) {
                     validateOrderSpec(fieldName, location, l.defaultOrder().spec(), errors);
                 }
@@ -379,7 +379,7 @@ public class GraphitronSchemaValidator {
                     validateOrderSpec(fieldName, location, enumValue.spec(), errors);
                 }
             }
-            case no.sikt.graphitron.record.field.FieldCardinality.Connection c -> {
+            case no.sikt.graphitron.record.field.FieldWrapper.Connection c -> {
                 if (c.defaultOrder() != null) {
                     validateOrderSpec(fieldName, location, c.defaultOrder().spec(), errors);
                 }

@@ -15,7 +15,7 @@ import no.sikt.graphitron.record.field.ChildField.TableMethodField;
 import no.sikt.graphitron.record.field.ColumnRef.ResolvedColumn;
 import no.sikt.graphitron.record.field.ColumnRef.UnresolvedColumn;
 import no.sikt.graphitron.record.field.DefaultOrderSpec;
-import no.sikt.graphitron.record.field.FieldCardinality;
+import no.sikt.graphitron.record.field.FieldWrapper;
 import no.sikt.graphitron.record.field.FieldConditionRef;
 import no.sikt.graphitron.record.field.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.record.field.GraphitronField.UnclassifiedField;
@@ -411,7 +411,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var tf = (TableField) schema.field("Film", "language");
-                assertThat(tf.cardinality()).isInstanceOf(FieldCardinality.Single.class);
+                assertThat(tf.cardinality()).isInstanceOf(FieldWrapper.Single.class);
                 assertThat(tf.splitQuery()).isFalse();
                 assertThat(tf.condition()).isInstanceOf(FieldConditionRef.NoFieldCondition.class);
                 assertThat(tf.referencePath()).isEmpty();
@@ -425,17 +425,23 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> assertThat(((TableField) schema.field("Film", "actors")).cardinality())
-                .isInstanceOf(FieldCardinality.List.class)),
+                .isInstanceOf(FieldWrapper.List.class)),
 
         CONNECTION_RETURN_TYPE(
-            "type name ending in 'Connection' → Connection cardinality",
+            "connection type detected via edges.node structure → Connection wrapper, element type resolved from node",
             """
-            type ActorConnection @table(name: "actor") { name: String }
+            type Actor @table(name: "actor") { name: String }
+            type ActorEdge { node: Actor cursor: String }
+            type ActorConnection { edges: [ActorEdge] }
             type Film @table(name: "film") { actors: ActorConnection }
             type Query { film: Film }
             """,
-            schema -> assertThat(((TableField) schema.field("Film", "actors")).cardinality())
-                .isInstanceOf(FieldCardinality.Connection.class)),
+            schema -> {
+                var tf = (TableField) schema.field("Film", "actors");
+                assertThat(tf.cardinality()).isInstanceOf(FieldWrapper.Connection.class);
+                assertThat(tf.returnType()).isInstanceOf(no.sikt.graphitron.record.field.ReturnTypeRef.TableBoundReturnType.class);
+                assertThat(tf.returnType().returnTypeName()).isEqualTo("Actor");
+            }),
 
         SPLIT_QUERY(
             "@splitQuery sets splitQuery to true",
@@ -499,7 +505,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldCardinality.List) ((TableField) schema.field("Film", "actors")).cardinality();
+                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).cardinality();
                 assertThat(cardinality.defaultOrder()).isNotNull();
                 var spec = (OrderSpec.IndexOrder) cardinality.defaultOrder().spec();
                 assertThat(spec.indexName()).isEqualTo("idx_actor_name");
@@ -515,7 +521,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldCardinality.List) ((TableField) schema.field("Film", "actors")).cardinality();
+                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).cardinality();
                 assertThat(cardinality.defaultOrder().spec()).isInstanceOf(OrderSpec.PrimaryKeyOrder.class);
             }),
 
@@ -529,7 +535,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldCardinality.List) ((TableField) schema.field("Film", "actors")).cardinality();
+                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).cardinality();
                 var fieldsOrder = (OrderSpec.FieldsOrder) cardinality.defaultOrder().spec();
                 assertThat(fieldsOrder.fields()).hasSize(2);
                 assertThat(fieldsOrder.fields().get(0).columnName()).isEqualTo("last_name");
@@ -548,21 +554,23 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldCardinality.List) ((TableField) schema.field("Film", "actors")).cardinality();
+                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).cardinality();
                 assertThat(cardinality.defaultOrder().direction()).isEqualTo("DESC");
             }),
 
         CONNECTION_WITH_DEFAULT_ORDER_INDEX(
-            "@defaultOrder(index:) on a Connection field produces IndexOrder in Connection cardinality",
+            "@defaultOrder(index:) on a connection field produces IndexOrder in Connection wrapper",
             """
-            type ActorConnection @table(name: "actor") { name: String }
+            type Actor @table(name: "actor") { name: String }
+            type ActorEdge { node: Actor cursor: String }
+            type ActorConnection { edges: [ActorEdge] }
             type Film @table(name: "film") {
                 actors: ActorConnection @defaultOrder(index: "idx_actor_name")
             }
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldCardinality.Connection) ((TableField) schema.field("Film", "actors")).cardinality();
+                var cardinality = (FieldWrapper.Connection) ((TableField) schema.field("Film", "actors")).cardinality();
                 assertThat(cardinality.defaultOrder()).isNotNull();
                 assertThat(cardinality.defaultOrder().spec()).isInstanceOf(OrderSpec.IndexOrder.class);
             });
@@ -595,7 +603,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> assertThat(((TableMethodField) schema.field("Film", "language")).cardinality())
-                .isInstanceOf(FieldCardinality.Single.class)),
+                .isInstanceOf(FieldWrapper.Single.class)),
 
         LIST_RETURN(
             "@tableMethod with list return type → List cardinality",
@@ -607,19 +615,24 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> assertThat(((TableMethodField) schema.field("Film", "actors")).cardinality())
-                .isInstanceOf(FieldCardinality.List.class)),
+                .isInstanceOf(FieldWrapper.List.class)),
 
         CONNECTION_RETURN(
-            "@tableMethod with Connection return type → Connection cardinality",
+            "@tableMethod with connection return type → Connection wrapper, element type from edges.node",
             """
-            type ActorConnection @table(name: "actor") { name: String }
+            type Actor @table(name: "actor") { name: String }
+            type ActorEdge { node: Actor cursor: String }
+            type ActorConnection { edges: [ActorEdge] }
             type Film @table(name: "film") {
                 actors: ActorConnection @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(((TableMethodField) schema.field("Film", "actors")).cardinality())
-                .isInstanceOf(FieldCardinality.Connection.class)),
+            schema -> {
+                var tf = (TableMethodField) schema.field("Film", "actors");
+                assertThat(tf.cardinality()).isInstanceOf(FieldWrapper.Connection.class);
+                assertThat(tf.returnType().returnTypeName()).isEqualTo("Actor");
+            }),
 
         WITH_REFERENCE_PATH(
             "@tableMethod + @reference(path:) populates the referencePath",

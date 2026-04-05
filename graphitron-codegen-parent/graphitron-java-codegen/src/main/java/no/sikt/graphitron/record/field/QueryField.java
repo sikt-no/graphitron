@@ -34,9 +34,9 @@ public sealed interface QueryField extends RootField
      * {@link ReturnTypeRef.UnresolvedReturnType} means the return type name does not exist in the
      * schema; the validator reports an error.
      *
-     * <p>{@code cardinality} is the cardinality of this field — {@link FieldCardinality.Single} for a
-     * single-item lookup, {@link FieldCardinality.List} for a list result, or
-     * {@link FieldCardinality.Connection} for a Relay paginated list. For list and connection variants,
+     * <p>{@code cardinality} is the cardinality of this field — {@link FieldWrapper.Single} for a
+     * single-item lookup, {@link FieldWrapper.List} for a list result, or
+     * {@link FieldWrapper.Connection} for a Relay paginated list. For list and connection variants,
      * {@code defaultOrder} and {@code orderByValues} are carried inside the cardinality record. The
      * validator reports errors for unresolved ordering specs.
      */
@@ -45,7 +45,7 @@ public sealed interface QueryField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        FieldCardinality cardinality
+        FieldWrapper cardinality
     ) implements QueryField {}
 
     /**
@@ -61,7 +61,7 @@ public sealed interface QueryField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        FieldCardinality cardinality
+        FieldWrapper cardinality
     ) implements QueryField {}
 
     /**
@@ -103,7 +103,7 @@ public sealed interface QueryField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        FieldCardinality cardinality
+        FieldWrapper cardinality
     ) implements QueryField {}
 
     /**
@@ -119,7 +119,7 @@ public sealed interface QueryField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        FieldCardinality cardinality
+        FieldWrapper cardinality
     ) implements QueryField {}
 
     /**
@@ -135,7 +135,7 @@ public sealed interface QueryField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        FieldCardinality cardinality
+        FieldWrapper cardinality
     ) implements QueryField {}
 
     /**

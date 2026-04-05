@@ -8,6 +8,9 @@ import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLAppliedDirective;
+import graphql.schema.GraphQLList;
+import graphql.schema.GraphQLNonNull;
+import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLAppliedDirectiveArgument;
 import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLDirectiveContainer;
@@ -37,7 +40,7 @@ import no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField;
 import no.sikt.graphitron.record.field.ChildField.TableField;
 import no.sikt.graphitron.record.field.ChildField.TableMethodField;
 import no.sikt.graphitron.record.field.DefaultOrderSpec;
-import no.sikt.graphitron.record.field.FieldCardinality;
+import no.sikt.graphitron.record.field.FieldWrapper;
 import no.sikt.graphitron.record.field.FieldConditionRef;
 import no.sikt.graphitron.record.field.OrderSpec;
 import no.sikt.graphitron.record.field.SortFieldSpec;
@@ -382,50 +385,100 @@ public class GraphitronSchemaBuilder {
     private GraphitronField classifyObjectReturnChildField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
-        String returnTypeName = baseTypeName(fieldDef);
-        GraphitronType returnType = types.get(returnTypeName);
+        String rawTypeName = baseTypeName(fieldDef);
 
-        if (returnType instanceof TableType) {
+        // For connection types the element type is edges.node, not the connection wrapper type.
+        String elementTypeName = isConnectionType(rawTypeName)
+            ? connectionElementTypeName(rawTypeName)
+            : rawTypeName;
+        GraphitronType elementType = types.get(elementTypeName);
+
+        if (elementType instanceof TableType) {
             return new TableField(parentTypeName, name, location,
-                resolveReturnType(returnTypeName),
+                resolveReturnType(elementTypeName),
                 parseReferencePath(fieldDef),
                 new FieldConditionRef.NoFieldCondition(),
                 fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY),
-                buildCardinality(fieldDef));
+                buildWrapper(fieldDef));
         }
 
         // NestingField: a plain object type in the schema with no Graphitron classification.
         // Its fields are resolved from the same table context as the parent.
-        if (schema.getType(returnTypeName) instanceof GraphQLObjectType && returnType == null) {
+        if (schema.getType(elementTypeName) instanceof GraphQLObjectType && elementType == null) {
             return new NestingField(parentTypeName, name, location,
-                new ReturnTypeRef.UnresolvedReturnType(returnTypeName));
+                new ReturnTypeRef.UnresolvedReturnType(elementTypeName));
         }
 
         return new UnclassifiedField(parentTypeName, name, location);
     }
 
-    // ===== Cardinality helpers =====
+    // ===== Wrapper helpers =====
 
     /**
-     * Builds a {@link FieldCardinality} from the return type shape of the field and any
-     * {@code @defaultOrder} directive. A type name ending in {@code "Connection"} produces
-     * {@link FieldCardinality.Connection}; a list-wrapped type produces {@link FieldCardinality.List};
-     * anything else produces {@link FieldCardinality.Single}.
+     * Builds a {@link FieldWrapper} from the return type shape of the field and any
+     * {@code @defaultOrder} directive.
      *
-     * <p>{@code @orderBy} enum value specs are not populated here — that is deferred to P4
-     * (field argument modeling).
+     * <p>Connection is detected structurally — the return type must be a {@link GraphQLObjectType}
+     * that has an {@code edges} field whose element type in turn has a {@code node} field. This is
+     * more robust than the naming convention and is the authoritative Relay definition.
+     *
+     * <p>{@code @orderBy} enum value specs are not populated here — that is deferred to P4.
      */
-    private FieldCardinality buildCardinality(GraphQLFieldDefinition fieldDef) {
-        String returnTypeName = baseTypeName(fieldDef);
+    private FieldWrapper buildWrapper(GraphQLFieldDefinition fieldDef) {
+        GraphQLType fieldType = fieldDef.getType();
+        boolean outerNullable = !(fieldType instanceof GraphQLNonNull);
+        GraphQLType unwrappedOnce = GraphQLTypeUtil.unwrapNonNull(fieldType);
         DefaultOrderSpec defaultOrder = parseDefaultOrderSpec(fieldDef);
 
-        if (returnTypeName.endsWith("Connection")) {
-            return new FieldCardinality.Connection(defaultOrder, List.of());
+        if (unwrappedOnce instanceof GraphQLList listType) {
+            boolean itemNullable = !(listType.getWrappedType() instanceof GraphQLNonNull);
+            return new FieldWrapper.List(outerNullable, itemNullable, defaultOrder, List.of());
         }
-        if (GraphQLTypeUtil.isList(GraphQLTypeUtil.unwrapNonNull(fieldDef.getType()))) {
-            return new FieldCardinality.List(defaultOrder, List.of());
+
+        String typeName = baseTypeName(fieldDef);
+        if (isConnectionType(typeName)) {
+            boolean itemNullable = connectionItemNullable(typeName);
+            return new FieldWrapper.Connection(outerNullable, itemNullable, defaultOrder, List.of());
         }
-        return new FieldCardinality.Single();
+
+        return new FieldWrapper.Single(outerNullable);
+    }
+
+    /**
+     * Returns {@code true} when {@code typeName} refers to a Relay connection type — i.e. when
+     * the type is an object type whose {@code edges} field's element type has a {@code node} field.
+     * This uses the schema structure rather than a naming convention.
+     */
+    private boolean isConnectionType(String typeName) {
+        if (!(schema.getType(typeName) instanceof GraphQLObjectType connType)) return false;
+        var edgesField = connType.getFieldDefinition("edges");
+        if (edgesField == null) return false;
+        var edgeType = GraphQLTypeUtil.unwrapAll(edgesField.getType());
+        return edgeType instanceof GraphQLObjectType edgeObj && edgeObj.getFieldDefinition("node") != null;
+    }
+
+    /**
+     * Returns the nullability of the {@code edges.node} field for a confirmed connection type.
+     * {@code true} when the node field's type has no {@code !} wrapper (the item may be null).
+     */
+    private boolean connectionItemNullable(String connectionTypeName) {
+        var connType = (GraphQLObjectType) schema.getType(connectionTypeName);
+        var edgesField = connType.getFieldDefinition("edges");
+        var edgeType = (GraphQLObjectType) GraphQLTypeUtil.unwrapAll(edgesField.getType());
+        var nodeField = edgeType.getFieldDefinition("node");
+        return !(nodeField.getType() instanceof GraphQLNonNull);
+    }
+
+    /**
+     * Returns the name of the element type for a confirmed connection type by navigating
+     * {@code edges.node}. This is the authoritative element type per the Relay spec.
+     */
+    private String connectionElementTypeName(String connectionTypeName) {
+        var connType = (GraphQLObjectType) schema.getType(connectionTypeName);
+        var edgesField = connType.getFieldDefinition("edges");
+        var edgeType = (GraphQLObjectType) GraphQLTypeUtil.unwrapAll(edgesField.getType());
+        var nodeField = edgeType.getFieldDefinition("node");
+        return ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(nodeField.getType())).getName();
     }
 
     /**
@@ -527,10 +580,12 @@ public class GraphitronSchemaBuilder {
         SourceLocation location = locationOf(fieldDef);
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
+            String rawTypeName = baseTypeName(fieldDef);
+            String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             return new TableMethodField(parentTypeName, name, location,
-                resolveReturnType(baseTypeName(fieldDef)),
+                resolveReturnType(elementTypeName),
                 parseReferencePath(fieldDef),
-                buildCardinality(fieldDef));
+                buildWrapper(fieldDef));
         }
 
         if (!isScalarOrEnum(fieldDef)) {

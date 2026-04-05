@@ -2,7 +2,7 @@ package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.DefaultOrderSpec;
-import no.sikt.graphitron.record.field.FieldCardinality;
+import no.sikt.graphitron.record.field.FieldWrapper;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.OrderByEnumValueSpec;
 import no.sikt.graphitron.record.field.OrderSpec;
@@ -38,19 +38,19 @@ class TableQueryFieldNonDeterministicOrderingValidationTest {
         PKLESS_TABLE_NO_ORDER(
             "list field on PK-less table with no @defaultOrder and no @orderBy — non-deterministic error",
             new TableQueryField("Query", "films", null, FILM_LIST_RETURN,
-                new FieldCardinality.List(null, List.of())),
+                new FieldWrapper.List(true, true, null, List.of())),
             List.of("Field 'films': table 'film_list' has no @defaultOrder directive and no primary key — result ordering is non-deterministic")),
 
         CONNECTION_PKLESS_TABLE_NO_ORDER(
             "connection field on PK-less table with no @defaultOrder and no @orderBy — non-deterministic error",
             new TableQueryField("Query", "films", null, FILM_LIST_RETURN,
-                new FieldCardinality.Connection(null, List.of())),
+                new FieldWrapper.Connection(true, true, null, List.of())),
             List.of("Field 'films': table 'film_list' has no @defaultOrder directive and no primary key — result ordering is non-deterministic")),
 
         PKLESS_TABLE_WITH_DEFAULT_ORDER(
             "list field on PK-less table with @defaultOrder — ordering guaranteed, no error",
             new TableQueryField("Query", "films", null, FILM_LIST_RETURN,
-                new FieldCardinality.List(
+                new FieldWrapper.List(true, true, 
                     new DefaultOrderSpec(new OrderSpec.FieldsOrder(List.of()), "ASC"),
                     List.of())),
             List.of()),
@@ -58,20 +58,20 @@ class TableQueryFieldNonDeterministicOrderingValidationTest {
         PKLESS_TABLE_WITH_ORDER_BY(
             "list field on PK-less table with @orderBy enum values — ordering configurable, no error",
             new TableQueryField("Query", "films", null, FILM_LIST_RETURN,
-                new FieldCardinality.List(null,
+                new FieldWrapper.List(true, true, null,
                     List.of(new OrderByEnumValueSpec("TITLE", new OrderSpec.FieldsOrder(List.of()))))),
             List.of()),
 
         TABLE_WITH_PK_NO_ORDER(
             "list field on table with primary key, no @defaultOrder — PK provides determinism, no error",
             new TableQueryField("Query", "films", null, FILM_RETURN,
-                new FieldCardinality.List(null, List.of())),
+                new FieldWrapper.List(true, true, null, List.of())),
             List.of()),
 
         SINGLE_CARDINALITY(
             "single cardinality field on PK-less table — ordering irrelevant, no error",
             new TableQueryField("Query", "film", null, FILM_LIST_RETURN,
-                new FieldCardinality.Single()),
+                new FieldWrapper.Single(true)),
             List.of());
 
         private final String description;

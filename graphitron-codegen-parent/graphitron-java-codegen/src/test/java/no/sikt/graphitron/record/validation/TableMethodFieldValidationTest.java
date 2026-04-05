@@ -3,7 +3,7 @@ package no.sikt.graphitron.record.validation;
 import no.sikt.graphitron.jooq.generated.testdata.public_.Keys;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyRef;
-import no.sikt.graphitron.record.field.FieldCardinality;
+import no.sikt.graphitron.record.field.FieldWrapper;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MethodRef;
@@ -25,31 +25,31 @@ class TableMethodFieldValidationTest {
     enum Case implements ValidatorCase {
 
         NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
-            new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film"), List.of(), new FieldCardinality.Single()),
+            new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film"), List.of(), new FieldWrapper.Single(true)),
             List.of()),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film"), List.of(
-                new FkRef(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY)), new FieldCardinality.Single()),
+                new FkRef(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY)), new FieldWrapper.Single(true)),
             List.of()),
 
         WITH_CONDITION_ONLY("condition method only — no FK",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film"), List.of(
-                new ConditionOnlyRef(new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))), new FieldCardinality.Single()),
+                new ConditionOnlyRef(new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))), new FieldWrapper.Single(true)),
             List.of()),
 
         UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
-            new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film"), List.of(new UnresolvedKeyRef("FILM_ACTOR_FK")), new FieldCardinality.Single()),
+            new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film"), List.of(new UnresolvedKeyRef("FILM_ACTOR_FK")), new FieldWrapper.Single(true)),
             List.of("Field 'filteredActors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog")),
 
         UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film"), List.of(
-                new UnresolvedConditionRef("com.example.Conditions.actorCondition")), new FieldCardinality.Single()),
+                new UnresolvedConditionRef("com.example.Conditions.actorCondition")), new FieldWrapper.Single(true)),
             List.of("Field 'filteredActors': condition method 'com.example.Conditions.actorCondition' could not be resolved")),
 
         UNRESOLVED_KEY_AND_CONDITION("both key and condition specified, neither could be resolved — two errors",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film"), List.of(
-                new UnresolvedKeyAndConditionRef("FILM_ACTOR_FK", "com.example.Conditions.actorCondition")), new FieldCardinality.Single()),
+                new UnresolvedKeyAndConditionRef("FILM_ACTOR_FK", "com.example.Conditions.actorCondition")), new FieldWrapper.Single(true)),
             List.of(
                 "Field 'filteredActors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog",
                 "Field 'filteredActors': condition method 'com.example.Conditions.actorCondition' could not be resolved"));
