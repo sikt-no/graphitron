@@ -26,8 +26,8 @@ import no.sikt.graphitron.record.field.DefaultOrderSpec;
 import no.sikt.graphitron.record.field.FieldWrapper;
 import no.sikt.graphitron.record.field.FieldConditionRef;
 import no.sikt.graphitron.record.field.GraphitronField.NotGeneratedField;
+import no.sikt.graphitron.record.field.NodeTypeRef;
 import no.sikt.graphitron.record.field.NodeTypeRef.ResolvedNodeType;
-import no.sikt.graphitron.record.field.NodeTypeRef.UnresolvedNodeType;
 import no.sikt.graphitron.record.field.OrderSpec;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
@@ -351,7 +351,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         UNRESOLVED_TYPE_HAS_NO_NODE(
-            "typeName pointing to a type that exists but lacks @node → UnresolvedNodeType",
+            "typeName pointing to a type that exists but lacks @node → NoNodeDirectiveType",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -360,10 +360,10 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> assertThat(((NodeIdReferenceField) schema.field("Film", "languageId")).nodeType())
-                .isInstanceOf(UnresolvedNodeType.class)),
+                .isInstanceOf(NodeTypeRef.NoNodeDirectiveType.class)),
 
         UNRESOLVED_TYPE_DOES_NOT_EXIST(
-            "typeName pointing to a type that does not exist at all → UnresolvedNodeType",
+            "typeName pointing to a type that does not exist at all → NotFoundNodeType",
             """
             type Film @table(name: "film") {
               languageId: ID! @nodeId(typeName: "NoSuchType")
@@ -371,7 +371,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> assertThat(((NodeIdReferenceField) schema.field("Film", "languageId")).nodeType())
-                .isInstanceOf(UnresolvedNodeType.class)),
+                .isInstanceOf(NodeTypeRef.NotFoundNodeType.class)),
 
         WITH_REFERENCE_PATH(
             "@reference(path:) on a @nodeId field populates the referencePath",

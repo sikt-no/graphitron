@@ -12,7 +12,8 @@ import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditi
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.record.field.NodeTypeRef.ResolvedNodeType;
-import no.sikt.graphitron.record.field.NodeTypeRef.UnresolvedNodeType;
+import no.sikt.graphitron.record.field.NodeTypeRef.NoNodeDirectiveType;
+import no.sikt.graphitron.record.field.NodeTypeRef.NotFoundNodeType;
 import no.sikt.graphitron.record.field.ReturnTypeRef;
 import no.sikt.graphitron.record.type.GraphitronType;
 import no.sikt.graphitron.record.type.NodeRef.NodeDirective;
@@ -282,9 +283,17 @@ public class GraphitronSchemaValidator {
     }
     private void validateNodeIdReferenceField(no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField field, List<ValidationError> errors) {
         switch (field.nodeType()) {
-            case UnresolvedNodeType ignored -> {
+            case NotFoundNodeType ignored -> {
                 errors.add(new ValidationError(
-                    "Field '" + field.name() + "': type '" + field.typeName() + "' does not exist in the schema or does not have @node",
+                    "Field '" + field.name() + "': type '" + field.typeName() + "' does not exist in the schema",
+                    field.location()
+                ));
+                validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+                return;
+            }
+            case NoNodeDirectiveType ignored -> {
+                errors.add(new ValidationError(
+                    "Field '" + field.name() + "': type '" + field.typeName() + "' does not have @node",
                     field.location()
                 ));
                 validateReferencePath(field.name(), field.location(), field.referencePath(), errors);

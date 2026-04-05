@@ -64,7 +64,6 @@ import no.sikt.graphitron.record.field.ExternalRef;
 import no.sikt.graphitron.record.field.MethodRef;
 import no.sikt.graphitron.record.field.NodeTypeRef;
 import no.sikt.graphitron.record.field.NodeTypeRef.ResolvedNodeType;
-import no.sikt.graphitron.record.field.NodeTypeRef.UnresolvedNodeType;
 import no.sikt.graphitron.record.field.ReturnTypeRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyRef;
@@ -900,10 +899,11 @@ public class GraphitronSchemaBuilder {
     }
 
     private NodeTypeRef resolveNodeType(String targetTypeName) {
+        if (schema.getType(targetTypeName) == null) return new NodeTypeRef.NotFoundNodeType();
         GraphitronType target = types.get(targetTypeName);
         if (target instanceof TableType tt && tt.node() instanceof NodeDirective nd)
             return new ResolvedNodeType(nd);
-        return new UnresolvedNodeType();
+        return new NodeTypeRef.NoNodeDirectiveType();
     }
 
     private boolean isScalarOrEnum(GraphQLFieldDefinition fieldDef) {

@@ -6,8 +6,9 @@ import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.record.field.ChildField.NodeIdReferenceField;
+import no.sikt.graphitron.record.field.NodeTypeRef.NoNodeDirectiveType;
+import no.sikt.graphitron.record.field.NodeTypeRef.NotFoundNodeType;
 import no.sikt.graphitron.record.field.NodeTypeRef.ResolvedNodeType;
-import no.sikt.graphitron.record.field.NodeTypeRef.UnresolvedNodeType;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedConditionRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.record.field.FieldWrapper;
@@ -62,13 +63,21 @@ class NodeIdReferenceFieldValidationTest {
                 List.of()),
             List.of("Field 'languageId': multiple foreign keys found between tables 'film' and 'language'; add a @reference directive to specify the join path")),
 
-        UNRESOLVED_NODE_TYPE("typeName does not resolve to a @node type — one error",
+        TYPE_NOT_FOUND("typeName does not exist in the schema — specific not-found error",
             new NodeIdReferenceField("Film", "languageId", null, "UnknownType",
                 new ReturnTypeRef.OtherReturnType("UnknownType", new FieldWrapper.Single(true)),
                 null,
-                new UnresolvedNodeType(),
+                new NotFoundNodeType(),
                 List.of()),
-            List.of("Field 'languageId': type 'UnknownType' does not exist in the schema or does not have @node")),
+            List.of("Field 'languageId': type 'UnknownType' does not exist in the schema")),
+
+        TYPE_HAS_NO_NODE("typeName exists but has no @node directive — specific missing-@node error",
+            new NodeIdReferenceField("Film", "languageId", null, "Film",
+                new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)),
+                null,
+                new NoNodeDirectiveType(),
+                List.of()),
+            List.of("Field 'languageId': type 'Film' does not have @node")),
 
         WITH_EXPLICIT_PATH("explicit FK path leading to the correct table — no errors",
             new NodeIdReferenceField("Film", "languageId", null, "Language",

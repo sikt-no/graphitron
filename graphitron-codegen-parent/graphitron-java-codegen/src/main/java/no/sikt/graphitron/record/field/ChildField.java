@@ -111,10 +111,11 @@ public sealed interface ChildField extends GraphitronField
      *
      * <p>{@code nodeType} is the outcome of resolving {@code typeName} against the {@code @node}
      * directive: {@link NodeTypeRef.ResolvedNodeType} when the named type exists as a table type
-     * with {@code @node} (carrying the directive properties for ID encoding), or
-     * {@link NodeTypeRef.UnresolvedNodeType} when it does not. The
-     * {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error for
-     * {@code UnresolvedNodeType}.
+     * with {@code @node} (carrying the directive properties for ID encoding),
+     * {@link NodeTypeRef.NoNodeDirectiveType} when the type exists but lacks {@code @node}, or
+     * {@link NodeTypeRef.NotFoundNodeType} when the type name does not match any schema type.
+     * The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports a distinct error
+     * for each failure case.
      *
      * <p>{@code referencePath} is the ordered list of join steps from the source table to the target
      * type's table, extracted from {@code @reference(path:)}. May be empty when there is exactly one
