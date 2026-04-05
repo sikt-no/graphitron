@@ -27,12 +27,18 @@ public sealed interface GraphitronField
     ) implements GraphitronField {}
 
     /**
-     * A field that does not match any known type. A schema containing unclassified fields is invalid —
+     * A field that could not be classified. A schema containing unclassified fields is invalid —
      * Graphitron terminates with an error identifying which fields need to be fixed.
+     *
+     * <p>{@code reason} describes why classification failed: either the directives required to
+     * classify the field are absent, or two mutually exclusive directives were found together.
+     * The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} includes the reason in its
+     * error message so the user knows exactly what to fix.
      */
     record UnclassifiedField(
         String parentTypeName,
         String name,
-        SourceLocation location
+        SourceLocation location,
+        String reason
     ) implements GraphitronField {}
 }

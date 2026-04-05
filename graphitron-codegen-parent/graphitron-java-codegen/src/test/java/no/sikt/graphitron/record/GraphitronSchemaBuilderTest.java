@@ -38,6 +38,7 @@ import no.sikt.graphitron.record.type.GraphitronType.InterfaceType;
 import no.sikt.graphitron.record.type.GraphitronType.ResultType;
 import no.sikt.graphitron.record.type.GraphitronType.RootType;
 import no.sikt.graphitron.record.type.GraphitronType.TableType;
+import no.sikt.graphitron.record.type.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.record.type.GraphitronType.UnionType;
 import no.sikt.graphitron.record.type.NodeRef.NodeDirective;
 import no.sikt.graphitron.record.type.NodeRef.NoNode;
@@ -1437,41 +1438,42 @@ class GraphitronSchemaBuilderTest {
     }
 
     // ===== Type directive mutual exclusivity =====
-    // @table, @record, and @error are mutually exclusive — no priority between them.
-    // These tests document the builder's fallback behavior (first if/else match wins)
-    // when this constraint is violated. The builder should ideally produce a validation error.
+    // @table, @record, and @error are mutually exclusive — the builder produces UnclassifiedType
+    // carrying the names of the conflicting directives in its reason.
 
     enum TypeDirectiveConflictCase {
 
         TABLE_AND_RECORD_CONFLICT(
-            "@table and @record are mutually exclusive — builder falls back to @table (if/else order)",
+            "@table and @record on the same type → UnclassifiedType with reason mentioning both",
             """
             type Film @table(name: "film") @record { title: String }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.type("Film")).isInstanceOf(TableType.class)),
+            "Film", "@table", "@record"),
 
         TABLE_AND_ERROR_CONFLICT(
-            "@table and @error are mutually exclusive — builder falls back to @table (if/else order)",
+            "@table and @error on the same type → UnclassifiedType with reason mentioning both",
             """
             type Film @table(name: "film") @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) { title: String }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.type("Film")).isInstanceOf(TableType.class)),
+            "Film", "@table", "@error"),
 
         RECORD_AND_ERROR_CONFLICT(
-            "@record and @error are mutually exclusive — builder falls back to @record (if/else order)",
+            "@record and @error on the same type → UnclassifiedType with reason mentioning both",
             """
             type Hybrid @record @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) { value: String }
             type Query { x: String }
             """,
-            schema -> assertThat(schema.type("Hybrid")).isInstanceOf(ResultType.class));
+            "Hybrid", "@record", "@error");
 
+        final String typeName;
         final String sdl;
-        final Consumer<GraphitronSchema> assertions;
-        TypeDirectiveConflictCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+        final String[] conflictingDirectives;
+        TypeDirectiveConflictCase(String description, String sdl, String typeName, String... conflictingDirectives) {
             this.sdl = sdl;
-            this.assertions = assertions;
+            this.typeName = typeName;
+            this.conflictingDirectives = conflictingDirectives;
         }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
@@ -1479,28 +1481,31 @@ class GraphitronSchemaBuilderTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(TypeDirectiveConflictCase.class)
     void typeDirectiveConflict(TypeDirectiveConflictCase tc) {
-        tc.assertions.accept(build(tc.sdl));
+        var schema = build(tc.sdl);
+        assertThat(schema.type(tc.typeName)).isInstanceOf(UnclassifiedType.class);
+        assertThat(((UnclassifiedType) schema.type(tc.typeName)).reason())
+            .contains(tc.conflictingDirectives);
     }
 
     // ===== Child field directive mutual exclusivity =====
     // @service, @externalField, @tableMethod, (@nodeId || @reference), @notGenerated, and
     // @multitableReference are mutually exclusive. @nodeId and @reference CAN be combined.
-    // These tests document the builder's fallback behavior when this constraint is violated.
+    // The builder produces UnclassifiedField with a reason naming the conflicting directives.
 
     enum ChildFieldDirectiveConflictCase {
 
         SERVICE_AND_EXTERNAL_FIELD_CONFLICT(
-            "@service and @externalField are mutually exclusive — builder falls back to @service",
+            "@service and @externalField → UnclassifiedField with reason naming both",
             """
             type Film @table(name: "film") {
                 title: String @service(service: {className: "com.example.Svc", method: "get"}) @externalField
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("Film", "title")).isInstanceOf(ServiceField.class)),
+            "Film", "title", "@service", "@externalField"),
 
         SERVICE_AND_TABLE_METHOD_CONFLICT(
-            "@service and @tableMethod are mutually exclusive — builder falls back to @service",
+            "@service and @tableMethod → UnclassifiedField with reason naming both",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -1510,20 +1515,20 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("Film", "language")).isInstanceOf(ServiceField.class)),
+            "Film", "language", "@service", "@tableMethod"),
 
         SERVICE_AND_NODE_ID_CONFLICT(
-            "@service and @nodeId are mutually exclusive — builder falls back to @service",
+            "@service and @nodeId → UnclassifiedField with reason naming both",
             """
             type Film @table(name: "film") {
                 id: String @service(service: {className: "com.example.Svc", method: "get"}) @nodeId
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("Film", "id")).isInstanceOf(ServiceField.class)),
+            "Film", "id", "@service", "@nodeId"),
 
         EXTERNAL_FIELD_AND_TABLE_METHOD_CONFLICT(
-            "@externalField and @tableMethod are mutually exclusive — builder falls back to @externalField",
+            "@externalField and @tableMethod → UnclassifiedField with reason naming both",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -1533,20 +1538,20 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("Film", "language")).isInstanceOf(ComputedField.class)),
+            "Film", "language", "@externalField", "@tableMethod"),
 
         NOT_GENERATED_AND_SERVICE_CONFLICT(
-            "@notGenerated and @service are mutually exclusive — builder falls back to @notGenerated",
+            "@notGenerated and @service → UnclassifiedField with reason naming both",
             """
             type Film @table(name: "film") {
                 title: String @notGenerated @service(service: {className: "com.example.Svc", method: "get"})
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("Film", "title")).isInstanceOf(NotGeneratedField.class)),
+            "Film", "title", "@notGenerated", "@service"),
 
         MULTITABLE_REFERENCE_AND_SERVICE_CONFLICT(
-            "@multitableReference and @service are mutually exclusive — builder falls back to @multitableReference",
+            "@multitableReference and @service → UnclassifiedField with reason naming both",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -1554,13 +1559,18 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("Film", "language")).isInstanceOf(MultitableReferenceField.class));
+            "Film", "language", "@multitableReference", "@service");
 
         final String sdl;
-        final Consumer<GraphitronSchema> assertions;
-        ChildFieldDirectiveConflictCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+        final String parentType;
+        final String fieldName;
+        final String[] conflictingDirectives;
+        ChildFieldDirectiveConflictCase(String description, String sdl,
+                String parentType, String fieldName, String... conflictingDirectives) {
             this.sdl = sdl;
-            this.assertions = assertions;
+            this.parentType = parentType;
+            this.fieldName = fieldName;
+            this.conflictingDirectives = conflictingDirectives;
         }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
@@ -1568,18 +1578,21 @@ class GraphitronSchemaBuilderTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(ChildFieldDirectiveConflictCase.class)
     void childFieldDirectiveConflict(ChildFieldDirectiveConflictCase tc) {
-        tc.assertions.accept(build(tc.sdl));
+        var schema = build(tc.sdl);
+        assertThat(schema.field(tc.parentType, tc.fieldName)).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) schema.field(tc.parentType, tc.fieldName)).reason())
+            .contains(tc.conflictingDirectives);
     }
 
     // ===== Query/mutation field directive mutual exclusivity =====
     // Query fields: @service, @lookupKey, @tableMethod are mutually exclusive.
     // Mutation fields: @service, @mutation are mutually exclusive.
-    // These tests document the builder's fallback behavior when this constraint is violated.
+    // The builder produces UnclassifiedField with a reason naming the conflicting directives.
 
-    enum QueryFieldDirectiveConflictCase {
+    enum RootFieldDirectiveConflictCase {
 
         SERVICE_AND_LOOKUP_KEY_CONFLICT(
-            "@service and @lookupKey are mutually exclusive on query — builder falls back to @service",
+            "@service and @lookupKey on query → UnclassifiedField with reason naming both",
             """
             type Film @table(name: "film") { title: String }
             type Query {
@@ -1587,10 +1600,10 @@ class GraphitronSchemaBuilderTest {
                     @service(service: {className: "com.example.Svc", method: "get"})
             }
             """,
-            schema -> assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.ServiceQueryField.class)),
+            "Query", "film", "@service", "@lookupKey"),
 
         SERVICE_AND_TABLE_METHOD_CONFLICT(
-            "@service and @tableMethod are mutually exclusive on query — builder falls back to @service",
+            "@service and @tableMethod on query → UnclassifiedField with reason naming both",
             """
             type Film @table(name: "film") { title: String }
             type Query {
@@ -1599,10 +1612,10 @@ class GraphitronSchemaBuilderTest {
                     @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
             }
             """,
-            schema -> assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.ServiceQueryField.class)),
+            "Query", "film", "@service", "@tableMethod"),
 
         LOOKUP_KEY_AND_TABLE_METHOD_CONFLICT(
-            "@lookupKey and @tableMethod are mutually exclusive on query — builder falls back to @lookupKey",
+            "@lookupKey and @tableMethod on query → UnclassifiedField with reason naming both",
             """
             type Film @table(name: "film") { title: String }
             type Query {
@@ -1610,20 +1623,10 @@ class GraphitronSchemaBuilderTest {
                     @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
             }
             """,
-            schema -> assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.LookupQueryField.class)),
-
-        SERVICE_AND_TABLE_RETURN_TYPE_CONFLICT(
-            "@service and @table return type are mutually exclusive on query — builder falls back to @service",
-            """
-            type Film @table(name: "film") { title: String }
-            type Query {
-                film: Film @service(service: {className: "com.example.Svc", method: "get"})
-            }
-            """,
-            schema -> assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.ServiceQueryField.class)),
+            "Query", "film", "@lookupKey", "@tableMethod"),
 
         SERVICE_AND_MUTATION_CONFLICT(
-            "@service and @mutation are mutually exclusive on mutation — builder falls back to @service",
+            "@service and @mutation on mutation → UnclassifiedField with reason naming both",
             """
             type Film @table(name: "film") { title: String }
             type Query { x: String }
@@ -1633,21 +1636,43 @@ class GraphitronSchemaBuilderTest {
                     @mutation(typeName: INSERT)
             }
             """,
-            schema -> assertThat(schema.field("Mutation", "createFilm")).isInstanceOf(MutationField.ServiceMutationField.class));
+            "Mutation", "createFilm", "@service", "@mutation");
 
         final String sdl;
-        final Consumer<GraphitronSchema> assertions;
-        QueryFieldDirectiveConflictCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+        final String parentType;
+        final String fieldName;
+        final String[] conflictingDirectives;
+        RootFieldDirectiveConflictCase(String description, String sdl,
+                String parentType, String fieldName, String... conflictingDirectives) {
             this.sdl = sdl;
-            this.assertions = assertions;
+            this.parentType = parentType;
+            this.fieldName = fieldName;
+            this.conflictingDirectives = conflictingDirectives;
         }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
     @ParameterizedTest(name = "{0}")
-    @EnumSource(QueryFieldDirectiveConflictCase.class)
-    void queryFieldDirectiveConflict(QueryFieldDirectiveConflictCase tc) {
-        tc.assertions.accept(build(tc.sdl));
+    @EnumSource(RootFieldDirectiveConflictCase.class)
+    void rootFieldDirectiveConflict(RootFieldDirectiveConflictCase tc) {
+        var schema = build(tc.sdl);
+        assertThat(schema.field(tc.parentType, tc.fieldName)).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) schema.field(tc.parentType, tc.fieldName)).reason())
+            .contains(tc.conflictingDirectives);
+    }
+
+    @Test
+    void serviceOnQueryWithTableReturnType_classifiesAsServiceQueryField() {
+        // @service on a query returning a @table type is valid — @service drives classification.
+        // Having a @table return type is not a conflicting directive; it is only a fallback
+        // when no explicit directive is present.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+                film: Film @service(service: {className: "com.example.Svc", method: "get"})
+            }
+            """);
+        assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.ServiceQueryField.class);
     }
 
     // ===== Helper =====

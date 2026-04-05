@@ -15,9 +15,9 @@ class UnclassifiedFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        UNCLASSIFIED("field missing or with conflicting directives — classification error",
-            new UnclassifiedField("Query", "unknownField", null),
-            List.of("Field 'unknownField': could not be classified — missing or conflicting directives"));
+        UNCLASSIFIED("field with no matching classification rule",
+            new UnclassifiedField("Query", "unknownField", null, "no matching classification rule"),
+            List.of("Field 'unknownField': could not be classified — no matching classification rule"));
 
         private final String description;
         private final GraphitronField field;

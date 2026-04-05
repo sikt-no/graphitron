@@ -11,7 +11,7 @@ import java.util.List;
 public sealed interface GraphitronType
     permits GraphitronType.TableType, GraphitronType.ResultType, GraphitronType.RootType,
             GraphitronType.TableInterfaceType, GraphitronType.InterfaceType, GraphitronType.UnionType,
-            GraphitronType.ErrorType, GraphitronType.InputType {
+            GraphitronType.ErrorType, GraphitronType.InputType, GraphitronType.UnclassifiedType {
 
     String name();
 
@@ -130,5 +130,17 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         List<InputFieldSpec> fields
+    ) implements GraphitronType {}
+
+    /**
+     * A type that could not be classified because mutually exclusive directives were found together.
+     * A schema containing unclassified types is invalid — the
+     * {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error with the
+     * {@code reason} explaining which directives conflict.
+     */
+    record UnclassifiedType(
+        String name,
+        SourceLocation location,
+        String reason
     ) implements GraphitronType {}
 }

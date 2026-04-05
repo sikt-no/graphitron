@@ -59,6 +59,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.record.type.GraphitronType.UnionType t          -> validateUnionType(t, errors);
             case no.sikt.graphitron.record.type.GraphitronType.ErrorType t          -> {} // no structural validation needed
             case no.sikt.graphitron.record.type.GraphitronType.InputType t          -> validateInputType(t, types, errors);
+            case no.sikt.graphitron.record.type.GraphitronType.UnclassifiedType t   -> validateUnclassifiedType(t, errors);
         }
     }
 
@@ -404,9 +405,16 @@ public class GraphitronSchemaValidator {
         ));
     }
     private void validateNotGeneratedField(no.sikt.graphitron.record.field.GraphitronField.NotGeneratedField field, List<ValidationError> errors) {}
+    private void validateUnclassifiedType(no.sikt.graphitron.record.type.GraphitronType.UnclassifiedType type, List<ValidationError> errors) {
+        errors.add(new ValidationError(
+            "Type '" + type.name() + "': could not be classified — " + type.reason(),
+            type.location()
+        ));
+    }
+
     private void validateUnclassifiedField(no.sikt.graphitron.record.field.GraphitronField.UnclassifiedField field, List<ValidationError> errors) {
         errors.add(new ValidationError(
-            "Field '" + field.name() + "': could not be classified — missing or conflicting directives",
+            "Field '" + field.name() + "': could not be classified — " + field.reason(),
             field.location()
         ));
     }

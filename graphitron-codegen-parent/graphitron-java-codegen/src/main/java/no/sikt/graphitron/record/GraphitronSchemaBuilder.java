@@ -97,6 +97,7 @@ import no.sikt.graphitron.record.type.TableRef.UnresolvedTable;
 import org.jooq.ForeignKey;
 import org.jooq.Table;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -308,6 +309,10 @@ public class GraphitronSchemaBuilder {
             if (ROOT_TYPE_NAMES.contains(name)) {
                 return new RootType(name, location);
             }
+            String typeConflict = detectTypeDirectiveConflict(objType);
+            if (typeConflict != null) {
+                return new GraphitronType.UnclassifiedType(name, location, typeConflict);
+            }
             if (objType.hasAppliedDirective(DIR_TABLE)) {
                 return buildTableType(objType);
             }
@@ -480,7 +485,8 @@ public class GraphitronSchemaBuilder {
         // semantics are not yet defined (planned future deliverable). Fields that would logically
         // map to ConstructorField fall through to UnclassifiedField, which the validator rejects
         // with a clear error, making the gap visible and enforced rather than silently ignored.
-        return new UnclassifiedField(parentTypeName, name, location);
+        return new UnclassifiedField(parentTypeName, name, location,
+            "ConstructorField (child field on @table type returning a @record type) is not yet supported");
     }
 
     // ===== Wrapper helpers =====
@@ -632,6 +638,16 @@ public class GraphitronSchemaBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
+        // Detect conflicts among the child-field exclusive directives before the @notGenerated and
+        // @multitableReference early-returns — those returns would otherwise silently mask a
+        // conflicting directive on the same field.
+        if (!(parentType instanceof RootType)) {
+            String conflict = detectChildFieldConflict(fieldDef);
+            if (conflict != null) {
+                return new UnclassifiedField(parentTypeName, name, location, conflict);
+            }
+        }
+
         if (fieldDef.hasAppliedDirective(DIR_NOT_GENERATED)) {
             return new NotGeneratedField(parentTypeName, name, location);
         }
@@ -649,7 +665,8 @@ public class GraphitronSchemaBuilder {
             return classifyChildFieldOnResultType(fieldDef, parentTypeName);
         }
 
-        return new UnclassifiedField(parentTypeName, name, location);
+        return new UnclassifiedField(parentTypeName, name, location,
+            "parent type '" + parentTypeName + "' has no supported Graphitron classification");
     }
 
     // ===== Root field classification (P5) =====
@@ -661,12 +678,18 @@ public class GraphitronSchemaBuilder {
         if (parentTypeName.equals("Query")) {
             return classifyQueryField(fieldDef, parentTypeName);
         }
-        return new UnclassifiedField(parentTypeName, fieldDef.getName(), locationOf(fieldDef));
+        return new UnclassifiedField(parentTypeName, fieldDef.getName(), locationOf(fieldDef),
+            "fields on '" + parentTypeName + "' (Subscription is not supported)");
     }
 
     private GraphitronField classifyQueryField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
+
+        String conflict = detectQueryFieldConflict(fieldDef);
+        if (conflict != null) {
+            return new UnclassifiedField(parentTypeName, name, location, conflict);
+        }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             String rawTypeName = baseTypeName(fieldDef);
@@ -726,12 +749,19 @@ public class GraphitronSchemaBuilder {
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
-        return new UnclassifiedField(parentTypeName, name, location);
+        return new UnclassifiedField(parentTypeName, name, location,
+            "return type '" + elementTypeName + "' is not a @table, interface, or union Graphitron type; " +
+            "@service, @lookupKey, and @tableMethod are all absent");
     }
 
     private GraphitronField classifyMutationField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
+
+        if (fieldDef.hasAppliedDirective(DIR_SERVICE) && fieldDef.hasAppliedDirective(DIR_MUTATION)) {
+            return new UnclassifiedField(parentTypeName, name, location,
+                "@" + DIR_SERVICE + ", @" + DIR_MUTATION + " are mutually exclusive");
+        }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             return new MutationField.ServiceMutationField(parentTypeName, name, location,
@@ -752,12 +782,14 @@ public class GraphitronSchemaBuilder {
                     case "UPDATE" -> new MutationField.UpdateMutationField(parentTypeName, name, location, returnType, arguments);
                     case "DELETE" -> new MutationField.DeleteMutationField(parentTypeName, name, location, returnType, arguments);
                     case "UPSERT" -> new MutationField.UpsertMutationField(parentTypeName, name, location, returnType, arguments);
-                    default       -> new UnclassifiedField(parentTypeName, name, location);
+                    default       -> new UnclassifiedField(parentTypeName, name, location,
+                        "unknown @mutation(typeName:) value '" + typeName + "'");
                 };
             }
         }
 
-        return new UnclassifiedField(parentTypeName, name, location);
+        return new UnclassifiedField(parentTypeName, name, location,
+            "@" + DIR_SERVICE + " and @" + DIR_MUTATION + " are both absent on this mutation field");
     }
 
     /**
@@ -797,6 +829,82 @@ public class GraphitronSchemaBuilder {
         if (value instanceof EnumValue ev) return ev.getName();
         if (value instanceof String s) return s;
         return null;
+    }
+
+    // ===== Conflict detection helpers =====
+    // Each method returns a human-readable reason string when mutually exclusive directives are
+    // found together, or {@code null} when no conflict exists. Callers produce an
+    // {@link UnclassifiedField} or {@link GraphitronType.UnclassifiedType} carrying the reason,
+    // which the validator then reports as a standard error.
+
+    /**
+     * Returns a reason string when {@code @table}, {@code @record}, and/or {@code @error} appear
+     * together on one type, or {@code null} when at most one is present.
+     */
+    private static String detectTypeDirectiveConflict(GraphQLObjectType objType) {
+        var present = List.of(DIR_TABLE, DIR_RECORD, DIR_ERROR).stream()
+            .filter(objType::hasAppliedDirective)
+            .toList();
+        if (present.size() <= 1) return null;
+        return present.stream().map(d -> "@" + d).collect(Collectors.joining(", ")) + " are mutually exclusive";
+    }
+
+    /**
+     * Returns a reason string when mutually exclusive child-field classification directives appear
+     * together, or {@code null} when at most one exclusive slot is occupied.
+     *
+     * <p>Note: {@code @reference} is a path-annotation directive, not a classification directive —
+     * it may be combined with {@code @service}, {@code @externalField}, {@code @tableMethod}, and
+     * {@code @tableField} (as a FK reference path) or with {@code @nodeId} (producing
+     * {@link NodeIdReferenceField}). It is therefore not included in this check.
+     */
+    private String detectChildFieldConflict(GraphQLFieldDefinition fieldDef) {
+        boolean hasNotGenerated  = fieldDef.hasAppliedDirective(DIR_NOT_GENERATED);
+        boolean hasMultitable    = fieldDef.hasAppliedDirective(DIR_MULTITABLE_REFERENCE);
+        boolean hasService       = fieldDef.hasAppliedDirective(DIR_SERVICE);
+        boolean hasExternalField = fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD);
+        boolean hasTableMethod   = fieldDef.hasAppliedDirective(DIR_TABLE_METHOD);
+        boolean hasNodeId        = fieldDef.hasAppliedDirective(DIR_NODE_ID);
+
+        int slots = (hasNotGenerated  ? 1 : 0)
+                  + (hasMultitable    ? 1 : 0)
+                  + (hasService       ? 1 : 0)
+                  + (hasExternalField ? 1 : 0)
+                  + (hasTableMethod   ? 1 : 0)
+                  + (hasNodeId        ? 1 : 0);
+
+        if (slots <= 1) return null;
+
+        var names = new ArrayList<String>();
+        if (hasNotGenerated)  names.add("@" + DIR_NOT_GENERATED);
+        if (hasMultitable)    names.add("@" + DIR_MULTITABLE_REFERENCE);
+        if (hasService)       names.add("@" + DIR_SERVICE);
+        if (hasExternalField) names.add("@" + DIR_EXTERNAL_FIELD);
+        if (hasTableMethod)   names.add("@" + DIR_TABLE_METHOD);
+        if (hasNodeId)        names.add("@" + DIR_NODE_ID);
+        return String.join(", ", names) + " are mutually exclusive";
+    }
+
+    /**
+     * Returns a reason string when mutually exclusive query-field directives appear together
+     * ({@code @service}, {@code @lookupKey} on arguments, {@code @tableMethod}), or {@code null}.
+     */
+    private String detectQueryFieldConflict(GraphQLFieldDefinition fieldDef) {
+        boolean hasService     = fieldDef.hasAppliedDirective(DIR_SERVICE);
+        boolean hasLookupKey   = hasLookupKeyAnywhere(fieldDef);
+        boolean hasTableMethod = fieldDef.hasAppliedDirective(DIR_TABLE_METHOD);
+
+        int slots = (hasService     ? 1 : 0)
+                  + (hasLookupKey   ? 1 : 0)
+                  + (hasTableMethod ? 1 : 0);
+
+        if (slots <= 1) return null;
+
+        var names = new ArrayList<String>();
+        if (hasService)     names.add("@" + DIR_SERVICE);
+        if (hasLookupKey)   names.add("@" + DIR_LOOKUP_KEY);
+        if (hasTableMethod) names.add("@" + DIR_TABLE_METHOD);
+        return String.join(", ", names) + " are mutually exclusive";
     }
 
     private GraphitronField classifyChildFieldOnResultType(GraphQLFieldDefinition fieldDef, String parentTypeName) {
