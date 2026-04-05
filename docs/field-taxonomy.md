@@ -45,7 +45,7 @@ A Graphitron scope corresponds to one SQL statement. Fields within a scope contr
 
 ### `GraphitronType`
 
-Every named GraphQL type is classified into a `GraphitronType`. This is the Java materialisation of the Source Context table above — it determines what Graphitron generates for a type and is the authoritative source of source context for all fields defined on it.
+See [`GraphitronType.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/type/GraphitronType.java). Every named GraphQL type is classified into a `GraphitronType`. This is the Java materialisation of the Source Context table above — it determines what Graphitron generates for a type and is the authoritative source of source context for all fields defined on it.
 
 ```
 GraphitronType
@@ -54,12 +54,14 @@ GraphitronType
 ├── RootType           (Query / Mutation — unmapped entry points)
 ├── TableInterfaceType (@table + @discriminate on interface)
 ├── InterfaceType      (no directives; implementors have @table)
-└── UnionType          (all member types have @table)
+├── UnionType          (all member types have @table)
+├── ErrorType          (@error — maps Java exceptions to GraphQL error responses)
+└── InputType          (GraphQL input object — carries field list for argument inspection)
 ```
 
 ### `GraphitronField`
 
-Field names encode source: `*QueryField` (Query), `*MutationField` (Mutation), no suffix (child fields). Only mutation fields may write to the database. Subscription is out of scope.
+See [`GraphitronField.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/GraphitronField.java), [`QueryField.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/QueryField.java), [`MutationField.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/MutationField.java), [`ChildField.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/ChildField.java). Field names encode source: `*QueryField` (Query), `*MutationField` (Mutation), no suffix (child fields). Only mutation fields may write to the database. Subscription is out of scope.
 
 ```
 GraphitronField
@@ -94,7 +96,8 @@ GraphitronField
 │   ├── ConstructorField
 │   ├── ServiceField
 │   ├── ComputedField
-│   └── PropertyField
+│   ├── PropertyField
+│   └── MultitableReferenceField
 ├── NotGeneratedField
 └── UnclassifiedField
 ```
@@ -147,7 +150,7 @@ The only fields permitted to write to the database. All support access back into
 
 ### Child fields
 
-Child fields carry a `sourceContext` property — table-mapped or result-mapped — which determines whether the field contributes to an existing scope or starts a new one.
+For each child field, source context is derived at generation time from `schema.type(parentTypeName)` — `TableType` means table-mapped, `ResultType` means result-mapped. Source context determines whether the field contributes to an existing scope or starts a new one.
 
 #### Graphitron projects through these fields
 
@@ -168,10 +171,11 @@ Child fields carry a `sourceContext` property — table-mapped or result-mapped 
 | `ColumnReferenceField` | Table-mapped | Bound to a column on a joined target table. |
 | `NodeIdField` | Table-mapped | `@nodeId` — encodes a globally unique Relay ID from the source type's key columns (`@node(keyColumns:...)`). Can be passed to `Query.node` to re-fetch this object. Source type must have `@node`. |
 | `NodeIdReferenceField` | Table-mapped | `@nodeId(typeName: ...)` — joins to the target type's table and encodes a Relay ID for that row. Parallel to `ColumnReferenceField`. |
-| `ComputedField` | Table-mapped | `@computed` — developer provides a jOOQ `Field<?>` (scalar, `row(...)`, or `multiset(...)`). Included in the SELECT; Graphitron does not project through it. LiftCondition applies if return type is table-mapped. |
+| `ComputedField` | Table-mapped | `@externalField` — developer provides a jOOQ `Field<?>` (scalar, `row(...)`, or `multiset(...)`). Included in the SELECT; Graphitron does not project through it. LiftCondition applies if return type is table-mapped. |
 | `ConstructorField` | Table-mapped | *(planned)* A directive carries field-to-constructor-parameter mapping. Graphitron does not project through it. |
 | `ServiceField` | Table-mapped, result-mapped | `@service` — private scope. From table-mapped source, Graphitron controls what is passed to the service. From result-mapped source, input is locked to what the record carries. LiftCondition applies if return type is table-mapped. |
 | `PropertyField` | Result-mapped | Reads a scalar or nested record property. Trivial data fetcher. No SQL interaction. |
+| `MultitableReferenceField` | — | `@multitableReference` — not supported in record-based output. Validator always reports an error. Users must convert to `@service` or equivalent. |
 
 ---
 
@@ -191,6 +195,7 @@ Quick reference: which field type applies given target and source context.
 | Service | Table-mapped or result-mapped | — | `ServiceField` |
 | Record property | Result-mapped | — | `PropertyField` |
 | Planned | Table-mapped | — | `ConstructorField` |
+| Unsupported | — | — | `MultitableReferenceField` |
 
 `@splitQuery` is valid on `TableField` with table-mapped source context. `@lookupKey` is orthogonal and can be combined with or without it.
 
