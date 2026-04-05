@@ -174,6 +174,14 @@ public sealed interface ChildField extends GraphitronField
      * <p>{@code referencePath} is the ordered list of join steps extracted from {@code @reference(path:)},
      * used to override FK auto-inference. Empty when no {@code @reference} directive is present —
      * Graphitron will attempt to infer the foreign key automatically.
+     *
+     * <p>{@code tableMethodRef} is the {@code tableMethodReference: ExternalCodeReference!} argument
+     * of the {@code @tableMethod} directive — the Java method that returns the pre-filtered table.
+     *
+     * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
+     * of the {@code @tableMethod} directive.
+     *
+     * <p>{@code arguments} is the full list of GraphQL arguments on the field.
      */
     record TableMethodField(
         String parentTypeName,
@@ -181,7 +189,9 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef returnType,
         List<ReferencePathElementRef> referencePath,
-        List<String> contextArguments
+        ExternalRef tableMethodRef,
+        List<String> contextArguments,
+        List<ArgumentSpec> arguments
     ) implements ChildField {}
 
     /**
@@ -259,6 +269,14 @@ public sealed interface ChildField extends GraphitronField
      * providing the lift condition that reconnects this field's result back to the parent table.
      * Each element should carry a {@code condition} method — no FK is involved in lift conditions.
      * Empty when no {@code @reference} directive is present.
+     *
+     * <p>{@code serviceRef} is the {@code service: ExternalCodeReference!} argument of the
+     * {@code @service} directive — the Java class and method to delegate to.
+     *
+     * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
+     * of the {@code @service} directive.
+     *
+     * <p>{@code arguments} is the full list of GraphQL arguments on the field.
      */
     record ServiceField(
         String parentTypeName,
@@ -266,12 +284,13 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef returnType,
         List<ReferencePathElementRef> referencePath,
+        ExternalRef serviceRef,
         List<ArgumentSpec> arguments,
         List<String> contextArguments
     ) implements ChildField {}
 
     /**
-     * A child field resolved by a developer-provided jOOQ {@code Field<?>} expression via {@code @computed}.
+     * A child field resolved by a developer-provided jOOQ {@code Field<?>} expression via {@code @externalField}.
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
      * schema.

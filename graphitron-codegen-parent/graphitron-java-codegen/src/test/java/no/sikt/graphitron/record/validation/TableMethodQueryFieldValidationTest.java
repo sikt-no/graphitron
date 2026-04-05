@@ -21,21 +21,21 @@ class TableMethodQueryFieldValidationTest {
 
         VALID("single cardinality — valid",
             new TableMethodQueryField("Query", "filmsByMethod", null,
-                new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of()),
+                new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), null, List.of(), List.of()),
             List.of()),
 
         LIST_UNRESOLVED_INDEX("list cardinality: @defaultOrder references an index that could not be found — validation error",
             new TableMethodQueryField("Query", "filmsByMethod", null,
                 new ReturnTypeRef.OtherReturnType("Film",
                     new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedIndexOrder("IDX_MISSING"), "ASC"), List.of())),
-                List.of()),
+                null, List.of(), List.of()),
             List.of("Field 'filmsByMethod': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
 
         LIST_UNRESOLVED_PRIMARY_KEY("list cardinality: @defaultOrder uses primaryKey but the table has none — validation error",
             new TableMethodQueryField("Query", "filmsByMethod", null,
                 new ReturnTypeRef.OtherReturnType("Film",
                     new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "ASC"), List.of())),
-                List.of()),
+                null, List.of(), List.of()),
             List.of("Field 'filmsByMethod': primary key could not be resolved — the table may not have one"));
 
         private final String description;

@@ -16,8 +16,12 @@ public sealed interface ParticipantRef permits ParticipantRef.BoundParticipant, 
     /**
      * The implementing/member type has {@code @table}; {@code table} is the resolution outcome
      * ({@link TableRef.ResolvedTable} or {@link TableRef.UnresolvedTable}).
+     *
+     * <p>{@code discriminatorValue} is the value from {@code @discriminator(value:)} on this
+     * type, used by the type resolver to map a discriminator column value to a concrete type.
+     * {@code null} when {@code @discriminator} is absent.
      */
-    record BoundParticipant(String typeName, TableRef table) implements ParticipantRef {}
+    record BoundParticipant(String typeName, TableRef table, String discriminatorValue) implements ParticipantRef {}
 
     /** The implementing/member type does not have {@code @table}. */
     record UnboundParticipant(String typeName) implements ParticipantRef {}

@@ -18,7 +18,7 @@ class DeleteMutationFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("delete mutation field — always valid",
-            new DeleteMutationField("Mutation", "deleteFilm", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true))),
+            new DeleteMutationField("Mutation", "deleteFilm", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of()),
             List.of());
 
         private final String description;

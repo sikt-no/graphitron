@@ -32,8 +32,8 @@ class TableInterfaceTypeValidationTest {
             new TableInterfaceType("FilmStatus", null, "status_type",
                 new ResolvedTable("film_status", "FILM_STATUS", FILM),
                 List.of(
-                    new BoundParticipant("NewFilm", new ResolvedTable("film", "FILM", FILM)),
-                    new BoundParticipant("OldFilm", new ResolvedTable("film", "FILM", FILM))
+                    new BoundParticipant("NewFilm", new ResolvedTable("film", "FILM", FILM), null),
+                    new BoundParticipant("OldFilm", new ResolvedTable("film", "FILM", FILM), null)
                 )),
             List.of()),
 
@@ -41,7 +41,7 @@ class TableInterfaceTypeValidationTest {
             new TableInterfaceType("FilmStatus", null, "status_type",
                 new ResolvedTable("film_status", "FILM_STATUS", FILM),
                 List.of(
-                    new BoundParticipant("NewFilm", new ResolvedTable("film", "FILM", FILM)),
+                    new BoundParticipant("NewFilm", new ResolvedTable("film", "FILM", FILM), null),
                     new UnboundParticipant("FilmDescription")
                 )),
             List.of("Type 'FilmStatus': implementing type 'FilmDescription' is not table-bound (missing @table directive)")),

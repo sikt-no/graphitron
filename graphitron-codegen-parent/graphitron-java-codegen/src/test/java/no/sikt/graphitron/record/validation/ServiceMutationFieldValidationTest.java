@@ -18,7 +18,7 @@ class ServiceMutationFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("service mutation field — always valid",
-            new ServiceMutationField("Mutation", "externalMutation", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true))),
+            new ServiceMutationField("Mutation", "externalMutation", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), null, List.of(), List.of()),
             List.of());
 
         private final String description;

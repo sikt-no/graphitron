@@ -26,14 +26,14 @@ class UnionTypeValidationTest {
 
         ALL_BOUND("all member types are table-bound — valid",
             new UnionType("SearchResult", null, List.of(
-                new BoundParticipant("Film", new ResolvedTable("film", "FILM", FILM)),
-                new BoundParticipant("Category", new ResolvedTable("category", "CATEGORY", CATEGORY))
+                new BoundParticipant("Film", new ResolvedTable("film", "FILM", FILM), null),
+                new BoundParticipant("Category", new ResolvedTable("category", "CATEGORY", CATEGORY), null)
             )),
             List.of()),
 
         ONE_UNBOUND("one member type is not table-bound — error",
             new UnionType("SearchResult", null, List.of(
-                new BoundParticipant("Film", new ResolvedTable("film", "FILM", FILM)),
+                new BoundParticipant("Film", new ResolvedTable("film", "FILM", FILM), null),
                 new UnboundParticipant("Description")
             )),
             List.of("Type 'SearchResult': implementing type 'Description' is not table-bound (missing @table directive)")),

@@ -60,6 +60,7 @@ import no.sikt.graphitron.record.field.ColumnRef.UnresolvedColumn;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.record.field.GraphitronField.UnclassifiedField;
+import no.sikt.graphitron.record.field.ExternalRef;
 import no.sikt.graphitron.record.field.MethodRef;
 import no.sikt.graphitron.record.field.NodeTypeRef;
 import no.sikt.graphitron.record.field.NodeTypeRef.ResolvedNodeType;
@@ -148,9 +149,14 @@ public class GraphitronSchemaBuilder {
     private static final String DIR_ORDER_BY = "orderBy";
     private static final String DIR_CONDITION = "condition";
     private static final String DIR_MUTATION = "mutation";
+    private static final String DIR_DISCRIMINATOR = "discriminator";
 
     // Argument names for the directives above.
     private static final String ARG_CONTEXT_ARGUMENTS = "contextArguments";
+    private static final String ARG_SERVICE_REF = "service";
+    private static final String ARG_TABLE_METHOD_REF = "tableMethodReference";
+    private static final String ARG_METHOD = "method";
+    private static final String ARG_VALUE = "value";  // @discriminator(value:)
     private static final String ARG_NAME = "name";
     private static final String ARG_ON = "on";
     private static final String ARG_TYPE_ID = "typeId";
@@ -281,7 +287,8 @@ public class GraphitronSchemaBuilder {
 
     private ParticipantRef participantRef(String typeName, Map<String, GraphitronType> types) {
         if (types.get(typeName) instanceof TableType tableType) {
-            return new BoundParticipant(typeName, tableType.table());
+            String discriminatorValue = argString(schema.getObjectType(typeName), DIR_DISCRIMINATOR, ARG_VALUE).orElse(null);
+            return new BoundParticipant(typeName, tableType.table(), discriminatorValue);
         }
         return new UnboundParticipant(typeName);
     }
@@ -399,10 +406,8 @@ public class GraphitronSchemaBuilder {
         String columnName = hasFieldDir
             ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
-        String javaName = hasFieldDir
-            ? argString(field, DIR_FIELD, ARG_JAVA_NAME).orElse(null)
-            : null;
-        return new InputFieldSpec(name, typeName, nonNull, list, lookupKey, orderBy, columnName, javaName);
+        boolean javaNamePresent = hasFieldDir && argString(field, DIR_FIELD, ARG_JAVA_NAME).isPresent();
+        return new InputFieldSpec(name, typeName, nonNull, list, lookupKey, orderBy, columnName, javaNamePresent);
     }
 
     private ErrorHandlerSpec parseErrorHandlerSpec(Map<String, Object> item) {
@@ -667,6 +672,7 @@ public class GraphitronSchemaBuilder {
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             return new QueryField.ServiceQueryField(parentTypeName, name, location,
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
+                parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF),
                 parseArguments(fieldDef),
                 parseContextArguments(fieldDef, DIR_SERVICE));
         }
@@ -692,7 +698,9 @@ public class GraphitronSchemaBuilder {
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             return new QueryField.TableMethodQueryField(parentTypeName, name, location,
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
-                parseContextArguments(fieldDef, DIR_TABLE_METHOD));
+                parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF),
+                parseContextArguments(fieldDef, DIR_TABLE_METHOD),
+                parseArguments(fieldDef));
         }
 
         String rawTypeName = baseTypeName(fieldDef);
@@ -726,7 +734,10 @@ public class GraphitronSchemaBuilder {
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             return new MutationField.ServiceMutationField(parentTypeName, name, location,
-                resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
+                resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)),
+                parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF),
+                parseArguments(fieldDef),
+                parseContextArguments(fieldDef, DIR_SERVICE));
         }
 
         if (fieldDef.hasAppliedDirective(DIR_MUTATION)) {
@@ -734,11 +745,12 @@ public class GraphitronSchemaBuilder {
             if (typeName != null) {
                 String rawReturn = baseTypeName(fieldDef);
                 ReturnTypeRef returnType = resolveReturnType(rawReturn, buildWrapper(fieldDef));
+                List<ArgumentSpec> arguments = parseArguments(fieldDef);
                 return switch (typeName) {
-                    case "INSERT" -> new MutationField.InsertMutationField(parentTypeName, name, location, returnType);
-                    case "UPDATE" -> new MutationField.UpdateMutationField(parentTypeName, name, location, returnType);
-                    case "DELETE" -> new MutationField.DeleteMutationField(parentTypeName, name, location, returnType);
-                    case "UPSERT" -> new MutationField.UpsertMutationField(parentTypeName, name, location, returnType);
+                    case "INSERT" -> new MutationField.InsertMutationField(parentTypeName, name, location, returnType, arguments);
+                    case "UPDATE" -> new MutationField.UpdateMutationField(parentTypeName, name, location, returnType, arguments);
+                    case "DELETE" -> new MutationField.DeleteMutationField(parentTypeName, name, location, returnType, arguments);
+                    case "UPSERT" -> new MutationField.UpsertMutationField(parentTypeName, name, location, returnType, arguments);
                     default       -> new UnclassifiedField(parentTypeName, name, location);
                 };
             }
@@ -796,6 +808,7 @@ public class GraphitronSchemaBuilder {
             return new ServiceField(parentTypeName, name, location,
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
                 parseReferencePath(fieldDef),
+                parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF),
                 parseArguments(fieldDef),
                 parseContextArguments(fieldDef, DIR_SERVICE));
         }
@@ -816,6 +829,7 @@ public class GraphitronSchemaBuilder {
             return new ServiceField(parentTypeName, name, location,
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
                 parseReferencePath(fieldDef),
+                parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF),
                 parseArguments(fieldDef),
                 parseContextArguments(fieldDef, DIR_SERVICE));
         }
@@ -832,7 +846,9 @@ public class GraphitronSchemaBuilder {
             return new TableMethodField(parentTypeName, name, location,
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
                 parseReferencePath(fieldDef),
-                parseContextArguments(fieldDef, DIR_TABLE_METHOD));
+                parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF),
+                parseContextArguments(fieldDef, DIR_TABLE_METHOD),
+                parseArguments(fieldDef));
         }
 
         if (!isScalarOrEnum(fieldDef)) {
@@ -939,6 +955,21 @@ public class GraphitronSchemaBuilder {
         boolean orderBy = arg.hasAppliedDirective(DIR_ORDER_BY);
         boolean conditionArg = arg.hasAppliedDirective(DIR_CONDITION);
         return new ArgumentSpec(arg.getName(), typeName, nonNull, list, orderBy, conditionArg);
+    }
+
+    /**
+     * Returns an {@link ExternalRef} from the {@code ExternalCodeReference} input object at
+     * argument {@code argName} of the given directive on {@code fieldDef}.
+     */
+    private ExternalRef parseExternalRef(GraphQLFieldDefinition fieldDef, String directiveName, String argName) {
+        var dir = fieldDef.getAppliedDirective(directiveName);
+        if (dir == null) return null;
+        var arg = dir.getArgument(argName);
+        if (arg == null) return null;
+        Map<String, Object> ref = asMap(arg.getValue());
+        String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
+        String methodName = Optional.ofNullable(ref.get(ARG_METHOD)).map(Object::toString).orElse(null);
+        return new ExternalRef(className, methodName);
     }
 
     /**
@@ -1088,6 +1119,7 @@ public class GraphitronSchemaBuilder {
         assertDirective(DIR_TABLE, ARG_NAME);
         assertDirective(DIR_RECORD);
         assertDirective(DIR_DISCRIMINATE, ARG_ON);
+        assertDirective(DIR_DISCRIMINATOR, ARG_VALUE);
         assertDirective(DIR_NODE, ARG_TYPE_ID, ARG_KEY_COLUMNS);
         assertDirective(DIR_NOT_GENERATED);
         assertDirective(DIR_MULTITABLE_REFERENCE);

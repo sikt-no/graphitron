@@ -13,8 +13,9 @@ package no.sikt.graphitron.record.type;
  * {@link no.sikt.graphitron.record.GraphitronSchema#types()}.
  *
  * <p>{@code columnName} is the value of {@code @field(name:)} when present, otherwise the
- * GraphQL field name. {@code javaName} is the value of {@code @field(javaName:)} when present,
- * otherwise {@code null}.
+ * GraphQL field name. {@code javaNamePresent} is {@code true} when {@code @field(javaName:)} was
+ * present on this field; the value is not stored because {@code javaName} is deprecated and
+ * generates a validation warning.
  */
 public record InputFieldSpec(
     String name,
@@ -24,5 +25,5 @@ public record InputFieldSpec(
     boolean lookupKey,
     boolean orderBy,
     String columnName,
-    String javaName
+    boolean javaNamePresent
 ) {}

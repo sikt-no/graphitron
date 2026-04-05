@@ -20,7 +20,7 @@ class ServiceQueryFieldValidationTest {
         VALID("service query field — always valid",
             new ServiceQueryField("Query", "externalData", null,
                 new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)),
-                List.of(), List.of()),
+                null, List.of(), List.of()),
             List.of());
 
         private final String description;

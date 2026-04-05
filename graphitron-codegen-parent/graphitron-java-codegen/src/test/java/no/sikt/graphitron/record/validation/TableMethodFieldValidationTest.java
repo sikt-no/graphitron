@@ -25,36 +25,36 @@ class TableMethodFieldValidationTest {
     enum Case implements ValidatorCase {
 
         NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
-            new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(), List.of()),
+            new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(), null, List.of(), List.of()),
             List.of()),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new FkRef(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY)),
-                List.of()),
+                null, List.of(), List.of()),
             List.of()),
 
         WITH_CONDITION_ONLY("condition method only — no FK",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new ConditionOnlyRef(new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))),
-                List.of()),
+                null, List.of(), List.of()),
             List.of()),
 
         UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)),
-                List.of(new UnresolvedKeyRef("FILM_ACTOR_FK")), List.of()),
+                List.of(new UnresolvedKeyRef("FILM_ACTOR_FK")), null, List.of(), List.of()),
             List.of("Field 'filteredActors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog")),
 
         UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new UnresolvedConditionRef("com.example.Conditions.actorCondition")),
-                List.of()),
+                null, List.of(), List.of()),
             List.of("Field 'filteredActors': condition method 'com.example.Conditions.actorCondition' could not be resolved")),
 
         UNRESOLVED_KEY_AND_CONDITION("both key and condition specified, neither could be resolved — two errors",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new UnresolvedKeyAndConditionRef("FILM_ACTOR_FK", "com.example.Conditions.actorCondition")),
-                List.of()),
+                null, List.of(), List.of()),
             List.of(
                 "Field 'filteredActors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog",
                 "Field 'filteredActors': condition method 'com.example.Conditions.actorCondition' could not be resolved"));
