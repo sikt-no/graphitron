@@ -65,7 +65,7 @@ These items are described in the plan but not yet implemented:
 | `getTenantId()` implementation | `DefaultGraphitronContext.java` | **Missing** |
 | Conditional generator registration | `GraphQLGenerator.getGenerators()` | **Missing** (existing record mappers run unconditionally) |
 
-These are all straightforward additions. Recommend completing Deliverable 2 fully before starting the generating stream.
+These are all straightforward additions. None of them block the generating stream — the feature flag, context methods, and conditional registration are wiring concerns that only matter when the generator is ready to run end-to-end. Recommend deferring Deliverable 2 completion until the generator exists and needs to be invoked from the plugin.
 
 ---
 
@@ -102,15 +102,15 @@ The plan's testing strategy requires approval tests for every leaf type in the g
 
 ## 4. Recommended Sequencing Before Next Phase
 
-1. **Complete Deliverable 2** — Add `recordBasedOutput` flag to `GeneratorConfig`, `GenerateMojo`, and `Generator` interface. Add `getTenantId()` to `GraphitronContext`/`DefaultGraphitronContext`. Gate new generators in `GraphQLGenerator.getGenerators()`.
+1. **Close Level 2 classification gaps** — Add `ConstructorField` and `UnclassifiedField` classification tests. Add directive-conflict negative tests. Verify `FieldWrapper.Connection` detection test exists.
 
-2. **Close Level 2 classification gaps** — Add `ConstructorField` and `UnclassifiedField` classification tests. Add directive-conflict negative tests. Verify `FieldWrapper.Connection` detection test exists.
+2. **Clarify `CompletableFuture` executor strategy** — Document in the plan whether generated code will accept an executor parameter or use a fixed pool. This affects the API surface of every generated root field and DataLoader method.
 
-3. **Clarify `CompletableFuture` executor strategy** — Document in the plan whether generated code will accept an executor parameter or use a fixed pool. This affects the API surface of every generated root field and DataLoader method.
+3. **Rename "@defer" section** — Deliverable 4's "check-then-fetch" pattern is not related to GraphQL `@defer`. Rename to avoid confusion.
 
-4. **Rename "@defer" section** — Deliverable 4's "check-then-fetch" pattern is not related to GraphQL `@defer`. Rename to avoid confusion.
+4. **Proceed to generating stream (G1)** — With classification fully tested, hand-craft `GraphitronField` instances for `ColumnField` and `TableQueryField`, implement `FieldsCodeGenerator`, and write approval tests.
 
-5. **Then proceed to generating stream (G1)** — With classification fully tested, hand-craft `GraphitronField` instances for `ColumnField` and `TableQueryField`, implement `FieldsCodeGenerator`, and write approval tests.
+5. **Complete Deliverable 2 when the generator is ready for integration** — Add `recordBasedOutput` flag to `GeneratorConfig`, `GenerateMojo`, and `Generator` interface. Add `getTenantId()` to `GraphitronContext`/`DefaultGraphitronContext`. Gate new generators in `GraphQLGenerator.getGenerators()`. This is wiring that only matters once the generator can run end-to-end via the Maven plugin.
 
 ---
 
@@ -120,7 +120,7 @@ The plan's testing strategy requires approval tests for every leaf type in the g
 |---|---|---|
 | Architecture | **Strong** | Sealed hierarchies, two-stream design, directive boundary — all excellent |
 | Implementation (D1 + parsing) | **Excellent** | Complete, well-structured, uses records and sealed types correctly |
-| Infrastructure (D2) | **Incomplete** | Feature flag and context methods not yet wired |
+| Infrastructure (D2) | **Incomplete** | Feature flag and context methods not yet wired; can wait until generator is ready |
 | Testing (L1 validators) | **Very good** | 40+ test files, 1 minor gap (ErrorType) |
 | Testing (L2 classification) | **Very good** | 26/28 leaf types, 2 gaps (ConstructorField, UnclassifiedField) |
 | Testing (L3 generation) | **Not started** | Expected — generating stream not built yet |
