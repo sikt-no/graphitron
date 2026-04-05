@@ -64,7 +64,7 @@ class NodeIdReferenceFieldValidationTest {
 
         UNRESOLVED_NODE_TYPE("typeName does not resolve to a @node type — one error",
             new NodeIdReferenceField("Film", "languageId", null, "UnknownType",
-                new ReturnTypeRef.UnresolvedReturnType("UnknownType", new FieldWrapper.Single(true)),
+                new ReturnTypeRef.OtherReturnType("UnknownType", new FieldWrapper.Single(true)),
                 null,
                 new UnresolvedNodeType(),
                 List.of()),

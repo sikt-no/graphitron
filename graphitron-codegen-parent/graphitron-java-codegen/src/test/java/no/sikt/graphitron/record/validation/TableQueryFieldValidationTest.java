@@ -32,12 +32,6 @@ class TableQueryFieldValidationTest {
             new TableQueryField("Query", "films", null, filmReturn(new FieldWrapper.Single(true)), List.of()),
             List.of()),
 
-        UNKNOWN_RETURN_TYPE("return type name does not exist in the schema — validation error",
-            new TableQueryField("Query", "films", null,
-                new ReturnTypeRef.UnresolvedReturnType("UnknownType", new FieldWrapper.List(true, true, null, List.of())),
-                List.of()),
-            List.of("Field 'films': return type 'UnknownType' does not exist in the schema")),
-
         DEFAULT_ORDER_INDEX("@defaultOrder with index mode — valid",
             new TableQueryField("Query", "films", null,
                 filmReturn(new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.IndexOrder("IDX_TITLE"), "ASC"), List.of())),

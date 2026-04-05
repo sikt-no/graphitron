@@ -104,7 +104,7 @@ public sealed interface ChildField extends GraphitronField
      * <p>{@code targetType} is the outcome of resolving {@code typeName} against the classified
      * schema: {@link ReturnTypeRef.TableBoundReturnType} when the named type exists and is a
      * table-backed type (carrying the table ref for FK and path validation), or
-     * {@link ReturnTypeRef.OtherReturnType} / {@link ReturnTypeRef.UnresolvedReturnType} otherwise.
+     * {@link ReturnTypeRef.OtherReturnType} otherwise.
      *
      * <p>{@code parentTable} is the resolved table of the containing type, or {@code null} when
      * the parent's table is unresolved. A null parent table skips the implicit FK count check.
@@ -178,10 +178,10 @@ public sealed interface ChildField extends GraphitronField
      * <p>{@code tableMethodRef} is the {@code tableMethodReference: ExternalCodeReference!} argument
      * of the {@code @tableMethod} directive — the Java method that returns the pre-filtered table.
      *
+     * <p>{@code arguments} is the full list of GraphQL arguments on the field.
+     *
      * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
      * of the {@code @tableMethod} directive.
-     *
-     * <p>{@code arguments} is the full list of GraphQL arguments on the field.
      */
     record TableMethodField(
         String parentTypeName,
@@ -190,8 +190,8 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef returnType,
         List<ReferencePathElementRef> referencePath,
         ExternalRef tableMethodRef,
-        List<String> contextArguments,
-        List<ArgumentSpec> arguments
+        List<ArgumentSpec> arguments,
+        List<String> contextArguments
     ) implements ChildField {}
 
     /**

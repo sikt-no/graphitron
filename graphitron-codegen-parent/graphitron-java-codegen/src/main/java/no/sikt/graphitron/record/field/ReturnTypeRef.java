@@ -24,10 +24,8 @@ import no.sikt.graphitron.record.type.TableRef;
  * {@link no.sikt.graphitron.record.type.GraphitronType.TableType} (e.g. a result type,
  * interface, or union).
  *
- * <p>{@link UnresolvedReturnType} — the named type does not exist in the schema. The
- * {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error.
  */
-public sealed interface ReturnTypeRef permits ReturnTypeRef.TableBoundReturnType, ReturnTypeRef.OtherReturnType, ReturnTypeRef.UnresolvedReturnType {
+public sealed interface ReturnTypeRef permits ReturnTypeRef.TableBoundReturnType, ReturnTypeRef.OtherReturnType {
 
     String returnTypeName();
 
@@ -46,9 +44,4 @@ public sealed interface ReturnTypeRef permits ReturnTypeRef.TableBoundReturnType
      */
     record OtherReturnType(String returnTypeName, FieldWrapper wrapper) implements ReturnTypeRef {}
 
-    /**
-     * The return type name does not correspond to any classified type in the schema.
-     * The validator reports an error.
-     */
-    record UnresolvedReturnType(String returnTypeName, FieldWrapper wrapper) implements ReturnTypeRef {}
 }

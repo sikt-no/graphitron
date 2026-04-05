@@ -70,10 +70,10 @@ public sealed interface QueryField extends RootField
      * <p>{@code tableMethodRef} is the {@code tableMethodReference: ExternalCodeReference!} argument
      * of the {@code @tableMethod} directive — the Java method that returns the pre-filtered table.
      *
+     * <p>{@code arguments} is the full list of GraphQL arguments on the field.
+     *
      * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
      * of the {@code @tableMethod} directive.
-     *
-     * <p>{@code arguments} is the full list of GraphQL arguments on the field.
      */
     record TableMethodQueryField(
         String parentTypeName,
@@ -81,8 +81,8 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef returnType,
         ExternalRef tableMethodRef,
-        List<String> contextArguments,
-        List<ArgumentSpec> arguments
+        List<ArgumentSpec> arguments,
+        List<String> contextArguments
     ) implements QueryField {}
 
     /**
@@ -156,16 +156,13 @@ public sealed interface QueryField extends RootField
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
      * schema.
      *
-     * <p>{@code arguments} is the full list of arguments on the field. The validator checks that
-     * any referenced input types exist in the classified schema.
-     *
      * <p>{@code serviceRef} is the {@code service: ExternalCodeReference!} argument of the
      * {@code @service} directive — the Java class and method to delegate to.
      *
+     * <p>{@code arguments} is the full list of GraphQL arguments on the field.
+     *
      * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
      * of the {@code @service} directive.
-     *
-     * <p>{@code arguments} is the full list of GraphQL arguments on the field.
      */
     record ServiceQueryField(
         String parentTypeName,

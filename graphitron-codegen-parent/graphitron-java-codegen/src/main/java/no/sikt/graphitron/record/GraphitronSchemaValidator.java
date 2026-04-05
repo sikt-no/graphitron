@@ -26,7 +26,6 @@ import org.jooq.Table;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import no.sikt.graphitron.record.field.ArgumentSpec;
 import no.sikt.graphitron.record.type.InputFieldSpec;
@@ -136,18 +135,9 @@ public class GraphitronSchemaValidator {
         validateParticipants(type.name(), type.participants(), errors);
     }
 
-    private static final Set<String> BUILTIN_SCALARS =
-        Set.of("String", "Int", "Float", "Boolean", "ID");
-
     private void validateInputType(no.sikt.graphitron.record.type.GraphitronType.InputType type, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        for (var field : type.fields()) {
-            if (!BUILTIN_SCALARS.contains(field.typeName()) && !types.containsKey(field.typeName())) {
-                errors.add(new ValidationError(
-                    "Input type '" + type.name() + "': field '" + field.name() + "' references unknown type '" + field.typeName() + "'",
-                    type.location()
-                ));
-            }
-        }
+        // Type-existence of field types is already guaranteed by graphql-java schema validation.
+        // Graphitron-specific constraints (e.g. javaName deprecation) will be added here.
     }
 
     private void validateParticipants(String typeName, java.util.List<no.sikt.graphitron.record.type.ParticipantRef> participants, List<ValidationError> errors) {
@@ -190,10 +180,6 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
         switch (field.returnType()) {
-            case ReturnTypeRef.UnresolvedReturnType u -> errors.add(new ValidationError(
-                "Field '" + field.name() + "': return type '" + u.returnTypeName() + "' does not exist in the schema",
-                field.location()
-            ));
             case ReturnTypeRef.TableBoundReturnType tb -> {
                 if (tb.table() instanceof ResolvedTable rt) {
                     validateDeterministicOrdering(field.name(), field.location(), tb.wrapper(), rt.table(), errors);
@@ -417,14 +403,8 @@ public class GraphitronSchemaValidator {
     }
 
     private void validateArguments(String fieldName, SourceLocation location, List<ArgumentSpec> arguments, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        for (var arg : arguments) {
-            if (!BUILTIN_SCALARS.contains(arg.typeName()) && !types.containsKey(arg.typeName())) {
-                errors.add(new ValidationError(
-                    "Field '" + fieldName + "': argument '" + arg.name() + "' references unknown type '" + arg.typeName() + "'",
-                    location
-                ));
-            }
-        }
+        // Type-existence of argument types is already guaranteed by graphql-java schema validation.
+        // Graphitron-specific constraints will be added here as needed.
     }
 
     private void validateCardinality(String fieldName, SourceLocation location, no.sikt.graphitron.record.field.FieldWrapper cardinality, List<ValidationError> errors) {

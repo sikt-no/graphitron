@@ -48,7 +48,7 @@ public sealed interface ReferencePathElementRef
      * A {@link ReferencePathElementRef} where a condition method was successfully resolved and no
      * jOOQ FK is involved.
      *
-     * <p>Used for lift conditions on {@code @service} and {@code @computed} fields, where the
+     * <p>Used for lift conditions on {@code @service} and {@code @externalField} fields, where the
      * condition method reconnects the result back to the parent table without a FK join.
      *
      * <p>{@code condition} is the resolved condition method; all fields on {@link MethodRef} are

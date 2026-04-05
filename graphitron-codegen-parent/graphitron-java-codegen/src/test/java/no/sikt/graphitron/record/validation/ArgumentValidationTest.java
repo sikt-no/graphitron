@@ -66,17 +66,10 @@ class ArgumentValidationTest {
             Map.of("FilmFilter", new InputType("FilmFilter", null, List.of())),
             List.of()),
 
-        UNKNOWN_TYPE_ARG("argument referencing an unknown type — validation error",
-            tableField(List.of(new ArgumentSpec("status", "FilmStatus", false, false, false, false))),
+        CUSTOM_SCALAR_ARG("argument with a custom scalar type — no errors (graphql-java validates scalars)",
+            tableField(List.of(new ArgumentSpec("createdAt", "DateTime", false, false, false, false))),
             Map.of(),
-            List.of("Field 'actors': argument 'status' references unknown type 'FilmStatus'")),
-
-        MULTIPLE_ARGS_ONE_UNKNOWN("two arguments, one unknown — one error",
-            tableField(List.of(
-                new ArgumentSpec("limit", "Int", false, false, false, false),
-                new ArgumentSpec("status", "FilmStatus", false, false, false, false))),
-            Map.of(),
-            List.of("Field 'actors': argument 'status' references unknown type 'FilmStatus'"));
+            List.of());
 
         private final GraphitronField field;
         private final Map<String, GraphitronType> extraTypes;

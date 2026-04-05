@@ -38,11 +38,6 @@ class InputTypeValidationTest {
                 new InputFieldSpec("year", "Int", false, false, false, "year", false))),
             List.of()),
 
-        UNKNOWN_TYPE_ERROR("input field referencing a type not in the schema — error",
-            new InputType("FilmInput", null, List.of(
-                new InputFieldSpec("status", "FilmStatus", false, false, false, "status", false))),
-            List.of("Input type 'FilmInput': field 'status' references unknown type 'FilmStatus'")),
-
         KNOWN_INPUT_TYPE_NO_ERROR("input field referencing another InputType in the schema — no error",
             new InputType("CreateFilmInput", null, List.of(
                 new InputFieldSpec("translation", "TranslationInput", false, false, false, "translation", false))),

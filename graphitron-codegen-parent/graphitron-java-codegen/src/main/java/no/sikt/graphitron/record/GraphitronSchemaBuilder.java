@@ -171,7 +171,6 @@ public class GraphitronSchemaBuilder {
     private static final String ARG_FIELDS = "fields";
     private static final String ARG_PRIMARY_KEY = "primaryKey";
     private static final String ARG_DIRECTION = "direction";
-    private static final String ARG_SORT_FIELD_NAME = "name";    // FieldSort.name (database field name)
     private static final String ARG_COLLATE = "collate";         // FieldSort.collate (collation string)
     // Argument names for @error / ErrorHandler input fields.
     private static final String ARG_HANDLERS = "handlers";
@@ -475,9 +474,13 @@ public class GraphitronSchemaBuilder {
         // Its fields are resolved from the same table context as the parent.
         if (schema.getType(elementTypeName) instanceof GraphQLObjectType && elementType == null) {
             return new NestingField(parentTypeName, name, location,
-                new ReturnTypeRef.UnresolvedReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.OtherReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
+        // ConstructorField is intentionally not classified here — its directive and generation
+        // semantics are not yet defined (planned future deliverable). Fields that would logically
+        // map to ConstructorField fall through to UnclassifiedField, which the validator rejects
+        // with a clear error, making the gap visible and enforced rather than silently ignored.
         return new UnclassifiedField(parentTypeName, name, location);
     }
 
@@ -606,7 +609,7 @@ public class GraphitronSchemaBuilder {
 
     private SortFieldSpec parseSortFieldSpec(Map<String, Object> item) {
         // FieldSort uses `name` (database field name) and `collate` (optional collation).
-        Object nameRaw = item.get(ARG_SORT_FIELD_NAME);
+        Object nameRaw = item.get(ARG_NAME);
         if (nameRaw == null) {
             throw new IllegalStateException("Missing required 'name' in FieldSort");
         }
@@ -698,8 +701,8 @@ public class GraphitronSchemaBuilder {
             return new QueryField.TableMethodQueryField(parentTypeName, name, location,
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
                 parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF),
-                parseContextArguments(fieldDef, DIR_TABLE_METHOD),
-                parseArguments(fieldDef));
+                parseArguments(fieldDef),
+                parseContextArguments(fieldDef, DIR_TABLE_METHOD));
         }
 
         String rawTypeName = baseTypeName(fieldDef);
@@ -846,8 +849,8 @@ public class GraphitronSchemaBuilder {
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
                 parseReferencePath(fieldDef),
                 parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF),
-                parseContextArguments(fieldDef, DIR_TABLE_METHOD),
-                parseArguments(fieldDef));
+                parseArguments(fieldDef),
+                parseContextArguments(fieldDef, DIR_TABLE_METHOD));
         }
 
         if (!isScalarOrEnum(fieldDef)) {
@@ -887,8 +890,13 @@ public class GraphitronSchemaBuilder {
     private ReturnTypeRef resolveReturnType(String targetTypeName, FieldWrapper wrapper) {
         GraphitronType target = types.get(targetTypeName);
         if (target instanceof TableType tt) return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tt.table(), wrapper);
-        if (target != null) return new ReturnTypeRef.OtherReturnType(targetTypeName, wrapper);
-        return new ReturnTypeRef.UnresolvedReturnType(targetTypeName, wrapper);
+        // OtherReturnType covers:
+        //  - classified non-table types (ResultType, InputType, interfaces, unions)
+        //  - scalars and enums (not classified by Graphitron but valid leaf types)
+        //  - directive-argument type names that don't match any schema type (e.g. @nodeId(typeName:))
+        //    — these are not validated by graphql-java, so the type may genuinely not exist;
+        //    downstream validators (e.g. UnresolvedNodeType) catch those errors.
+        return new ReturnTypeRef.OtherReturnType(targetTypeName, wrapper);
     }
 
     private NodeTypeRef resolveNodeType(String targetTypeName) {
@@ -1034,7 +1042,8 @@ public class GraphitronSchemaBuilder {
             }
             return new UnresolvedConditionRef(extractConditionQualifiedName(condMap));
         }
-        return new UnresolvedKeyRef("");
+        // A path element with neither 'key' nor 'condition' is structurally invalid.
+        return new UnresolvedKeyRef("<empty path element — missing 'key' and 'condition'>");
     }
 
     private ReferencePathElementRef resolveKey(String keyName) {
@@ -1088,12 +1097,12 @@ public class GraphitronSchemaBuilder {
         if (value instanceof ArrayValue av) {
             return av.getValues().stream()
                 .map(v -> v instanceof NullValue ? null : ((StringValue) v).getValue().strip())
-                .collect(Collectors.toList());
+                .toList();
         }
         if (value instanceof List<?> list) {
             return list.stream()
                 .map(v -> v == null ? null : v.toString().strip())
-                .collect(Collectors.toList());
+                .toList();
         }
         return List.of();
     }
