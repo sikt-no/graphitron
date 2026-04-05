@@ -26,11 +26,11 @@ The overall architecture is sound and well-suited to the problem.
 
 ### Concerns (minor, none blocking)
 
-1. **`CompletableFuture.supplyAsync()` without an executor (Deliverable 3, line ~340).** The generated root field code uses `CompletableFuture.supplyAsync(() -> ctx.getDslContext(env).select(...).fetchOne())` which defaults to `ForkJoinPool.commonPool()`. This pool uses daemon threads sized to CPU cores and is inappropriate for blocking JDBC calls. The plan should specify that an executor parameter (from `GraphitronContext` or `GraphQlContext`) is used, or document this as a known limitation to address in a follow-up.
+1. ~~**`CompletableFuture.supplyAsync()` without an executor (Deliverable 3, line ~340).**~~ **Fixed.** All three `supplyAsync` calls replaced with `CompletableFuture.completedFuture(syncJdbcCall)`, matching the existing `DataFetcherHelper` pattern. A threading model note was added after the D3 code block explaining why synchronous execution on the calling thread is correct: graphql-java's `AsyncExecutionStrategy` has no internal executor and calls fetchers inline; Quarkus worker threads handle blocking I/O; `supplyAsync` with no executor would hit `ForkJoinPool.commonPool()` which is sized for CPU-bound work.
 
 2. **`@defer` terminology in Deliverable 4 (line ~412).** The section title says "@defer check-then-fetch" but the pattern described is actually an inline-prefetch-with-fallback pattern (check if the parent query already embedded the result, fall back to a separate query if not). This is not related to GraphQL `@defer`. The naming may confuse readers — suggest renaming to "prefetch-with-fallback" or "inline-or-fetch".
 
-3. **No executor/thread-pool strategy documented.** The plan covers SQL generation and wiring in detail but doesn't discuss the threading model for DataLoaders and root field fetchers. This matters for production correctness and should be addressed at least as a note in Deliverable 5 (DataLoaders).
+3. ~~**No executor/thread-pool strategy documented.**~~ **Fixed** (along with concern 1). Threading model note added to D3, explicitly covering both root fields and DataLoaders.
 
 4. **Mutation scope deferral is fine** but should be called out more prominently as a phase boundary. Currently buried at the bottom (line 621).
 
@@ -115,7 +115,7 @@ The following directive groups are **mutually exclusive** — combining directiv
 
 1. ~~**Close Level 2 classification gaps**~~ — **Done.** `ConstructorField` and `UnclassifiedField` classification tests added. Directive-conflict tests produce `UnclassifiedField/UnclassifiedType` with typed reasons. `FieldWrapper.Connection` detection already covered.
 
-2. **Clarify `CompletableFuture` executor strategy** — Document in the plan whether generated code will accept an executor parameter or use a fixed pool. This affects the API surface of every generated root field and DataLoader method.
+2. ~~**Clarify `CompletableFuture` executor strategy**~~ — **Done.** All `supplyAsync` replaced with `completedFuture`; threading model documented in plan.
 
 3. **Rename "@defer" section** — Deliverable 4's "check-then-fetch" pattern is not related to GraphQL `@defer`. Rename to avoid confusion.
 
@@ -135,4 +135,4 @@ The following directive groups are **mutually exclusive** — combining directiv
 | Testing (L1 validators) | **Very good** | 40+ test files, 1 minor gap (ErrorType) |
 | Testing (L2 classification) | **Complete** | 28/28 leaf types covered; conflicts now produce typed error records — tests assert `UnclassifiedField/UnclassifiedType` with specific reasons |
 | Testing (L3 generation) | **Not started** | Expected — generating stream not built yet |
-| Plan clarity | **Good** | Minor naming issues (@defer), executor strategy undocumented |
+| Plan clarity | **Good** | `@defer` naming issue remains; executor strategy documented |

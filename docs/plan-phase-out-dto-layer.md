@@ -339,14 +339,14 @@ public class QueryFields {
     public static CompletableFuture<Record> customer(DataFetchingEnvironment env) {
         GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
         String id = env.getArgument("id");
-        return CompletableFuture.supplyAsync(() -> {
-            var _a = CUSTOMER.as("customer_hash");
-            return ctx.getDslContext(env)
+        var _a = CUSTOMER.as("customer_hash");
+        return CompletableFuture.completedFuture(
+            ctx.getDslContext(env)
                 .select(CustomerFields.fields(_a, env.getSelectionSet()))
                 .from(_a)
                 .where(_a.CUSTOMER_ID.eq(UInteger.valueOf(id)))
-                .fetchOne();
-        });
+                .fetchOne()
+        );
     }
 }
 ```
@@ -362,6 +362,20 @@ public class GraphitronWiring {
     }
 }
 ```
+
+### Threading model
+
+All generated fetchers execute their JDBC work **synchronously on the calling thread** and return an already-completed `CompletableFuture` via `CompletableFuture.completedFuture(result)`. This mirrors the existing `DataFetcherHelper` pattern throughout graphitron.
+
+This is correct because:
+
+1. **graphql-java provides no executor.** `AsyncExecutionStrategy` calls `DataFetcher.get()` directly on its own thread. It does not submit fetchers to any thread pool — the "async" in its name refers only to its ability to compose multiple futures without serialising between sibling fields. A fetcher that blocks does so on the strategy's thread.
+
+2. **The application framework (Quarkus) manages blocking.** Quarkus routes incoming GraphQL requests to worker threads from its managed thread pool, where blocking I/O (JDBC) is permitted. There is no need for generated code to create additional threads.
+
+3. **`supplyAsync()` without an executor would be wrong.** It defaults to `ForkJoinPool.commonPool()`, which is CPU-sized and not designed for blocking I/O. Using it risks pool exhaustion and would contradict the existing graphitron threading contract.
+
+DataLoaders (Deliverable 5) follow the same pattern: the batch function executes its batched SQL synchronously and returns `completedFuture(result)`.
 
 ---
 
@@ -495,15 +509,15 @@ private static CompletableFuture<Map<CustomerRecord, Result<Record>>> ordersLoad
         List<CustomerRecord> keys, BatchLoaderEnvironment ctx) {
     DataFetchingEnvironment env = (DataFetchingEnvironment) ctx.getKeyContextsList().get(0);
     GraphitronContext gCtx = env.getGraphQlContext().get("graphitronContext");
-    return CompletableFuture.supplyAsync(() -> {
-        Order _a = ORDER.as("order_hash");
-        return gCtx.getDslContext(env)
+    Order _a = ORDER.as("order_hash");
+    return CompletableFuture.completedFuture(
+        gCtx.getDslContext(env)
             .select(OrderFields.fields(_a, env.getSelectionSet()))
             .from(_a)
             .where(_a.CUSTOMER_ID.in(keys.stream().map(CustomerRecord::getCustomerId).toList()))
             .fetch().stream()
-            .collect(Collectors.groupingBy(r -> r.into(CUSTOMER)));
-    });
+            .collect(Collectors.groupingBy(r -> r.into(CUSTOMER)))
+    );
 }
 
 private static String loaderName(ResultPath path, Optional<String> tenantId) {
@@ -582,7 +596,7 @@ public class HelloWorldServiceWrapper {
         String name = env.getArgument("name");
         GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
         HelloWorldService service = new HelloWorldService(ctx.getDslContext(env));
-        return CompletableFuture.supplyAsync(() -> service.helloWorldAgain(name));
+        return CompletableFuture.completedFuture(service.helloWorldAgain(name));
     }
 }
 ```
