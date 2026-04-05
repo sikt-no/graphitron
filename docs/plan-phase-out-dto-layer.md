@@ -48,9 +48,9 @@ Each deliverable is a self-contained, reviewable change behind the `recordBasedO
 | **Parsing stream** | `GraphitronSchemaBuilder` — schema → `GraphitronField` | Independent of generating stream |
 | P1 ✓ | Scalar parsing | `ColumnField`, `ColumnReferenceField`, `NodeIdField`, `NodeIdReferenceField`, `NotGeneratedField`, `ErrorType` — done |
 | P2 ✓ | Table child parsing | `TableField`, `TableMethodField`, `NestingField` |
-| P3 | Remaining child parsing | `ComputedField`, `PropertyField`, `TableInterfaceField`, `InterfaceField`, `UnionField`, `ServiceField` |
-| P4 | Field arguments + input types | `InputType` in `GraphitronType`; argument list on field records |
-| P5 | Root field parsing | `LookupQueryField`, `TableQueryField`, `TableMethodQueryField`, `NodeQueryField`, `EntityQueryField`, `TableInterfaceQueryField`, `InterfaceQueryField`, `UnionQueryField`, `ServiceQueryField`, all `MutationField` variants |
+| P3 ✓ | Remaining child parsing | `ComputedField`, `PropertyField`, `TableInterfaceField`, `InterfaceField`, `UnionField`, `ServiceField` |
+| P4 ✓ | Field arguments + input types | `InputType` in `GraphitronType`; argument list on field records |
+| P5 ✓ | Root field parsing | `LookupQueryField`, `TableQueryField`, `TableMethodQueryField`, `NodeQueryField`, `EntityQueryField`, `TableInterfaceQueryField`, `InterfaceQueryField`, `UnionQueryField`, `ServiceQueryField`, all `MutationField` variants |
 | P4 is a prerequisite for P5. Field arguments must be classified before root fields can be fully specified, because root-field records carry their argument lists. Input types must be in `GraphitronType` before the validator can check argument type references. P4 does not depend on P2 or P3. |
 | **Generating stream** | `FieldsCodeGenerator` — `GraphitronField` → Java | Independent of parsing stream |
 | G1 | Scalar generating | `ColumnField`, `ColumnReferenceField` → `wiring()` + `fields()` |
@@ -433,10 +433,11 @@ record InputFieldSpec(
     String typeName,           // base type name (unwrapped)
     boolean nonNull,
     boolean list,
-    boolean lookupKey,         // @lookupKey present
     boolean orderBy            // @orderBy present on this field
 ) {}
 ```
+
+> **`@lookupKey` is not stored per field or per argument.** Its presence anywhere in the argument tree (direct args or nested input fields) classifies the *root field* as a `LookupQueryField`. Once that classification is made, `@lookupKey` carries no further per-argument semantic — all arguments on a lookup field participate equally in lookup semantics. Storing it in `InputFieldSpec` or `ArgumentSpec` would mislead generator authors into treating `@lookupKey` args differently from non-`@lookupKey` args, which is wrong.
 
 `@field(name:, javaName:)` on input fields is also captured here (column name override, Java name override) when present. Directives not needed for generation are ignored.
 
@@ -450,11 +451,12 @@ record ArgumentSpec(
     String typeName,       // base type name (unwrapped)
     boolean nonNull,
     boolean list,
-    boolean lookupKey,     // @lookupKey present
     boolean orderBy,       // @orderBy present
     boolean conditionArg   // @condition present on this argument
 ) {}
 ```
+
+> `lookupKey` is absent — see note under `InputFieldSpec` above.
 
 `contextArguments` from `@service` and `@tableMethod` directives (a `[String!]` list of `GraphQLContext` key names) are captured separately as `List<String> contextArguments` on `ServiceQueryField`, `ServiceMutationField`, `ServiceField`, `TableMethodQueryField`, and `TableMethodField`.
 
@@ -463,13 +465,50 @@ record ArgumentSpec(
 The validator gains checks for:
 - Every `ArgumentSpec.typeName` that is not a built-in scalar must resolve to a type in `GraphitronSchema.types()` (either an `InputType`, scalar, or enum).
 - Every `InputFieldSpec.typeName` with the same constraint.
-- `@lookupKey` and `@orderBy` must not appear on non-scalar argument/field types.
+- `@orderBy` must not appear on non-scalar argument/field types.
 
 ### What P4 does not include
 
 - Condition resolution via reflection (`@condition` on `ARGUMENT_DEFINITION`) — still deferred to P3 of the original deliverable sequence (the "P3" in the `resolveConditionRef` comment in `GraphitronSchemaBuilder`).
 - Default value capture — not needed for current generators.
 - Relay pagination argument names (`first`, `after`, `last`, `before`) are captured as ordinary `ArgumentSpec` entries; the `FieldWrapper.Connection` wrapper identifies the field as paginated, not the presence of specific argument names.
+
+---
+
+## Parsing stream — P5: Root field parsing
+
+**Prerequisite:** P4 must be done first.
+
+Root fields are classified into the `QueryField`/`MutationField` sealed hierarchies by `classifyQueryField()` and `classifyMutationField()` in `GraphitronSchemaBuilder`.
+
+### Classification priority (Query fields)
+
+1. `@service` directive → `ServiceQueryField`
+2. Field name `_entities` → `EntityQueryField`
+3. Field name `node` → `NodeQueryField`
+4. Any arg (direct or nested in input types) has `@lookupKey` → `LookupQueryField`
+5. `@tableMethod` directive → `TableMethodQueryField`
+6. Return type is `TableType` → `TableQueryField`
+7. Return type is `TableInterfaceType` → `TableInterfaceQueryField`
+8. Return type is `InterfaceType` → `InterfaceQueryField`
+9. Return type is `UnionType` → `UnionQueryField`
+
+`hasLookupKeyAnywhere()` checks direct args for `@lookupKey`, then recursively checks input type fields (depth-guarded at 10 levels). This allows `@lookupKey` to appear on nested input object fields to classify the root Query field.
+
+### `@lookupKey` semantics
+
+`@lookupKey` is a **field-level classifier only**. Its presence on any argument anywhere in the arg tree marks the whole Query field as a `LookupQueryField`. Beyond classification, `@lookupKey` carries no per-argument semantic — all arguments on a lookup field participate equally in lookup semantics (list args positionally correlated, scalar args broadcast). This is intentional: having a non-`@lookupKey` arg with the correct dimension would be semantically identical to a `@lookupKey` arg, so the distinction is meaningless and storing it per-arg would mislead generator authors.
+
+### `LookupQueryField` validation
+
+Three constraints are enforced:
+- **Single return type**: lookup fields must return a single object (`FieldWrapper.Single`), not a list or connection. The result list length equals the input key list length — the DataLoader correlation depends on this.
+- **No `@orderBy` args**: ordering is meaningless when returning a single object per key.
+- **No `@condition` args**: filter conditions are incompatible with lookup semantics.
+
+### Mutation classification
+
+`@service` directive → `ServiceMutationField`. Otherwise, `@mutation(typeName:)` determines the type: `INSERT`, `UPDATE`, `DELETE`, or `UPSERT`.
 
 ---
 
@@ -948,13 +987,15 @@ The test method is a one-liner. `@EnumSource` filtering splits valid and invalid
 
 ```java
 @ParameterizedTest(name = "{0}")
-@EnumSource(LookupQueryFieldCase.class)
-void lookupQueryField(LookupQueryFieldCase tc) {
+@EnumSource(Case.class)
+void lookupQueryField(Case tc) {
     assertThat(validate(tc.field()))
         .extracting(ValidationError::message)
         .containsExactlyInAnyOrderElementsOf(tc.errors());
 }
 ```
+
+The validation test enum for `LookupQueryField` is `LookupQueryFieldValidationTest.Case` (in `LookupQueryFieldValidationTest.java`) with cases: `VALID`, `VALID_WITH_ARGS`, `LIST_RETURN`, `CONNECTION_RETURN`, `ORDERBY_ARG`, `CONDITION_ARG`, `ORDERBY_AND_CONDITION_ARGS`.
 
 For multi-dimensional combinations (e.g., type directive × field directive → classification), `@CsvSource` with `useHeadersInDisplayName = true` reads as a truth table:
 
