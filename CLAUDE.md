@@ -53,9 +53,54 @@ The graphitron-maven-plugin provides:
 
 Maven 3.9.11 is at `/opt/maven`. Java 21 is the default JVM. Both are pre-configured — no installation needed.
 
-`~/.m2/settings.xml` is pre-populated with an HTTPS proxy configuration (session-scoped credentials). Do not edit or regenerate this file; Maven dependency resolution works out of the box.
+`JAVA_TOOL_OPTIONS` is pre-set with proxy settings (`http.proxyHost`, `http.proxyPort`, `http.proxyUser`, `http.proxyPassword`, etc.), so `java` commands pick up the proxy automatically.
 
-`JAVA_TOOL_OPTIONS` is also pre-set with matching proxy settings, so `java` commands pick up the proxy automatically.
+**Proxy setup (required before first build):**
+
+`~/.m2/settings.xml` must exist with the proxy configuration. If it's missing, create it by extracting credentials from the `http_proxy` environment variable:
+
+```bash
+PROXY_USER=$(echo "$http_proxy" | sed 's|http://||' | sed 's|@.*||' | sed 's|:.*||')
+PROXY_PASS=$(echo "$http_proxy" | sed 's|http://||' | sed 's|@.*||' | sed 's|^[^:]*:||')
+
+cat > ~/.m2/settings.xml << XMLEOF
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <proxies>
+    <proxy>
+      <id>https-proxy</id>
+      <active>true</active>
+      <protocol>https</protocol>
+      <host>21.0.0.129</host>
+      <port>15004</port>
+      <username>${PROXY_USER}</username>
+      <password>${PROXY_PASS}</password>
+      <nonProxyHosts>localhost|127.0.0.1</nonProxyHosts>
+    </proxy>
+    <proxy>
+      <id>http-proxy</id>
+      <active>true</active>
+      <protocol>http</protocol>
+      <host>21.0.0.129</host>
+      <port>15004</port>
+      <username>${PROXY_USER}</username>
+      <password>${PROXY_PASS}</password>
+      <nonProxyHosts>localhost|127.0.0.1</nonProxyHosts>
+    </proxy>
+  </proxies>
+</settings>
+XMLEOF
+```
+
+**Resolver transport:** Maven's default `native` transport gets intermittent 407 errors behind this proxy. Use the `wagon` transport instead:
+
+```bash
+mkdir -p .mvn
+echo "-Dmaven.resolver.transport=wagon" > .mvn/maven.config
+```
+
+Or pass it on each invocation: `mvn -Dmaven.resolver.transport=wagon ...`
 
 Run tests normally:
 
@@ -74,7 +119,7 @@ sleep 3   # wait for daemon to finish initialising
 docker ps  # verify it's running
 ```
 
-Docker must be running before any test that uses TestContainers (e.g. the Sakila database integration tests). Unit tests in `graphitron-java-codegen` do **not** require Docker.
+Docker must be running before building `graphitron-java-codegen` (jOOQ code generation uses TestContainers to start a Postgres database) and before any integration test that uses TestContainers (e.g. the Sakila database integration tests).
 
 ---
 
