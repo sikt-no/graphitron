@@ -78,7 +78,7 @@ Every GraphQL named type is classified into a `GraphitronType`. This is where `@
 ```java
 sealed interface GraphitronType
     permits TableType, ResultType, RootType,
-            TableInterfaceType, InterfaceType, UnionType, ErrorType {
+            TableInterfaceType, InterfaceType, UnionType, ErrorType, InputType {
     String name();
     SourceLocation location();
 }
@@ -131,6 +131,13 @@ record ErrorType(
     SourceLocation location,
     List<ErrorHandlerSpec> handlers
 ) implements GraphitronType {}
+
+// GraphQL input object type; fields and their directive markers
+record InputType(
+    String name,
+    SourceLocation location,
+    List<InputFieldSpec> fields
+) implements GraphitronType {}
 ```
 
 ### `TableRef`
@@ -155,6 +162,28 @@ record UnresolvedTable(String tableName) implements TableRef {}
 ```
 
 The validator reports an error for `UnresolvedTable`; the code generator only consumes `ResolvedTable`.
+
+### `ParticipantRef`
+
+Each implementing or member type of an interface or union is represented by a `ParticipantRef`:
+
+```java
+sealed interface ParticipantRef permits BoundParticipant, UnboundParticipant {
+    String typeName();
+}
+
+// implementing/member type carries @table
+record BoundParticipant(
+    String typeName,
+    TableRef table,
+    String discriminatorValue  // value from @discriminator(value:); null when absent
+) implements ParticipantRef {}
+
+// implementing/member type does not carry @table — validator reports an error
+record UnboundParticipant(String typeName) implements ParticipantRef {}
+```
+
+`discriminatorValue` is used by the type resolver generator for `TableInterfaceType` and `UnionType` to map a discriminator column value to a concrete Java type.
 
 ### `GraphitronField`
 
@@ -184,7 +213,8 @@ sealed interface ChildField extends GraphitronField
             TableField, TableMethodField,
             TableInterfaceField, InterfaceField, UnionField,
             NestingField, ConstructorField,
-            ServiceField, ComputedField, PropertyField {}
+            ServiceField, ComputedField, PropertyField,
+            MultitableReferenceField {}
 ```
 
 Each leaf type is a Java `record` carrying the properties relevant to code generation (table class, FK key constant, condition wrapper class, etc.). Source context for a `ChildField` is derived from `schema.type(parentTypeName)` — a `TableType` means table-mapped, a `ResultType` means result-mapped.
