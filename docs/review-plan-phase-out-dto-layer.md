@@ -93,19 +93,19 @@ The plan's testing strategy requires approval tests for every leaf type in the g
 
 | Gap | Severity | Recommendation |
 |---|---|---|
-| **No negative classification tests for directive conflicts** | Medium | **Fixed** — 15 mutual-exclusivity tests added across type, child field, and query/mutation field classification chains. Documents the builder's fallback behavior when mutually exclusive directives are combined (the builder silently picks the first match in its if/else chain rather than erroring). See directive exclusivity rules below. |
+| **No negative classification tests for directive conflicts** | Medium | **Fixed** — 15 conflict tests added, then upgraded: the builder now classifies conflicting directive combinations as `UnclassifiedField(reason)` / `UnclassifiedType(reason)` rather than silently picking the if/else winner. Tests assert the correct record type and that the reason names the conflicting directives. `@reference` correctly excluded from child-field conflict detection (it is a path annotation, not a classification directive). |
 | **No test for `hasLookupKeyAnywhere()` depth guard** | Low | The plan mentions a depth guard at 10 levels for recursive `@lookupKey` detection. Add a test confirming the guard prevents infinite recursion on circular input type references. |
 | **`FieldWrapper.Connection` detection not tested** | N/A | Already covered — `TableFieldCase.CONNECTION_RETURN_TYPE` and `TableMethodFieldCase.CONNECTION_RETURN` both test structural edges→node detection. |
 | **No round-trip test for `JooqCatalog` with Sakila** | Low | `JooqCatalog` is tested indirectly via `GraphitronSchemaBuilderTest` (which uses `@table(name: "film")` etc.), but a direct unit test against the Sakila jOOQ classes would catch reflection edge cases (e.g., tables with unusual naming, composite FKs). |
 
 ### Directive exclusivity rules
 
-The following directive groups are **mutually exclusive** — combining directives from the same group on a single type or field is invalid. The builder currently resolves violations silently (the first match in the if/else chain wins) rather than producing a validation error. Consider adding explicit validation errors for these conflicts.
+The following directive groups are **mutually exclusive** — combining directives from the same group on a single type or field is invalid. The builder now classifies violations as `UnclassifiedField(reason)` or `UnclassifiedType(reason)`; the validator reports the reason as a build error.
 
 | Scope | Mutually exclusive directives | Notes |
 |---|---|---|
-| **Type-level** | `@table`, `@record`, `@error` | No priority between them — they are peers |
-| **Child fields** | `@service`, `@externalField`, `@tableMethod`, (`@nodeId` \|\| `@reference`), `@notGenerated`, `@multitableReference` | `@nodeId` and `@reference` **can** be combined with each other (producing `NodeIdReferenceField`), but the pair is mutually exclusive with the other directives |
+| **Type-level** | `@table`, `@record`, `@error` | All three are peers — no priority |
+| **Child fields** | `@service`, `@externalField`, `@tableMethod`, `@nodeId`, `@notGenerated`, `@multitableReference` | `@reference` is a **path-annotation** directive and is intentionally excluded from this group — it may be combined with any of the above to specify FK paths |
 | **Query fields** | `@service`, `@lookupKey`, `@tableMethod` | |
 | **Mutation fields** | `@service`, `@mutation` | |
 
@@ -113,7 +113,7 @@ The following directive groups are **mutually exclusive** — combining directiv
 
 ## 4. Recommended Sequencing Before Next Phase
 
-1. **Close Level 2 classification gaps** — Add `ConstructorField` and `UnclassifiedField` classification tests. Add directive-conflict negative tests. Verify `FieldWrapper.Connection` detection test exists.
+1. ~~**Close Level 2 classification gaps**~~ — **Done.** `ConstructorField` and `UnclassifiedField` classification tests added. Directive-conflict tests produce `UnclassifiedField/UnclassifiedType` with typed reasons. `FieldWrapper.Connection` detection already covered.
 
 2. **Clarify `CompletableFuture` executor strategy** — Document in the plan whether generated code will accept an executor parameter or use a fixed pool. This affects the API surface of every generated root field and DataLoader method.
 
@@ -133,6 +133,6 @@ The following directive groups are **mutually exclusive** — combining directiv
 | Implementation (D1 + parsing) | **Excellent** | Complete, well-structured, uses records and sealed types correctly |
 | Infrastructure (D2) | **Incomplete** | Feature flag and context methods not yet wired; can wait until generator is ready |
 | Testing (L1 validators) | **Very good** | 40+ test files, 1 minor gap (ErrorType) |
-| Testing (L2 classification) | **Complete** | 28/28 leaf types covered; precedence documented via 15 conflict tests |
+| Testing (L2 classification) | **Complete** | 28/28 leaf types covered; conflicts now produce typed error records — tests assert `UnclassifiedField/UnclassifiedType` with specific reasons |
 | Testing (L3 generation) | **Not started** | Expected — generating stream not built yet |
 | Plan clarity | **Good** | Minor naming issues (@defer), executor strategy undocumented |
