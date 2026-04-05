@@ -13,21 +13,26 @@ public sealed interface QueryField extends RootField
 
     /**
      * Triggered by {@code @lookupKey} on one or more arguments.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      */
     record LookupQueryField(
         String parentTypeName,
         String name,
-        SourceLocation location
+        SourceLocation location,
+        ReturnTypeRef returnType
     ) implements QueryField {}
 
     /**
      * A root query field whose return type is annotated with {@code @table}.
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema. {@link ReturnTypeRef.ResolvedReturnType} carries the jOOQ {@code Table<?>} when the
-     * return type's table is resolved — used to detect non-deterministic ordering (list cardinality
-     * with no {@code @defaultOrder} and a PK-less table). {@link ReturnTypeRef.UnresolvedReturnType}
-     * means the return type name does not exist in the schema; the validator reports an error.
+     * schema. {@link ReturnTypeRef.TableBoundReturnType} carries the {@link no.sikt.graphitron.record.type.TableRef}
+     * when the return type's table is resolved — used to detect non-deterministic ordering (list
+     * cardinality with no {@code @defaultOrder} and a PK-less table).
+     * {@link ReturnTypeRef.UnresolvedReturnType} means the return type name does not exist in the
+     * schema; the validator reports an error.
      *
      * <p>{@code cardinality} is the cardinality of this field — {@link FieldCardinality.Single} for a
      * single-item lookup, {@link FieldCardinality.List} for a list result, or
@@ -46,35 +51,50 @@ public sealed interface QueryField extends RootField
     /**
      * A root query field using {@code @tableMethod} — the developer provides a pre-filtered {@code Table<?>}.
      *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
+     *
      * <p>{@code cardinality} is the cardinality of this field.
      */
     record TableMethodQueryField(
         String parentTypeName,
         String name,
         SourceLocation location,
+        ReturnTypeRef returnType,
         FieldCardinality cardinality
     ) implements QueryField {}
 
     /**
      * The {@code Query.node(id:)} field for Relay Global Object Identification.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      */
     record NodeQueryField(
         String parentTypeName,
         String name,
-        SourceLocation location
+        SourceLocation location,
+        ReturnTypeRef returnType
     ) implements QueryField {}
 
     /**
      * The {@code Query._entities(representations:)} field for Apollo Federation.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      */
     record EntityQueryField(
         String parentTypeName,
         String name,
-        SourceLocation location
+        SourceLocation location,
+        ReturnTypeRef returnType
     ) implements QueryField {}
 
     /**
      * A root query field whose return type is a single-table interface ({@code @table} + {@code @discriminate}).
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      *
      * <p>{@code cardinality} is the cardinality of this field.
      */
@@ -82,11 +102,15 @@ public sealed interface QueryField extends RootField
         String parentTypeName,
         String name,
         SourceLocation location,
+        ReturnTypeRef returnType,
         FieldCardinality cardinality
     ) implements QueryField {}
 
     /**
      * A root query field whose return type is a multi-table interface.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      *
      * <p>{@code cardinality} is the cardinality of this field.
      */
@@ -94,11 +118,15 @@ public sealed interface QueryField extends RootField
         String parentTypeName,
         String name,
         SourceLocation location,
+        ReturnTypeRef returnType,
         FieldCardinality cardinality
     ) implements QueryField {}
 
     /**
      * A root query field whose return type is a union.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      *
      * <p>{@code cardinality} is the cardinality of this field.
      */
@@ -106,15 +134,20 @@ public sealed interface QueryField extends RootField
         String parentTypeName,
         String name,
         SourceLocation location,
+        ReturnTypeRef returnType,
         FieldCardinality cardinality
     ) implements QueryField {}
 
     /**
      * A root query field delegating to a developer-provided service class via {@code @service}.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      */
     record ServiceQueryField(
         String parentTypeName,
         String name,
-        SourceLocation location
+        SourceLocation location,
+        ReturnTypeRef returnType
     ) implements QueryField {}
 }

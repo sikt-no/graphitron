@@ -3,6 +3,7 @@ package no.sikt.graphitron.record.validation;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.MutationField.InsertMutationField;
+import no.sikt.graphitron.record.field.ReturnTypeRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -16,7 +17,7 @@ class InsertMutationFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("insert mutation field — always valid",
-            new InsertMutationField("Mutation", "createFilm", null),
+            new InsertMutationField("Mutation", "createFilm", null, new ReturnTypeRef.OtherReturnType("Film")),
             List.of());
 
         private final String description;

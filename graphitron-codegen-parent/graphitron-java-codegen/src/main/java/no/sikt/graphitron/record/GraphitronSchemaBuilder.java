@@ -51,6 +51,7 @@ import no.sikt.graphitron.record.field.MethodRef;
 import no.sikt.graphitron.record.field.NodeTypeRef;
 import no.sikt.graphitron.record.field.NodeTypeRef.ResolvedNodeType;
 import no.sikt.graphitron.record.field.NodeTypeRef.UnresolvedNodeType;
+import no.sikt.graphitron.record.field.ReturnTypeRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.ConditionOnlyRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef.FkRef;
@@ -386,6 +387,7 @@ public class GraphitronSchemaBuilder {
 
         if (returnType instanceof TableType) {
             return new TableField(parentTypeName, name, location,
+                resolveReturnType(returnTypeName),
                 parseReferencePath(fieldDef),
                 new FieldConditionRef.NoFieldCondition(),
                 fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY),
@@ -395,7 +397,8 @@ public class GraphitronSchemaBuilder {
         // NestingField: a plain object type in the schema with no Graphitron classification.
         // Its fields are resolved from the same table context as the parent.
         if (schema.getType(returnTypeName) instanceof GraphQLObjectType && returnType == null) {
-            return new NestingField(parentTypeName, name, location);
+            return new NestingField(parentTypeName, name, location,
+                new ReturnTypeRef.UnresolvedReturnType(returnTypeName));
         }
 
         return new UnclassifiedField(parentTypeName, name, location);
@@ -525,6 +528,7 @@ public class GraphitronSchemaBuilder {
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
             return new TableMethodField(parentTypeName, name, location,
+                resolveReturnType(baseTypeName(fieldDef)),
                 parseReferencePath(fieldDef),
                 buildCardinality(fieldDef));
         }
@@ -536,9 +540,11 @@ public class GraphitronSchemaBuilder {
         if (fieldDef.hasAppliedDirective(DIR_NODE_ID)) {
             Optional<String> typeName = argString(fieldDef, DIR_NODE_ID, ARG_TYPE_NAME);
             if (typeName.isPresent()) {
-                NodeTypeRef nodeType = resolveNodeType(typeName.get(), tableType);
+                ReturnTypeRef targetType = resolveReturnType(typeName.get());
+                ResolvedTable parentTable = tableType.table() instanceof ResolvedTable rt ? rt : null;
+                NodeTypeRef nodeType = resolveNodeType(typeName.get());
                 List<ReferencePathElementRef> path = parseReferencePath(fieldDef);
-                return new NodeIdReferenceField(parentTypeName, name, location, typeName.get(), nodeType, path);
+                return new NodeIdReferenceField(parentTypeName, name, location, typeName.get(), targetType, parentTable, nodeType, path);
             } else {
                 return new NodeIdField(parentTypeName, name, location, tableType.node());
             }
@@ -561,13 +567,17 @@ public class GraphitronSchemaBuilder {
         return new ColumnField(parentTypeName, name, location, columnName, column, javaNamePresent);
     }
 
-    private NodeTypeRef resolveNodeType(String targetTypeName, TableType parentType) {
+    private ReturnTypeRef resolveReturnType(String targetTypeName) {
         GraphitronType target = types.get(targetTypeName);
-        if (target instanceof TableType tt && tt.node() instanceof NodeDirective) {
-            ResolvedTable targetTable = tt.table() instanceof ResolvedTable rt ? rt : null;
-            ResolvedTable parentTable = parentType.table() instanceof ResolvedTable rt ? rt : null;
-            return new ResolvedNodeType(targetTable, parentTable);
-        }
+        if (target instanceof TableType tt) return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tt.table());
+        if (target != null) return new ReturnTypeRef.OtherReturnType(targetTypeName);
+        return new ReturnTypeRef.UnresolvedReturnType(targetTypeName);
+    }
+
+    private NodeTypeRef resolveNodeType(String targetTypeName) {
+        GraphitronType target = types.get(targetTypeName);
+        if (target instanceof TableType tt && tt.node() instanceof NodeDirective nd)
+            return new ResolvedNodeType(nd);
         return new UnresolvedNodeType();
     }
 

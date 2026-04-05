@@ -6,6 +6,7 @@ import no.sikt.graphitron.record.field.ColumnRef;
 import no.sikt.graphitron.record.field.FieldConditionRef;
 import no.sikt.graphitron.record.field.NodeTypeRef;
 import no.sikt.graphitron.record.field.ReferencePathElementRef;
+import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
 
 import java.util.List;
 
@@ -93,13 +94,24 @@ public sealed interface ChildField extends GraphitronField
     ) implements ChildField {}
 
     /**
-     * An {@code @nodeId(typeName: ...)} field that joins to a target type's table and encodes a Relay Global ID.
+     * An {@code @nodeId(typeName: ...)} field that joins to a target type's table and encodes a
+     * Relay Global ID.
      *
-     * <p>{@code typeName} is the value of the {@code typeName} argument on the {@code @nodeId} directive
-     * (e.g. {@code "Film"}). It identifies which type's {@code @node} key columns are encoded in the ID.
+     * <p>{@code typeName} is the value of the {@code typeName} argument on the {@code @nodeId}
+     * directive (e.g. {@code "Film"}). It identifies which type's {@code @node} key columns are
+     * encoded in the ID.
      *
-     * <p>{@code nodeType} is the outcome of resolving {@code typeName} against the classified schema:
-     * {@link NodeTypeRef.ResolvedNodeType} when the named type exists and carries {@code @node},
+     * <p>{@code targetType} is the outcome of resolving {@code typeName} against the classified
+     * schema: {@link ReturnTypeRef.TableBoundReturnType} when the named type exists and is a
+     * table-backed type (carrying the table ref for FK and path validation), or
+     * {@link ReturnTypeRef.OtherReturnType} / {@link ReturnTypeRef.UnresolvedReturnType} otherwise.
+     *
+     * <p>{@code parentTable} is the resolved table of the containing type, or {@code null} when
+     * the parent's table is unresolved. A null parent table skips the implicit FK count check.
+     *
+     * <p>{@code nodeType} is the outcome of resolving {@code typeName} against the {@code @node}
+     * directive: {@link NodeTypeRef.ResolvedNodeType} when the named type exists as a table type
+     * with {@code @node} (carrying the directive properties for ID encoding), or
      * {@link NodeTypeRef.UnresolvedNodeType} when it does not. The
      * {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error for
      * {@code UnresolvedNodeType}.
@@ -116,12 +128,18 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         String typeName,
+        ReturnTypeRef targetType,
+        ResolvedTable parentTable,
         NodeTypeRef nodeType,
         List<ReferencePathElementRef> referencePath
     ) implements ChildField {}
 
     /**
      * A child field whose return type is annotated with {@code @table}.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema. Always a {@link ReturnTypeRef.TableBoundReturnType} when the return type is found as a
+     * table-backed type, or {@link ReturnTypeRef.UnresolvedReturnType} when it does not exist.
      *
      * <p>{@code referencePath} is the ordered list of join steps extracted from {@code @reference(path:)},
      * used to override FK auto-inference. Empty when no {@code @reference} directive is present —
@@ -143,6 +161,7 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
+        ReturnTypeRef returnType,
         List<ReferencePathElementRef> referencePath,
         FieldConditionRef condition,
         boolean splitQuery,
@@ -151,6 +170,9 @@ public sealed interface ChildField extends GraphitronField
 
     /**
      * A child field using {@code @tableMethod} — the developer provides a pre-filtered {@code Table<?>}.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      *
      * <p>{@code referencePath} is the ordered list of join steps extracted from {@code @reference(path:)},
      * used to override FK auto-inference. Empty when no {@code @reference} directive is present —
@@ -162,6 +184,7 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
+        ReturnTypeRef returnType,
         List<ReferencePathElementRef> referencePath,
         FieldCardinality cardinality
     ) implements ChildField {}
@@ -169,17 +192,24 @@ public sealed interface ChildField extends GraphitronField
     /**
      * A child field whose return type is a single-table interface.
      *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
+     *
      * <p>{@code cardinality} is the cardinality of this field.
      */
     record TableInterfaceField(
         String parentTypeName,
         String name,
         SourceLocation location,
+        ReturnTypeRef returnType,
         FieldCardinality cardinality
     ) implements ChildField {}
 
     /**
      * A child field whose return type is a multi-table interface.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      *
      * <p>{@code cardinality} is the cardinality of this field.
      */
@@ -187,11 +217,15 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
+        ReturnTypeRef returnType,
         FieldCardinality cardinality
     ) implements ChildField {}
 
     /**
      * A child field whose return type is a union.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      *
      * <p>{@code cardinality} is the cardinality of this field.
      */
@@ -199,29 +233,41 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
+        ReturnTypeRef returnType,
         FieldCardinality cardinality
     ) implements ChildField {}
 
     /**
      * A child field that inherits the source table context without introducing a new scope boundary.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      */
     record NestingField(
         String parentTypeName,
         String name,
-        SourceLocation location
+        SourceLocation location,
+        ReturnTypeRef returnType
     ) implements ChildField {}
 
     /**
      * A child field mapped via a constructor parameter on a result record.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      */
     record ConstructorField(
         String parentTypeName,
         String name,
-        SourceLocation location
+        SourceLocation location,
+        ReturnTypeRef returnType
     ) implements ChildField {}
 
     /**
      * A child field delegating to a developer-provided service class via {@code @service}.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      *
      * <p>{@code referencePath} is the ordered list of join steps extracted from {@code @reference(path:)},
      * providing the lift condition that reconnects this field's result back to the parent table.
@@ -232,11 +278,15 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
+        ReturnTypeRef returnType,
         List<ReferencePathElementRef> referencePath
     ) implements ChildField {}
 
     /**
      * A child field resolved by a developer-provided jOOQ {@code Field<?>} expression via {@code @computed}.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      *
      * <p>{@code referencePath} is the ordered list of join steps extracted from {@code @reference(path:)},
      * providing the lift condition that reconnects this field's result back to the parent table.
@@ -247,6 +297,7 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
+        ReturnTypeRef returnType,
         List<ReferencePathElementRef> referencePath
     ) implements ChildField {}
 

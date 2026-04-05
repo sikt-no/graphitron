@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TableQueryFieldValidationTest {
 
     /** Resolved return type used for cardinality/ordering cases — {@code film} has a primary key. */
-    private static final ReturnTypeRef FILM_RETURN = new ReturnTypeRef.ResolvedReturnType("Film", FILM);
+    private static final ReturnTypeRef FILM_RETURN = new ReturnTypeRef.TableBoundReturnType("Film", new no.sikt.graphitron.record.type.TableRef.ResolvedTable("film", "FILM", FILM));
 
     enum Case implements ValidatorCase {
 

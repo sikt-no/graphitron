@@ -2,6 +2,7 @@ package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.QueryField.EntityQueryField;
+import no.sikt.graphitron.record.field.ReturnTypeRef;
 import no.sikt.graphitron.record.field.GraphitronField;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -16,7 +17,7 @@ class EntityQueryFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("entity query field — always valid",
-            new EntityQueryField("Query", "_entities", null),
+            new EntityQueryField("Query", "_entities", null, new ReturnTypeRef.OtherReturnType("Film")),
             List.of());
 
         private final String description;

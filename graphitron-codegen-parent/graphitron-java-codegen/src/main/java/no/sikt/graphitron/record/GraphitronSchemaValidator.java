@@ -150,7 +150,13 @@ public class GraphitronSchemaValidator {
                 "Field '" + field.name() + "': return type '" + u.returnTypeName() + "' does not exist in the schema",
                 field.location()
             ));
-            case ReturnTypeRef.ResolvedReturnType r -> validateDeterministicOrdering(field.name(), field.location(), field.cardinality(), r.table(), errors);
+            case ReturnTypeRef.TableBoundReturnType tb -> {
+                if (tb.table() instanceof ResolvedTable rt) {
+                    validateDeterministicOrdering(field.name(), field.location(), field.cardinality(), rt.table(), errors);
+                }
+                // UnresolvedTable: type validator reports the unresolved table; skip ordering check
+            }
+            case ReturnTypeRef.OtherReturnType ignored -> {} // non-table return; no ordering concern
         }
     }
 
@@ -158,14 +164,10 @@ public class GraphitronSchemaValidator {
      * Warns when a list or connection field returns rows from a PK-less table with no
      * {@code @defaultOrder} and no {@code @orderBy} enum values. Without a primary key or explicit
      * ordering, the result order is non-deterministic across pages and repeated calls.
-     *
-     * <p>{@code table} may be null when the return type's table is unresolved — in that case
-     * the check is skipped and the unresolved table is reported by the type validator.
      */
     private void validateDeterministicOrdering(
             String fieldName, SourceLocation location, no.sikt.graphitron.record.field.FieldCardinality cardinality,
             Table<?> table, List<ValidationError> errors) {
-        if (table == null) return;
         boolean needsCheck = switch (cardinality) {
             case no.sikt.graphitron.record.field.FieldCardinality.List l ->
                 l.defaultOrder() == null && l.orderByValues().isEmpty();
@@ -254,44 +256,50 @@ public class GraphitronSchemaValidator {
                     field.location()
                 ));
                 validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+                return;
             }
-            case ResolvedNodeType r -> {
-                var targetTable = r.targetTable();
-                if (targetTable == null) {
-                    // Target type's table is unresolved; other validators will report that error
-                    validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
-                    return;
-                }
-                if (field.referencePath().isEmpty()) {
-                    // Implicit join: exactly one FK must exist between parent and target tables
-                    var parentTable = r.parentTable();
-                    if (parentTable != null) {
-                        int fkCount = TableReflection.getNumberOfForeignKeysBetweenTables(
-                            parentTable.javaFieldName(), targetTable.javaFieldName());
-                        if (fkCount == 0) {
-                            errors.add(new ValidationError(
-                                "Field '" + field.name() + "': no foreign key found between tables '"
-                                    + parentTable.table().getName() + "' and '"
-                                    + targetTable.table().getName()
-                                    + "'; add a @reference directive to specify the join path",
-                                field.location()
-                            ));
-                        } else if (fkCount > 1) {
-                            errors.add(new ValidationError(
-                                "Field '" + field.name() + "': multiple foreign keys found between tables '"
-                                    + parentTable.table().getName() + "' and '"
-                                    + targetTable.table().getName()
-                                    + "'; add a @reference directive to specify the join path",
-                                field.location()
-                            ));
-                        }
-                    }
-                } else {
-                    // Explicit reference path: validate steps and check it leads to the target type's table
-                    validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
-                    validateReferenceLeadsToType(field.name(), field.location(), field.referencePath(), field.typeName(), targetTable, errors);
+            case ResolvedNodeType ignored -> {} // @node resolved; continue to table validation
+        }
+
+        // @node is resolved; use targetType for table-level FK and path validation
+        if (!(field.targetType() instanceof ReturnTypeRef.TableBoundReturnType tb)) {
+            validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+            return;
+        }
+        if (!(tb.table() instanceof ResolvedTable targetTable)) {
+            // Target type's table is unresolved; type validator reports that error
+            validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+            return;
+        }
+
+        if (field.referencePath().isEmpty()) {
+            // Implicit join: exactly one FK must exist between parent and target tables
+            var parentTable = field.parentTable();
+            if (parentTable != null) {
+                int fkCount = TableReflection.getNumberOfForeignKeysBetweenTables(
+                    parentTable.javaFieldName(), targetTable.javaFieldName());
+                if (fkCount == 0) {
+                    errors.add(new ValidationError(
+                        "Field '" + field.name() + "': no foreign key found between tables '"
+                            + parentTable.table().getName() + "' and '"
+                            + targetTable.table().getName()
+                            + "'; add a @reference directive to specify the join path",
+                        field.location()
+                    ));
+                } else if (fkCount > 1) {
+                    errors.add(new ValidationError(
+                        "Field '" + field.name() + "': multiple foreign keys found between tables '"
+                            + parentTable.table().getName() + "' and '"
+                            + targetTable.table().getName()
+                            + "'; add a @reference directive to specify the join path",
+                        field.location()
+                    ));
                 }
             }
+        } else {
+            // Explicit reference path: validate steps and check it leads to the target type's table
+            validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+            validateReferenceLeadsToType(field.name(), field.location(), field.referencePath(), field.typeName(), targetTable, errors);
         }
     }
 

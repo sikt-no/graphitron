@@ -2,6 +2,7 @@ package no.sikt.graphitron.record.validation;
 
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.ChildField.ConstructorField;
+import no.sikt.graphitron.record.field.ReturnTypeRef;
 import no.sikt.graphitron.record.field.GraphitronField;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -16,7 +17,7 @@ class ConstructorFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("constructor field — always valid",
-            new ConstructorField("Film", "constructed", null),
+            new ConstructorField("Film", "constructed", null, new ReturnTypeRef.OtherReturnType("Film")),
             List.of());
 
         private final String description;

@@ -3,6 +3,7 @@ package no.sikt.graphitron.record.validation;
 import no.sikt.graphitron.record.ValidationError;
 import no.sikt.graphitron.record.field.GraphitronField;
 import no.sikt.graphitron.record.field.QueryField.ServiceQueryField;
+import no.sikt.graphitron.record.field.ReturnTypeRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -16,7 +17,7 @@ class ServiceQueryFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("service query field — always valid",
-            new ServiceQueryField("Query", "externalData", null),
+            new ServiceQueryField("Query", "externalData", null, new ReturnTypeRef.OtherReturnType("Film")),
             List.of());
 
         private final String description;

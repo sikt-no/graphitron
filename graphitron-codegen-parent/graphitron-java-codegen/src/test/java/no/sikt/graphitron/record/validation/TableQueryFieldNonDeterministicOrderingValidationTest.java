@@ -28,10 +28,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TableQueryFieldNonDeterministicOrderingValidationTest {
 
     /** Resolved return type backed by {@code film_list} (a view — no primary key). */
-    private static final ReturnTypeRef FILM_LIST_RETURN = new ReturnTypeRef.ResolvedReturnType("FilmList", FILM_LIST);
+    private static final ReturnTypeRef FILM_LIST_RETURN = new ReturnTypeRef.TableBoundReturnType("FilmList", new no.sikt.graphitron.record.type.TableRef.ResolvedTable("film_list", "FILM_LIST", FILM_LIST));
 
     /** Resolved return type backed by {@code film} (has a primary key). */
-    private static final ReturnTypeRef FILM_RETURN = new ReturnTypeRef.ResolvedReturnType("Film", FILM);
+    private static final ReturnTypeRef FILM_RETURN = new ReturnTypeRef.TableBoundReturnType("Film", new no.sikt.graphitron.record.type.TableRef.ResolvedTable("film", "FILM", FILM));
 
     enum Case implements ValidatorCase {
 

@@ -11,46 +11,66 @@ public sealed interface MutationField extends RootField
 
     /**
      * A mutation field for {@code @mutation(typeName: INSERT)}.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      */
     record InsertMutationField(
         String parentTypeName,
         String name,
-        SourceLocation location
+        SourceLocation location,
+        ReturnTypeRef returnType
     ) implements MutationField {}
 
     /**
      * A mutation field for {@code @mutation(typeName: UPDATE)}.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      */
     record UpdateMutationField(
         String parentTypeName,
         String name,
-        SourceLocation location
+        SourceLocation location,
+        ReturnTypeRef returnType
     ) implements MutationField {}
 
     /**
      * A mutation field for {@code @mutation(typeName: DELETE)}. Deleted rows are not re-queried.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      */
     record DeleteMutationField(
         String parentTypeName,
         String name,
-        SourceLocation location
+        SourceLocation location,
+        ReturnTypeRef returnType
     ) implements MutationField {}
 
     /**
      * A mutation field for {@code @mutation(typeName: UPSERT)}.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      */
     record UpsertMutationField(
         String parentTypeName,
         String name,
-        SourceLocation location
+        SourceLocation location,
+        ReturnTypeRef returnType
     ) implements MutationField {}
 
     /**
      * A mutation field delegating to a developer-provided service class via {@code @service}.
+     *
+     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
+     * schema.
      */
     record ServiceMutationField(
         String parentTypeName,
         String name,
-        SourceLocation location
+        SourceLocation location,
+        ReturnTypeRef returnType
     ) implements MutationField {}
 }

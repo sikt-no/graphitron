@@ -1,37 +1,32 @@
 package no.sikt.graphitron.record.field;
 
-import no.sikt.graphitron.record.type.TableRef.ResolvedTable;
+import no.sikt.graphitron.record.type.NodeRef.NodeDirective;
 
 /**
- * Outcome of resolving the {@code typeName} argument of {@code @nodeId(typeName: ...)}
- * against the classified {@link no.sikt.graphitron.record.GraphitronSchema}.
+ * Outcome of resolving the {@code typeName} argument of {@code @nodeId(typeName: ...)} against
+ * the classified {@link no.sikt.graphitron.record.GraphitronSchema} and verifying that the named
+ * type carries a {@code @node} directive.
  *
  * <p>{@link ResolvedNodeType} — the named type exists in the schema as a
- * {@link no.sikt.graphitron.record.type.GraphitronType.TableType} with a
- * {@link no.sikt.graphitron.record.type.NodeRef.NodeDirective}. The resolved tables of
- * both the target type and the parent type are carried here for FK validation.
+ * {@link no.sikt.graphitron.record.type.GraphitronType.TableType} and carries {@code @node}.
+ * The {@link NodeDirective} holds the {@code @node} directive properties ({@code typeId} and
+ * {@code keyColumns}) used at code-generation time for Relay Global ID encoding.
  *
  * <p>{@link UnresolvedNodeType} — the named type does not exist, is not a
- * {@code TableType}, or does not carry {@code @node}. The
- * {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error.
+ * {@link no.sikt.graphitron.record.type.GraphitronType.TableType}, or does not carry {@code @node}.
+ * The {@link no.sikt.graphitron.record.GraphitronSchemaValidator} reports an error.
+ *
+ * <p>Table resolution for FK validation and path checking is carried separately on the containing
+ * {@link ChildField.NodeIdReferenceField} via {@code targetType} and {@code parentTable}.
  */
 public sealed interface NodeTypeRef permits NodeTypeRef.ResolvedNodeType, NodeTypeRef.UnresolvedNodeType {
 
     /**
      * The type named by {@code @nodeId(typeName:)} was found in the schema as a
-     * {@link no.sikt.graphitron.record.type.GraphitronType.TableType} with a
-     * {@link no.sikt.graphitron.record.type.NodeRef.NodeDirective}.
-     *
-     * <p>{@code targetTable} is the {@link ResolvedTable} of the named type, or {@code null}
-     * when its table is unresolved. A null target table skips FK and path validation; the
-     * unresolved table is reported by the type validator instead.
-     *
-     * <p>{@code parentTable} is the {@link ResolvedTable} of the containing type, or {@code null}
-     * when the parent's table is unresolved. A null parent table skips the implicit FK count check.
-     *
-     * <p>The type name is stored on the parent {@link ChildField.NodeIdReferenceField}.
+     * {@link no.sikt.graphitron.record.type.GraphitronType.TableType} with a {@code @node}
+     * directive. {@code node} carries the directive properties used for ID encoding.
      */
-    record ResolvedNodeType(ResolvedTable targetTable, ResolvedTable parentTable) implements NodeTypeRef {}
+    record ResolvedNodeType(NodeDirective node) implements NodeTypeRef {}
 
     /**
      * The type named by {@code @nodeId(typeName:)} could not be resolved: the type does not
