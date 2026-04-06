@@ -21,9 +21,5 @@
 
     <properties>
         <jooqPackage>no.sikt.graphitron.rewrite.test.jooq</jooqPackage>
-        <db.url>jdbc:tc:postgresql:15:///rewrite_test?TC_TMPFS=/testtmpfs:rw&amp;TC_INITSCRIPT=file:${project.basedir}/../graphitron-rewrite-test-fixtures/src/main/resources/init.sql</db.url>
-        <db.username>postgres</db.username>
-        <db.password>postgres</db.password>
-        <jooq.codegen.schema.version>1.0</jooq.codegen.schema.version>
     </properties>
 </project>
