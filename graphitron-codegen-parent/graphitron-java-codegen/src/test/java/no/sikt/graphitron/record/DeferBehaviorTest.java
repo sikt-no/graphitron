@@ -90,6 +90,40 @@ public class DeferBehaviorTest {
     }
 
     // -------------------------------------------------------------------------
+    // 0. Verify incremental support is actually active
+    // -------------------------------------------------------------------------
+
+    /**
+     * Guards the rest of the suite: confirms that {@code enableIncrementalSupport(true)} produces
+     * an {@link IncrementalExecutionResult} (not a plain {@link ExecutionResult}). If this fails,
+     * the other {@code withDefer_*} tests would be testing a no-op {@code @defer}.
+     */
+    @Test
+    void executeWithDeferSupport_returnsIncrementalExecutionResult() {
+        ExecutionResult result = executeWithDeferSupport(
+            "{ customer { id ... @defer { payments { amount } } } }");
+
+        assertThat(result).isInstanceOf(IncrementalExecutionResult.class);
+    }
+
+    /**
+     * Without incremental support enabled, graphql-java executes {@code @defer} fragments
+     * eagerly as if there were no directive: both the initial result and the child DataFetcher
+     * behave identically to a query without {@code @defer}.
+     */
+    @Test
+    void withoutIncrementalSupport_deferIsIgnoredAndPaymentsCalledImmediately() {
+        // Plain execute — no unusualConfiguration, no enableIncrementalSupport
+        ExecutionResult result = graphQL.execute(
+            "{ customer { id ... @defer { payments { amount } } } }");
+
+        assertThat(result).isNotInstanceOf(IncrementalExecutionResult.class);
+        assertThat(capturedPaymentsEnv)
+            .as("without incremental support, @defer is ignored and payments is resolved eagerly")
+            .isNotNull();
+    }
+
+    // -------------------------------------------------------------------------
     // 1. Baseline — no @defer
     // -------------------------------------------------------------------------
 
