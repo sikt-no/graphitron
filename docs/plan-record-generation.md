@@ -85,8 +85,8 @@ Generated DataFetchers are compatible with incremental delivery because of the p
 
 | Subpackage | Contents |
 |---|---|
-| `<outputPackage>.record.fields` | `<TypeName>Fields` — SQL logic + `wiring()` per output type |
-| `<outputPackage>.record.resolvers` | `GraphitronWiring`, `<ConditionClassName>Wrapper`, `<ServiceClassName>Wrapper` |
+| `<outputPackage>.rewrite.fields` | `<TypeName>Fields` — SQL logic + `wiring()` per output type |
+| `<outputPackage>.rewrite.resolvers` | `GraphitronWiring`, `<ConditionClassName>Wrapper`, `<ServiceClassName>Wrapper` |
 
 ---
 
@@ -94,20 +94,20 @@ Generated DataFetchers are compatible with incremental delivery because of the p
 
 ### M1 — Maven plugin wiring (prerequisite for all generators)
 
-Add `recordBasedOutput` to the plugin and generator pipeline. **Off by default; non-intrusive.**
+Add `rewriteBasedOutput` to the plugin and generator pipeline. **Off by default; non-intrusive.**
 
 **`GeneratorConfig.java`**:
 ```java
-private static boolean recordBasedOutput = false;  // getter + setter
+private static boolean rewriteBasedOutput = false;  // getter + setter
 ```
 
 **`GenerateMojo.java`**:
 ```java
-@Parameter(property = "graphitron.recordBasedOutput", defaultValue = "false")
-protected boolean recordBasedOutput;
+@Parameter(property = "graphitron.rewriteBasedOutput", defaultValue = "false")
+protected boolean rewriteBasedOutput;
 ```
 
-**`GraphQLGenerator.getGenerators()`**: when `recordBasedOutput` is enabled, append the new generators after the existing ones. Existing generators are unaffected regardless of flag value.
+**`GraphQLGenerator.getGenerators()`**: when `rewriteBasedOutput` is enabled, append the new generators after the existing ones. Existing generators are unaffected regardless of flag value.
 
 This is the only change to the Maven plugin for now. No new configuration parameters beyond the flag.
 
@@ -126,7 +126,7 @@ graphitron-record-test/
   src/
     main/
       java/
-        no/sikt/graphitron/record/test/
+        no/sikt/graphitron/rewrite/test/
           conditions/     ← hand-written condition classes (user-side fixtures)
           service/        ← hand-written service classes (for service wrapper tests)
       resources/
@@ -134,7 +134,7 @@ graphitron-record-test/
           schema.graphqls ← minimal test schema referencing the fixtures above
     test/
       java/
-        no/sikt/graphitron/record/test/
+        no/sikt/graphitron/rewrite/test/
           # tests for generated code
       resources/
         init.sql          ← database init script for testcontainers
@@ -142,7 +142,7 @@ graphitron-record-test/
 ```
 
 **`pom.xml` key points:**
-- `graphitron-maven-plugin` bound to `generate-sources` with `recordBasedOutput = true`
+- `graphitron-maven-plugin` bound to `generate-sources` with `rewriteBasedOutput = true`
 - Plugin classpath includes this module itself (so it can see the hand-written condition/service classes)
 - jOOQ dependency for the same test database that `graphitron-java-codegen` already uses (Sakila)
 - testcontainers PostgreSQL for test execution (no Quarkus, no mocking)
@@ -159,7 +159,7 @@ First generator. Self-contained: no dependency on `FieldsClassGenerator` or fiel
 **Generated output:**
 
 ```java
-package <outputPackage>.record.resolvers;
+package <outputPackage>.rewrite.resolvers;
 
 public class CustomerConditionsWrapper {
     public static Condition activeCustomers(DSLContext ctx) {
@@ -432,7 +432,7 @@ The sealed hierarchy models all five mutation field types. None of G1–G8 cover
 Once the record-based pipeline achieves full feature parity and the example server passes all approval tests under the flag:
 1. Delete DTO generator classes
 2. Delete TypeMapper generator classes
-3. Remove the `recordBasedOutput` flag — record-based output becomes the only path
+3. Remove the `rewriteBasedOutput` flag — record-based output becomes the only path
 4. Update `GraphQLGenerator.getGenerators()`
 
 ---
@@ -444,14 +444,14 @@ Once the record-based pipeline achieves full feature parity and the example serv
 | `graphitron-common/.../GraphitronFetcherFactory.java` | **New** |
 | `graphitron-common/.../GraphitronContext.java` | Add `getTenantId()` |
 | `graphitron-common/.../DefaultGraphitronContext.java` | Implement `getTenantId()` → `Optional.empty()` |
-| `graphitron-java-codegen/.../configuration/GeneratorConfig.java` | Add `recordBasedOutput` flag |
-| `graphitron-java-codegen/.../generate/Generator.java` | Add `boolean recordBasedOutput()` |
-| `graphitron-maven-plugin/.../mojo/GenerateMojo.java` | Add `@Parameter recordBasedOutput` |
+| `graphitron-java-codegen/.../configuration/GeneratorConfig.java` | Add `rewriteBasedOutput` flag |
+| `graphitron-java-codegen/.../generate/Generator.java` | Add `boolean rewriteBasedOutput()` |
+| `graphitron-maven-plugin/.../mojo/GenerateMojo.java` | Add `@Parameter rewriteBasedOutput` |
 | `graphitron-java-codegen/.../generate/GraphQLGenerator.java` | Add new generators when flag is set |
 | `graphitron-java-codegen/.../mappings/JavaPoetClassName.java` | Add `JOOQ_RECORD`, `JOOQ_RESULT`, `LIGHT_DATA_FETCHER`, `GRAPHITRON_FETCHER_FACTORY` |
 | `graphitron-record-test/pom.xml` | **New module** |
-| `record/ConditionWrapper*.java` (4 files) | **New** |
-| `record/ServiceWrapper*.java` (4 files) | **New** |
-| `record/FieldsCodeGenerator.java` | **New** |
-| `record/FieldsClassGenerator.java` | **New** |
-| `record/GraphitronWiringClassGenerator.java` | **New** |
+| `rewrite/ConditionWrapper*.java` (4 files) | **New** |
+| `rewrite/ServiceWrapper*.java` (4 files) | **New** |
+| `rewrite/FieldsCodeGenerator.java` | **New** |
+| `rewrite/FieldsClassGenerator.java` | **New** |
+| `rewrite/GraphitronWiringClassGenerator.java` | **New** |

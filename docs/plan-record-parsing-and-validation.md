@@ -10,7 +10,7 @@ The companion document [`plan-record-generation.md`](plan-record-generation.md) 
 
 The current code generation pipeline produces output DTOs and TypeMapper classes that convert jOOQ Records into those DTOs. This is unnecessary: graphql-java's `RuntimeWiring` can resolve fields directly from any Java object, including jOOQ `Record`. Eliminating the DTO/TypeMapper layer reduces generated code volume, removes the selection-set-per-field mapping boilerplate, and unblocks future features (e.g. `@record` output support).
 
-The change is behind a `recordBasedOutput` feature flag (default `false`) and generates new artefacts into a separate package (`<outputPackage>.record.*`) so old and new code can coexist. The existing generators continue to run unchanged — the flag adds new generators alongside.
+The change is behind a `rewriteBasedOutput` feature flag (default `false`) and generates new artefacts into a separate package (`<outputPackage>.rewrite.*`) so old and new code can coexist. The existing generators continue to run unchanged — the flag adds new generators alongside.
 
 ### Existing codebase facts
 
@@ -45,7 +45,7 @@ GraphQLSchema schema = new SchemaGenerator().makeExecutableSchema(typeDefinition
 
 The `GraphitronField` sealed interface hierarchy is the Java materialisation of the field taxonomy. It is the foundation everything else targets — the spec builder populates it, the code generators consume it.
 
-**Packages:** `no.sikt.graphitron.record.field` and `no.sikt.graphitron.record.type` (in `graphitron-java-codegen`)
+**Packages:** `no.sikt.graphitron.rewrite.field` and `no.sikt.graphitron.rewrite.type` (in `graphitron-java-codegen`)
 
 ### `GraphitronType`
 
@@ -88,7 +88,7 @@ Sealed hierarchy on return type cardinality: `Single`, `List`, `Connection`. `Co
 
 ### `ColumnRef`, `ReferencePathElementRef`, `FieldConditionRef`, `ArgumentSpec`, etc.
 
-Supporting value types carried in field records. See their respective source files under `no.sikt.graphitron.record.field`.
+Supporting value types carried in field records. See their respective source files under `no.sikt.graphitron.rewrite.field`.
 
 ---
 
