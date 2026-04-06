@@ -16,117 +16,158 @@ class LookupCodeGeneratorTest {
         return JavaFile.builder("test.pkg", typeSpec).indent("    ").build().toString();
     }
 
+    // ===== Common assertions =====
+
     @Test
     void generate_classNamedAfterTypeName() {
-        var spec = new LookupSpec("Customer", "CUSTOMER",
-            List.of(new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer")));
-        var typeSpec = GEN.generate(spec);
-        assertThat(typeSpec.name()).isEqualTo("CustomerLookup");
+        var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
+            new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
+        assertThat(GEN.generate(spec).name()).isEqualTo("CustomerLookup");
     }
 
     @Test
     void generate_containsToInputRowsMethod() {
-        var spec = new LookupSpec("Customer", "CUSTOMER",
-            List.of(new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer")));
-        var output = render(spec);
-        assertThat(output).contains("toInputRows");
+        var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
+            new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
+        assertThat(render(spec)).contains("toInputRows");
     }
 
     @Test
     void generate_methodIsPublicStatic() {
-        var spec = new LookupSpec("Customer", "CUSTOMER",
-            List.of(new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer")));
-        var output = render(spec);
-        assertThat(output).contains("public static");
+        var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
+            new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
+        assertThat(render(spec)).contains("public static");
     }
 
     @Test
-    void generate_returnTypeIncludesRecord2ForOneField() {
-        var spec = new LookupSpec("Customer", "CUSTOMER",
-            List.of(new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer")));
-        var output = render(spec);
-        assertThat(output).contains("Record2<Integer, Integer>");
+    void generate_parameterIsMapOfStringObject() {
+        var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
+            new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
+        assertThat(render(spec)).contains("Map<String, Object> arguments");
+    }
+
+    // ===== Input-type case =====
+
+    @Test
+    void inputType_extractsListFromArguments() {
+        var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
+            new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
+        assertThat(render(spec)).contains("arguments.get(\"input\")");
     }
 
     @Test
-    void generate_returnTypeIncludesRecord3ForTwoFields() {
-        var spec = new LookupSpec("Customer", "CUSTOMER", List.of(
-            new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer"),
-            new LookupInputFieldSpec("email", "EMAIL", "java.lang.String")
+    void inputType_declaresLocalVar() {
+        var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
+            new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
+        assertThat(render(spec)).contains("List<Map<String, Object>> input =");
+    }
+
+    @Test
+    void inputType_iteratesOverLocalVar() {
+        var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
+            new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
+        assertThat(render(spec)).contains("input.size()").contains("input.get(i)");
+    }
+
+    @Test
+    void inputType_valuesReadFromElementMap() {
+        var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
+            new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
+        assertThat(render(spec)).contains("(Integer) m.get(\"customerId\")");
+    }
+
+    @Test
+    void inputType_returnTypeIsRecord2ForOneField() {
+        var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
+            new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
+        assertThat(render(spec)).contains("Record2<Integer, Integer>");
+    }
+
+    @Test
+    void inputType_returnTypeIsRecord3ForTwoFields() {
+        var spec = new LookupSpec("Customer", "CUSTOMER", "input", List.of(
+            new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false),
+            new LookupInputFieldSpec("email", "EMAIL", "java.lang.String", false)
         ));
-        var output = render(spec);
-        assertThat(output).contains("Record3<Integer, Integer, String>");
+        assertThat(render(spec)).contains("Record3<Integer, Integer, String>");
     }
 
     @Test
-    void generate_bodyUsesIntStreamRange() {
-        var spec = new LookupSpec("Customer", "CUSTOMER",
-            List.of(new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer")));
-        var output = render(spec);
-        assertThat(output).contains("IntStream.range(0, inputs.size())");
+    void inputType_newRecordIncludesTableColumn() {
+        var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
+            new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
+        assertThat(render(spec)).contains("CUSTOMER.CUSTOMER_ID");
     }
 
     @Test
-    void generate_bodyUsesDslNewRecord() {
-        var spec = new LookupSpec("Customer", "CUSTOMER",
-            List.of(new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer")));
-        var output = render(spec);
-        assertThat(output).contains("DSL.newRecord(");
+    void inputType_bodyUsesIntStreamAndDsl() {
+        var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
+            new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
+        String out = render(spec);
+        assertThat(out)
+            .contains("IntStream.range(0,")
+            .contains("DSL.newRecord(")
+            .contains("GRAPHITRON_INPUT_IDX")
+            .contains(".toList()");
+    }
+
+    // ===== Flat-args case =====
+
+    @Test
+    void flatArgs_listArgDeclaredAsLocalVar() {
+        var spec = flatSpec("Person", "PERSON",
+            new LookupInputFieldSpec("ids", "PERSON_ID", "java.lang.String", true),
+            new LookupInputFieldSpec("tenantId", "TENANT_ID", "java.lang.String", false));
+        assertThat(render(spec)).contains("List<String> ids = (List<String>) arguments.get(\"ids\")");
     }
 
     @Test
-    void generate_bodyIncludesGraphitronInputIdx() {
-        var spec = new LookupSpec("Customer", "CUSTOMER",
-            List.of(new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer")));
-        var output = render(spec);
-        assertThat(output).contains("GRAPHITRON_INPUT_IDX");
+    void flatArgs_scalarArgReadInlineWithCast() {
+        var spec = flatSpec("Person", "PERSON",
+            new LookupInputFieldSpec("ids", "PERSON_ID", "java.lang.String", true),
+            new LookupInputFieldSpec("tenantId", "TENANT_ID", "java.lang.String", false));
+        assertThat(render(spec)).contains("(String) arguments.get(\"tenantId\")");
     }
 
     @Test
-    void generate_bodyIncludesTableColumnReference() {
-        var spec = new LookupSpec("Customer", "CUSTOMER",
-            List.of(new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer")));
-        var output = render(spec);
-        assertThat(output).contains("CUSTOMER.CUSTOMER_ID");
+    void flatArgs_listArgValueUsesGetI() {
+        var spec = flatSpec("Person", "PERSON",
+            new LookupInputFieldSpec("ids", "PERSON_ID", "java.lang.String", true));
+        assertThat(render(spec)).contains("ids.get(i)");
     }
 
     @Test
-    void generate_bodyIncludesCastAndArgName() {
-        var spec = new LookupSpec("Customer", "CUSTOMER",
-            List.of(new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer")));
-        var output = render(spec);
-        assertThat(output)
-            .contains("(Integer) m.get(\"customerId\")")
-            .contains("i + 1");
+    void flatArgs_sizeFromFirstListArg() {
+        var spec = flatSpec("Person", "PERSON",
+            new LookupInputFieldSpec("ids", "PERSON_ID", "java.lang.String", true),
+            new LookupInputFieldSpec("tenantId", "TENANT_ID", "java.lang.String", false));
+        assertThat(render(spec)).contains("ids.size()");
     }
 
     @Test
-    void generate_bodyIncludesAllFieldsInValues() {
-        var spec = new LookupSpec("Customer", "CUSTOMER", List.of(
-            new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer"),
-            new LookupInputFieldSpec("email", "EMAIL", "java.lang.String")
-        ));
-        var output = render(spec);
-        assertThat(output)
-            .contains("(Integer) m.get(\"customerId\")")
-            .contains("(String) m.get(\"email\")")
-            .contains("CUSTOMER.CUSTOMER_ID")
-            .contains("CUSTOMER.EMAIL");
+    void flatArgs_noInputVarDeclaration() {
+        // In flat mode, there should be no local "input" list-of-maps variable
+        var spec = flatSpec("Person", "PERSON",
+            new LookupInputFieldSpec("ids", "PERSON_ID", "java.lang.String", true));
+        assertThat(render(spec)).doesNotContain("Map<String, Object>> input");
     }
 
     @Test
-    void generate_bodyEndsWithToList() {
-        var spec = new LookupSpec("Customer", "CUSTOMER",
-            List.of(new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer")));
-        var output = render(spec);
-        assertThat(output).contains(".toList()");
+    void flatArgs_returnTypeCorrect() {
+        var spec = flatSpec("Person", "PERSON",
+            new LookupInputFieldSpec("ids", "PERSON_ID", "java.lang.String", true),
+            new LookupInputFieldSpec("tenantId", "TENANT_ID", "java.lang.String", false));
+        assertThat(render(spec)).contains("Record3<Integer, String, String>");
     }
 
-    @Test
-    void generate_parameterIsListOfMaps() {
-        var spec = new LookupSpec("Customer", "CUSTOMER",
-            List.of(new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer")));
-        var output = render(spec);
-        assertThat(output).contains("List<Map<String, Object>> inputs");
+    // ===== Helpers =====
+
+    private static LookupSpec inputTypeSpec(String typeName, String table, String inputArgName,
+            LookupInputFieldSpec... fields) {
+        return new LookupSpec(typeName, table, inputArgName, List.of(fields));
+    }
+
+    private static LookupSpec flatSpec(String typeName, String table, LookupInputFieldSpec... fields) {
+        return new LookupSpec(typeName, table, null, List.of(fields));
     }
 }

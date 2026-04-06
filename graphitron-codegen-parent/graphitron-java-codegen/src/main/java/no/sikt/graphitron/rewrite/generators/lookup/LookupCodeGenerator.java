@@ -15,10 +15,25 @@ import java.util.Map;
  * Generates {@link TypeSpec}s for lookup classes from {@link LookupSpec}s.
  *
  * <p>Each spec produces one class (e.g. {@code CustomerLookup}) containing a
- * {@code toInputRows} method that maps a {@code List<Map<String, Object>>} — the graphql-java
- * representation of a list input argument — into a {@code List<RecordN<Integer, T1, ...>>}.
- * The first record column is always {@code GRAPHITRON_INPUT_IDX} (row position, 1-based), which
- * lets the generated JOIN preserve input-to-output ordering.
+ * {@code toInputRows} method. The method signature is always:
+ * <pre>{@code
+ * public static List<RecordN<Integer, T1, ...>> toInputRows(Map<String, Object> arguments)
+ * }</pre>
+ *
+ * <p>Receiving the full {@code arguments} map rather than a single extracted list allows the method
+ * to pull multiple arguments together — both list arguments (one element per row) and scalar
+ * arguments (broadcast to every row). The first column is always {@code GRAPHITRON_INPUT_IDX}
+ * (1-based row position), which lets a JOIN preserve input-to-output ordering.
+ *
+ * <p>Two code paths are generated depending on {@link LookupSpec#inputArgName()}:
+ * <ul>
+ *   <li>Non-null — single {@code TableInputType} argument: extracts a
+ *       {@code List<Map<String,Object>>} from {@code arguments}, iterates over it, and reads
+ *       each field from the per-element map.</li>
+ *   <li>Null — flat arguments: declares one local {@code List<T>} variable per list argument,
+ *       uses the first list's size for the {@code IntStream}, and reads scalar arguments
+ *       directly from {@code arguments} per row.</li>
+ * </ul>
  */
 public class LookupCodeGenerator {
 
@@ -36,67 +51,145 @@ public class LookupCodeGenerator {
             .build();
     }
 
-    /**
-     * Generates the {@code toInputRows} method:
-     * <pre>{@code
-     * public static List<Record3<Integer, Integer, String>> toInputRows(
-     *         List<Map<String, Object>> inputs) {
-     *     return IntStream.range(0, inputs.size())
-     *         .mapToObj(i -> {
-     *             var m = inputs.get(i);
-     *             return DSL.newRecord(GRAPHITRON_INPUT_IDX, TABLE.COL1, TABLE.COL2)
-     *                 .values(i + 1, (Type1) m.get("field1"), (Type2) m.get("field2"));
-     *         })
-     *         .toList();
-     * }
-     * }</pre>
-     */
     private MethodSpec buildToInputRowsMethod(LookupSpec spec) {
         var returnType = recordListType(spec);
-        var paramType = ParameterizedTypeName.get(LIST,
-            ParameterizedTypeName.get(MAP, STRING, OBJECT));
-
-        var body = buildToInputRowsBody(spec);
+        var paramType = ParameterizedTypeName.get(MAP, STRING, OBJECT);
 
         return MethodSpec.methodBuilder("toInputRows")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
-            .addParameter(paramType, "inputs")
-            .addCode(body)
+            .addParameter(paramType, "arguments")
+            .addCode(buildToInputRowsBody(spec))
             .build();
     }
 
     private CodeBlock buildToInputRowsBody(LookupSpec spec) {
-        var newRecordArgs = CodeBlock.builder();
-        newRecordArgs.add("GRAPHITRON_INPUT_IDX");
-        for (var f : spec.fields()) {
-            newRecordArgs.add(", $L.$L", spec.tableJavaFieldName(), f.columnJavaName());
-        }
+        return spec.inputArgName() != null
+            ? buildInputTypeBody(spec)
+            : buildFlatArgsBody(spec);
+    }
 
-        var valuesArgs = CodeBlock.builder();
-        valuesArgs.add("i + 1");
-        for (var f : spec.fields()) {
-            int dot = f.columnClass().lastIndexOf('.');
-            String pkg = f.columnClass().substring(0, dot);
-            String simple = f.columnClass().substring(dot + 1);
-            valuesArgs.add(", ($T) m.get($S)", ClassName.get(pkg, simple), f.argName());
-        }
+    /**
+     * Generates the body for the input-type-arg case:
+     * <pre>{@code
+     * List<Map<String, Object>> input = (List<Map<String, Object>>) arguments.get("input");
+     * return IntStream.range(0, input.size())
+     *     .mapToObj(i -> {
+     *         var m = input.get(i);
+     *         return DSL.newRecord(GRAPHITRON_INPUT_IDX, TABLE.COL1, TABLE.COL2)
+     *             .values(i + 1, (Type1) m.get("field1"), (Type2) m.get("field2"));
+     *     })
+     *     .toList();
+     * }</pre>
+     */
+    private CodeBlock buildInputTypeBody(LookupSpec spec) {
+        var inputArgName = spec.inputArgName();
+        var listType = ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(MAP, STRING, OBJECT));
+
+        var newRecordArgs = newRecordArgsBlock(spec);
+        var valuesArgs = inputTypeValuesBlock(spec);
 
         return CodeBlock.builder()
-            .add("return $T.range(0, inputs.size())\n", INT_STREAM)
+            .add("$T $L = ($T) arguments.get($S);\n", listType, inputArgName, listType, inputArgName)
+            .add("return $T.range(0, $L.size())\n", INT_STREAM, inputArgName)
             .indent()
             .add(".mapToObj(i -> {\n")
             .indent()
-            .add("var m = inputs.get(i);\n")
-            .add("return $T.newRecord($L)\n", DSL, newRecordArgs.build())
+            .add("var m = $L.get(i);\n", inputArgName)
+            .add("return $T.newRecord($L)\n", DSL, newRecordArgs)
             .indent()
-            .add(".values($L);\n", valuesArgs.build())
+            .add(".values($L);\n", valuesArgs)
             .unindent()
             .unindent()
             .add("})\n")
             .add(".toList();\n")
             .unindent()
             .build();
+    }
+
+    /**
+     * Generates the body for the flat-args case:
+     * <pre>{@code
+     * List<String> ids = (List<String>) arguments.get("ids");
+     * return IntStream.range(0, ids.size())
+     *     .mapToObj(i -> DSL.newRecord(GRAPHITRON_INPUT_IDX, TABLE.TENANT_ID, TABLE.ID)
+     *         .values(i + 1, (String) arguments.get("tenantId"), ids.get(i)))
+     *     .toList();
+     * }</pre>
+     */
+    private CodeBlock buildFlatArgsBody(LookupSpec spec) {
+        var body = CodeBlock.builder();
+
+        // Declare local variables for each list argument
+        var listFields = spec.fields().stream().filter(LookupInputFieldSpec::list).toList();
+        for (var f : listFields) {
+            int dot = f.columnClass().lastIndexOf('.');
+            String pkg = f.columnClass().substring(0, dot);
+            String simple = f.columnClass().substring(dot + 1);
+            var listType = ParameterizedTypeName.get(LIST, ClassName.get(pkg, simple));
+            body.add("$T $L = ($T) arguments.get($S);\n", listType, f.argName(), listType, f.argName());
+        }
+
+        // Size expression from the first list field
+        var firstList = listFields.isEmpty() ? null : listFields.get(0);
+        String sizeExpr = firstList != null ? firstList.argName() + ".size()" : "0";
+
+        var newRecordArgs = newRecordArgsBlock(spec);
+        var valuesArgs = flatValuesBlock(spec);
+
+        body.add("return $T.range(0, $L)\n", INT_STREAM, sizeExpr)
+            .indent()
+            .add(".mapToObj(i -> $T.newRecord($L)\n", DSL, newRecordArgs)
+            .indent()
+            .add(".values($L))\n", valuesArgs)
+            .unindent()
+            .add(".toList();\n")
+            .unindent();
+
+        return body.build();
+    }
+
+    /** {@code GRAPHITRON_INPUT_IDX, TABLE.COL1, TABLE.COL2, ...} */
+    private CodeBlock newRecordArgsBlock(LookupSpec spec) {
+        var b = CodeBlock.builder();
+        b.add("GRAPHITRON_INPUT_IDX");
+        for (var f : spec.fields()) {
+            b.add(", $L.$L", spec.tableJavaFieldName(), f.columnJavaName());
+        }
+        return b.build();
+    }
+
+    /** {@code i + 1, (Type1) m.get("field1"), (Type2) m.get("field2")} for the input-type case. */
+    private CodeBlock inputTypeValuesBlock(LookupSpec spec) {
+        var b = CodeBlock.builder();
+        b.add("i + 1");
+        for (var f : spec.fields()) {
+            int dot = f.columnClass().lastIndexOf('.');
+            String pkg = f.columnClass().substring(0, dot);
+            String simple = f.columnClass().substring(dot + 1);
+            b.add(", ($T) m.get($S)", ClassName.get(pkg, simple), f.argName());
+        }
+        return b.build();
+    }
+
+    /**
+     * {@code i + 1, (Type) arguments.get("scalarArg"), listArg.get(i), ...} for the flat case.
+     * List args use the local variable; scalar args read from {@code arguments} with a cast.
+     */
+    private CodeBlock flatValuesBlock(LookupSpec spec) {
+        var b = CodeBlock.builder();
+        b.add("i + 1");
+        for (var f : spec.fields()) {
+            if (f.list()) {
+                b.add(", $L.get(i)", f.argName());
+            } else {
+                int dot = f.columnClass().lastIndexOf('.');
+                String pkg = f.columnClass().substring(0, dot);
+                String simple = f.columnClass().substring(dot + 1);
+                b.add(", ($T) arguments.get($S)", ClassName.get(pkg, simple), f.argName());
+            }
+        }
+        return b.build();
     }
 
     /**

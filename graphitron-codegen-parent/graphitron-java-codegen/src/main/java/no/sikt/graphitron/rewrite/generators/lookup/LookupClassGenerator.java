@@ -6,6 +6,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.JooqCatalog;
 
 import java.io.File;
 import java.io.IOException;
@@ -32,7 +33,8 @@ public class LookupClassGenerator extends AbstractClassGenerator {
     private final Class<?> tablesClass;
 
     public LookupClassGenerator(GraphitronSchema schema) {
-        this.specs = LookupSpecBuilder.build(schema);
+        var catalog = new JooqCatalog(GeneratorConfig.getGeneratedJooqPackage());
+        this.specs = LookupSpecBuilder.build(schema, catalog);
         this.tablesClass = loadTablesClass();
     }
 
