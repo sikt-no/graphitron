@@ -1,11 +1,11 @@
 package no.sikt.graphitron.rewrite.generators.lookup;
 
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.field.ArgumentRef;
-import no.sikt.graphitron.rewrite.field.ArgumentRef.InputTypeArg;
+import no.sikt.graphitron.rewrite.field.ArgumentRef.InputTypeArg.TableInputTypeArg;
 import no.sikt.graphitron.rewrite.field.ArgumentRef.ColumnArg.ResolvedColumnArg;
 import no.sikt.graphitron.rewrite.field.QueryField;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType;
 import no.sikt.graphitron.rewrite.type.InputFieldRef.TableInputField;
 import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
@@ -52,9 +52,8 @@ public class LookupSpecBuilder {
 
         // Prefer input-type arg that has been promoted to TableInputType
         var inputTypeArgOpt = field.arguments().stream()
-            .filter(a -> a instanceof InputTypeArg)
-            .map(a -> (InputTypeArg) a)
-            .filter(a -> schema.types().get(a.typeName()) instanceof TableInputType)
+            .filter(a -> a instanceof TableInputTypeArg)
+            .map(a -> (TableInputTypeArg) a)
             .findFirst();
 
         if (inputTypeArgOpt.isPresent()) {
@@ -66,7 +65,7 @@ public class LookupSpecBuilder {
 
     private static LookupSpec buildInputTypeSpec(
             QueryField.LookupQueryField field, String tableJavaFieldName,
-            InputTypeArg arg, GraphitronSchema schema) {
+            TableInputTypeArg arg, GraphitronSchema schema) {
 
         var inputType = (TableInputType) schema.types().get(arg.typeName());
         var fields = inputType.fields().stream()

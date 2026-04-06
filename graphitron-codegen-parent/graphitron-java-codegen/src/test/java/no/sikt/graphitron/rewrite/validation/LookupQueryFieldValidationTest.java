@@ -31,8 +31,12 @@ class LookupQueryFieldValidationTest {
             singleReturn(List.of(new ArgumentRef.ColumnArg.ResolvedColumnArg("id", "ID", false, true, "FILM_ID", null))),
             List.of()),
 
-        VALID_WITH_INPUT_TYPE_ARG("input type arg — valid (error handling deferred to type validator)",
-            singleReturn(List.of(new ArgumentRef.InputTypeArg("key", "FilmKey", false, true, false, false))),
+        VALID_WITH_TABLE_INPUT_TYPE_ARG("table input type arg — valid",
+            singleReturn(List.of(new ArgumentRef.InputTypeArg.TableInputTypeArg("key", "FilmKey", false, true))),
+            List.of()),
+
+        VALID_WITH_PLAIN_INPUT_TYPE_ARG("plain input type arg — valid (error handled at type level)",
+            singleReturn(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("key", "FilmKey", false, true, false, false))),
             List.of()),
 
         LIST_RETURN("list cardinality — lookup must return a single object",
@@ -48,17 +52,17 @@ class LookupQueryFieldValidationTest {
             List.of("Field 'filmById': lookup fields must return a single object, not a list or connection")),
 
         ORDERBY_ARG("@orderBy on a lookup field argument — not valid on lookup",
-            singleReturn(List.of(new ArgumentRef.InputTypeArg("order", "String", false, false, true, false))),
+            singleReturn(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("order", "String", false, false, true, false))),
             List.of("Field 'filmById': @orderBy is not valid on a lookup field")),
 
         CONDITION_ARG("@condition on a lookup field argument — not valid on lookup",
-            singleReturn(List.of(new ArgumentRef.InputTypeArg("filter", "String", false, false, false, true))),
+            singleReturn(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("filter", "String", false, false, false, true))),
             List.of("Field 'filmById': @condition is not valid on a lookup field")),
 
         ORDERBY_AND_CONDITION_ARGS("both @orderBy and @condition on a lookup field — two errors",
             singleReturn(List.of(
-                new ArgumentRef.InputTypeArg("order", "String", false, false, true, false),
-                new ArgumentRef.InputTypeArg("filter", "String", false, false, false, true))),
+                new ArgumentRef.InputTypeArg.PlainInputTypeArg("order", "String", false, false, true, false),
+                new ArgumentRef.InputTypeArg.PlainInputTypeArg("filter", "String", false, false, false, true))),
             List.of(
                 "Field 'filmById': @orderBy is not valid on a lookup field",
                 "Field 'filmById': @condition is not valid on a lookup field")),

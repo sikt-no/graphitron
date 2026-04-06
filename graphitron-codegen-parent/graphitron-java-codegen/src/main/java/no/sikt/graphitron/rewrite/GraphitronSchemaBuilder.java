@@ -235,93 +235,45 @@ public class GraphitronSchemaBuilder {
                 });
             });
 
-        // Third pass: promote InputType → TableInputType where a unique table can be inferred
-        // from the field context (return type's resolved table).
-        promoteImplicitTableInputTypes(fields.values());
-
         return new GraphitronSchema(types, fields);
     }
 
     /**
-     * Scans all classified fields for arguments whose type is an {@link InputType} (no {@code @table}).
-     * When a unique {@link ResolvedTable} can be inferred from the field's return type for a given
-     * input type (across all fields that use it), promotes that input type to a {@link TableInputType}.
+     * Optimistically promotes an {@link InputType} (no {@code @table}) to a
+     * {@link TableInputType} using {@code rt} as the implied table, or detects and records a
+     * conflict when the same input type has already been promoted with a different table.
      *
-     * <p>If the same input type is used as an argument on multiple fields with different return tables,
-     * the implied table is ambiguous — the input type is demoted to an {@link GraphitronType.UnclassifiedType}
-     * and the validator reports an error.
+     * <p>Call this for every input-type argument encountered while building any field that has a
+     * resolved return table. The promotion/demotion is a side-effect on {@link #types}: no
+     * separate post-processing pass is needed.
      */
-    private void promoteImplicitTableInputTypes(java.util.Collection<GraphitronField> allFields) {
-        // Collect the implied table for each InputType name.
-        // On conflict (different tables for the same input type name), record the conflicting table
-        // names so we can produce a descriptive error.
-        Map<String, ResolvedTable> impliedTable = new LinkedHashMap<>();
-        Map<String, String> conflictReason = new LinkedHashMap<>();
-
-        for (var field : allFields) {
-            var table = impliedTableFrom(field);
-            if (table == null) continue;
-
-            for (var arg : argumentsOf(field)) {
-                var typeName = arg.typeName();
-                if (conflictReason.containsKey(typeName)) continue;
-                if (!(types.get(typeName) instanceof InputType)) continue;
-
-                var existing = impliedTable.get(typeName);
-                if (existing != null && !existing.tableName().equalsIgnoreCase(table.tableName())) {
-                    conflictReason.put(typeName,
-                        "used as an argument on fields with conflicting return tables: '"
-                        + existing.tableName() + "' and '" + table.tableName() + "'");
-                    impliedTable.remove(typeName);
-                } else {
-                    impliedTable.put(typeName, table);
-                }
-            }
-        }
-
-        // Promote each unambiguously resolved InputType
-        for (var entry : impliedTable.entrySet()) {
-            var inputType = (InputType) types.get(entry.getKey());
-            types.put(entry.getKey(), promoteToTableInputType(inputType, entry.getValue()));
-        }
-
-        // Demote conflicted InputTypes to UnclassifiedType so the validator reports an error
-        for (var entry : conflictReason.entrySet()) {
-            var inputType = (InputType) types.get(entry.getKey());
-            types.put(entry.getKey(), new GraphitronType.UnclassifiedType(
-                inputType.name(), inputType.location(), entry.getValue()));
+    private void resolveInputTypeImplicitly(String typeName, ResolvedTable rt) {
+        if (rt == null) return;
+        var current = types.get(typeName);
+        if (current instanceof InputType it) {
+            types.put(typeName, promoteToTableInputType(it, rt));
+        } else if (current instanceof TableInputType tit
+                && tit.table() instanceof ResolvedTable existing
+                && !existing.tableName().equalsIgnoreCase(rt.tableName())) {
+            types.put(typeName, new GraphitronType.UnclassifiedType(typeName, tit.location(),
+                "used as an argument on fields with conflicting return tables: '"
+                + existing.tableName() + "' and '" + rt.tableName() + "'"));
         }
     }
 
     /**
-     * Returns the {@link ResolvedTable} implied by the field's return type, or {@code null} when
-     * the field has no table-bound return type (or the table is unresolved).
+     * Resolves all input-type arguments in {@code args} against the given {@code returnType}.
+     * For each arg whose type is a known {@link InputType}, calls
+     * {@link #resolveInputTypeImplicitly} to promote or detect conflicts.
      */
-    private ResolvedTable impliedTableFrom(GraphitronField field) {
-        var returnType = switch (field) {
-            case QueryField.LookupQueryField f -> f.returnType();
-            case QueryField.TableQueryField f  -> f.returnType();
-            case TableField f                  -> f.returnType();
-            case TableMethodField f            -> f.returnType();
-            default                            -> null;
-        };
-        if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) return null;
-        if (!(tb.table() instanceof ResolvedTable rt)) return null;
-        return rt;
-    }
-
-    /** Returns the argument list for field types that can carry input-type arguments. */
-    private List<ArgumentSpec> argumentsOf(GraphitronField field) {
-        return switch (field) {
-            case QueryField.LookupQueryField f -> f.arguments().stream()
-                .filter(a -> a instanceof ArgumentRef.InputTypeArg i && !i.orderBy() && !i.conditionArg())
-                .map(a -> new ArgumentSpec(a.name(), a.typeName(), a.nonNull(), a.list(), false, false, a.name()))
-                .toList();
-            case QueryField.TableQueryField f  -> f.arguments();
-            case TableField f                  -> f.arguments();
-            case TableMethodField f            -> f.arguments();
-            default                            -> List.of();
-        };
+    private void resolveInputTypeArgs(List<ArgumentSpec> args, ReturnTypeRef returnType) {
+        if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) return;
+        if (!(tb.table() instanceof ResolvedTable rt)) return;
+        for (var arg : args) {
+            if (types.containsKey(arg.typeName())) {
+                resolveInputTypeImplicitly(arg.typeName(), rt);
+            }
+        }
     }
 
     /**
@@ -588,12 +540,15 @@ public class GraphitronSchemaBuilder {
         GraphitronType elementType = types.get(elementTypeName);
 
         if (elementType instanceof TableType) {
+            var returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+            var args = parseArguments(fieldDef);
+            resolveInputTypeArgs(args, returnType);
             return new TableField(parentTypeName, name, location,
-                resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
+                returnType,
                 parseReferencePath(fieldDef),
                 new FieldConditionRef.NoFieldCondition(),
                 fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY),
-                parseArguments(fieldDef));
+                args);
         }
 
         if (elementType instanceof TableInterfaceType) {
@@ -862,10 +817,13 @@ public class GraphitronSchemaBuilder {
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
+            var returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+            var args = parseArguments(fieldDef);
+            resolveInputTypeArgs(args, returnType);
             return new QueryField.TableMethodQueryField(parentTypeName, name, location,
-                resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
+                returnType,
                 parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF),
-                parseArguments(fieldDef),
+                args,
                 parseContextArguments(fieldDef, DIR_TABLE_METHOD));
         }
 
@@ -874,9 +832,12 @@ public class GraphitronSchemaBuilder {
         GraphitronType elementType = types.get(elementTypeName);
 
         if (elementType instanceof TableType) {
+            var returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+            var args = parseArguments(fieldDef);
+            resolveInputTypeArgs(args, returnType);
             return new QueryField.TableQueryField(parentTypeName, name, location,
-                resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
-                parseArguments(fieldDef));
+                returnType,
+                args);
         }
         if (elementType instanceof TableInterfaceType) {
             return new QueryField.TableInterfaceQueryField(parentTypeName, name, location,
@@ -977,22 +938,27 @@ public class GraphitronSchemaBuilder {
      * Classifies one argument of a {@code LookupQueryField} into the appropriate
      * {@link ArgumentRef} variant.
      *
-     * <p>Arguments with {@code @orderBy} or {@code @condition} become {@link ArgumentRef.InputTypeArg}
-     * with the corresponding flag set — the validator rejects them on lookup fields.
-     * Arguments whose type is a user-defined input type (any entry in {@code types}) become a plain
-     * {@link ArgumentRef.InputTypeArg} — this covers both explicitly {@code @table}-annotated
-     * input types and plain input types that will be promoted in the third pass.
-     * Remaining (scalar) arguments are resolved against the return table if available.
+     * <p>Arguments with {@code @orderBy} or {@code @condition} become
+     * {@link ArgumentRef.InputTypeArg.PlainInputTypeArg} with the corresponding flag set — the
+     * validator rejects them on lookup fields.
+     * Arguments whose type is a user-defined input type (any entry in {@code types}) are resolved
+     * via {@link #resolveInputTypeImplicitly}: if the type is or becomes a
+     * {@link TableInputType}, a {@link ArgumentRef.InputTypeArg.TableInputTypeArg} is returned;
+     * otherwise a {@link ArgumentRef.InputTypeArg.PlainInputTypeArg}.
+     * Remaining (scalar) arguments are resolved against the return table via the catalog.
      */
     private ArgumentRef buildLookupArg(ArgumentSpec arg, TableRef.ResolvedTable rt) {
         if (arg.orderBy()) {
-            return new ArgumentRef.InputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), true, false);
+            return new ArgumentRef.InputTypeArg.PlainInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), true, false);
         }
         if (arg.conditionArg()) {
-            return new ArgumentRef.InputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), false, true);
+            return new ArgumentRef.InputTypeArg.PlainInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), false, true);
         }
         if (types.containsKey(arg.typeName())) {
-            return new ArgumentRef.InputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), false, false);
+            resolveInputTypeImplicitly(arg.typeName(), rt);
+            return types.get(arg.typeName()) instanceof TableInputType
+                ? new ArgumentRef.InputTypeArg.TableInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list())
+                : new ArgumentRef.InputTypeArg.PlainInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), false, false);
         }
         // Scalar arg — resolve against the return type's table
         if (rt == null) {
@@ -1126,11 +1092,14 @@ public class GraphitronSchemaBuilder {
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
+            var returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+            var args = parseArguments(fieldDef);
+            resolveInputTypeArgs(args, returnType);
             return new TableMethodField(parentTypeName, name, location,
-                resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
+                returnType,
                 parseReferencePath(fieldDef),
                 parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF),
-                parseArguments(fieldDef),
+                args,
                 parseContextArguments(fieldDef, DIR_TABLE_METHOD));
         }
 

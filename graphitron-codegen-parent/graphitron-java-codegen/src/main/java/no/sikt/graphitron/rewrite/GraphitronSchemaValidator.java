@@ -184,11 +184,11 @@ public class GraphitronSchemaValidator {
         }
         for (var arg : field.arguments()) {
             switch (arg) {
-                case ArgumentRef.InputTypeArg a when a.orderBy() -> errors.add(new ValidationError(
+                case ArgumentRef.InputTypeArg.PlainInputTypeArg a when a.orderBy() -> errors.add(new ValidationError(
                     "Field '" + field.name() + "': @orderBy is not valid on a lookup field",
                     field.location()
                 ));
-                case ArgumentRef.InputTypeArg a when a.conditionArg() -> errors.add(new ValidationError(
+                case ArgumentRef.InputTypeArg.PlainInputTypeArg a when a.conditionArg() -> errors.add(new ValidationError(
                     "Field '" + field.name() + "': @condition is not valid on a lookup field",
                     field.location()
                 ));

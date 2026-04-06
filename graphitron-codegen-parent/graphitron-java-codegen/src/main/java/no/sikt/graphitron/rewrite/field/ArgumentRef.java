@@ -6,12 +6,19 @@ package no.sikt.graphitron.rewrite.field;
  * <p>The builder classifies each argument into exactly one variant during schema building:
  *
  * <ul>
- *   <li>{@link InputTypeArg} — the argument type is a user-defined input type (including those
- *       flagged with {@code @orderBy} or {@code @condition}). The {@code orderBy} and
- *       {@code conditionArg} flags record those directives; the validator rejects them on lookup
- *       fields. Non-flagged input types feed the input-type code-generation path.</li>
- *   <li>{@link ColumnArg} — a scalar or list argument that is table-bound (i.e. column-bound).
- *       Two sub-variants track whether the column was successfully resolved:
+ *   <li>{@link InputTypeArg} — the argument type is a user-defined input type (sealed):
+ *     <ul>
+ *       <li>{@link InputTypeArg.TableInputTypeArg} — the type was resolved to a
+ *           {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType} (either via
+ *           {@code @table} or by optimistic inference from the field's return type). Code
+ *           generation uses the input-type path for these.</li>
+ *       <li>{@link InputTypeArg.PlainInputTypeArg} — the type could not be resolved to a table,
+ *           or carries {@code @orderBy}/{@code @condition} (both invalid on lookup fields and
+ *           reported as errors by the validator).</li>
+ *     </ul>
+ *   </li>
+ *   <li>{@link ColumnArg} — a scalar or list argument that is column-bound (table-bound scalar,
+ *       sealed):
  *     <ul>
  *       <li>{@link ColumnArg.ResolvedColumnArg} — column found; carries Java field name and jOOQ
  *           {@link org.jooq.Field} for code generation.</li>
@@ -35,19 +42,47 @@ public sealed interface ArgumentRef
     /**
      * Argument whose type is a user-defined input type.
      *
-     * <p>{@code orderBy} is {@code true} when the argument carries {@code @orderBy} — invalid on
-     * lookup fields. {@code conditionArg} is {@code true} when the argument carries
-     * {@code @condition} — also invalid on lookup fields. Both flags default to {@code false} for
-     * ordinary input type arguments.
+     * <p>Two sub-variants encode whether the type was resolved to a table at schema-build time.
      */
-    record InputTypeArg(
-        String name,
-        String typeName,
-        boolean nonNull,
-        boolean list,
-        boolean orderBy,
-        boolean conditionArg
-    ) implements ArgumentRef {}
+    sealed interface InputTypeArg extends ArgumentRef
+            permits ArgumentRef.InputTypeArg.TableInputTypeArg,
+                    ArgumentRef.InputTypeArg.PlainInputTypeArg {
+
+        /**
+         * The type was resolved to a
+         * {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType}.
+         *
+         * <p>Resolved either because the input type carries {@code @table}, or because the builder
+         * inferred the table from the lookup field's return type. The actual
+         * {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType} instance is
+         * available via {@link no.sikt.graphitron.rewrite.GraphitronSchema#types()}.
+         */
+        record TableInputTypeArg(
+            String name,
+            String typeName,
+            boolean nonNull,
+            boolean list
+        ) implements InputTypeArg {}
+
+        /**
+         * The type could not be resolved to a table, or carries {@code @orderBy} /
+         * {@code @condition}.
+         *
+         * <p>{@code orderBy} is {@code true} when the argument carries {@code @orderBy} — invalid
+         * on lookup fields. {@code conditionArg} is {@code true} when the argument carries
+         * {@code @condition} — also invalid on lookup fields. When both flags are {@code false},
+         * the type is an ordinary input type whose table could not be inferred; the validator
+         * reports an error if code generation requires a table.
+         */
+        record PlainInputTypeArg(
+            String name,
+            String typeName,
+            boolean nonNull,
+            boolean list,
+            boolean orderBy,
+            boolean conditionArg
+        ) implements InputTypeArg {}
+    }
 
     /**
      * A scalar or list argument that is column-bound (table-bound scalar).
