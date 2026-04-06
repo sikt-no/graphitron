@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>no.sikt</groupId>
+        <artifactId>graphitron-parent</artifactId>
+        <version>${revision}${changelist}</version>
+    </parent>
+
+    <artifactId>graphitron-rewrite-test</artifactId>
+    <packaging>pom</packaging>
+    <name>${project.groupId}:${project.artifactId}</name>
+
+    <modules>
+        <module>graphitron-rewrite-test-fixtures</module>
+        <module>graphitron-rewrite-test-spec</module>
+    </modules>
+
+    <properties>
+        <jooqPackage>no.sikt.graphitron.rewrite.test.jooq</jooqPackage>
+        <db.url>jdbc:tc:postgresql:15:///rewrite_test?TC_TMPFS=/testtmpfs:rw&amp;TC_INITSCRIPT=file:${project.basedir}/../graphitron-rewrite-test-fixtures/src/main/resources/init.sql</db.url>
+        <db.username>postgres</db.username>
+        <db.password>postgres</db.password>
+        <jooq.codegen.schema.version>1.0</jooq.codegen.schema.version>
+    </properties>
+</project>

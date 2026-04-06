@@ -1,0 +1,29 @@
+type Query {
+    customers(active: Boolean): [Customer!]!
+    films(rating: MpaaRating, maxRentalRate: Float): [Film!]!
+}
+
+type Customer @table(name: "customer") {
+    customerId: Int!     @field(name: "CUSTOMER_ID")
+    firstName:  String!  @field(name: "FIRST_NAME")
+    lastName:   String!  @field(name: "LAST_NAME")
+    email:      String   @field(name: "EMAIL")
+    activebool: Boolean! @field(name: "ACTIVEBOOL")
+}
+
+type Film @table(name: "film") {
+    filmId:     Int!         @field(name: "FILM_ID")
+    title:      String!      @field(name: "TITLE")
+    description: String      @field(name: "DESCRIPTION")
+    rentalRate: Float!       @field(name: "RENTAL_RATE")
+    rating:     MpaaRating   @field(name: "RATING")
+    length:     Int          @field(name: "LENGTH")
+}
+
+enum MpaaRating {
+    G
+    PG
+    PG_13
+    R
+    NC_17
+}

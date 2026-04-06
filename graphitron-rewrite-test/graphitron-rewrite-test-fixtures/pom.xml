@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>no.sikt</groupId>
+        <artifactId>graphitron-rewrite-test</artifactId>
+        <version>${revision}${changelist}</version>
+    </parent>
+
+    <artifactId>graphitron-rewrite-test-fixtures</artifactId>
+    <name>${project.groupId}:${project.artifactId}</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.jooq</groupId>
+            <artifactId>jooq</artifactId>
+        </dependency>
+    </dependencies>
+
+    <profiles>
+        <!--
+            Regenerate jOOQ sources from the live database schema.
+            Run with: mvn -P jooq-codegen generate-sources -pl :graphitron-rewrite-test-fixtures
+            Docker must be running (TestContainers spins up PostgreSQL automatically).
+            Increment jooq.codegen.schema.version in the parent pom when the schema changes.
+        -->
+        <profile>
+            <id>jooq-codegen</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.jooq</groupId>
+                        <artifactId>jooq-codegen-maven</artifactId>
+                        <executions>
+                            <execution>
+                                <id>jooq-codegen</id>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>generate</goal>
+                                </goals>
+                                <configuration>
+                                    <jdbc>
+                                        <driver>org.testcontainers.jdbc.ContainerDatabaseDriver</driver>
+                                        <url>${db.url}</url>
+                                        <user>${db.username}</user>
+                                        <password>${db.password}</password>
+                                    </jdbc>
+                                    <generator>
+                                        <database>
+                                            <inputSchema>public</inputSchema>
+                                            <includes>public.*</includes>
+                                            <schemaVersionProvider>${jooq.codegen.schema.version}</schemaVersionProvider>
+                                            <includeIndexes>true</includeIndexes>
+                                        </database>
+                                        <target>
+                                            <packageName>${jooqPackage}</packageName>
+                                            <directory>src/main/java</directory>
+                                        </target>
+                                    </generator>
+                                </configuration>
+                            </execution>
+                        </executions>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.postgresql</groupId>
+                                <artifactId>postgresql</artifactId>
+                                <version>${version.postgresql}</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.testcontainers</groupId>
+                                <artifactId>testcontainers-postgresql</artifactId>
+                                <version>${version.testcontainers.postgresql}</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.testcontainers</groupId>
+                                <artifactId>testcontainers</artifactId>
+                                <version>${version.testcontainers.postgresql}</version>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

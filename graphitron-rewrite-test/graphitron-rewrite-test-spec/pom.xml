@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>no.sikt</groupId>
+        <artifactId>graphitron-rewrite-test</artifactId>
+        <version>${revision}${changelist}</version>
+    </parent>
+
+    <artifactId>graphitron-rewrite-test-spec</artifactId>
+    <name>${project.groupId}:${project.artifactId}</name>
+
+    <properties>
+        <outputPackage>no.sikt.graphitron.rewrite.test.generated</outputPackage>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-rewrite-test-fixtures</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jooq</groupId>
+            <artifactId>jooq</artifactId>
+        </dependency>
+
+        <!-- Test dependencies -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <version>${version.testcontainers.postgresql}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <version>${version.testcontainers.postgresql}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>${version.postgresql}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                Graphitron code generation — activated in G1 when the rewrite generators are ready.
+                The plugin config below is intentionally phase=none so it compiles but does not run.
+                G1 will change phase to generate-sources and set rewriteBasedOutput=true.
+            -->
+            <plugin>
+                <groupId>no.sikt</groupId>
+                <artifactId>graphitron-maven-plugin</artifactId>
+                <version>${revision}${changelist}</version>
+                <executions>
+                    <execution>
+                        <id>rewrite-generate</id>
+                        <phase>none</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <transform>
+                                <schemaRootDirectories>
+                                    <directory>${project.basedir}/src/main/resources/graphql</directory>
+                                </schemaRootDirectories>
+                            </transform>
+                            <jooqGeneratedPackage>${jooqPackage}</jooqGeneratedPackage>
+                            <outputPackage>${outputPackage}</outputPackage>
+                            <rewriteBasedOutput>false</rewriteBasedOutput>
+                        </configuration>
+                    </execution>
+                </executions>
+                <dependencies>
+                    <dependency>
+                        <groupId>no.sikt</groupId>
+                        <artifactId>graphitron-rewrite-test-fixtures</artifactId>
+                        <version>${revision}${changelist}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+        </plugins>
+    </build>
+</project>
