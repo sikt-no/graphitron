@@ -383,7 +383,7 @@ DataLoader batch functions (Deliverable 5) follow the same pattern: synchronous 
 
 ## Deliverable 4: Inline `TableField`
 
-Extends `FieldsCodeGenerator` with `TableField` in table-mapped source context (no `@splitQuery`). Introduces the static field method pattern and the `@defer` check-then-fetch resolver.
+Extends `FieldsCodeGenerator` with `TableField` in table-mapped source context (no `@splitQuery`). Introduces the static field method pattern and the prefetch-with-fallback resolver.
 
 ### Static field methods
 
@@ -425,9 +425,11 @@ public static List<Field<?>> fields(Customer customer, DataFetchingFieldSelectio
 }
 ```
 
-### `@defer` check-then-fetch wiring
+### Prefetch-with-fallback wiring
 
 Every inline `TableField` generates a `private static final` typed field constant used as the key both when embedding the subquery in `fields()` and when reading back the result in `wiring()`. This constant is the alias: it is type-safe, collision-free, and the same value serves both roles.
+
+**How this interacts with `@defer`:** graphql-java's `@defer` does not exclude deferred child fields from the parent DataFetcher's `getSelectionSet()` — they remain visible. The parent therefore pre-fetches them inline as usual. The deferred child DataFetcher is called later (in the incremental pass), but by then the data is already embedded in the parent record, so the null-check short-circuits the fallback fetch entirely. `DeferBehaviorTest` pins this behaviour. The fallback fetch exists to handle the case where the parent's selection set was built without the child field (e.g. the field was added to the response via a DataLoader path or some other route that bypassed the parent `fields()` call).
 
 ```java
 // Generated constant — type-safe key for both embed and read-back
@@ -483,7 +485,7 @@ public static TypeRuntimeWiring.Builder wiring() {
 }
 ```
 
-`fields()` is an optimisation — pre-fetching via parent SELECT. The check-then-fetch resolver is the correctness guarantee. Using typed `Field<T>` constants rather than raw string aliases prevents alias collisions and makes the null-check type-safe at compile time.
+`fields()` is the optimisation — pre-fetching via parent SELECT, including deferred child fields. The fallback fetch in `wiring()` is the correctness guarantee for any path that bypasses `fields()`. Using typed `Field<T>` constants rather than raw string aliases prevents alias collisions and makes the null-check type-safe at compile time.
 
 ### FK auto-inference
 
