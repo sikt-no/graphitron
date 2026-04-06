@@ -1,5 +1,13 @@
 # Plan: Phase Out DTO Layer — Record-Based Output
 
+> **Superseded.** This document has been split into two focused documents:
+> - [`plan-record-parsing-and-validation.md`](plan-record-parsing-and-validation.md) — completed parsing and validation work
+> - [`plan-record-generation.md`](plan-record-generation.md) — infrastructure, generating stream, test module, remaining deliverables
+>
+> This file is retained for history only.
+
+---
+
 ## Context
 
 The current code generation pipeline produces output DTOs and TypeMapper classes that convert jOOQ Records into those DTOs. This is unnecessary: graphql-java's `RuntimeWiring` can resolve fields directly from any Java object, including jOOQ `Record`. Eliminating the DTO/TypeMapper layer reduces generated code volume, removes the selection-set-per-field mapping boilerplate, and unblocks future features (e.g. `@record` output support).
