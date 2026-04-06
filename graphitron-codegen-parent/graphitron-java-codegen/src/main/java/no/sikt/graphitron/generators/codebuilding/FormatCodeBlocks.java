@@ -554,6 +554,82 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * Variant that handles the case where the jOOQ column type is itself a Java enum implementing
+     * {@link org.jooq.EnumType} (e.g. a PostgreSQL enum column), while the GraphQL enum has no
+     * {@code @enum} directive ({@code hasJavaEnumMapping == false}).
+     *
+     * <p>In this situation the standard converter would emit {@code s -> makeEnumMap(s, List.of("G",…), …)}
+     * where {@code s} is inferred as the jOOQ enum type, but the {@code from} list is {@code List<String>}.
+     * Java's type-inference cannot reconcile the two bounds and the generated code fails to compile.</p>
+     *
+     * <p>The fix uses {@link org.jooq.EnumType#getLiteral()} to convert the jOOQ enum to its string
+     * literal before passing it to {@code makeEnumMap}, and {@link org.jooq.EnumType#lookupLiteral}
+     * for the reverse direction, keeping both sides consistently {@code String}-typed.</p>
+     *
+     * @param columnClass the actual Java type of the jOOQ column field; when it is a {@link org.jooq.EnumType}
+     *                    subclass and the schema enum has no Java mapping, a type-safe converter is generated.
+     * @return Code block containing the enum conversion, or an empty block if inapplicable.
+     */
+    public static CodeBlock toJOOQEnumConverter(String enumType, ProcessedSchema schema, Class<?> columnClass) {
+        if (!schema.isEnum(enumType)) {
+            return CodeBlock.empty();
+        }
+        var enumEntry = schema.getEnum(enumType);
+        if (!enumEntry.hasJavaEnumMapping()
+                && columnClass != null
+                && columnClass.isEnum()
+                && org.jooq.EnumType.class.isAssignableFrom(columnClass)) {
+            return toJOOQEnumConverterForEnumTypeColumn(enumEntry, columnClass);
+        }
+        return toJOOQEnumConverter(enumType, schema);
+    }
+
+    /**
+     * Generates a {@code .convert()} call for a jOOQ column whose Java type is an {@link org.jooq.EnumType}
+     * enum, while the GraphQL enum has no explicit Java mapping ({@code hasJavaEnumMapping == false}).
+     *
+     * <p>Example output:
+     * <pre>{@code
+     * .convert(FilmRating.class,
+     *   (MpaaRating s) -> QueryHelper.makeEnumMap(s.getLiteral(), List.of("G","PG",…), List.of(FilmRating.G,…)),
+     *   (FilmRating s) -> {
+     *     var _s = QueryHelper.makeEnumMap(s, List.of(FilmRating.G,…), List.of("G","PG",…));
+     *     return _s == null ? null : EnumType.lookupLiteral(MpaaRating.class, _s);
+     *   }
+     * )
+     * }</pre>
+     */
+    private static CodeBlock toJOOQEnumConverterForEnumTypeColumn(EnumDefinition enumEntry, Class<?> jooqEnumClass) {
+        var tempVarName = "s";
+        var litVarName = "_s";
+        var dtoClass = enumEntry.getGraphClassName();
+        var jooqClass = ClassName.get(jooqEnumClass);
+
+        // From-lambda: (JooqEnumClass s) -> makeEnumMap(s.getLiteral(), strings, dtos)
+        var fromLambda = CodeBlock.of(
+                "($T $L) -> $L",
+                jooqClass,
+                tempVarName,
+                makeEnumMapBlock(tempVarName + ".getLiteral()", renderEnumMapElements(enumEntry, true))
+        );
+
+        // To-lambda: (DtoClass s) -> { var _s = makeEnumMap(s, dtos, strings); return EnumType.lookupLiteral(JooqClass, _s); }
+        var reverseMapBlock = makeEnumMapBlock(tempVarName, renderEnumMapElements(enumEntry, false));
+        var toLambda = CodeBlock.builder()
+                .add("($T $L) -> {\n", dtoClass, tempVarName)
+                .indent()
+                .add("var $L = $L;\n", litVarName, reverseMapBlock)
+                .add("return $L == null ? null : $T.lookupLiteral($T.class, $L);\n",
+                        litVarName, JOOQ_ENUM_TYPE.className, jooqClass, litVarName)
+                .unindent()
+                .add("}")
+                .build();
+
+        var code = CodeBlock.of("$T.class,\n$L,\n$L", dtoClass, fromLambda, toLambda);
+        return CodeBlock.of(".convert($L)", indentIfMultiline(code));
+    }
+
+    /**
      * @return CodeBlock that converts a SQL array field to a Java List using jOOQ's convertFrom with null-safety.
      */
     public static CodeBlock arrayToListConverter() {

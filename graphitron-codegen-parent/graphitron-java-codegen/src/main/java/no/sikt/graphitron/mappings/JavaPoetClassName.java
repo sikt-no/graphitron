@@ -112,7 +112,8 @@ public enum JavaPoetClassName {
     SELECT_SELECT_STEP(SelectSelectStep.class),
     INT_STREAM(IntStream.class),
     CONNECTION_IMPL(ConnectionImpl.class),
-    FEDERATION_HELPER(no.sikt.graphql.schema.FederationHelper.class);
+    FEDERATION_HELPER(no.sikt.graphql.schema.FederationHelper.class),
+    JOOQ_ENUM_TYPE(org.jooq.EnumType.class);
 
     public final ClassName className;
 

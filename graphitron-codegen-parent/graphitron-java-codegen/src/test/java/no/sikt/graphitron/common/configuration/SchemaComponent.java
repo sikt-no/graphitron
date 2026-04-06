@@ -21,6 +21,7 @@ public enum SchemaComponent {
 
     DUMMY_ENUM("enums/DummyEnum"),
     DUMMY_ENUM_CONVERTED("enums/DummyEnumConverted", Set.of(ReferencedEntry.DUMMY_JOOQ_ENUM)),
+    FILM_RATING("enums/FilmRating"),
 
     CUSTOMER("basic/Customer"),
     CUSTOMER_NODE("basic/CustomerNode", NODE),
@@ -29,6 +30,7 @@ public enum SchemaComponent {
     CUSTOMER_QUERY("basic/CustomerQuery"),
     CUSTOMER_NOT_GENERATED("basic/CustomerNotGenerated"),
     CUSTOMER_TABLE("basic/CustomerTable"),
+    FILM_TABLE("basic/FilmTable"),
     CUSTOMER_INPUT_TABLE("basic/CustomerInputTable"),
     CUSTOMER_CONNECTION_ONLY("basic/CustomerConnection", PAGE_INFO),
     CUSTOMER_CONNECTION_WITH_NO_OPTIONALS_ONLY("basic/CustomerConnectionWithNoOptionals", PAGE_INFO),

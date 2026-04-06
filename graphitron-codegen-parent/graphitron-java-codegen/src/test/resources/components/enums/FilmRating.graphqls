@@ -1,0 +1,6 @@
+# Schema-only enum (no @enum directive) that maps to the jOOQ MpaaRating enum column.
+enum FilmRating {
+    G
+    PG
+    R
+}

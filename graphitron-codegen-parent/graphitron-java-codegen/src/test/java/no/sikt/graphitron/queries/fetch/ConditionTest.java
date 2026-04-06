@@ -356,6 +356,26 @@ public class ConditionTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Bug A: Float condition on a BigDecimal column wraps value with BigDecimal.valueOf()")
+    void onFloatConditionBigDecimalColumn() {
+        assertGeneratedContentContains(
+                "onFloatConditionBigDecimalColumn", Set.of(FILM_TABLE),
+                "RENTAL_RATE.eq(BigDecimal.valueOf(_mi_rentalRate))"
+        );
+    }
+
+    @Test
+    @DisplayName("Bug B: Schema-only enum condition on a jOOQ EnumType column uses getLiteral() and lookupLiteral()")
+    void onJooqEnumTypeColumnWithSchemaEnum() {
+        assertGeneratedContentContains(
+                "onJooqEnumTypeColumnWithSchemaEnum", Set.of(FILM_TABLE, FILM_RATING),
+                "RATING.convert(",
+                "s.getLiteral()",
+                "EnumType.lookupLiteral("
+        );
+    }
+
+    @Test
     @DisplayName("Condition on a listed enum parameter")
     void onListedEnum() {
         assertGeneratedContentContains(

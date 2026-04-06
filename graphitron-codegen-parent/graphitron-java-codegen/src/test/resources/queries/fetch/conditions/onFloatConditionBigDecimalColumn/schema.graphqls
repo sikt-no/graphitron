@@ -1,0 +1,3 @@
+type Query {
+  films(rentalRate: Float @condition): FilmTable
+}

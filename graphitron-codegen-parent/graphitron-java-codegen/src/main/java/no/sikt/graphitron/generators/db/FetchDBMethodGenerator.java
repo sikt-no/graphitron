@@ -837,11 +837,33 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             return CodeBlock.join(renderedSequence, generateHasForID(field.getMappingFromFieldOverride(), table, name, field.isIterableWrapped()));
         }
 
+        var hasJooqRecord = processedSchema.hasJOOQRecord(field.getContainerTypeName());
+        var enumConverter = CodeBlock.empty();
+        if (!hasJooqRecord) {
+            var tableName = context.iterateJoinSequenceFor(field).getLast().getTable().getName();
+            var columnType = getFieldType(tableName, field.getUpperCaseName());
+
+            // Bug A: if the jOOQ column is BigDecimal but the GraphQL field produces a different
+            // numeric type (e.g. Float → Double), wrap the value with BigDecimal.valueOf() so
+            // that jOOQ's Field<BigDecimal>.eq(Double) type mismatch does not cause a compile error.
+            // Only applies to single-value conditions (.eq), not lists (.in), which would require
+            // a different stream-based conversion.
+            if (!field.isIterableWrapped()
+                    && columnType.filter(java.math.BigDecimal.class::equals).isPresent()
+                    && !field.getTypeName().equals("BigDecimal")) {
+                name = CodeBlock.of("$T.valueOf($L)", java.math.BigDecimal.class, name);
+            }
+
+            // Bug B: pass the column class so toJOOQEnumConverter can generate explicit lambda
+            // types when the column is a jOOQ EnumType and the schema enum has no @enum directive.
+            enumConverter = toJOOQEnumConverter(field.getTypeName(), processedSchema, columnType.orElse(null));
+        }
+
         return CodeBlock.of(
                 "$L.$N$L.$L($L)",
                 renderedSequence,
                 field.getUpperCaseName(),
-                !processedSchema.hasJOOQRecord(field.getContainerTypeName()) ? toJOOQEnumConverter(field.getTypeName(), processedSchema) : CodeBlock.empty(),
+                enumConverter,
                 field.isIterableWrapped() ? "in" : "eq",
                 name
         );
