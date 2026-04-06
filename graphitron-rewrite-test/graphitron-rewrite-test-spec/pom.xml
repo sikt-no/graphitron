@@ -101,6 +101,7 @@
                             <jooqGeneratedPackage>${jooqPackage}</jooqGeneratedPackage>
                             <outputPackage>${outputPackage}</outputPackage>
                             <rewriteBasedOutput>true</rewriteBasedOutput>
+                            <disableLegacy>true</disableLegacy>
                         </configuration>
                     </execution>
                 </executions>
