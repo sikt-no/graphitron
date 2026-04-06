@@ -234,7 +234,97 @@ public class GraphitronSchemaBuilder {
                 });
             });
 
+        // Third pass: promote InputType → TableInputType where a unique table can be inferred
+        // from the field context (return type's resolved table).
+        promoteImplicitTableInputTypes(fields.values());
+
         return new GraphitronSchema(types, fields);
+    }
+
+    /**
+     * Scans all classified fields for arguments whose type is an {@link InputType} (no {@code @table}).
+     * When a unique {@link ResolvedTable} can be inferred from the field's return type for a given
+     * input type (across all fields that use it), promotes that input type to a {@link TableInputType}.
+     *
+     * <p>If the same input type is used as an argument on multiple fields with different return tables,
+     * the implied table is ambiguous and the input type is left as {@link InputType}.
+     */
+    private void promoteImplicitTableInputTypes(java.util.Collection<GraphitronField> allFields) {
+        // Collect the implied table for each InputType name.
+        // On conflict (different tables for the same input type name), move to conflicted set.
+        Map<String, ResolvedTable> impliedTable = new LinkedHashMap<>();
+        var conflicted = new java.util.HashSet<String>();
+
+        for (var field : allFields) {
+            var table = impliedTableFrom(field);
+            if (table == null) continue;
+
+            for (var arg : argumentsOf(field)) {
+                var typeName = arg.typeName();
+                if (conflicted.contains(typeName)) continue;
+                if (!(types.get(typeName) instanceof InputType)) continue;
+
+                var existing = impliedTable.get(typeName);
+                if (existing != null && !existing.tableName().equalsIgnoreCase(table.tableName())) {
+                    conflicted.add(typeName);
+                    impliedTable.remove(typeName);
+                } else {
+                    impliedTable.put(typeName, table);
+                }
+            }
+        }
+
+        // Promote each unambiguously resolved InputType
+        for (var entry : impliedTable.entrySet()) {
+            var inputType = (InputType) types.get(entry.getKey());
+            types.put(entry.getKey(), promoteToTableInputType(inputType, entry.getValue()));
+        }
+    }
+
+    /**
+     * Returns the {@link ResolvedTable} implied by the field's return type, or {@code null} when
+     * the field has no table-bound return type (or the table is unresolved).
+     */
+    private ResolvedTable impliedTableFrom(GraphitronField field) {
+        var returnType = switch (field) {
+            case QueryField.LookupQueryField f -> f.returnType();
+            case QueryField.TableQueryField f  -> f.returnType();
+            case TableField f                  -> f.returnType();
+            case TableMethodField f            -> f.returnType();
+            default                            -> null;
+        };
+        if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) return null;
+        if (!(tb.table() instanceof ResolvedTable rt)) return null;
+        return rt;
+    }
+
+    /** Returns the argument list for field types that can carry input-type arguments. */
+    private List<ArgumentSpec> argumentsOf(GraphitronField field) {
+        return switch (field) {
+            case QueryField.LookupQueryField f -> f.arguments();
+            case QueryField.TableQueryField f  -> f.arguments();
+            case TableField f                  -> f.arguments();
+            case TableMethodField f            -> f.arguments();
+            default                            -> List.of();
+        };
+    }
+
+    /**
+     * Promotes an {@link InputType} to a {@link TableInputType} by resolving each field's column
+     * against the given {@link ResolvedTable}.
+     */
+    private TableInputType promoteToTableInputType(InputType inputType, ResolvedTable resolvedTable) {
+        var jooqTable = resolvedTable.table();
+        List<InputFieldRef> resolvedFields = inputType.fields().stream()
+            .map(spec -> catalog.findColumn(jooqTable, spec.columnName())
+                .<InputFieldRef>map(e -> new TableInputField(
+                    spec.name(), spec.typeName(), spec.nonNull(), spec.list(),
+                    resolvedTable, e.javaName(), e.column()))
+                .orElseGet(() -> new UnresolvedInputField(
+                    spec.name(), spec.typeName(), spec.nonNull(), spec.list(),
+                    spec.columnName())))
+            .toList();
+        return new TableInputType(inputType.name(), inputType.location(), resolvedTable, resolvedFields);
     }
 
     // ===== Type classification =====
