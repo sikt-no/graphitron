@@ -313,7 +313,10 @@ public class GraphitronSchemaBuilder {
     /** Returns the argument list for field types that can carry input-type arguments. */
     private List<ArgumentSpec> argumentsOf(GraphitronField field) {
         return switch (field) {
-            case QueryField.LookupQueryField f -> f.arguments();
+            case QueryField.LookupQueryField f -> f.arguments().stream()
+                .filter(a -> a instanceof LookupArgRef.InputTypeArg)
+                .map(a -> new ArgumentSpec(a.name(), a.typeName(), a.nonNull(), a.list(), false, false, a.name()))
+                .toList();
             case QueryField.TableQueryField f  -> f.arguments();
             case TableField f                  -> f.arguments();
             case TableMethodField f            -> f.arguments();
@@ -847,10 +850,13 @@ public class GraphitronSchemaBuilder {
 
         if (hasLookupKeyAnywhere(fieldDef)) {
             var returnType = resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
-            var arguments = parseArguments(fieldDef);
-            var resolvedFlatArgs = resolveLookupFlatArgs(returnType, arguments);
+            var rt = (returnType instanceof ReturnTypeRef.TableBoundReturnType trt
+                && trt.table() instanceof TableRef.ResolvedTable r) ? r : null;
+            var arguments = parseArguments(fieldDef).stream()
+                .map(arg -> buildLookupArg(arg, rt))
+                .toList();
             return new QueryField.LookupQueryField(parentTypeName, name, location,
-                returnType, arguments, resolvedFlatArgs);
+                returnType, arguments);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
@@ -968,24 +974,34 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * Resolves flat (non-input-type) arguments of a {@code LookupQueryField} against the return
-     * type's jOOQ table. Returns an empty list when the return type has no resolved table, or when
-     * the field uses a {@code TableInputType} argument (in that case the input type itself carries
-     * all column resolution).
+     * Classifies one argument of a {@code LookupQueryField} into the appropriate
+     * {@link LookupArgRef} variant.
+     *
+     * <p>Arguments with {@code @orderBy} or {@code @condition} become error variants.
+     * Arguments whose type is a user-defined input type (any entry in {@code types}) become
+     * {@link LookupArgRef.InputTypeArg} — this covers both explicitly {@code @table}-annotated
+     * input types and plain input types that will be promoted in the third pass.
+     * Remaining (scalar) arguments are resolved against the return table if available.
      */
-    private List<LookupArgRef> resolveLookupFlatArgs(ReturnTypeRef returnType, List<ArgumentSpec> arguments) {
-        if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType trt)) return List.of();
-        if (!(trt.table() instanceof TableRef.ResolvedTable rt)) return List.of();
-        // If any arg is a TableInputType, use that path — no flat-arg resolution needed
-        if (arguments.stream().anyMatch(arg -> types.get(arg.typeName()) instanceof GraphitronType.TableInputType)) {
-            return List.of();
+    private LookupArgRef buildLookupArg(ArgumentSpec arg, TableRef.ResolvedTable rt) {
+        if (arg.orderBy()) {
+            return new LookupArgRef.OrderByArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list());
         }
-        return arguments.stream()
-            .filter(arg -> !arg.orderBy() && !arg.conditionArg())
-            .map(arg -> catalog.findColumn(rt.table(), arg.columnName())
-                .<LookupArgRef>map(e -> new LookupArgRef.ResolvedLookupArg(arg.name(), arg.list(), e.javaName(), e.column()))
-                .orElseGet(() -> new LookupArgRef.UnresolvedLookupArg(arg.name(), arg.list(), arg.columnName())))
-            .toList();
+        if (arg.conditionArg()) {
+            return new LookupArgRef.ConditionArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list());
+        }
+        if (types.containsKey(arg.typeName())) {
+            return new LookupArgRef.InputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list());
+        }
+        // Scalar arg — resolve against the return type's table
+        if (rt == null) {
+            return new LookupArgRef.UnresolvedFlatArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), arg.columnName());
+        }
+        return catalog.findColumn(rt.table(), arg.columnName())
+            .<LookupArgRef>map(e -> new LookupArgRef.ResolvedFlatArg(
+                arg.name(), arg.typeName(), arg.nonNull(), arg.list(), e.javaName(), e.column()))
+            .orElseGet(() -> new LookupArgRef.UnresolvedFlatArg(
+                arg.name(), arg.typeName(), arg.nonNull(), arg.list(), arg.columnName()));
     }
 
     // ===== Conflict detection helpers =====

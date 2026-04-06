@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.field.ArgumentSpec;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
+import no.sikt.graphitron.rewrite.field.LookupArgRef;
 import no.sikt.graphitron.rewrite.field.QueryField.LookupQueryField;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
@@ -16,9 +16,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class LookupQueryFieldValidationTest {
 
-    private static LookupQueryField singleReturn(List<ArgumentSpec> arguments) {
+    private static LookupQueryField singleReturn(List<LookupArgRef> arguments) {
         return new LookupQueryField("Query", "filmById", null,
-            new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), arguments, List.of());
+            new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), arguments);
     }
 
     enum Case implements ValidatorCase {
@@ -27,37 +27,45 @@ class LookupQueryFieldValidationTest {
             singleReturn(List.of()),
             List.of()),
 
-        VALID_WITH_ARGS("single return with plain args — valid",
-            singleReturn(List.of(new ArgumentSpec("id", "ID", false, true, false, false, null))),
+        VALID_WITH_RESOLVED_FLAT_ARG("resolved flat arg — valid",
+            singleReturn(List.of(new LookupArgRef.ResolvedFlatArg("id", "ID", false, true, "FILM_ID", null))),
+            List.of()),
+
+        VALID_WITH_INPUT_TYPE_ARG("input type arg — valid (error handling deferred to type validator)",
+            singleReturn(List.of(new LookupArgRef.InputTypeArg("key", "FilmKey", false, true))),
             List.of()),
 
         LIST_RETURN("list cardinality — lookup must return a single object",
             new LookupQueryField("Query", "filmById", null,
                 new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.List(true, true, null, List.of())),
-                List.of(), List.of()),
+                List.of()),
             List.of("Field 'filmById': lookup fields must return a single object, not a list or connection")),
 
         CONNECTION_RETURN("connection cardinality — lookup must return a single object",
             new LookupQueryField("Query", "filmById", null,
                 new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Connection(true, true, null, List.of())),
-                List.of(), List.of()),
+                List.of()),
             List.of("Field 'filmById': lookup fields must return a single object, not a list or connection")),
 
         ORDERBY_ARG("@orderBy on a lookup field argument — not valid on lookup",
-            singleReturn(List.of(new ArgumentSpec("order", "String", false, false, true, false, null))),
+            singleReturn(List.of(new LookupArgRef.OrderByArg("order", "String", false, false))),
             List.of("Field 'filmById': @orderBy is not valid on a lookup field")),
 
         CONDITION_ARG("@condition on a lookup field argument — not valid on lookup",
-            singleReturn(List.of(new ArgumentSpec("filter", "String", false, false, false, true, null))),
+            singleReturn(List.of(new LookupArgRef.ConditionArg("filter", "String", false, false))),
             List.of("Field 'filmById': @condition is not valid on a lookup field")),
 
         ORDERBY_AND_CONDITION_ARGS("both @orderBy and @condition on a lookup field — two errors",
             singleReturn(List.of(
-                new ArgumentSpec("order", "String", false, false, true, false, null),
-                new ArgumentSpec("filter", "String", false, false, false, true, null))),
+                new LookupArgRef.OrderByArg("order", "String", false, false),
+                new LookupArgRef.ConditionArg("filter", "String", false, false))),
             List.of(
                 "Field 'filmById': @orderBy is not valid on a lookup field",
-                "Field 'filmById': @condition is not valid on a lookup field"));
+                "Field 'filmById': @condition is not valid on a lookup field")),
+
+        UNRESOLVED_FLAT_ARG("unresolved flat arg — reports column error",
+            singleReturn(List.of(new LookupArgRef.UnresolvedFlatArg("tenantId", "String", false, false, "tenant_id"))),
+            List.of("Field 'filmById': argument 'tenantId' could not be resolved to column 'tenant_id' on the return type's table"));
 
         private final String description;
         private final GraphitronField field;

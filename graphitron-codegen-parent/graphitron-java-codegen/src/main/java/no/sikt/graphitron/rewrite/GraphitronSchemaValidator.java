@@ -183,28 +183,22 @@ public class GraphitronSchemaValidator {
             ));
         }
         for (var arg : field.arguments()) {
-            if (arg.orderBy()) {
-                errors.add(new ValidationError(
+            switch (arg) {
+                case LookupArgRef.OrderByArg a -> errors.add(new ValidationError(
                     "Field '" + field.name() + "': @orderBy is not valid on a lookup field",
                     field.location()
                 ));
-            }
-            if (arg.conditionArg()) {
-                errors.add(new ValidationError(
+                case LookupArgRef.ConditionArg a -> errors.add(new ValidationError(
                     "Field '" + field.name() + "': @condition is not valid on a lookup field",
                     field.location()
                 ));
-            }
-        }
-        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
-        for (var arg : field.resolvedFlatArgs()) {
-            if (arg instanceof LookupArgRef.UnresolvedLookupArg u) {
-                errors.add(new ValidationError(
-                    "Field '" + field.name() + "': argument '" + u.name()
-                        + "' could not be resolved to column '" + u.columnName()
+                case LookupArgRef.UnresolvedFlatArg a -> errors.add(new ValidationError(
+                    "Field '" + field.name() + "': argument '" + a.name()
+                        + "' could not be resolved to column '" + a.columnName()
                         + "' on the return type's table",
                     field.location()
                 ));
+                default -> {}
             }
         }
     }

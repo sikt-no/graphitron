@@ -1,54 +1,75 @@
 package no.sikt.graphitron.rewrite.field;
 
 /**
- * Represents the outcome of resolving one flat argument of a
- * {@link QueryField.LookupQueryField} against the return type's jOOQ table.
+ * Represents one argument on a {@link QueryField.LookupQueryField}, with its resolved state.
  *
- * <p>Only non-condition, non-orderBy arguments without a {@code TableInputType} are candidates
- * for flat-arg resolution. The sealed hierarchy distinguishes two states:
- *
+ * <p>The builder classifies each argument into exactly one variant during schema building:
  * <ul>
- *   <li>{@link ResolvedLookupArg} — the column was found in the table. Carries the Java field
- *       name and the jOOQ {@link org.jooq.Field} instance for use in code generation.</li>
- *   <li>{@link UnresolvedLookupArg} — the column name could not be matched to any field in the
- *       jOOQ table. The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports
- *       this as an error.</li>
+ *   <li>{@link OrderByArg} — argument carries {@code @orderBy}; rejected by the validator.</li>
+ *   <li>{@link ConditionArg} — argument carries {@code @condition}; rejected by the validator.</li>
+ *   <li>{@link InputTypeArg} — the argument type is a user-defined input type (either already a
+ *       {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType} or an
+ *       {@link no.sikt.graphitron.rewrite.type.GraphitronType.InputType} that will be promoted).
+ *       Code generation uses the input-type path for these.</li>
+ *   <li>{@link ResolvedFlatArg} — a scalar or list argument whose database column was found in
+ *       the return type's jOOQ table. Carries the Java field name and jOOQ {@link org.jooq.Field}
+ *       for code generation.</li>
+ *   <li>{@link UnresolvedFlatArg} — a scalar or list argument whose column could not be matched.
+ *       The validator reports this as an error.</li>
  * </ul>
+ *
+ * <p>Common GraphQL argument metadata ({@code name}, {@code typeName}, {@code nonNull},
+ * {@code list}) is available on all variants.
  */
 public sealed interface LookupArgRef
-        permits LookupArgRef.ResolvedLookupArg, LookupArgRef.UnresolvedLookupArg {
+        permits LookupArgRef.OrderByArg, LookupArgRef.ConditionArg, LookupArgRef.InputTypeArg,
+                LookupArgRef.ResolvedFlatArg, LookupArgRef.UnresolvedFlatArg {
 
-    /** The GraphQL argument name (also the key used in {@code env.getArguments()}). */
     String name();
-
-    /** Whether the argument is a list type (determines row cardinality). */
+    String typeName();
+    boolean nonNull();
     boolean list();
 
+    /** Argument annotated with {@code @orderBy} — invalid on a lookup field. */
+    record OrderByArg(
+        String name, String typeName, boolean nonNull, boolean list
+    ) implements LookupArgRef {}
+
+    /** Argument annotated with {@code @condition} — invalid on a lookup field. */
+    record ConditionArg(
+        String name, String typeName, boolean nonNull, boolean list
+    ) implements LookupArgRef {}
+
     /**
-     * A flat lookup argument successfully resolved to a column in the return type's jOOQ table.
+     * Argument whose type is a user-defined input type. Handled via the input-type code path in
+     * {@link no.sikt.graphitron.rewrite.generators.lookup.LookupSpecBuilder}.
+     */
+    record InputTypeArg(
+        String name, String typeName, boolean nonNull, boolean list
+    ) implements LookupArgRef {}
+
+    /**
+     * A scalar or list argument whose database column was successfully resolved against the
+     * return type's jOOQ table.
      *
      * <p>{@code javaColumnName} is the Java field name in the generated jOOQ table class
      * (e.g. {@code "CUSTOMER_ID"}).
-     * {@code column} is the jOOQ {@link org.jooq.Field} instance for use in code generation
-     * (type, name, etc.).
+     * {@code column} is the jOOQ {@link org.jooq.Field} instance for use in code generation.
      */
-    record ResolvedLookupArg(
-        String name,
-        boolean list,
+    record ResolvedFlatArg(
+        String name, String typeName, boolean nonNull, boolean list,
         String javaColumnName,
         org.jooq.Field<?> column
     ) implements LookupArgRef {}
 
     /**
-     * A flat lookup argument whose column name could not be matched to any field in the jOOQ
-     * table.
+     * A scalar or list argument whose column could not be matched in the return type's jOOQ table.
      *
      * <p>{@code columnName} is the SQL column name that was attempted (from {@code @field(name:)}
-     * or the GraphQL argument name).
+     * or the GraphQL argument name). The validator reports this as an error.
      */
-    record UnresolvedLookupArg(
-        String name,
-        boolean list,
+    record UnresolvedFlatArg(
+        String name, String typeName, boolean nonNull, boolean list,
         String columnName
     ) implements LookupArgRef {}
 }

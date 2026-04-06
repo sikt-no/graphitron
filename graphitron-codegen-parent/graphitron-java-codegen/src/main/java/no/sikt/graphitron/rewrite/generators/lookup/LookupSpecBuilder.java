@@ -2,6 +2,8 @@ package no.sikt.graphitron.rewrite.generators.lookup;
 
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.field.LookupArgRef;
+import no.sikt.graphitron.rewrite.field.LookupArgRef.InputTypeArg;
+import no.sikt.graphitron.rewrite.field.LookupArgRef.ResolvedFlatArg;
 import no.sikt.graphitron.rewrite.field.QueryField;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType;
@@ -48,9 +50,11 @@ public class LookupSpecBuilder {
 
         String tableJavaFieldName = rt.javaFieldName();
 
-        // Prefer input-type arg if present
+        // Prefer input-type arg that has been promoted to TableInputType
         var inputTypeArgOpt = field.arguments().stream()
-            .filter(arg -> schema.types().get(arg.typeName()) instanceof TableInputType)
+            .filter(a -> a instanceof InputTypeArg)
+            .map(a -> (InputTypeArg) a)
+            .filter(a -> schema.types().get(a.typeName()) instanceof TableInputType)
             .findFirst();
 
         if (inputTypeArgOpt.isPresent()) {
@@ -62,7 +66,7 @@ public class LookupSpecBuilder {
 
     private static LookupSpec buildInputTypeSpec(
             QueryField.LookupQueryField field, String tableJavaFieldName,
-            no.sikt.graphitron.rewrite.field.ArgumentSpec arg, GraphitronSchema schema) {
+            InputTypeArg arg, GraphitronSchema schema) {
 
         var inputType = (TableInputType) schema.types().get(arg.typeName());
         var fields = inputType.fields().stream()
@@ -79,14 +83,14 @@ public class LookupSpecBuilder {
     }
 
     private static LookupSpec buildFlatSpec(QueryField.LookupQueryField field, String tableJavaFieldName) {
-        var fields = field.resolvedFlatArgs().stream()
-            .filter(arg -> arg instanceof LookupArgRef.ResolvedLookupArg)
-            .map(arg -> (LookupArgRef.ResolvedLookupArg) arg)
-            .map(arg -> new LookupInputFieldSpec(
-                arg.name(),
-                arg.javaColumnName(),
-                arg.column().getType().getName(),
-                arg.list()))
+        var fields = field.arguments().stream()
+            .filter(a -> a instanceof ResolvedFlatArg)
+            .map(a -> (ResolvedFlatArg) a)
+            .map(a -> new LookupInputFieldSpec(
+                a.name(),
+                a.javaColumnName(),
+                a.column().getType().getName(),
+                a.list()))
             .toList();
 
         return new LookupSpec(field.returnType().returnTypeName(), tableJavaFieldName, null, fields);
