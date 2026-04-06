@@ -247,13 +247,15 @@ public class GraphitronSchemaBuilder {
      * input type (across all fields that use it), promotes that input type to a {@link TableInputType}.
      *
      * <p>If the same input type is used as an argument on multiple fields with different return tables,
-     * the implied table is ambiguous and the input type is left as {@link InputType}.
+     * the implied table is ambiguous — the input type is demoted to an {@link GraphitronType.UnclassifiedType}
+     * and the validator reports an error.
      */
     private void promoteImplicitTableInputTypes(java.util.Collection<GraphitronField> allFields) {
         // Collect the implied table for each InputType name.
-        // On conflict (different tables for the same input type name), move to conflicted set.
+        // On conflict (different tables for the same input type name), record the conflicting table
+        // names so we can produce a descriptive error.
         Map<String, ResolvedTable> impliedTable = new LinkedHashMap<>();
-        var conflicted = new java.util.HashSet<String>();
+        Map<String, String> conflictReason = new LinkedHashMap<>();
 
         for (var field : allFields) {
             var table = impliedTableFrom(field);
@@ -261,12 +263,14 @@ public class GraphitronSchemaBuilder {
 
             for (var arg : argumentsOf(field)) {
                 var typeName = arg.typeName();
-                if (conflicted.contains(typeName)) continue;
+                if (conflictReason.containsKey(typeName)) continue;
                 if (!(types.get(typeName) instanceof InputType)) continue;
 
                 var existing = impliedTable.get(typeName);
                 if (existing != null && !existing.tableName().equalsIgnoreCase(table.tableName())) {
-                    conflicted.add(typeName);
+                    conflictReason.put(typeName,
+                        "used as an argument on fields with conflicting return tables: '"
+                        + existing.tableName() + "' and '" + table.tableName() + "'");
                     impliedTable.remove(typeName);
                 } else {
                     impliedTable.put(typeName, table);
@@ -278,6 +282,13 @@ public class GraphitronSchemaBuilder {
         for (var entry : impliedTable.entrySet()) {
             var inputType = (InputType) types.get(entry.getKey());
             types.put(entry.getKey(), promoteToTableInputType(inputType, entry.getValue()));
+        }
+
+        // Demote conflicted InputTypes to UnclassifiedType so the validator reports an error
+        for (var entry : conflictReason.entrySet()) {
+            var inputType = (InputType) types.get(entry.getKey());
+            types.put(entry.getKey(), new GraphitronType.UnclassifiedType(
+                inputType.name(), inputType.location(), entry.getValue()));
         }
     }
 
