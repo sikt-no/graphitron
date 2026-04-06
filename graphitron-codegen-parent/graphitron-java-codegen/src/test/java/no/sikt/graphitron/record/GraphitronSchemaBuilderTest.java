@@ -1188,6 +1188,32 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    // ===== hasLookupKeyAnywhere() depth guard =====
+
+    /**
+     * Verifies that {@code hasLookupKeyAnywhere()} does not recurse infinitely on circular
+     * input type references. A depth limit of 10 in {@code inputTypeHasLookupKey()} is the
+     * guard. A field whose input chain reaches the limit without finding {@code @lookupKey}
+     * must be classified as a non-lookup query field (here {@code TableQueryField}) rather
+     * than causing a stack overflow.
+     */
+    @Test
+    void lookupKeySearch_depthGuardPreventsInfiniteRecursionOnCircularInputTypes() {
+        // A → B → A … circular reference; no @lookupKey anywhere in the chain.
+        // The guard stops at depth 10 and returns false, so the field falls through
+        // to TableQueryField classification.
+        var schema = build("""
+            input A { b: B }
+            input B { a: A }
+            type Film @table(name: "film") { title: String }
+            type Query { films(filter: A): [Film!]! }
+            """);
+
+        assertThat(schema.field("Query", "films"))
+            .as("circular input chain with no @lookupKey → TableQueryField, not a stack overflow")
+            .isInstanceOf(QueryField.TableQueryField.class);
+    }
+
     // ===== Registry validation =====
 
     @Test
