@@ -59,7 +59,7 @@ import no.sikt.graphitron.rewrite.field.ColumnRef.ResolvedColumn;
 import no.sikt.graphitron.rewrite.field.ColumnRef.UnresolvedColumn;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.GraphitronField.NotGeneratedField;
-import no.sikt.graphitron.rewrite.field.LookupArgRef;
+import no.sikt.graphitron.rewrite.field.ArgumentRef;
 import no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.field.ExternalRef;
 import no.sikt.graphitron.rewrite.field.MethodRef;
@@ -314,7 +314,7 @@ public class GraphitronSchemaBuilder {
     private List<ArgumentSpec> argumentsOf(GraphitronField field) {
         return switch (field) {
             case QueryField.LookupQueryField f -> f.arguments().stream()
-                .filter(a -> a instanceof LookupArgRef.InputTypeArg)
+                .filter(a -> a instanceof ArgumentRef.InputTypeArg i && !i.orderBy() && !i.conditionArg())
                 .map(a -> new ArgumentSpec(a.name(), a.typeName(), a.nonNull(), a.list(), false, false, a.name()))
                 .toList();
             case QueryField.TableQueryField f  -> f.arguments();
@@ -975,32 +975,33 @@ public class GraphitronSchemaBuilder {
 
     /**
      * Classifies one argument of a {@code LookupQueryField} into the appropriate
-     * {@link LookupArgRef} variant.
+     * {@link ArgumentRef} variant.
      *
-     * <p>Arguments with {@code @orderBy} or {@code @condition} become error variants.
-     * Arguments whose type is a user-defined input type (any entry in {@code types}) become
-     * {@link LookupArgRef.InputTypeArg} — this covers both explicitly {@code @table}-annotated
+     * <p>Arguments with {@code @orderBy} or {@code @condition} become {@link ArgumentRef.InputTypeArg}
+     * with the corresponding flag set — the validator rejects them on lookup fields.
+     * Arguments whose type is a user-defined input type (any entry in {@code types}) become a plain
+     * {@link ArgumentRef.InputTypeArg} — this covers both explicitly {@code @table}-annotated
      * input types and plain input types that will be promoted in the third pass.
      * Remaining (scalar) arguments are resolved against the return table if available.
      */
-    private LookupArgRef buildLookupArg(ArgumentSpec arg, TableRef.ResolvedTable rt) {
+    private ArgumentRef buildLookupArg(ArgumentSpec arg, TableRef.ResolvedTable rt) {
         if (arg.orderBy()) {
-            return new LookupArgRef.OrderByArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list());
+            return new ArgumentRef.InputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), true, false);
         }
         if (arg.conditionArg()) {
-            return new LookupArgRef.ConditionArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list());
+            return new ArgumentRef.InputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), false, true);
         }
         if (types.containsKey(arg.typeName())) {
-            return new LookupArgRef.InputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list());
+            return new ArgumentRef.InputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), false, false);
         }
         // Scalar arg — resolve against the return type's table
         if (rt == null) {
-            return new LookupArgRef.UnresolvedFlatArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), arg.columnName());
+            return new ArgumentRef.ColumnArg.UnresolvedColumnArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), arg.columnName());
         }
         return catalog.findColumn(rt.table(), arg.columnName())
-            .<LookupArgRef>map(e -> new LookupArgRef.ResolvedFlatArg(
+            .<ArgumentRef>map(e -> new ArgumentRef.ColumnArg.ResolvedColumnArg(
                 arg.name(), arg.typeName(), arg.nonNull(), arg.list(), e.javaName(), e.column()))
-            .orElseGet(() -> new LookupArgRef.UnresolvedFlatArg(
+            .orElseGet(() -> new ArgumentRef.ColumnArg.UnresolvedColumnArg(
                 arg.name(), arg.typeName(), arg.nonNull(), arg.list(), arg.columnName()));
     }
 

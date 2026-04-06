@@ -6,7 +6,7 @@ import no.sikt.graphitron.rewrite.field.FieldConditionRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkWithConditionRef;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
-import no.sikt.graphitron.rewrite.field.LookupArgRef;
+import no.sikt.graphitron.rewrite.field.ArgumentRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef;
 import no.sikt.graphitron.rewrite.field.ColumnRef.UnresolvedColumn;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedConditionRef;
@@ -184,15 +184,15 @@ public class GraphitronSchemaValidator {
         }
         for (var arg : field.arguments()) {
             switch (arg) {
-                case LookupArgRef.OrderByArg a -> errors.add(new ValidationError(
+                case ArgumentRef.InputTypeArg a when a.orderBy() -> errors.add(new ValidationError(
                     "Field '" + field.name() + "': @orderBy is not valid on a lookup field",
                     field.location()
                 ));
-                case LookupArgRef.ConditionArg a -> errors.add(new ValidationError(
+                case ArgumentRef.InputTypeArg a when a.conditionArg() -> errors.add(new ValidationError(
                     "Field '" + field.name() + "': @condition is not valid on a lookup field",
                     field.location()
                 ));
-                case LookupArgRef.UnresolvedFlatArg a -> errors.add(new ValidationError(
+                case ArgumentRef.ColumnArg.UnresolvedColumnArg a -> errors.add(new ValidationError(
                     "Field '" + field.name() + "': argument '" + a.name()
                         + "' could not be resolved to column '" + a.columnName()
                         + "' on the return type's table",

@@ -31,18 +31,19 @@ public sealed interface QueryField extends RootField
      */
     /**
      * @param arguments all arguments classified into their resolved state. Each argument is
-     *     exactly one {@link LookupArgRef} variant: {@link LookupArgRef.OrderByArg} and
-     *     {@link LookupArgRef.ConditionArg} are validator errors; {@link LookupArgRef.InputTypeArg}
-     *     feeds the input-type code path; {@link LookupArgRef.ResolvedFlatArg} and
-     *     {@link LookupArgRef.UnresolvedFlatArg} represent scalar/list arguments with and without
-     *     a resolved database column respectively.
+     *     exactly one {@link ArgumentRef} variant: {@link ArgumentRef.InputTypeArg} with
+     *     {@code orderBy=true} or {@code conditionArg=true} are validator errors;
+     *     a plain {@link ArgumentRef.InputTypeArg} feeds the input-type code path;
+     *     {@link ArgumentRef.ColumnArg.ResolvedColumnArg} and
+     *     {@link ArgumentRef.ColumnArg.UnresolvedColumnArg} represent scalar/list arguments with
+     *     and without a resolved database column respectively.
      */
     record LookupQueryField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        List<LookupArgRef> arguments
+        List<ArgumentRef> arguments
     ) implements QueryField {}
 
     /**
