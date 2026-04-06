@@ -365,17 +365,19 @@ public class GraphitronWiring {
 
 ### Threading model
 
-All generated fetchers execute their JDBC work **synchronously on the calling thread** and return an already-completed `CompletableFuture` via `CompletableFuture.completedFuture(result)`. This mirrors the existing `DataFetcherHelper` pattern throughout graphitron.
+All generated fetchers execute their JDBC work **synchronously on the calling thread** and return `CompletableFuture.completedFuture(result)`.
 
-This is correct because:
+**Why synchronous-on-caller is correct here:**
 
-1. **graphql-java provides no executor.** `AsyncExecutionStrategy` calls `DataFetcher.get()` directly on its own thread. It does not submit fetchers to any thread pool — the "async" in its name refers only to its ability to compose multiple futures without serialising between sibling fields. A fetcher that blocks does so on the strategy's thread.
+1. **graphql-java `AsyncExecutionStrategy` is not a thread pool.** It calls each `DataFetcher.get()` sequentially on its own execution thread and collects the returned `CompletableFuture<Object>` values. It then waits for all sibling futures via `CompletableFuture.allOf()`. The "async" refers to the ability to compose futures — not to concurrent dispatch. A fetcher that returns `completedFuture(x)` resolves immediately, with no thread switch.
 
-2. **The application framework (Quarkus) manages blocking.** Quarkus routes incoming GraphQL requests to worker threads from its managed thread pool, where blocking I/O (JDBC) is permitted. There is no need for generated code to create additional threads.
+2. **Quarkus worker-thread routing makes blocking safe.** Quarkus SmallRye GraphQL routes each incoming GraphQL request to a managed worker thread where blocking I/O is permitted. The `AsyncExecutionStrategy` runs on that worker thread. JDBC blocking on a worker thread is the intended use — no additional thread hops needed.
 
-3. **`supplyAsync()` without an executor would be wrong.** It defaults to `ForkJoinPool.commonPool()`, which is CPU-sized and not designed for blocking I/O. Using it risks pool exhaustion and would contradict the existing graphitron threading contract.
+3. **`supplyAsync(supplier, executor)` would add parallelism between sibling root fields**, but the cost outweighs the benefit: most queries have one root field; an extra thread switch adds latency for the common case; the executor must be managed and injected into context. The N+1 problem — the real threat — is solved by the DataLoader pattern (Deliverable 5), which batches many loads into one bulk query regardless of how many concurrent parents there are.
 
-DataLoaders (Deliverable 5) follow the same pattern: the batch function executes its batched SQL synchronously and returns `completedFuture(result)`.
+4. **`supplyAsync()` without an explicit executor is unconditionally wrong.** It defaults to `ForkJoinPool.commonPool()`, which is CPU-sized and not designed for blocking I/O.
+
+DataLoader batch functions (Deliverable 5) follow the same pattern: synchronous bulk SQL, returned as `completedFuture(result)`. The DataLoader framework itself handles dispatch timing.
 
 ---
 
