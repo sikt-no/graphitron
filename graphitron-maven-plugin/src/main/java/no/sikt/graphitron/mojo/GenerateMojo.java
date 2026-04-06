@@ -9,7 +9,7 @@ import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
 import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.generate.Generator;
 import no.sikt.graphitron.generate.GraphQLGenerator;
-import no.sikt.graphitron.generate.GraphQLRewriteGenerator;
+import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.validation.ValidationHandler;
 import org.apache.maven.model.Resource;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -102,9 +102,9 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @SuppressWarnings("unused")
     protected boolean validateOverlappingInputFields;
 
-    @Parameter(property = "graphitron.rewriteBasedOutput", defaultValue = "false")
+    @Parameter(property = "graphitron.enableRewrite", defaultValue = "false")
     @SuppressWarnings("unused")
-    protected boolean rewriteBasedOutput;
+    protected boolean enableRewrite;
 
     /**
      * When {@code true}, the legacy generator is skipped and only the rewrite pipeline runs.
@@ -172,7 +172,7 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
         if (!disableLegacy) {
             GraphQLGenerator.generate();
         }
-        if (rewriteBasedOutput) {
+        if (enableRewrite) {
             GraphQLRewriteGenerator.generate();
         }
     }
@@ -259,8 +259,8 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     }
 
     @Override
-    public boolean rewriteBasedOutput() {
-        return rewriteBasedOutput;
+    public boolean enableRewrite() {
+        return enableRewrite;
     }
 
     @Override

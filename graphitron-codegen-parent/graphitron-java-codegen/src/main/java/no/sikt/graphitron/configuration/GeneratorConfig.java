@@ -44,7 +44,7 @@ public class GeneratorConfig {
     private static boolean useJdbcBatchingForInserts = true;
     private static boolean requireTypeIdOnNode = false;
     private static boolean validateOverlappingInputFields = true;
-    private static boolean rewriteBasedOutput = false;
+    private static boolean enableRewrite = false;
 
     private static int maxAllowedPageSize;
 
@@ -122,7 +122,7 @@ public class GeneratorConfig {
         requireTypeIdOnNode = mojo.requireTypeIdOnNode();
         optionalSelect = mojo.getOptionalSelect();
         validateOverlappingInputFields = mojo.validateOverlappingInputFields();
-        rewriteBasedOutput = mojo.rewriteBasedOutput();
+        enableRewrite = mojo.enableRewrite();
     }
 
     /**
@@ -344,12 +344,12 @@ public class GeneratorConfig {
         validateOverlappingInputFields = validate;
     }
 
-    public static boolean rewriteBasedOutput() {
-        return rewriteBasedOutput;
+    public static boolean enableRewrite() {
+        return enableRewrite;
     }
 
-    public static void setRewriteBasedOutput(boolean enable) {
-        rewriteBasedOutput = enable;
+    public static void setEnableRewrite(boolean enable) {
+        enableRewrite = enable;
     }
 
     public static void setUseOptionalSelects(boolean enable) {

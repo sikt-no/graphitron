@@ -79,7 +79,7 @@
             <!--
                 Graphitron code generation — activated in G1 when the rewrite generators are ready.
                 The plugin config below is intentionally phase=none so it compiles but does not run.
-                G1 will change phase to generate-sources and set rewriteBasedOutput=true.
+                G1 will change phase to generate-sources and set enableRewrite=true.
             -->
             <plugin>
                 <groupId>no.sikt</groupId>
@@ -100,7 +100,7 @@
                             </transform>
                             <jooqGeneratedPackage>${jooqPackage}</jooqGeneratedPackage>
                             <outputPackage>${outputPackage}</outputPackage>
-                            <rewriteBasedOutput>true</rewriteBasedOutput>
+                            <enableRewrite>true</enableRewrite>
                             <disableLegacy>true</disableLegacy>
                         </configuration>
                     </execution>

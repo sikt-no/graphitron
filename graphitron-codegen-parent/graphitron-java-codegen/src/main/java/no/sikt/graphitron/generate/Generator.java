@@ -44,7 +44,7 @@ public interface Generator {
 
     OptionalSelect getOptionalSelect();
 
-    default boolean rewriteBasedOutput() {
+    default boolean enableRewrite() {
         return false;
     }
 
