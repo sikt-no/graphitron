@@ -77,6 +77,10 @@ import no.sikt.graphitron.rewrite.type.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.ResultType;
+import no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType;
+import no.sikt.graphitron.rewrite.type.InputFieldRef;
+import no.sikt.graphitron.rewrite.type.InputFieldRef.TableInputField;
+import no.sikt.graphitron.rewrite.type.InputFieldRef.UnresolvedInputField;
 import no.sikt.graphitron.rewrite.type.InputFieldSpec;
 import no.sikt.graphitron.rewrite.type.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.TableInterfaceType;
@@ -387,14 +391,42 @@ public class GraphitronSchemaBuilder {
         return new ErrorType(name, location, handlers);
     }
 
-    private InputType buildInputType(GraphQLInputObjectType inputType) {
+    private GraphitronType buildInputType(GraphQLInputObjectType inputType) {
         String name = inputType.getName();
         SourceLocation location = locationOf(inputType);
+        if (inputType.hasAppliedDirective(DIR_TABLE)) {
+            String tableName = argString(inputType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
+            TableRef tableRef = resolveTable(tableName);
+            Table<?> resolvedTable = tableRef instanceof ResolvedTable rt ? rt.table() : null;
+            List<InputFieldRef> fields = inputType.getFieldDefinitions().stream()
+                .filter(f -> !f.hasAppliedDirective(DIR_NOT_GENERATED))
+                .map(f -> buildInputFieldRef(f, tableRef instanceof ResolvedTable rt ? rt : null, resolvedTable))
+                .toList();
+            return new TableInputType(name, location, tableRef, fields);
+        }
         List<InputFieldSpec> fields = inputType.getFieldDefinitions().stream()
             .filter(f -> !f.hasAppliedDirective(DIR_NOT_GENERATED))
             .map(this::buildInputFieldSpec)
             .toList();
         return new InputType(name, location, fields);
+    }
+
+    private InputFieldRef buildInputFieldRef(GraphQLInputObjectField field, ResolvedTable resolvedTable, Table<?> jooqTable) {
+        String name = field.getName();
+        GraphQLType type = field.getType();
+        boolean nonNull = type instanceof GraphQLNonNull;
+        boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
+        String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
+        boolean hasFieldDir = field.hasAppliedDirective(DIR_FIELD);
+        String columnName = hasFieldDir
+            ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
+            : name;
+        if (resolvedTable == null || jooqTable == null) {
+            return new UnresolvedInputField(name, typeName, nonNull, list, columnName);
+        }
+        return catalog.findColumn(jooqTable, columnName)
+            .<InputFieldRef>map(e -> new TableInputField(name, typeName, nonNull, list, resolvedTable, e.javaName(), e.column()))
+            .orElseGet(() -> new UnresolvedInputField(name, typeName, nonNull, list, columnName));
     }
 
     private InputFieldSpec buildInputFieldSpec(GraphQLInputObjectField field) {

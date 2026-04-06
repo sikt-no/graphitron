@@ -11,7 +11,8 @@ import java.util.List;
 public sealed interface GraphitronType
     permits GraphitronType.TableType, GraphitronType.ResultType, GraphitronType.RootType,
             GraphitronType.TableInterfaceType, GraphitronType.InterfaceType, GraphitronType.UnionType,
-            GraphitronType.ErrorType, GraphitronType.InputType, GraphitronType.UnclassifiedType {
+            GraphitronType.ErrorType, GraphitronType.InputType, GraphitronType.TableInputType,
+            GraphitronType.UnclassifiedType {
 
     String name();
 
@@ -130,6 +131,27 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         List<InputFieldSpec> fields
+    ) implements GraphitronType {}
+
+    /**
+     * A GraphQL input object type annotated with {@code @table}. Fields are resolved against the
+     * jOOQ table, enabling use of this input type in generated lookup queries.
+     *
+     * <p>{@code table} is the outcome of resolving the {@code @table} directive's SQL name against
+     * the jOOQ catalog: {@link TableRef.ResolvedTable} when found, {@link TableRef.UnresolvedTable}
+     * when not. The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error
+     * for {@code UnresolvedTable}.
+     *
+     * <p>{@code fields} holds one {@link InputFieldRef} per field in the input type (excluding
+     * {@code @notGenerated} fields). Each field is either a {@link InputFieldRef.TableInputField}
+     * (column resolved) or an {@link InputFieldRef.UnresolvedInputField} (column not found in the
+     * jOOQ table). The validator reports an error for every {@code UnresolvedInputField}.
+     */
+    record TableInputType(
+        String name,
+        SourceLocation location,
+        TableRef table,
+        List<InputFieldRef> fields
     ) implements GraphitronType {}
 
     /**

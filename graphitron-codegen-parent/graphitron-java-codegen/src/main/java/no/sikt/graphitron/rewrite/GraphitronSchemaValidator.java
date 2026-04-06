@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 
 import no.sikt.graphitron.rewrite.field.ArgumentSpec;
+import no.sikt.graphitron.rewrite.type.InputFieldRef;
 import no.sikt.graphitron.rewrite.type.InputFieldSpec;
 
 /**
@@ -59,6 +60,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.type.GraphitronType.UnionType t          -> validateUnionType(t, errors);
             case no.sikt.graphitron.rewrite.type.GraphitronType.ErrorType t          -> {} // no structural validation needed
             case no.sikt.graphitron.rewrite.type.GraphitronType.InputType t          -> validateInputType(t, types, errors);
+            case no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType t     -> validateTableInputType(t, errors);
             case no.sikt.graphitron.rewrite.type.GraphitronType.UnclassifiedType t   -> validateUnclassifiedType(t, errors);
         }
     }
@@ -140,6 +142,23 @@ public class GraphitronSchemaValidator {
     private void validateInputType(no.sikt.graphitron.rewrite.type.GraphitronType.InputType type, Map<String, GraphitronType> types, List<ValidationError> errors) {
         // Type-existence of field types is already guaranteed by graphql-java schema validation.
         // Graphitron-specific constraints (e.g. javaName deprecation) will be added here.
+    }
+
+    private void validateTableInputType(no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType type, List<ValidationError> errors) {
+        if (type.table() instanceof UnresolvedTable) {
+            errors.add(new ValidationError(
+                "Input type '" + type.name() + "': table '" + type.table().tableName() + "' could not be resolved in the jOOQ catalog",
+                type.location()
+            ));
+        }
+        for (var field : type.fields()) {
+            if (field instanceof InputFieldRef.UnresolvedInputField u) {
+                errors.add(new ValidationError(
+                    "Input type '" + type.name() + "', field '" + u.name() + "': column '" + u.columnName() + "' could not be resolved in the jOOQ table",
+                    type.location()
+                ));
+            }
+        }
     }
 
     private void validateParticipants(String typeName, java.util.List<no.sikt.graphitron.rewrite.type.ParticipantRef> participants, List<ValidationError> errors) {
