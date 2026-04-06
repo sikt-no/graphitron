@@ -371,7 +371,7 @@ All generated fetchers execute their JDBC work **synchronously on the calling th
 
 1. **graphql-java `AsyncExecutionStrategy` is not a thread pool.** It calls each `DataFetcher.get()` sequentially on its own execution thread and collects the returned `CompletableFuture<Object>` values. It then waits for all sibling futures via `CompletableFuture.allOf()`. The "async" refers to the ability to compose futures — not to concurrent dispatch. A fetcher that returns `completedFuture(x)` resolves immediately, with no thread switch.
 
-2. **Quarkus worker-thread routing makes blocking safe.** Quarkus SmallRye GraphQL routes each incoming GraphQL request to a managed worker thread where blocking I/O is permitted. The `AsyncExecutionStrategy` runs on that worker thread. JDBC blocking on a worker thread is the intended use — no additional thread hops needed.
+2. **The host application is responsible for thread context.** graphql-java's execution engine is invoked by the application on whatever thread the application chooses. Any conforming host that issues blocking JDBC calls must already route GraphQL execution onto a thread where blocking is safe (a managed worker pool, virtual thread, etc.). Generated code inheriting that contract needs no additional dispatch.
 
 3. **`supplyAsync(supplier, executor)` would add parallelism between sibling root fields**, but the cost outweighs the benefit: most queries have one root field; an extra thread switch adds latency for the common case; the executor must be managed and injected into context. The N+1 problem — the real threat — is solved by the DataLoader pattern (Deliverable 5), which batches many loads into one bulk query regardless of how many concurrent parents there are.
 
