@@ -29,12 +29,19 @@ public sealed interface QueryField extends RootField
      * argument with {@code orderBy=true} or {@code conditionArg=true}, as those directives are
      * incompatible with lookup semantics.
      */
+    /**
+     * @param resolvedFlatArgs resolved column info for each flat (non-input-type) argument;
+     *     empty when the field uses a {@code TableInputType} argument or when the return type's
+     *     table is unresolved. {@link LookupArgRef.UnresolvedLookupArg} entries indicate columns
+     *     that could not be found and are reported by the validator.
+     */
     record LookupQueryField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        List<ArgumentSpec> arguments
+        List<ArgumentSpec> arguments,
+        List<LookupArgRef> resolvedFlatArgs
     ) implements QueryField {}
 
     /**

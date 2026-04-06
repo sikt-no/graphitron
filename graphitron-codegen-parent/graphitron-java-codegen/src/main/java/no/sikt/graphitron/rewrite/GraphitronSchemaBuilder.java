@@ -59,6 +59,7 @@ import no.sikt.graphitron.rewrite.field.ColumnRef.ResolvedColumn;
 import no.sikt.graphitron.rewrite.field.ColumnRef.UnresolvedColumn;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.GraphitronField.NotGeneratedField;
+import no.sikt.graphitron.rewrite.field.LookupArgRef;
 import no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.field.ExternalRef;
 import no.sikt.graphitron.rewrite.field.MethodRef;
@@ -845,9 +846,11 @@ public class GraphitronSchemaBuilder {
         }
 
         if (hasLookupKeyAnywhere(fieldDef)) {
+            var returnType = resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
+            var arguments = parseArguments(fieldDef);
+            var resolvedFlatArgs = resolveLookupFlatArgs(returnType, arguments);
             return new QueryField.LookupQueryField(parentTypeName, name, location,
-                resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)),
-                parseArguments(fieldDef));
+                returnType, arguments, resolvedFlatArgs);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
@@ -962,6 +965,27 @@ public class GraphitronSchemaBuilder {
         if (value instanceof EnumValue ev) return ev.getName();
         if (value instanceof String s) return s;
         return null;
+    }
+
+    /**
+     * Resolves flat (non-input-type) arguments of a {@code LookupQueryField} against the return
+     * type's jOOQ table. Returns an empty list when the return type has no resolved table, or when
+     * the field uses a {@code TableInputType} argument (in that case the input type itself carries
+     * all column resolution).
+     */
+    private List<LookupArgRef> resolveLookupFlatArgs(ReturnTypeRef returnType, List<ArgumentSpec> arguments) {
+        if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType trt)) return List.of();
+        if (!(trt.table() instanceof TableRef.ResolvedTable rt)) return List.of();
+        // If any arg is a TableInputType, use that path — no flat-arg resolution needed
+        if (arguments.stream().anyMatch(arg -> types.get(arg.typeName()) instanceof GraphitronType.TableInputType)) {
+            return List.of();
+        }
+        return arguments.stream()
+            .filter(arg -> !arg.orderBy() && !arg.conditionArg())
+            .map(arg -> catalog.findColumn(rt.table(), arg.columnName())
+                .<LookupArgRef>map(e -> new LookupArgRef.ResolvedLookupArg(arg.name(), arg.list(), e.javaName(), e.column()))
+                .orElseGet(() -> new LookupArgRef.UnresolvedLookupArg(arg.name(), arg.list(), arg.columnName())))
+            .toList();
     }
 
     // ===== Conflict detection helpers =====

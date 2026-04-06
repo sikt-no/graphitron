@@ -18,7 +18,7 @@ class LookupQueryFieldValidationTest {
 
     private static LookupQueryField singleReturn(List<ArgumentSpec> arguments) {
         return new LookupQueryField("Query", "filmById", null,
-            new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), arguments);
+            new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), arguments, List.of());
     }
 
     enum Case implements ValidatorCase {
@@ -34,13 +34,13 @@ class LookupQueryFieldValidationTest {
         LIST_RETURN("list cardinality — lookup must return a single object",
             new LookupQueryField("Query", "filmById", null,
                 new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.List(true, true, null, List.of())),
-                List.of()),
+                List.of(), List.of()),
             List.of("Field 'filmById': lookup fields must return a single object, not a list or connection")),
 
         CONNECTION_RETURN("connection cardinality — lookup must return a single object",
             new LookupQueryField("Query", "filmById", null,
                 new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Connection(true, true, null, List.of())),
-                List.of()),
+                List.of(), List.of()),
             List.of("Field 'filmById': lookup fields must return a single object, not a list or connection")),
 
         ORDERBY_ARG("@orderBy on a lookup field argument — not valid on lookup",

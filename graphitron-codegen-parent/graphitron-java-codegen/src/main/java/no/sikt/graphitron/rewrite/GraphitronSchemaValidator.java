@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.field.FieldConditionRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkWithConditionRef;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
+import no.sikt.graphitron.rewrite.field.LookupArgRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef;
 import no.sikt.graphitron.rewrite.field.ColumnRef.UnresolvedColumn;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedConditionRef;
@@ -196,6 +197,16 @@ public class GraphitronSchemaValidator {
             }
         }
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
+        for (var arg : field.resolvedFlatArgs()) {
+            if (arg instanceof LookupArgRef.UnresolvedLookupArg u) {
+                errors.add(new ValidationError(
+                    "Field '" + field.name() + "': argument '" + u.name()
+                        + "' could not be resolved to column '" + u.columnName()
+                        + "' on the return type's table",
+                    field.location()
+                ));
+            }
+        }
     }
     private void validateTableQueryField(no.sikt.graphitron.rewrite.field.QueryField.TableQueryField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
