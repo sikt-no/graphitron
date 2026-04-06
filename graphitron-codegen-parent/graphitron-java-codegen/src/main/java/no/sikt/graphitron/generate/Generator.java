@@ -43,4 +43,8 @@ public interface Generator {
     boolean validateOverlappingInputFields();
 
     OptionalSelect getOptionalSelect();
+
+    default boolean rewriteBasedOutput() {
+        return false;
+    }
 }

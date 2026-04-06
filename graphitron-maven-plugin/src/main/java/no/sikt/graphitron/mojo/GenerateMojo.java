@@ -101,6 +101,10 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @SuppressWarnings("unused")
     protected boolean validateOverlappingInputFields;
 
+    @Parameter(property = "graphitron.rewriteBasedOutput", defaultValue = "false")
+    @SuppressWarnings("unused")
+    protected boolean rewriteBasedOutput;
+
     @Override
     public Set<String> getUserSchemaFiles() {
         if (userSchemaFiles == null || userSchemaFiles.isEmpty()) {
@@ -233,5 +237,10 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @Override
     public boolean validateOverlappingInputFields() {
         return validateOverlappingInputFields;
+    }
+
+    @Override
+    public boolean rewriteBasedOutput() {
+        return rewriteBasedOutput;
     }
 }

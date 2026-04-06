@@ -69,10 +69,24 @@ public class GraphQLGenerator {
                 new OperationClassGenerator(processedSchema),
                 new TypeResolverClassGenerator(processedSchema)
         );
+        List<ClassGenerator> rewriteGenerators = GeneratorConfig.rewriteBasedOutput()
+                ? getRewriteGenerators(processedSchema)
+                : List.of();
         return Stream.concat(
                 Stream.concat(generators.stream(), dataFetcherGenerators.stream()),
-                Stream.of(new WiringClassGenerator(dataFetcherGenerators, processedSchema))  // These must be the last.
+                Stream.concat(
+                        rewriteGenerators.stream(),
+                        Stream.of(new WiringClassGenerator(dataFetcherGenerators, processedSchema))  // These must be the last.
+                )
         ).toList();
+    }
+
+    /**
+     * Rewrite-pipeline generators, activated by the {@code rewriteBasedOutput} flag.
+     * Generators are added here incrementally as the rewrite pipeline is built.
+     */
+    private static List<ClassGenerator> getRewriteGenerators(ProcessedSchema processedSchema) {
+        return List.of();
     }
 
     /**
