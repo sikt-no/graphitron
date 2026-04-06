@@ -1071,6 +1071,94 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    // ===== P4b: TableInputType classification =====
+
+    enum TableInputTypeCase {
+        EXPLICIT_TABLE_DIRECTIVE(
+            "input type with @table → TableInputType with ResolvedTable",
+            """
+            input CustomerInput @table(name: "customer") { customerId: Int! @field(name: "customer_id") }
+            type Query { x: String }
+            """,
+            schema -> {
+                var it = (no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType) schema.type("CustomerInput");
+                assertThat(it.table()).isInstanceOf(no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.class);
+                assertThat(it.table().tableName()).isEqualTo("customer");
+                assertThat(it.fields()).hasSize(1);
+                assertThat(it.fields().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.type.InputFieldRef.TableInputField.class);
+                var f = (no.sikt.graphitron.rewrite.type.InputFieldRef.TableInputField) it.fields().get(0);
+                assertThat(f.name()).isEqualTo("customerId");
+                assertThat(f.javaColumnName()).isEqualTo("CUSTOMER_ID");
+            }),
+
+        EXPLICIT_TABLE_UNRESOLVED_COLUMN(
+            "input type with @table but unknown column → UnresolvedInputField",
+            """
+            input CustomerInput @table(name: "customer") { noSuchField: Int! }
+            type Query { x: String }
+            """,
+            schema -> {
+                var it = (no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType) schema.type("CustomerInput");
+                assertThat(it.fields().get(0))
+                    .isInstanceOf(no.sikt.graphitron.rewrite.type.InputFieldRef.UnresolvedInputField.class);
+            }),
+
+        EXPLICIT_TABLE_UNRESOLVED_TABLE(
+            "input type with @table pointing to unknown DB table → TableInputType with UnresolvedTable",
+            """
+            input NoSuchInput @table(name: "no_such_table") { id: Int! }
+            type Query { x: String }
+            """,
+            schema -> {
+                var it = (no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType) schema.type("NoSuchInput");
+                assertThat(it.table()).isInstanceOf(no.sikt.graphitron.rewrite.type.TableRef.UnresolvedTable.class);
+            }),
+
+        IMPLICIT_TABLE_FROM_LOOKUP_FIELD(
+            "input type without @table used on a LookupQueryField → promoted to TableInputType",
+            """
+            input CustomerInput { customerId: Int! @field(name: "customer_id") }
+            type Customer @table(name: "customer") { customerId: Int! @field(name: "customer_id") }
+            type Query { customer(input: CustomerInput! @lookupKey): Customer }
+            """,
+            schema -> {
+                assertThat(schema.type("CustomerInput"))
+                    .isInstanceOf(no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType.class);
+                var it = (no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType) schema.type("CustomerInput");
+                assertThat(it.table().tableName()).isEqualTo("customer");
+                assertThat(it.fields().get(0))
+                    .isInstanceOf(no.sikt.graphitron.rewrite.type.InputFieldRef.TableInputField.class);
+            }),
+
+        IMPLICIT_TABLE_CONFLICT(
+            "input type used on fields with different return tables → UnclassifiedType",
+            """
+            input SharedInput { id: Int! }
+            type Customer @table(name: "customer") { customerId: Int! @field(name: "customer_id") }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+                customer(input: SharedInput! @lookupKey): Customer
+                film(input: SharedInput! @lookupKey): Film
+            }
+            """,
+            schema -> assertThat(schema.type("SharedInput"))
+                .isInstanceOf(no.sikt.graphitron.rewrite.type.GraphitronType.UnclassifiedType.class));
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        TableInputTypeCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(TableInputTypeCase.class)
+    void tableInputTypeClassification(TableInputTypeCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
     // ===== Type classification =====
 
     enum TypeClassificationCase {

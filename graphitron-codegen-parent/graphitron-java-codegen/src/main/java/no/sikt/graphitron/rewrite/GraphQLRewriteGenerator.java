@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.rewrite.generators.conditions.FieldArgConditionClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,6 +35,9 @@ public class GraphQLRewriteGenerator {
     }
 
     static List<ClassGenerator> getGenerators(GraphitronSchema schema) {
-        return List.of(new FieldArgConditionClassGenerator(schema));
+        return List.of(
+            new FieldArgConditionClassGenerator(schema),
+            new GraphitronValuesClassGenerator()
+        );
     }
 }
