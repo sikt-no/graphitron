@@ -117,7 +117,7 @@ The following directive groups are **mutually exclusive** — combining directiv
 
 2. ~~**Clarify `CompletableFuture` executor strategy**~~ — **Done.** All `supplyAsync` replaced with `completedFuture`; threading model documented in plan.
 
-3. **Rename "@defer" section** — Deliverable 4's "check-then-fetch" pattern is not related to GraphQL `@defer`. Rename to avoid confusion.
+3. ~~**Rename "@defer" section**~~ — **Done.** Deliverable 4's "check-then-fetch" section renamed to "Prefetch-with-fallback". `DeferBehaviorTest` pins the actual graphql-java behavior: deferred child fields remain visible in the parent's selection set, enabling the parent to pre-fetch eagerly; the deferred child DataFetcher short-circuits on the cached data. Full `@defer` support (incremental delivery to the client) is tracked upstream and deferred.
 
 4. **Proceed to generating stream (G1)** — With classification fully tested, hand-craft `GraphitronField` instances for `ColumnField` and `TableQueryField`, implement `FieldsCodeGenerator`, and write approval tests.
 
@@ -135,4 +135,4 @@ The following directive groups are **mutually exclusive** — combining directiv
 | Testing (L1 validators) | **Very good** | 40+ test files, 1 minor gap (ErrorType) |
 | Testing (L2 classification) | **Complete** | 28/28 leaf types covered; conflicts now produce typed error records — tests assert `UnclassifiedField/UnclassifiedType` with specific reasons |
 | Testing (L3 generation) | **Not started** | Expected — generating stream not built yet |
-| Plan clarity | **Good** | `@defer` naming issue remains; executor strategy documented |
+| Plan clarity | **Good** | `@defer` naming resolved; executor strategy documented; defer implementation tracked upstream |
