@@ -57,17 +57,17 @@ class ArgumentValidationTest {
             List.of()),
 
         BUILTIN_SCALAR_ARG("argument with built-in scalar type — no errors",
-            tableField(List.of(new ArgumentSpec("limit", "Int", false, false, false, false))),
+            tableField(List.of(new ArgumentSpec("limit", "Int", false, false, false, false, null))),
             Map.of(),
             List.of()),
 
         KNOWN_INPUT_TYPE_ARG("argument referencing a known InputType — no errors",
-            tableField(List.of(new ArgumentSpec("filter", "FilmFilter", false, false, false, false))),
+            tableField(List.of(new ArgumentSpec("filter", "FilmFilter", false, false, false, false, null))),
             Map.of("FilmFilter", new InputType("FilmFilter", null, List.of())),
             List.of()),
 
         CUSTOM_SCALAR_ARG("argument with a custom scalar type — no errors (graphql-java validates scalars)",
-            tableField(List.of(new ArgumentSpec("createdAt", "DateTime", false, false, false, false))),
+            tableField(List.of(new ArgumentSpec("createdAt", "DateTime", false, false, false, false, null))),
             Map.of(),
             List.of());
 

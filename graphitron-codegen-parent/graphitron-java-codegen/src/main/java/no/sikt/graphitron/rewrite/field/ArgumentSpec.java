@@ -21,6 +21,10 @@ package no.sikt.graphitron.rewrite.field;
  *
  * <p>{@code conditionArg} is {@code true} when the {@code @condition} directive is present on
  * this argument. Resolution of the condition method is deferred.
+ *
+ * <p>{@code columnName} is the value of {@code @field(name:)} when present, otherwise the
+ * GraphQL argument name. Used by the condition-generation pipeline to identify which database
+ * column this argument maps to.
  */
 public record ArgumentSpec(
     String name,
@@ -28,5 +32,6 @@ public record ArgumentSpec(
     boolean nonNull,
     boolean list,
     boolean orderBy,
-    boolean conditionArg
+    boolean conditionArg,
+    String columnName
 ) {}

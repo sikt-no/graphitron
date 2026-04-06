@@ -28,7 +28,7 @@ class LookupQueryFieldValidationTest {
             List.of()),
 
         VALID_WITH_ARGS("single return with plain args — valid",
-            singleReturn(List.of(new ArgumentSpec("id", "ID", false, true, false, false))),
+            singleReturn(List.of(new ArgumentSpec("id", "ID", false, true, false, false, null))),
             List.of()),
 
         LIST_RETURN("list cardinality — lookup must return a single object",
@@ -44,17 +44,17 @@ class LookupQueryFieldValidationTest {
             List.of("Field 'filmById': lookup fields must return a single object, not a list or connection")),
 
         ORDERBY_ARG("@orderBy on a lookup field argument — not valid on lookup",
-            singleReturn(List.of(new ArgumentSpec("order", "String", false, false, true, false))),
+            singleReturn(List.of(new ArgumentSpec("order", "String", false, false, true, false, null))),
             List.of("Field 'filmById': @orderBy is not valid on a lookup field")),
 
         CONDITION_ARG("@condition on a lookup field argument — not valid on lookup",
-            singleReturn(List.of(new ArgumentSpec("filter", "String", false, false, false, true))),
+            singleReturn(List.of(new ArgumentSpec("filter", "String", false, false, false, true, null))),
             List.of("Field 'filmById': @condition is not valid on a lookup field")),
 
         ORDERBY_AND_CONDITION_ARGS("both @orderBy and @condition on a lookup field — two errors",
             singleReturn(List.of(
-                new ArgumentSpec("order", "String", false, false, true, false),
-                new ArgumentSpec("filter", "String", false, false, false, true))),
+                new ArgumentSpec("order", "String", false, false, true, false, null),
+                new ArgumentSpec("filter", "String", false, false, false, true, null))),
             List.of(
                 "Field 'filmById': @orderBy is not valid on a lookup field",
                 "Field 'filmById': @condition is not valid on a lookup field"));

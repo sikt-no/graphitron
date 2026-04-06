@@ -3,6 +3,8 @@ package no.sikt.graphitron.generate;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.CodeInterfaceClassGenerator;
+import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
+import no.sikt.graphitron.rewrite.generators.conditions.FieldArgConditionClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.typeregistry.TypeRegistryClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
@@ -48,6 +50,11 @@ public class GraphQLGenerator {
     }
 
     public static List<ClassGenerator> getGenerators(ProcessedSchema processedSchema) {
+        if (GeneratorConfig.rewriteBasedOutput()) {
+            // In rewrite mode, run only the rewrite pipeline generators.
+            // Legacy generators are incrementally replaced as the rewrite pipeline matures.
+            return getRewriteGenerators(processedSchema);
+        }
         List<ClassGenerator> generators = List.of(
                 new TypeDTOGenerator(processedSchema),
                 new InputDTOGenerator(processedSchema),
@@ -69,13 +76,10 @@ public class GraphQLGenerator {
                 new OperationClassGenerator(processedSchema),
                 new TypeResolverClassGenerator(processedSchema)
         );
-        List<ClassGenerator> rewriteGenerators = GeneratorConfig.rewriteBasedOutput()
-                ? getRewriteGenerators(processedSchema)
-                : List.of();
         return Stream.concat(
-                Stream.concat(generators.stream(), dataFetcherGenerators.stream()),
+                generators.stream(),
                 Stream.concat(
-                        rewriteGenerators.stream(),
+                        dataFetcherGenerators.stream(),
                         Stream.of(new WiringClassGenerator(dataFetcherGenerators, processedSchema))  // These must be the last.
                 )
         ).toList();
@@ -86,7 +90,9 @@ public class GraphQLGenerator {
      * Generators are added here incrementally as the rewrite pipeline is built.
      */
     private static List<ClassGenerator> getRewriteGenerators(ProcessedSchema processedSchema) {
-        return List.of();
+        var registry = getTypeDefinitionRegistry(GeneratorConfig.generatorSchemaFiles());
+        var schema = GraphitronSchemaBuilder.build(registry);
+        return List.of(new FieldArgConditionClassGenerator(schema));
     }
 
     /**

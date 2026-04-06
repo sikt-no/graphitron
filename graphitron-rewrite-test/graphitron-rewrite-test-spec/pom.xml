@@ -24,6 +24,11 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.jooq</groupId>
             <artifactId>jooq</artifactId>
         </dependency>
@@ -83,7 +88,7 @@
                 <executions>
                     <execution>
                         <id>rewrite-generate</id>
-                        <phase>none</phase>
+                        <phase>generate-sources</phase>
                         <goals>
                             <goal>generate</goal>
                         </goals>
@@ -95,7 +100,7 @@
                             </transform>
                             <jooqGeneratedPackage>${jooqPackage}</jooqGeneratedPackage>
                             <outputPackage>${outputPackage}</outputPackage>
-                            <rewriteBasedOutput>false</rewriteBasedOutput>
+                            <rewriteBasedOutput>true</rewriteBasedOutput>
                         </configuration>
                     </execution>
                 </executions>

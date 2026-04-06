@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.toCamelCase;
+import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentObjectFields;
 import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
 import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalObjectFieldByName;
 import static no.sikt.graphql.directives.GenerationDirective.*;
@@ -65,7 +66,9 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
                     .ifPresent(this::addMultitableReferences);
         }
 
-        condition = field.hasDirective(GenerationDirective.CONDITION.getName()) && fieldType != null ? new SQLCondition(field) : null;
+        condition = field.hasDirective(GenerationDirective.CONDITION.getName()) && fieldType != null
+                && getOptionalDirectiveArgumentObjectFields(field, GenerationDirective.CONDITION, GenerationDirectiveParam.CONDITION).isPresent()
+                ? new SQLCondition(field) : null;
         serviceWrapper = field.hasDirective(SERVICE.getName()) || field.hasDirective(TABLE_METHOD.getName()) ? new ServiceWrapper(field) : null;
         if (field.hasDirective(FIELD.getName())) {
             mappingForRecordFieldOverride = getJavaName().isEmpty() ? new MethodMapping(toCamelCase(getUpperCaseName())) : new MethodMapping(getJavaName());
