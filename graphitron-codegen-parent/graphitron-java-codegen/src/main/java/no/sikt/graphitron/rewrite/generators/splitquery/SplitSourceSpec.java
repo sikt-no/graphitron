@@ -8,7 +8,7 @@ import java.util.List;
  *
  * <p>{@code parentTypeName} is the name of the containing GraphQL type (e.g. {@code "Language"}),
  * used together with {@code fieldName} to form the generated class name
- * (e.g. {@code LanguageFilmsSource}).
+ * (e.g. {@code LanguageFilmsDerivedSource}).
  *
  * <p>{@code fieldName} is the GraphQL field name (e.g. {@code "films"}).
  *

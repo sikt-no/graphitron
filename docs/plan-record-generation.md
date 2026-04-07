@@ -12,7 +12,7 @@ This document covers the generating stream, the Maven plugin wiring, the test in
 |---|---|---|---|---|
 | — | `GraphitronValuesClassGenerator` | `GraphitronValues.java` | — | Done |
 | — | `LookupClassGenerator` | `<TypeName>Lookup.java` per `LookupQueryField` | — | Done |
-| — | `SplitSourceClassGenerator` | `<ParentType><FieldName>Source.java` per `@splitQuery` `TableField` | — | Done |
+| — | `SplitSourceClassGenerator` | `<ParentType><FieldName>DerivedSource.java` per `@splitQuery` `TableField` | — | Done |
 | 0 | Infrastructure | `GraphitronFetcherFactory`, `rewriteBasedOutput` flag, `getTenantId()` | — | Partial |
 | 1 | `ConditionWrapperClassGenerator` | `<ConditionClassName>Wrapper.java` per condition class | — | — |
 | 2 | `ServiceWrapperClassGenerator` | `<ServiceClassName>Wrapper.java` per service class | — | — |
@@ -235,17 +235,16 @@ Produces one `<ParentType><FieldName>Source.java` per `@splitQuery` `TableField`
 
 ```java
 // Generated for Language.films (@splitQuery, FK: film.language_id → language.language_id)
-public class LanguageFilmsSource {
-    public static List<Record2<Integer, Integer>> toSourceRows(DSLContext ctx, List<Record> sources) {
+public class LanguageFilmsDerivedSource {
+    public static List<Row2<Integer, Integer>> rows(List<Record> sources) {
         return IntStream.range(0, sources.size())
-            .mapToObj(i -> ctx.newRecord(GRAPHITRON_INPUT_IDX, LANGUAGE.LANGUAGE_ID)
-                .values(i + 1, sources.get(i).get(LANGUAGE.LANGUAGE_ID)))
+            .mapToObj(i -> DSL.row(i + 1, sources.get(i).get(LANGUAGE.LANGUAGE_ID)))
             .toList();
     }
 }
 ```
 
-This class is a pure data-transformation helper; it contains no SQL and no DataLoader logic. The DataLoader itself (in `FieldsClassGenerator`, G6) calls `toSourceRows` to build the derived table and then JOINs it against the child table in the batch query.
+This class is a pure data-transformation helper; it contains no SQL and no DataLoader logic. The DataLoader itself (in `FieldsClassGenerator`, G6) calls `rows` to obtain the derived source table rows and then wraps them in a jOOQ `DSL.values(...).asTable(...)` expression to JOIN against the child table in the batch query.
 
 Generated files are placed in `<outputPackage>.rewrite.resolvers`.
 

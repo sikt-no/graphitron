@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.generators.splitquery;
 
 /**
- * Per-column data for the {@code toSourceRows} source-key-mapping method.
+ * Per-column data for the {@code rows} derived-source method.
  *
  * <p>{@code columnJavaName} is the Java field name in the jOOQ parent table class
  * (e.g. {@code "LANGUAGE_ID"}), used to reference {@code PARENT_TABLE.COLUMN} in the generated

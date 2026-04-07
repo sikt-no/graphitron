@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.generators.splitquery;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
-import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
@@ -13,13 +12,13 @@ import java.util.List;
 
 /**
  * {@link no.sikt.graphitron.generators.abstractions.ClassGenerator} that produces one
- * {@code <ParentTypeName><FieldName>Source.java} per
+ * {@code <ParentTypeName><FieldName>DerivedSource.java} per
  * {@link no.sikt.graphitron.rewrite.field.ChildField.TableField} annotated with
  * {@code @splitQuery}.
  *
- * <p>Each generated class contains a {@code toSourceRows} method that maps a
+ * <p>Each generated class contains a {@code rows} method that maps a
  * {@code List<Record>} — the parent records supplied by the DataLoader — into a
- * {@code List<RecordN<Integer, T1, ...>>} for use in a jOOQ derived VALUES table. The first
+ * {@code List<RowN<Integer, T1, ...>>} for use in a jOOQ derived VALUES table. The first
  * column is always {@code GRAPHITRON_INPUT_IDX} (1-based row position), preserving input-to-output
  * ordering when JOINed against the child table.
  *
@@ -82,11 +81,6 @@ public class SplitSourceClassGenerator extends AbstractClassGenerator {
         if (tablesClass != null) {
             fileBuilder.addStaticImport(tablesClass, "*");
         }
-        var graphitronValuesClass = ClassName.get(
-            packagePath.isEmpty() ? "" : packagePath + ".rewrite",
-            "GraphitronValues"
-        );
-        fileBuilder.addStaticImport(graphitronValuesClass, "GRAPHITRON_INPUT_IDX");
     }
 
     private Class<?> loadTablesClass() {
