@@ -192,7 +192,7 @@ public class GraphitronSchemaValidator {
                     "Field '" + field.name() + "': @condition is not valid on a lookup field",
                     field.location()
                 ));
-                case ArgumentRef.PlainScalarArg a -> errors.add(new ValidationError(
+                case ArgumentRef.ScalarArg.UnboundScalarArg a -> errors.add(new ValidationError(
                     "Field '" + field.name() + "': argument '" + a.name()
                         + "' could not be resolved to column '" + a.columnName()
                         + "' on the return type's table",

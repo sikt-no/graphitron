@@ -1349,8 +1349,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
                 assertThat(f.arguments()).hasSize(1);
-                assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.ColumnArg.class);
-                var a = (ArgumentRef.ColumnArg) f.arguments().get(0);
+                assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.ScalarArg.ColumnArg.class);
+                var a = (ArgumentRef.ScalarArg.ColumnArg) f.arguments().get(0);
                 assertThat(a.name()).isEqualTo("film_id");
                 assertThat(a.javaColumnName()).isEqualTo("FILM_ID");
                 assertThat(a.column()).isNotNull();
@@ -1365,8 +1365,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
                 assertThat(f.arguments()).hasSize(1);
-                assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.PlainScalarArg.class);
-                var a = (ArgumentRef.PlainScalarArg) f.arguments().get(0);
+                assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.ScalarArg.UnboundScalarArg.class);
+                var a = (ArgumentRef.ScalarArg.UnboundScalarArg) f.arguments().get(0);
                 assertThat(a.columnName()).isEqualTo("unknownColumn");
             }),
 

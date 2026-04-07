@@ -34,8 +34,9 @@ public sealed interface QueryField extends RootField
      *     exactly one {@link ArgumentRef} variant: {@link ArgumentRef.InputTypeArg} with
      *     {@code orderBy=true} or {@code conditionArg=true} are validator errors;
      *     a plain {@link ArgumentRef.InputTypeArg} feeds the input-type code path;
-     *     {@link ArgumentRef.ColumnArg} and {@link ArgumentRef.PlainScalarArg} represent
-     *     scalar/list arguments with and without a resolved database column respectively.
+     *     {@link ArgumentRef.ScalarArg.ColumnArg} and {@link ArgumentRef.ScalarArg.UnboundScalarArg}
+     *     represent scalar/list arguments with and without a resolved database column respectively;
+     *     {@link ArgumentRef.ScalarArg.ParamArg} covers non-column-bound method parameters.
      */
     record LookupQueryField(
         String parentTypeName,
