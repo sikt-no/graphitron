@@ -1,6 +1,6 @@
 # Plan: Record-Based Output — Infrastructure and Generation
 
-This document covers the generating stream, the Maven plugin wiring, the test infrastructure for generated code, and all remaining deliverables. The companion document [`plan-record-parsing-and-validation.md`](plan-record-parsing-and-validation.md) covers the completed parsing and validation work.
+This document covers the generating stream, the Maven plugin wiring, the test infrastructure for generated code, and all remaining deliverables. The companion document [`record-schema-classification.md`](record-schema-classification.md) covers the completed parsing and validation work.
 
 ---
 
