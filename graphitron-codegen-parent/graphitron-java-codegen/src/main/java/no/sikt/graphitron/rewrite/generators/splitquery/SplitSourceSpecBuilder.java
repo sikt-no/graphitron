@@ -47,7 +47,7 @@ public class SplitSourceSpecBuilder {
         var fkRef = firstFkRef(field.referencePath());
         if (fkRef == null) return null;
 
-        var keyFields = buildKeyFields(fkRef, rt.table().getName());
+        var keyFields = buildKeyFields(fkRef, rt.tableName());
         if (keyFields.isEmpty()) return null;
 
         return new SplitSourceSpec(
@@ -79,12 +79,12 @@ public class SplitSourceSpecBuilder {
      * columns are the referencing FK fields: {@link FkRef#fkColumnEntries()}.
      */
     private static List<SplitSourceKeyFieldSpec> buildKeyFields(FkRef fkRef, String parentTableSqlName) {
-        List<ColumnEntry> entries = fkRef.key().getKey().getTable().getName().equalsIgnoreCase(parentTableSqlName)
+        List<ColumnEntry> entries = fkRef.keyTableSqlName().equalsIgnoreCase(parentTableSqlName)
             ? fkRef.keyColumnEntries()
             : fkRef.fkColumnEntries();
 
         return entries.stream()
-            .map(e -> new SplitSourceKeyFieldSpec(e.javaName(), e.column().getType().getName()))
+            .map(e -> new SplitSourceKeyFieldSpec(e.javaName(), e.columnClass()))
             .toList();
     }
 }

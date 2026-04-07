@@ -126,7 +126,12 @@ public sealed interface ArgumentRef
             boolean list,
             String javaColumnName,
             org.jooq.Field<?> column
-        ) implements ScalarArg {}
+        ) implements ScalarArg {
+            /** Fully qualified Java class name of the column type (e.g. {@code "java.lang.Long"}). */
+            public String columnClass() {
+                return column.getType().getName();
+            }
+        }
 
         /**
          * Scalar argument whose column could not be matched in the return type's jOOQ table.

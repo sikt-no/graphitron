@@ -53,6 +53,16 @@ public sealed interface ReferencePathElementRef
         public FkRef(ForeignKey<?, ?> key) {
             this(key, List.of(), List.of());
         }
+
+        /** SQL name of the referenced (key-side) table, e.g. {@code "language"}. */
+        public String keyTableSqlName() {
+            return key.getKey().getTable().getName();
+        }
+
+        /** SQL name of the referencing (FK-side) table, e.g. {@code "film"}. */
+        public String fkTableSqlName() {
+            return key.getTable().getName();
+        }
     }
 
     /**

@@ -45,7 +45,12 @@ public sealed interface InputFieldRef
         TableRef.ResolvedTable table,
         String javaColumnName,
         org.jooq.Field<?> column
-    ) implements InputFieldRef {}
+    ) implements InputFieldRef {
+        /** Fully qualified Java class name of the column type (e.g. {@code "java.lang.Integer"}). */
+        public String columnClass() {
+            return column.getType().getName();
+        }
+    }
 
     /**
      * A field whose column name could not be matched to any field in the jOOQ table.

@@ -74,7 +74,7 @@ public class LookupSpecBuilder {
             .map(f -> new LookupInputFieldSpec(
                 f.name(),
                 f.javaColumnName(),
-                f.column().getType().getName(),
+                f.columnClass(),
                 false))
             .toList();
 
@@ -88,7 +88,7 @@ public class LookupSpecBuilder {
             .map(a -> new LookupInputFieldSpec(
                 a.name(),
                 a.javaColumnName(),
-                a.column().getType().getName(),
+                a.columnClass(),
                 a.list()))
             .toList();
 

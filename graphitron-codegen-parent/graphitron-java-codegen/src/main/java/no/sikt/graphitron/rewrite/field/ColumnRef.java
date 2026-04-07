@@ -24,7 +24,12 @@ public sealed interface ColumnRef permits ColumnRef.ResolvedColumn, ColumnRef.Un
      * for {@code FILM.TITLE}). {@code column} is the resolved jOOQ {@link Field} instance, used
      * for type inspection at code-generation time.
      */
-    record ResolvedColumn(String javaName, Field<?> column) implements ColumnRef {}
+    record ResolvedColumn(String javaName, Field<?> column) implements ColumnRef {
+        /** Fully qualified Java class name of the column type (e.g. {@code "java.lang.String"}). */
+        public String columnClass() {
+            return column.getType().getName();
+        }
+    }
 
     /**
      * A {@link ColumnRef} where the column name could not be matched to any field in the jOOQ table.

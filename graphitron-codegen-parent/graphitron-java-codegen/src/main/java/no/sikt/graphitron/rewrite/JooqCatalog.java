@@ -124,5 +124,10 @@ public class JooqCatalog {
 
     public record TableEntry(String javaFieldName, Table<?> table) {}
 
-    public record ColumnEntry(String javaName, org.jooq.Field<?> column) {}
+    public record ColumnEntry(String javaName, org.jooq.Field<?> column) {
+        /** Fully qualified Java class name of the column type (e.g. {@code "java.lang.Integer"}). */
+        public String columnClass() {
+            return column.getType().getName();
+        }
+    }
 }
