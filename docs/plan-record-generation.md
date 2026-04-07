@@ -1,6 +1,6 @@
 # Plan: Record-Based Output — Infrastructure and Generation
 
-This document covers the generating stream, the Maven plugin wiring, the test infrastructure for generated code, and all remaining deliverables. The companion document [`record-schema-classification.md`](record-schema-classification.md) covers the completed parsing and validation work.
+This document covers the generating stream, the Maven plugin wiring, the test infrastructure for generated code, and all remaining deliverables. The companion document [`rewrite-schema-classification.md`](rewrite-schema-classification.md) covers the completed parsing and validation work.
 
 ---
 
@@ -418,6 +418,14 @@ class CustomerConditionsWrapperTest {
 - **Level 2** — Classification tests (inline schema → `GraphitronSchemaBuilder`, no DB)
 - **Level 3** — Error message and source location tests (no DB)
 - **Approval tests** — `FieldsCodeGeneratorTest` hand-crafts `GraphitronField` instances and compares generated text against expected `.java` files (no DB)
+
+### Open gaps in parsing/validation layer
+
+| Gap | Severity | Recommendation |
+|---|---|---|
+| **No `ErrorTypeValidationTest`** | Low | Construct an `ErrorType` and assert zero validation errors. Documents the intentional validator no-op and prevents accidental regression. |
+| **`hasLookupKeyAnywhere()` depth guard** | Low | Add a test confirming the guard prevents infinite recursion on circular input type references (depth limit is 10 levels). |
+| **`JooqCatalog` direct unit test with Sakila** | Low | `JooqCatalog` is tested indirectly via `GraphitronSchemaBuilderTest`; a direct test against the Sakila jOOQ classes would catch reflection edge cases (unusual table naming, composite FKs). |
 
 ---
 

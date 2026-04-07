@@ -1,6 +1,6 @@
 # Record-Based Output: Schema Classification
 
-This document describes the parsing and validation layer of the record-based output pipeline. The companion document [`plan-record-generation.md`](plan-record-generation.md) covers the generating stream and remaining deliverables.
+This document describes the parsing and validation layer of the record-based output pipeline. The companion document [`plan-record-generation.md`](plan-record-generation.md) covers the generating stream, remaining deliverables, and outstanding testing gaps for this layer.
 
 ---
 
@@ -311,13 +311,7 @@ void columnField() {
 
 Verifies that error messages are human-readable, contain the right field/type name, and that `SourceLocation` carries correct line and column.
 
-### Remaining testing gaps
-
-| Gap | Severity | Recommendation |
-|---|---|---|
-| **No `ErrorTypeValidationTest`** | Low | Construct an `ErrorType` and assert zero validation errors. Documents the intentional validator no-op and prevents accidental regression. |
-| **`hasLookupKeyAnywhere()` depth guard** | Low | Add a test confirming the guard prevents infinite recursion on circular input type references (depth limit is 10 levels). |
-| **`JooqCatalog` direct unit test with Sakila** | Low | `JooqCatalog` is tested indirectly via `GraphitronSchemaBuilderTest`; a direct test against the Sakila jOOQ classes would catch reflection edge cases (unusual table naming, composite FKs). |
+Outstanding testing gaps for this layer are tracked in [`plan-record-generation.md`](plan-record-generation.md).
 
 ---
 
