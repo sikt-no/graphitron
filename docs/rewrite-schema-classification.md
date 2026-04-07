@@ -99,8 +99,13 @@ Lazy wrapper around the jOOQ `Catalog`. Resolves table and column references via
 
 Key methods:
 - `findTable(sqlName)` → `Optional<TableEntry>` (`javaFieldName`, `Table<?>`)
-- `findColumn(table, sqlColumnName)` → `Optional<ColumnEntry>` (`javaName`, `Field<?>`)
+- `findColumn(table, sqlColumnName)` → `Optional<ColumnEntry>` (`javaName`, `columnClass`)
+- `findColumn(tableSqlName, columnSqlName)` → same, resolving the table by name first
 - `findForeignKey(name)` → searches by SQL or Java FK name, case-insensitive
+
+`JooqCatalog` and `GraphitronSchemaBuilder` are the **only** classes permitted to hold or access raw jOOQ types (`Table<?>`, `Field<?>`, `ForeignKey<?,?>`). They form the reflection boundary. All information extracted from jOOQ is stored as primitives or strings in the taxonomy records; downstream code (validators, spec builders, generators) works from those values alone.
+
+This constraint keeps the taxonomy complete: if a generator needs information that is not yet in a record, the fix is to add a component and extract the value in the builder — not to reach past the taxonomy to a stored jOOQ handle.
 
 ---
 
@@ -127,7 +132,7 @@ GraphitronType
 ### Reference types
 
 **`TableRef`** — outcome of matching `@table(name:)` against the jOOQ catalog:
-- `ResolvedTable` — `tableName`, `javaFieldName`, `table: Table<?>` (columns, PK, FK metadata)
+- `ResolvedTable` — `tableName`, `javaFieldName`, `hasPrimaryKey: boolean`
 - `UnresolvedTable` — `tableName` only; validator reports an error
 - `tableName()` is present on both variants
 
@@ -140,7 +145,7 @@ GraphitronType
 - `UnboundParticipant` — type lacks `@table`; validator reports an error
 
 **`InputFieldRef`** — resolution outcome for a single field in a `TableInputType`:
-- `TableInputField` — `name`, `typeName`, `nonNull`, `list`, `table: ResolvedTable`, `javaColumnName`, `column: Field<?>`
+- `TableInputField` — `name`, `typeName`, `nonNull`, `list`, `table: ResolvedTable`, `javaColumnName`, `columnClass: String`
 - `UnresolvedInputField` — `name`, `typeName`, `nonNull`, `list`, `columnName`
 
 ---
@@ -311,8 +316,8 @@ ArgumentRef
 │   ├── OrderByArg           — carries @orderBy; sortFieldName, directionFieldName
 │   └── PlainInputTypeArg    — unresolved input type arg
 ├── ScalarArg (sealed)
-│   ├── ColumnArg            — resolved to column on return type's table
-│   ├── UnboundScalarArg     — column could not be matched
+│   ├── ColumnArg            — resolved to column; javaColumnName, columnClass: String
+│   ├── UnboundScalarArg     — column could not be matched; columnName: String
 │   └── ParamArg             — passed as direct Java parameter
 └── UnclassifiedArg          — unsupported directive; reason: String
 ```
@@ -327,8 +332,8 @@ All variants carry `name`, `typeName`, `nonNull`, `list`.
 
 | Variant | State |
 |---|---|
-| `FkRef` | jOOQ FK resolved; no condition |
-| `FkWithConditionRef` | FK + condition method both resolved |
+| `FkRef` | FK resolved; `fkName`, `keyTableSqlName`, `fkTableSqlName` (all `String`); pre-resolved `keyColumnEntries` and `fkColumnEntries` |
+| `FkWithConditionRef` | FK + condition method both resolved; same FK string fields as `FkRef` |
 | `ConditionOnlyRef` | condition method only; no FK step |
 | `UnresolvedKeyRef` | FK lookup failed |
 | `UnresolvedConditionRef` | condition method not found |
@@ -370,11 +375,11 @@ Additional rules:
 ```java
 enum Case implements ValidatorCase {
     RESOLVED_IMPLICIT("no @field — column name defaults to field name",
-        new ColumnField("title", null, "title", new ResolvedColumn("TITLE", null)),
+        new ColumnField("title", null, "title", new ResolvedColumn("TITLE", "java.lang.String"), false),
         List.of()),
 
     UNRESOLVED_COLUMN("column name could not be matched",
-        new ColumnField("title", null, "title", new UnresolvedColumn()),
+        new ColumnField("title", null, "title", new UnresolvedColumn(), false),
         List.of("Field 'title': column 'title' could not be resolved"));
 }
 ```
@@ -425,7 +430,7 @@ Outstanding testing gaps for this layer are tracked in [`plan-record-generation.
 | `rewrite/field/ColumnRef.java`, `NodeTypeRef.java` | Column and node type resolution |
 | `rewrite/field/OrderSpec.java` | Sort specification |
 | `rewrite/type/GraphitronType.java` | Root of the type hierarchy |
-| `rewrite/type/TableRef.java` | `@table` → jOOQ `Table<?>` resolution |
+| `rewrite/type/TableRef.java` | `@table` → resolved table metadata (SQL name, Java field name, PK flag) |
 | `rewrite/type/ParticipantRef.java` | Interface/union member resolution |
 | `rewrite/type/NodeRef.java`, `KeyColumnRef.java` | `@node` directive and key columns |
 | `rewrite/type/InputFieldRef.java` | `TableInputType` field resolution |
