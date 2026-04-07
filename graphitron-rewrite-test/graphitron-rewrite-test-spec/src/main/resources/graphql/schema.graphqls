@@ -1,3 +1,5 @@
+input LanguageKey @table(name: "language") { languageId: Int @field(name: "language_id") }
+
 type Query {
     customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]!
     films(
@@ -5,6 +7,8 @@ type Query {
         maxRentalRate: Float @field(name: "RENTAL_RATE")
     ): [Film!]!
     filmById(film_id: [ID] @lookupKey): [Film!]!
+    languageByKey(key: [LanguageKey] @lookupKey): [Language!]!
+    customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
 }
 
 type Customer @table(name: "customer") {
@@ -22,6 +26,11 @@ type Film @table(name: "film") {
     rentalRate: Float!       @field(name: "RENTAL_RATE")
     rating:     MpaaRating   @field(name: "RATING")
     length:     Int          @field(name: "LENGTH")
+}
+
+type Language @table(name: "language") {
+    languageId: Int!    @field(name: "LANGUAGE_ID")
+    name:       String! @field(name: "NAME")
 }
 
 enum MpaaRating {
