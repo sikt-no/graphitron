@@ -10,7 +10,7 @@ The companion document [`plan-record-generation.md`](plan-record-generation.md) 
 
 The current code generation pipeline produces output DTOs and TypeMapper classes that convert jOOQ Records into those DTOs. This is unnecessary: graphql-java's `RuntimeWiring` can resolve fields directly from any Java object, including jOOQ `Record`. Eliminating the DTO/TypeMapper layer reduces generated code volume, removes the selection-set-per-field mapping boilerplate, and unblocks future features (e.g. `@record` output support).
 
-The change is behind an `enableRewrite` feature flag (default `false`) and generates new artefacts into a separate package (`<outputPackage>.rewrite.*`) so old and new code can coexist. The existing generators continue to run unchanged — the flag adds new generators alongside. A companion `disableLegacy` flag (default `false`) suppresses the legacy generators entirely, used by the test module.
+The change is behind a `rewriteBasedOutput` feature flag (default `false`) and generates new artefacts into a separate package (`<outputPackage>.rewrite.*`) so old and new code can coexist. The existing generators continue to run unchanged — the flag adds new generators alongside. See [`plan-record-generation.md`](plan-record-generation.md) for the plugin wiring (M1).
 
 ### Existing codebase facts
 
@@ -203,6 +203,14 @@ void columnField() {
 ### Level 3 — Error message and source location tests
 
 Verifies that error messages are human-readable, contain the right field/type name, and that `SourceLocation` carries correct line and column.
+
+### Remaining testing gaps
+
+| Gap | Severity | Recommendation |
+|---|---|---|
+| **No `ErrorTypeValidationTest`** | Low | Construct an `ErrorType` and assert zero validation errors. Documents the intentional no-op in the validator and prevents accidental regression if validation rules are added later. |
+| **`hasLookupKeyAnywhere()` depth guard** | Low | Add a test confirming the guard prevents infinite recursion on circular input type references (depth limit is 10 levels). |
+| **`JooqCatalog` direct unit test with Sakila** | Low | `JooqCatalog` is tested indirectly via `GraphitronSchemaBuilderTest`, but a direct test against the Sakila jOOQ classes would catch reflection edge cases (tables with unusual naming, composite FKs). |
 
 ---
 
