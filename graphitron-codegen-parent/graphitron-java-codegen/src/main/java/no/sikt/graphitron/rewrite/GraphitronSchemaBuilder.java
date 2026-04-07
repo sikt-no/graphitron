@@ -962,12 +962,12 @@ public class GraphitronSchemaBuilder {
         }
         // Scalar arg — resolve against the return type's table
         if (rt == null) {
-            return new ArgumentRef.ColumnArg.UnresolvedColumnArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), arg.columnName());
+            return new ArgumentRef.PlainScalarArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), arg.columnName());
         }
         return catalog.findColumn(rt.table(), arg.columnName())
-            .<ArgumentRef>map(e -> new ArgumentRef.ColumnArg.ResolvedColumnArg(
+            .<ArgumentRef>map(e -> new ArgumentRef.ColumnArg(
                 arg.name(), arg.typeName(), arg.nonNull(), arg.list(), e.javaName(), e.column()))
-            .orElseGet(() -> new ArgumentRef.ColumnArg.UnresolvedColumnArg(
+            .orElseGet(() -> new ArgumentRef.PlainScalarArg(
                 arg.name(), arg.typeName(), arg.nonNull(), arg.list(), arg.columnName()));
     }
 

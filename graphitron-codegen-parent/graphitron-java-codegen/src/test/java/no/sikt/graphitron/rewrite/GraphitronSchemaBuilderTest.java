@@ -26,6 +26,7 @@ import no.sikt.graphitron.rewrite.field.DefaultOrderSpec;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.FieldConditionRef;
 import no.sikt.graphitron.rewrite.field.GraphitronField.NotGeneratedField;
+import no.sikt.graphitron.rewrite.field.ArgumentRef;
 import no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.field.NodeTypeRef;
 import no.sikt.graphitron.rewrite.field.NodeTypeRef.ResolvedNodeType;
@@ -1338,6 +1339,83 @@ class GraphitronSchemaBuilderTest {
             type Query { filmByKey(key: [FilmKey]): Film }
             """,
             schema -> assertThat(schema.field("Query", "filmByKey")).isInstanceOf(QueryField.LookupQueryField.class)),
+
+        LOOKUP_FIELD_COLUMN_ARG(
+            "lookup field scalar arg whose column exists → ColumnArg with resolved jOOQ field",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { filmById(film_id: [ID] @lookupKey): Film }
+            """,
+            schema -> {
+                var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
+                assertThat(f.arguments()).hasSize(1);
+                assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.ColumnArg.class);
+                var a = (ArgumentRef.ColumnArg) f.arguments().get(0);
+                assertThat(a.name()).isEqualTo("film_id");
+                assertThat(a.javaColumnName()).isEqualTo("FILM_ID");
+                assertThat(a.column()).isNotNull();
+            }),
+
+        LOOKUP_FIELD_PLAIN_SCALAR_ARG(
+            "lookup field scalar arg with no matching column → PlainScalarArg",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { filmById(unknownColumn: [String] @lookupKey): Film }
+            """,
+            schema -> {
+                var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
+                assertThat(f.arguments()).hasSize(1);
+                assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.PlainScalarArg.class);
+                var a = (ArgumentRef.PlainScalarArg) f.arguments().get(0);
+                assertThat(a.columnName()).isEqualTo("unknownColumn");
+            }),
+
+        LOOKUP_FIELD_TABLE_INPUT_TYPE_ARG(
+            "lookup field with explicit @table input type arg → TableInputTypeArg",
+            """
+            input FilmKey @table(name: "film") { filmId: Int @field(name: "film_id") }
+            type Film @table(name: "film") { title: String }
+            type Query { filmByKey(key: FilmKey @lookupKey): Film }
+            """,
+            schema -> {
+                var f = (QueryField.LookupQueryField) schema.field("Query", "filmByKey");
+                assertThat(f.arguments()).hasSize(1);
+                assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.InputTypeArg.TableInputTypeArg.class);
+                assertThat(f.arguments().get(0).name()).isEqualTo("key");
+                assertThat(f.arguments().get(0).typeName()).isEqualTo("FilmKey");
+            }),
+
+        LOOKUP_FIELD_IMPLICIT_TABLE_INPUT_TYPE_ARG(
+            "lookup field with plain input type arg (no @table) → TableInputTypeArg via inline promotion",
+            """
+            input FilmKey { filmId: Int @field(name: "film_id") }
+            type Film @table(name: "film") { title: String }
+            type Query { filmByKey(key: FilmKey @lookupKey): Film }
+            """,
+            schema -> {
+                var f = (QueryField.LookupQueryField) schema.field("Query", "filmByKey");
+                assertThat(f.arguments()).hasSize(1);
+                assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.InputTypeArg.TableInputTypeArg.class);
+                // The type was promoted to TableInputType in types map
+                assertThat(schema.type("FilmKey"))
+                    .isInstanceOf(no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType.class);
+            }),
+
+        LOOKUP_FIELD_ORDERBY_ARG(
+            "lookup field with @orderBy arg → PlainInputTypeArg with orderBy=true",
+            """
+            enum FilmOrder { TITLE }
+            type Film @table(name: "film") { title: String }
+            type Query { filmById(film_id: [ID] @lookupKey, order: FilmOrder @orderBy): Film }
+            """,
+            schema -> {
+                var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
+                var orderArg = f.arguments().stream()
+                    .filter(a -> a.name().equals("order"))
+                    .findFirst().orElseThrow();
+                assertThat(orderArg).isInstanceOf(ArgumentRef.InputTypeArg.PlainInputTypeArg.class);
+                assertThat(((ArgumentRef.InputTypeArg.PlainInputTypeArg) orderArg).orderBy()).isTrue();
+            }),
 
         TABLE_QUERY_FIELD(
             "field returning @table type → TableQueryField",

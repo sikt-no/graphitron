@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.generators.lookup;
 
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.field.ArgumentRef.InputTypeArg.TableInputTypeArg;
-import no.sikt.graphitron.rewrite.field.ArgumentRef.ColumnArg.ResolvedColumnArg;
+import no.sikt.graphitron.rewrite.field.ArgumentRef.ColumnArg;
 import no.sikt.graphitron.rewrite.field.QueryField;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
@@ -25,7 +25,7 @@ import java.util.List;
  *       {@link LookupInputFieldSpec}.</li>
  *   <li><b>Flat-args path</b>: the field has no {@code TableInputType} argument.
  *       {@link LookupSpec#inputArgName()} is {@code null}; each
- *       {@link ArgumentRef.ColumnArg.ResolvedColumnArg} from {@link QueryField.LookupQueryField#arguments()}
+ *       {@link ArgumentRef.ColumnArg} from {@link QueryField.LookupQueryField#arguments()}
  *       becomes one {@link LookupInputFieldSpec}. Column resolution was performed during schema
  *       building — no catalog access is needed here.</li>
  * </ul>
@@ -83,8 +83,8 @@ public class LookupSpecBuilder {
 
     private static LookupSpec buildFlatSpec(QueryField.LookupQueryField field, String tableJavaFieldName) {
         var fields = field.arguments().stream()
-            .filter(a -> a instanceof ResolvedColumnArg)
-            .map(a -> (ResolvedColumnArg) a)
+            .filter(a -> a instanceof ColumnArg)
+            .map(a -> (ColumnArg) a)
             .map(a -> new LookupInputFieldSpec(
                 a.name(),
                 a.javaColumnName(),

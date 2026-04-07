@@ -27,8 +27,8 @@ class LookupQueryFieldValidationTest {
             singleReturn(List.of()),
             List.of()),
 
-        VALID_WITH_RESOLVED_FLAT_ARG("resolved flat arg — valid",
-            singleReturn(List.of(new ArgumentRef.ColumnArg.ResolvedColumnArg("id", "ID", false, true, "FILM_ID", null))),
+        VALID_WITH_COLUMN_ARG("column arg (resolved scalar) — valid",
+            singleReturn(List.of(new ArgumentRef.ColumnArg("id", "ID", false, true, "FILM_ID", null))),
             List.of()),
 
         VALID_WITH_TABLE_INPUT_TYPE_ARG("table input type arg — valid",
@@ -67,8 +67,8 @@ class LookupQueryFieldValidationTest {
                 "Field 'filmById': @orderBy is not valid on a lookup field",
                 "Field 'filmById': @condition is not valid on a lookup field")),
 
-        UNRESOLVED_FLAT_ARG("unresolved flat arg — reports column error",
-            singleReturn(List.of(new ArgumentRef.ColumnArg.UnresolvedColumnArg("tenantId", "String", false, false, "tenant_id"))),
+        PLAIN_SCALAR_ARG("plain scalar arg (unresolved column) — reports error",
+            singleReturn(List.of(new ArgumentRef.PlainScalarArg("tenantId", "String", false, false, "tenant_id"))),
             List.of("Field 'filmById': argument 'tenantId' could not be resolved to column 'tenant_id' on the return type's table"));
 
         private final String description;
