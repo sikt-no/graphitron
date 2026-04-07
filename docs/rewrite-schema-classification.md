@@ -103,9 +103,9 @@ Key methods:
 - `findColumn(tableSqlName, columnSqlName)` → same, resolving the table by name first
 - `findForeignKey(name)` → searches by SQL or Java FK name, case-insensitive
 
-`JooqCatalog` and `GraphitronSchemaBuilder` are the **only** classes permitted to hold or access raw jOOQ types (`Table<?>`, `Field<?>`, `ForeignKey<?,?>`). They form the reflection boundary. All information extracted from jOOQ is stored as primitives or strings in the taxonomy records; downstream code (validators, spec builders, generators) works from those values alone.
+`JooqCatalog` and `GraphitronSchemaBuilder` are the **only** classes permitted to hold or access raw jOOQ types (`Table<?>`, `Field<?>`, `ForeignKey<?,?>`) or raw graphql-java schema types (`TypeDefinitionRegistry`, `GraphQLSchema`, `GraphQLFieldDefinition`, etc.). They form the reflection and schema-parsing boundary. All information extracted from either source is stored as primitives or strings in the taxonomy records; downstream code (validators, spec builders, generators) works from those values alone.
 
-This constraint keeps the taxonomy complete: if a generator needs information that is not yet in a record, the fix is to add a component and extract the value in the builder — not to reach past the taxonomy to a stored jOOQ handle.
+This constraint keeps the taxonomy complete: if a generator needs information that is not yet in a record, the fix is to add a component and extract the value in the builder — not to reach past the taxonomy to a stored jOOQ or graphql-java handle.
 
 ---
 
