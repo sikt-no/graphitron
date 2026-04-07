@@ -1,8 +1,8 @@
 type Query {
-    customers(active: Boolean @condition @field(name: "ACTIVEBOOL")): [Customer!]!
+    customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]!
     films(
-        rating: MpaaRating @condition @field(name: "RATING"),
-        maxRentalRate: Float @condition @field(name: "RENTAL_RATE")
+        rating: MpaaRating @field(name: "RATING"),
+        maxRentalRate: Float @field(name: "RENTAL_RATE")
     ): [Film!]!
 }
 

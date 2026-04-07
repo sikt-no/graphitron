@@ -948,17 +948,18 @@ public class GraphitronSchemaBuilder {
      * Remaining (scalar) arguments are resolved against the return table via the catalog.
      */
     private ArgumentRef buildLookupArg(ArgumentSpec arg, TableRef.ResolvedTable rt) {
-        if (arg.orderBy()) {
-            return new ArgumentRef.InputTypeArg.PlainInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), true, false);
-        }
         if (arg.conditionArg()) {
-            return new ArgumentRef.InputTypeArg.PlainInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), false, true);
+            return new ArgumentRef.UnclassifiedArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
+                "@condition is only supported on field definitions, not on arguments");
+        }
+        if (arg.orderBy()) {
+            return new ArgumentRef.InputTypeArg.PlainInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), true);
         }
         if (types.containsKey(arg.typeName())) {
             resolveInputTypeImplicitly(arg.typeName(), rt);
             return types.get(arg.typeName()) instanceof TableInputType
                 ? new ArgumentRef.InputTypeArg.TableInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list())
-                : new ArgumentRef.InputTypeArg.PlainInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), false, false);
+                : new ArgumentRef.InputTypeArg.PlainInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), false);
         }
         // Scalar arg — resolve against the return type's table
         if (rt == null) {

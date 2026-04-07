@@ -36,7 +36,7 @@ class LookupQueryFieldValidationTest {
             List.of()),
 
         VALID_WITH_PLAIN_INPUT_TYPE_ARG("plain input type arg — valid (error handled at type level)",
-            singleReturn(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("key", "FilmKey", false, true, false, false))),
+            singleReturn(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("key", "FilmKey", false, true, false))),
             List.of()),
 
         LIST_RETURN("list cardinality — lookup must return a single object",
@@ -52,20 +52,13 @@ class LookupQueryFieldValidationTest {
             List.of("Field 'filmById': lookup fields must return a single object, not a list or connection")),
 
         ORDERBY_ARG("@orderBy on a lookup field argument — not valid on lookup",
-            singleReturn(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("order", "String", false, false, true, false))),
+            singleReturn(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("order", "String", false, false, true))),
             List.of("Field 'filmById': @orderBy is not valid on a lookup field")),
 
-        CONDITION_ARG("@condition on a lookup field argument — not valid on lookup",
-            singleReturn(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("filter", "String", false, false, false, true))),
-            List.of("Field 'filmById': @condition is not valid on a lookup field")),
-
-        ORDERBY_AND_CONDITION_ARGS("both @orderBy and @condition on a lookup field — two errors",
-            singleReturn(List.of(
-                new ArgumentRef.InputTypeArg.PlainInputTypeArg("order", "String", false, false, true, false),
-                new ArgumentRef.InputTypeArg.PlainInputTypeArg("filter", "String", false, false, false, true))),
-            List.of(
-                "Field 'filmById': @orderBy is not valid on a lookup field",
-                "Field 'filmById': @condition is not valid on a lookup field")),
+        UNCLASSIFIED_ARG("UnclassifiedArg — reports reason as error",
+            singleReturn(List.of(new ArgumentRef.UnclassifiedArg("filter", "String", false, false,
+                "@condition is only supported on field definitions, not on arguments"))),
+            List.of("Field 'filmById', argument 'filter': @condition is only supported on field definitions, not on arguments")),
 
         UNBOUND_SCALAR_ARG("ScalarArg.UnboundScalarArg — reports column error",
             singleReturn(List.of(new ArgumentRef.ScalarArg.UnboundScalarArg("tenantId", "String", false, false, "tenant_id"))),

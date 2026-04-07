@@ -12,7 +12,7 @@ package no.sikt.graphitron.rewrite.field;
  *           {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType} (either via
  *           {@code @table} or by optimistic inference from the field's return type).</li>
  *       <li>{@link InputTypeArg.PlainInputTypeArg} — the type could not be resolved to a table,
- *           or carries {@code @orderBy}/{@code @condition} (both invalid on lookup fields).</li>
+ *           or carries {@code @orderBy} (invalid on lookup fields).</li>
  *     </ul>
  *   </li>
  *   <li>{@link ScalarArg} — the argument type is a scalar or enum (sealed):
@@ -25,13 +25,15 @@ package no.sikt.graphitron.rewrite.field;
  *           column binding (e.g. a context argument or method parameter).</li>
  *     </ul>
  *   </li>
+ *   <li>{@link UnclassifiedArg} — the argument carries a directive that is not supported at the
+ *       argument level (e.g. {@code @condition}). The validator reports an error.</li>
  * </ul>
  *
  * <p>Common GraphQL argument metadata ({@code name}, {@code typeName}, {@code nonNull},
  * {@code list}) is available on all variants.
  */
 public sealed interface ArgumentRef
-        permits ArgumentRef.InputTypeArg, ArgumentRef.ScalarArg {
+        permits ArgumentRef.InputTypeArg, ArgumentRef.ScalarArg, ArgumentRef.UnclassifiedArg {
 
     String name();
     String typeName();
@@ -64,20 +66,17 @@ public sealed interface ArgumentRef
         ) implements InputTypeArg {}
 
         /**
-         * The type could not be resolved to a table, or carries {@code @orderBy} /
-         * {@code @condition}.
+         * The type could not be resolved to a table, or carries {@code @orderBy}.
          *
          * <p>{@code orderBy} is {@code true} when the argument carries {@code @orderBy} — invalid
-         * on lookup fields. {@code conditionArg} is {@code true} when the argument carries
-         * {@code @condition} — also invalid on lookup fields.
+         * on lookup fields.
          */
         record PlainInputTypeArg(
             String name,
             String typeName,
             boolean nonNull,
             boolean list,
-            boolean orderBy,
-            boolean conditionArg
+            boolean orderBy
         ) implements InputTypeArg {}
     }
 
@@ -135,4 +134,18 @@ public sealed interface ArgumentRef
             boolean list
         ) implements ScalarArg {}
     }
+
+    /**
+     * Argument that carries a directive not supported at the argument level.
+     *
+     * <p>Example: {@code @condition} is only valid on {@code FIELD_DEFINITION}; using it on an
+     * argument produces this variant. The validator reports {@code reason} as an error.
+     */
+    record UnclassifiedArg(
+        String name,
+        String typeName,
+        boolean nonNull,
+        boolean list,
+        String reason
+    ) implements ArgumentRef {}
 }

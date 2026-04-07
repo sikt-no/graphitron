@@ -20,11 +20,11 @@ package no.sikt.graphitron.rewrite.field;
  * semantic distinction.
  *
  * <p>{@code conditionArg} is {@code true} when the {@code @condition} directive is present on
- * this argument. Resolution of the condition method is deferred.
+ * this argument. The builder converts this to an {@link ArgumentRef.UnclassifiedArg} since
+ * {@code @condition} is only supported on field definitions.
  *
  * <p>{@code columnName} is the value of {@code @field(name:)} when present, otherwise the
- * GraphQL argument name. Used by the condition-generation pipeline to identify which database
- * column this argument maps to.
+ * GraphQL argument name. Used to identify which database column this argument maps to.
  */
 public record ArgumentSpec(
     String name,
