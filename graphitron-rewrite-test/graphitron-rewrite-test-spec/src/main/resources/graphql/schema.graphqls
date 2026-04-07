@@ -31,6 +31,7 @@ type Film @table(name: "film") {
 type Language @table(name: "language") {
     languageId: Int!    @field(name: "LANGUAGE_ID")
     name:       String! @field(name: "NAME")
+    films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
 }
 
 enum MpaaRating {
