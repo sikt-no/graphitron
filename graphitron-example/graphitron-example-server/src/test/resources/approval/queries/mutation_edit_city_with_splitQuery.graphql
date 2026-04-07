@@ -1,5 +1,5 @@
 mutation {
-    updateCityName(in: {cityId: "Q2l0eVR5cGU6MQ", name: "NEW_NAME"}) {
+    updateCityName(in: {cityId: "Q2l0eVR5cGU6MTAw", name: "NEW_NAME"}) {
         name
         addresses {
             id
