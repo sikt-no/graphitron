@@ -34,17 +34,25 @@ A Graphitron scope corresponds to one SQL statement. Fields within a scope contr
 |---|---|
 | **Enter** | An unmapped root field reaches a table-mapped type — the first scope starts |
 | **Split** | `@splitQuery` on a `TableField` — new scope via DataLoader |
-| **Lift** | A `TableField` on a result-mapped type — new scope via DataLoader, connected using a LiftCondition |
+| **Lift** | A `TableField` on a result-mapped type — new scope via DataLoader, connected via a lift table |
 
 `@service` fields use a **private scope** — they create their own SQL statement independently and do not participate in any Graphitron-managed scope.
+
+### Derived tables
+
+Both lookup and lift use the same structural pattern: a set of input rows is transformed into a derived table, and the target scope JOINs against it.
+
+| Kind | Input source | Derived table contents |
+|---|---|---|
+| **Lookup table** | GraphQL arguments (`@lookupKey`) | One row per input key; positional alignment between input and output is guaranteed |
+| **Lift table** | Parent record FK columns | One row per parent record; the target scope JOINs back to the parent using those columns |
 
 ### Conditions
 
 | Kind | Purpose | Source |
 |---|---|---|
-| **Reference condition** | How two tables are joined | `@reference` directive, FK metadata |
+| **Reference condition** | How two tables are joined within a scope | `@reference` directive, FK metadata |
 | **Filter condition** | Narrows the result set | `@condition` directive, arguments, cursor |
-| **LiftCondition** | Reconnects a result-mapped type back to a target table to start a new scope | FK match, `@condition`, or automatic for `TableRecord` returns |
 
 ### Structural properties
 
@@ -199,13 +207,13 @@ All create a new Graphitron scope or enter private service scope. Classification
 | `TableInterfaceQueryField` | Return type is `TableInterfaceType` | Single / List / Connection | Single-table discriminated interface. |
 | `InterfaceQueryField` | Return type is `InterfaceType` | Single / List / Connection | Multi-table interface; each implementor has its own `@table`. |
 | `UnionQueryField` | Return type is `UnionType` | Single / List / Connection | All member types have `@table`. |
-| `ServiceQueryField` | `@service` — checked first | Always single | Private scope. LiftCondition applies if return type is table-mapped. |
+| `ServiceQueryField` | `@service` — checked first | Always single | Private scope. A lift table reconnects the result to the target scope if return type is table-mapped. |
 
 `hasLookupKeyAnywhere()` checks direct arguments for `@lookupKey`, then recursively checks input type fields (depth-capped at 10 levels to prevent infinite recursion on circular input type references).
 
 ### Mutation fields
 
-The only fields permitted to write to the database. All support access back into the graph via their return type (LiftCondition if table-mapped, lift on child fields if result-mapped), except `DeleteMutationField`.
+The only fields permitted to write to the database. All support access back into the graph via their return type (lift table if table-mapped, lift on child fields if result-mapped), except `DeleteMutationField`.
 
 | Field type | Operation | Return |
 |---|---|---|
@@ -223,7 +231,7 @@ Source context at generation time is derived from `schema.type(parentTypeName)` 
 
 | Field type | Valid source contexts | Description |
 |---|---|---|
-| `TableField` | Table-mapped, result-mapped | Table-mapped target. Handles projection, ordering, pagination, nested scopes. In result-mapped context starts a new scope via DataLoader + LiftCondition. |
+| `TableField` | Table-mapped, result-mapped | Table-mapped target. Handles projection, ordering, pagination, nested scopes. In result-mapped context starts a new scope via DataLoader with a lift table. |
 | `TableMethodField` | Table-mapped, result-mapped | `@tableMethod` — developer supplies a pre-filtered `Table<?>`. Joined using the same logic as `TableField`. |
 | `TableInterfaceField` | Table-mapped, result-mapped | Single-table discriminated interface target. |
 | `InterfaceField` | Table-mapped, result-mapped | Multi-table interface target. |
@@ -240,7 +248,7 @@ Source context at generation time is derived from `schema.type(parentTypeName)` 
 | `NodeIdReferenceField` | Table-mapped | `@nodeId(typeName: ...)` — joins to the target type and encodes a Relay ID for that row. |
 | `ComputedField` | Table-mapped | `@externalField` — developer provides a jOOQ `Field<?>` included in the SELECT. |
 | `ConstructorField` | Table-mapped | Field-to-constructor-parameter mapping; Graphitron does not project through it. |
-| `ServiceField` | Table-mapped, result-mapped | `@service` — private scope. From result-mapped source, input is locked to what the record carries. LiftCondition applies if return type is table-mapped. |
+| `ServiceField` | Table-mapped, result-mapped | `@service` — private scope. From result-mapped source, input is locked to what the record carries. A lift table reconnects the result to the target scope if return type is table-mapped. |
 | `PropertyField` | Result-mapped | Reads a scalar or nested record property. Trivial data fetcher; no SQL. |
 | `MultitableReferenceField` | — | `@multitableReference` — not supported. Validator always reports an error; use `@service` instead. |
 

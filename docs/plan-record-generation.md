@@ -122,10 +122,10 @@ Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nest
 | `LookupQueryField` — batch DataLoader | `filmNested` per key (positional VALUES join) |
 | `TableField` — no `@splitQuery` | `filmNested` |
 | `TableField` — `@splitQuery` | DataLoader → `filmSelect` with batch condition |
-| `TableField` — result-mapped (lift) | DataLoader → `filmSelect` with LiftCondition |
+| `TableField` — result-mapped (lift) | DataLoader → `filmSelect` with lift table (derived from parent FK columns) |
 | `TableMethodField` | `filmNested(developerTable, ...)` overload |
 | `InterfaceField` | union over each implementor's `filmNested` |
-| Mutation read-back | `filmSelect` with LiftCondition |
+| Mutation read-back | `filmSelect` with lift table |
 
 **`LookupQueryField` batch mapping** uses `filmNested` rather than `filmSelect`. Each input key drives one row in a VALUES outer query; the nested multiset produces the matching result. Positional alignment between input keys and output rows is guaranteed, even for missing keys.
 
