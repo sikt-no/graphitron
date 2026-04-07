@@ -1,6 +1,8 @@
-# Record-Based Output: Schema Classification
+# Rewrite Pipeline: Schema Classification
 
-This document describes the parsing and validation layer of the record-based output pipeline. The companion document [`plan-record-generation.md`](plan-record-generation.md) covers the generating stream, remaining deliverables, and outstanding testing gaps for this layer.
+> **Status: in progress.** The parsing and validation layer described here is complete. The generating stream (code emission) is not yet built. The rewrite pipeline is behind the `rewriteBasedOutput` flag (default `false`) and is not ready for production use.
+
+This document describes the parsing and validation layer of the rewrite pipeline. The companion document [`plan-record-generation.md`](plan-record-generation.md) covers the generating stream, remaining deliverables, and outstanding testing gaps for this layer.
 
 ---
 

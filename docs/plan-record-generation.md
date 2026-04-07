@@ -1,6 +1,8 @@
-# Plan: Record-Based Output — Infrastructure and Generation
+# Rewrite Pipeline: Generation Plan
 
-This document covers the generating stream, the Maven plugin wiring, the test infrastructure for generated code, and all remaining deliverables. The companion document [`rewrite-schema-classification.md`](rewrite-schema-classification.md) covers the completed parsing and validation work.
+> **Status: in progress.** The parsing and validation layer is complete (see [`rewrite-schema-classification.md`](rewrite-schema-classification.md)). This document covers what remains: the generating stream, Maven plugin wiring, and test infrastructure. The rewrite pipeline is behind the `rewriteBasedOutput` flag (default `false`) and is not ready for production use.
+
+This document covers the generating stream, the Maven plugin wiring, the test infrastructure for generated code, and all remaining deliverables.
 
 ---
 
