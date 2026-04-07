@@ -2,15 +2,56 @@
 
 > **Status: in progress.** The parsing and validation layer described here is complete. The generating stream (code emission) is not yet built. The rewrite pipeline is behind the `rewriteBasedOutput` flag (default `false`) and is not ready for production use.
 
-This document describes the parsing and validation layer of the rewrite pipeline. The companion document [`plan-record-generation.md`](plan-record-generation.md) covers the generating stream, remaining deliverables, and outstanding testing gaps for this layer.
+This document covers the field taxonomy, the schema classification model, and the validation layer of the rewrite pipeline. The companion document [`plan-record-generation.md`](plan-record-generation.md) covers the generating stream, remaining deliverables, and outstanding testing gaps for this layer.
 
 ---
 
 ## Purpose
 
-The record-based output pipeline eliminates the DTO/TypeMapper layer from generated code. graphql-java's `RuntimeWiring` can resolve fields directly from jOOQ `Record` objects — no intermediate DTOs required. This reduces generated code volume, removes selection-set-per-field mapping boilerplate, and unblocks `@record` output support.
+The rewrite pipeline eliminates the DTO/TypeMapper layer from generated code. graphql-java's `RuntimeWiring` can resolve fields directly from jOOQ `Record` objects — no intermediate DTOs required. This reduces generated code volume, removes selection-set-per-field mapping boilerplate, and unblocks `@record` output support.
 
 New generators live in `<outputPackage>.rewrite.*` alongside the existing pipeline, controlled by the `rewriteBasedOutput` flag (default `false`).
+
+---
+
+## Core Vocabulary
+
+### Source context
+
+Every field has a source context — the type on which it is defined. Source context determines what Graphitron can generate for that field.
+
+| Source context | Directive | What Graphitron generates |
+|---|---|---|
+| **Unmapped** | *(none — Query, Mutation)* | Entry point. No SQL yet. |
+| **Table-mapped** | `@table` | Full SQL generation — queries, joins, projections. |
+| **Result-mapped** | `@record` | Runtime wiring only. Graphitron validates types and wires data fetchers, but generates no SQL until a new scope starts. |
+
+### Scope
+
+A Graphitron scope corresponds to one SQL statement. Fields within a scope contribute to the same query.
+
+| Boundary | Trigger |
+|---|---|
+| **Enter** | An unmapped root field reaches a table-mapped type — the first scope starts |
+| **Split** | `@splitQuery` on a `TableField` — new scope via DataLoader |
+| **Lift** | A `TableField` on a result-mapped type — new scope via DataLoader, connected using a LiftCondition |
+
+`@service` fields use a **private scope** — they create their own SQL statement independently and do not participate in any Graphitron-managed scope.
+
+### Conditions
+
+| Kind | Purpose | Source |
+|---|---|---|
+| **Reference condition** | How two tables are joined | `@reference` directive, FK metadata |
+| **Filter condition** | Narrows the result set | `@condition` directive, arguments, cursor |
+| **LiftCondition** | Reconnects a result-mapped type back to a target table to start a new scope | FK match, `@condition`, or automatic for `TableRecord` returns |
+
+### Structural properties
+
+| Property | Effect |
+|---|---|
+| **`@splitQuery`** | Forces a new scope via DataLoader instead of a SQL join. Valid on `TableField`; error on result-mapped fields (they always start a new scope implicitly). |
+| **`@lookupKey`** | Adds strict lookup semantics: 1:1 row-to-key matching, count enforcement, no pagination. Orthogonal to `@splitQuery`. |
 
 ---
 
@@ -31,10 +72,6 @@ TypeDefinitionRegistry
 `GraphitronSchemaBuilder` operates on a `GraphQLSchema` assembled from the `TypeDefinitionRegistry` (same pattern as `SchemaTransformer.assembleSchema()`). It iterates `schema.getAllTypesAsList()` for type classification, then each `GraphQLObjectType`'s field definitions for field classification. Interface and union participant lists are populated in a second enrichment pass.
 
 `GraphitronRewriteGenerator` (in `no.sikt.graphitron.rewrite`) is the entry point: it runs the builder, runs the validator, and dispatches generators in parallel.
-
----
-
-## Core Types
 
 ### `GraphitronSchema`
 
@@ -60,52 +97,38 @@ Key methods:
 
 Every GraphQL named type is classified into one `GraphitronType` variant. The builder reports violations as `UnclassifiedType(reason)`.
 
-| Variant | Trigger | Key fields |
-|---|---|---|
-| `TableType` | `@table` directive | `table: TableRef`, `node: NodeRef` |
-| `ResultType` | `@record` directive | runtime wiring only; no SQL scope |
-| `RootType` | `Query` / `Mutation` type | entry point; no directives |
-| `TableInterfaceType` | `@table` + `@discriminate` | `discriminatorColumn`, `table: TableRef`, `participants: List<ParticipantRef>` |
-| `InterfaceType` | interface, no directives | `participants: List<ParticipantRef>` (each member carries `@table`) |
-| `UnionType` | GraphQL union | `participants: List<ParticipantRef>` (all members carry `@table`) |
-| `ErrorType` | `@error` directive | `handlers: List<ErrorHandlerSpec>` |
-| `InputType` | input object, no directives | — |
-| `TableInputType` | input object + `@table` | `table: TableRef`, `fields: List<InputFieldRef>` |
-| `UnclassifiedType` | conflicting or unrecognised directives | `reason: String` |
+```
+GraphitronType
+├── TableType          (@table — full SQL generation)
+├── ResultType         (@record — runtime wiring only)
+├── RootType           (Query / Mutation — unmapped entry points)
+├── TableInterfaceType (@table + @discriminate on interface)
+├── InterfaceType      (no directives; implementors have @table)
+├── UnionType          (all member types have @table)
+├── ErrorType          (@error — maps Java exceptions to GraphQL error responses)
+├── InputType          (GraphQL input object)
+├── TableInputType     (@table on input object — fields map to database columns)
+└── UnclassifiedType   (conflicting or unrecognised directives; reason: String)
+```
 
 **Type-level directive exclusivity:** `@table`, `@record`, and `@error` are mutually exclusive peers on any type.
 
-### `TableRef`
+### Reference types
 
-Two-variant sealed hierarchy for the outcome of matching `@table(name:)` against the jOOQ catalog:
-
+**`TableRef`** — outcome of matching `@table(name:)` against the jOOQ catalog:
 - `ResolvedTable` — `tableName`, `javaFieldName`, `table: Table<?>` (columns, PK, FK metadata)
 - `UnresolvedTable` — `tableName` only; validator reports an error
+- `tableName()` is present on both variants
 
-`tableName()` is present on both so callers never need to pattern-match just to retrieve the SQL name.
+**`NodeRef`** — whether a `TableType` carries `@node`:
+- `NoNode` — no directive
+- `NodeDirective` — `typeId: String` (nullable), `keyColumns: List<KeyColumnRef>` (resolved/unresolved)
 
-### `NodeRef`
-
-Whether a `TableType` carries `@node`:
-
-- `NoNode` — no `@node` directive
-- `NodeDirective` — `typeId: String` (nullable), `keyColumns: List<KeyColumnRef>`
-
-`KeyColumnRef` is resolved/unresolved: `ResolvedKeyColumn(name, javaName)` or `UnresolvedKeyColumn(name)`.
-
-### `ParticipantRef`
-
-Each implementing or member type of an interface or union:
-
+**`ParticipantRef`** — each implementing or member type of an interface or union:
 - `BoundParticipant` — type has `@table`; `typeName`, `table: TableRef`, `discriminatorValue` (from `@discriminator(value:)`, null when absent)
 - `UnboundParticipant` — type lacks `@table`; validator reports an error
 
-`BoundParticipant.discriminatorValue` drives the type resolver generator mapping discriminator column values to concrete Java types.
-
-### `InputFieldRef`
-
-Resolution outcome for a single field in a `TableInputType`:
-
+**`InputFieldRef`** — resolution outcome for a single field in a `TableInputType`:
 - `TableInputField` — `name`, `typeName`, `nonNull`, `list`, `table: ResolvedTable`, `javaColumnName`, `column: Field<?>`
 - `UnresolvedInputField` — `name`, `typeName`, `nonNull`, `list`, `columnName`
 
@@ -113,16 +136,43 @@ Resolution outcome for a single field in a `TableInputType`:
 
 ## Field Classification (`GraphitronField`)
 
-Every field is classified into one of three sealed branches:
-
 ```
 GraphitronField
-├── ChildField       (fields on non-root output types)
 ├── RootField
-│   ├── QueryField   (fields on Query)
-│   └── MutationField (fields on Mutation)
-├── NotGeneratedField (@notGenerated)
-└── UnclassifiedField (reason: String)
+│   ├── QueryField
+│   │   ├── LookupQueryField
+│   │   ├── TableQueryField
+│   │   ├── TableMethodQueryField
+│   │   ├── NodeQueryField
+│   │   ├── EntityQueryField
+│   │   ├── TableInterfaceQueryField
+│   │   ├── InterfaceQueryField
+│   │   ├── UnionQueryField
+│   │   └── ServiceQueryField
+│   └── MutationField
+│       ├── InsertMutationField
+│       ├── UpdateMutationField
+│       ├── DeleteMutationField
+│       ├── UpsertMutationField
+│       └── ServiceMutationField
+├── ChildField
+│   ├── ColumnField
+│   ├── ColumnReferenceField
+│   ├── NodeIdField
+│   ├── NodeIdReferenceField
+│   ├── TableField
+│   ├── TableMethodField
+│   ├── TableInterfaceField
+│   ├── InterfaceField
+│   ├── UnionField
+│   ├── NestingField
+│   ├── ConstructorField
+│   ├── ServiceField
+│   ├── ComputedField
+│   ├── PropertyField
+│   └── MultitableReferenceField
+├── NotGeneratedField  (@notGenerated — classified but no data fetcher generated)
+└── UnclassifiedField  (reason: String)
 ```
 
 **Field-level directive exclusivity:**
@@ -135,70 +185,101 @@ GraphitronField
 
 Violations produce `UnclassifiedField(reason)` naming the conflicting directives.
 
-### Child fields (14 variants)
+### Query fields
 
-| Variant | Classification trigger | Key fields |
+All create a new Graphitron scope or enter private service scope. Classification priority runs top to bottom.
+
+| Field type | Trigger | Return | Notes |
+|---|---|---|---|
+| `LookupQueryField` | `@lookupKey` on any argument | Always single | Strict 1:1 row-to-key; no pagination. If any arg is a list, return must also be a list. |
+| `TableQueryField` | Return type is `TableType` | Single / List / Connection | General table query. |
+| `TableMethodQueryField` | `@tableMethod` | Single / List / Connection | Developer supplies a pre-filtered `Table<?>`. Preferred over `ServiceQueryField` when logic fits a filtered table. |
+| `NodeQueryField` | Field name `node` | Always single | Relay `Query.node(id:)` — decodes global ID. |
+| `EntityQueryField` | Field name `_entities` | Always single | Apollo Federation `Query._entities(representations:)`. |
+| `TableInterfaceQueryField` | Return type is `TableInterfaceType` | Single / List / Connection | Single-table discriminated interface. |
+| `InterfaceQueryField` | Return type is `InterfaceType` | Single / List / Connection | Multi-table interface; each implementor has its own `@table`. |
+| `UnionQueryField` | Return type is `UnionType` | Single / List / Connection | All member types have `@table`. |
+| `ServiceQueryField` | `@service` — checked first | Always single | Private scope. LiftCondition applies if return type is table-mapped. |
+
+`hasLookupKeyAnywhere()` checks direct arguments for `@lookupKey`, then recursively checks input type fields (depth-capped at 10 levels to prevent infinite recursion on circular input type references).
+
+### Mutation fields
+
+The only fields permitted to write to the database. All support access back into the graph via their return type (LiftCondition if table-mapped, lift on child fields if result-mapped), except `DeleteMutationField`.
+
+| Field type | Operation | Return |
 |---|---|---|
-| `ColumnField` | scalar/enum, no path directive | `columnName`, `column: ColumnRef` |
-| `ColumnReferenceField` | scalar/enum + `@reference` | `columnName`, `column: ColumnRef`, `referencePath` |
-| `NodeIdField` | `@nodeId` (no typeName) | `node: NodeRef` (from parent's `@node`) |
-| `NodeIdReferenceField` | `@nodeId(typeName: ...)` | `typeName`, `nodeType: NodeTypeRef`, `returnType`, `referencePath`, `parentTable` |
-| `TableField` | return type is `TableType`, no `@tableMethod` | `returnType`, `referencePath`, `condition: FieldConditionRef`, `arguments` |
-| `TableMethodField` | `@tableMethod` on child field | developer supplies pre-filtered `Table<?>` |
-| `TableInterfaceField` | return type is `TableInterfaceType` | — |
-| `InterfaceField` | return type is `InterfaceType` | — |
-| `UnionField` | return type is `UnionType` | — |
-| `NestingField` | inline nesting, no table join | — |
-| `ConstructorField` | return type is `ResultType` child | — |
-| `ServiceField` | `@service` on child field | `referencePath`, `arguments` |
-| `ComputedField` | `@computed` | `referencePath` |
-| `PropertyField` | direct property access | — |
-| `MultitableReferenceField` | `@multitableReference` | validation error — not supported in rewrite pipeline |
+| `InsertMutationField` | `@mutation(typeName: INSERT)` | Table-mapped or result-mapped (lift applies) |
+| `UpdateMutationField` | `@mutation(typeName: UPDATE)` | Table-mapped or result-mapped (lift applies) |
+| `DeleteMutationField` | `@mutation(typeName: DELETE)` | Success flag, count, or ordered input echo. No lift — deleted rows cannot be queried back. |
+| `UpsertMutationField` | `@mutation(typeName: UPSERT)` | Table-mapped or result-mapped (lift applies) |
+| `ServiceMutationField` | `@service` — checked first | Lift rule applies as for service fields |
 
-### Query field classification (9 variants, priority order)
+### Child fields
 
-1. `@service` directive → `ServiceQueryField`
-2. Field name `_entities` → `EntityQueryField`
-3. Field name `node` → `NodeQueryField`
-4. Any argument (direct or nested in input types) has `@lookupKey` → `LookupQueryField`
-5. `@tableMethod` directive → `TableMethodQueryField`
-6. Return type is `TableType` → `TableQueryField`
-7. Return type is `TableInterfaceType` → `TableInterfaceQueryField`
-8. Return type is `InterfaceType` → `InterfaceQueryField`
-9. Return type is `UnionType` → `UnionQueryField`
+Source context at generation time is derived from `schema.type(parentTypeName)` — `TableType` means table-mapped, `ResultType` means result-mapped.
 
-`hasLookupKeyAnywhere()` checks direct arguments for `@lookupKey`, then recursively checks input type fields. Depth is capped at 10 levels to prevent infinite recursion on circular input type references.
+#### Graphitron projects through these
 
-**`LookupQueryField` cardinality rule:** if any argument is a list, the return type must also be a list; if all arguments are scalar, the return must be single; connection return is never valid on a lookup field.
+| Field type | Valid source contexts | Description |
+|---|---|---|
+| `TableField` | Table-mapped, result-mapped | Table-mapped target. Handles projection, ordering, pagination, nested scopes. In result-mapped context starts a new scope via DataLoader + LiftCondition. |
+| `TableMethodField` | Table-mapped, result-mapped | `@tableMethod` — developer supplies a pre-filtered `Table<?>`. Joined using the same logic as `TableField`. |
+| `TableInterfaceField` | Table-mapped, result-mapped | Single-table discriminated interface target. |
+| `InterfaceField` | Table-mapped, result-mapped | Multi-table interface target. |
+| `UnionField` | Table-mapped, result-mapped | Union target. |
+| `NestingField` | Table-mapped | Target inherits the source table context; produces a nesting level without a new scope. |
 
-### Mutation field classification (5 variants)
+#### Graphitron does not project through these
 
-`@service` → `ServiceMutationField`. Otherwise `@mutation(typeName:)` determines: `InsertMutationField`, `UpdateMutationField`, `DeleteMutationField`, or `UpsertMutationField`.
+| Field type | Valid source contexts | Description |
+|---|---|---|
+| `ColumnField` | Table-mapped | Bound to a column on the source table. |
+| `ColumnReferenceField` | Table-mapped | Bound to a column on a joined target table via `@reference`. |
+| `NodeIdField` | Table-mapped | `@nodeId` — encodes a Relay global ID from the source type's key columns. Source type must have `@node`. |
+| `NodeIdReferenceField` | Table-mapped | `@nodeId(typeName: ...)` — joins to the target type and encodes a Relay ID for that row. |
+| `ComputedField` | Table-mapped | `@externalField` — developer provides a jOOQ `Field<?>` included in the SELECT. |
+| `ConstructorField` | Table-mapped | Field-to-constructor-parameter mapping; Graphitron does not project through it. |
+| `ServiceField` | Table-mapped, result-mapped | `@service` — private scope. From result-mapped source, input is locked to what the record carries. LiftCondition applies if return type is table-mapped. |
+| `PropertyField` | Result-mapped | Reads a scalar or nested record property. Trivial data fetcher; no SQL. |
+| `MultitableReferenceField` | — | `@multitableReference` — not supported. Validator always reports an error; use `@service` instead. |
+
+### Child field matrix
+
+Quick reference: which field type applies given target and source context.
+
+| Target | Source context | Projects through | Stops here |
+|---|---|---|---|
+| Table-mapped | Table-mapped or result-mapped | `TableField`, `TableMethodField` | — |
+| Interface | Table-mapped or result-mapped | `TableInterfaceField`, `InterfaceField` | — |
+| Union | Table-mapped or result-mapped | `UnionField` | — |
+| Inherited table scope | Table-mapped | `NestingField` | — |
+| Column (own table) | Table-mapped | — | `ColumnField`, `NodeIdField` |
+| Column (via join) | Table-mapped | — | `ColumnReferenceField`, `NodeIdReferenceField` |
+| SQL expression | Table-mapped | — | `ComputedField` |
+| Service | Table-mapped or result-mapped | — | `ServiceField` |
+| Record property | Result-mapped | — | `PropertyField` |
+| Constructor | Table-mapped | — | `ConstructorField` |
+| Unsupported | — | — | `MultitableReferenceField` |
 
 ---
 
 ## Return Types and Wrappers
 
-### `ReturnTypeRef`
-
-Outcome of resolving a field's return type name against classified types:
-
+**`ReturnTypeRef`** — outcome of resolving a field's return type against classified types:
 - `TableBoundReturnType` — type is a `TableType`; carries resolved `TableRef`
 - `OtherReturnType` — type exists but is not table-bound (result type, interface, union)
 
-Both variants carry `returnTypeName` and `wrapper: FieldWrapper`.
+Both carry `returnTypeName` and `wrapper: FieldWrapper`.
 
-### `FieldWrapper`
-
-Describes the cardinality wrapping of a field's element type:
-
+**`FieldWrapper`** — cardinality of the field's element type:
 - `Single(nullable)` — one instance or null
 - `List(listNullable, itemNullable, defaultOrder, orderByValues)` — SQL-style list
 - `Connection(connectionNullable, itemNullable, defaultOrder, orderByValues)` — Relay cursor-paginated list
 
 `Connection` is detected by structural inspection (edges → node chain), not a directive.
 
-`DefaultOrderSpec` holds an `OrderSpec` and direction. `OrderSpec` is itself a sealed hierarchy normalising three sources of sort specification:
+**`OrderSpec`** — sealed hierarchy normalising sort specification sources:
 
 | Variant | State |
 |---|---|
@@ -211,8 +292,6 @@ Describes the cardinality wrapping of a field's element type:
 ---
 
 ## Argument Resolution (`ArgumentRef`)
-
-Arguments on query and mutation fields are resolved to one of three sealed branches:
 
 ```
 ArgumentRef
@@ -244,16 +323,14 @@ All variants carry `name`, `typeName`, `nonNull`, `list`.
 | `UnresolvedConditionRef` | condition method not found |
 | `UnresolvedKeyAndConditionRef` | both failed |
 
-Field-level `@condition` is resolved to `FieldConditionRef`:
-
+**`FieldConditionRef`** — field-level `@condition` resolution:
 - `NoFieldCondition` — no `@condition` on field
 - `ResolvedFieldCondition` — `method: MethodRef`, `override`, `contextArgs`
 - `UnresolvedFieldCondition` — `qualifiedName`, `override`, `contextArgs`
 
 `MethodRef` carries `qualifiedName`, `returnTypeName`, `params: List<ParamInfo>`. `ParamInfo` records type and parameter name (requires `-parameters` compiler flag on user code).
 
-`NodeTypeRef` resolves `@nodeId(typeName:)` targets:
-
+**`NodeTypeRef`** — resolves `@nodeId(typeName:)` targets:
 - `ResolvedNodeType` — type exists as `TableType` with `@node`
 - `NoNodeDirectiveType` — type exists but has no `@node`
 - `NotFoundNodeType` — type name not in schema
@@ -266,11 +343,10 @@ Field-level `@condition` is resolved to `FieldConditionRef`:
 
 After the full scan, `GraphitronRewriteGenerator` logs all errors with source locations and throws a `RuntimeException` to fail the build.
 
-Additional rules beyond basic variant validation:
-
+Additional rules:
 - **`LookupQueryField` cardinality** — list/scalar argument cardinality must match return type cardinality
 - **Reference path integrity** — each unresolved step in a path is reported
-- **Deterministic ordering** — tables without a primary key that appear in paginated queries must have a `@defaultOrder` or `@orderBy` configured
+- **Deterministic ordering** — tables without a primary key that appear in paginated queries must have `@defaultOrder` or `@orderBy` configured
 
 ---
 
@@ -292,7 +368,7 @@ enum Case implements ValidatorCase {
 }
 ```
 
-Rule: use `@EnumSource` when constants have behaviour or are reused; use `@CsvSource` when data is purely tabular.
+Use `@EnumSource` when constants have behaviour or are reused; use `@CsvSource` when data is purely tabular.
 
 ### Level 2 — Classification tests
 
@@ -327,7 +403,7 @@ Outstanding testing gaps for this layer are tracked in [`plan-record-generation.
 | `rewrite/JooqCatalog.java` | jOOQ reflection wrapper: SQL name → `Table<?>` / `Field<?>` |
 | `rewrite/GraphQLRewriteGenerator.java` | Entry point: build → validate → dispatch generators |
 | `rewrite/ValidationError.java` | `message`, `location: SourceLocation` |
-| `rewrite/field/GraphitronField.java` | Root of 28+ leaf field type hierarchy |
+| `rewrite/field/GraphitronField.java` | Root of the field type hierarchy |
 | `rewrite/field/ChildField.java` | Sealed branch: 14 child field variants |
 | `rewrite/field/QueryField.java` | Sealed branch: 9 query field variants |
 | `rewrite/field/MutationField.java` | Sealed branch: 5 mutation field variants |
@@ -336,8 +412,8 @@ Outstanding testing gaps for this layer are tracked in [`plan-record-generation.
 | `rewrite/field/ReferencePathElementRef.java` | 6-variant FK + condition path step |
 | `rewrite/field/FieldConditionRef.java` | Field-level `@condition` resolution |
 | `rewrite/field/ColumnRef.java`, `NodeTypeRef.java` | Column and node type resolution |
-| `rewrite/field/OrderSpec.java`, `FieldWrapper.java` | Sort specification |
-| `rewrite/type/GraphitronType.java` | Root of 10-variant type hierarchy |
+| `rewrite/field/OrderSpec.java` | Sort specification |
+| `rewrite/type/GraphitronType.java` | Root of the type hierarchy |
 | `rewrite/type/TableRef.java` | `@table` → jOOQ `Table<?>` resolution |
 | `rewrite/type/ParticipantRef.java` | Interface/union member resolution |
 | `rewrite/type/NodeRef.java`, `KeyColumnRef.java` | `@node` directive and key columns |

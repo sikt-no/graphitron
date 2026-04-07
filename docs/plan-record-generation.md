@@ -65,6 +65,72 @@ DataLoader batch functions follow the same pattern: synchronous bulk SQL, return
 
 ---
 
+## Per-type select pattern
+
+Every `@table` type generates a `<TypeName>Fields` class with two kinds of method:
+
+**Static field methods** produce `Field<Result<Record>>` (multiset, one-to-many) or `Field<Record>` (row, one-to-one) expressions composable into any SELECT clause — analogous to jOOQ's own `FILM.FILM_ID` constants. They use graphql-java's native `SelectedField`, which carries both `getSelectionSet()` and `getArguments()`, with no custom wrapper.
+
+```java
+// In FilmFields
+public static Field<Result<Record>> actors(Film film, SelectedField field) {
+    return DSL.multiset(
+        DSL.select(ActorFields.fields(ACTOR, field.getSelectionSet()))
+           .from(ACTOR)
+           .join(FILM_ACTOR).on(FILM_ACTOR.ACTOR_ID.eq(ACTOR.ACTOR_ID))
+           .where(FILM_ACTOR.FILM_ID.eq(film.FILM_ID))
+           .orderBy(actorOrderBy(field.getArguments()))
+    ).as("actors");
+}
+```
+
+**`fields(table, sel)`** assembles the SELECT list, passing each sub-field's `SelectedField` directly:
+
+```java
+List<Field<?>> fields(Film film, DataFetchingFieldSelectionSet sel) {
+    var fields = new ArrayList<Field<?>>();
+    fields.add(film.TITLE);
+    sel.getFields("actors").forEach(f -> fields.add(actors(film, f)));
+    sel.getFields("language").forEach(f -> fields.add(language(film, f)));
+    return fields;
+}
+```
+
+Two scope-establishing methods delegate to `fields()`:
+
+```java
+// Starts a new SQL statement — used by root queries, DataLoaders (split + lift), mutation read-back.
+SelectFinalStep<Record> filmSelect(DSLContext ctx, DataFetchingFieldSelectionSet sel,
+    Condition condition, List<SortField<?>> orderBy)
+
+// Contributes to an existing statement as a multiset subquery.
+Field<Result<Record>> filmNested(DataFetchingFieldSelectionSet sel,
+    Condition condition, List<SortField<?>> orderBy)
+
+// @tableMethod overload — developer supplies a pre-filtered table.
+Field<Result<Record>> filmNested(Table<FilmRecord> table, ...)
+```
+
+Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nested via `record.get(nestedField)`.
+
+**Field type to method mapping:**
+
+| Field type | Method |
+|---|---|
+| `TableQueryField` | `filmSelect` |
+| `LookupQueryField` — single | `filmSelect` with key condition |
+| `LookupQueryField` — batch DataLoader | `filmNested` per key (positional VALUES join) |
+| `TableField` — no `@splitQuery` | `filmNested` |
+| `TableField` — `@splitQuery` | DataLoader → `filmSelect` with batch condition |
+| `TableField` — result-mapped (lift) | DataLoader → `filmSelect` with LiftCondition |
+| `TableMethodField` | `filmNested(developerTable, ...)` overload |
+| `InterfaceField` | union over each implementor's `filmNested` |
+| Mutation read-back | `filmSelect` with LiftCondition |
+
+**`LookupQueryField` batch mapping** uses `filmNested` rather than `filmSelect`. Each input key drives one row in a VALUES outer query; the nested multiset produces the matching result. Positional alignment between input keys and output rows is guaranteed, even for missing keys.
+
+---
+
 ## Prefetch-with-fallback pattern (`TableField` wiring)
 
 Every inline `TableField` generates a `private static final` typed field constant used as the key both when embedding the subquery in `fields()` and when reading back the result in `wiring()`.
