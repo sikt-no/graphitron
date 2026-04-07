@@ -70,18 +70,25 @@ public sealed interface ArgumentRef
         ) implements InputTypeArg {}
 
         /**
-         * The argument carries {@code @orderBy}.
+         * The argument carries {@code @orderBy} and its input type has been resolved to the
+         * required structure.
          *
-         * <p>The input type must have a specific structure validated by the schema: one enum field
-         * whose values carry {@code @order} directives, and one direction field (ASC/DESC).
-         * Valid on {@link no.sikt.graphitron.rewrite.field.QueryField.TableQueryField}; invalid
-         * on lookup fields.
+         * <p>The input type must have exactly one enum field whose values carry {@code @order}
+         * directives ({@code sortFieldName}) and exactly one direction enum field ({@code directionFieldName}).
+         * Valid on {@link no.sikt.graphitron.rewrite.field.QueryField.TableQueryField}; the
+         * validator reports an error on lookup fields.
+         *
+         * <p>If the input type cannot be resolved to this structure (type not found, wrong number
+         * of sort/direction fields), the builder produces an {@link ArgumentRef.UnclassifiedArg}
+         * instead.
          */
         record OrderByArg(
             String name,
             String typeName,
             boolean nonNull,
-            boolean list
+            boolean list,
+            String sortFieldName,
+            String directionFieldName
         ) implements InputTypeArg {}
 
         /**

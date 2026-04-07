@@ -52,7 +52,7 @@ class LookupQueryFieldValidationTest {
             List.of("Field 'filmById': lookup fields must return a single object, not a list or connection")),
 
         ORDERBY_ARG("@orderBy on a lookup field argument — not valid on lookup",
-            singleReturn(List.of(new ArgumentRef.InputTypeArg.OrderByArg("order", "FilmOrder", false, false))),
+            singleReturn(List.of(new ArgumentRef.InputTypeArg.OrderByArg("order", "FilmOrder", false, false, "sortField", "direction"))),
             List.of("Field 'filmById': @orderBy is not valid on a lookup field")),
 
         UNCLASSIFIED_ARG("UnclassifiedArg — reports reason as error",

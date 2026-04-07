@@ -953,7 +953,7 @@ public class GraphitronSchemaBuilder {
                 "@condition is only supported on field definitions, not on arguments");
         }
         if (arg.orderBy()) {
-            return new ArgumentRef.InputTypeArg.OrderByArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list());
+            return resolveOrderByArg(arg);
         }
         if (types.containsKey(arg.typeName())) {
             resolveInputTypeImplicitly(arg.typeName(), rt);
@@ -970,6 +970,53 @@ public class GraphitronSchemaBuilder {
                 arg.name(), arg.typeName(), arg.nonNull(), arg.list(), e.javaName(), e.column()))
             .orElseGet(() -> new ArgumentRef.ScalarArg.UnboundScalarArg(
                 arg.name(), arg.typeName(), arg.nonNull(), arg.list(), arg.columnName()));
+    }
+
+    /**
+     * Resolves an {@code @orderBy} argument to an {@link ArgumentRef.InputTypeArg.OrderByArg}.
+     *
+     * <p>Looks up the argument's input type in the schema and expects it to contain exactly one
+     * enum field whose values carry {@code @order} directives (the sort field) and exactly one
+     * other enum field (the direction field). Returns an {@link ArgumentRef.UnclassifiedArg} with
+     * a descriptive reason if the structure is invalid.
+     */
+    private ArgumentRef resolveOrderByArg(ArgumentSpec arg) {
+        var rawType = schema.getType(arg.typeName());
+        if (!(rawType instanceof GraphQLInputObjectType inputType)) {
+            return new ArgumentRef.UnclassifiedArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
+                "@orderBy argument type '" + arg.typeName() + "' is not an input type");
+        }
+        String sortFieldName = null;
+        String directionFieldName = null;
+        for (var field : inputType.getFieldDefinitions()) {
+            var fieldType = GraphQLTypeUtil.unwrapNonNull(field.getType());
+            if (!(fieldType instanceof GraphQLEnumType enumType)) continue;
+            boolean isSortEnum = enumType.getValues().stream()
+                .anyMatch(v -> v.hasAppliedDirective("order"));
+            if (isSortEnum) {
+                if (sortFieldName != null) {
+                    return new ArgumentRef.UnclassifiedArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
+                        "@orderBy input type '" + arg.typeName() + "' must have exactly one sort enum field, but found multiple");
+                }
+                sortFieldName = field.getName();
+            } else {
+                if (directionFieldName != null) {
+                    return new ArgumentRef.UnclassifiedArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
+                        "@orderBy input type '" + arg.typeName() + "' must have exactly one direction field, but found multiple");
+                }
+                directionFieldName = field.getName();
+            }
+        }
+        if (sortFieldName == null) {
+            return new ArgumentRef.UnclassifiedArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
+                "@orderBy input type '" + arg.typeName() + "' has no sort enum field (no enum values with @order)");
+        }
+        if (directionFieldName == null) {
+            return new ArgumentRef.UnclassifiedArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
+                "@orderBy input type '" + arg.typeName() + "' has no direction field");
+        }
+        return new ArgumentRef.InputTypeArg.OrderByArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
+            sortFieldName, directionFieldName);
     }
 
     // ===== Conflict detection helpers =====

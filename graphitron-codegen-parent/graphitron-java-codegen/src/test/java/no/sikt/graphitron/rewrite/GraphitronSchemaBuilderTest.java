@@ -1402,7 +1402,27 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LOOKUP_FIELD_ORDERBY_ARG(
-            "lookup field with @orderBy arg → OrderByArg",
+            "@orderBy arg with valid input type structure → OrderByArg with resolved field names",
+            """
+            enum FilmOrderField { TITLE @order(index: "IDX_TITLE") }
+            enum Direction { ASC DESC }
+            input FilmOrder { sortField: FilmOrderField! direction: Direction! }
+            type Film @table(name: "film") { title: String }
+            type Query { filmById(film_id: [ID] @lookupKey, order: FilmOrder @orderBy): Film }
+            """,
+            schema -> {
+                var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
+                var orderArg = f.arguments().stream()
+                    .filter(a -> a.name().equals("order"))
+                    .findFirst().orElseThrow();
+                assertThat(orderArg).isInstanceOf(ArgumentRef.InputTypeArg.OrderByArg.class);
+                var resolved = (ArgumentRef.InputTypeArg.OrderByArg) orderArg;
+                assertThat(resolved.sortFieldName()).isEqualTo("sortField");
+                assertThat(resolved.directionFieldName()).isEqualTo("direction");
+            }),
+
+        LOOKUP_FIELD_ORDERBY_ARG_BAD_STRUCTURE(
+            "@orderBy arg whose type is not an input type → UnclassifiedArg",
             """
             enum FilmOrder { TITLE }
             type Film @table(name: "film") { title: String }
@@ -1413,7 +1433,9 @@ class GraphitronSchemaBuilderTest {
                 var orderArg = f.arguments().stream()
                     .filter(a -> a.name().equals("order"))
                     .findFirst().orElseThrow();
-                assertThat(orderArg).isInstanceOf(ArgumentRef.InputTypeArg.OrderByArg.class);
+                assertThat(orderArg).isInstanceOf(ArgumentRef.UnclassifiedArg.class);
+                assertThat(((ArgumentRef.UnclassifiedArg) orderArg).reason())
+                    .contains("not an input type");
             }),
 
         TABLE_QUERY_FIELD(
