@@ -10,7 +10,7 @@ The companion document [`plan-record-generation.md`](plan-record-generation.md) 
 
 The current code generation pipeline produces output DTOs and TypeMapper classes that convert jOOQ Records into those DTOs. This is unnecessary: graphql-java's `RuntimeWiring` can resolve fields directly from any Java object, including jOOQ `Record`. Eliminating the DTO/TypeMapper layer reduces generated code volume, removes the selection-set-per-field mapping boilerplate, and unblocks future features (e.g. `@record` output support).
 
-The change is behind a `rewriteBasedOutput` feature flag (default `false`) and generates new artefacts into a separate package (`<outputPackage>.rewrite.*`) so old and new code can coexist. The existing generators continue to run unchanged — the flag adds new generators alongside.
+The change is behind an `enableRewrite` feature flag (default `false`) and generates new artefacts into a separate package (`<outputPackage>.rewrite.*`) so old and new code can coexist. The existing generators continue to run unchanged — the flag adds new generators alongside. A companion `disableLegacy` flag (default `false`) suppresses the legacy generators entirely, used by the test module.
 
 ### Existing codebase facts
 
@@ -51,7 +51,7 @@ The `GraphitronField` sealed interface hierarchy is the Java materialisation of 
 
 Every GraphQL named type is classified into a `GraphitronType`. This is where `@table` directive mappings are validated — jOOQ table class exists, discriminator columns are present, etc. — and it is the authoritative source of source context for all fields on that type.
 
-See [`GraphitronType.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/type/GraphitronType.java). The variants are:
+See [`GraphitronType.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/rewrite/type/GraphitronType.java). The variants are:
 
 | Variant | Trigger | Key fields |
 |---|---|---|
@@ -67,15 +67,15 @@ See [`GraphitronType.java`](../graphitron-codegen-parent/graphitron-java-codegen
 
 ### `TableRef`
 
-See [`TableRef.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/type/TableRef.java). `TableType` and `TableInterfaceType` use a two-variant sealed hierarchy (`ResolvedTable`, `UnresolvedTable`) for the outcome of matching the `@table` directive's SQL name against the jOOQ catalog. `tableName()` is present on both so callers never need to pattern-match just to retrieve the SQL name. `ResolvedTable` additionally carries the jOOQ `Table<?>` instance (columns, primary key, FK metadata) and the Java field name in the generated `Tables` class. The validator reports an error for `UnresolvedTable`; the code generator only consumes `ResolvedTable`.
+See [`TableRef.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/rewrite/type/TableRef.java). `TableType` and `TableInterfaceType` use a two-variant sealed hierarchy (`ResolvedTable`, `UnresolvedTable`) for the outcome of matching the `@table` directive's SQL name against the jOOQ catalog. `tableName()` is present on both so callers never need to pattern-match just to retrieve the SQL name. `ResolvedTable` additionally carries the jOOQ `Table<?>` instance (columns, primary key, FK metadata) and the Java field name in the generated `Tables` class. The validator reports an error for `UnresolvedTable`; the code generator only consumes `ResolvedTable`.
 
 ### `ParticipantRef`
 
-See [`ParticipantRef.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/type/ParticipantRef.java). Each implementing or member type of an interface or union is represented as `BoundParticipant` (carries `@table` + the `TableRef`) or `UnboundParticipant` (does not — validator reports an error). `BoundParticipant.discriminatorValue` (from `@discriminator(value:)`, `null` when absent) is used by the type resolver generator to map a discriminator column value to a concrete Java type.
+See [`ParticipantRef.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/rewrite/type/ParticipantRef.java). Each implementing or member type of an interface or union is represented as `BoundParticipant` (carries `@table` + the `TableRef`) or `UnboundParticipant` (does not — validator reports an error). `BoundParticipant.discriminatorValue` (from `@discriminator(value:)`, `null` when absent) is used by the type resolver generator to map a discriminator column value to a concrete Java type.
 
 ### `GraphitronField`
 
-The sealed interface hierarchy covering all 28+ leaf field types. See [`GraphitronField.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/record/field/GraphitronField.java). Key subtypes:
+The sealed interface hierarchy covering all 28+ leaf field types. See [`GraphitronField.java`](../graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/rewrite/field/GraphitronField.java). Key subtypes:
 
 - **`ChildField`** — fields on non-root types. Includes `ColumnField`, `ColumnReferenceField`, `TableField`, `TableMethodField`, `NodeIdField`, `NodeIdReferenceField`, `ComputedField`, `PropertyField`, `ServiceField`, `NestingField`, `TableInterfaceField`, `InterfaceField`, `UnionField`, `MultitableReferenceField`, `NotGeneratedField`
 - **`QueryField`** — root Query fields. Includes `TableQueryField`, `LookupQueryField`, `TableMethodQueryField`, `NodeQueryField`, `EntityQueryField`, `TableInterfaceQueryField`, `InterfaceQueryField`, `UnionQueryField`, `ServiceQueryField`
@@ -146,9 +146,14 @@ The builder classifies violations as `UnclassifiedField(reason)` or `Unclassifie
 
 ---
 
-## Validator
+## Validator ✓
 
 `GraphitronSchemaValidator` receives a `GraphitronSchema` and accumulates `ValidationError` records — it never throws. Each `GraphitronField` and `GraphitronType` variant has a dedicated `validate*()` method. `UnclassifiedField` and `UnclassifiedType` report their `reason` as a build error. `ErrorType` is a deliberate no-op (no structural constraints to check at this layer).
+
+The validator is called from `GraphQLRewriteGenerator.generate()` before code generation runs. Validation errors are logged with source location and a `RuntimeException` is thrown to fail the build.
+
+Additional validation added beyond the original scope:
+- **`LookupQueryField` cardinality rule**: if any argument is a list, the return type must also be a list; if all arguments are scalar, the return must be single; connection return type is never valid on a lookup field.
 
 ---
 
@@ -205,12 +210,12 @@ Verifies that error messages are human-readable, contain the right field/type na
 
 | File | Status |
 |---|---|
-| `record/field/GraphitronField.java` + 28 leaf types | Done |
-| `record/field/ColumnRef.java` + variants | Done |
-| `record/field/ReferencePathElementRef.java` + 6 step types | Done |
-| `record/field/ArgumentSpec.java`, `ExternalRef.java`, `InputFieldSpec.java` | Done |
-| `record/type/GraphitronType.java` + all variants | Done |
-| `record/type/TableRef.java`, `ParticipantRef.java`, `NodeRef.java` | Done |
-| `record/GraphitronSchema.java` | Done |
-| `record/GraphitronSchemaBuilder.java` | Done |
-| `record/GraphitronSchemaValidator.java` | Done |
+| `rewrite/field/GraphitronField.java` + 28 leaf types | Done |
+| `rewrite/field/ColumnRef.java` + variants | Done |
+| `rewrite/field/ReferencePathElementRef.java` + 6 step types | Done |
+| `rewrite/field/ArgumentSpec.java`, `ExternalRef.java`, `InputFieldSpec.java` | Done |
+| `rewrite/type/GraphitronType.java` + all variants | Done |
+| `rewrite/type/TableRef.java`, `ParticipantRef.java`, `NodeRef.java` | Done |
+| `rewrite/GraphitronSchema.java` | Done |
+| `rewrite/GraphitronSchemaBuilder.java` | Done |
+| `rewrite/GraphitronSchemaValidator.java` | Done |
