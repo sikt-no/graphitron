@@ -8,14 +8,16 @@ This document covers the generating stream, the Maven plugin wiring, the test in
 
 ## Generator Overview
 
-| Step | Generator | Output | Depends on |
-|---|---|---|---|
-| 0 | Infrastructure | `GraphitronFetcherFactory`, feature flag, `getTenantId()` | — |
-| 1 | `ConditionWrapperClassGenerator` | `<ConditionClassName>Wrapper.java` per condition class | — |
-| 2 | `ServiceWrapperClassGenerator` | `<ServiceClassName>Wrapper.java` per service class | — |
-| 3 | `FieldsClassGenerator` | `<TypeName>Fields.java` | Steps 1 + 2 |
-| 4 | `GraphitronWiringClassGenerator` | `GraphitronWiring.java` | Step 3 |
-| 5 | Orchestration | Wire into `GraphQLGenerator` | Steps 0–4 |
+| Step | Generator | Output | Depends on | Status |
+|---|---|---|---|---|
+| — | `GraphitronValuesClassGenerator` | `GraphitronValues.java` | — | Done |
+| — | `LookupClassGenerator` | `<TypeName>Lookup.java` per `LookupQueryField` | — | Done |
+| 0 | Infrastructure | `GraphitronFetcherFactory`, `rewriteBasedOutput` flag, `getTenantId()` | — | Partial |
+| 1 | `ConditionWrapperClassGenerator` | `<ConditionClassName>Wrapper.java` per condition class | — | — |
+| 2 | `ServiceWrapperClassGenerator` | `<ServiceClassName>Wrapper.java` per service class | — | — |
+| 3 | `FieldsClassGenerator` | `<TypeName>Fields.java` | Steps 1 + 2 | — |
+| 4 | `GraphitronWiringClassGenerator` | `GraphitronWiring.java` | Step 3 | — |
+| 5 | Orchestration | Wire into `GraphQLGenerator` | Steps 0–4 | — |
 
 `FieldsClassGenerator` is the core generator. It owns both the SQL logic (field methods, scope-establishing methods, DataLoaders) and `wiring()` for each type.
 
@@ -99,7 +101,7 @@ List<Field<?>> fields(Film film, DataFetchingFieldSelectionSet sel) {
 Two scope-establishing methods delegate to `fields()`:
 
 ```java
-// Starts a new SQL statement — used by root queries, DataLoaders (split + lift), mutation read-back.
+// Starts a new SQL statement — used by root queries, DataLoaders (split + derived source), mutation read-back.
 SelectFinalStep<Record> filmSelect(DSLContext ctx, DataFetchingFieldSelectionSet sel,
     Condition condition, List<SortField<?>> orderBy)
 
@@ -122,10 +124,10 @@ Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nest
 | `LookupQueryField` — batch DataLoader | positional VALUES join → `filmNested` per row |
 | `TableField` — no `@splitQuery` | `filmNested` |
 | `TableField` — `@splitQuery` | DataLoader → `filmSelect` (Graphitron controls both sides) |
-| `TableField` — result-mapped (lift) | DataLoader → `filmSelect` with lift table (from parent `TableRecord` PK) |
-| `ServiceField` / `TableMethodField` returning table-mapped type | DataLoader → `filmSelect` with lift table (from returned `TableRecord` PK) |
+| `TableField` — result-mapped (derived source) | DataLoader → `filmSelect` with derived source table (from parent `TableRecord` PK) |
+| `ServiceField` / `TableMethodField` returning table-mapped type | DataLoader → `filmSelect` with derived source table (from returned `TableRecord` PK) |
 | `InterfaceField` | union over each implementor's `filmNested` |
-| Mutation read-back | `filmSelect` with lift table (from returned `TableRecord` PK) |
+| Mutation read-back | `filmSelect` with derived source table (from returned `TableRecord` PK) |
 
 **`LookupQueryField` batch mapping**: each input key drives one row in a VALUES outer query; the nested multiset produces the matching result. The invariant is that output cardinality and ordering match the input keys — which index the database uses is an infrastructure concern, not a Graphitron constraint. Missing keys produce a null row, preserving positional alignment.
 
