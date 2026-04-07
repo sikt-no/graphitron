@@ -34,7 +34,7 @@ A Graphitron scope corresponds to one SQL statement. Fields within a scope contr
 |---|---|
 | **Enter** | An unmapped root field reaches a table-mapped type — the first scope starts |
 | **Split** | `@splitQuery` on a `TableField` — new scope via DataLoader |
-| **Derived source** | A `TableField` on a result-mapped type, or a user-provided return connecting to a table-mapped scope — new scope via DataLoader, connected via a derived source table |
+| **Record handoff** | A `TableField` on a result-mapped type, or a user-provided return (`@service`, `@tableMethod`) reaching a table-mapped type — new scope via DataLoader, keyed by the parent or returned `TableRecord`'s PK |
 
 `@service` fields use a **private scope** — they create their own SQL statement independently and do not participate in any Graphitron-managed scope.
 
