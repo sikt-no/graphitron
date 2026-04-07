@@ -116,8 +116,8 @@ public sealed interface ArgumentRef
          * Scalar argument resolved against the return type's jOOQ table.
          *
          * <p>{@code javaColumnName} is the Java field name in the generated jOOQ table class
-         * (e.g. {@code "CUSTOMER_ID"}). {@code column} is the jOOQ {@link org.jooq.Field}
-         * instance for use in code generation.
+         * (e.g. {@code "CUSTOMER_ID"}). {@code columnClass} is the fully qualified Java class
+         * name of the column type (e.g. {@code "java.lang.Long"}).
          */
         record ColumnArg(
             String name,
@@ -125,13 +125,8 @@ public sealed interface ArgumentRef
             boolean nonNull,
             boolean list,
             String javaColumnName,
-            org.jooq.Field<?> column
-        ) implements ScalarArg {
-            /** Fully qualified Java class name of the column type (e.g. {@code "java.lang.Long"}). */
-            public String columnClass() {
-                return column.getType().getName();
-            }
-        }
+            String columnClass
+        ) implements ScalarArg {}
 
         /**
          * Scalar argument whose column could not be matched in the return type's jOOQ table.

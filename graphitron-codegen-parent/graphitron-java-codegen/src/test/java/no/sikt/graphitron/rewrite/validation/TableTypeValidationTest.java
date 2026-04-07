@@ -11,7 +11,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -20,7 +19,7 @@ class TableTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         RESOLVED("table name resolved to a jOOQ Table",
-            new TableType("Film", null, new ResolvedTable("film", "FILM", FILM), new NoNode()),
+            new TableType("Film", null, new ResolvedTable("film", "FILM", true), new NoNode()),
             List.of()),
 
         UNRESOLVED_TABLE("table name could not be matched to a jOOQ table in the catalog",

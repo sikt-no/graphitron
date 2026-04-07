@@ -1353,7 +1353,7 @@ class GraphitronSchemaBuilderTest {
                 var a = (ArgumentRef.ScalarArg.ColumnArg) f.arguments().get(0);
                 assertThat(a.name()).isEqualTo("film_id");
                 assertThat(a.javaColumnName()).isEqualTo("FILM_ID");
-                assertThat(a.column()).isNotNull();
+                assertThat(a.columnClass()).isNotEmpty();
             }),
 
         LOOKUP_FIELD_PLAIN_SCALAR_ARG(

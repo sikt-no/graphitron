@@ -11,8 +11,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.ACTOR;
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -26,14 +24,14 @@ class InterfaceTypeValidationTest {
 
         ALL_BOUND("all implementing types are table-bound — valid",
             new InterfaceType("Media", null, List.of(
-                new BoundParticipant("Film", new ResolvedTable("film", "FILM", FILM), null),
-                new BoundParticipant("Actor", new ResolvedTable("actor", "ACTOR", ACTOR), null)
+                new BoundParticipant("Film", new ResolvedTable("film", "FILM", true), null),
+                new BoundParticipant("Actor", new ResolvedTable("actor", "ACTOR", true), null)
             )),
             List.of()),
 
         ONE_UNBOUND("one implementing type is not table-bound — error",
             new InterfaceType("Media", null, List.of(
-                new BoundParticipant("Film", new ResolvedTable("film", "FILM", FILM), null),
+                new BoundParticipant("Film", new ResolvedTable("film", "FILM", true), null),
                 new UnboundParticipant("Description")
             )),
             List.of("Type 'Media': implementing type 'Description' is not table-bound (missing @table directive)")),

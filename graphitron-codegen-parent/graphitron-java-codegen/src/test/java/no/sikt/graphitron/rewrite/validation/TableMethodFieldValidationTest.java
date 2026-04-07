@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.validation;
 
-import no.sikt.graphitron.jooq.generated.testdata.public_.Keys;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.ConditionOnlyRef;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
@@ -30,7 +29,7 @@ class TableMethodFieldValidationTest {
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new FkRef(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY)),
+                new FkRef("film_actor_film_id_fkey", "film", "film_actor", List.of(), List.of())),
                 null, List.of(), List.of()),
             List.of()),
 

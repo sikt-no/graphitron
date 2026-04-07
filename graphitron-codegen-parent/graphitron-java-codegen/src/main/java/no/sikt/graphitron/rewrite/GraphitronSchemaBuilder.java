@@ -100,7 +100,6 @@ import no.sikt.graphitron.rewrite.type.TableRef;
 import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
 import no.sikt.graphitron.rewrite.type.TableRef.UnresolvedTable;
 import org.jooq.ForeignKey;
-import org.jooq.Table;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -282,12 +281,11 @@ public class GraphitronSchemaBuilder {
      * against the given {@link ResolvedTable}.
      */
     private TableInputType promoteToTableInputType(InputType inputType, ResolvedTable resolvedTable) {
-        var jooqTable = resolvedTable.table();
         List<InputFieldRef> resolvedFields = inputType.fields().stream()
-            .map(spec -> catalog.findColumn(jooqTable, spec.columnName())
+            .map(spec -> catalog.findColumn(resolvedTable.tableName(), spec.columnName())
                 .<InputFieldRef>map(e -> new TableInputField(
                     spec.name(), spec.typeName(), spec.nonNull(), spec.list(),
-                    resolvedTable, e.javaName(), e.column()))
+                    resolvedTable, e.javaName(), e.columnClass()))
                 .orElseGet(() -> new UnresolvedInputField(
                     spec.name(), spec.typeName(), spec.nonNull(), spec.list(),
                     spec.columnName())))
@@ -418,7 +416,7 @@ public class GraphitronSchemaBuilder {
 
     private TableRef resolveTable(String sqlName) {
         return catalog.findTable(sqlName)
-            .<TableRef>map(e -> new ResolvedTable(sqlName, e.javaFieldName(), e.table()))
+            .<TableRef>map(e -> new ResolvedTable(sqlName, e.javaFieldName(), e.table().getPrimaryKey() != null))
             .orElseGet(() -> new UnresolvedTable(sqlName));
     }
 
@@ -428,9 +426,9 @@ public class GraphitronSchemaBuilder {
         }
         String typeId = argString(objType, DIR_NODE, ARG_TYPE_ID).orElse(null);
         List<String> keyColumnNames = argStringList(objType, DIR_NODE, ARG_KEY_COLUMNS);
-        Table<?> resolvedTable = tableRef instanceof ResolvedTable rt ? rt.table() : null;
+        String resolvedTableSqlName = tableRef instanceof ResolvedTable rt ? rt.tableName() : null;
         List<KeyColumnRef> keyColumns = keyColumnNames.stream()
-            .map(colName -> resolveKeyColumn(colName, resolvedTable))
+            .map(colName -> resolveKeyColumn(colName, resolvedTableSqlName))
             .toList();
         return new NodeDirective(typeId, keyColumns);
     }
@@ -455,10 +453,10 @@ public class GraphitronSchemaBuilder {
         if (inputType.hasAppliedDirective(DIR_TABLE)) {
             String tableName = argString(inputType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
             TableRef tableRef = resolveTable(tableName);
-            Table<?> resolvedTable = tableRef instanceof ResolvedTable rt ? rt.table() : null;
+            String resolvedTableSqlName = tableRef instanceof ResolvedTable rt ? rt.tableName() : null;
             List<InputFieldRef> fields = inputType.getFieldDefinitions().stream()
                 .filter(f -> !f.hasAppliedDirective(DIR_NOT_GENERATED))
-                .map(f -> buildInputFieldRef(f, tableRef instanceof ResolvedTable rt ? rt : null, resolvedTable))
+                .map(f -> buildInputFieldRef(f, tableRef instanceof ResolvedTable rt ? rt : null, resolvedTableSqlName))
                 .toList();
             return new TableInputType(name, location, tableRef, fields);
         }
@@ -469,7 +467,7 @@ public class GraphitronSchemaBuilder {
         return new InputType(name, location, fields);
     }
 
-    private InputFieldRef buildInputFieldRef(GraphQLInputObjectField field, ResolvedTable resolvedTable, Table<?> jooqTable) {
+    private InputFieldRef buildInputFieldRef(GraphQLInputObjectField field, ResolvedTable resolvedTable, String tableSqlName) {
         String name = field.getName();
         GraphQLType type = field.getType();
         boolean nonNull = type instanceof GraphQLNonNull;
@@ -479,11 +477,11 @@ public class GraphitronSchemaBuilder {
         String columnName = hasFieldDir
             ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
-        if (resolvedTable == null || jooqTable == null) {
+        if (resolvedTable == null || tableSqlName == null) {
             return new UnresolvedInputField(name, typeName, nonNull, list, columnName);
         }
-        return catalog.findColumn(jooqTable, columnName)
-            .<InputFieldRef>map(e -> new TableInputField(name, typeName, nonNull, list, resolvedTable, e.javaName(), e.column()))
+        return catalog.findColumn(tableSqlName, columnName)
+            .<InputFieldRef>map(e -> new TableInputField(name, typeName, nonNull, list, resolvedTable, e.javaName(), e.columnClass()))
             .orElseGet(() -> new UnresolvedInputField(name, typeName, nonNull, list, columnName));
     }
 
@@ -716,11 +714,11 @@ public class GraphitronSchemaBuilder {
         return new SortFieldSpec(columnName, collation);
     }
 
-    private KeyColumnRef resolveKeyColumn(String colName, Table<?> table) {
-        if (table == null) {
+    private KeyColumnRef resolveKeyColumn(String colName, String tableSqlName) {
+        if (tableSqlName == null) {
             return new UnresolvedKeyColumn(colName);
         }
-        return catalog.findColumn(table, colName)
+        return catalog.findColumn(tableSqlName, colName)
             .<KeyColumnRef>map(e -> new ResolvedKeyColumn(colName, e.javaName()))
             .orElseGet(() -> new UnresolvedKeyColumn(colName));
     }
@@ -966,9 +964,9 @@ public class GraphitronSchemaBuilder {
         if (rt == null) {
             return new ArgumentRef.ScalarArg.UnboundScalarArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), arg.columnName());
         }
-        return catalog.findColumn(rt.table(), arg.columnName())
+        return catalog.findColumn(rt.tableName(), arg.columnName())
             .<ArgumentRef>map(e -> new ArgumentRef.ScalarArg.ColumnArg(
-                arg.name(), arg.typeName(), arg.nonNull(), arg.list(), e.javaName(), e.column()))
+                arg.name(), arg.typeName(), arg.nonNull(), arg.list(), e.javaName(), e.columnClass()))
             .orElseGet(() -> new ArgumentRef.ScalarArg.UnboundScalarArg(
                 arg.name(), arg.typeName(), arg.nonNull(), arg.list(), arg.columnName()));
     }
@@ -1219,27 +1217,27 @@ public class GraphitronSchemaBuilder {
         if (!(tableType.table() instanceof ResolvedTable resolvedTable)) {
             return new UnresolvedColumn();
         }
-        return resolveColumnInTable(columnName, resolvedTable.table());
+        return resolveColumnInTable(columnName, resolvedTable.tableName());
     }
 
     private ColumnRef resolveColumnForReference(String columnName, List<ReferencePathElementRef> path, TableType sourceType) {
         if (!(sourceType.table() instanceof ResolvedTable rt)) {
             return new UnresolvedColumn();
         }
-        var current = rt.table();
+        String currentTableSqlName = rt.tableName();
         for (var step : path) {
             if (step instanceof FkRef fk) {
-                current = fk.key().getKey().getTable();
+                currentTableSqlName = fk.keyTableSqlName();
             } else {
                 return new UnresolvedColumn();
             }
         }
-        return resolveColumnInTable(columnName, current);
+        return resolveColumnInTable(columnName, currentTableSqlName);
     }
 
-    private ColumnRef resolveColumnInTable(String columnName, Table<?> table) {
-        return catalog.findColumn(table, columnName)
-            .<ColumnRef>map(e -> new ResolvedColumn(e.javaName(), e.column()))
+    private ColumnRef resolveColumnInTable(String columnName, String tableSqlName) {
+        return catalog.findColumn(tableSqlName, columnName)
+            .<ColumnRef>map(e -> new ResolvedColumn(e.javaName(), e.columnClass()))
             .orElseGet(UnresolvedColumn::new);
     }
 
@@ -1326,7 +1324,13 @@ public class GraphitronSchemaBuilder {
             MethodRef resolved = resolveConditionRef(condMap);
             if (fk.isPresent() && resolved != null) {
                 var f = fk.get();
-                return new FkWithConditionRef(f, resolved, resolveFkColumns(f.getKey().getTable(), f.getKey().getFields()), resolveFkColumns(f.getTable(), f.getFields()));
+                return new FkWithConditionRef(
+                    f.getName(),
+                    f.getKey().getTable().getName(),
+                    f.getTable().getName(),
+                    resolved,
+                    resolveFkColumns(f.getKey().getTable(), f.getKey().getFields()),
+                    resolveFkColumns(f.getTable(), f.getFields()));
             }
             if (fk.isPresent()) {
                 return new UnresolvedConditionRef(condName);
@@ -1350,7 +1354,12 @@ public class GraphitronSchemaBuilder {
 
     private ReferencePathElementRef resolveKey(String keyName) {
         return catalog.findForeignKey(keyName)
-            .<ReferencePathElementRef>map(fk -> new FkRef(fk, resolveFkColumns(fk.getKey().getTable(), fk.getKey().getFields()), resolveFkColumns(fk.getTable(), fk.getFields())))
+            .<ReferencePathElementRef>map(fk -> new FkRef(
+                fk.getName(),
+                fk.getKey().getTable().getName(),
+                fk.getTable().getName(),
+                resolveFkColumns(fk.getKey().getTable(), fk.getKey().getFields()),
+                resolveFkColumns(fk.getTable(), fk.getFields())))
             .orElseGet(() -> new UnresolvedKeyRef(keyName));
     }
 

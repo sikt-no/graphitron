@@ -15,7 +15,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -23,7 +22,7 @@ class TableQueryFieldValidationTest {
 
     /** Resolved return type backed by {@code film} (has a primary key). */
     private static ReturnTypeRef filmReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Film", new ResolvedTable("film", "FILM", FILM), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Film", new ResolvedTable("film", "FILM", true), wrapper);
     }
 
     enum Case implements ValidatorCase {

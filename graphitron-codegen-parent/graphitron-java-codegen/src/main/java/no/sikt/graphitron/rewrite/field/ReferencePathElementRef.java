@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.field;
 
 import no.sikt.graphitron.rewrite.JooqCatalog.ColumnEntry;
-import org.jooq.ForeignKey;
 
 import java.util.List;
 
@@ -28,63 +27,41 @@ public sealed interface ReferencePathElementRef
             ReferencePathElementRef.UnresolvedKeyRef, ReferencePathElementRef.UnresolvedConditionRef, ReferencePathElementRef.UnresolvedKeyAndConditionRef {
 
     /**
-     * A {@link ReferencePathElementRef} where a jOOQ {@link ForeignKey} was successfully resolved.
+     * A {@link ReferencePathElementRef} where a jOOQ foreign key was successfully resolved.
      *
-     * <p>{@code key} is the resolved jOOQ FK instance, used at code-generation time to emit
-     * {@code .onKey(key)} join clauses. Use {@code key.getName()} to recover the FK constant name.
+     * <p>{@code fkName} is the SQL constraint name (e.g. {@code "film_language_id_fkey"}).
+     * {@code keyTableSqlName} is the SQL name of the <em>referenced</em> (key-side) table
+     * (e.g. {@code "language"}). {@code fkTableSqlName} is the SQL name of the <em>referencing</em>
+     * (FK-side) table (e.g. {@code "film"}).
      *
      * <p>{@code keyColumnEntries} is the ordered list of pre-resolved column entries for the
-     * <em>referenced</em> (key) side of the FK — i.e. {@code fk.getKey().getFields()} resolved
-     * to their Java identifier names via {@link no.sikt.graphitron.rewrite.JooqCatalog#findColumn}.
-     *
-     * <p>{@code fkColumnEntries} is the ordered list of pre-resolved column entries for the
-     * <em>referencing</em> side — i.e. {@code fk.getFields()}.
-     *
-     * <p>Both lists are populated during schema building so that generators never need reflection.
-     * Tests and other contexts that do not use column entries may use the single-argument
-     * convenience constructor, which leaves both lists empty.
+     * <em>referenced</em> (key) side of the FK. {@code fkColumnEntries} is the ordered list for
+     * the <em>referencing</em> side. Both are populated during schema building so that generators
+     * never need reflection.
      */
     record FkRef(
-        ForeignKey<?, ?> key,
+        String fkName,
+        String keyTableSqlName,
+        String fkTableSqlName,
         List<ColumnEntry> keyColumnEntries,
         List<ColumnEntry> fkColumnEntries
-    ) implements ReferencePathElementRef {
-        /** Convenience constructor for tests and validation contexts that do not need column entries. */
-        public FkRef(ForeignKey<?, ?> key) {
-            this(key, List.of(), List.of());
-        }
-
-        /** SQL name of the referenced (key-side) table, e.g. {@code "language"}. */
-        public String keyTableSqlName() {
-            return key.getKey().getTable().getName();
-        }
-
-        /** SQL name of the referencing (FK-side) table, e.g. {@code "film"}. */
-        public String fkTableSqlName() {
-            return key.getTable().getName();
-        }
-    }
+    ) implements ReferencePathElementRef {}
 
     /**
-     * A {@link ReferencePathElementRef} where both a jOOQ {@link ForeignKey} and a condition method
+     * A {@link ReferencePathElementRef} where both a jOOQ foreign key and a condition method
      * were successfully resolved.
      *
-     * <p>{@code key} is the resolved jOOQ FK instance (see {@link FkRef}).
-     * {@code condition} is the resolved condition method (see {@link ConditionOnlyRef}).
-     * {@code keyColumnEntries} and {@code fkColumnEntries} carry the same pre-resolved column
-     * metadata as described on {@link FkRef}.
+     * <p>See {@link FkRef} for the FK fields. {@code condition} is the resolved condition method
+     * (see {@link ConditionOnlyRef}).
      */
     record FkWithConditionRef(
-        ForeignKey<?, ?> key,
+        String fkName,
+        String keyTableSqlName,
+        String fkTableSqlName,
         MethodRef condition,
         List<ColumnEntry> keyColumnEntries,
         List<ColumnEntry> fkColumnEntries
-    ) implements ReferencePathElementRef {
-        /** Convenience constructor for tests and validation contexts that do not need column entries. */
-        public FkWithConditionRef(ForeignKey<?, ?> key, MethodRef condition) {
-            this(key, condition, List.of(), List.of());
-        }
-    }
+    ) implements ReferencePathElementRef {}
 
     /**
      * A {@link ReferencePathElementRef} where a condition method was successfully resolved and no

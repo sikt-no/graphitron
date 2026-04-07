@@ -18,11 +18,11 @@ class ColumnFieldValidationTest {
     enum Case implements ValidatorCase {
 
         RESOLVED_IMPLICIT("no @field — column name defaults to the GraphQL field name",
-            new ColumnField("Film", "title", null, "title", new ResolvedColumn("TITLE", null), false),
+            new ColumnField("Film", "title", null, "title", new ResolvedColumn("TITLE", ""), false),
             List.of()),
 
         RESOLVED_EXPLICIT("@field(name:) overrides the column name",
-            new ColumnField("Film", "title", null, "film_title", new ResolvedColumn("FILM_TITLE", null), false),
+            new ColumnField("Film", "title", null, "film_title", new ResolvedColumn("FILM_TITLE", ""), false),
             List.of()),
 
         UNRESOLVED_COLUMN("column name could not be matched to a jOOQ field in the table",
@@ -30,7 +30,7 @@ class ColumnFieldValidationTest {
             List.of("Field 'title': column 'title' could not be resolved in the jOOQ table")),
 
         JAVA_NAME_PRESENT("@field(javaName:) is not supported — validation error",
-            new ColumnField("Film", "title", null, "title", new ResolvedColumn("TITLE", null), true),
+            new ColumnField("Film", "title", null, "title", new ResolvedColumn("TITLE", ""), true),
             List.of("Field 'title': @field(javaName:) is not supported in record-based output")),
 
         JAVA_NAME_WITH_UNRESOLVED_COLUMN("@field(javaName:) + unresolved column — both errors reported",

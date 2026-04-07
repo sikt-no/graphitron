@@ -11,8 +11,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.CATEGORY;
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -26,14 +24,14 @@ class UnionTypeValidationTest {
 
         ALL_BOUND("all member types are table-bound — valid",
             new UnionType("SearchResult", null, List.of(
-                new BoundParticipant("Film", new ResolvedTable("film", "FILM", FILM), null),
-                new BoundParticipant("Category", new ResolvedTable("category", "CATEGORY", CATEGORY), null)
+                new BoundParticipant("Film", new ResolvedTable("film", "FILM", true), null),
+                new BoundParticipant("Category", new ResolvedTable("category", "CATEGORY", true), null)
             )),
             List.of()),
 
         ONE_UNBOUND("one member type is not table-bound — error",
             new UnionType("SearchResult", null, List.of(
-                new BoundParticipant("Film", new ResolvedTable("film", "FILM", FILM), null),
+                new BoundParticipant("Film", new ResolvedTable("film", "FILM", true), null),
                 new UnboundParticipant("Description")
             )),
             List.of("Type 'SearchResult': implementing type 'Description' is not table-bound (missing @table directive)")),

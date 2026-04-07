@@ -22,9 +22,6 @@ import no.sikt.graphitron.rewrite.type.ParticipantRef.UnboundParticipant;
 import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
 import no.sikt.graphitron.rewrite.type.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.type.TableRef.UnresolvedTable;
-import org.jooq.ForeignKey;
-import org.jooq.Table;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -217,7 +214,7 @@ public class GraphitronSchemaValidator {
         switch (field.returnType()) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
                 if (tb.table() instanceof ResolvedTable rt) {
-                    validateDeterministicOrdering(field.name(), field.location(), tb.wrapper(), rt.table(), errors);
+                    validateDeterministicOrdering(field.name(), field.location(), tb.wrapper(), rt, errors);
                 }
                 // UnresolvedTable: type validator reports the unresolved table; skip ordering check
             }
@@ -232,7 +229,7 @@ public class GraphitronSchemaValidator {
      */
     private void validateDeterministicOrdering(
             String fieldName, SourceLocation location, no.sikt.graphitron.rewrite.field.FieldWrapper cardinality,
-            Table<?> table, List<ValidationError> errors) {
+            ResolvedTable table, List<ValidationError> errors) {
         boolean needsCheck = switch (cardinality) {
             case no.sikt.graphitron.rewrite.field.FieldWrapper.List l ->
                 l.defaultOrder() == null && l.orderByValues().isEmpty();
@@ -241,10 +238,10 @@ public class GraphitronSchemaValidator {
             default -> false;
         };
         if (!needsCheck) return;
-        if (table.getPrimaryKey() != null) return;
+        if (table.hasPrimaryKey()) return;
 
         errors.add(new ValidationError(
-            "Field '" + fieldName + "': table '" + table.getName()
+            "Field '" + fieldName + "': table '" + table.tableName()
                 + "' has no @defaultOrder directive and no primary key — result ordering is non-deterministic",
             location
         ));
@@ -356,16 +353,16 @@ public class GraphitronSchemaValidator {
                 if (fkCount == 0) {
                     errors.add(new ValidationError(
                         "Field '" + field.name() + "': no foreign key found between tables '"
-                            + parentTable.table().getName() + "' and '"
-                            + targetTable.table().getName()
+                            + parentTable.tableName() + "' and '"
+                            + targetTable.tableName()
                             + "'; add a @reference directive to specify the join path",
                         field.location()
                     ));
                 } else if (fkCount > 1) {
                     errors.add(new ValidationError(
                         "Field '" + field.name() + "': multiple foreign keys found between tables '"
-                            + parentTable.table().getName() + "' and '"
-                            + targetTable.table().getName()
+                            + parentTable.tableName() + "' and '"
+                            + targetTable.tableName()
                             + "'; add a @reference directive to specify the join path",
                         field.location()
                     ));
@@ -380,17 +377,15 @@ public class GraphitronSchemaValidator {
 
     private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<ReferencePathElementRef> path, String typeName, ResolvedTable targetTable, List<ValidationError> errors) {
         var lastStep = path.getLast();
-        ForeignKey<?, ?> fk = switch (lastStep) {
-            case FkRef s             -> s.key();
-            case FkWithConditionRef s -> s.key();
-            default                   -> null;
-        };
-        if (fk == null) {
-            return; // Can't check for condition-only or unresolved steps
+        String fkTableSql = null, keyTableSql = null;
+        switch (lastStep) {
+            case FkRef s             -> { fkTableSql = s.fkTableSqlName(); keyTableSql = s.keyTableSqlName(); }
+            case FkWithConditionRef s -> { fkTableSql = s.fkTableSqlName(); keyTableSql = s.keyTableSqlName(); }
+            default                   -> { return; } // Can't check for condition-only or unresolved steps
         }
-        var targetSqlName = targetTable.table().getName();
-        if (!fk.getTable().getName().equalsIgnoreCase(targetSqlName) &&
-            !fk.getKey().getTable().getName().equalsIgnoreCase(targetSqlName)) {
+        var targetSqlName = targetTable.tableName();
+        if (!fkTableSql.equalsIgnoreCase(targetSqlName) &&
+            !keyTableSql.equalsIgnoreCase(targetSqlName)) {
             errors.add(new ValidationError(
                 "Field '" + fieldName + "': @reference path does not lead to the table of type '" + typeName + "'",
                 location

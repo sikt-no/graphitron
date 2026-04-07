@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.validation;
 
-import no.sikt.graphitron.jooq.generated.testdata.public_.Keys;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.ConditionOnlyRef;
 import no.sikt.graphitron.rewrite.field.DefaultOrderSpec;
@@ -23,14 +22,13 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.ACTOR;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class TableFieldValidationTest {
 
     private static ReturnTypeRef actorReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Actor", new ResolvedTable("actor", "ACTOR", ACTOR), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Actor", new ResolvedTable("actor", "ACTOR", true), wrapper);
     }
 
     enum Case implements ValidatorCase {
@@ -40,13 +38,13 @@ class TableFieldValidationTest {
             List.of()),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
-            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(new FkRef(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY)), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(new FkRef("film_actor_film_id_fkey", "film", "film_actor", List.of(), List.of())), new FieldConditionRef.NoFieldCondition(), false, List.of()),
             List.of()),
 
         WITH_FK_AND_CONDITION("FK + resolved condition method in reference path",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(
-                new FkWithConditionRef(Keys.FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY,
-                    new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+                new FkWithConditionRef("film_actor_film_id_fkey", "film", "film_actor",
+                    new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()), List.of(), List.of())), new FieldConditionRef.NoFieldCondition(), false, List.of()),
             List.of()),
 
         WITH_CONDITION_ONLY("condition method only — no FK",

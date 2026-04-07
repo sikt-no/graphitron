@@ -14,13 +14,12 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class NodeTypeValidationTest {
 
-    private static final ResolvedTable RESOLVED_FILM = new ResolvedTable("film", "FILM", FILM);
+    private static final ResolvedTable RESOLVED_FILM = new ResolvedTable("film", "FILM", true);
 
     enum Case implements TypeValidatorCase {
 

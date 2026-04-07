@@ -14,8 +14,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM_LIST;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,12 +28,12 @@ class TableQueryFieldNonDeterministicOrderingValidationTest {
 
     /** Resolved return type backed by {@code film_list} (a view — no primary key). */
     private static ReturnTypeRef filmListReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("FilmList", new ResolvedTable("film_list", "FILM_LIST", FILM_LIST), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("FilmList", new ResolvedTable("film_list", "FILM_LIST", false), wrapper);
     }
 
     /** Resolved return type backed by {@code film} (has a primary key). */
     private static ReturnTypeRef filmReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Film", new ResolvedTable("film", "FILM", FILM), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Film", new ResolvedTable("film", "FILM", true), wrapper);
     }
 
     enum Case implements ValidatorCase {

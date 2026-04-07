@@ -20,8 +20,8 @@ import java.util.List;
  *
  * <p>The FK is resolved from the first element of
  * {@link no.sikt.graphitron.rewrite.field.ChildField.TableField#referencePath()} that carries a
- * jOOQ {@link org.jooq.ForeignKey}. The parent-side key columns — those belonging to the parent
- * type's table — are taken from the pre-resolved {@link ColumnEntry} lists on {@link FkRef} or
+ * foreign key. The parent-side key columns — those belonging to the parent type's table — are
+ * taken from the pre-resolved {@link ColumnEntry} lists on {@link FkRef} or
  * {@link FkWithConditionRef}. No reflection is performed here; all Java identifier names were
  * resolved by {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder} at schema-build time.
  *
@@ -62,7 +62,7 @@ public class SplitSourceSpecBuilder {
         for (var el : path) {
             if (el instanceof FkRef r) return r;
             if (el instanceof FkWithConditionRef r)
-                return new FkRef(r.key(), r.keyColumnEntries(), r.fkColumnEntries());
+                return new FkRef(r.fkName(), r.keyTableSqlName(), r.fkTableSqlName(), r.keyColumnEntries(), r.fkColumnEntries());
         }
         return null;
     }

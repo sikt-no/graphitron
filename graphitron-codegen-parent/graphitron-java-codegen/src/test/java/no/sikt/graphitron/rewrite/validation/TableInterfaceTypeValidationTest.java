@@ -12,7 +12,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.FILM;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -21,7 +20,7 @@ class TableInterfaceTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         RESOLVED("table name resolved — no implementing types",
-            new TableInterfaceType("FilmStatus", null, "status_type", new ResolvedTable("film_status", "FILM_STATUS", FILM), List.of()),
+            new TableInterfaceType("FilmStatus", null, "status_type", new ResolvedTable("film_status", "FILM_STATUS", true), List.of()),
             List.of()),
 
         UNRESOLVED_TABLE("table name could not be matched to a jOOQ table in the catalog",
@@ -30,18 +29,18 @@ class TableInterfaceTypeValidationTest {
 
         RESOLVED_WITH_BOUND_PARTICIPANTS("resolved table with table-bound implementing types — valid",
             new TableInterfaceType("FilmStatus", null, "status_type",
-                new ResolvedTable("film_status", "FILM_STATUS", FILM),
+                new ResolvedTable("film_status", "FILM_STATUS", true),
                 List.of(
-                    new BoundParticipant("NewFilm", new ResolvedTable("film", "FILM", FILM), null),
-                    new BoundParticipant("OldFilm", new ResolvedTable("film", "FILM", FILM), null)
+                    new BoundParticipant("NewFilm", new ResolvedTable("film", "FILM", true), null),
+                    new BoundParticipant("OldFilm", new ResolvedTable("film", "FILM", true), null)
                 )),
             List.of()),
 
         UNBOUND_PARTICIPANT("one implementing type is not table-bound — error",
             new TableInterfaceType("FilmStatus", null, "status_type",
-                new ResolvedTable("film_status", "FILM_STATUS", FILM),
+                new ResolvedTable("film_status", "FILM_STATUS", true),
                 List.of(
-                    new BoundParticipant("NewFilm", new ResolvedTable("film", "FILM", FILM), null),
+                    new BoundParticipant("NewFilm", new ResolvedTable("film", "FILM", true), null),
                     new UnboundParticipant("FilmDescription")
                 )),
             List.of("Type 'FilmStatus': implementing type 'FilmDescription' is not table-bound (missing @table directive)")),

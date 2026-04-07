@@ -35,7 +35,8 @@ public sealed interface InputFieldRef
      * {@link TableRef.ResolvedTable} in practice, since unresolved tables produce
      * {@link UnresolvedInputField} for all their fields).
      * {@code javaColumnName} is the Java field name in the jOOQ table class (e.g. {@code "CUSTOMER_ID"}).
-     * {@code column} is the jOOQ {@link org.jooq.Field} instance for use in code generation.
+     * {@code columnClass} is the fully qualified Java class name of the column type
+     * (e.g. {@code "java.lang.Integer"}).
      */
     record TableInputField(
         String name,
@@ -44,13 +45,8 @@ public sealed interface InputFieldRef
         boolean list,
         TableRef.ResolvedTable table,
         String javaColumnName,
-        org.jooq.Field<?> column
-    ) implements InputFieldRef {
-        /** Fully qualified Java class name of the column type (e.g. {@code "java.lang.Integer"}). */
-        public String columnClass() {
-            return column.getType().getName();
-        }
-    }
+        String columnClass
+    ) implements InputFieldRef {}
 
     /**
      * A field whose column name could not be matched to any field in the jOOQ table.

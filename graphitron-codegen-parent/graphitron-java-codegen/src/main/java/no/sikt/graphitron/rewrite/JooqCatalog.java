@@ -71,17 +71,29 @@ public class JooqCatalog {
     }
 
     /**
-     * Find a column in a table by its SQL name. Returns both the jOOQ {@link org.jooq.Field}
-     * instance and its Java field name in the generated table class (e.g. {@code "FILM_ID"}).
-     * Uses reflection to read the actual Java identifier name, which respects custom jOOQ
-     * naming strategies rather than assuming a plain {@code toUpperCase()} transformation.
+     * Find a column in a table by its SQL name. Returns the Java field name in the generated table
+     * class (e.g. {@code "FILM_ID"}) and the fully qualified column type name. Uses reflection to
+     * read the actual Java identifier name, which respects custom jOOQ naming strategies rather
+     * than assuming a plain {@code toUpperCase()} transformation.
      */
     public Optional<ColumnEntry> findColumn(Table<?> table, String sqlColumnName) {
         return Arrays.stream(table.getClass().getFields())
             .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
-            .map(f -> new ColumnEntry(f.getName(), (org.jooq.Field<?>) instanceFieldValue(f, table)))
-            .filter(e -> sqlColumnName.equalsIgnoreCase(e.column().getName()))
+            .map(f -> {
+                var col = (org.jooq.Field<?>) instanceFieldValue(f, table);
+                return new ColumnEntry(f.getName(), col.getType().getName(), col.getName());
+            })
+            .filter(e -> sqlColumnName.equalsIgnoreCase(e.sqlName()))
             .findFirst();
+    }
+
+    /**
+     * Find a column by SQL table name and SQL column name. Delegates to
+     * {@link #findTable(String)} followed by {@link #findColumn(Table, String)}.
+     */
+    public Optional<ColumnEntry> findColumn(String tableSqlName, String columnSqlName) {
+        return findTable(tableSqlName)
+            .flatMap(e -> findColumn(e.table(), columnSqlName));
     }
 
     private Optional<Class<?>> tablesClass(Schema schema) {
@@ -124,10 +136,13 @@ public class JooqCatalog {
 
     public record TableEntry(String javaFieldName, Table<?> table) {}
 
-    public record ColumnEntry(String javaName, org.jooq.Field<?> column) {
-        /** Fully qualified Java class name of the column type (e.g. {@code "java.lang.Integer"}). */
-        public String columnClass() {
-            return column.getType().getName();
-        }
-    }
+    /**
+     * Column resolution result.
+     *
+     * <p>{@code javaName} is the Java field name in the generated jOOQ table class
+     * (e.g. {@code "FILM_ID"}). {@code columnClass} is the fully qualified Java type name of the
+     * column (e.g. {@code "java.lang.Long"}). {@code sqlName} is the SQL column name used
+     * internally for filtering; it is not exposed beyond the catalog.
+     */
+    public record ColumnEntry(String javaName, String columnClass, String sqlName) {}
 }
