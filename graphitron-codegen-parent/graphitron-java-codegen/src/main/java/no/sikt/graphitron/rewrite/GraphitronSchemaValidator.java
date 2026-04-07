@@ -176,11 +176,20 @@ public class GraphitronSchemaValidator {
     // --- Field validators (stubs — filled in as test classes are added) ---
 
     private void validateLookupQueryField(no.sikt.graphitron.rewrite.field.QueryField.LookupQueryField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        if (!(field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.field.FieldWrapper.Single)) {
+        boolean anyArgIsList = field.arguments().stream().anyMatch(ArgumentRef::list);
+        if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.field.FieldWrapper.Connection) {
             errors.add(new ValidationError(
-                "Field '" + field.name() + "': lookup fields must return a single object, not a list or connection",
+                "Field '" + field.name() + "': lookup fields must not return a connection",
                 field.location()
             ));
+        } else {
+            boolean returnIsList = field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.field.FieldWrapper.List;
+            if (anyArgIsList != returnIsList) {
+                errors.add(new ValidationError(
+                    "Field '" + field.name() + "': result type does not match input cardinality",
+                    field.location()
+                ));
+            }
         }
         for (var arg : field.arguments()) {
             switch (arg) {

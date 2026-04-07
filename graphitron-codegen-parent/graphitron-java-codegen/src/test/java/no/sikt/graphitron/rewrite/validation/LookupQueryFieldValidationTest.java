@@ -27,29 +27,39 @@ class LookupQueryFieldValidationTest {
             singleReturn(List.of()),
             List.of()),
 
-        VALID_WITH_COLUMN_ARG("ScalarArg.ColumnArg (resolved) — valid",
-            singleReturn(List.of(new ArgumentRef.ScalarArg.ColumnArg("id", "ID", false, true, "FILM_ID", null))),
+        VALID_WITH_COLUMN_ARG("ScalarArg.ColumnArg scalar (no list) — valid with single return",
+            singleReturn(List.of(new ArgumentRef.ScalarArg.ColumnArg("id", "ID", false, false, "FILM_ID", null))),
             List.of()),
 
-        VALID_WITH_TABLE_INPUT_TYPE_ARG("table input type arg — valid",
-            singleReturn(List.of(new ArgumentRef.InputTypeArg.TableInputTypeArg("key", "FilmKey", false, true))),
+        VALID_WITH_LIST_COLUMN_ARG("ScalarArg.ColumnArg list — valid with list return",
+            new LookupQueryField("Query", "filmById", null,
+                new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.List(true, true, null, List.of())),
+                List.of(new ArgumentRef.ScalarArg.ColumnArg("id", "ID", false, true, "FILM_ID", null))),
+            List.of()),
+
+        VALID_WITH_TABLE_INPUT_TYPE_ARG("table input type arg — valid with single return",
+            singleReturn(List.of(new ArgumentRef.InputTypeArg.TableInputTypeArg("key", "FilmKey", false, false))),
             List.of()),
 
         VALID_WITH_PLAIN_INPUT_TYPE_ARG("plain input type arg — valid (error handled at type level)",
-            singleReturn(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("key", "FilmKey", false, true))),
+            singleReturn(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("key", "FilmKey", false, false))),
             List.of()),
 
-        LIST_RETURN("list cardinality — lookup must return a single object",
+        LIST_RETURN_NO_LIST_ARG("list return with no list arg — cardinality mismatch",
             new LookupQueryField("Query", "filmById", null,
                 new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.List(true, true, null, List.of())),
                 List.of()),
-            List.of("Field 'filmById': lookup fields must return a single object, not a list or connection")),
+            List.of("Field 'filmById': result type does not match input cardinality")),
 
-        CONNECTION_RETURN("connection cardinality — lookup must return a single object",
+        SINGLE_RETURN_LIST_ARG("single return with list arg — cardinality mismatch",
+            singleReturn(List.of(new ArgumentRef.ScalarArg.ColumnArg("id", "ID", false, true, "FILM_ID", null))),
+            List.of("Field 'filmById': result type does not match input cardinality")),
+
+        CONNECTION_RETURN("connection return — never valid on lookup",
             new LookupQueryField("Query", "filmById", null,
                 new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Connection(true, true, null, List.of())),
                 List.of()),
-            List.of("Field 'filmById': lookup fields must return a single object, not a list or connection")),
+            List.of("Field 'filmById': lookup fields must not return a connection")),
 
         ORDERBY_ARG("@orderBy on a lookup field argument — not valid on lookup",
             singleReturn(List.of(new ArgumentRef.InputTypeArg.OrderByArg("order", "FilmOrder", false, false, "sortField", "direction"))),

@@ -4,6 +4,7 @@ type Query {
         rating: MpaaRating @field(name: "RATING"),
         maxRentalRate: Float @field(name: "RENTAL_RATE")
     ): [Film!]!
+    filmById(film_id: [ID] @lookupKey): [Film!]!
 }
 
 type Customer @table(name: "customer") {

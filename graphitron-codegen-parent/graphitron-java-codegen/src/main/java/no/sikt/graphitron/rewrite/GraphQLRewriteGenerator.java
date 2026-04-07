@@ -27,6 +27,20 @@ public class GraphQLRewriteGenerator {
     public static void generate() {
         var registry = getTypeDefinitionRegistry(GeneratorConfig.generatorSchemaFiles());
         var schema = GraphitronSchemaBuilder.build(registry);
+
+        var errors = new GraphitronSchemaValidator().validate(schema);
+        if (!errors.isEmpty()) {
+            errors.forEach(e -> {
+                var loc = e.location();
+                if (loc != null) {
+                    LOGGER.error("{}:{}:{}: error: {}", loc.getSourceName(), loc.getLine(), loc.getColumn(), e.message());
+                } else {
+                    LOGGER.error("error: {}", e.message());
+                }
+            });
+            throw new RuntimeException("Rewrite schema validation failed with " + errors.size() + " error(s)");
+        }
+
         var generators = getGenerators(schema);
         generators.parallelStream().forEach(g -> {
             g.generateAllToDirectory(GeneratorConfig.outputDirectory(), GeneratorConfig.outputPackage());

@@ -38,6 +38,7 @@ import java.util.Map;
 public class LookupCodeGenerator {
 
     private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName SQL_DIALECT = ClassName.get("org.jooq", "SQLDialect");
     private static final ClassName INT_STREAM = ClassName.get("java.util.stream", "IntStream");
     private static final ClassName MAP = ClassName.get(Map.class);
     private static final ClassName LIST = ClassName.get(List.class);
@@ -86,7 +87,7 @@ public class LookupCodeGenerator {
         var inputArgName = spec.inputArgName();
         var listType = ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(MAP, STRING, OBJECT));
 
-        var newRecordArgs = newRecordArgsBlock(spec);
+        var newRecordCall = newRecordCallBlock(spec);
         var valuesArgs = inputTypeValuesBlock(spec);
 
         return CodeBlock.builder()
@@ -96,7 +97,7 @@ public class LookupCodeGenerator {
             .add(".mapToObj(i -> {\n")
             .indent()
             .add("var m = $L.get(i);\n", inputArgName)
-            .add("return $T.newRecord($L)\n", DSL, newRecordArgs)
+            .add("return $L\n", newRecordCall)
             .indent()
             .add(".values($L);\n", valuesArgs)
             .unindent()
@@ -134,12 +135,12 @@ public class LookupCodeGenerator {
         var firstList = listFields.isEmpty() ? null : listFields.get(0);
         String sizeExpr = firstList != null ? firstList.argName() + ".size()" : "0";
 
-        var newRecordArgs = newRecordArgsBlock(spec);
+        var newRecordCall = newRecordCallBlock(spec);
         var valuesArgs = flatValuesBlock(spec);
 
         body.add("return $T.range(0, $L)\n", INT_STREAM, sizeExpr)
             .indent()
-            .add(".mapToObj(i -> $T.newRecord($L)\n", DSL, newRecordArgs)
+            .add(".mapToObj(i -> $L\n", newRecordCall)
             .indent()
             .add(".values($L))\n", valuesArgs)
             .unindent()
@@ -149,13 +150,19 @@ public class LookupCodeGenerator {
         return body.build();
     }
 
-    /** {@code GRAPHITRON_INPUT_IDX, TABLE.COL1, TABLE.COL2, ...} */
-    private CodeBlock newRecordArgsBlock(LookupSpec spec) {
+    /**
+     * {@code DSL.using(SQLDialect.DEFAULT).newRecord(GRAPHITRON_INPUT_IDX, TABLE.COL1, ...)}
+     *
+     * <p>Uses {@code DSLContext.newRecord} (instance method) instead of the removed
+     * {@code DSL.newRecord} (static method) which was dropped in jOOQ 3.20.
+     */
+    private CodeBlock newRecordCallBlock(LookupSpec spec) {
         var b = CodeBlock.builder();
-        b.add("GRAPHITRON_INPUT_IDX");
+        b.add("$T.using($T.DEFAULT).newRecord(GRAPHITRON_INPUT_IDX", DSL, SQL_DIALECT);
         for (var f : spec.fields()) {
             b.add(", $L.$L", spec.tableJavaFieldName(), f.columnJavaName());
         }
+        b.add(")");
         return b.build();
     }
 

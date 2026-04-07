@@ -106,7 +106,8 @@ class LookupCodeGeneratorTest {
         String out = render(spec);
         assertThat(out)
             .contains("IntStream.range(0,")
-            .contains("DSL.newRecord(")
+            .contains("DSL.using(")
+            .contains(".newRecord(")
             .contains("GRAPHITRON_INPUT_IDX")
             .contains(".toList()");
     }

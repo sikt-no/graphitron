@@ -1318,17 +1318,17 @@ class GraphitronSchemaBuilderTest {
     enum RootFieldCase {
 
         LOOKUP_QUERY_FIELD(
-            "field with @lookupKey arg → LookupQueryField",
+            "field with @lookupKey list arg → LookupQueryField with list return",
             """
             type Film @table(name: "film") { title: String }
-            type Query { filmById(id: [ID] @lookupKey): Film }
+            type Query { filmById(id: [ID] @lookupKey): [Film!]! }
             """,
             schema -> {
                 assertThat(schema.field("Query", "filmById")).isInstanceOf(QueryField.LookupQueryField.class);
                 var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
                 assertThat(f.arguments()).hasSize(1);
                 assertThat(f.arguments().get(0).name()).isEqualTo("id");
-                assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
+                assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class);
             }),
 
         LOOKUP_NESTED_IN_INPUT(
@@ -1336,15 +1336,15 @@ class GraphitronSchemaBuilderTest {
             """
             input FilmKey { id: ID @lookupKey }
             type Film @table(name: "film") { title: String }
-            type Query { filmByKey(key: [FilmKey]): Film }
+            type Query { filmByKey(key: [FilmKey]): [Film!]! }
             """,
             schema -> assertThat(schema.field("Query", "filmByKey")).isInstanceOf(QueryField.LookupQueryField.class)),
 
         LOOKUP_FIELD_COLUMN_ARG(
-            "lookup field scalar arg whose column exists → ColumnArg with resolved jOOQ field",
+            "lookup field list arg whose column exists → ColumnArg with resolved jOOQ field",
             """
             type Film @table(name: "film") { title: String }
-            type Query { filmById(film_id: [ID] @lookupKey): Film }
+            type Query { filmById(film_id: [ID] @lookupKey): [Film!]! }
             """,
             schema -> {
                 var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
@@ -1357,10 +1357,10 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LOOKUP_FIELD_PLAIN_SCALAR_ARG(
-            "lookup field scalar arg with no matching column → PlainScalarArg",
+            "lookup field list arg with no matching column → UnboundScalarArg",
             """
             type Film @table(name: "film") { title: String }
-            type Query { filmById(unknownColumn: [String] @lookupKey): Film }
+            type Query { filmById(unknownColumn: [String] @lookupKey): [Film!]! }
             """,
             schema -> {
                 var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
@@ -1375,7 +1375,7 @@ class GraphitronSchemaBuilderTest {
             """
             input FilmKey @table(name: "film") { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
-            type Query { filmByKey(key: FilmKey @lookupKey): Film }
+            type Query { filmByKey(key: [FilmKey] @lookupKey): [Film!]! }
             """,
             schema -> {
                 var f = (QueryField.LookupQueryField) schema.field("Query", "filmByKey");
@@ -1390,7 +1390,7 @@ class GraphitronSchemaBuilderTest {
             """
             input FilmKey { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
-            type Query { filmByKey(key: FilmKey @lookupKey): Film }
+            type Query { filmByKey(key: [FilmKey] @lookupKey): [Film!]! }
             """,
             schema -> {
                 var f = (QueryField.LookupQueryField) schema.field("Query", "filmByKey");
@@ -1408,7 +1408,7 @@ class GraphitronSchemaBuilderTest {
             enum Direction { ASC DESC }
             input FilmOrder { sortField: FilmOrderField! direction: Direction! }
             type Film @table(name: "film") { title: String }
-            type Query { filmById(film_id: [ID] @lookupKey, order: FilmOrder @orderBy): Film }
+            type Query { filmById(film_id: [ID] @lookupKey, order: FilmOrder @orderBy): [Film!]! }
             """,
             schema -> {
                 var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
@@ -1426,7 +1426,7 @@ class GraphitronSchemaBuilderTest {
             """
             enum FilmOrder { TITLE }
             type Film @table(name: "film") { title: String }
-            type Query { filmById(film_id: [ID] @lookupKey, order: FilmOrder @orderBy): Film }
+            type Query { filmById(film_id: [ID] @lookupKey, order: FilmOrder @orderBy): [Film!]! }
             """,
             schema -> {
                 var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");

@@ -46,7 +46,7 @@ class LookupPipelineTest {
     void flatScalarArg_buildsOneSpec() {
         var specs = buildSpecs("""
             type Film @table(name: "film") { title: String }
-            type Query { filmById(film_id: [ID] @lookupKey): Film }
+            type Query { filmById(film_id: [ID] @lookupKey): [Film!]! }
             """);
         assertThat(specs).hasSize(1);
         assertThat(specs.get(0).typeName()).isEqualTo("Film");
@@ -61,7 +61,7 @@ class LookupPipelineTest {
     void flatMultipleArgs_listArgAndScalarArg() {
         var specs = buildSpecs("""
             type Customer @table(name: "customer") { firstName: String }
-            type Query { customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): Customer }
+            type Query { customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]! }
             """);
         assertThat(specs).hasSize(1);
         var fields = specs.get(0).fields();
@@ -77,7 +77,7 @@ class LookupPipelineTest {
         var specs = buildSpecs("""
             input FilmKey @table(name: "film") { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
-            type Query { filmByKey(key: FilmKey @lookupKey): Film }
+            type Query { filmByKey(key: [FilmKey] @lookupKey): [Film!]! }
             """);
         assertThat(specs).hasSize(1);
         assertThat(specs.get(0).inputArgName()).isEqualTo("key");
@@ -91,7 +91,7 @@ class LookupPipelineTest {
         var specs = buildSpecs("""
             input FilmKey { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
-            type Query { filmByKey(key: FilmKey @lookupKey): Film }
+            type Query { filmByKey(key: [FilmKey] @lookupKey): [Film!]! }
             """);
         assertThat(specs).hasSize(1);
         assertThat(specs.get(0).inputArgName()).isEqualTo("key");
@@ -99,10 +99,10 @@ class LookupPipelineTest {
 
     @Test
     void unresolvedScalarArg_droppedFromSpec() {
-        // unknownColumn has no matching DB column → PlainScalarArg → no spec fields → spec dropped
+        // unknownColumn has no matching DB column → UnboundScalarArg → no spec fields → spec dropped
         var specs = buildSpecs("""
             type Film @table(name: "film") { title: String }
-            type Query { filmById(unknownColumn: [String] @lookupKey): Film }
+            type Query { filmById(unknownColumn: [String] @lookupKey): [Film!]! }
             """);
         assertThat(specs).isEmpty();
     }
@@ -114,7 +114,7 @@ class LookupPipelineTest {
         // film_id is Long in jOOQ (integer PK)
         var code = renderFirst("""
             type Film @table(name: "film") { title: String }
-            type Query { filmById(film_id: [ID] @lookupKey): Film }
+            type Query { filmById(film_id: [ID] @lookupKey): [Film!]! }
             """);
         assertThat(code)
             .contains("List<Long> film_id = (List<Long>) arguments.get(\"film_id\")")
@@ -128,7 +128,7 @@ class LookupPipelineTest {
         // the scalar arg is read inline — exact Java type varies so we check the pattern not the type
         var code = renderFirst("""
             type Customer @table(name: "customer") { firstName: String }
-            type Query { customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): Customer }
+            type Query { customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]! }
             """);
         assertThat(code)
             .contains("arguments.get(\"customer_id\")")   // list arg declared as local var
@@ -142,18 +142,18 @@ class LookupPipelineTest {
         // 1 index column + 1 field → Record2<Integer, Long> (film_id is Long in jOOQ)
         var code = renderFirst("""
             type Film @table(name: "film") { title: String }
-            type Query { filmById(film_id: [ID] @lookupKey): Film }
+            type Query { filmById(film_id: [ID] @lookupKey): [Film!]! }
             """);
         assertThat(code).contains("Record2<Integer, Long>");
     }
 
     @Test
     void inputTypeArg_generatesInputListExtractionAndMapGet() {
-        // film_id is Long in jOOQ
+        // film_id is Long in jOOQ; key is a list input type arg
         var code = renderFirst("""
             input FilmKey @table(name: "film") { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
-            type Query { filmByKey(key: FilmKey @lookupKey): Film }
+            type Query { filmByKey(key: [FilmKey] @lookupKey): [Film!]! }
             """);
         assertThat(code)
             .contains("List<Map<String, Object>> key = (List<Map<String, Object>>) arguments.get(\"key\")")
@@ -168,7 +168,7 @@ class LookupPipelineTest {
         var code = renderFirst("""
             input FilmKey @table(name: "film") { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
-            type Query { filmByKey(key: FilmKey @lookupKey): Film }
+            type Query { filmByKey(key: [FilmKey] @lookupKey): [Film!]! }
             """);
         assertThat(code).contains("Record2<Integer, Long>");
     }
@@ -178,11 +178,12 @@ class LookupPipelineTest {
         var code = renderFirst("""
             input FilmKey @table(name: "film") { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
-            type Query { filmByKey(key: FilmKey @lookupKey): Film }
+            type Query { filmByKey(key: [FilmKey] @lookupKey): [Film!]! }
             """);
         assertThat(code)
             .contains("IntStream.range(0,")
-            .contains("DSL.newRecord(")
+            .contains("DSL.using(")
+            .contains(".newRecord(")
             .contains("GRAPHITRON_INPUT_IDX")
             .contains(".toList()");
     }
