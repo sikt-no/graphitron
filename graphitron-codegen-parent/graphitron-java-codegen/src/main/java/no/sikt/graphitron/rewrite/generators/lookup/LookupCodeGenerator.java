@@ -17,7 +17,7 @@ import java.util.Map;
  * <p>Each spec produces one class (e.g. {@code CustomerLookup}) containing a
  * {@code toInputRows} method. The method signature is always:
  * <pre>{@code
- * public static List<RecordN<Integer, T1, ...>> toInputRows(Map<String, Object> arguments)
+ * public static List<RecordN<Integer, T1, ...>> toInputRows(DSLContext ctx, Map<String, Object> arguments)
  * }</pre>
  *
  * <p>Receiving the full {@code arguments} map rather than a single extracted list allows the method
@@ -37,8 +37,7 @@ import java.util.Map;
  */
 public class LookupCodeGenerator {
 
-    private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
-    private static final ClassName SQL_DIALECT = ClassName.get("org.jooq", "SQLDialect");
+    private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName INT_STREAM = ClassName.get("java.util.stream", "IntStream");
     private static final ClassName MAP = ClassName.get(Map.class);
     private static final ClassName LIST = ClassName.get(List.class);
@@ -59,6 +58,7 @@ public class LookupCodeGenerator {
         return MethodSpec.methodBuilder("toInputRows")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
+            .addParameter(DSL_CONTEXT, "ctx")
             .addParameter(paramType, "arguments")
             .addCode(buildToInputRowsBody(spec))
             .build();
@@ -150,15 +150,10 @@ public class LookupCodeGenerator {
         return body.build();
     }
 
-    /**
-     * {@code DSL.using(SQLDialect.DEFAULT).newRecord(GRAPHITRON_INPUT_IDX, TABLE.COL1, ...)}
-     *
-     * <p>Uses {@code DSLContext.newRecord} (instance method) instead of the removed
-     * {@code DSL.newRecord} (static method) which was dropped in jOOQ 3.20.
-     */
+    /** {@code ctx.newRecord(GRAPHITRON_INPUT_IDX, TABLE.COL1, ...)} */
     private CodeBlock newRecordCallBlock(LookupSpec spec) {
         var b = CodeBlock.builder();
-        b.add("$T.using($T.DEFAULT).newRecord(GRAPHITRON_INPUT_IDX", DSL, SQL_DIALECT);
+        b.add("ctx.newRecord(GRAPHITRON_INPUT_IDX");
         for (var f : spec.fields()) {
             b.add(", $L.$L", spec.tableJavaFieldName(), f.columnJavaName());
         }

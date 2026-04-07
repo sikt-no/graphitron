@@ -40,7 +40,14 @@ class LookupCodeGeneratorTest {
     }
 
     @Test
-    void generate_parameterIsMapOfStringObject() {
+    void generate_firstParameterIsDslContext() {
+        var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
+            new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
+        assertThat(render(spec)).contains("DSLContext ctx");
+    }
+
+    @Test
+    void generate_secondParameterIsMapOfStringObject() {
         var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
             new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
         assertThat(render(spec)).contains("Map<String, Object> arguments");
@@ -106,8 +113,7 @@ class LookupCodeGeneratorTest {
         String out = render(spec);
         assertThat(out)
             .contains("IntStream.range(0,")
-            .contains("DSL.using(")
-            .contains(".newRecord(")
+            .contains("ctx.newRecord(")
             .contains("GRAPHITRON_INPUT_IDX")
             .contains(".toList()");
     }

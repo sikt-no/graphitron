@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite.test;
 
 import no.sikt.graphitron.rewrite.test.generated.rewrite.resolvers.FilmLookup;
+import org.jooq.SQLDialect;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -11,16 +13,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Tests the generated {@code FilmLookup.toInputRows} method.
  *
- * <p>{@code toInputRows} is a pure function: given a {@code Map<String, Object>} carrying
- * {@code "film_id"} → {@code List<Integer>}, it returns one {@code Record2<Integer, Integer>}
- * per input ID, where the first value is the 1-based row index and the second is the film ID.
- * No database is needed to test this.
+ * <p>Given a {@code Map<String, Object>} carrying {@code "film_id"} → {@code List<Integer>},
+ * it returns one {@code Record2<Integer, Integer>} per input ID, where the first value is the
+ * 1-based row index and the second is the film ID. No database is needed to test this.
  */
 class FilmLookupTest {
 
+    private static final org.jooq.DSLContext CTX = DSL.using(SQLDialect.DEFAULT);
+
     @Test
     void singleId_returnsOneRowWithIndex1() {
-        var rows = FilmLookup.toInputRows(Map.of("film_id", List.of(3)));
+        var rows = FilmLookup.toInputRows(CTX, Map.of("film_id", List.of(3)));
 
         assertThat(rows).hasSize(1);
         assertThat(rows.get(0).value1()).isEqualTo(1);  // 1-based index
@@ -29,7 +32,7 @@ class FilmLookupTest {
 
     @Test
     void multipleIds_preservesOrderAndAssignsConsecutiveIndex() {
-        var rows = FilmLookup.toInputRows(Map.of("film_id", List.of(2, 5, 1)));
+        var rows = FilmLookup.toInputRows(CTX, Map.of("film_id", List.of(2, 5, 1)));
 
         assertThat(rows).hasSize(3);
         assertThat(rows.get(0).value1()).isEqualTo(1);
@@ -42,7 +45,7 @@ class FilmLookupTest {
 
     @Test
     void emptyList_returnsEmptyList() {
-        var rows = FilmLookup.toInputRows(Map.of("film_id", List.of()));
+        var rows = FilmLookup.toInputRows(CTX, Map.of("film_id", List.of()));
 
         assertThat(rows).isEmpty();
     }

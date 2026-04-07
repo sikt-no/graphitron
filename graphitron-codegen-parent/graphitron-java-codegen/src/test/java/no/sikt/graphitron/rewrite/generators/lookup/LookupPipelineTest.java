@@ -182,8 +182,7 @@ class LookupPipelineTest {
             """);
         assertThat(code)
             .contains("IntStream.range(0,")
-            .contains("DSL.using(")
-            .contains(".newRecord(")
+            .contains("ctx.newRecord(")
             .contains("GRAPHITRON_INPUT_IDX")
             .contains(".toList()");
     }
