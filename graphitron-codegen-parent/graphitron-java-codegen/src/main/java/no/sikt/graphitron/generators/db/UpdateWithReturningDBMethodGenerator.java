@@ -101,6 +101,8 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .indent()
                 .indent()
                 .add("\n$L", formatWhereContentsForDeleteMutation(target))
+                .unindent()
+                .unindent()
                 .build();
     }
 
@@ -173,6 +175,8 @@ public class UpdateWithReturningDBMethodGenerator extends FetchDBMethodGenerator
                 .indent()
                 .add(".insertInto($N, $L)", targetTable, CodeBlock.join(setValueMap.keySet(), ", "))
                 .add("\n.$L($L)", recordInput.isIterableWrapped() ? "valuesOfRows" : "values", valuesContent)
+                .unindent()
+                .unindent()
                 .build();
     }
 
