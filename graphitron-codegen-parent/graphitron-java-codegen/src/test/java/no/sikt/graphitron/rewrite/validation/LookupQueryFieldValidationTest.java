@@ -36,7 +36,7 @@ class LookupQueryFieldValidationTest {
             List.of()),
 
         VALID_WITH_PLAIN_INPUT_TYPE_ARG("plain input type arg — valid (error handled at type level)",
-            singleReturn(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("key", "FilmKey", false, true, false))),
+            singleReturn(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("key", "FilmKey", false, true))),
             List.of()),
 
         LIST_RETURN("list cardinality — lookup must return a single object",
@@ -52,7 +52,7 @@ class LookupQueryFieldValidationTest {
             List.of("Field 'filmById': lookup fields must return a single object, not a list or connection")),
 
         ORDERBY_ARG("@orderBy on a lookup field argument — not valid on lookup",
-            singleReturn(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("order", "String", false, false, true))),
+            singleReturn(List.of(new ArgumentRef.InputTypeArg.OrderByArg("order", "FilmOrder", false, false))),
             List.of("Field 'filmById': @orderBy is not valid on a lookup field")),
 
         UNCLASSIFIED_ARG("UnclassifiedArg — reports reason as error",

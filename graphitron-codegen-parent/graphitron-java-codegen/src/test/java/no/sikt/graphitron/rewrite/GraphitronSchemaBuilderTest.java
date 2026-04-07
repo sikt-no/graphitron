@@ -1402,7 +1402,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LOOKUP_FIELD_ORDERBY_ARG(
-            "lookup field with @orderBy arg → PlainInputTypeArg with orderBy=true",
+            "lookup field with @orderBy arg → OrderByArg",
             """
             enum FilmOrder { TITLE }
             type Film @table(name: "film") { title: String }
@@ -1413,8 +1413,7 @@ class GraphitronSchemaBuilderTest {
                 var orderArg = f.arguments().stream()
                     .filter(a -> a.name().equals("order"))
                     .findFirst().orElseThrow();
-                assertThat(orderArg).isInstanceOf(ArgumentRef.InputTypeArg.PlainInputTypeArg.class);
-                assertThat(((ArgumentRef.InputTypeArg.PlainInputTypeArg) orderArg).orderBy()).isTrue();
+                assertThat(orderArg).isInstanceOf(ArgumentRef.InputTypeArg.OrderByArg.class);
             }),
 
         TABLE_QUERY_FIELD(

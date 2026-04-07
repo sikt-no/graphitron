@@ -11,8 +11,11 @@ package no.sikt.graphitron.rewrite.field;
  *       <li>{@link InputTypeArg.TableInputTypeArg} — the type was resolved to a
  *           {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType} (either via
  *           {@code @table} or by optimistic inference from the field's return type).</li>
- *       <li>{@link InputTypeArg.PlainInputTypeArg} — the type could not be resolved to a table,
- *           or carries {@code @orderBy} (invalid on lookup fields).</li>
+ *       <li>{@link InputTypeArg.OrderByArg} — the argument carries {@code @orderBy}; its input
+ *           type must have a specific structure (one enum with {@code @order} values, one
+ *           direction field). Invalid on lookup fields.</li>
+ *       <li>{@link InputTypeArg.PlainInputTypeArg} — the type could not be resolved to a table
+ *           and carries no recognised directive.</li>
  *     </ul>
  *   </li>
  *   <li>{@link ScalarArg} — the argument type is a scalar or enum (sealed):
@@ -43,10 +46,11 @@ public sealed interface ArgumentRef
     /**
      * Argument whose type is a user-defined input type.
      *
-     * <p>Two sub-variants encode whether the type was resolved to a table at schema-build time.
+     * <p>Three sub-variants encode how the type was classified at schema-build time.
      */
     sealed interface InputTypeArg extends ArgumentRef
             permits ArgumentRef.InputTypeArg.TableInputTypeArg,
+                    ArgumentRef.InputTypeArg.OrderByArg,
                     ArgumentRef.InputTypeArg.PlainInputTypeArg {
 
         /**
@@ -66,17 +70,28 @@ public sealed interface ArgumentRef
         ) implements InputTypeArg {}
 
         /**
-         * The type could not be resolved to a table, or carries {@code @orderBy}.
+         * The argument carries {@code @orderBy}.
          *
-         * <p>{@code orderBy} is {@code true} when the argument carries {@code @orderBy} — invalid
+         * <p>The input type must have a specific structure validated by the schema: one enum field
+         * whose values carry {@code @order} directives, and one direction field (ASC/DESC).
+         * Valid on {@link no.sikt.graphitron.rewrite.field.QueryField.TableQueryField}; invalid
          * on lookup fields.
+         */
+        record OrderByArg(
+            String name,
+            String typeName,
+            boolean nonNull,
+            boolean list
+        ) implements InputTypeArg {}
+
+        /**
+         * The type could not be resolved to a table and carries no recognised directive.
          */
         record PlainInputTypeArg(
             String name,
             String typeName,
             boolean nonNull,
-            boolean list,
-            boolean orderBy
+            boolean list
         ) implements InputTypeArg {}
     }
 

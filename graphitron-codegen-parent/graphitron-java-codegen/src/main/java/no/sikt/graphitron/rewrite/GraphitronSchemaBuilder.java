@@ -953,13 +953,13 @@ public class GraphitronSchemaBuilder {
                 "@condition is only supported on field definitions, not on arguments");
         }
         if (arg.orderBy()) {
-            return new ArgumentRef.InputTypeArg.PlainInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), true);
+            return new ArgumentRef.InputTypeArg.OrderByArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list());
         }
         if (types.containsKey(arg.typeName())) {
             resolveInputTypeImplicitly(arg.typeName(), rt);
             return types.get(arg.typeName()) instanceof TableInputType
                 ? new ArgumentRef.InputTypeArg.TableInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list())
-                : new ArgumentRef.InputTypeArg.PlainInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), false);
+                : new ArgumentRef.InputTypeArg.PlainInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list());
         }
         // Scalar arg — resolve against the return type's table
         if (rt == null) {
