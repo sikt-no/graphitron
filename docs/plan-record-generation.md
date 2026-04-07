@@ -119,15 +119,15 @@ Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nest
 |---|---|
 | `TableQueryField` | `filmSelect` |
 | `LookupQueryField` — single | `filmSelect` with key condition |
-| `LookupQueryField` — batch DataLoader | `filmNested` per key (positional VALUES join) |
+| `LookupQueryField` — batch DataLoader | positional VALUES join → `filmNested` per row |
 | `TableField` — no `@splitQuery` | `filmNested` |
-| `TableField` — `@splitQuery` | DataLoader → `filmSelect` with batch condition |
-| `TableField` — result-mapped (lift) | DataLoader → `filmSelect` with lift table (derived from parent FK columns) |
-| `TableMethodField` | `filmNested(developerTable, ...)` overload |
+| `TableField` — `@splitQuery` | DataLoader → `filmSelect` (Graphitron controls both sides) |
+| `TableField` — result-mapped (lift) | DataLoader → `filmSelect` with lift table (from parent `TableRecord` PK) |
+| `ServiceField` / `TableMethodField` returning table-mapped type | DataLoader → `filmSelect` with lift table (from returned `TableRecord` PK) |
 | `InterfaceField` | union over each implementor's `filmNested` |
-| Mutation read-back | `filmSelect` with lift table |
+| Mutation read-back | `filmSelect` with lift table (from returned `TableRecord` PK) |
 
-**`LookupQueryField` batch mapping** uses `filmNested` rather than `filmSelect`. Each input key drives one row in a VALUES outer query; the nested multiset produces the matching result. Positional alignment between input keys and output rows is guaranteed, even for missing keys.
+**`LookupQueryField` batch mapping**: each input key drives one row in a VALUES outer query; the nested multiset produces the matching result. The invariant is that output cardinality and ordering match the input keys — which index the database uses is an infrastructure concern, not a Graphitron constraint. Missing keys produce a null row, preserving positional alignment.
 
 ---
 
