@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.splitquery;
 
+import no.sikt.graphitron.rewrite.JooqCatalog.ColumnEntry;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.field.ChildField.TableField;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef;
@@ -7,11 +8,8 @@ import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkWithConditionRef;
 import no.sikt.graphitron.rewrite.type.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
-import org.jooq.ForeignKey;
 
-import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Builds {@link SplitSourceSpec} instances from a {@link GraphitronSchema}.
@@ -22,8 +20,10 @@ import java.util.Optional;
  *
  * <p>The FK is resolved from the first element of
  * {@link no.sikt.graphitron.rewrite.field.ChildField.TableField#referencePath()} that carries a
- * jOOQ {@link ForeignKey}. The parent-side key columns (the columns belonging to the parent type's
- * table) are used as the columns in the derived source table.
+ * jOOQ {@link org.jooq.ForeignKey}. The parent-side key columns — those belonging to the parent
+ * type's table — are taken from the pre-resolved {@link ColumnEntry} lists on {@link FkRef} or
+ * {@link FkWithConditionRef}. No reflection is performed here; all Java identifier names were
+ * resolved by {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder} at schema-build time.
  *
  * <p>Fields with no resolvable FK, an unresolved parent table, or an empty key-field list are
  * silently dropped — the validator already reports those errors.
@@ -44,10 +44,10 @@ public class SplitSourceSpecBuilder {
         if (!(parentType instanceof TableType tt)) return null;
         if (!(tt.table() instanceof ResolvedTable rt)) return null;
 
-        var fk = firstFk(field.referencePath());
-        if (fk == null) return null;
+        var fkRef = firstFkRef(field.referencePath());
+        if (fkRef == null) return null;
 
-        var keyFields = buildKeyFields(fk, rt.table());
+        var keyFields = buildKeyFields(fkRef, rt.table().getName());
         if (keyFields.isEmpty()) return null;
 
         return new SplitSourceSpec(
@@ -58,10 +58,11 @@ public class SplitSourceSpecBuilder {
         );
     }
 
-    private static ForeignKey<?, ?> firstFk(List<ReferencePathElementRef> path) {
+    private static FkRef firstFkRef(List<ReferencePathElementRef> path) {
         for (var el : path) {
-            if (el instanceof FkRef r) return r.key();
-            if (el instanceof FkWithConditionRef r) return r.key();
+            if (el instanceof FkRef r) return r;
+            if (el instanceof FkWithConditionRef r)
+                return new FkRef(r.key(), r.keyColumnEntries(), r.fkColumnEntries());
         }
         return null;
     }
@@ -72,42 +73,18 @@ public class SplitSourceSpecBuilder {
      *
      * <p>When the FK is declared on the child table and references the parent (the common case —
      * e.g. {@code film.language_id → language.language_id}), the parent-side columns are the
-     * referenced key fields: {@code fk.getKey().getFields()}.
+     * referenced key fields: {@link FkRef#keyColumnEntries()}.
      *
      * <p>When the FK is declared on the parent table and references the child, the parent-side
-     * columns are the referencing FK fields: {@code fk.getFields()}.
+     * columns are the referencing FK fields: {@link FkRef#fkColumnEntries()}.
      */
-    @SuppressWarnings("unchecked")
-    private static List<SplitSourceKeyFieldSpec> buildKeyFields(ForeignKey<?, ?> fk, org.jooq.Table<?> parentTable) {
-        List<? extends org.jooq.TableField<?, ?>> parentKeyFields;
-        if (fk.getKey().getTable().getName().equalsIgnoreCase(parentTable.getName())) {
-            parentKeyFields = (List<? extends org.jooq.TableField<?, ?>>) fk.getKey().getFields();
-        } else {
-            parentKeyFields = (List<? extends org.jooq.TableField<?, ?>>) fk.getFields();
-        }
+    private static List<SplitSourceKeyFieldSpec> buildKeyFields(FkRef fkRef, String parentTableSqlName) {
+        List<ColumnEntry> entries = fkRef.key().getKey().getTable().getName().equalsIgnoreCase(parentTableSqlName)
+            ? fkRef.keyColumnEntries()
+            : fkRef.fkColumnEntries();
 
-        return parentKeyFields.stream()
-            .map(kf -> {
-                String javaName = javaFieldName(parentTable, kf.getName())
-                    .orElse(kf.getName().toUpperCase());
-                String columnClass = kf.getType().getName();
-                return new SplitSourceKeyFieldSpec(javaName, columnClass);
-            })
+        return entries.stream()
+            .map(e -> new SplitSourceKeyFieldSpec(e.javaName(), e.column().getType().getName()))
             .toList();
-    }
-
-    private static Optional<String> javaFieldName(org.jooq.Table<?> table, String sqlName) {
-        return Arrays.stream(table.getClass().getFields())
-            .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
-            .filter(f -> {
-                try {
-                    var field = (org.jooq.Field<?>) f.get(table);
-                    return sqlName.equalsIgnoreCase(field.getName());
-                } catch (IllegalAccessException e) {
-                    return false;
-                }
-            })
-            .map(java.lang.reflect.Field::getName)
-            .findFirst();
     }
 }

@@ -106,6 +106,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -1324,7 +1325,8 @@ public class GraphitronSchemaBuilder {
             String condName = extractConditionQualifiedName(condMap);
             MethodRef resolved = resolveConditionRef(condMap);
             if (fk.isPresent() && resolved != null) {
-                return new FkWithConditionRef(fk.get(), resolved);
+                var f = fk.get();
+                return new FkWithConditionRef(f, resolved, resolveFkColumns(f.getKey().getTable(), f.getKey().getFields()), resolveFkColumns(f.getTable(), f.getFields()));
             }
             if (fk.isPresent()) {
                 return new UnresolvedConditionRef(condName);
@@ -1348,8 +1350,16 @@ public class GraphitronSchemaBuilder {
 
     private ReferencePathElementRef resolveKey(String keyName) {
         return catalog.findForeignKey(keyName)
-            .<ReferencePathElementRef>map(FkRef::new)
+            .<ReferencePathElementRef>map(fk -> new FkRef(fk, resolveFkColumns(fk.getKey().getTable(), fk.getKey().getFields()), resolveFkColumns(fk.getTable(), fk.getFields())))
             .orElseGet(() -> new UnresolvedKeyRef(keyName));
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<JooqCatalog.ColumnEntry> resolveFkColumns(org.jooq.Table<?> table, List<?> fields) {
+        return ((List<org.jooq.TableField<?, ?>>) fields).stream()
+            .map(f -> catalog.findColumn(table, f.getName()).orElse(null))
+            .filter(java.util.Objects::nonNull)
+            .toList();
     }
 
     /**
