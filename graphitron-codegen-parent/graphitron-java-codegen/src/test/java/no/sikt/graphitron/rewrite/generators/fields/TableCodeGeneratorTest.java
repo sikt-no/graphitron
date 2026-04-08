@@ -5,24 +5,41 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class TableWrapperCodeGeneratorTest {
+class TableCodeGeneratorTest {
 
-    private static final TableWrapperCodeGenerator GEN = new TableWrapperCodeGenerator();
+    private static final TableCodeGenerator GEN = new TableCodeGenerator();
 
-    private static String render(String typeName) {
-        return JavaFile.builder("test.pkg", GEN.generate(typeName)).indent("    ").build().toString();
+    private static String render(String tableName) {
+        return JavaFile.builder("test.pkg", GEN.generate(tableName)).indent("    ").build().toString();
     }
 
-    // ===== Class structure =====
+    // ===== Class naming =====
 
     @Test
-    void generate_classNameHasTableWrapperSuffix() {
-        assertThat(GEN.generate("Film").name()).isEqualTo("FilmTableWrapper");
+    void generate_classNameMatchesTableName() {
+        assertThat(GEN.generate("Film").name()).isEqualTo("Film");
     }
 
     @Test
     void generate_classIsPublic() {
-        assertThat(render("Film")).contains("public class FilmTableWrapper");
+        assertThat(render("Film")).contains("public class Film");
+    }
+
+    // ===== toPascalCase =====
+
+    @Test
+    void toPascalCase_singleWord() {
+        assertThat(TableCodeGenerator.toPascalCase("film")).isEqualTo("Film");
+    }
+
+    @Test
+    void toPascalCase_snakeCase() {
+        assertThat(TableCodeGenerator.toPascalCase("film_actor")).isEqualTo("FilmActor");
+    }
+
+    @Test
+    void toPascalCase_alreadyUpperCase() {
+        assertThat(TableCodeGenerator.toPascalCase("FILM")).isEqualTo("Film");
     }
 
     // ===== selectMany =====
@@ -30,7 +47,6 @@ class TableWrapperCodeGeneratorTest {
     @Test
     void generate_selectManyMethodIsPresent() {
         assertThat(render("Film")).contains("selectMany(");
-        assertThat(render("Customer")).contains("selectMany(");
     }
 
     @Test
@@ -61,7 +77,6 @@ class TableWrapperCodeGeneratorTest {
     @Test
     void generate_selectOneMethodIsPresent() {
         assertThat(render("Film")).contains("selectOne(");
-        assertThat(render("Customer")).contains("selectOne(");
     }
 
     @Test
@@ -76,17 +91,11 @@ class TableWrapperCodeGeneratorTest {
         assertThat(out).contains("Condition condition");
     }
 
-    @Test
-    void generate_selectOneMethodThrowsUnsupportedOperationException() {
-        assertThat(render("Film")).contains("throw new UnsupportedOperationException()");
-    }
-
     // ===== subselectMany =====
 
     @Test
     void generate_subselectManyMethodIsPresent() {
         assertThat(render("Film")).contains("subselectMany(");
-        assertThat(render("Customer")).contains("subselectMany(");
     }
 
     @Test
@@ -102,17 +111,11 @@ class TableWrapperCodeGeneratorTest {
         assertThat(out).contains("List<SortField<?>> orderBy");
     }
 
-    @Test
-    void generate_subselectManyMethodThrowsUnsupportedOperationException() {
-        assertThat(render("Film")).contains("throw new UnsupportedOperationException()");
-    }
-
     // ===== subselectOne =====
 
     @Test
     void generate_subselectOneMethodIsPresent() {
         assertThat(render("Film")).contains("subselectOne(");
-        assertThat(render("Customer")).contains("subselectOne(");
     }
 
     @Test
@@ -125,11 +128,6 @@ class TableWrapperCodeGeneratorTest {
         String out = render("Film");
         assertThat(out).contains("DataFetchingFieldSelectionSet sel");
         assertThat(out).contains("Condition condition");
-    }
-
-    @Test
-    void generate_subselectOneMethodThrowsUnsupportedOperationException() {
-        assertThat(render("Film")).contains("throw new UnsupportedOperationException()");
     }
 
     // ===== All four methods present =====

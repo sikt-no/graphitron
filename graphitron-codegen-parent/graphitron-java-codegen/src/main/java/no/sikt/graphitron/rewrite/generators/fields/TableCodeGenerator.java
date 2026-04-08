@@ -7,10 +7,16 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 
 import javax.lang.model.element.Modifier;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
- * Generates a {@link TypeSpec} for one {@code <TypeName>TableWrapper} class.
+ * Generates a {@link TypeSpec} for one table class in {@code rewrite.tables}.
+ *
+ * <p>The class is named after the SQL table (PascalCase, e.g. {@code Film} for table
+ * {@code film}, {@code FilmActor} for table {@code film_actor}). This is distinct from the
+ * GraphQL type name, which may differ.
  *
  * <p>Each class contains four scope-establishing stub methods:
  * <ul>
@@ -27,7 +33,7 @@ import java.util.List;
  * <p>All stubs throw {@link UnsupportedOperationException} until their bodies are filled in by
  * subsequent deliverables.
  */
-public class TableWrapperCodeGenerator {
+public class TableCodeGenerator {
 
     private static final ClassName RESULT        = ClassName.get("org.jooq", "Result");
     private static final ClassName RECORD        = ClassName.get("org.jooq", "Record");
@@ -38,8 +44,16 @@ public class TableWrapperCodeGenerator {
     private static final ClassName ENV           = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName SELECTION_SET = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
 
-    public TypeSpec generate(String typeName) {
-        return TypeSpec.classBuilder(typeName + "TableWrapper")
+    /** Converts a SQL table name (e.g. {@code film_actor}) to PascalCase (e.g. {@code FilmActor}). */
+    public static String toPascalCase(String tableName) {
+        return Arrays.stream(tableName.split("_"))
+            .filter(p -> !p.isEmpty())
+            .map(p -> Character.toUpperCase(p.charAt(0)) + p.substring(1).toLowerCase())
+            .collect(Collectors.joining());
+    }
+
+    public TypeSpec generate(String tableName) {
+        return TypeSpec.classBuilder(tableName)
             .addModifiers(Modifier.PUBLIC)
             .addMethod(buildSelectManyMethod())
             .addMethod(buildSelectOneMethod())

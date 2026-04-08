@@ -16,13 +16,14 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Integration tests for the full table-wrapper pipeline: SDL schema → {@link GraphitronSchema} →
- * generated {@link javax.lang.model.element.TypeElement} list.
+ * Integration tests for the full table class pipeline: SDL schema → {@link GraphitronSchema} →
+ * generated class list.
  *
- * <p>Verifies that {@link TableWrapperClassGenerator} produces exactly one class per
- * {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableType} and skips all other types.
+ * <p>Verifies that {@link TableClassGenerator} produces exactly one class per distinct SQL table
+ * referenced by a {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableType}, named after
+ * the table (not the GraphQL type name), and skips all other types.
  */
-class TableWrapperPipelineTest {
+class TablePipelineTest {
 
     @BeforeEach
     void setup() {
@@ -37,13 +38,12 @@ class TableWrapperPipelineTest {
     }
 
     @Test
-    void singleTableType_producesOneTableWrapperClass() {
+    void singleTableType_producesOneClass() {
         var classes = generate("""
             type Film @table(name: "film") { title: String }
             type Query { dummy: String }
             """);
-        assertThat(classes).hasSize(1);
-        assertThat(classes.get(0)).isEqualTo("FilmTableWrapper");
+        assertThat(classes).containsExactly("Film");
     }
 
     @Test
@@ -53,7 +53,27 @@ class TableWrapperPipelineTest {
             type Actor @table(name: "actor") { name: String }
             type Query { dummy: String }
             """);
-        assertThat(classes).containsExactlyInAnyOrder("FilmTableWrapper", "ActorTableWrapper");
+        assertThat(classes).containsExactlyInAnyOrder("Film", "Actor");
+    }
+
+    @Test
+    void classNameFollowsTableNotTypeName() {
+        // GraphQL type "MovieItem" maps to SQL table "film" → class should be "Film"
+        var classes = generate("""
+            type MovieItem @table(name: "film") { title: String }
+            type Query { dummy: String }
+            """);
+        assertThat(classes).containsExactly("Film");
+        assertThat(classes).doesNotContain("MovieItem");
+    }
+
+    @Test
+    void snakeCaseTableName_convertedToPascalCase() {
+        var classes = generate("""
+            type FilmActor @table(name: "film_actor") { actorId: Int }
+            type Query { dummy: String }
+            """);
+        assertThat(classes).containsExactly("FilmActor");
     }
 
     @Test
@@ -71,13 +91,13 @@ class TableWrapperPipelineTest {
             type Film @table(name: "film") { title: String }
             type Query { dummy: String }
             """);
-        assertThat(classes).doesNotContain("QueryTableWrapper");
+        assertThat(classes).doesNotContain("Query");
     }
 
     // ===== Helpers =====
 
     private List<String> generate(String sdl) {
-        var gen = new TableWrapperClassGenerator(buildSchema(sdl));
+        var gen = new TableClassGenerator(buildSchema(sdl));
         return gen.generateAll().stream().map(t -> t.name()).toList();
     }
 
