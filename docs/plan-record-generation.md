@@ -256,13 +256,22 @@ Both `@splitQuery` fields and lookup-key queries use the same DataLoader per tab
 
 Two questions determine the generated code: **how many keys does one resolver invocation contribute?** and **what is the field's return cardinality?**
 
+**Key anatomy**: each DataLoader key row is built from two independent sources:
+
+- **Source columns** (from the parent record): the FK-relevant columns from the source table.
+  - FK on child: source contributes its PK/unique-key columns (the columns that the child FK references — e.g. `LANGUAGE.LANGUAGE_ID`).
+  - FK on parent (inverse FK): source contributes its FK columns (the columns pointing at the target — e.g. `FILM.LANGUAGE_ID`).
+- **Argument columns** (from `@lookupKey` args): these address the **target** table, not the source. They form a derived VALUES table on the target side. Each arg element contributes one row to the combined key.
+
+When both sources are present (`@splitQuery` with `@lookupKey` args), combining them works only because the source's FK column and the arg's target column are the same logical join key — one side of the FK pair. The batch function sees a flat list of composite keys; `loadMany` is used because N arg values × 1 parent invocation = N keys per call.
+
 | Scenario | Return type | Keys per invocation | DataLoader call | Result handling |
 |---|---|---|---|---|
-| `@splitQuery`, FK on child (parent→children) | `[T]` | 1 (parent PK/unique-key columns) | `load(key)` | return `List<Record>` as-is |
-| `@splitQuery`, FK on parent (inverse FK) | `T` | 1 (parent FK columns) | `load(key)` | take first element |
-| `@splitQuery`, non-lookup filter args | `[T]` or `T` | 1 (FK columns only; filter args go to WHERE) | `load(key)` | as above |
-| `@splitQuery`, list `@lookupKey` args | `[T]` | N (one per arg element, combined with FK columns) | `loadMany(keys)` | flatten results |
-| `LookupQueryField`, list `@lookupKey` args | `[T]` | N (one per arg element) | `loadMany(keys)` | flatten results |
+| `@splitQuery`, FK on child (parent→children) | `[T]` | 1 (source PK columns) | `load(key)` | return `List<Record>` as-is |
+| `@splitQuery`, FK on parent (inverse FK) | `T` | 1 (source FK columns) | `load(key)` | take first element |
+| `@splitQuery`, non-lookup filter args | `[T]` or `T` | 1 (FK columns only; filter args go to WHERE on target) | `load(key)` | as above |
+| `@splitQuery`, list `@lookupKey` args | `[T]` | N (source FK cols + one arg value per key) | `loadMany(keys)` | flatten results |
+| `LookupQueryField`, list `@lookupKey` args | `[T]` | N (one arg-derived key per element) | `loadMany(keys)` | flatten results |
 
 In all cases the DataLoader key type is `Row` and the value type is `List<Record>`. The batch function is identical across all scenarios — the distinction only affects how the field resolver builds keys and post-processes results.
 
