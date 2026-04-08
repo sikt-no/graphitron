@@ -97,83 +97,59 @@ Add `getTenantId()` to `GraphitronContext` in `graphitron-common`:
 
 Every `@table` type generates two classes in different packages:
 
-- **`rewrite.tables.<TableName>`** — SQL scope methods, named after the SQL table (`Film` for table `film`, `FilmActor` for table `film_actor`). This is the database namespace.
-- **`rewrite.fields.<TypeName>Fields`** — GraphQL field wiring, named after the GraphQL type. This is the GraphQL namespace.
+- **`rewrite.tables.<TableName>`** — SQL namespace, named after the jOOQ table class. Owns `fields()` (SELECT list assembly), `selectMany/One` (execute new statement), `subselectMany/One` (build subquery expression), and batch loader methods.
+- **`rewrite.fields.<TypeName>Fields`** — GraphQL namespace, named after the GraphQL type. Owns one static method per GraphQL field — each is a `DataFetcher<T>` by signature — and a `wiring()` method that registers them by method reference.
 
 The type name and table name can differ (e.g. GraphQL type `MovieItem` backed by SQL table `film` yields `Film` + `MovieItemFields`).
 
-**Static field methods** (in `rewrite.tables`) produce `Field<Result<Record>>` (multiset, one-to-many) or `Field<Record>` (row, one-to-one) expressions composable into any SELECT clause — analogous to jOOQ's own `FILM.FILM_ID` constants. They use graphql-java's native `SelectedField`, which carries both `getSelectionSet()` and `getArguments()`.
+**`wiring()` uses method references, not lambdas.** Because each field is a named `static T fieldName(DataFetchingEnvironment env)` method, it satisfies `DataFetcher<T>` and can be referenced directly:
 
 ```java
-// In rewrite.tables.Film
-public static Field<Result<Record>> actors(Film film, SelectedField field) {
-    return DSL.multiset(
-        DSL.select(Actor.fields(ACTOR, field.getSelectionSet()))
-           .from(ACTOR)
-           .join(FILM_ACTOR).on(FILM_ACTOR.ACTOR_ID.eq(ACTOR.ACTOR_ID))
-           .where(FILM_ACTOR.FILM_ID.eq(film.FILM_ID))
-           .orderBy(actorOrderBy(field.getArguments()))
-    ).as("actors");
+// rewrite.fields.FilmFields
+public static TypeRuntimeWiring.Builder wiring() {
+    return TypeRuntimeWiring.newTypeWiring("Film")
+        .dataFetcher("title",  FilmFields::title)
+        .dataFetcher("actors", FilmFields::actors);
 }
 ```
 
-**`fields(table, sel)`** assembles the SELECT list, passing each sub-field's `SelectedField` directly:
+The wiring method is a pure manifest — no logic, no lambdas. Each field method carries the logic and is independently testable.
+
+**`rewrite.tables.Film`** contains the SQL side:
 
 ```java
-List<Field<?>> fields(Film film, DataFetchingFieldSelectionSet sel) {
-    var fields = new ArrayList<Field<?>>();
-    fields.add(film.TITLE);
-    sel.getFields("actors").forEach(f -> fields.add(actors(film, f)));
-    sel.getFields("language").forEach(f -> fields.add(language(film, f)));
-    return fields;
-}
+// Assembles the SELECT list for this type's query.
+List<Field<?>> fields(Film alias, DataFetchingFieldSelectionSet sel)
+
+// Scope-establishing methods (current stubs):
+Result<Record>          selectMany(DataFetchingEnvironment env, Condition condition, List<SortField<?>> orderBy)
+Record                  selectOne(DataFetchingEnvironment env, Condition condition)
+Field<Result<Record>>   subselectMany(DataFetchingFieldSelectionSet sel, Condition condition, List<SortField<?>> orderBy)
+Field<Record>           subselectOne(DataFetchingFieldSelectionSet sel, Condition condition)
 ```
 
-Four scope-establishing methods delegate to `fields()`:
-
-```java
-// In rewrite.tables.Film:
-
-// Executes a new SQL statement, returns all rows.
-// Used by: list root queries, batch DataLoaders (split + record handoff), mutation read-back.
-Result<Record> selectMany(DataFetchingEnvironment env,
-    Condition condition, List<SortField<?>> orderBy)
-
-// Executes a new SQL statement, returns a single row.
-// Used by: single root queries, single lookups.
-Record selectOne(DataFetchingEnvironment env, Condition condition)
-
-// Contributes to an existing statement as a multiset subquery — many rows.
-// Used by: inline list TableField (no @splitQuery).
-Field<Result<Record>> subselectMany(DataFetchingFieldSelectionSet sel,
-    Condition condition, List<SortField<?>> orderBy)
-
-// Contributes to an existing statement as a scalar subquery — single row.
-// Used by: inline single TableField (no @splitQuery).
-Field<Record> subselectOne(DataFetchingFieldSelectionSet sel, Condition condition)
-```
-
-`selectMany` and `selectOne` obtain a `DSLContext` internally (e.g. from CDI or Spring context) — callers never supply one. `DataFetchingEnvironment` carries the selection set and is available in every fetcher context. The jOOQ `XYZ*Step` types are never referenced in generated method signatures because they are mutable, less composable, and binary-incompatible across jOOQ minor releases.
+`selectMany` and `selectOne` obtain a `DSLContext` internally. The jOOQ `XYZ*Step` types are never referenced in generated method signatures because they are mutable, less composable, and binary-incompatible across jOOQ minor releases.
 
 Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nested via `record.get(nestedField)`.
 
 **Field type to method mapping:**
 
-| Field type | Method |
-|---|---|
-| `TableQueryField` — list | `Film.selectMany` |
-| `TableQueryField` — single | `Film.selectOne` |
-| `LookupQueryField` — single | `Film.selectOne` with key condition |
-| `LookupQueryField` — batch DataLoader | positional VALUES join → `Film.subselectMany` per row |
-| `TableField` — list, no `@splitQuery` | `Film.subselectMany` |
-| `TableField` — single, no `@splitQuery` | `Film.subselectOne` |
-| `TableField` — `@splitQuery` | DataLoader → `Film.selectMany` (Graphitron controls both sides) |
-| `TableField` — record handoff | DataLoader → `Film.selectMany` with derived source table (from parent `TableRecord` PK) |
-| `ServiceField` / `TableMethodField` returning table-mapped type | DataLoader → `Film.selectMany` with derived source table (from returned `TableRecord` PK) |
-| `InterfaceField` | union over each implementor's `<TableName>.subselectMany` |
-| Mutation read-back | `Film.selectMany` with derived source table (from returned `TableRecord` PK) |
+| Field type | `*Fields` fetcher method | Delegates to |
+|---|---|---|
+| `ColumnField` / `ColumnReferenceField` | `static T fieldName(env)` | `record.get(TABLE.COL)` from source |
+| `TableQueryField` — list | `static Result<Record> fieldName(env)` | `TableName.selectMany` |
+| `TableQueryField` — single | `static Record fieldName(env)` | `TableName.selectOne` |
+| `LookupQueryField` — single | `static Record fieldName(env)` | `TableName.selectOne` with key condition |
+| `LookupQueryField` — batch DataLoader | `static CompletableFuture<…> fieldName(env)` | `TableName.selectMany` via DataLoader |
+| `TableField` — list, no `@splitQuery` | `static Result<Record> fieldName(env)` | extract nested column from source `Record` |
+| `TableField` — single, no `@splitQuery` | `static Record fieldName(env)` | extract nested column from source `Record` |
+| `TableField` — `@splitQuery` | `static CompletableFuture<…> fieldName(env)` | `TableName.selectMany` via DataLoader |
+| `TableField` — record handoff | `static CompletableFuture<…> fieldName(env)` | `TableName.selectMany` via DataLoader + derived source |
+| `ServiceField` / `TableMethodField` → table | `static CompletableFuture<…> fieldName(env)` | `TableName.selectMany` via DataLoader + derived source |
+| `InterfaceField` | `static Object fieldName(env)` | union over each implementor's `subselectMany` |
+| Mutation read-back | *(inside mutation fetcher)* | `TableName.selectMany` with derived source |
 
-**`LookupQueryField` batch mapping**: each input key drives one row in a VALUES outer query; the nested multiset produces the matching result. The invariant is that output cardinality and ordering match the input keys. Missing keys produce a null row, preserving positional alignment.
+**`LookupQueryField` batch mapping**: each input key drives one row in a VALUES outer query; the nested multiset produces the matching result. Missing keys produce a null row, preserving positional alignment.
 
 ---
 
@@ -183,25 +159,32 @@ Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nest
 
 ### G3 — Scalar child fields (`ColumnField`, `ColumnReferenceField`)
 
-The first `TableCodeGenerator` deliverable. Generates `wiring()` entries for scalar fields and their contributions to `fields(table, sel)`.
+Generates `fields()` in `rewrite.tables` and one fetcher method + wiring entry in `rewrite.fields` per scalar field.
 
-**Generated `Customer` (scalar-only, in `rewrite.tables`):**
-
+**`rewrite.tables.Customer`** — SELECT list assembly:
 ```java
-public class Customer {
+public static List<Field<?>> fields(Customer alias, DataFetchingFieldSelectionSet sel) {
+    var fields = new ArrayList<Field<?>>();
+    if (sel.contains("id"))    fields.add(alias.CUSTOMER_ID);
+    if (sel.contains("email")) fields.add(alias.EMAIL_ADDRESS);
+    return fields;
+}
+```
 
-    public static TypeRuntimeWiring.Builder wiring() {
-        return TypeRuntimeWiring.newTypeWiring("Customer")
-            .dataFetcher("id",    GraphitronFetchers.field(CUSTOMER.CUSTOMER_ID))
-            .dataFetcher("email", GraphitronFetchers.field(CUSTOMER.EMAIL_ADDRESS));
-    }
+**`rewrite.fields.CustomerFields`** — one method per field, wiring by method reference:
+```java
+public static Object id(DataFetchingEnvironment env) {
+    return ((Record) env.getSource()).get(CUSTOMER.CUSTOMER_ID);
+}
 
-    public static List<Field<?>> fields(Customer customer, DataFetchingFieldSelectionSet sel) {
-        var fields = new ArrayList<Field<?>>();
-        fields.add(customer.CUSTOMER_ID);
-        fields.add(customer.EMAIL_ADDRESS);
-        return fields;
-    }
+public static String email(DataFetchingEnvironment env) {
+    return ((Record) env.getSource()).get(CUSTOMER.EMAIL_ADDRESS);
+}
+
+public static TypeRuntimeWiring.Builder wiring() {
+    return TypeRuntimeWiring.newTypeWiring("Customer")
+        .dataFetcher("id",    CustomerFields::id)
+        .dataFetcher("email", CustomerFields::email);
 }
 ```
 
@@ -209,28 +192,43 @@ public class Customer {
 
 ### G4 — Root query fields (`TableQueryField`)
 
-The simplest root field type: queries that return a `@table` type. Generates the DataFetcher method on `Query` (in `rewrite.tables`).
+Generates one fetcher method in `rewrite.fields.QueryFields` per root field, delegating to `TableName.selectMany/One`.
 
 ```java
-public static CompletableFuture<Record> customer(DataFetchingEnvironment env) {
-    GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
-    String id = env.getArgument("id");
-    var _a = CUSTOMER.as("customer_hash");
-    return CompletableFuture.completedFuture(
-        ctx.getDslContext(env)
-            .select(Customer.fields(_a, env.getSelectionSet()))
-            .from(_a)
-            .where(_a.CUSTOMER_ID.eq(UInteger.valueOf(id)))
-            .fetchOne()
-    );
+// rewrite.fields.QueryFields
+public static Record customer(DataFetchingEnvironment env) {
+    return Customer.selectOne(env, CUSTOMER.CUSTOMER_ID.eq(env.getArgument("id")));
+}
+
+public static Result<Record> customers(DataFetchingEnvironment env) {
+    return Customer.selectMany(env, DSL.noCondition(), List.of());
+}
+
+public static TypeRuntimeWiring.Builder wiring() {
+    return TypeRuntimeWiring.newTypeWiring("Query")
+        .dataFetcher("customer",  QueryFields::customer)
+        .dataFetcher("customers", QueryFields::customers);
 }
 ```
 
 ---
 
-### I1 — `GraphitronWiringClassGenerator` *(TableClassGenerator done)*
+### I1 — `FieldsClassGenerator` + `GraphitronWiringClassGenerator` *(TableClassGenerator done)*
 
-`TableClassGenerator` already exists and generates one stub class per SQL table. The remaining work is `GraphitronWiringClassGenerator`, which produces `GraphitronWiring.java` aggregating all `wiring()` calls from G3.
+`TableClassGenerator` already exists and generates one stub class per SQL table. The remaining work:
+
+- **`FieldsClassGenerator`** — generates one `<TypeName>Fields.java` per GraphQL output type, containing the field fetcher methods and `wiring()`.
+- **`GraphitronWiringClassGenerator`** — generates `GraphitronWiring.java` aggregating all `wiring()` calls:
+
+```java
+public static RuntimeWiring build() {
+    return RuntimeWiring.newRuntimeWiring()
+        .type(QueryFields.wiring())
+        .type(FilmFields.wiring())
+        .type(CustomerFields.wiring())
+        .build();
+}
+```
 
 This is the first deliverable that produces an end-to-end working pipeline for scalar-only types.
 
@@ -244,19 +242,23 @@ Extends `TableCodeGenerator` with `TableField` in table-mapped source context (n
 
 ### G6 — `@splitQuery` `TableField`
 
-Extends `TableCodeGenerator` with `TableField` where `@splitQuery` is set. Adds DataLoader + BatchLoader generation and the `loaderName()` helper. The derived source helper class (`<ParentType><FieldName>DerivedSource`) is already generated by `SplitSourceClassGenerator`; G6 generates the DataLoader and BatchLoader methods that call it.
+Generates a DataLoader fetcher method in `rewrite.fields.*Fields` and a batch loader method in `rewrite.tables.*`. The derived source helper (`<ParentType><FieldName>DerivedSource`) is already generated by `SplitSourceClassGenerator`; G6 generates the DataLoader and batch loader that call it.
 
+**`rewrite.fields.CustomerFields`** — DataLoader fetcher, used as `CustomerFields::orders` in `wiring()`:
 ```java
 public static CompletableFuture<Result<Record>> orders(DataFetchingEnvironment env) {
     GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
     String name = loaderName(env.getExecutionStepInfo().getPath(), ctx.getTenantId(env));
     DataLoader<CustomerRecord, Result<Record>> loader = env.getDataLoaderRegistry()
         .computeIfAbsent(name, k -> DataLoaderFactory.newMappedDataLoaderWithContext(
-            Customer::ordersLoader));
+            Order::byCustomerLoader));
     return loader.load(((Record) env.getSource()).into(CUSTOMER), env);
 }
+```
 
-private static CompletableFuture<Map<CustomerRecord, Result<Record>>> ordersLoader(
+**`rewrite.tables.Order`** — batch loader (SQL work belongs in the table class):
+```java
+public static CompletableFuture<Map<CustomerRecord, Result<Record>>> byCustomerLoader(
         List<CustomerRecord> keys, BatchLoaderEnvironment ctx) {
     DataFetchingEnvironment env = (DataFetchingEnvironment) ctx.getKeyContextsList().get(0);
     GraphitronContext gCtx = env.getGraphQlContext().get("graphitronContext");
@@ -270,14 +272,9 @@ private static CompletableFuture<Map<CustomerRecord, Result<Record>>> ordersLoad
             .collect(Collectors.groupingBy(r -> r.into(CUSTOMER)))
     );
 }
-
-private static String loaderName(ResultPath path, Optional<String> tenantId) {
-    String normalized = path.toList().stream()
-        .filter(seg -> !(seg instanceof Integer))
-        .map(Object::toString).collect(Collectors.joining("/"));
-    return tenantId.map(id -> id + "/" + normalized).orElse(normalized);
-}
 ```
+
+`loaderName` is a private helper in the `*Fields` class (GraphQL path-based, not SQL).
 
 ---
 
@@ -322,29 +319,22 @@ Integrates condition handling directly into the generated WHERE clause. Fields w
 
 ```java
 @Testcontainers
-class FilmTest {
+class FilmFieldsTest {
 
     @Container
     static final PostgreSQLContainer<?> DB =
         new PostgreSQLContainer<>("postgres:15")
             .withInitScript("init.sql");
 
-    static DSLContext ctx;
-
     @BeforeAll
-    static void setupDsl() {
-        ctx = DSL.using(DB.getJdbcUrl(), DB.getUsername(), DB.getPassword());
-    }
+    static void setup() { /* bind DSLContext into GraphitronContext */ }
 
     @Test
-    void fields_returnsExpectedScalars() {
-        var result = ctx
-            .select(Film.fields(FILM, /* sel */))
-            .from(FILM)
-            .where(FILM.FILM_ID.eq(1))
-            .fetchOne();
-
-        assertThat(result.get(FILM.TITLE)).isEqualTo("ACADEMY DINOSAUR");
+    void title_returnsExpectedScalar() {
+        // Use the generated FilmFields.selectOne via a mock DataFetchingEnvironment
+        // or exercise it end-to-end via a real GraphQL execution.
+        var record = Film.selectOne(mockEnv, FILM.FILM_ID.eq(1));
+        assertThat(FilmFields.title(envWithSource(record))).isEqualTo("ACADEMY DINOSAUR");
     }
 }
 ```
