@@ -17,7 +17,7 @@ import java.util.List;
 public sealed interface ChildField extends GraphitronField
     permits ChildField.ColumnField, ChildField.ColumnReferenceField,
             ChildField.NodeIdField, ChildField.NodeIdReferenceField,
-            ChildField.TableField, ChildField.TableMethodField,
+            ChildField.TableField, ChildField.LookupTableField, ChildField.TableMethodField,
             ChildField.TableInterfaceField, ChildField.InterfaceField, ChildField.UnionField,
             ChildField.NestingField, ChildField.ConstructorField,
             ChildField.ServiceField, ChildField.ComputedField, ChildField.PropertyField,
@@ -163,6 +163,31 @@ public sealed interface ChildField extends GraphitronField
         List<ReferencePathElementRef> referencePath,
         FieldConditionRef condition,
         boolean splitQuery,
+        List<ArgumentSpec> arguments
+    ) implements ChildField {}
+
+    /**
+     * A {@code @splitQuery} child field whose arguments carry {@code @lookupKey} — a result mapped
+     * LookupTableField. Uses a derived source table (from parent records) and a derived target table
+     * (from {@code @lookupKey} argument values).
+     *
+     * <p>Classified when {@code @splitQuery} is present on the field and {@code @lookupKey} appears
+     * on any argument (including nested inside input types). Distinct from {@link TableField} because
+     * the lookup invariant applies: the result count is always exactly N × M (N parent source rows ×
+     * M lookup argument values), which blocks {@code @condition} and connection-cardinality returns.
+     *
+     * <p>{@code returnType} carries the resolved return type with its {@link FieldWrapper}. Only
+     * {@link FieldWrapper.Single} and {@link FieldWrapper.List} are valid; the validator rejects
+     * {@link FieldWrapper.Connection}.
+     *
+     * <p>{@code referencePath} and {@code arguments} have the same semantics as {@link TableField}.
+     */
+    record LookupTableField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef returnType,
+        List<ReferencePathElementRef> referencePath,
         List<ArgumentSpec> arguments
     ) implements ChildField {}
 

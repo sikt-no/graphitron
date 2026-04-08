@@ -84,6 +84,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.field.ChildField.NodeIdField f             -> validateNodeIdField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.NodeIdReferenceField f    -> validateNodeIdReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.TableField f              -> validateTableField(f, types, errors);
+            case no.sikt.graphitron.rewrite.field.ChildField.LookupTableField f       -> validateLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.TableMethodField f        -> validateTableMethodField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.TableInterfaceField f     -> validateTableInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.InterfaceField f          -> validateInterfaceField(f, errors);
@@ -400,20 +401,16 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         }
-        boolean isLookup = field.splitQuery() && field.arguments().stream().anyMatch(no.sikt.graphitron.rewrite.field.ArgumentSpec::lookupKey);
-        if (isLookup) {
-            if (!(field.condition() instanceof FieldConditionRef.NoFieldCondition)) {
-                errors.add(new ValidationError(
-                    "Field '" + field.name() + "': @condition is not valid on a @splitQuery field with @lookupKey arguments",
-                    field.location()
-                ));
-            }
-            if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.field.FieldWrapper.Connection) {
-                errors.add(new ValidationError(
-                    "Field '" + field.name() + "': @splitQuery fields with @lookupKey arguments must not return a connection",
-                    field.location()
-                ));
-            }
+        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
+    }
+    private void validateLookupTableField(no.sikt.graphitron.rewrite.field.ChildField.LookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.field.FieldWrapper.Connection) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': lookup fields must not return a connection",
+                field.location()
+            ));
         }
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);

@@ -542,9 +542,14 @@ public class GraphitronSchemaBuilder {
             var returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             var args = parseArguments(fieldDef);
             resolveInputTypeArgs(args, returnType);
+            var referencePath = parseReferencePath(fieldDef);
+            if (fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY) && hasLookupKeyAnywhere(fieldDef)) {
+                return new no.sikt.graphitron.rewrite.field.ChildField.LookupTableField(
+                    parentTypeName, name, location, returnType, referencePath, args);
+            }
             return new TableField(parentTypeName, name, location,
                 returnType,
-                parseReferencePath(fieldDef),
+                referencePath,
                 new FieldConditionRef.NoFieldCondition(),
                 fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY),
                 args);
@@ -1259,9 +1264,8 @@ public class GraphitronSchemaBuilder {
         String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
         boolean orderBy = arg.hasAppliedDirective(DIR_ORDER_BY);
         boolean conditionArg = arg.hasAppliedDirective(DIR_CONDITION);
-        boolean lookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
         String columnName = argString(arg, DIR_FIELD, ARG_NAME).orElse(arg.getName());
-        return new ArgumentSpec(arg.getName(), typeName, nonNull, list, orderBy, conditionArg, lookupKey, columnName);
+        return new ArgumentSpec(arg.getName(), typeName, nonNull, list, orderBy, conditionArg, columnName);
     }
 
     /**
