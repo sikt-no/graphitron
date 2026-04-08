@@ -122,20 +122,24 @@ List<Field<?>> fields(Film film, DataFetchingFieldSelectionSet sel) {
 }
 ```
 
-Two scope-establishing methods delegate to `fields()`:
+Three scope-establishing methods delegate to `fields()`:
 
 ```java
-// Starts a new SQL statement — used by root queries, DataLoaders (split + record handoff), mutation read-back.
-SelectFinalStep<Record> filmSelect(DSLContext ctx, DataFetchingFieldSelectionSet sel,
+// Executes a new SQL statement, returns all rows.
+// Used by: list root queries, batch DataLoaders (split + record handoff), mutation read-back.
+Result<Record> filmSelectMany(DataFetchingEnvironment env,
     Condition condition, List<SortField<?>> orderBy)
+
+// Executes a new SQL statement, returns a single row.
+// Used by: single root queries, single lookups.
+Record filmSelectOne(DataFetchingEnvironment env, Condition condition)
 
 // Contributes to an existing statement as a multiset subquery.
 Field<Result<Record>> filmNested(DataFetchingFieldSelectionSet sel,
     Condition condition, List<SortField<?>> orderBy)
-
-// @tableMethod overload — developer supplies a pre-filtered table.
-Field<Result<Record>> filmNested(Table<FilmRecord> table, ...)
 ```
+
+`filmSelectMany` and `filmSelectOne` obtain a `DSLContext` internally (e.g. from CDI or Spring context) — callers never supply one. `DataFetchingEnvironment` carries the selection set and is available in every fetcher context. The jOOQ `XYZ*Step` types are never referenced in generated method signatures because they are mutable, less composable, and binary-incompatible across jOOQ minor releases.
 
 Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nested via `record.get(nestedField)`.
 
@@ -143,15 +147,16 @@ Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nest
 
 | Field type | Method |
 |---|---|
-| `TableQueryField` | `filmSelect` |
-| `LookupQueryField` — single | `filmSelect` with key condition |
+| `TableQueryField` — list | `filmSelectMany` |
+| `TableQueryField` — single | `filmSelectOne` |
+| `LookupQueryField` — single | `filmSelectOne` with key condition |
 | `LookupQueryField` — batch DataLoader | positional VALUES join → `filmNested` per row |
 | `TableField` — no `@splitQuery` | `filmNested` |
-| `TableField` — `@splitQuery` | DataLoader → `filmSelect` (Graphitron controls both sides) |
-| `TableField` — record handoff | DataLoader → `filmSelect` with derived source table (from parent `TableRecord` PK) |
-| `ServiceField` / `TableMethodField` returning table-mapped type | DataLoader → `filmSelect` with derived source table (from returned `TableRecord` PK) |
+| `TableField` — `@splitQuery` | DataLoader → `filmSelectMany` (Graphitron controls both sides) |
+| `TableField` — record handoff | DataLoader → `filmSelectMany` with derived source table (from parent `TableRecord` PK) |
+| `ServiceField` / `TableMethodField` returning table-mapped type | DataLoader → `filmSelectMany` with derived source table (from returned `TableRecord` PK) |
 | `InterfaceField` | union over each implementor's `filmNested` |
-| Mutation read-back | `filmSelect` with derived source table (from returned `TableRecord` PK) |
+| Mutation read-back | `filmSelectMany` with derived source table (from returned `TableRecord` PK) |
 
 **`LookupQueryField` batch mapping**: each input key drives one row in a VALUES outer query; the nested multiset produces the matching result. The invariant is that output cardinality and ordering match the input keys. Missing keys produce a null row, preserving positional alignment.
 

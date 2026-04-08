@@ -25,35 +25,59 @@ class FieldsCodeGeneratorTest {
         assertThat(render("Film")).contains("public class FilmFields");
     }
 
-    // ===== filmSelect =====
+    // ===== filmSelectMany =====
 
     @Test
-    void generate_selectMethodNameUsesDecapitalizedTypeName() {
-        assertThat(render("Film")).contains("filmSelect(");
-        assertThat(render("Customer")).contains("customerSelect(");
+    void generate_selectManyMethodNameUsesDecapitalizedTypeName() {
+        assertThat(render("Film")).contains("filmSelectMany(");
+        assertThat(render("Customer")).contains("customerSelectMany(");
     }
 
     @Test
-    void generate_selectMethodIsPublicStatic() {
+    void generate_selectManyMethodIsPublicStatic() {
         assertThat(render("Film")).contains("public static");
     }
 
     @Test
-    void generate_selectMethodReturnType() {
-        assertThat(render("Film")).contains("SelectFinalStep<Record>");
+    void generate_selectManyMethodReturnType() {
+        assertThat(render("Film")).contains("Result<Record>");
     }
 
     @Test
-    void generate_selectMethodParameters() {
+    void generate_selectManyMethodParameters() {
         String out = render("Film");
-        assertThat(out).contains("DSLContext ctx");
-        assertThat(out).contains("DataFetchingFieldSelectionSet sel");
+        assertThat(out).contains("DataFetchingEnvironment env");
         assertThat(out).contains("Condition condition");
         assertThat(out).contains("List<SortField<?>> orderBy");
     }
 
     @Test
-    void generate_selectMethodThrowsUnsupportedOperationException() {
+    void generate_selectManyMethodThrowsUnsupportedOperationException() {
+        assertThat(render("Film")).contains("throw new UnsupportedOperationException()");
+    }
+
+    // ===== filmSelectOne =====
+
+    @Test
+    void generate_selectOneMethodNameUsesDecapitalizedTypeName() {
+        assertThat(render("Film")).contains("filmSelectOne(");
+        assertThat(render("Customer")).contains("customerSelectOne(");
+    }
+
+    @Test
+    void generate_selectOneMethodReturnType() {
+        assertThat(render("Film")).contains("Record filmSelectOne(");
+    }
+
+    @Test
+    void generate_selectOneMethodParameters() {
+        String out = render("Film");
+        assertThat(out).contains("DataFetchingEnvironment env");
+        assertThat(out).contains("Condition condition");
+    }
+
+    @Test
+    void generate_selectOneMethodThrowsUnsupportedOperationException() {
         assertThat(render("Film")).contains("throw new UnsupportedOperationException()");
     }
 
@@ -83,12 +107,13 @@ class FieldsCodeGeneratorTest {
         assertThat(render("Film")).contains("throw new UnsupportedOperationException()");
     }
 
-    // ===== Separate methods =====
+    // ===== Distinct methods =====
 
     @Test
-    void generate_selectAndNestedAreDistinctMethods() {
+    void generate_allThreeMethodsArePresent() {
         String out = render("Film");
-        assertThat(out).contains("filmSelect(");
+        assertThat(out).contains("filmSelectMany(");
+        assertThat(out).contains("filmSelectOne(");
         assertThat(out).contains("filmNested(");
     }
 }
