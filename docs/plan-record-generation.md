@@ -47,6 +47,7 @@ If a generator needs a piece of information that is not present in the taxonomy,
 | `GraphitronValuesClassGenerator` | `GraphitronValues.java` in `rewrite` | Defines `GRAPHITRON_INPUT_IDX` |
 | `LookupClassGenerator` | `<TypeName>Lookup.java` in `rewrite.resolvers` | Derived source rows for lookup key batching |
 | `SplitSourceClassGenerator` | `<ParentType><FieldName>DerivedSource.java` in `rewrite.resolvers` | Derived source rows for `@splitQuery` DataLoader batching |
+| `TableClassGenerator` | `<TableName>.java` in `rewrite.tables` | Scope-establishing stubs (`selectMany`, `selectOne`, `subselectMany`, `subselectOne`); named after the jOOQ table class |
 
 Each `DerivedSource` / `Lookup` class contains a single static `rows` method that maps a list of parent records or input argument maps into typed `List<RowN<Integer, T1, ...>>` rows for use in a jOOQ `DSL.values(...).asTable(...)` derived table.
 
@@ -227,9 +228,9 @@ public static CompletableFuture<Record> customer(DataFetchingEnvironment env) {
 
 ---
 
-### I1 — `TableClassGenerator` + `GraphitronWiringClassGenerator`
+### I1 — `GraphitronWiringClassGenerator` *(TableClassGenerator done)*
 
-Wires G3 and G4 into runnable classes. `TableClassGenerator` produces one table class per SQL table (e.g. `Film.java`). `GraphitronWiringClassGenerator` produces `GraphitronWiring.java` aggregating all `wiring()` calls.
+`TableClassGenerator` already exists and generates one stub class per SQL table. The remaining work is `GraphitronWiringClassGenerator`, which produces `GraphitronWiring.java` aggregating all `wiring()` calls from G3.
 
 This is the first deliverable that produces an end-to-end working pipeline for scalar-only types.
 
@@ -413,6 +414,6 @@ Once the record-based pipeline achieves full feature parity and the example serv
 | `graphitron-common/.../DefaultGraphitronContext.java` | Implement `getTenantId()` → `Optional.empty()` |
 | `graphitron-java-codegen/.../mappings/JavaPoetClassName.java` | Add `JOOQ_RECORD`, `JOOQ_RESULT`, `LIGHT_DATA_FETCHER`, `GRAPHITRON_FETCHERS` |
 | `rewrite/generators/util/GraphitronFetchersClassGenerator.java` | **New** |
-| `rewrite/generators/fields/TableCodeGenerator.java` | **New** |
-| `rewrite/generators/fields/TableClassGenerator.java` | **New** |
+| `rewrite/generators/fields/TableCodeGenerator.java` | **Done** — scope-establishing stubs only |
+| `rewrite/generators/fields/TableClassGenerator.java` | **Done** — iterates `TableType`s, uses `javaClassName` |
 | `rewrite/GraphitronWiringClassGenerator.java` | **New** |

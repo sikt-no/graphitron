@@ -1,6 +1,6 @@
 # Rewrite Pipeline: Schema Classification
 
-> **Status: in progress.** The parsing and validation layer described here is complete. The generating stream (code emission) is not yet built. The rewrite pipeline is behind the `rewriteBasedOutput` flag (default `false`) and is not ready for production use.
+> **Status: in progress.** The parsing and validation layer described here is complete. The generating stream (code emission) is not yet built. The rewrite pipeline is behind the `enableRewrite` flag (default `false`) and is not ready for production use.
 
 This document covers the field taxonomy, the schema classification model, and the validation layer of the rewrite pipeline. The companion document [`plan-record-generation.md`](plan-record-generation.md) covers the generating stream, remaining deliverables, and outstanding testing gaps for this layer.
 
@@ -10,7 +10,7 @@ This document covers the field taxonomy, the schema classification model, and th
 
 The rewrite pipeline eliminates the DTO/TypeMapper layer from generated code. graphql-java's `RuntimeWiring` can resolve fields directly from jOOQ `Record` objects — no intermediate DTOs required. This reduces generated code volume, removes selection-set-per-field mapping boilerplate, and unblocks `@record` output support.
 
-New generators live in `<outputPackage>.rewrite.*` alongside the existing pipeline, controlled by the `rewriteBasedOutput` flag (default `false`).
+New generators live in `<outputPackage>.rewrite.*` alongside the existing pipeline, controlled by the `enableRewrite` flag (default `false`).
 
 ---
 
@@ -82,7 +82,7 @@ TypeDefinitionRegistry
 
 `GraphitronSchemaBuilder` operates on a `GraphQLSchema` assembled from the `TypeDefinitionRegistry` (same pattern as `SchemaTransformer.assembleSchema()`). It iterates `schema.getAllTypesAsList()` for type classification, then each `GraphQLObjectType`'s field definitions for field classification. Interface and union participant lists are populated in a second enrichment pass.
 
-`GraphitronRewriteGenerator` (in `no.sikt.graphitron.rewrite`) is the entry point: it runs the builder, runs the validator, and dispatches generators in parallel.
+`GraphQLRewriteGenerator` (in `no.sikt.graphitron.rewrite`) is the entry point: it runs the builder, runs the validator, and dispatches generators in parallel.
 
 ### `GraphitronSchema`
 
@@ -357,7 +357,7 @@ All variants carry `name`, `typeName`, `nonNull`, `list`.
 
 `GraphitronSchemaValidator` receives a `GraphitronSchema` and accumulates `ValidationError` records — it never throws. Every sealed leaf variant has a dedicated validation branch. `UnclassifiedField` and `UnclassifiedType` report their `reason` as a build error. `ErrorType` is a deliberate no-op (no structural constraints at this layer).
 
-After the full scan, `GraphitronRewriteGenerator` logs all errors with source locations and throws a `RuntimeException` to fail the build.
+After the full scan, `GraphQLRewriteGenerator` logs all errors with source locations and throws a `RuntimeException` to fail the build.
 
 Additional rules:
 - **`LookupQueryField` cardinality** — list/scalar argument cardinality must match return type cardinality
