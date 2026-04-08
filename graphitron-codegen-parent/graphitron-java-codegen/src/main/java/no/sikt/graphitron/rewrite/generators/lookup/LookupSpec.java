@@ -8,9 +8,6 @@ import java.util.List;
  * <p>{@code typeName} is the return type name (e.g. {@code "Customer"}), used to name the
  * generated class ({@code CustomerLookup}).
  *
- * <p>{@code tableJavaFieldName} is the Java field name in the generated jOOQ {@code Tables}
- * class (e.g. {@code "CUSTOMER"}), used for references like {@code CUSTOMER.CUSTOMER_ID}.
- *
  * <p>{@code inputArgName} distinguishes two code-generation paths:
  * <ul>
  *   <li>Non-null (e.g. {@code "input"}) — the lookup uses a single {@code TableInputType}
@@ -21,11 +18,10 @@ import java.util.List;
  *       declared from {@code arguments}; scalar fields are read inline per row.</li>
  * </ul>
  *
- * <p>{@code fields} is the ordered list of column mappings to include in the generated record.
+ * <p>{@code fields} is the ordered list of column mappings to include in the generated row.
  */
 public record LookupSpec(
     String typeName,
-    String tableJavaFieldName,
     String inputArgName,
     List<LookupInputFieldSpec> fields
 ) {}

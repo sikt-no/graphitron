@@ -11,10 +11,6 @@ package no.sikt.graphitron.rewrite.generators.lookup;
  *       (e.g. {@code "tenantId"} or {@code "ids"}).</li>
  * </ul>
  *
- * <p>{@code columnJavaName} is the Java field name in the jOOQ table class
- * (e.g. {@code "CUSTOMER_ID"}), used to reference {@code TABLE.COLUMN} in the generated record
- * construction.
- *
  * <p>{@code columnClass} is the fully qualified Java class name of the column type
  * (e.g. {@code "java.lang.Integer"}), used to cast values retrieved from the argument map.
  *
@@ -26,7 +22,6 @@ package no.sikt.graphitron.rewrite.generators.lookup;
  */
 public record LookupInputFieldSpec(
     String argName,
-    String columnJavaName,
     String columnClass,
     boolean list
 ) {}

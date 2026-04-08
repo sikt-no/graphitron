@@ -17,13 +17,13 @@ import java.util.Map;
  * <p>Each spec produces one class (e.g. {@code CustomerLookup}) containing a
  * {@code toInputRows} method. The method signature is always:
  * <pre>{@code
- * public static List<RecordN<Integer, T1, ...>> toInputRows(DSLContext ctx, Map<String, Object> arguments)
+ * public static List<RowN<Integer, T1, ...>> toInputRows(Map<String, Object> arguments)
  * }</pre>
  *
  * <p>Receiving the full {@code arguments} map rather than a single extracted list allows the method
  * to pull multiple arguments together — both list arguments (one element per row) and scalar
- * arguments (broadcast to every row). The first column is always {@code GRAPHITRON_INPUT_IDX}
- * (1-based row position), which lets a JOIN preserve input-to-output ordering.
+ * arguments (broadcast to every row). The first element of each row is always the 1-based row
+ * position, which lets a JOIN preserve input-to-output ordering.
  *
  * <p>Two code paths are generated depending on {@link LookupSpec#inputArgName()}:
  * <ul>
@@ -37,20 +37,12 @@ import java.util.Map;
  */
 public class LookupCodeGenerator {
 
-    private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
+    private static final ClassName DSL        = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName INT_STREAM = ClassName.get("java.util.stream", "IntStream");
-    private static final ClassName MAP = ClassName.get(Map.class);
-    private static final ClassName LIST = ClassName.get(List.class);
-    private static final ClassName STRING = ClassName.get(String.class);
-    private static final ClassName OBJECT = ClassName.get(Object.class);
-
-    private final ClassName tablesClass;
-    private final ClassName graphitronValuesClass;
-
-    public LookupCodeGenerator(ClassName tablesClass, ClassName graphitronValuesClass) {
-        this.tablesClass = tablesClass;
-        this.graphitronValuesClass = graphitronValuesClass;
-    }
+    private static final ClassName MAP        = ClassName.get(Map.class);
+    private static final ClassName LIST       = ClassName.get(List.class);
+    private static final ClassName STRING     = ClassName.get(String.class);
+    private static final ClassName OBJECT     = ClassName.get(Object.class);
 
     public TypeSpec generate(LookupSpec spec) {
         return TypeSpec.classBuilder(spec.typeName() + "Lookup")
@@ -60,13 +52,12 @@ public class LookupCodeGenerator {
     }
 
     private MethodSpec buildToInputRowsMethod(LookupSpec spec) {
-        var returnType = recordListType(spec);
+        var returnType = rowListType(spec);
         var paramType = ParameterizedTypeName.get(MAP, STRING, OBJECT);
 
         return MethodSpec.methodBuilder("toInputRows")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
-            .addParameter(DSL_CONTEXT, "ctx")
             .addParameter(paramType, "arguments")
             .addCode(buildToInputRowsBody(spec))
             .build();
@@ -85,8 +76,7 @@ public class LookupCodeGenerator {
      * return IntStream.range(0, input.size())
      *     .mapToObj(i -> {
      *         var m = input.get(i);
-     *         return DSL.newRecord(GRAPHITRON_INPUT_IDX, TABLE.COL1, TABLE.COL2)
-     *             .values(i + 1, (Type1) m.get("field1"), (Type2) m.get("field2"));
+     *         return DSL.row(i + 1, (Type1) m.get("field1"), (Type2) m.get("field2"));
      *     })
      *     .toList();
      * }</pre>
@@ -94,9 +84,7 @@ public class LookupCodeGenerator {
     private CodeBlock buildInputTypeBody(LookupSpec spec) {
         var inputArgName = spec.inputArgName();
         var listType = ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(MAP, STRING, OBJECT));
-
-        var newRecordCall = newRecordCallBlock(spec);
-        var valuesArgs = inputTypeValuesBlock(spec);
+        var rowArgs = inputTypeRowArgsBlock(spec);
 
         return CodeBlock.builder()
             .add("$T $L = ($T) arguments.get($S);\n", listType, inputArgName, listType, inputArgName)
@@ -105,10 +93,7 @@ public class LookupCodeGenerator {
             .add(".mapToObj(i -> {\n")
             .indent()
             .add("var m = $L.get(i);\n", inputArgName)
-            .add("return $L\n", newRecordCall)
-            .indent()
-            .add(".values($L);\n", valuesArgs)
-            .unindent()
+            .add("return $T.row($L);\n", DSL, rowArgs)
             .unindent()
             .add("})\n")
             .add(".toList();\n")
@@ -121,15 +106,13 @@ public class LookupCodeGenerator {
      * <pre>{@code
      * List<String> ids = (List<String>) arguments.get("ids");
      * return IntStream.range(0, ids.size())
-     *     .mapToObj(i -> DSL.newRecord(GRAPHITRON_INPUT_IDX, TABLE.TENANT_ID, TABLE.ID)
-     *         .values(i + 1, (String) arguments.get("tenantId"), ids.get(i)))
+     *     .mapToObj(i -> DSL.row(i + 1, ids.get(i), (String) arguments.get("tenantId")))
      *     .toList();
      * }</pre>
      */
     private CodeBlock buildFlatArgsBody(LookupSpec spec) {
         var body = CodeBlock.builder();
 
-        // Declare local variables for each list argument
         var listFields = spec.fields().stream().filter(LookupInputFieldSpec::list).toList();
         for (var f : listFields) {
             int dot = f.columnClass().lastIndexOf('.');
@@ -139,38 +122,21 @@ public class LookupCodeGenerator {
             body.add("$T $L = ($T) arguments.get($S);\n", listType, f.argName(), listType, f.argName());
         }
 
-        // Size expression from the first list field
         var firstList = listFields.isEmpty() ? null : listFields.get(0);
         String sizeExpr = firstList != null ? firstList.argName() + ".size()" : "0";
-
-        var newRecordCall = newRecordCallBlock(spec);
-        var valuesArgs = flatValuesBlock(spec);
+        var rowArgs = flatRowArgsBlock(spec);
 
         body.add("return $T.range(0, $L)\n", INT_STREAM, sizeExpr)
             .indent()
-            .add(".mapToObj(i -> $L\n", newRecordCall)
-            .indent()
-            .add(".values($L))\n", valuesArgs)
-            .unindent()
+            .add(".mapToObj(i -> $T.row($L))\n", DSL, rowArgs)
             .add(".toList();\n")
             .unindent();
 
         return body.build();
     }
 
-    /** {@code ctx.newRecord(GraphitronValues.GRAPHITRON_INPUT_IDX, Tables.TABLE.COL1, ...)} */
-    private CodeBlock newRecordCallBlock(LookupSpec spec) {
-        var b = CodeBlock.builder();
-        b.add("ctx.newRecord($T.GRAPHITRON_INPUT_IDX", graphitronValuesClass);
-        for (var f : spec.fields()) {
-            b.add(", $T.$L.$L", tablesClass, spec.tableJavaFieldName(), f.columnJavaName());
-        }
-        b.add(")");
-        return b.build();
-    }
-
     /** {@code i + 1, (Type1) m.get("field1"), (Type2) m.get("field2")} for the input-type case. */
-    private CodeBlock inputTypeValuesBlock(LookupSpec spec) {
+    private CodeBlock inputTypeRowArgsBlock(LookupSpec spec) {
         var b = CodeBlock.builder();
         b.add("i + 1");
         for (var f : spec.fields()) {
@@ -183,10 +149,10 @@ public class LookupCodeGenerator {
     }
 
     /**
-     * {@code i + 1, (Type) arguments.get("scalarArg"), listArg.get(i), ...} for the flat case.
+     * {@code i + 1, listArg.get(i), (Type) arguments.get("scalarArg"), ...} for the flat case.
      * List args use the local variable; scalar args read from {@code arguments} with a cast.
      */
-    private CodeBlock flatValuesBlock(LookupSpec spec) {
+    private CodeBlock flatRowArgsBlock(LookupSpec spec) {
         var b = CodeBlock.builder();
         b.add("i + 1");
         for (var f : spec.fields()) {
@@ -202,13 +168,10 @@ public class LookupCodeGenerator {
         return b.build();
     }
 
-    /**
-     * Builds the return type {@code List<RecordN<Integer, T1, T2, ...>>} where N is
-     * 1 (for GRAPHITRON_INPUT_IDX) plus the number of input fields.
-     */
-    private TypeName recordListType(LookupSpec spec) {
+    /** Builds the return type {@code List<RowN<Integer, T1, T2, ...>>}. */
+    private TypeName rowListType(LookupSpec spec) {
         int n = 1 + spec.fields().size();
-        var recordClass = ClassName.get("org.jooq", "Record" + n);
+        var rowClass = ClassName.get("org.jooq", "Row" + n);
         var typeArgs = new TypeName[n];
         typeArgs[0] = ClassName.get(Integer.class);
         for (int i = 0; i < spec.fields().size(); i++) {
@@ -219,6 +182,6 @@ public class LookupCodeGenerator {
             typeArgs[i + 1] = ClassName.get(pkg, simple);
         }
         return ParameterizedTypeName.get(LIST,
-            ParameterizedTypeName.get(recordClass, typeArgs));
+            ParameterizedTypeName.get(rowClass, typeArgs));
     }
 }

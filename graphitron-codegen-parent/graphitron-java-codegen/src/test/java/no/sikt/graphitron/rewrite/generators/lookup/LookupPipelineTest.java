@@ -50,7 +50,6 @@ class LookupPipelineTest {
         assertThat(specs.get(0).fields()).hasSize(1);
         var field = specs.get(0).fields().get(0);
         assertThat(field.argName()).isEqualTo("film_id");
-        assertThat(field.columnJavaName()).isEqualTo("FILM_ID");
         assertThat(field.columnClass()).isEqualTo("java.lang.Long");
         assertThat(field.list()).isTrue();
     }
@@ -84,7 +83,6 @@ class LookupPipelineTest {
         assertThat(specs.get(0).fields()).hasSize(1);
         var field = specs.get(0).fields().get(0);
         assertThat(field.argName()).isEqualTo("filmId");
-        assertThat(field.columnJavaName()).isEqualTo("FILM_ID");
         assertThat(field.columnClass()).isEqualTo("java.lang.Long");
     }
 

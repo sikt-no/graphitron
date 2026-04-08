@@ -1,7 +1,5 @@
 package no.sikt.graphitron.rewrite.generators.lookup;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.AbstractRewriteClassGenerator;
@@ -25,13 +23,10 @@ public class LookupClassGenerator extends AbstractRewriteClassGenerator {
     static final String SAVE_DIRECTORY = "rewrite.resolvers";
 
     private final List<LookupSpec> specs;
-    private final LookupCodeGenerator codeGenerator;
+    private final LookupCodeGenerator codeGenerator = new LookupCodeGenerator();
 
     public LookupClassGenerator(GraphitronSchema schema) {
         this.specs = LookupSpecBuilder.build(schema);
-        var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
-        var graphitronValuesClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite", "GraphitronValues");
-        this.codeGenerator = new LookupCodeGenerator(tablesClass, graphitronValuesClass);
     }
 
     @Override
