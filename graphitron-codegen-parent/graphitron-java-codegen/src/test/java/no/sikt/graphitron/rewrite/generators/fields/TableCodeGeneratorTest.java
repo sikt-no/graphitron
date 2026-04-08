@@ -35,12 +35,13 @@ class TableCodeGeneratorTest {
         assertThat(spec("Film").modifiers()).contains(Modifier.PUBLIC);
     }
 
-    // ===== All five methods present =====
+    // ===== All seven methods present =====
 
     @Test
-    void generate_allFiveMethodsArePresent() {
+    void generate_allSevenMethodsArePresent() {
         assertThat(spec("Film").methodSpecs()).extracting(MethodSpec::name)
-            .containsExactlyInAnyOrder("selectMany", "selectOne", "subselectMany", "subselectOne", "loadMany");
+            .containsExactlyInAnyOrder("selectMany", "selectOne", "subselectMany", "subselectOne",
+                "loadManyBySource", "loadManyByTarget", "loadMany");
     }
 
     // ===== selectMany =====
@@ -151,6 +152,68 @@ class TableCodeGeneratorTest {
             .containsExactly("sel", "condition");
     }
 
+    // ===== loadManyBySource =====
+
+    @Test
+    void loadManyBySource_isPublicStatic() {
+        assertThat(method("Film", "loadManyBySource").modifiers())
+            .containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
+    }
+
+    @Test
+    void loadManyBySource_returnType() {
+        assertThat(method("Film", "loadManyBySource").returnType().toString())
+            .isEqualTo("java.util.List<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void loadManyBySource_parameters() {
+        var params = method("Film", "loadManyBySource").parameters();
+        assertThat(params).extracting(p -> p.type().toString())
+            .containsExactly(
+                "org.jooq.DSLContext",
+                "java.util.List<org.jooq.Row>");
+        assertThat(params).extracting(p -> p.name())
+            .containsExactly("ctx", "sourceKeys");
+    }
+
+    @Test
+    void loadManyBySource_throwsUnsupportedOperationException() {
+        assertThat(method("Film", "loadManyBySource").code().toString())
+            .contains("UnsupportedOperationException()");
+    }
+
+    // ===== loadManyByTarget =====
+
+    @Test
+    void loadManyByTarget_isPublicStatic() {
+        assertThat(method("Film", "loadManyByTarget").modifiers())
+            .containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
+    }
+
+    @Test
+    void loadManyByTarget_returnType() {
+        assertThat(method("Film", "loadManyByTarget").returnType().toString())
+            .isEqualTo("java.util.List<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void loadManyByTarget_parameters() {
+        var params = method("Film", "loadManyByTarget").parameters();
+        assertThat(params).extracting(p -> p.type().toString())
+            .containsExactly(
+                "org.jooq.DSLContext",
+                "java.util.List<org.jooq.Row>");
+        assertThat(params).extracting(p -> p.name())
+            .containsExactly("ctx", "targetKeys");
+    }
+
+    @Test
+    void loadManyByTarget_throwsUnsupportedOperationException() {
+        assertThat(method("Film", "loadManyByTarget").code().toString())
+            .contains("UnsupportedOperationException()");
+    }
+
     // ===== loadMany =====
 
     @Test
@@ -171,9 +234,10 @@ class TableCodeGeneratorTest {
         assertThat(params).extracting(p -> p.type().toString())
             .containsExactly(
                 "org.jooq.DSLContext",
+                "java.util.List<org.jooq.Row>",
                 "java.util.List<org.jooq.Row>");
         assertThat(params).extracting(p -> p.name())
-            .containsExactly("ctx", "keys");
+            .containsExactly("ctx", "sourceKeys", "targetKeys");
     }
 
     @Test

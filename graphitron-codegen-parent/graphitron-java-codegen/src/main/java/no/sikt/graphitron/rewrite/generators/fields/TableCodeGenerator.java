@@ -16,7 +16,7 @@ import java.util.List;
  * {@code film}, {@code FilmActor} for table {@code film_actor}). This is distinct from the
  * GraphQL type name, which may differ.
  *
- * <p>Each class contains five scope-establishing stub methods:
+ * <p>Each class contains seven scope-establishing stub methods:
  * <ul>
  *   <li>{@code selectMany} — executes a new SQL statement and returns all rows
  *       (list root queries)</li>
@@ -26,9 +26,16 @@ import java.util.List;
  *       returning many rows (inline list {@code TableField})</li>
  *   <li>{@code subselectOne} — contributes a scalar subquery to an existing statement,
  *       returning a single row (inline single {@code TableField})</li>
- *   <li>{@code loadMany} — executes an indexed VALUES JOIN and returns results positionally
- *       aligned with the input keys; called by DataLoaders for both {@code @splitQuery} fields
- *       and lookup-key queries</li>
+ *   <li>{@code loadManyBySource} — executes an indexed VALUES JOIN against a derived source
+ *       table built from parent records; used by {@code @splitQuery} DataLoaders when the
+ *       field has no {@code @lookupKey} arguments</li>
+ *   <li>{@code loadManyByTarget} — executes an indexed VALUES JOIN against a derived target
+ *       table built from {@code @lookupKey} argument values; used by {@code LookupQueryField}
+ *       DataLoaders</li>
+ *   <li>{@code loadMany} — executes two indexed VALUES JOINs (one for the derived source
+ *       table, one for the derived target table) and returns N×M results in row-major order;
+ *       used by {@code @splitQuery} DataLoaders when the field also has {@code @lookupKey}
+ *       arguments</li>
  * </ul>
  *
  * <p>All stubs throw {@link UnsupportedOperationException} until their bodies are filled in by
@@ -54,6 +61,8 @@ public class TableCodeGenerator {
             .addMethod(buildSelectOneMethod())
             .addMethod(buildSubselectManyMethod())
             .addMethod(buildSubselectOneMethod())
+            .addMethod(buildLoadManyBySourceMethod())
+            .addMethod(buildLoadManyByTargetMethod())
             .addMethod(buildLoadManyMethod())
             .build();
     }
@@ -101,12 +110,58 @@ public class TableCodeGenerator {
     }
 
     /**
-     * Generates the {@code loadMany} stub used by both {@code @splitQuery} DataLoaders and
-     * lookup-key DataLoaders. Receives a batch of key rows (without idx), executes an indexed
-     * VALUES JOIN, and returns results positionally aligned with the input.
+     * Generates the {@code loadManyBySource} stub used by {@code @splitQuery} DataLoaders when
+     * the field has no {@code @lookupKey} arguments. Receives a batch of source key rows built
+     * from parent records, executes an indexed VALUES JOIN against a derived source table, and
+     * returns results positionally aligned with the input.
      *
      * <pre>{@code
-     * public static List<List<Record>> loadMany(DSLContext ctx, List<Row> keys) {
+     * public static List<List<Record>> loadManyBySource(DSLContext ctx, List<Row> sourceKeys) {
+     *     throw new UnsupportedOperationException();
+     * }
+     * }</pre>
+     */
+    private MethodSpec buildLoadManyBySourceMethod() {
+        return MethodSpec.methodBuilder("loadManyBySource")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, RECORD)))
+            .addParameter(DSL_CONTEXT, "ctx")
+            .addParameter(ParameterizedTypeName.get(LIST, ROW), "sourceKeys")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    /**
+     * Generates the {@code loadManyByTarget} stub used by {@code LookupQueryField} DataLoaders.
+     * Receives a batch of target key rows built from {@code @lookupKey} argument values, executes
+     * an indexed VALUES JOIN against a derived target table, and returns results positionally
+     * aligned with the input.
+     *
+     * <pre>{@code
+     * public static List<List<Record>> loadManyByTarget(DSLContext ctx, List<Row> targetKeys) {
+     *     throw new UnsupportedOperationException();
+     * }
+     * }</pre>
+     */
+    private MethodSpec buildLoadManyByTargetMethod() {
+        return MethodSpec.methodBuilder("loadManyByTarget")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, RECORD)))
+            .addParameter(DSL_CONTEXT, "ctx")
+            .addParameter(ParameterizedTypeName.get(LIST, ROW), "targetKeys")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    /**
+     * Generates the {@code loadMany} stub used by {@code @splitQuery} DataLoaders when the field
+     * also has {@code @lookupKey} arguments. Executes two indexed VALUES JOINs — one for the
+     * derived source table (parent records) and one for the derived target table ({@code @lookupKey}
+     * args) — and returns N×M results in row-major order: position {@code (i * targetKeys.size() + j)}
+     * holds the results for {@code (sourceKeys[i], targetKeys[j])}.
+     *
+     * <pre>{@code
+     * public static List<List<Record>> loadMany(DSLContext ctx, List<Row> sourceKeys, List<Row> targetKeys) {
      *     throw new UnsupportedOperationException();
      * }
      * }</pre>
@@ -116,7 +171,8 @@ public class TableCodeGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, RECORD)))
             .addParameter(DSL_CONTEXT, "ctx")
-            .addParameter(ParameterizedTypeName.get(LIST, ROW), "keys")
+            .addParameter(ParameterizedTypeName.get(LIST, ROW), "sourceKeys")
+            .addParameter(ParameterizedTypeName.get(LIST, ROW), "targetKeys")
             .addStatement("throw new $T()", UnsupportedOperationException.class)
             .build();
     }
