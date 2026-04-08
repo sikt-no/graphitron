@@ -16,13 +16,13 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Integration tests for the full fields pipeline: SDL schema → {@link GraphitronSchema} →
+ * Integration tests for the full table-wrapper pipeline: SDL schema → {@link GraphitronSchema} →
  * generated {@link javax.lang.model.element.TypeElement} list.
  *
- * <p>Verifies that {@link FieldsClassGenerator} produces exactly one class per
+ * <p>Verifies that {@link TableWrapperClassGenerator} produces exactly one class per
  * {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableType} and skips all other types.
  */
-class FieldsPipelineTest {
+class TableWrapperPipelineTest {
 
     @BeforeEach
     void setup() {
@@ -37,13 +37,13 @@ class FieldsPipelineTest {
     }
 
     @Test
-    void singleTableType_producesOneFieldsClass() {
+    void singleTableType_producesOneTableWrapperClass() {
         var classes = generate("""
             type Film @table(name: "film") { title: String }
             type Query { dummy: String }
             """);
         assertThat(classes).hasSize(1);
-        assertThat(classes.get(0)).isEqualTo("FilmFields");
+        assertThat(classes.get(0)).isEqualTo("FilmTableWrapper");
     }
 
     @Test
@@ -53,7 +53,7 @@ class FieldsPipelineTest {
             type Actor @table(name: "actor") { name: String }
             type Query { dummy: String }
             """);
-        assertThat(classes).containsExactlyInAnyOrder("FilmFields", "ActorFields");
+        assertThat(classes).containsExactlyInAnyOrder("FilmTableWrapper", "ActorTableWrapper");
     }
 
     @Test
@@ -71,13 +71,13 @@ class FieldsPipelineTest {
             type Film @table(name: "film") { title: String }
             type Query { dummy: String }
             """);
-        assertThat(classes).doesNotContain("QueryFields");
+        assertThat(classes).doesNotContain("QueryTableWrapper");
     }
 
     // ===== Helpers =====
 
     private List<String> generate(String sdl) {
-        var gen = new FieldsClassGenerator(buildSchema(sdl));
+        var gen = new TableWrapperClassGenerator(buildSchema(sdl));
         return gen.generateAll().stream().map(t -> t.name()).toList();
     }
 

@@ -9,19 +9,19 @@ import java.util.List;
 
 /**
  * {@link no.sikt.graphitron.generators.abstractions.ClassGenerator} that produces one
- * {@code <TypeName>Fields.java} per {@link GraphitronType.TableType} in the schema.
+ * {@code <TypeName>TableWrapper.java} per {@link GraphitronType.TableType} in the schema.
  *
- * <p>Generated files are placed in the {@code rewrite.fields} sub-package of the configured
+ * <p>Generated files are placed in the {@code rewrite.tablewrapper} sub-package of the configured
  * output package.
  */
-public class FieldsClassGenerator extends AbstractClassGenerator {
+public class TableWrapperClassGenerator extends AbstractClassGenerator {
 
-    static final String SAVE_DIRECTORY = "rewrite.fields";
+    static final String SAVE_DIRECTORY = "rewrite.tablewrapper";
 
     private final List<String> typeNames;
-    private final FieldsCodeGenerator codeGenerator = new FieldsCodeGenerator();
+    private final TableWrapperCodeGenerator codeGenerator = new TableWrapperCodeGenerator();
 
-    public FieldsClassGenerator(GraphitronSchema schema) {
+    public TableWrapperClassGenerator(GraphitronSchema schema) {
         this.typeNames = schema.types().values().stream()
             .filter(t -> t instanceof GraphitronType.TableType)
             .map(GraphitronType::name)

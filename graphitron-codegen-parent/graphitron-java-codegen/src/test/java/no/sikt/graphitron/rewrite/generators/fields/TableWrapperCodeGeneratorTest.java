@@ -5,9 +5,9 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class FieldsCodeGeneratorTest {
+class TableWrapperCodeGeneratorTest {
 
-    private static final FieldsCodeGenerator GEN = new FieldsCodeGenerator();
+    private static final TableWrapperCodeGenerator GEN = new TableWrapperCodeGenerator();
 
     private static String render(String typeName) {
         return JavaFile.builder("test.pkg", GEN.generate(typeName)).indent("    ").build().toString();
@@ -16,21 +16,21 @@ class FieldsCodeGeneratorTest {
     // ===== Class structure =====
 
     @Test
-    void generate_classNameHasFieldsSuffix() {
-        assertThat(GEN.generate("Film").name()).isEqualTo("FilmFields");
+    void generate_classNameHasTableWrapperSuffix() {
+        assertThat(GEN.generate("Film").name()).isEqualTo("FilmTableWrapper");
     }
 
     @Test
     void generate_classIsPublic() {
-        assertThat(render("Film")).contains("public class FilmFields");
+        assertThat(render("Film")).contains("public class FilmTableWrapper");
     }
 
-    // ===== filmSelectMany =====
+    // ===== selectMany =====
 
     @Test
-    void generate_selectManyMethodNameUsesDecapitalizedTypeName() {
-        assertThat(render("Film")).contains("filmSelectMany(");
-        assertThat(render("Customer")).contains("customerSelectMany(");
+    void generate_selectManyMethodIsPresent() {
+        assertThat(render("Film")).contains("selectMany(");
+        assertThat(render("Customer")).contains("selectMany(");
     }
 
     @Test
@@ -40,7 +40,7 @@ class FieldsCodeGeneratorTest {
 
     @Test
     void generate_selectManyMethodReturnType() {
-        assertThat(render("Film")).contains("Result<Record> filmSelectMany(");
+        assertThat(render("Film")).contains("Result<Record> selectMany(");
     }
 
     @Test
@@ -56,17 +56,17 @@ class FieldsCodeGeneratorTest {
         assertThat(render("Film")).contains("throw new UnsupportedOperationException()");
     }
 
-    // ===== filmSelectOne =====
+    // ===== selectOne =====
 
     @Test
-    void generate_selectOneMethodNameUsesDecapitalizedTypeName() {
-        assertThat(render("Film")).contains("filmSelectOne(");
-        assertThat(render("Customer")).contains("customerSelectOne(");
+    void generate_selectOneMethodIsPresent() {
+        assertThat(render("Film")).contains("selectOne(");
+        assertThat(render("Customer")).contains("selectOne(");
     }
 
     @Test
     void generate_selectOneMethodReturnType() {
-        assertThat(render("Film")).contains("Record filmSelectOne(");
+        assertThat(render("Film")).contains("Record selectOne(");
     }
 
     @Test
@@ -81,17 +81,17 @@ class FieldsCodeGeneratorTest {
         assertThat(render("Film")).contains("throw new UnsupportedOperationException()");
     }
 
-    // ===== filmSubselectMany =====
+    // ===== subselectMany =====
 
     @Test
-    void generate_subselectManyMethodNameUsesDecapitalizedTypeName() {
-        assertThat(render("Film")).contains("filmSubselectMany(");
-        assertThat(render("Customer")).contains("customerSubselectMany(");
+    void generate_subselectManyMethodIsPresent() {
+        assertThat(render("Film")).contains("subselectMany(");
+        assertThat(render("Customer")).contains("subselectMany(");
     }
 
     @Test
     void generate_subselectManyMethodReturnType() {
-        assertThat(render("Film")).contains("Field<Result<Record>> filmSubselectMany(");
+        assertThat(render("Film")).contains("Field<Result<Record>> subselectMany(");
     }
 
     @Test
@@ -107,17 +107,17 @@ class FieldsCodeGeneratorTest {
         assertThat(render("Film")).contains("throw new UnsupportedOperationException()");
     }
 
-    // ===== filmSubselectOne =====
+    // ===== subselectOne =====
 
     @Test
-    void generate_subselectOneMethodNameUsesDecapitalizedTypeName() {
-        assertThat(render("Film")).contains("filmSubselectOne(");
-        assertThat(render("Customer")).contains("customerSubselectOne(");
+    void generate_subselectOneMethodIsPresent() {
+        assertThat(render("Film")).contains("subselectOne(");
+        assertThat(render("Customer")).contains("subselectOne(");
     }
 
     @Test
     void generate_subselectOneMethodReturnType() {
-        assertThat(render("Film")).contains("Field<Record> filmSubselectOne(");
+        assertThat(render("Film")).contains("Field<Record> subselectOne(");
     }
 
     @Test
@@ -137,9 +137,9 @@ class FieldsCodeGeneratorTest {
     @Test
     void generate_allFourMethodsArePresent() {
         String out = render("Film");
-        assertThat(out).contains("filmSelectMany(");
-        assertThat(out).contains("filmSelectOne(");
-        assertThat(out).contains("filmSubselectMany(");
-        assertThat(out).contains("filmSubselectOne(");
+        assertThat(out).contains("selectMany(");
+        assertThat(out).contains("selectOne(");
+        assertThat(out).contains("subselectMany(");
+        assertThat(out).contains("subselectOne(");
     }
 }
