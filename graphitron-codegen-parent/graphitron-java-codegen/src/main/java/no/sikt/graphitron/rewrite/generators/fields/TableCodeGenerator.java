@@ -16,16 +16,19 @@ import java.util.List;
  * {@code film}, {@code FilmActor} for table {@code film_actor}). This is distinct from the
  * GraphQL type name, which may differ.
  *
- * <p>Each class contains four scope-establishing stub methods:
+ * <p>Each class contains five scope-establishing stub methods:
  * <ul>
  *   <li>{@code selectMany} — executes a new SQL statement and returns all rows
- *       (list root queries, DataLoaders)</li>
+ *       (list root queries)</li>
  *   <li>{@code selectOne} — executes a new SQL statement and returns a single row
- *       (single root queries, single lookups)</li>
+ *       (single root queries)</li>
  *   <li>{@code subselectMany} — contributes a multiset subquery to an existing statement,
  *       returning many rows (inline list {@code TableField})</li>
  *   <li>{@code subselectOne} — contributes a scalar subquery to an existing statement,
  *       returning a single row (inline single {@code TableField})</li>
+ *   <li>{@code loadMany} — executes an indexed VALUES JOIN and returns results positionally
+ *       aligned with the input keys; called by DataLoaders for both {@code @splitQuery} fields
+ *       and lookup-key queries</li>
  * </ul>
  *
  * <p>All stubs throw {@link UnsupportedOperationException} until their bodies are filled in by
@@ -35,9 +38,11 @@ public class TableCodeGenerator {
 
     private static final ClassName RESULT        = ClassName.get("org.jooq", "Result");
     private static final ClassName RECORD        = ClassName.get("org.jooq", "Record");
+    private static final ClassName ROW           = ClassName.get("org.jooq", "Row");
     private static final ClassName FIELD         = ClassName.get("org.jooq", "Field");
     private static final ClassName CONDITION     = ClassName.get("org.jooq", "Condition");
     private static final ClassName SORT_FIELD    = ClassName.get("org.jooq", "SortField");
+    private static final ClassName DSL_CONTEXT   = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName LIST          = ClassName.get(List.class);
     private static final ClassName ENV           = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName SELECTION_SET = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
@@ -49,6 +54,7 @@ public class TableCodeGenerator {
             .addMethod(buildSelectOneMethod())
             .addMethod(buildSubselectManyMethod())
             .addMethod(buildSubselectOneMethod())
+            .addMethod(buildLoadManyMethod())
             .build();
     }
 
@@ -90,6 +96,27 @@ public class TableCodeGenerator {
             .returns(ParameterizedTypeName.get(FIELD, RECORD))
             .addParameter(SELECTION_SET, "sel")
             .addParameter(CONDITION, "condition")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    /**
+     * Generates the {@code loadMany} stub used by both {@code @splitQuery} DataLoaders and
+     * lookup-key DataLoaders. Receives a batch of key rows (without idx), executes an indexed
+     * VALUES JOIN, and returns results positionally aligned with the input.
+     *
+     * <pre>{@code
+     * public static List<List<Record>> loadMany(DSLContext ctx, List<Row> keys) {
+     *     throw new UnsupportedOperationException();
+     * }
+     * }</pre>
+     */
+    private MethodSpec buildLoadManyMethod() {
+        return MethodSpec.methodBuilder("loadMany")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, RECORD)))
+            .addParameter(DSL_CONTEXT, "ctx")
+            .addParameter(ParameterizedTypeName.get(LIST, ROW), "keys")
             .addStatement("throw new $T()", UnsupportedOperationException.class)
             .build();
     }
