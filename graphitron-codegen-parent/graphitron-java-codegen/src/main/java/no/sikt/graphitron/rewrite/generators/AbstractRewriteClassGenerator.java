@@ -29,18 +29,12 @@ public abstract class AbstractRewriteClassGenerator {
         generateAll().forEach(spec -> write(spec, path, packageName));
     }
 
-    /** Renders a single generated class to a Java source string (empty package). */
-    public String writeToString(TypeSpec spec) {
-        return buildFile(spec, "").build().toString();
-    }
-
     /**
      * Creates the {@link JavaFile.Builder} for a generated class.
      *
-     * <p>Override this method to add static imports before the file is written or rendered.
-     * The {@code packageName} is the full output package (e.g.
-     * {@code "com.example.rewrite.resolvers"}) when writing to disk, or {@code ""} when
-     * rendering to a string.
+     * <p>Override this method to add static imports before the file is written.
+     * The {@code packageName} is the full output package
+     * (e.g. {@code "com.example.rewrite.resolvers"}).
      */
     protected JavaFile.Builder buildFile(TypeSpec spec, String packageName) {
         return JavaFile.builder(packageName, spec).indent("    ");
