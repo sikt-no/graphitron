@@ -253,7 +253,18 @@ Both `@splitQuery` fields and lookup-key queries use the same DataLoader per tab
 1. A DataLoader fetcher method in `rewrite.types.*Fields` per field/query
 2. A batch loader method in `rewrite.tables.*` (calling `loadMany`) per table
 
-**`rewrite.types.LanguageFields`** — DataLoader fetcher for `@splitQuery` (one key per parent):
+The key question for each field is: **how many keys does one resolver invocation contribute?**
+
+| Scenario | Keys per invocation | DataLoader call |
+|---|---|---|
+| `@splitQuery`, no args | 1 (FK columns from parent source) | `load(key)` |
+| `@splitQuery`, non-lookup filter args | 1 (FK columns only; filter args go to WHERE) | `load(key)` |
+| `@splitQuery`, list `@lookupKey` args | N (one per arg element, combined with FK columns) | `loadMany(keys)` |
+| `LookupQueryField`, list `@lookupKey` args | N (one per arg element) | `loadMany(keys)` |
+
+In all cases the DataLoader key type is `Row` and the value type is `List<Record>`. The batch function is identical across all four — the distinction only affects how the field resolver builds keys and post-processes results.
+
+**`rewrite.types.LanguageFields`** — `@splitQuery`, no args (one key per parent):
 ```java
 public static CompletableFuture<List<Record>> films(DataFetchingEnvironment env) {
     GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
@@ -265,7 +276,24 @@ public static CompletableFuture<List<Record>> films(DataFetchingEnvironment env)
 }
 ```
 
-**`rewrite.types.QueryFields`** — DataLoader fetcher for `LookupQueryField` (many keys from args):
+**`rewrite.types.LanguageFields`** — `@splitQuery`, list `@lookupKey` args (N keys per parent):
+```java
+public static CompletableFuture<List<Record>> filmsByTitle(DataFetchingEnvironment env) {
+    GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
+    String name = loaderName(env.getExecutionStepInfo().getPath(), ctx.getTenantId(env));
+    DataLoader<Row, List<Record>> loader = env.getDataLoaderRegistry()
+        .computeIfAbsent(name, k -> DataLoaderFactory.newDataLoaderWithContext(Film::batchLoader));
+    List<String> titles = env.getArgument("title");
+    Record source = (Record) env.getSource();
+    List<Row> keys = titles.stream()
+        .map(t -> DSL.row(source.get(LANGUAGE.LANGUAGE_ID), t))
+        .toList();
+    return loader.loadMany(keys, Collections.nCopies(keys.size(), env))
+        .thenApply(results -> results.stream().flatMap(List::stream).toList());
+}
+```
+
+**`rewrite.types.QueryFields`** — `LookupQueryField`, list `@lookupKey` args (N keys from args):
 ```java
 public static CompletableFuture<List<Record>> filmById(DataFetchingEnvironment env) {
     GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
