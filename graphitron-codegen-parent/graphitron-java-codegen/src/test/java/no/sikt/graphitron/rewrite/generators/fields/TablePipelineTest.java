@@ -68,7 +68,8 @@ class TablePipelineTest {
     }
 
     @Test
-    void snakeCaseTableName_convertedToPascalCase() {
+    void classNameFromJooqFieldName_respectsNamingStrategy() {
+        // film_actor resolves to jOOQ class FilmActor (field FILM_ACTOR) → class name "FilmActor"
         var classes = generate("""
             type FilmActor @table(name: "film_actor") { actorId: Int }
             type Query { dummy: String }

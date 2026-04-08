@@ -25,21 +25,16 @@ class TableCodeGeneratorTest {
         assertThat(render("Film")).contains("public class Film");
     }
 
-    // ===== toPascalCase =====
+    // ===== toPascalCase — converts jOOQ UPPER_SNAKE field names to class names =====
 
     @Test
-    void toPascalCase_singleWord() {
-        assertThat(TableCodeGenerator.toPascalCase("film")).isEqualTo("Film");
-    }
-
-    @Test
-    void toPascalCase_snakeCase() {
-        assertThat(TableCodeGenerator.toPascalCase("film_actor")).isEqualTo("FilmActor");
-    }
-
-    @Test
-    void toPascalCase_alreadyUpperCase() {
+    void toPascalCase_singleWordFieldName() {
         assertThat(TableCodeGenerator.toPascalCase("FILM")).isEqualTo("Film");
+    }
+
+    @Test
+    void toPascalCase_multiWordFieldName() {
+        assertThat(TableCodeGenerator.toPascalCase("FILM_ACTOR")).isEqualTo("FilmActor");
     }
 
     // ===== selectMany =====

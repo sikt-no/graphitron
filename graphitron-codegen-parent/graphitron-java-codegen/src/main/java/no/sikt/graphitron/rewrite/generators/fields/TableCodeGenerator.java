@@ -44,7 +44,12 @@ public class TableCodeGenerator {
     private static final ClassName ENV           = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName SELECTION_SET = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
 
-    /** Converts a SQL table name (e.g. {@code film_actor}) to PascalCase (e.g. {@code FilmActor}). */
+    /**
+     * Converts a jOOQ field name (UPPER_SNAKE, e.g. {@code FILM_ACTOR}) to PascalCase
+     * (e.g. {@code FilmActor}), recovering the jOOQ-generated table class name.
+     * Works for any jOOQ naming strategy because the field name and class name are derived
+     * from the same logical name: {@code FILM_ACTOR} → class {@code FilmActor}.
+     */
     public static String toPascalCase(String tableName) {
         return Arrays.stream(tableName.split("_"))
             .filter(p -> !p.isEmpty())
