@@ -150,7 +150,8 @@ Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nest
 | `LookupQueryField` | `static CompletableFuture<…> fieldName(env)` | `TableName.loadMany` via DataLoader — builds key rows from arguments, calls `dataLoader.loadMany(keys)`, flattens results |
 | `TableField` — list, no `@splitQuery` | `static Result<Record> fieldName(env)` | extract nested column from source `Record` |
 | `TableField` — single, no `@splitQuery` | `static Record fieldName(env)` | extract nested column from source `Record` |
-| `TableField` — `@splitQuery` | `static CompletableFuture<…> fieldName(env)` | `TableName.loadMany` via DataLoader — builds key row from parent source record, calls `dataLoader.load(key)` |
+| `TableField` — `@splitQuery`, FK on child, returns `[T]` | `static CompletableFuture<List<Record>> fieldName(env)` | DataLoader `load(key)`, key = parent PK columns; return `List<Record>` as-is |
+| `TableField` — `@splitQuery`, FK on parent (inverse FK), returns `T` | `static CompletableFuture<Record> fieldName(env)` | DataLoader `load(key)`, key = parent FK columns; take first element |
 | `TableField` — record handoff | `static CompletableFuture<…> fieldName(env)` | `TableName.loadMany` via DataLoader |
 | `ServiceField` / `TableMethodField` → table | `static CompletableFuture<…> fieldName(env)` | `TableName.loadMany` via DataLoader |
 | `InterfaceField` | `static Object fieldName(env)` | union over each implementor's `subselectMany` |
@@ -253,18 +254,19 @@ Both `@splitQuery` fields and lookup-key queries use the same DataLoader per tab
 1. A DataLoader fetcher method in `rewrite.types.*Fields` per field/query
 2. A batch loader method in `rewrite.tables.*` (calling `loadMany`) per table
 
-The key question for each field is: **how many keys does one resolver invocation contribute?**
+Two questions determine the generated code: **how many keys does one resolver invocation contribute?** and **what is the field's return cardinality?**
 
-| Scenario | Keys per invocation | DataLoader call |
-|---|---|---|
-| `@splitQuery`, no args | 1 (FK columns from parent source) | `load(key)` |
-| `@splitQuery`, non-lookup filter args | 1 (FK columns only; filter args go to WHERE) | `load(key)` |
-| `@splitQuery`, list `@lookupKey` args | N (one per arg element, combined with FK columns) | `loadMany(keys)` |
-| `LookupQueryField`, list `@lookupKey` args | N (one per arg element) | `loadMany(keys)` |
+| Scenario | Return type | Keys per invocation | DataLoader call | Result handling |
+|---|---|---|---|---|
+| `@splitQuery`, FK on child (parent→children) | `[T]` | 1 (parent PK/unique-key columns) | `load(key)` | return `List<Record>` as-is |
+| `@splitQuery`, FK on parent (inverse FK) | `T` | 1 (parent FK columns) | `load(key)` | take first element |
+| `@splitQuery`, non-lookup filter args | `[T]` or `T` | 1 (FK columns only; filter args go to WHERE) | `load(key)` | as above |
+| `@splitQuery`, list `@lookupKey` args | `[T]` | N (one per arg element, combined with FK columns) | `loadMany(keys)` | flatten results |
+| `LookupQueryField`, list `@lookupKey` args | `[T]` | N (one per arg element) | `loadMany(keys)` | flatten results |
 
-In all cases the DataLoader key type is `Row` and the value type is `List<Record>`. The batch function is identical across all four — the distinction only affects how the field resolver builds keys and post-processes results.
+In all cases the DataLoader key type is `Row` and the value type is `List<Record>`. The batch function is identical across all scenarios — the distinction only affects how the field resolver builds keys and post-processes results.
 
-**`rewrite.types.LanguageFields`** — `@splitQuery`, no args (one key per parent):
+**`rewrite.types.LanguageFields`** — `@splitQuery`, FK on child, returns `[T]` (one key per parent):
 ```java
 public static CompletableFuture<List<Record>> films(DataFetchingEnvironment env) {
     GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
@@ -272,7 +274,19 @@ public static CompletableFuture<List<Record>> films(DataFetchingEnvironment env)
     DataLoader<Row, List<Record>> loader = env.getDataLoaderRegistry()
         .computeIfAbsent(name, k -> DataLoaderFactory.newDataLoaderWithContext(Film::batchLoader));
     Row key = DSL.row(((Record) env.getSource()).get(LANGUAGE.LANGUAGE_ID));
-    return loader.load(key, env);
+    return loader.load(key, env);  // CompletableFuture<List<Record>> — returned directly
+}
+```
+
+**`rewrite.types.FilmFields`** — `@splitQuery`, FK on parent (inverse FK), returns `T` (one key per parent):
+```java
+public static CompletableFuture<Record> language(DataFetchingEnvironment env) {
+    GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
+    String name = loaderName(env.getExecutionStepInfo().getPath(), ctx.getTenantId(env));
+    DataLoader<Row, List<Record>> loader = env.getDataLoaderRegistry()
+        .computeIfAbsent(name, k -> DataLoaderFactory.newDataLoaderWithContext(Language::batchLoader));
+    Row key = DSL.row(((Record) env.getSource()).get(FILM.LANGUAGE_ID));
+    return loader.load(key, env).thenApply(list -> list.isEmpty() ? null : list.get(0));
 }
 ```
 
