@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.db;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
@@ -51,6 +52,12 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
      */
     @Override
     public MethodSpec generate(ObjectField target) {
+        if (GeneratorConfig.failOnMerge() && target.getMutationType() == MutationType.UPSERT) {
+            throw new IllegalArgumentException(
+                    "MERGE generation is disabled (failOnMerge is enabled), but mutation '" + target.getName() + "' uses UPSERT."
+            );
+        }
+
         var recordMethod = mutationConverter.get(target.getMutationType());
         if (recordMethod == null) {
             return MethodSpec.methodBuilder(target.getName()).build();

@@ -16,6 +16,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_INPUT_TABLE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Mutation queries - Queries for updating data with JDBC batching")
 public class BatchingQueryTest extends GeneratorTest {
@@ -66,6 +67,19 @@ public class BatchingQueryTest extends GeneratorTest {
     @DisplayName("Upsert")
     void upsert() {
         assertGeneratedContentContains("upsert", ".batchMerge(_mi_inRecord)");
+    }
+
+    @Test
+    @DisplayName("Upsert throws exception when failOnMerge is enabled")
+    void upsertFailsWhenFailOnMergeEnabled() {
+        try {
+            GeneratorConfig.setFailOnMerge(true);
+            assertThatThrownBy(() -> generateFiles("upsert"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("MERGE generation is disabled (failOnMerge is enabled), but mutation 'mutation' uses UPSERT.");
+        } finally {
+            GeneratorConfig.setFailOnMerge(false);
+        }
     }
 
     @Test
