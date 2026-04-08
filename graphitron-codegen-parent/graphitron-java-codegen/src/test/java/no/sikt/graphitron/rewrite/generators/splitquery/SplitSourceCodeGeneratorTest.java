@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.generators.splitquery;
 
-import no.sikt.graphitron.javapoet.JavaFile;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -9,11 +10,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class SplitSourceCodeGeneratorTest {
 
-    private static final SplitSourceCodeGenerator GEN = new SplitSourceCodeGenerator();
+    private static final ClassName TABLES = ClassName.get("test.jooq", "Tables");
+    private static final SplitSourceCodeGenerator GEN = new SplitSourceCodeGenerator(TABLES);
 
-    private static String render(SplitSourceSpec spec) {
-        var typeSpec = GEN.generate(spec);
-        return JavaFile.builder("test.pkg", typeSpec).indent("    ").build().toString();
+    private static MethodSpec method(SplitSourceSpec spec) {
+        return GEN.generate(spec).methodSpecs().get(0);
     }
 
     // ===== Class naming =====
@@ -38,28 +39,32 @@ class SplitSourceCodeGeneratorTest {
     void generate_containsRowsMethod() {
         var spec = spec("Language", "films", "LANGUAGE",
             new SplitSourceKeyFieldSpec("LANGUAGE_ID", "java.lang.Integer"));
-        assertThat(render(spec)).contains("rows(");
+        assertThat(method(spec).name()).isEqualTo("rows");
     }
 
     @Test
     void generate_methodIsPublicStatic() {
         var spec = spec("Language", "films", "LANGUAGE",
             new SplitSourceKeyFieldSpec("LANGUAGE_ID", "java.lang.Integer"));
-        assertThat(render(spec)).contains("public static");
+        assertThat(method(spec).modifiers())
+            .containsExactlyInAnyOrder(javax.lang.model.element.Modifier.PUBLIC, javax.lang.model.element.Modifier.STATIC);
     }
 
     @Test
     void generate_noDslContextParameter() {
         var spec = spec("Language", "films", "LANGUAGE",
             new SplitSourceKeyFieldSpec("LANGUAGE_ID", "java.lang.Integer"));
-        assertThat(render(spec)).doesNotContain("DSLContext");
+        assertThat(method(spec).parameters())
+            .extracting(p -> p.type().toString())
+            .doesNotContain("org.jooq.DSLContext");
     }
 
     @Test
     void generate_parameterIsListOfRecord() {
         var spec = spec("Language", "films", "LANGUAGE",
             new SplitSourceKeyFieldSpec("LANGUAGE_ID", "java.lang.Integer"));
-        assertThat(render(spec)).contains("List<Record> sources");
+        assertThat(method(spec).parameters().get(0).type().toString())
+            .isEqualTo("java.util.List<org.jooq.Record>");
     }
 
     // ===== Return type =====
@@ -68,7 +73,8 @@ class SplitSourceCodeGeneratorTest {
     void generate_returnTypeIsRow2ForOneKeyField() {
         var spec = spec("Language", "films", "LANGUAGE",
             new SplitSourceKeyFieldSpec("LANGUAGE_ID", "java.lang.Integer"));
-        assertThat(render(spec)).contains("Row2<Integer, Integer>");
+        assertThat(method(spec).returnType().toString())
+            .isEqualTo("java.util.List<org.jooq.Row2<java.lang.Integer, java.lang.Integer>>");
     }
 
     @Test
@@ -77,7 +83,8 @@ class SplitSourceCodeGeneratorTest {
             new SplitSourceKeyFieldSpec("STORE_ID", "java.lang.Integer"),
             new SplitSourceKeyFieldSpec("CUSTOMER_ID", "java.lang.Integer")
         ));
-        assertThat(render(spec)).contains("Row3<Integer, Integer, Integer>");
+        assertThat(method(spec).returnType().toString())
+            .isEqualTo("java.util.List<org.jooq.Row3<java.lang.Integer, java.lang.Integer, java.lang.Integer>>");
     }
 
     // ===== Method body =====
@@ -86,7 +93,8 @@ class SplitSourceCodeGeneratorTest {
     void generate_bodyUsesIntStreamOverSourcesSize() {
         var spec = spec("Language", "films", "LANGUAGE",
             new SplitSourceKeyFieldSpec("LANGUAGE_ID", "java.lang.Integer"));
-        assertThat(render(spec))
+        String code = method(spec).code().toString();
+        assertThat(code)
             .contains("IntStream.range(0,")
             .contains("sources.size()");
     }
@@ -95,21 +103,24 @@ class SplitSourceCodeGeneratorTest {
     void generate_rowCallIncludesTableColumn() {
         var spec = spec("Language", "films", "LANGUAGE",
             new SplitSourceKeyFieldSpec("LANGUAGE_ID", "java.lang.Integer"));
-        assertThat(render(spec)).contains("LANGUAGE.LANGUAGE_ID");
+        assertThat(method(spec).code().toString()).contains("LANGUAGE.LANGUAGE_ID");
     }
 
     @Test
     void generate_rowFirstArgIsOnePlusI() {
         var spec = spec("Language", "films", "LANGUAGE",
             new SplitSourceKeyFieldSpec("LANGUAGE_ID", "java.lang.Integer"));
-        assertThat(render(spec)).contains("i + 1");
+        assertThat(method(spec).code().toString()).contains("i + 1");
     }
 
     @Test
     void generate_rowExtractsColumnFromSourcesViaTypedGet() {
         var spec = spec("Language", "films", "LANGUAGE",
             new SplitSourceKeyFieldSpec("LANGUAGE_ID", "java.lang.Integer"));
-        assertThat(render(spec)).contains("sources.get(i).get(LANGUAGE.LANGUAGE_ID)");
+        String code = method(spec).code().toString();
+        assertThat(code)
+            .contains("sources.get(i).get(")
+            .contains("LANGUAGE.LANGUAGE_ID");
     }
 
     @Test
@@ -118,24 +129,24 @@ class SplitSourceCodeGeneratorTest {
             new SplitSourceKeyFieldSpec("STORE_ID", "java.lang.Integer"),
             new SplitSourceKeyFieldSpec("CUSTOMER_ID", "java.lang.Integer")
         ));
-        String out = render(spec);
-        assertThat(out)
-            .contains("sources.get(i).get(CUSTOMER.STORE_ID)")
-            .contains("sources.get(i).get(CUSTOMER.CUSTOMER_ID)");
+        String code = method(spec).code().toString();
+        assertThat(code)
+            .contains("CUSTOMER.STORE_ID")
+            .contains("CUSTOMER.CUSTOMER_ID");
     }
 
     @Test
     void generate_bodyEndsWithToList() {
         var spec = spec("Language", "films", "LANGUAGE",
             new SplitSourceKeyFieldSpec("LANGUAGE_ID", "java.lang.Integer"));
-        assertThat(render(spec)).contains(".toList()");
+        assertThat(method(spec).code().toString()).contains(".toList()");
     }
 
     @Test
     void generate_usesDslRow() {
         var spec = spec("Language", "films", "LANGUAGE",
             new SplitSourceKeyFieldSpec("LANGUAGE_ID", "java.lang.Integer"));
-        assertThat(render(spec)).contains("DSL.row(");
+        assertThat(method(spec).code().toString()).contains("DSL.row(");
     }
 
     @Test
@@ -143,7 +154,7 @@ class SplitSourceCodeGeneratorTest {
         // values are extracted via typed get(Field<T>) — no explicit cast should appear
         var spec = spec("Language", "films", "LANGUAGE",
             new SplitSourceKeyFieldSpec("LANGUAGE_ID", "java.lang.Integer"));
-        assertThat(render(spec)).doesNotContain("(Integer)");
+        assertThat(method(spec).code().toString()).doesNotContain("(Integer)");
     }
 
     // ===== Helper =====

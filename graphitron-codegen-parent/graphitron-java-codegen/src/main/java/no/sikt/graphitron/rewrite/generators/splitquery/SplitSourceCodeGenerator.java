@@ -39,6 +39,12 @@ public class SplitSourceCodeGenerator {
     private static final ClassName LIST = ClassName.get(List.class);
     private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
 
+    private final ClassName tablesClass;
+
+    public SplitSourceCodeGenerator(ClassName tablesClass) {
+        this.tablesClass = tablesClass;
+    }
+
     public TypeSpec generate(SplitSourceSpec spec) {
         String className = spec.parentTypeName() + capitalize(spec.fieldName()) + "DerivedSource";
         return TypeSpec.classBuilder(className)
@@ -79,12 +85,12 @@ public class SplitSourceCodeGenerator {
             .build();
     }
 
-    /** {@code i + 1, sources.get(i).get(TABLE.COL1), ...} */
+    /** {@code i + 1, sources.get(i).get(Tables.TABLE.COL1), ...} */
     private CodeBlock rowArgsBlock(SplitSourceSpec spec) {
         var b = CodeBlock.builder();
         b.add("i + 1");
         for (var f : spec.keyFields()) {
-            b.add(", sources.get(i).get($L.$L)", spec.parentTableJavaFieldName(), f.columnJavaName());
+            b.add(", sources.get(i).get($T.$L.$L)", tablesClass, spec.parentTableJavaFieldName(), f.columnJavaName());
         }
         return b.build();
     }

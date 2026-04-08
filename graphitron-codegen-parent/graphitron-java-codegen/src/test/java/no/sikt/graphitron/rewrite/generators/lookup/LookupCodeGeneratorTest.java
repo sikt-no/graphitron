@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.generators.lookup;
 
-import no.sikt.graphitron.javapoet.JavaFile;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -9,11 +10,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class LookupCodeGeneratorTest {
 
-    private static final LookupCodeGenerator GEN = new LookupCodeGenerator();
+    private static final ClassName TABLES = ClassName.get("test.jooq", "Tables");
+    private static final ClassName GRAPHITRON_VALUES = ClassName.get("test.rewrite", "GraphitronValues");
+    private static final LookupCodeGenerator GEN = new LookupCodeGenerator(TABLES, GRAPHITRON_VALUES);
 
-    private static String render(LookupSpec spec) {
-        var typeSpec = GEN.generate(spec);
-        return JavaFile.builder("test.pkg", typeSpec).indent("    ").build().toString();
+    private static MethodSpec method(LookupSpec spec) {
+        return GEN.generate(spec).methodSpecs().get(0);
     }
 
     // ===== Common assertions =====
@@ -29,28 +31,31 @@ class LookupCodeGeneratorTest {
     void generate_containsToInputRowsMethod() {
         var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
             new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
-        assertThat(render(spec)).contains("toInputRows");
+        assertThat(method(spec).name()).isEqualTo("toInputRows");
     }
 
     @Test
     void generate_methodIsPublicStatic() {
         var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
             new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
-        assertThat(render(spec)).contains("public static");
+        assertThat(method(spec).modifiers())
+            .containsExactlyInAnyOrder(javax.lang.model.element.Modifier.PUBLIC, javax.lang.model.element.Modifier.STATIC);
     }
 
     @Test
     void generate_firstParameterIsDslContext() {
         var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
             new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
-        assertThat(render(spec)).contains("DSLContext ctx");
+        assertThat(method(spec).parameters().get(0).type().toString())
+            .isEqualTo("org.jooq.DSLContext");
     }
 
     @Test
     void generate_secondParameterIsMapOfStringObject() {
         var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
             new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
-        assertThat(render(spec)).contains("Map<String, Object> arguments");
+        assertThat(method(spec).parameters().get(1).type().toString())
+            .isEqualTo("java.util.Map<java.lang.String, java.lang.Object>");
     }
 
     // ===== Input-type case =====
@@ -59,35 +64,37 @@ class LookupCodeGeneratorTest {
     void inputType_extractsListFromArguments() {
         var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
             new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
-        assertThat(render(spec)).contains("arguments.get(\"input\")");
+        assertThat(method(spec).code().toString()).contains("arguments.get(\"input\")");
     }
 
     @Test
     void inputType_declaresLocalVar() {
         var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
             new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
-        assertThat(render(spec)).contains("List<Map<String, Object>> input =");
+        assertThat(method(spec).code().toString()).contains("input =");
     }
 
     @Test
     void inputType_iteratesOverLocalVar() {
         var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
             new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
-        assertThat(render(spec)).contains("input.size()").contains("input.get(i)");
+        String code = method(spec).code().toString();
+        assertThat(code).contains("input.size()").contains("input.get(i)");
     }
 
     @Test
     void inputType_valuesReadFromElementMap() {
         var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
             new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
-        assertThat(render(spec)).contains("(Integer) m.get(\"customerId\")");
+        assertThat(method(spec).code().toString()).contains("m.get(\"customerId\")");
     }
 
     @Test
     void inputType_returnTypeIsRecord2ForOneField() {
         var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
             new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
-        assertThat(render(spec)).contains("Record2<Integer, Integer>");
+        assertThat(method(spec).returnType().toString())
+            .isEqualTo("java.util.List<org.jooq.Record2<java.lang.Integer, java.lang.Integer>>");
     }
 
     @Test
@@ -96,22 +103,23 @@ class LookupCodeGeneratorTest {
             new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false),
             new LookupInputFieldSpec("email", "EMAIL", "java.lang.String", false)
         ));
-        assertThat(render(spec)).contains("Record3<Integer, Integer, String>");
+        assertThat(method(spec).returnType().toString())
+            .isEqualTo("java.util.List<org.jooq.Record3<java.lang.Integer, java.lang.Integer, java.lang.String>>");
     }
 
     @Test
     void inputType_newRecordIncludesTableColumn() {
         var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
             new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
-        assertThat(render(spec)).contains("CUSTOMER.CUSTOMER_ID");
+        assertThat(method(spec).code().toString()).contains("CUSTOMER.CUSTOMER_ID");
     }
 
     @Test
     void inputType_bodyUsesIntStreamAndDsl() {
         var spec = inputTypeSpec("Customer", "CUSTOMER", "input",
             new LookupInputFieldSpec("customerId", "CUSTOMER_ID", "java.lang.Integer", false));
-        String out = render(spec);
-        assertThat(out)
+        String code = method(spec).code().toString();
+        assertThat(code)
             .contains("IntStream.range(0,")
             .contains("ctx.newRecord(")
             .contains("GRAPHITRON_INPUT_IDX")
@@ -125,7 +133,8 @@ class LookupCodeGeneratorTest {
         var spec = flatSpec("Person", "PERSON",
             new LookupInputFieldSpec("ids", "PERSON_ID", "java.lang.String", true),
             new LookupInputFieldSpec("tenantId", "TENANT_ID", "java.lang.String", false));
-        assertThat(render(spec)).contains("List<String> ids = (List<String>) arguments.get(\"ids\")");
+        String code = method(spec).code().toString();
+        assertThat(code).contains("ids =").contains("arguments.get(\"ids\")");
     }
 
     @Test
@@ -133,14 +142,14 @@ class LookupCodeGeneratorTest {
         var spec = flatSpec("Person", "PERSON",
             new LookupInputFieldSpec("ids", "PERSON_ID", "java.lang.String", true),
             new LookupInputFieldSpec("tenantId", "TENANT_ID", "java.lang.String", false));
-        assertThat(render(spec)).contains("(String) arguments.get(\"tenantId\")");
+        assertThat(method(spec).code().toString()).contains("arguments.get(\"tenantId\")");
     }
 
     @Test
     void flatArgs_listArgValueUsesGetI() {
         var spec = flatSpec("Person", "PERSON",
             new LookupInputFieldSpec("ids", "PERSON_ID", "java.lang.String", true));
-        assertThat(render(spec)).contains("ids.get(i)");
+        assertThat(method(spec).code().toString()).contains("ids.get(i)");
     }
 
     @Test
@@ -148,15 +157,14 @@ class LookupCodeGeneratorTest {
         var spec = flatSpec("Person", "PERSON",
             new LookupInputFieldSpec("ids", "PERSON_ID", "java.lang.String", true),
             new LookupInputFieldSpec("tenantId", "TENANT_ID", "java.lang.String", false));
-        assertThat(render(spec)).contains("ids.size()");
+        assertThat(method(spec).code().toString()).contains("ids.size()");
     }
 
     @Test
     void flatArgs_noInputVarDeclaration() {
-        // In flat mode, there should be no local "input" list-of-maps variable
         var spec = flatSpec("Person", "PERSON",
             new LookupInputFieldSpec("ids", "PERSON_ID", "java.lang.String", true));
-        assertThat(render(spec)).doesNotContain("Map<String, Object>> input");
+        assertThat(method(spec).code().toString()).doesNotContain("input =");
     }
 
     @Test
@@ -164,7 +172,8 @@ class LookupCodeGeneratorTest {
         var spec = flatSpec("Person", "PERSON",
             new LookupInputFieldSpec("ids", "PERSON_ID", "java.lang.String", true),
             new LookupInputFieldSpec("tenantId", "TENANT_ID", "java.lang.String", false));
-        assertThat(render(spec)).contains("Record3<Integer, String, String>");
+        assertThat(method(spec).returnType().toString())
+            .isEqualTo("java.util.List<org.jooq.Record3<java.lang.Integer, java.lang.String, java.lang.String>>");
     }
 
     // ===== Helpers =====

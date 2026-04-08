@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.generators.splitquery;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.javapoet.JavaFile;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.AbstractRewriteClassGenerator;
@@ -27,12 +27,12 @@ public class SplitSourceClassGenerator extends AbstractRewriteClassGenerator {
     static final String SAVE_DIRECTORY = "rewrite.resolvers";
 
     private final List<SplitSourceSpec> specs;
-    private final SplitSourceCodeGenerator codeGenerator = new SplitSourceCodeGenerator();
-    private final Class<?> tablesClass;
+    private final SplitSourceCodeGenerator codeGenerator;
 
     public SplitSourceClassGenerator(GraphitronSchema schema) {
         this.specs = SplitSourceSpecBuilder.build(schema);
-        this.tablesClass = loadTablesClass();
+        var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
+        this.codeGenerator = new SplitSourceCodeGenerator(tablesClass);
     }
 
     @Override
@@ -45,22 +45,5 @@ public class SplitSourceClassGenerator extends AbstractRewriteClassGenerator {
     @Override
     public String getDefaultSaveDirectoryName() {
         return SAVE_DIRECTORY;
-    }
-
-    @Override
-    protected JavaFile.Builder buildFile(TypeSpec spec, String packageName) {
-        var builder = super.buildFile(spec, packageName);
-        if (tablesClass != null) {
-            builder.addStaticImport(tablesClass, "*");
-        }
-        return builder;
-    }
-
-    private Class<?> loadTablesClass() {
-        try {
-            return Class.forName(GeneratorConfig.getGeneratedJooqPackage() + ".Tables");
-        } catch (ClassNotFoundException e) {
-            return null;
-        }
     }
 }

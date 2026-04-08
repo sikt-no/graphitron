@@ -44,6 +44,14 @@ public class LookupCodeGenerator {
     private static final ClassName STRING = ClassName.get(String.class);
     private static final ClassName OBJECT = ClassName.get(Object.class);
 
+    private final ClassName tablesClass;
+    private final ClassName graphitronValuesClass;
+
+    public LookupCodeGenerator(ClassName tablesClass, ClassName graphitronValuesClass) {
+        this.tablesClass = tablesClass;
+        this.graphitronValuesClass = graphitronValuesClass;
+    }
+
     public TypeSpec generate(LookupSpec spec) {
         return TypeSpec.classBuilder(spec.typeName() + "Lookup")
             .addModifiers(Modifier.PUBLIC)
@@ -150,12 +158,12 @@ public class LookupCodeGenerator {
         return body.build();
     }
 
-    /** {@code ctx.newRecord(GRAPHITRON_INPUT_IDX, TABLE.COL1, ...)} */
+    /** {@code ctx.newRecord(GraphitronValues.GRAPHITRON_INPUT_IDX, Tables.TABLE.COL1, ...)} */
     private CodeBlock newRecordCallBlock(LookupSpec spec) {
         var b = CodeBlock.builder();
-        b.add("ctx.newRecord(GRAPHITRON_INPUT_IDX");
+        b.add("ctx.newRecord($T.GRAPHITRON_INPUT_IDX", graphitronValuesClass);
         for (var f : spec.fields()) {
-            b.add(", $L.$L", spec.tableJavaFieldName(), f.columnJavaName());
+            b.add(", $T.$L.$L", tablesClass, spec.tableJavaFieldName(), f.columnJavaName());
         }
         b.add(")");
         return b.build();

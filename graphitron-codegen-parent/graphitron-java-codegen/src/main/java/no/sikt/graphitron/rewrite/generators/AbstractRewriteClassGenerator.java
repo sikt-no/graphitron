@@ -11,9 +11,7 @@ import java.util.List;
  * Base class for rewrite-pipeline class generators.
  *
  * <p>Subclasses implement {@link #generateAll()} and {@link #getDefaultSaveDirectoryName()}.
- * The pipeline entry point is {@link #generateAllToDirectory}; both writing and string
- * rendering go through {@link #buildFile}, which subclasses may override to add static
- * imports (e.g. for jOOQ {@code Tables.*}).
+ * The pipeline entry point is {@link #generateAllToDirectory}.
  */
 public abstract class AbstractRewriteClassGenerator {
 
@@ -29,20 +27,9 @@ public abstract class AbstractRewriteClassGenerator {
         generateAll().forEach(spec -> write(spec, path, packageName));
     }
 
-    /**
-     * Creates the {@link JavaFile.Builder} for a generated class.
-     *
-     * <p>Override this method to add static imports before the file is written.
-     * The {@code packageName} is the full output package
-     * (e.g. {@code "com.example.rewrite.resolvers"}).
-     */
-    protected JavaFile.Builder buildFile(TypeSpec spec, String packageName) {
-        return JavaFile.builder(packageName, spec).indent("    ");
-    }
-
     private void write(TypeSpec spec, String path, String packageName) {
         try {
-            buildFile(spec, packageName).build().writeTo(new File(path));
+            JavaFile.builder(packageName, spec).indent("    ").build().writeTo(new File(path));
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
