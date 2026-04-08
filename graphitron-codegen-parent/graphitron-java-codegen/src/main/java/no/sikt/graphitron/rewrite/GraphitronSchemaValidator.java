@@ -400,6 +400,21 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         }
+        boolean isLookup = field.splitQuery() && field.arguments().stream().anyMatch(no.sikt.graphitron.rewrite.field.ArgumentSpec::lookupKey);
+        if (isLookup) {
+            if (!(field.condition() instanceof FieldConditionRef.NoFieldCondition)) {
+                errors.add(new ValidationError(
+                    "Field '" + field.name() + "': @condition is not valid on a @splitQuery field with @lookupKey arguments",
+                    field.location()
+                ));
+            }
+            if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.field.FieldWrapper.Connection) {
+                errors.add(new ValidationError(
+                    "Field '" + field.name() + "': @splitQuery fields with @lookupKey arguments must not return a connection",
+                    field.location()
+                ));
+            }
+        }
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }

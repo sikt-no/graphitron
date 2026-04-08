@@ -1259,8 +1259,9 @@ public class GraphitronSchemaBuilder {
         String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
         boolean orderBy = arg.hasAppliedDirective(DIR_ORDER_BY);
         boolean conditionArg = arg.hasAppliedDirective(DIR_CONDITION);
+        boolean lookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
         String columnName = argString(arg, DIR_FIELD, ARG_NAME).orElse(arg.getName());
-        return new ArgumentSpec(arg.getName(), typeName, nonNull, list, orderBy, conditionArg, columnName);
+        return new ArgumentSpec(arg.getName(), typeName, nonNull, list, orderBy, conditionArg, lookupKey, columnName);
     }
 
     /**
