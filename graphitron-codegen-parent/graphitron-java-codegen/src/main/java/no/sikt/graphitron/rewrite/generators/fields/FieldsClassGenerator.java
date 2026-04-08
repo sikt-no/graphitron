@@ -9,8 +9,8 @@ import no.sikt.graphitron.rewrite.type.GraphitronType;
 import java.util.List;
 
 /**
- * {@link no.sikt.graphitron.generators.abstractions.ClassGenerator} that produces one
- * {@code <TypeName>Fields.java} per table-mapped or root GraphQL type in the schema.
+ * Generator that produces one {@code <TypeName>Fields.java} per table-mapped or root GraphQL type
+ * in the schema.
  *
  * <p>Class names are {@code <GraphQLTypeName>Fields} (e.g. {@code FilmFields} for GraphQL type
  * {@code Film}, {@code QueryFields} for the root {@code Query} type). This is distinct from the
@@ -52,8 +52,6 @@ public class FieldsClassGenerator extends AbstractRewriteClassGenerator {
     public String getDefaultSaveDirectoryName() {
         return SAVE_DIRECTORY;
     }
-
-
 
     private TypeSpec generateForType(String typeName) {
         var fieldNames = schema.fields().entrySet().stream()

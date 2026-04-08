@@ -48,6 +48,7 @@ If a generator needs a piece of information that is not present in the taxonomy,
 | `LookupClassGenerator` | `<TypeName>Lookup.java` in `rewrite.resolvers` | Derived source rows for lookup key batching |
 | `SplitSourceClassGenerator` | `<ParentType><FieldName>DerivedSource.java` in `rewrite.resolvers` | Derived source rows for `@splitQuery` DataLoader batching |
 | `TableClassGenerator` | `<TableName>.java` in `rewrite.tables` | Scope-establishing stubs (`selectMany`, `selectOne`, `subselectMany`, `subselectOne`); named after the jOOQ table class |
+| `FieldsClassGenerator` | `<TypeName>Fields.java` in `rewrite.types` | One static stub per GraphQL field + `wiring()` by method reference; named after the GraphQL type |
 
 Each `DerivedSource` / `Lookup` class contains a single static `rows` method that maps a list of parent records or input argument maps into typed `List<RowN<Integer, T1, ...>>` rows for use in a jOOQ `DSL.values(...).asTable(...)` derived table.
 
@@ -213,11 +214,10 @@ public static TypeRuntimeWiring.Builder wiring() {
 
 ---
 
-### I1 — `FieldsClassGenerator` + `GraphitronWiringClassGenerator` *(TableClassGenerator done)*
+### I1 — `GraphitronWiringClassGenerator` *(TableClassGenerator and FieldsClassGenerator done)*
 
-`TableClassGenerator` already exists and generates one stub class per SQL table. The remaining work:
+`TableClassGenerator` generates one stub class per SQL table. `FieldsClassGenerator` generates one `<TypeName>Fields.java` per GraphQL output type with one static stub per field and a `wiring()` method. The remaining work:
 
-- **`FieldsClassGenerator`** — generates one `<TypeName>Fields.java` per GraphQL output type, containing the field fetcher methods and `wiring()`.
 - **`GraphitronWiringClassGenerator`** — generates `GraphitronWiring.java` aggregating all `wiring()` calls:
 
 ```java
@@ -406,4 +406,6 @@ Once the record-based pipeline achieves full feature parity and the example serv
 | `rewrite/generators/util/GraphitronFetchersClassGenerator.java` | **New** |
 | `rewrite/generators/fields/TableCodeGenerator.java` | **Done** — scope-establishing stubs only |
 | `rewrite/generators/fields/TableClassGenerator.java` | **Done** — iterates `TableType`s, uses `javaClassName` |
+| `rewrite/generators/fields/FieldsCodeGenerator.java` | **Done** — one stub per field + `wiring()` by method reference |
+| `rewrite/generators/fields/FieldsClassGenerator.java` | **Done** — iterates `TableType`s and `RootType`s |
 | `rewrite/GraphitronWiringClassGenerator.java` | **New** |
