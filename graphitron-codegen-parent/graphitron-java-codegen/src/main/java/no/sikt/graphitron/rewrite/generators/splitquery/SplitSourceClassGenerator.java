@@ -6,13 +6,10 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.AbstractRewriteClassGenerator;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.List;
 
 /**
- * {@link no.sikt.graphitron.generators.abstractions.ClassGenerator} that produces one
- * {@code <ParentTypeName><FieldName>DerivedSource.java} per
+ * Generates one {@code <ParentTypeName><FieldName>DerivedSource.java} per
  * {@link no.sikt.graphitron.rewrite.field.ChildField.TableField} annotated with
  * {@code @splitQuery}.
  *
@@ -51,36 +48,12 @@ public class SplitSourceClassGenerator extends AbstractRewriteClassGenerator {
     }
 
     @Override
-    public String getFileNameSuffix() {
-        return "";
-    }
-
-    @Override
-    public void writeToFile(TypeSpec generatedClass, String path, String packagePath, String directoryOverride) {
-        var fileBuilder = JavaFile
-            .builder(packagePath + "." + directoryOverride, generatedClass)
-            .indent("    ");
-
-        addStaticImports(fileBuilder, packagePath);
-
-        try {
-            fileBuilder.build().writeTo(new File(path));
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    @Override
-    public String writeToString(TypeSpec generatedClass) {
-        var fileBuilder = JavaFile.builder("", generatedClass).indent("    ");
-        addStaticImports(fileBuilder, "");
-        return fileBuilder.build().toString();
-    }
-
-    private void addStaticImports(JavaFile.Builder fileBuilder, String packagePath) {
+    protected JavaFile.Builder buildFile(TypeSpec spec, String packageName) {
+        var builder = super.buildFile(spec, packageName);
         if (tablesClass != null) {
-            fileBuilder.addStaticImport(tablesClass, "*");
+            builder.addStaticImport(tablesClass, "*");
         }
+        return builder;
     }
 
     private Class<?> loadTablesClass() {

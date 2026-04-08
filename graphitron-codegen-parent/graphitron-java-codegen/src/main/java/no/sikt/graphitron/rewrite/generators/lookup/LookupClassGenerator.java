@@ -7,14 +7,12 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.AbstractRewriteClassGenerator;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.List;
 
 /**
- * {@link no.sikt.graphitron.generators.abstractions.ClassGenerator} that produces one
- * {@code <TypeName>Lookup.java} per {@link no.sikt.graphitron.rewrite.field.QueryField.LookupQueryField}
- * whose argument type is a {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType}.
+ * Generates one {@code <TypeName>Lookup.java} per
+ * {@link no.sikt.graphitron.rewrite.field.QueryField.LookupQueryField} whose argument type is a
+ * {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType}.
  *
  * <p>Each generated class contains a {@code toInputRows} method that maps a
  * {@code List<Map<String, Object>>} — the graphql-java representation of a list input argument —
@@ -49,41 +47,28 @@ public class LookupClassGenerator extends AbstractRewriteClassGenerator {
     }
 
     @Override
-    public String getFileNameSuffix() {
-        return "";
-    }
-
-    @Override
-    public void writeToFile(TypeSpec generatedClass, String path, String packagePath, String directoryOverride) {
-        var fileBuilder = JavaFile
-            .builder(packagePath + "." + directoryOverride, generatedClass)
-            .indent("    ");
-
-        addStaticImports(fileBuilder, packagePath);
-
-        try {
-            fileBuilder.build().writeTo(new File(path));
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    @Override
-    public String writeToString(TypeSpec generatedClass) {
-        var fileBuilder = JavaFile.builder("", generatedClass).indent("    ");
-        addStaticImports(fileBuilder, "");
-        return fileBuilder.build().toString();
-    }
-
-    private void addStaticImports(JavaFile.Builder fileBuilder, String packagePath) {
+    protected JavaFile.Builder buildFile(TypeSpec spec, String packageName) {
+        var builder = super.buildFile(spec, packageName);
         if (tablesClass != null) {
-            fileBuilder.addStaticImport(tablesClass, "*");
+            builder.addStaticImport(tablesClass, "*");
         }
+        // packageName is either "" (rendering to string) or the full output package
+        // (e.g. "com.example.rewrite.resolvers"). GraphitronValues lives at {basePkg}.rewrite.
+        var basePkg = basePkg(packageName);
         var graphitronValuesClass = ClassName.get(
-            packagePath.isEmpty() ? "" : packagePath + ".rewrite",
+            basePkg.isEmpty() ? "" : basePkg + ".rewrite",
             "GraphitronValues"
         );
-        fileBuilder.addStaticImport(graphitronValuesClass, "GRAPHITRON_INPUT_IDX");
+        builder.addStaticImport(graphitronValuesClass, "GRAPHITRON_INPUT_IDX");
+        return builder;
+    }
+
+    private static String basePkg(String packageName) {
+        if (packageName.isEmpty()) return "";
+        var suffix = "." + SAVE_DIRECTORY;
+        return packageName.endsWith(suffix)
+            ? packageName.substring(0, packageName.length() - suffix.length())
+            : packageName;
     }
 
     private Class<?> loadTablesClass() {

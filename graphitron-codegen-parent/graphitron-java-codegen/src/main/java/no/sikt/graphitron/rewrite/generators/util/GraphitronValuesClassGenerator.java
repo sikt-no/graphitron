@@ -57,8 +57,5 @@ public class GraphitronValuesClassGenerator extends AbstractRewriteClassGenerato
         return SAVE_DIRECTORY;
     }
 
-    @Override
-    public String getFileNameSuffix() {
-        return "";
-    }
+
 }

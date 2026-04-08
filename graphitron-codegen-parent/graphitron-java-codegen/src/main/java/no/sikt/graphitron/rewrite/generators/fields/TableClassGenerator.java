@@ -49,8 +49,5 @@ public class TableClassGenerator extends AbstractRewriteClassGenerator {
         return SAVE_DIRECTORY;
     }
 
-    @Override
-    public String getFileNameSuffix() {
-        return "";
-    }
+
 }

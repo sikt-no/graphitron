@@ -53,10 +53,7 @@ public class FieldsClassGenerator extends AbstractRewriteClassGenerator {
         return SAVE_DIRECTORY;
     }
 
-    @Override
-    public String getFileNameSuffix() {
-        return "";
-    }
+
 
     private TypeSpec generateForType(String typeName) {
         var fieldNames = schema.fields().entrySet().stream()
