@@ -35,13 +35,12 @@ class TableCodeGeneratorTest {
         assertThat(spec("Film").modifiers()).contains(Modifier.PUBLIC);
     }
 
-    // ===== All seven methods present =====
+    // ===== All four methods present =====
 
     @Test
-    void generate_allSevenMethodsArePresent() {
+    void generate_allFourMethodsArePresent() {
         assertThat(spec("Film").methodSpecs()).extracting(MethodSpec::name)
-            .containsExactlyInAnyOrder("selectMany", "selectOne", "subselectMany", "subselectOne",
-                "loadManyBySource", "loadManyByTarget", "loadMany");
+            .containsExactlyInAnyOrder("selectMany", "selectOne", "subselectMany", "subselectOne");
     }
 
     // ===== selectMany =====
@@ -150,99 +149,5 @@ class TableCodeGeneratorTest {
                 "org.jooq.Condition");
         assertThat(params).extracting(p -> p.name())
             .containsExactly("sel", "condition");
-    }
-
-    // ===== loadManyBySource =====
-
-    @Test
-    void loadManyBySource_isPublicStatic() {
-        assertThat(method("Film", "loadManyBySource").modifiers())
-            .containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
-    }
-
-    @Test
-    void loadManyBySource_returnType() {
-        assertThat(method("Film", "loadManyBySource").returnType().toString())
-            .isEqualTo("java.util.List<java.util.List<org.jooq.Record>>");
-    }
-
-    @Test
-    void loadManyBySource_parameters() {
-        var params = method("Film", "loadManyBySource").parameters();
-        assertThat(params).extracting(p -> p.type().toString())
-            .containsExactly(
-                "org.jooq.DSLContext",
-                "java.util.List<org.jooq.Row>");
-        assertThat(params).extracting(p -> p.name())
-            .containsExactly("ctx", "sourceKeys");
-    }
-
-    @Test
-    void loadManyBySource_throwsUnsupportedOperationException() {
-        assertThat(method("Film", "loadManyBySource").code().toString())
-            .contains("UnsupportedOperationException()");
-    }
-
-    // ===== loadManyByTarget =====
-
-    @Test
-    void loadManyByTarget_isPublicStatic() {
-        assertThat(method("Film", "loadManyByTarget").modifiers())
-            .containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
-    }
-
-    @Test
-    void loadManyByTarget_returnType() {
-        assertThat(method("Film", "loadManyByTarget").returnType().toString())
-            .isEqualTo("java.util.List<java.util.List<org.jooq.Record>>");
-    }
-
-    @Test
-    void loadManyByTarget_parameters() {
-        var params = method("Film", "loadManyByTarget").parameters();
-        assertThat(params).extracting(p -> p.type().toString())
-            .containsExactly(
-                "org.jooq.DSLContext",
-                "java.util.List<org.jooq.Row>");
-        assertThat(params).extracting(p -> p.name())
-            .containsExactly("ctx", "targetKeys");
-    }
-
-    @Test
-    void loadManyByTarget_throwsUnsupportedOperationException() {
-        assertThat(method("Film", "loadManyByTarget").code().toString())
-            .contains("UnsupportedOperationException()");
-    }
-
-    // ===== loadMany =====
-
-    @Test
-    void loadMany_isPublicStatic() {
-        assertThat(method("Film", "loadMany").modifiers())
-            .containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
-    }
-
-    @Test
-    void loadMany_returnType() {
-        assertThat(method("Film", "loadMany").returnType().toString())
-            .isEqualTo("java.util.List<java.util.List<org.jooq.Record>>");
-    }
-
-    @Test
-    void loadMany_parameters() {
-        var params = method("Film", "loadMany").parameters();
-        assertThat(params).extracting(p -> p.type().toString())
-            .containsExactly(
-                "org.jooq.DSLContext",
-                "java.util.List<org.jooq.Row>",
-                "java.util.List<org.jooq.Row>");
-        assertThat(params).extracting(p -> p.name())
-            .containsExactly("ctx", "sourceKeys", "targetKeys");
-    }
-
-    @Test
-    void loadMany_throwsUnsupportedOperationException() {
-        assertThat(method("Film", "loadMany").code().toString())
-            .contains("UnsupportedOperationException()");
     }
 }

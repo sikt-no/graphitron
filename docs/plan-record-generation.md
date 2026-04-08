@@ -47,7 +47,7 @@ If a generator needs a piece of information that is not present in the taxonomy,
 | `GraphitronValuesClassGenerator` | `GraphitronValues.java` in `rewrite` | Defines `GRAPHITRON_INPUT_IDX` |
 | `LookupClassGenerator` | *(transitional)* | Generates `<TypeName>Lookup::toInputRows`; superseded by DataLoader pattern — to be removed when DataLoader generation is implemented |
 | `SplitSourceClassGenerator` | *(transitional)* | Generates `<ParentType><FieldName>DerivedSource::rows`; superseded by DataLoader pattern — to be removed when DataLoader generation is implemented |
-| `TableClassGenerator` | `<TableName>.java` in `rewrite.tables` | Scope-establishing stubs (`selectMany`, `selectOne`, `subselectMany`, `subselectOne`, `loadMany`); named after the jOOQ table class |
+| `TableClassGenerator` | `<TableName>.java` in `rewrite.tables` | Projection stubs only (`selectMany`, `selectOne`, `subselectMany`, `subselectOne`); named after the jOOQ table class. DataLoader batch methods are bespoke per-field and live in `rewrite.types` alongside their data fetchers. |
 | `FieldsClassGenerator` | `<TypeName>Fields.java` in `rewrite.types` | One static stub per GraphQL field + `wiring()` by method reference; named after the GraphQL type |
 
 ---
@@ -114,7 +114,7 @@ public static TypeRuntimeWiring.Builder wiring() {
 
 The wiring method is a pure manifest — no logic, no lambdas. Each field method carries the logic and is independently testable.
 
-**`rewrite.tables.Film`** contains the SQL side:
+**`rewrite.tables.Film`** contains the SQL projection side only:
 
 ```java
 // Assembles the SELECT list for this type's query.
@@ -125,16 +125,11 @@ Result<Record>          selectMany(DataFetchingEnvironment env, Condition condit
 Record                  selectOne(DataFetchingEnvironment env, Condition condition)
 Field<Result<Record>>   subselectMany(DataFetchingFieldSelectionSet sel, Condition condition, List<SortField<?>> orderBy)
 Field<Record>           subselectOne(DataFetchingFieldSelectionSet sel, Condition condition)
-
-// DataLoader batch method — shared by @splitQuery fields and lookup-key queries:
-List<List<Record>>      loadMany(DSLContext ctx, List<Row> keys)
 ```
 
-`loadMany` receives the batch as a list of key rows (no idx), prepends `i+1` to build an indexed VALUES derived table, JOINs against the child table ordered by idx, and partitions the result back into one `List<Record>` per input key using the idx column as a positional index. No `CompletableFuture`; the DataLoader wrapper calls `completedFuture(loadMany(...))`.
+These projection methods may eventually move to `rewrite.types.<TypeName>` but are in `rewrite.tables` for now.
 
-The same DataLoader registration covers both use cases:
-- **`LookupQueryField`**: the resolver calls `dataLoader.loadMany(keys)` where each key is built from the query arguments (e.g. `DSL.row(filmId)` per element).
-- **`@splitQuery` `TableField`**: the resolver calls `dataLoader.load(key)` where the key is built from the parent source record (e.g. `DSL.row(source.get(LANGUAGE.LANGUAGE_ID))`).
+DataLoader batch methods are **not** in the table class. They are generated bespoke per-field and live in `rewrite.types.<TypeName>Fields` alongside the corresponding data fetcher (see G6).
 
 `selectMany` and `selectOne` obtain a `DSLContext` internally. The jOOQ `XYZ*Step` types are never referenced in generated method signatures because they are mutable, less composable, and binary-incompatible across jOOQ minor releases.
 
@@ -147,17 +142,15 @@ Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nest
 | `ColumnField` / `ColumnReferenceField` | `static T fieldName(env)` | `record.get(TABLE.COL)` from source |
 | `TableQueryField` — list | `static Result<Record> fieldName(env)` | `TableName.selectMany` |
 | `TableQueryField` — single | `static Record fieldName(env)` | `TableName.selectOne` |
-| `LookupQueryField` | `static CompletableFuture<…> fieldName(env)` | `TableName.loadMany` via DataLoader — builds key rows from arguments, calls `dataLoader.loadMany(keys)`, flattens results |
+| `LookupQueryField` *(lookup field)* | `static CompletableFuture<List<Record>> fieldName(env)` | `lookupFieldName(env, selectedField)` via DataLoader |
 | `TableField` — list, no `@splitQuery` | `static Result<Record> fieldName(env)` | extract nested column from source `Record` |
 | `TableField` — single, no `@splitQuery` | `static Record fieldName(env)` | extract nested column from source `Record` |
-| `TableField` — `@splitQuery`, FK on child, returns `[T]` | `static CompletableFuture<List<Record>> fieldName(env)` | DataLoader `load(key)`, key = parent PK columns; return `List<Record>` as-is |
-| `TableField` — `@splitQuery`, FK on parent (inverse FK), returns `T` | `static CompletableFuture<Record> fieldName(env)` | DataLoader `load(key)`, key = parent FK columns; take first element |
-| `TableField` — record handoff | `static CompletableFuture<…> fieldName(env)` | `TableName.loadMany` via DataLoader |
-| `ServiceField` / `TableMethodField` → table | `static CompletableFuture<…> fieldName(env)` | `TableName.loadMany` via DataLoader |
+| `TableField` — `@splitQuery`, no `@lookupKey` *(result mapped TableField)*, returns `[T]` | `static CompletableFuture<List<Record>> fieldName(env)` | `loadFieldName(sourceRows, env, selectedField)` via DataLoader |
+| `TableField` — `@splitQuery`, no `@lookupKey` *(result mapped TableField)*, returns `T` | `static CompletableFuture<Record> fieldName(env)` | `loadFieldName(sourceRows, env, selectedField)` via DataLoader, take first |
+| `TableField` — `@splitQuery`, no `@lookupKey` *(result mapped TableField)*, paginated | `static CompletableFuture<List<Record>> fieldName(env)` | `loadFieldNamePage(sourceRows, env, selectedField)` via DataLoader |
+| `TableField` — `@splitQuery` + `@lookupKey` *(result mapped LookupTableField)* | `static CompletableFuture<List<Record>> fieldName(env)` | `lookupFieldName(sourceRows, env, selectedField)` via DataLoader |
 | `InterfaceField` | `static Object fieldName(env)` | union over each implementor's `subselectMany` |
 | Mutation read-back | *(inside mutation fetcher)* | `TableName.selectMany` with derived source |
-
-**`LookupQueryField` batch mapping**: each input key drives one row in a VALUES outer query; the nested multiset produces the matching result. Missing keys produce a null row, preserving positional alignment.
 
 ---
 
@@ -247,98 +240,111 @@ Extends `TableCodeGenerator` with `TableField` in table-mapped source context (n
 
 ---
 
-### G6 — `@splitQuery` `TableField` and `LookupQueryField` (shared DataLoader)
+### G6 — DataLoader fields: `LookupQueryField`, result mapped `TableField`, result mapped `LookupTableField`
 
-Both `@splitQuery` fields and lookup-key queries use the same DataLoader per table. G6 generates:
+G6 generates, per affected field, a pair of methods in `rewrite.types.<TypeName>Fields`:
+1. A **data fetcher** — `static CompletableFuture<…> fieldName(DataFetchingEnvironment env)` — registers or retrieves the DataLoader and dispatches to it.
+2. A **bespoke batch method** — named `load<FieldName>` or `lookup<FieldName>` — executed by the DataLoader's batch function. Contains all SQL logic specific to this field.
 
-1. A DataLoader fetcher method in `rewrite.types.*Fields` per field/query
-2. A batch loader method in `rewrite.tables.*` (calling `loadMany`) per table
+---
 
-**Key anatomy.** A DataLoader key row is the concatenation of two independent derived tables:
+#### Three field categories
 
-- **Derived source table** — columns from the parent record, addressing the source side of the FK. Present only on `@splitQuery` fields. The source contributes either its PK/unique-key columns (FK on child side, e.g. `LANGUAGE.LANGUAGE_ID`) or its FK columns (FK on parent side, e.g. `FILM.LANGUAGE_ID`).
-- **Derived target table** — columns from `@lookupKey` arguments, addressing the target table. Present only when `@lookupKey` args exist. Each arg element is one row. Non-`@lookupKey` filter args are not part of this table — they go to the WHERE clause on the target query.
-
-The key row passed to `DataLoader.load` / `loadMany` is the row-wise combination of whatever columns each derived table contributes. The batch function's `loadMany(ctx, keys)` then prepends an idx to each key when building the actual SQL VALUES table.
-
-**Resolver matrix** — rows = derived source table; columns = derived target table.
-
-| | No derived target | Derived target: scalar | Derived target: list |
+| Category | Derived tables present | `@condition` / non-`@lookupKey` args | Pagination |
 |---|---|---|---|
-| **No derived source** (`LookupQueryField`) | – | `load(row(arg))` → first | `loadMany(row(argᵢ) ∀i)` → flatten |
-| **Derived source: src.PK** (`@splitQuery`, FK on child → `[T]`) | `load(row(src.PK))` → List | `load(row(src.PK, arg))` → List | `loadMany(row(src.PK, argᵢ) ∀i)` → flatten |
-| **Derived source: src.FK** (`@splitQuery`, FK on parent → `T`) | `load(row(src.FK))` → first | `load(row(src.FK, arg))` → first | `loadMany(row(src.FK, argᵢ) ∀i)` → flatten |
+| **Lookup field** (`LookupQueryField`) | Derived target only | Blocked (lookup invariant) | Never — result count = M exactly |
+| **Result mapped `TableField`** (`@splitQuery`, no `@lookupKey` args) | Derived source only | Allowed — become WHERE on target | Allowed |
+| **Result mapped `LookupTableField`** (`@splitQuery` + `@lookupKey` args) | Both | Blocked (lookup invariant) | Never — result count = N × M |
 
-`src.PK` = source record's PK/unique-key columns; `src.FK` = source record's FK columns pointing at the target; `arg` / `argᵢ` = `@lookupKey` argument value(s). Filter-only args are orthogonal to this matrix (they can appear in any non-`–` cell and add a WHERE condition on the target without affecting the key).
+**Derived source table** — a SQL `VALUES(…)` derived table built from parent source records. Contains the FK-relevant columns from the parent: the parent's PK/unique-key columns when the FK is on the child side, or the parent's FK columns when the FK is on the parent side.
 
-In all cases the DataLoader key type is `Row` and the value type is `List<Record>`. The batch function is identical across all cells — only the resolver's key construction and result unwrapping differ.
+**Derived target table** — a SQL `VALUES(…)` derived table built from `@lookupKey` argument values, read from `SelectedField`. Each argument value (or list element) is one row. Arguments without `@lookupKey` are never part of this table.
 
-**`rewrite.types.LanguageFields`** — `@splitQuery`, FK on child, returns `[T]` (one key per parent):
+**Lookup invariant**: blocking `@condition` on lookup fields ensures the result count is always exactly N × M (N sources × M lookup rows), which makes positional alignment unambiguous.
+
+**Arguments are identical across all sources in a batch.** The DataLoader is keyed to the execution path (`loaderName` uses the GraphQL path), so all N source records in a batch share the same arguments. M is therefore a constant for the entire batch.
+
+---
+
+#### Bespoke method signatures
+
+Arguments are unpacked from `SelectedField` inside the bespoke method — they are never passed as separate parameters. `DataFetchingEnvironment` is used only for context (`DSLContext`, `contextArgument`, tenant ID, etc.). `SelectedField` drives both SELECT list assembly and argument unpacking.
+
+| Category | Bespoke method signature | Return type |
+|---|---|---|
+| Lookup field | `static List<Record> lookup<FieldName>(DataFetchingEnvironment env, SelectedField sel)` | `List<Record>` — M results total |
+| Result mapped TableField — returns `[T]` | `static List<List<Record>> load<FieldName>(List<Row> sourceRows, DataFetchingEnvironment env, SelectedField sel)` | `List<List<Record>>` — one inner list per source |
+| Result mapped TableField — returns `T` | `static List<Record> load<FieldName>(List<Row> sourceRows, DataFetchingEnvironment env, SelectedField sel)` | `List<Record>` — one Record per source |
+| Result mapped TableField — paginated | `static List<List<Record>> load<FieldName>Page(List<Row> sourceRows, DataFetchingEnvironment env, SelectedField sel)` | `List<List<Record>>` — one page per source |
+| Result mapped LookupTableField | `static List<List<Record>> lookup<FieldName>(List<Row> sourceRows, DataFetchingEnvironment env, SelectedField sel)` | `List<List<Record>>` — N inner lists, each up to M records |
+
+---
+
+#### SQL structure
+
+Each bespoke method builds an indexed `VALUES(…)` derived table (prepending a 1-based `idx` to each row), JOINs it against the target table, and partitions results back to one entry per input row using `idx`.
+
+- **Derived source only**: one `JOIN` — derived source ↔ target. One `idx` column.
+- **Derived target only**: one `JOIN` — derived target ↔ target. One `idx` column.
+- **Both derived tables**: two separate `JOIN`s — derived source ↔ target, derived target ↔ target. Two `idx` columns (`src_idx`, `tgt_idx`). NOT a pre-join of derived source × derived target (that would produce an N×M intermediate before hitting the target). Result at position `(i, j)` is retrieved by `src_idx = i+1 AND tgt_idx = j+1`.
+
+---
+
+#### Example sketches
+
+**`rewrite.types.LanguageFields`** — result mapped TableField, FK on child, returns `[T]`:
 ```java
+// Data fetcher
 public static CompletableFuture<List<Record>> films(DataFetchingEnvironment env) {
-    GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
-    String name = loaderName(env.getExecutionStepInfo().getPath(), ctx.getTenantId(env));
+    String name = loaderName(env.getExecutionStepInfo().getPath(),
+        graphitronContext(env).getTenantId(env));
     DataLoader<Row, List<Record>> loader = env.getDataLoaderRegistry()
-        .computeIfAbsent(name, k -> DataLoaderFactory.newDataLoaderWithContext(Film::batchLoader));
+        .computeIfAbsent(name, k -> DataLoaderFactory.newDataLoaderWithContext(
+            (keys, batchEnv) -> {
+                DataFetchingEnvironment dfe = (DataFetchingEnvironment) batchEnv.getKeyContextsList().get(0);
+                SelectedField sel = dfe.getSelectionSet().getField("films");
+                return CompletableFuture.completedFuture(loadFilms(keys, dfe, sel));
+            }));
     Row key = DSL.row(((Record) env.getSource()).get(LANGUAGE.LANGUAGE_ID));
-    return loader.load(key, env);  // CompletableFuture<List<Record>> — returned directly
+    return loader.load(key, env);
+}
+
+// Bespoke batch method — joins derived source (language IDs) against film table
+public static List<List<Record>> loadFilms(List<Row> sourceRows, DataFetchingEnvironment env, SelectedField sel) {
+    throw new UnsupportedOperationException();
 }
 ```
 
-**`rewrite.types.FilmFields`** — `@splitQuery`, FK on parent (inverse FK), returns `T` (one key per parent):
+**`rewrite.types.FilmFields`** — result mapped TableField, FK on parent, returns `T`:
 ```java
-public static CompletableFuture<Record> language(DataFetchingEnvironment env) {
-    GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
-    String name = loaderName(env.getExecutionStepInfo().getPath(), ctx.getTenantId(env));
-    DataLoader<Row, List<Record>> loader = env.getDataLoaderRegistry()
-        .computeIfAbsent(name, k -> DataLoaderFactory.newDataLoaderWithContext(Language::batchLoader));
-    Row key = DSL.row(((Record) env.getSource()).get(FILM.LANGUAGE_ID));
-    return loader.load(key, env).thenApply(list -> list.isEmpty() ? null : list.get(0));
+public static CompletableFuture<Record> language(DataFetchingEnvironment env) { … }
+
+public static List<Record> loadLanguage(List<Row> sourceRows, DataFetchingEnvironment env, SelectedField sel) {
+    throw new UnsupportedOperationException();
 }
 ```
 
-**`rewrite.types.LanguageFields`** — `@splitQuery`, list `@lookupKey` args (N keys per parent):
+**`rewrite.types.QueryFields`** — lookup field (no source rows):
 ```java
-public static CompletableFuture<List<Record>> filmsByTitle(DataFetchingEnvironment env) {
-    GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
-    String name = loaderName(env.getExecutionStepInfo().getPath(), ctx.getTenantId(env));
-    DataLoader<Row, List<Record>> loader = env.getDataLoaderRegistry()
-        .computeIfAbsent(name, k -> DataLoaderFactory.newDataLoaderWithContext(Film::batchLoader));
-    List<String> titles = env.getArgument("title");
-    Record source = (Record) env.getSource();
-    List<Row> keys = titles.stream()
-        .map(t -> DSL.row(source.get(LANGUAGE.LANGUAGE_ID), t))
-        .toList();
-    return loader.loadMany(keys, Collections.nCopies(keys.size(), env))
-        .thenApply(results -> results.stream().flatMap(List::stream).toList());
+public static CompletableFuture<List<Record>> filmById(DataFetchingEnvironment env) { … }
+
+// Unpacks @lookupKey args from sel internally; result positionally aligned with lookup rows
+public static List<Record> lookupFilmById(DataFetchingEnvironment env, SelectedField sel) {
+    throw new UnsupportedOperationException();
 }
 ```
 
-**`rewrite.types.QueryFields`** — `LookupQueryField`, list `@lookupKey` args (N keys from args):
+**`rewrite.types.LanguageFields`** — result mapped LookupTableField (`@splitQuery` + `@lookupKey`):
 ```java
-public static CompletableFuture<List<Record>> filmById(DataFetchingEnvironment env) {
-    GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
-    String name = loaderName(env.getExecutionStepInfo().getPath(), ctx.getTenantId(env));
-    DataLoader<Row, List<Record>> loader = env.getDataLoaderRegistry()
-        .computeIfAbsent(name, k -> DataLoaderFactory.newDataLoaderWithContext(Film::batchLoader));
-    List<Long> filmIds = env.getArgument("film_id");
-    List<Row> keys = filmIds.stream().map(DSL::row).toList();
-    return loader.loadMany(keys, Collections.nCopies(keys.size(), env))
-        .thenApply(results -> results.stream().flatMap(List::stream).toList());
+public static CompletableFuture<List<Record>> filmsByTitle(DataFetchingEnvironment env) { … }
+
+// Unpacks @lookupKey args from sel internally; N inner lists, each up to M records
+public static List<List<Record>> lookupFilmsByTitle(List<Row> sourceRows, DataFetchingEnvironment env, SelectedField sel) {
+    throw new UnsupportedOperationException();
 }
 ```
 
-**`rewrite.tables.Film`** — batch loader (calls `loadMany`, wraps in `completedFuture`):
-```java
-public static CompletableFuture<List<List<Record>>> batchLoader(
-        List<Row> keys, BatchLoaderEnvironment env) {
-    DataFetchingEnvironment dfe = (DataFetchingEnvironment) env.getKeyContextsList().get(0);
-    GraphitronContext ctx = dfe.getGraphQlContext().get("graphitronContext");
-    return CompletableFuture.completedFuture(loadMany(ctx.getDslContext(dfe), keys));
-}
-```
-
-`loaderName` is a private helper in the `*Fields` class (GraphQL path-based, not SQL).
+`loaderName` is a private static helper in the `*Fields` class — GraphQL path-based, not SQL.
 
 ---
 
@@ -468,7 +474,7 @@ Once the record-based pipeline achieves full feature parity and the example serv
 | `graphitron-common/.../DefaultGraphitronContext.java` | Implement `getTenantId()` → `Optional.empty()` |
 | `graphitron-java-codegen/.../mappings/JavaPoetClassName.java` | Add `JOOQ_RECORD`, `JOOQ_RESULT`, `LIGHT_DATA_FETCHER`, `GRAPHITRON_FETCHERS` |
 | `rewrite/generators/util/GraphitronFetchersClassGenerator.java` | **New** |
-| `rewrite/generators/fields/TableCodeGenerator.java` | **Done** — scope-establishing stubs including `loadMany` |
+| `rewrite/generators/fields/TableCodeGenerator.java` | **Done** — four projection stubs (`selectMany`, `selectOne`, `subselectMany`, `subselectOne`); DataLoader batch methods are bespoke per-field in `FieldsCodeGenerator` |
 | `rewrite/generators/fields/TableClassGenerator.java` | **Done** — iterates `TableType`s, uses `javaClassName` |
 | `rewrite/generators/fields/FieldsCodeGenerator.java` | **Done** — one stub per field + `wiring()` by method reference |
 | `rewrite/generators/fields/FieldsClassGenerator.java` | **Done** — iterates `TableType`s and `RootType`s |
