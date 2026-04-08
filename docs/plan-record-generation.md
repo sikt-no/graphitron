@@ -254,26 +254,22 @@ Both `@splitQuery` fields and lookup-key queries use the same DataLoader per tab
 1. A DataLoader fetcher method in `rewrite.types.*Fields` per field/query
 2. A batch loader method in `rewrite.tables.*` (calling `loadMany`) per table
 
-Two questions determine the generated code: **how many keys does one resolver invocation contribute?** and **what is the field's return cardinality?**
+**Key anatomy.** Each DataLoader key row is built from two independent column sources:
 
-**Key anatomy**: each DataLoader key row is built from two independent sources:
+- **Source columns** address the **source** table (the parent record in the resolver). The source contributes either its PK/unique-key columns (when the FK is on the child side — e.g. `LANGUAGE.LANGUAGE_ID`) or its FK columns (when the FK is on the parent side — e.g. `FILM.LANGUAGE_ID`).
+- **Argument columns** address the **target** table. `@lookupKey` args form a derived VALUES table on the target side; each arg element adds one column to the key. Non-`@lookupKey` filter args never enter the key — they go to the WHERE clause on the target.
 
-- **Source columns** (from the parent record): the FK-relevant columns from the source table.
-  - FK on child: source contributes its PK/unique-key columns (the columns that the child FK references — e.g. `LANGUAGE.LANGUAGE_ID`).
-  - FK on parent (inverse FK): source contributes its FK columns (the columns pointing at the target — e.g. `FILM.LANGUAGE_ID`).
-- **Argument columns** (from `@lookupKey` args): these address the **target** table, not the source. They form a derived VALUES table on the target side. Each arg element contributes one row to the combined key.
+**Resolver matrix.** Rows = relationship / source structure; columns = argument type.
 
-When both sources are present (`@splitQuery` with `@lookupKey` args), combining them works only because the source's FK column and the arg's target column are the same logical join key — one side of the FK pair. The batch function sees a flat list of composite keys; `loadMany` is used because N arg values × 1 parent invocation = N keys per call.
-
-| Scenario | Return type | Keys per invocation | DataLoader call | Result handling |
+| | No args | Filter-only args | `@lookupKey` scalar | `@lookupKey` list |
 |---|---|---|---|---|
-| `@splitQuery`, FK on child (parent→children) | `[T]` | 1 (source PK columns) | `load(key)` | return `List<Record>` as-is |
-| `@splitQuery`, FK on parent (inverse FK) | `T` | 1 (source FK columns) | `load(key)` | take first element |
-| `@splitQuery`, non-lookup filter args | `[T]` or `T` | 1 (FK columns only; filter args go to WHERE on target) | `load(key)` | as above |
-| `@splitQuery`, list `@lookupKey` args | `[T]` | N (source FK cols + one arg value per key) | `loadMany(keys)` | flatten results |
-| `LookupQueryField`, list `@lookupKey` args | `[T]` | N (one arg-derived key per element) | `loadMany(keys)` | flatten results |
+| `@splitQuery` FK on child → `[T]` | `load(row(src.PK))` → List | `load(row(src.PK))` + WHERE → List | `load(row(src.PK, arg))` → List | `loadMany(row(src.PK, argᵢ) ∀i)` → flatten |
+| `@splitQuery` FK on parent → `T` | `load(row(src.FK))` → first | `load(row(src.FK))` + WHERE → first | `load(row(src.FK, arg))` → first | `loadMany(row(src.FK, argᵢ) ∀i)` → flatten |
+| `LookupQueryField` (no source) | – | – | `load(row(arg))` → first | `loadMany(row(argᵢ) ∀i)` → flatten |
 
-In all cases the DataLoader key type is `Row` and the value type is `List<Record>`. The batch function is identical across all scenarios — the distinction only affects how the field resolver builds keys and post-processes results.
+`src.PK` = source record's PK/unique-key columns; `src.FK` = source record's FK columns pointing at the target; `arg` / `argᵢ` = `@lookupKey` argument value(s).
+
+In all cases the DataLoader key type is `Row` and the value type is `List<Record>`. The batch function (`Film::batchLoader`) is identical across all cells — only the resolver's key construction and result unwrapping differ.
 
 **`rewrite.types.LanguageFields`** — `@splitQuery`, FK on child, returns `[T]` (one key per parent):
 ```java
