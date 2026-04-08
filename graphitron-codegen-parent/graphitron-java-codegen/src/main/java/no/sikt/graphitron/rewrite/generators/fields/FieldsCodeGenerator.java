@@ -12,14 +12,16 @@ import java.util.List;
 /**
  * Generates a {@link TypeSpec} for one {@code <TypeName>Fields} class.
  *
- * <p>Each class contains three scope-establishing stub methods:
+ * <p>Each class contains four scope-establishing stub methods:
  * <ul>
  *   <li>{@code <typeName>SelectMany} — executes a new SQL statement and returns all rows
  *       (list root queries, DataLoaders)</li>
  *   <li>{@code <typeName>SelectOne} — executes a new SQL statement and returns a single row
  *       (single root queries, single lookups)</li>
- *   <li>{@code <typeName>Nested} — contributes a multiset subquery to an existing statement
- *       (inline {@code TableField})</li>
+ *   <li>{@code <typeName>SubselectMany} — contributes a multiset subquery to an existing statement,
+ *       returning many rows (inline list {@code TableField})</li>
+ *   <li>{@code <typeName>SubselectOne} — contributes a scalar subquery to an existing statement,
+ *       returning a single row (inline single {@code TableField})</li>
  * </ul>
  *
  * <p>All stubs throw {@link UnsupportedOperationException} until their bodies are filled in by
@@ -42,7 +44,8 @@ public class FieldsCodeGenerator {
             .addModifiers(Modifier.PUBLIC)
             .addMethod(buildSelectManyMethod(prefix))
             .addMethod(buildSelectOneMethod(prefix))
-            .addMethod(buildNestedMethod(prefix))
+            .addMethod(buildSubselectManyMethod(prefix))
+            .addMethod(buildSubselectOneMethod(prefix))
             .build();
     }
 
@@ -67,13 +70,23 @@ public class FieldsCodeGenerator {
             .build();
     }
 
-    private MethodSpec buildNestedMethod(String prefix) {
-        return MethodSpec.methodBuilder(prefix + "Nested")
+    private MethodSpec buildSubselectManyMethod(String prefix) {
+        return MethodSpec.methodBuilder(prefix + "SubselectMany")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(FIELD, ParameterizedTypeName.get(RESULT, RECORD)))
             .addParameter(SELECTION_SET, "sel")
             .addParameter(CONDITION, "condition")
             .addParameter(sortFieldList(), "orderBy")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    private MethodSpec buildSubselectOneMethod(String prefix) {
+        return MethodSpec.methodBuilder(prefix + "SubselectOne")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(FIELD, RECORD))
+            .addParameter(SELECTION_SET, "sel")
+            .addParameter(CONDITION, "condition")
             .addStatement("throw new $T()", UnsupportedOperationException.class)
             .build();
     }

@@ -40,7 +40,7 @@ class FieldsCodeGeneratorTest {
 
     @Test
     void generate_selectManyMethodReturnType() {
-        assertThat(render("Film")).contains("Result<Record>");
+        assertThat(render("Film")).contains("Result<Record> filmSelectMany(");
     }
 
     @Test
@@ -81,21 +81,21 @@ class FieldsCodeGeneratorTest {
         assertThat(render("Film")).contains("throw new UnsupportedOperationException()");
     }
 
-    // ===== filmNested =====
+    // ===== filmSubselectMany =====
 
     @Test
-    void generate_nestedMethodNameUsesDecapitalizedTypeName() {
-        assertThat(render("Film")).contains("filmNested(");
-        assertThat(render("Customer")).contains("customerNested(");
+    void generate_subselectManyMethodNameUsesDecapitalizedTypeName() {
+        assertThat(render("Film")).contains("filmSubselectMany(");
+        assertThat(render("Customer")).contains("customerSubselectMany(");
     }
 
     @Test
-    void generate_nestedMethodReturnType() {
-        assertThat(render("Film")).contains("Field<Result<Record>>");
+    void generate_subselectManyMethodReturnType() {
+        assertThat(render("Film")).contains("Field<Result<Record>> filmSubselectMany(");
     }
 
     @Test
-    void generate_nestedMethodParameters() {
+    void generate_subselectManyMethodParameters() {
         String out = render("Film");
         assertThat(out).contains("DataFetchingFieldSelectionSet sel");
         assertThat(out).contains("Condition condition");
@@ -103,17 +103,43 @@ class FieldsCodeGeneratorTest {
     }
 
     @Test
-    void generate_nestedMethodThrowsUnsupportedOperationException() {
+    void generate_subselectManyMethodThrowsUnsupportedOperationException() {
         assertThat(render("Film")).contains("throw new UnsupportedOperationException()");
     }
 
-    // ===== Distinct methods =====
+    // ===== filmSubselectOne =====
 
     @Test
-    void generate_allThreeMethodsArePresent() {
+    void generate_subselectOneMethodNameUsesDecapitalizedTypeName() {
+        assertThat(render("Film")).contains("filmSubselectOne(");
+        assertThat(render("Customer")).contains("customerSubselectOne(");
+    }
+
+    @Test
+    void generate_subselectOneMethodReturnType() {
+        assertThat(render("Film")).contains("Field<Record> filmSubselectOne(");
+    }
+
+    @Test
+    void generate_subselectOneMethodParameters() {
+        String out = render("Film");
+        assertThat(out).contains("DataFetchingFieldSelectionSet sel");
+        assertThat(out).contains("Condition condition");
+    }
+
+    @Test
+    void generate_subselectOneMethodThrowsUnsupportedOperationException() {
+        assertThat(render("Film")).contains("throw new UnsupportedOperationException()");
+    }
+
+    // ===== All four methods present =====
+
+    @Test
+    void generate_allFourMethodsArePresent() {
         String out = render("Film");
         assertThat(out).contains("filmSelectMany(");
         assertThat(out).contains("filmSelectOne(");
-        assertThat(out).contains("filmNested(");
+        assertThat(out).contains("filmSubselectMany(");
+        assertThat(out).contains("filmSubselectOne(");
     }
 }
