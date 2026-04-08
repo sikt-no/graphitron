@@ -1,54 +1,10 @@
 # Rewrite Pipeline: Generation Plan
 
-> **Status: in progress.** The parsing and validation layer is complete (see [`rewrite-schema-classification.md`](rewrite-schema-classification.md)). This document covers what remains: the generating stream, Maven plugin wiring, and test infrastructure. The rewrite pipeline is behind the `rewriteBasedOutput` flag (default `false`) and is not ready for production use.
-
-This document covers the generating stream, the Maven plugin wiring, the test infrastructure for generated code, and all remaining deliverables.
+> **Status: in progress.** The parsing and validation layer is complete (see [`rewrite-schema-classification.md`](rewrite-schema-classification.md)). This document covers the generating stream, Maven plugin wiring, and test infrastructure. The rewrite pipeline is behind the `enableRewrite` flag (default `false`) and is not ready for production use.
 
 ---
 
-## Generator Overview
-
-| Step | Generator | Output | Depends on | Status |
-|---|---|---|---|---|
-| — | `GraphitronValuesClassGenerator` | `GraphitronValues.java` | — | Done |
-| — | `LookupClassGenerator` | `<TypeName>Lookup.java` per `LookupQueryField` | — | Done |
-| — | `SplitSourceClassGenerator` | `<ParentType><FieldName>DerivedSource.java` per `@splitQuery` `TableField` | — | Done |
-| 0 | Infrastructure | `GraphitronFetcherFactory`, `rewriteBasedOutput` flag, `getTenantId()` | — | Partial |
-| 1 | `ConditionWrapperClassGenerator` | `<ConditionClassName>Wrapper.java` per condition class | — | — |
-| 2 | `ServiceWrapperClassGenerator` | `<ServiceClassName>Wrapper.java` per service class | — | — |
-| 3 | `FieldsClassGenerator` | `<TypeName>Fields.java` | Steps 1 + 2 | — |
-| 4 | `GraphitronWiringClassGenerator` | `GraphitronWiring.java` | Step 3 | — |
-| 5 | Orchestration | Wire into `GraphQLGenerator` | Steps 0–4 | — |
-
-`FieldsClassGenerator` is the core generator. It owns both the SQL logic (field methods, scope-establishing methods, DataLoaders) and `wiring()` for each type.
-
----
-
-## Generator Architecture: Spec Layer
-
-```
-GraphQLSchema
-  │
-  ▼  GraphitronSchemaBuilder  (schema traversal + FK inference; zero JavaPoet)
-  │
-  ▼  GraphitronSchema  (Map<String, GraphitronType> + Map<FieldCoordinates, GraphitronField>)
-  │
-  ▼  FieldsCodeGenerator  (iterates fields; looks up by name / FieldCoordinates; JavaPoet)
-  │
-  ▼  TypeSpec → .java file
-```
-
-`FieldsCodeGenerator` iterates `GraphitronField` instances and emits, per class:
-1. `wiring()` — one `.dataFetcher(...)` per field
-2. `fields(table, sel)` — scalars unconditional; inline fields guarded by `sel.getFields(...)` (non-root only)
-3. Public static field methods — one per inline `TableField`
-4. `public <name>(DataFetchingEnvironment)` — one per `@splitQuery` field and root fields
-5. `private <name>Loader(List, BatchLoaderEnvironment)` — one per `@splitQuery` field
-6. `private loaderName(ResultPath, Optional<String>)` — if any `@splitQuery` fields exist
-
-Wrapper generators follow the same spec → codegen split.
-
-### Taxonomy-first rule
+## Taxonomy-first rule
 
 Generators consume only what the taxonomy provides. They receive `GraphitronField` and `GraphitronType` instances from `GraphitronSchema` and emit code from the data those records carry — nothing more.
 
@@ -56,29 +12,90 @@ If a generator needs a piece of information that is not present in the taxonomy,
 
 ---
 
-## Threading model
+## Package structure
 
-All generated fetchers execute their JDBC work **synchronously on the calling thread** and return `CompletableFuture.completedFuture(result)`.
-
-**Why synchronous-on-caller is correct:**
-
-1. **graphql-java `AsyncExecutionStrategy` is not a thread pool.** It calls each `DataFetcher.get()` sequentially on its own execution thread and collects the returned `CompletableFuture<Object>` values. It then waits for all sibling futures via `CompletableFuture.allOf()`. The "async" refers to the ability to compose futures — not to concurrent dispatch. A fetcher that returns `completedFuture(x)` resolves immediately, with no thread switch.
-
-2. **The host application is responsible for thread context.** graphql-java's execution engine is invoked by the application on whatever thread the application chooses. Any conforming host that issues blocking JDBC calls must already route GraphQL execution onto a thread where blocking is safe (a managed worker pool, virtual thread, etc.). Generated code inheriting that contract needs no additional dispatch.
-
-3. **`supplyAsync(supplier, executor)` would add parallelism between sibling root fields**, but the cost outweighs the benefit: most queries have one root field; an extra thread switch adds latency for the common case; the executor must be managed and injected into context. The N+1 problem — the real threat — is solved by the DataLoader pattern, which batches many loads into one bulk query regardless of how many concurrent parents there are.
-
-4. **`supplyAsync()` without an explicit executor is unconditionally wrong.** It defaults to `ForkJoinPool.commonPool()`, which is CPU-sized and not designed for blocking I/O.
-
-DataLoader batch functions follow the same pattern: synchronous bulk SQL, returned as `completedFuture(result)`. The DataLoader framework itself handles dispatch timing.
+| Subpackage | Contents |
+|---|---|
+| `<outputPackage>.rewrite` | `GraphitronValues`, `GraphitronFetchers` |
+| `<outputPackage>.rewrite.fields` | `<TypeName>Fields` — SQL assembly + wiring per output type |
+| `<outputPackage>.rewrite.resolvers` | `GraphitronWiring`, `<TypeName>Lookup`, `<ParentType><FieldName>DerivedSource` |
 
 ---
 
-## Per-type select pattern
+## Deliverable sequence
 
-Every `@table` type generates a `<TypeName>Fields` class with two kinds of method:
+### M1 — Maven plugin wiring *(done)*
 
-**Static field methods** produce `Field<Result<Record>>` (multiset, one-to-many) or `Field<Record>` (row, one-to-one) expressions composable into any SELECT clause — analogous to jOOQ's own `FILM.FILM_ID` constants. They use graphql-java's native `SelectedField`, which carries both `getSelectionSet()` and `getArguments()`, with no custom wrapper.
+`enableRewrite` and `disableLegacy` flags added to `GenerateMojo` and wired through `GeneratorConfig` and `GraphQLRewriteGenerator`. When `enableRewrite` is set, the rewrite generators run. Existing generators are unaffected unless `disableLegacy` is also set.
+
+---
+
+### M2 — Test module setup *(done)*
+
+`graphitron-rewrite-test` (at the reactor root) contains two submodules:
+
+- **`graphitron-rewrite-test-fixtures`** — jOOQ class generation from a dedicated test schema via TestContainers, producing `no.sikt.graphitron.rewrite.test.jooq.*`. Contains `init.sql`.
+- **`graphitron-rewrite-test-spec`** — runs `graphitron-maven-plugin` in `generate-sources` with `<enableRewrite>true</enableRewrite>` and `<disableLegacy>true</disableLegacy>`, then compiles and tests the generated output against a TestContainers PostgreSQL database.
+
+---
+
+### Generators already done
+
+| Generator | Output | Notes |
+|---|---|---|
+| `GraphitronValuesClassGenerator` | `GraphitronValues.java` in `rewrite` | Defines `GRAPHITRON_INPUT_IDX` |
+| `LookupClassGenerator` | `<TypeName>Lookup.java` in `rewrite.resolvers` | Derived source rows for lookup key batching |
+| `SplitSourceClassGenerator` | `<ParentType><FieldName>DerivedSource.java` in `rewrite.resolvers` | Derived source rows for `@splitQuery` DataLoader batching |
+
+Each `DerivedSource` / `Lookup` class contains a single static `rows` method that maps a list of parent records or input argument maps into typed `List<RowN<Integer, T1, ...>>` rows for use in a jOOQ `DSL.values(...).asTable(...)` derived table.
+
+---
+
+### `GraphitronFetchersClassGenerator`
+
+Generates `GraphitronFetchers.java` into `<outputPackage>.rewrite`. The class contains the standard `LightDataFetcher` factory methods used by all generated `wiring()` methods. Generated rather than shipped as a runtime library dependency so that consuming projects have no runtime dependency on Graphitron itself — the same rationale as `GraphitronValues`.
+
+```java
+public class GraphitronFetchers {
+
+    /** Resolves a scalar column directly from the jOOQ Record in source position. */
+    public static <T> LightDataFetcher<T> field(Field<T> jooqField) {
+        return env -> ((Record) env.getSource()).get(jooqField);
+    }
+
+    /** Resolves an inline nested single object (many-to-one) from the source Record. */
+    public static LightDataFetcher<Record> nestedRecord(String alias) {
+        return env -> ((Record) env.getSource()).get(alias, Record.class);
+    }
+
+    /** Resolves an inline nested list (one-to-many) from the source Record. */
+    public static LightDataFetcher<Result<Record>> nestedResult(String alias) {
+        return env -> ((Record) env.getSource()).get(alias, Result.class);
+    }
+}
+```
+
+Simple generator analogous to `GraphitronValuesClassGenerator`: emits a fixed class with no schema input.
+
+---
+
+### M3 — `getTenantId()`
+
+Add `getTenantId()` to `GraphitronContext` in `graphitron-common`:
+
+```java
+@NotNull Optional<String> getTenantId(DataFetchingEnvironment env);
+```
+
+`DefaultGraphitronContext` returns `Optional.empty()`. Used in `loaderName()` for multi-tenant DataLoader key isolation.
+
+---
+
+### Per-type select pattern *(next)*
+
+Every `@table` type generates a `<TypeName>Fields` class with two kinds of method.
+
+**Static field methods** produce `Field<Result<Record>>` (multiset, one-to-many) or `Field<Record>` (row, one-to-one) expressions composable into any SELECT clause — analogous to jOOQ's own `FILM.FILM_ID` constants. They use graphql-java's native `SelectedField`, which carries both `getSelectionSet()` and `getArguments()`.
 
 ```java
 // In FilmFields
@@ -108,7 +125,7 @@ List<Field<?>> fields(Film film, DataFetchingFieldSelectionSet sel) {
 Two scope-establishing methods delegate to `fields()`:
 
 ```java
-// Starts a new SQL statement — used by root queries, DataLoaders (split + derived source), mutation read-back.
+// Starts a new SQL statement — used by root queries, DataLoaders (split + record handoff), mutation read-back.
 SelectFinalStep<Record> filmSelect(DSLContext ctx, DataFetchingFieldSelectionSet sel,
     Condition condition, List<SortField<?>> orderBy)
 
@@ -131,209 +148,16 @@ Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nest
 | `LookupQueryField` — batch DataLoader | positional VALUES join → `filmNested` per row |
 | `TableField` — no `@splitQuery` | `filmNested` |
 | `TableField` — `@splitQuery` | DataLoader → `filmSelect` (Graphitron controls both sides) |
-| `TableField` — result-mapped (derived source) | DataLoader → `filmSelect` with derived source table (from parent `TableRecord` PK) |
+| `TableField` — record handoff | DataLoader → `filmSelect` with derived source table (from parent `TableRecord` PK) |
 | `ServiceField` / `TableMethodField` returning table-mapped type | DataLoader → `filmSelect` with derived source table (from returned `TableRecord` PK) |
 | `InterfaceField` | union over each implementor's `filmNested` |
 | Mutation read-back | `filmSelect` with derived source table (from returned `TableRecord` PK) |
 
-**`LookupQueryField` batch mapping**: each input key drives one row in a VALUES outer query; the nested multiset produces the matching result. The invariant is that output cardinality and ordering match the input keys — which index the database uses is an infrastructure concern, not a Graphitron constraint. Missing keys produce a null row, preserving positional alignment.
+**`LookupQueryField` batch mapping**: each input key drives one row in a VALUES outer query; the nested multiset produces the matching result. The invariant is that output cardinality and ordering match the input keys. Missing keys produce a null row, preserving positional alignment.
 
 ---
 
-## Prefetch-with-fallback pattern (`TableField` wiring)
-
-Every inline `TableField` generates a `private static final` typed field constant used as the key both when embedding the subquery in `fields()` and when reading back the result in `wiring()`.
-
-`fields()` pre-fetches all in-scope child fields via the parent SELECT, including any fields inside client-sent `@defer` fragments. The `wiring()` resolver checks the parent record first; if the data is already there it short-circuits and returns it without a second query. If not (e.g. the parent was fetched via a path that bypassed `fields()`), it falls back to a separate query.
-
-`DeferBehaviorTest` pins the graphql-java behaviour: deferred child fields remain visible in the parent DataFetcher's `getSelectionSet()`, so the parent can pre-fetch them eagerly. When the deferred child DataFetcher eventually runs, the null-check short-circuits — zero extra SQL for deferred fields. Full incremental delivery support (streaming `@defer` payloads to the client) is tracked as a separate upstream issue.
-
----
-
-## `@defer` (incremental delivery)
-
-graphql-java 25.0 supports `@defer` behind `GraphQL.unusualConfiguration(...).incrementalSupport().enableIncrementalSupport(true)`. Without enabling incremental support, `@defer` is silently ignored and all fields resolve eagerly.
-
-Generated DataFetchers are compatible with incremental delivery because of the prefetch-with-fallback pattern: the parent pre-fetches deferred child data inline, and the deferred child fetcher finds it already present on the source record. Wire-level streaming of incremental payloads is outside the scope of this plan.
-
----
-
-## Package Structure
-
-| Subpackage | Contents |
-|---|---|
-| `<outputPackage>.rewrite.fields` | `<TypeName>Fields` — SQL logic + `wiring()` per output type |
-| `<outputPackage>.rewrite.resolvers` | `GraphitronWiring`, `<ConditionClassName>Wrapper`, `<ServiceClassName>Wrapper` |
-
----
-
-## Deliverable sequence
-
-### M1 — Maven plugin wiring (prerequisite for all generators)
-
-Add `rewriteBasedOutput` to the plugin and generator pipeline. **Off by default; non-intrusive.**
-
-**`GeneratorConfig.java`**:
-```java
-private static boolean rewriteBasedOutput = false;  // getter + setter
-```
-
-**`GenerateMojo.java`**:
-```java
-@Parameter(property = "graphitron.rewriteBasedOutput", defaultValue = "false")
-protected boolean rewriteBasedOutput;
-```
-
-**`GraphQLGenerator.getGenerators()`**: when `rewriteBasedOutput` is enabled, append the new generators after the existing ones. Existing generators are unaffected regardless of flag value.
-
-This is the only change to the Maven plugin for now. No new configuration parameters beyond the flag.
-
----
-
-### M2 — Test module setup (prerequisite for all generator tests)
-
-A new Maven module, `graphitron-codegen-parent/graphitron-record-test`, provides the infrastructure for compiling and running generated code against a real database.
-
-**Build position:** after `graphitron-maven-plugin` in the reactor, so the plugin is available to use in `generate-sources`.
-
-**Module structure:**
-
-```
-graphitron-record-test/
-  src/
-    main/
-      java/
-        no/sikt/graphitron/rewrite/test/
-          conditions/     ← hand-written condition classes (user-side fixtures)
-          service/        ← hand-written service classes (for service wrapper tests)
-      resources/
-        graphql/
-          schema.graphqls ← minimal test schema referencing the fixtures above
-    test/
-      java/
-        no/sikt/graphitron/rewrite/test/
-          # tests for generated code
-      resources/
-        init.sql          ← database init script for testcontainers
-  pom.xml
-```
-
-**`pom.xml` key points:**
-- `graphitron-maven-plugin` bound to `generate-sources` with `rewriteBasedOutput = true`
-- Plugin classpath includes this module itself (so it can see the hand-written condition/service classes)
-- jOOQ dependency for the same test database that `graphitron-java-codegen` already uses (Sakila)
-- testcontainers PostgreSQL for test execution (no Quarkus, no mocking)
-- `graphitron-common` dependency (for `GraphitronContext`, `DSLContext` helpers)
-
-**Why `src/main/java/` for fixtures:** the Maven plugin runs during `generate-sources` and resolves external class references by scanning the plugin's classpath. Hand-written condition and service classes must be compiled and on the classpath before the plugin runs, which means they go in `src/main/java/` (compiled in the `compile` phase, before `generate-sources` would run in a downstream module — but since the plugin has this module as a `<dependency>`, they are available to it).
-
----
-
-### `SplitSourceClassGenerator` *(done)*
-
-Produces one `<ParentType><FieldName>Source.java` per `@splitQuery` `TableField`. Each class contains a single static `toSourceRows` method that converts the list of parent records provided by a DataLoader into a typed `List<RecordN<Integer, T1, ...>>` for use as a jOOQ derived VALUES table. The first column is always `GRAPHITRON_INPUT_IDX` (1-based row position), which allows a JOIN against the child table to preserve input-to-output ordering.
-
-```java
-// Generated for Language.films (@splitQuery, FK: film.language_id → language.language_id)
-public class LanguageFilmsDerivedSource {
-    public static List<Row2<Integer, Integer>> rows(List<Record> sources) {
-        return IntStream.range(0, sources.size())
-            .mapToObj(i -> DSL.row(i + 1, sources.get(i).get(LANGUAGE.LANGUAGE_ID)))
-            .toList();
-    }
-}
-```
-
-This class is a pure data-transformation helper; it contains no SQL and no DataLoader logic. The DataLoader itself (in `FieldsClassGenerator`, G6) calls `rows` to obtain the derived source table rows and then wraps them in a jOOQ `DSL.values(...).asTable(...)` expression to JOIN against the child table in the batch query.
-
-Generated files are placed in `<outputPackage>.rewrite.resolvers`.
-
----
-
-### G1 — `ConditionWrapperClassGenerator`
-
-First generator. Self-contained: no dependency on `FieldsClassGenerator` or field-level code generation. Each distinct condition class referenced in the schema (via `@condition` on an argument definition) produces one wrapper class.
-
-**Generated output:**
-
-```java
-package <outputPackage>.rewrite.resolvers;
-
-public class CustomerConditionsWrapper {
-    public static Condition activeCustomers(DSLContext ctx) {
-        return CustomerConditions.activeCustomers(ctx);
-    }
-
-    public static Condition premiumCustomers(DSLContext ctx) {
-        return CustomerConditions.premiumCustomers(ctx);
-    }
-}
-```
-
-One public static method per condition method referenced from the schema. Arguments matched by name to the condition class's method signature; `DSLContext` matched by type.
-
-**`override`** is a property of the condition spec consumed by `FieldsCodeGenerator`, not the wrapper. The wrapper is a pure delegation layer.
-
-**Spec layer:** `ConditionWrapperSpec` carries the condition class reference and the list of method signatures. `ConditionWrapperSpecBuilder` extracts these from `GraphitronSchema`. `ConditionWrapperCodeGenerator` emits the `TypeSpec`. `ConditionWrapperClassGenerator` orchestrates the three.
-
-**Tests:**
-- Approval test in `graphitron-java-codegen`: verifies generated source text
-- DB integration test in `graphitron-record-test`: calls the generated wrapper method, uses the returned `Condition` in a jOOQ query, asserts correct results from the test database
-
----
-
-### G2 — `ServiceWrapperClassGenerator`
-
-Analogous to G1 but for service classes. Each distinct service class referenced via `@service` on a root or child field produces one wrapper class.
-
-```java
-public class HelloWorldServiceWrapper {
-    public static CompletableFuture<HelloWorldRecord> helloWorldAgain(DataFetchingEnvironment env) {
-        String name = env.getArgument("name");
-        GraphitronContext ctx = env.getGraphQlContext().get("graphitronContext");
-        HelloWorldService service = new HelloWorldService(ctx.getDslContext(env));
-        return CompletableFuture.completedFuture(service.helloWorldAgain(name));
-    }
-}
-```
-
-Arguments matched by name; `DSLContext` matched by type; instance service classes via `(DSLContext)` or no-arg constructor.
-
-**New files:** `ServiceWrapperSpec.java`, `ServiceWrapperSpecBuilder.java`, `ServiceWrapperCodeGenerator.java`, `ServiceWrapperClassGenerator.java`
-
----
-
-### M3 — Infrastructure classes
-
-**`GraphitronFetcherFactory`** (in `graphitron-common`):
-
-```java
-public class GraphitronFetcherFactory {
-
-    /** Resolves a scalar column directly from the jOOQ Record in source position. */
-    public static <T> LightDataFetcher<T> field(Field<T> jooqField) {
-        return env -> ((Record) env.getSource()).get(jooqField);
-    }
-
-    /** Resolves an inline nested single object (many-to-one) from the source Record. */
-    public static LightDataFetcher<Record> nestedRecord(String alias) {
-        return env -> ((Record) env.getSource()).get(alias, Record.class);
-    }
-
-    /** Resolves an inline nested list (one-to-many) from the source Record. */
-    public static LightDataFetcher<Result<Record>> nestedResult(String alias) {
-        return env -> ((Record) env.getSource()).get(alias, Result.class);
-    }
-}
-```
-
-**`GraphitronContext` — add `getTenantId()`:**
-
-```java
-@NotNull Optional<String> getTenantId(DataFetchingEnvironment env);
-```
-
-`DefaultGraphitronContext` returns `Optional.empty()`. Used in `loaderName()` for multi-tenant DataLoader key isolation.
+> **Plan review in progress.** Deliverables from G3 onwards have not yet been revised in light of current design decisions.
 
 ---
 
@@ -348,8 +172,8 @@ public class CustomerFields {
 
     public static TypeRuntimeWiring.Builder wiring() {
         return TypeRuntimeWiring.newTypeWiring("Customer")
-            .dataFetcher("id",    GraphitronFetcherFactory.field(CUSTOMER.CUSTOMER_ID))
-            .dataFetcher("email", GraphitronFetcherFactory.field(CUSTOMER.EMAIL_ADDRESS));
+            .dataFetcher("id",    GraphitronFetchers.field(CUSTOMER.CUSTOMER_ID))
+            .dataFetcher("email", GraphitronFetchers.field(CUSTOMER.EMAIL_ADDRESS));
     }
 
     public static List<Field<?>> fields(Customer customer, DataFetchingFieldSelectionSet sel) {
@@ -394,13 +218,13 @@ This is the first deliverable that produces an end-to-end working pipeline for s
 
 ### G5 — Inline `TableField`
 
-Extends `FieldsCodeGenerator` with `TableField` in table-mapped source context (no `@splitQuery`). Introduces the static field method pattern and the prefetch-with-fallback resolver (see above).
+Extends `FieldsCodeGenerator` with `TableField` in table-mapped source context (no `@splitQuery`). Introduces the static field method pattern.
 
 ---
 
 ### G6 — `@splitQuery` `TableField`
 
-Extends `FieldsCodeGenerator` with `TableField` where `@splitQuery` is set. Adds DataLoader + BatchLoader generation and the `loaderName()` helper. The source-table helper class (`<ParentType><FieldName>Source`) is already generated by `SplitSourceClassGenerator` (done); G6 generates the DataLoader and BatchLoader methods that call it.
+Extends `FieldsCodeGenerator` with `TableField` where `@splitQuery` is set. Adds DataLoader + BatchLoader generation and the `loaderName()` helper. The derived source helper class (`<ParentType><FieldName>DerivedSource`) is already generated by `SplitSourceClassGenerator`; G6 generates the DataLoader and BatchLoader methods that call it.
 
 ```java
 public static CompletableFuture<Result<Record>> orders(DataFetchingEnvironment env) {
@@ -437,7 +261,7 @@ private static String loaderName(ResultPath path, Optional<String> tenantId) {
 
 ---
 
-### G7 — Remaining child types (G3 from original plan)
+### G7 — Remaining child types
 
 `NodeIdField`, `NodeIdReferenceField`, `ComputedField`, `PropertyField`, `TableInterfaceField`, `InterfaceField`, `UnionField`, `NestingField`, `TableMethodField`, `ServiceField`.
 
@@ -445,7 +269,7 @@ One wiring entry style per type. The testing contract requires at least one appr
 
 ---
 
-### G8 — Remaining root field types (G4 from original plan)
+### G8 — Remaining root field types
 
 `LookupQueryField`, `TableMethodQueryField`, `NodeQueryField`, `EntityQueryField`, `TableInterfaceQueryField`, `InterfaceQueryField`, `UnionQueryField`, `ServiceQueryField`.
 
@@ -459,7 +283,7 @@ One wiring entry style per type. The testing contract requires at least one appr
 
 ### I3 — `@condition` in field wiring
 
-Integrates condition wrappers into `FieldsCodeGenerator`. Fields with `@condition` args pass the condition result to the WHERE clause. The `override` property on condition specs controls whether the condition replaces or augments the default WHERE.
+Integrates condition handling directly into the generated WHERE clause. Fields with `@condition` arguments call the user-supplied condition class directly — no generated wrapper class. The `override` property on condition specs controls whether the condition replaces or augments the default WHERE.
 
 ---
 
@@ -469,16 +293,16 @@ Integrates condition wrappers into `FieldsCodeGenerator`. Fields with `@conditio
 
 **Principle:** Generated code must be tested by compiling it and executing it against a live database as part of the build pipeline. Tests must not mock the database and must not assert on SQL query structure. They assert on whether the correct data is returned from the test database.
 
-**Infrastructure:** the `graphitron-record-test` module (see M2 above) uses:
+**Infrastructure:** `graphitron-rewrite-test-spec` uses:
 - `graphitron-maven-plugin` bound to `generate-sources` — generated code is compiled as ordinary Java source by Maven
-- testcontainers PostgreSQL, started per test class via `@BeforeAll` / `@Testcontainers`
-- jOOQ `DSLContext` constructed directly from the testcontainers JDBC URL — no CDI, no Quarkus
+- TestContainers PostgreSQL, started per test class via `@BeforeAll` / `@Testcontainers`
+- jOOQ `DSLContext` constructed directly from the TestContainers JDBC URL — no CDI, no Quarkus
 
 **Test structure:**
 
 ```java
 @Testcontainers
-class CustomerConditionsWrapperTest {
+class FilmFieldsTest {
 
     @Container
     static final PostgreSQLContainer<?> DB =
@@ -493,29 +317,28 @@ class CustomerConditionsWrapperTest {
     }
 
     @Test
-    void activeCustomers_returnsOnlyActiveRows() {
-        var condition = CustomerConditionsWrapper.activeCustomers(ctx);
-        var result = ctx.select(CUSTOMER.CUSTOMER_ID)
-            .from(CUSTOMER)
-            .where(condition)
-            .fetch();
+    void fields_returnsExpectedScalars() {
+        var result = ctx
+            .select(FilmFields.fields(FILM, /* sel */))
+            .from(FILM)
+            .where(FILM.FILM_ID.eq(1))
+            .fetchOne();
 
-        assertThat(result).isNotEmpty();
-        assertThat(result.map(r -> r.get(CUSTOMER.ACTIVE))).containsOnly(true);
+        assertThat(result.get(FILM.TITLE)).isEqualTo("ACADEMY DINOSAUR");
     }
 }
 ```
 
-**What these tests do NOT check:** the SQL text, the number of queries issued, query plans, column ordering in SELECT lists. Those details are internal to the generator and covered by approval tests in `graphitron-java-codegen`.
+**What these tests do NOT check:** the SQL text, the number of queries issued, query plans, column ordering in SELECT lists. Those details are covered by approval tests in `graphitron-java-codegen`.
 
-**What these tests DO check:** that the generated method compiles, that it produces a correct jOOQ `Condition` or result when called against a database with known data, and that the result set matches what the test data expects.
+**What these tests DO check:** that the generated method compiles and returns the correct data from a database with known rows.
 
 ### Existing levels (unchanged)
 
 - **Level 1** — Validator unit tests (direct field/type construction, no DB)
 - **Level 2** — Classification tests (inline schema → `GraphitronSchemaBuilder`, no DB)
 - **Level 3** — Error message and source location tests (no DB)
-- **Approval tests** — `FieldsCodeGeneratorTest` hand-crafts `GraphitronField` instances and compares generated text against expected `.java` files (no DB)
+- **Approval tests** — hand-crafted `GraphitronField` instances compared against expected `.java` files (no DB)
 
 ### Open gaps in parsing/validation layer
 
@@ -527,18 +350,38 @@ class CustomerConditionsWrapperTest {
 
 ---
 
+## Threading model
+
+All generated fetchers execute their JDBC work **synchronously on the calling thread** and return `CompletableFuture.completedFuture(result)`.
+
+1. **graphql-java `AsyncExecutionStrategy` is not a thread pool.** It calls each `DataFetcher.get()` sequentially and collects the returned `CompletableFuture<Object>` values, then waits via `CompletableFuture.allOf()`. The "async" refers to future composition, not concurrent dispatch.
+
+2. **The host application is responsible for thread context.** Any conforming host that issues blocking JDBC calls must already route GraphQL execution onto a thread where blocking is safe. Generated code inherits that contract.
+
+3. **`supplyAsync(supplier, executor)` would add parallelism between sibling root fields**, but most queries have one root field; extra thread switches add latency in the common case; and the N+1 problem is solved by the DataLoader pattern, not by sibling parallelism.
+
+4. **`supplyAsync()` without an explicit executor is unconditionally wrong.** It defaults to `ForkJoinPool.commonPool()`, which is CPU-sized and not designed for blocking I/O.
+
+DataLoader batch functions follow the same pattern: synchronous bulk SQL, returned as `completedFuture(result)`.
+
+---
+
 ## Scope and Future Work
 
 ### Mutations
 
-The sealed hierarchy models all five mutation field types. None of G1–G8 cover generating them. Mutation generation is deferred to a follow-on phase.
+The sealed hierarchy models all five mutation field types. None of G3–G8 cover generating them. Mutation generation is deferred to a follow-on phase.
+
+### Service wrappers
+
+Condition handling and service calls are inlined in the generated code. If generated files become unwieldy in practice, extracting service call delegation into generated wrapper classes is a straightforward follow-on.
 
 ### Removing the DTO layer
 
 Once the record-based pipeline achieves full feature parity and the example server passes all approval tests under the flag:
 1. Delete DTO generator classes
 2. Delete TypeMapper generator classes
-3. Remove the `rewriteBasedOutput` flag — record-based output becomes the only path
+3. Remove the `enableRewrite` / `disableLegacy` flags — record-based output becomes the only path
 4. Update `GraphQLGenerator.getGenerators()`
 
 ---
@@ -547,17 +390,10 @@ Once the record-based pipeline achieves full feature parity and the example serv
 
 | File | Change |
 |---|---|
-| `graphitron-common/.../GraphitronFetcherFactory.java` | **New** |
 | `graphitron-common/.../GraphitronContext.java` | Add `getTenantId()` |
 | `graphitron-common/.../DefaultGraphitronContext.java` | Implement `getTenantId()` → `Optional.empty()` |
-| `graphitron-java-codegen/.../configuration/GeneratorConfig.java` | Add `rewriteBasedOutput` flag |
-| `graphitron-java-codegen/.../generate/Generator.java` | Add `boolean rewriteBasedOutput()` |
-| `graphitron-maven-plugin/.../mojo/GenerateMojo.java` | Add `@Parameter rewriteBasedOutput` |
-| `graphitron-java-codegen/.../generate/GraphQLGenerator.java` | Add new generators when flag is set |
-| `graphitron-java-codegen/.../mappings/JavaPoetClassName.java` | Add `JOOQ_RECORD`, `JOOQ_RESULT`, `LIGHT_DATA_FETCHER`, `GRAPHITRON_FETCHER_FACTORY` |
-| `graphitron-record-test/pom.xml` | **New module** |
-| `rewrite/ConditionWrapper*.java` (4 files) | **New** |
-| `rewrite/ServiceWrapper*.java` (4 files) | **New** |
+| `graphitron-java-codegen/.../mappings/JavaPoetClassName.java` | Add `JOOQ_RECORD`, `JOOQ_RESULT`, `LIGHT_DATA_FETCHER`, `GRAPHITRON_FETCHERS` |
+| `rewrite/generators/util/GraphitronFetchersClassGenerator.java` | **New** |
 | `rewrite/FieldsCodeGenerator.java` | **New** |
 | `rewrite/FieldsClassGenerator.java` | **New** |
 | `rewrite/GraphitronWiringClassGenerator.java` | **New** |

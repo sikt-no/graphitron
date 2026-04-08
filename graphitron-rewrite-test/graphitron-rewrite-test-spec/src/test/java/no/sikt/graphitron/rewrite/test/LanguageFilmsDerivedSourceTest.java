@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.test;
 
-import no.sikt.graphitron.rewrite.test.generated.rewrite.resolvers.LanguageFilmsSource;
+import no.sikt.graphitron.rewrite.test.generated.rewrite.resolvers.LanguageFilmsDerivedSource;
 import org.jooq.Record;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
@@ -12,13 +12,13 @@ import static no.sikt.graphitron.rewrite.test.jooq.tables.Language.LANGUAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Tests the generated {@code LanguageFilmsSource.toSourceRows} method.
+ * Tests the generated {@code LanguageFilmsDerivedSource.rows} method.
  *
  * <p>Given a list of Language records (carrying {@code language_id} values), the method returns
- * one {@code Record2<Integer, Integer>} per source row, where the first value is the 1-based row
+ * one {@code Row2<Integer, Long>} per source row, where the first value is the 1-based row
  * index and the second is the language ID. No database connection is needed.
  */
-class LanguageFilmsSourceTest {
+class LanguageFilmsDerivedSourceTest {
 
     private static final org.jooq.DSLContext CTX = DSL.using(SQLDialect.DEFAULT);
 
@@ -30,7 +30,7 @@ class LanguageFilmsSourceTest {
     void singleSource_returnsOneRowWithIndex1() {
         List<Record> sources = List.of(languageRecord(2L));
 
-        var rows = LanguageFilmsSource.toSourceRows(CTX, sources);
+        var rows = LanguageFilmsDerivedSource.rows(sources);
 
         assertThat(rows).hasSize(1);
         assertThat(rows.get(0).value1()).isEqualTo(1);   // 1-based index
@@ -45,7 +45,7 @@ class LanguageFilmsSourceTest {
             languageRecord(2L)
         );
 
-        var rows = LanguageFilmsSource.toSourceRows(CTX, sources);
+        var rows = LanguageFilmsDerivedSource.rows(sources);
 
         assertThat(rows).hasSize(3);
         assertThat(rows.get(0).value1()).isEqualTo(1);
@@ -58,7 +58,7 @@ class LanguageFilmsSourceTest {
 
     @Test
     void emptySources_returnsEmptyList() {
-        var rows = LanguageFilmsSource.toSourceRows(CTX, List.of());
+        var rows = LanguageFilmsDerivedSource.rows(List.of());
 
         assertThat(rows).isEmpty();
     }
