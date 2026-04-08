@@ -254,22 +254,24 @@ Both `@splitQuery` fields and lookup-key queries use the same DataLoader per tab
 1. A DataLoader fetcher method in `rewrite.types.*Fields` per field/query
 2. A batch loader method in `rewrite.tables.*` (calling `loadMany`) per table
 
-**Key anatomy.** Each DataLoader key row is built from two independent column sources:
+**Key anatomy.** A DataLoader key row is the concatenation of two independent derived tables:
 
-- **Source columns** address the **source** table (the parent record in the resolver). The source contributes either its PK/unique-key columns (when the FK is on the child side — e.g. `LANGUAGE.LANGUAGE_ID`) or its FK columns (when the FK is on the parent side — e.g. `FILM.LANGUAGE_ID`).
-- **Argument columns** address the **target** table. `@lookupKey` args form a derived VALUES table on the target side; each arg element adds one column to the key. Non-`@lookupKey` filter args never enter the key — they go to the WHERE clause on the target.
+- **Derived source table** — columns from the parent record, addressing the source side of the FK. Present only on `@splitQuery` fields. The source contributes either its PK/unique-key columns (FK on child side, e.g. `LANGUAGE.LANGUAGE_ID`) or its FK columns (FK on parent side, e.g. `FILM.LANGUAGE_ID`).
+- **Derived target table** — columns from `@lookupKey` arguments, addressing the target table. Present only when `@lookupKey` args exist. Each arg element is one row. Non-`@lookupKey` filter args are not part of this table — they go to the WHERE clause on the target query.
 
-**Resolver matrix.** Rows = relationship / source structure; columns = argument type.
+The key row passed to `DataLoader.load` / `loadMany` is the row-wise combination of whatever columns each derived table contributes. The batch function's `loadMany(ctx, keys)` then prepends an idx to each key when building the actual SQL VALUES table.
 
-| | No args | Filter-only args | `@lookupKey` scalar | `@lookupKey` list |
-|---|---|---|---|---|
-| `@splitQuery` FK on child → `[T]` | `load(row(src.PK))` → List | `load(row(src.PK))` + WHERE → List | `load(row(src.PK, arg))` → List | `loadMany(row(src.PK, argᵢ) ∀i)` → flatten |
-| `@splitQuery` FK on parent → `T` | `load(row(src.FK))` → first | `load(row(src.FK))` + WHERE → first | `load(row(src.FK, arg))` → first | `loadMany(row(src.FK, argᵢ) ∀i)` → flatten |
-| `LookupQueryField` (no source) | – | – | `load(row(arg))` → first | `loadMany(row(argᵢ) ∀i)` → flatten |
+**Resolver matrix** — rows = derived source table; columns = derived target table.
 
-`src.PK` = source record's PK/unique-key columns; `src.FK` = source record's FK columns pointing at the target; `arg` / `argᵢ` = `@lookupKey` argument value(s).
+| | No derived target | Derived target: scalar | Derived target: list |
+|---|---|---|---|
+| **No derived source** (`LookupQueryField`) | – | `load(row(arg))` → first | `loadMany(row(argᵢ) ∀i)` → flatten |
+| **Derived source: src.PK** (`@splitQuery`, FK on child → `[T]`) | `load(row(src.PK))` → List | `load(row(src.PK, arg))` → List | `loadMany(row(src.PK, argᵢ) ∀i)` → flatten |
+| **Derived source: src.FK** (`@splitQuery`, FK on parent → `T`) | `load(row(src.FK))` → first | `load(row(src.FK, arg))` → first | `loadMany(row(src.FK, argᵢ) ∀i)` → flatten |
 
-In all cases the DataLoader key type is `Row` and the value type is `List<Record>`. The batch function (`Film::batchLoader`) is identical across all cells — only the resolver's key construction and result unwrapping differ.
+`src.PK` = source record's PK/unique-key columns; `src.FK` = source record's FK columns pointing at the target; `arg` / `argᵢ` = `@lookupKey` argument value(s). Filter-only args are orthogonal to this matrix (they can appear in any non-`–` cell and add a WHERE condition on the target without affecting the key).
+
+In all cases the DataLoader key type is `Row` and the value type is `List<Record>`. The batch function is identical across all cells — only the resolver's key construction and result unwrapping differ.
 
 **`rewrite.types.LanguageFields`** — `@splitQuery`, FK on child, returns `[T]` (one key per parent):
 ```java
