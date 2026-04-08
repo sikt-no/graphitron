@@ -22,7 +22,7 @@ class TableQueryFieldValidationTest {
 
     /** Resolved return type backed by {@code film} (has a primary key). */
     private static ReturnTypeRef filmReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Film", new ResolvedTable("film", "FILM", true), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Film", new ResolvedTable("film", "FILM", "Film", true), wrapper);
     }
 
     enum Case implements ValidatorCase {

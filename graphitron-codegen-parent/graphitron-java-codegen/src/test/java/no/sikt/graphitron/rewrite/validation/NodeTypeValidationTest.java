@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class NodeTypeValidationTest {
 
-    private static final ResolvedTable RESOLVED_FILM = new ResolvedTable("film", "FILM", true);
+    private static final ResolvedTable RESOLVED_FILM = new ResolvedTable("film", "FILM", "Film", true);
 
     enum Case implements TypeValidatorCase {
 

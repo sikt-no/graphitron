@@ -7,9 +7,7 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 
 import javax.lang.model.element.Modifier;
-import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * Generates a {@link TypeSpec} for one table class in {@code rewrite.tables}.
@@ -43,19 +41,6 @@ public class TableCodeGenerator {
     private static final ClassName LIST          = ClassName.get(List.class);
     private static final ClassName ENV           = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName SELECTION_SET = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
-
-    /**
-     * Converts a jOOQ field name (UPPER_SNAKE, e.g. {@code FILM_ACTOR}) to PascalCase
-     * (e.g. {@code FilmActor}), recovering the jOOQ-generated table class name.
-     * Works for any jOOQ naming strategy because the field name and class name are derived
-     * from the same logical name: {@code FILM_ACTOR} → class {@code FilmActor}.
-     */
-    public static String toPascalCase(String tableName) {
-        return Arrays.stream(tableName.split("_"))
-            .filter(p -> !p.isEmpty())
-            .map(p -> Character.toUpperCase(p.charAt(0)) + p.substring(1).toLowerCase())
-            .collect(Collectors.joining());
-    }
 
     public TypeSpec generate(String tableName) {
         return TypeSpec.classBuilder(tableName)

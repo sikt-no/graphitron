@@ -12,11 +12,10 @@ import java.util.List;
  * {@link no.sikt.graphitron.generators.abstractions.ClassGenerator} that produces one
  * table class per {@link GraphitronType.TableType} in the schema.
  *
- * <p>Class names are derived from the jOOQ field name in the {@code Tables} class
- * (e.g. {@code FILM} → {@code Film}, {@code FILM_ACTOR} → {@code FilmActor}), which respects
- * any custom jOOQ naming strategy. Only {@link TableRef.ResolvedTable} entries are generated;
- * unresolved tables (not found in the jOOQ catalog) are skipped. The GraphQL type name may
- * differ from the table name.
+ * <p>Class names come from {@link TableRef.ResolvedTable#javaClassName()}, the simple name of the
+ * jOOQ-generated table class obtained at catalog resolution time via reflection. This respects any
+ * custom jOOQ naming strategy. Only resolved tables are generated; unresolved entries (not found
+ * in the jOOQ catalog) are skipped. The GraphQL type name may differ from the table class name.
  *
  * <p>Generated files are placed in the {@code rewrite.tables} sub-package of the configured
  * output package.
@@ -33,7 +32,7 @@ public class TableClassGenerator extends AbstractClassGenerator {
             .filter(t -> t instanceof GraphitronType.TableType)
             .map(t -> ((GraphitronType.TableType) t).table())
             .filter(ref -> ref instanceof TableRef.ResolvedTable)
-            .map(ref -> TableCodeGenerator.toPascalCase(((TableRef.ResolvedTable) ref).javaFieldName()))
+            .map(ref -> ((TableRef.ResolvedTable) ref).javaClassName())
             .distinct()
             .sorted()
             .toList();

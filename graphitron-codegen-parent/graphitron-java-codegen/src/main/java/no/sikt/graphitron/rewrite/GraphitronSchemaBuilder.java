@@ -416,7 +416,7 @@ public class GraphitronSchemaBuilder {
 
     private TableRef resolveTable(String sqlName) {
         return catalog.findTable(sqlName)
-            .<TableRef>map(e -> new ResolvedTable(sqlName, e.javaFieldName(), e.table().getPrimaryKey() != null))
+            .<TableRef>map(e -> new ResolvedTable(sqlName, e.javaFieldName(), e.table().getClass().getSimpleName(), e.table().getPrimaryKey() != null))
             .orElseGet(() -> new UnresolvedTable(sqlName));
     }
 
