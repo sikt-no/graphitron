@@ -201,6 +201,7 @@ The output is a JSON file (default: `target/graphitron-lsp-config.json`) with th
 | `makeNodeStrategy`     | Enable Relay Global Object Identification                   | No       | `false`                    |
 | `scalars`              | Custom scalar implementations                               | No       | -                          |
 | `maxAllowedPageSize`   | Maximum page size for connections                           | No       | `1000`                     |
+| `failOnMerge`          | Fail code generation if a MERGE (upsert) mutation is found  | No       | `false`                    |
 
 \*\*\* Defaults to `schema.graphql` when using `<transform>`, otherwise defaults to `schemaFiles`.
 
