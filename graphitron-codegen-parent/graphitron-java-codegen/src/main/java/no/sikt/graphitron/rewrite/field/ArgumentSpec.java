@@ -23,11 +23,6 @@ package no.sikt.graphitron.rewrite.field;
  * this argument. The builder converts this to an {@link ArgumentRef.UnclassifiedArg} since
  * {@code @condition} is only supported on field definitions.
  *
- * <p>{@code lookupKey} is {@code true} when the {@code @lookupKey} directive is present on
- * this argument. On a {@link no.sikt.graphitron.rewrite.field.ChildField.TableField} with
- * {@code splitQuery = true} this marks the field as a result mapped LookupTableField, which
- * blocks field-level {@code @condition} and connection-cardinality returns.
- *
  * <p>{@code columnName} is the value of {@code @field(name:)} when present, otherwise the
  * GraphQL argument name. Used to identify which database column this argument maps to.
  */
@@ -38,6 +33,5 @@ public record ArgumentSpec(
     boolean list,
     boolean orderBy,
     boolean conditionArg,
-    boolean lookupKey,
     String columnName
 ) {}

@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.field.ArgumentSpec;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.ConditionOnlyRef;
 import no.sikt.graphitron.rewrite.field.DefaultOrderSpec;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
@@ -126,47 +125,7 @@ class TableFieldValidationTest {
             new TableField("Film", "actors", null,
                 actorReturn(new FieldWrapper.Connection(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "ASC"), List.of())),
                 List.of(), new FieldConditionRef.NoFieldCondition(), false, List.of()),
-            List.of("Field 'actors': primary key could not be resolved — the table may not have one")),
-
-        // ===== @splitQuery + @lookupKey (result mapped LookupTableField) =====
-
-        SPLIT_LOOKUP_VALID("@splitQuery + @lookupKey arg, list return, no @condition — valid",
-            new TableField("Language", "films", null,
-                actorReturn(new FieldWrapper.List(true, true, null, List.of())),
-                List.of(),
-                new FieldConditionRef.NoFieldCondition(),
-                true,
-                List.of(new ArgumentSpec("title", "String", false, true, false, false, true, "title"))),
-            List.of()),
-
-        SPLIT_LOOKUP_CONDITION_BLOCKED("@splitQuery + @lookupKey arg + @condition — @condition not valid",
-            new TableField("Language", "films", null,
-                actorReturn(new FieldWrapper.List(true, true, null, List.of())),
-                List.of(),
-                new FieldConditionRef.ResolvedFieldCondition(
-                    new MethodRef("com.example.Conditions.filter", "org.jooq.Condition", List.of()), false, List.of()),
-                true,
-                List.of(new ArgumentSpec("title", "String", false, true, false, false, true, "title"))),
-            List.of("Field 'films': @condition is not valid on a @splitQuery field with @lookupKey arguments")),
-
-        SPLIT_LOOKUP_CONNECTION_BLOCKED("@splitQuery + @lookupKey arg + connection return — connection not valid",
-            new TableField("Language", "films", null,
-                actorReturn(new FieldWrapper.Connection(true, true, null, List.of())),
-                List.of(),
-                new FieldConditionRef.NoFieldCondition(),
-                true,
-                List.of(new ArgumentSpec("title", "String", false, true, false, false, true, "title"))),
-            List.of("Field 'films': @splitQuery fields with @lookupKey arguments must not return a connection")),
-
-        SPLIT_NO_LOOKUP_CONDITION_ALLOWED("@splitQuery without @lookupKey args — @condition allowed",
-            new TableField("Language", "films", null,
-                actorReturn(new FieldWrapper.List(true, true, null, List.of())),
-                List.of(),
-                new FieldConditionRef.ResolvedFieldCondition(
-                    new MethodRef("com.example.Conditions.filter", "org.jooq.Condition", List.of()), false, List.of()),
-                true,
-                List.of(new ArgumentSpec("limit", "Int", false, false, false, false, false, null))),
-            List.of());
+            List.of("Field 'actors': primary key could not be resolved — the table may not have one"));
 
         private final String description;
         private final GraphitronField field;
