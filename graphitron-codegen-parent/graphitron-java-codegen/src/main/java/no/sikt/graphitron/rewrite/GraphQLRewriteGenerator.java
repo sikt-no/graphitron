@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
+import no.sikt.graphitron.rewrite.generators.fields.FieldsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.fields.TableClassGenerator;
 import no.sikt.graphitron.rewrite.generators.lookup.LookupClassGenerator;
 import no.sikt.graphitron.rewrite.generators.splitquery.SplitSourceClassGenerator;
@@ -55,7 +56,8 @@ public class GraphQLRewriteGenerator {
             new GraphitronValuesClassGenerator(),
             new LookupClassGenerator(schema),
             new SplitSourceClassGenerator(schema),
-            new TableClassGenerator(schema)
+            new TableClassGenerator(schema),
+            new FieldsClassGenerator(schema)
         );
     }
 }
