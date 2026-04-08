@@ -1,8 +1,10 @@
 package no.sikt.graphitron.rewrite.generators.fields;
 
-import no.sikt.graphitron.javapoet.JavaFile;
+import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import org.junit.jupiter.api.Test;
 
+import javax.lang.model.element.Modifier;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -11,96 +13,121 @@ class FieldsCodeGeneratorTest {
 
     private static final FieldsCodeGenerator GEN = new FieldsCodeGenerator();
 
-    private static String render(String typeName, List<String> fieldNames) {
-        return JavaFile.builder("test.pkg", GEN.generate(typeName, fieldNames))
-            .indent("    ")
-            .build()
-            .toString();
+    private static TypeSpec spec(String typeName, List<String> fieldNames) {
+        return GEN.generate(typeName, fieldNames);
     }
 
-    // ===== Class naming =====
+    private static MethodSpec method(TypeSpec spec, String name) {
+        return spec.methodSpecs().stream()
+            .filter(m -> m.name().equals(name))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Method not found: " + name));
+    }
+
+    // ===== Class structure =====
 
     @Test
     void generate_classNameIsTypeNamePlusFields() {
-        assertThat(GEN.generate("Film", List.of()).name()).isEqualTo("FilmFields");
+        assertThat(spec("Film", List.of()).name()).isEqualTo("FilmFields");
     }
 
     @Test
     void generate_classIsPublic() {
-        assertThat(render("Film", List.of())).contains("public class FilmFields");
+        assertThat(spec("Film", List.of()).modifiers()).contains(Modifier.PUBLIC);
     }
 
     // ===== Per-field stub methods =====
 
     @Test
     void generate_fieldMethodIsPresent() {
-        assertThat(render("Film", List.of("title"))).contains("title(");
+        assertThat(spec("Film", List.of("title")).methodSpecs())
+            .extracting(MethodSpec::name)
+            .contains("title");
     }
 
     @Test
     void generate_fieldMethodIsPublicStatic() {
-        assertThat(render("Film", List.of("title"))).contains("public static Object title(");
+        var m = method(spec("Film", List.of("title")), "title");
+        assertThat(m.modifiers()).containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
+    }
+
+    @Test
+    void generate_fieldMethodReturnsObject() {
+        var m = method(spec("Film", List.of("title")), "title");
+        assertThat(m.returnType().toString()).isEqualTo("java.lang.Object");
     }
 
     @Test
     void generate_fieldMethodTakesDataFetchingEnvironment() {
-        assertThat(render("Film", List.of("title"))).contains("DataFetchingEnvironment env");
+        var m = method(spec("Film", List.of("title")), "title");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("graphql.schema.DataFetchingEnvironment");
+        assertThat(m.parameters()).extracting(p -> p.name())
+            .containsExactly("env");
     }
 
     @Test
     void generate_fieldMethodThrowsUnsupportedOperationException() {
-        assertThat(render("Film", List.of("title"))).contains("throw new UnsupportedOperationException()");
+        var m = method(spec("Film", List.of("title")), "title");
+        assertThat(m.code().toString()).contains("UnsupportedOperationException()");
     }
 
     @Test
     void generate_multipleFields_allPresent() {
-        String out = render("Film", List.of("title", "releaseYear"));
-        assertThat(out).contains("title(");
-        assertThat(out).contains("releaseYear(");
+        var s = spec("Film", List.of("title", "releaseYear"));
+        assertThat(s.methodSpecs()).extracting(MethodSpec::name).contains("title", "releaseYear");
     }
 
     // ===== wiring() method =====
 
     @Test
     void generate_wiringMethodIsPresent() {
-        assertThat(render("Film", List.of())).contains("wiring()");
+        assertThat(spec("Film", List.of()).methodSpecs())
+            .extracting(MethodSpec::name)
+            .contains("wiring");
     }
 
     @Test
     void generate_wiringMethodIsPublicStatic() {
-        assertThat(render("Film", List.of())).contains("public static");
-        assertThat(render("Film", List.of())).contains("wiring()");
+        var w = method(spec("Film", List.of()), "wiring");
+        assertThat(w.modifiers()).containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
     }
 
     @Test
-    void generate_wiringMethodReturnsBuilderType() {
-        assertThat(render("Film", List.of())).contains("TypeRuntimeWiring.Builder wiring()");
+    void generate_wiringMethodReturnsTypeRuntimeWiringBuilder() {
+        var w = method(spec("Film", List.of()), "wiring");
+        assertThat(w.returnType().toString())
+            .isEqualTo("graphql.schema.idl.TypeRuntimeWiring.Builder");
     }
 
     @Test
-    void generate_wiringMethodContainsTypeName() {
-        assertThat(render("Film", List.of())).contains("newTypeWiring(\"Film\")");
+    void generate_wiringMethod_containsTypeName() {
+        var w = method(spec("Film", List.of()), "wiring");
+        assertThat(w.code().toString()).contains("newTypeWiring(\"Film\")");
     }
 
     @Test
-    void generate_wiringMethodUsesMethodReference() {
-        assertThat(render("Film", List.of("title"))).contains("FilmFields::title");
+    void generate_wiringMethod_usesMethodReference() {
+        var w = method(spec("Film", List.of("title")), "wiring");
+        assertThat(w.code().toString()).contains("FilmFields::title");
     }
 
     @Test
-    void generate_wiringMethodRegistersFieldByName() {
-        assertThat(render("Film", List.of("title"))).contains("dataFetcher(\"title\"");
+    void generate_wiringMethod_registersFieldByName() {
+        var w = method(spec("Film", List.of("title")), "wiring");
+        assertThat(w.code().toString()).contains("dataFetcher(\"title\"");
     }
 
     @Test
     void generate_wiringMethod_noFields_noDataFetchers() {
-        assertThat(render("Film", List.of())).doesNotContain("dataFetcher(");
+        var w = method(spec("Film", List.of()), "wiring");
+        assertThat(w.code().toString()).doesNotContain("dataFetcher(");
     }
 
     @Test
     void generate_wiringMethod_multipleFields_allRegistered() {
-        String out = render("Film", List.of("title", "releaseYear"));
-        assertThat(out).contains("dataFetcher(\"title\"");
-        assertThat(out).contains("dataFetcher(\"releaseYear\"");
+        var w = method(spec("Film", List.of("title", "releaseYear")), "wiring");
+        assertThat(w.code().toString()).contains("dataFetcher(\"title\"");
+        assertThat(w.code().toString()).contains("dataFetcher(\"releaseYear\"");
     }
 }

@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.generators.fields;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.javapoet.JavaFile;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
@@ -44,78 +44,66 @@ class FieldsPipelineTest {
 
     @Test
     void tableType_producesFieldsClass() {
-        var classes = generateNames("""
+        assertThat(generateNames("""
             type Film @table(name: "film") { title: String }
             type Query { dummy: String }
-            """);
-        assertThat(classes).contains("FilmFields");
+            """)).contains("FilmFields");
     }
 
     @Test
     void rootType_producesFieldsClass() {
-        var classes = generateNames("""
+        assertThat(generateNames("""
             type Film @table(name: "film") { title: String }
             type Query { dummy: String }
-            """);
-        assertThat(classes).contains("QueryFields");
+            """)).contains("QueryFields");
     }
 
     @Test
     void classNameFollowsGraphQLTypeName() {
         // GraphQL type "MovieItem" maps to SQL table "film" → fields class is "MovieItemFields"
-        var classes = generateNames("""
+        var names = generateNames("""
             type MovieItem @table(name: "film") { title: String }
             type Query { dummy: String }
             """);
-        assertThat(classes).contains("MovieItemFields");
-        assertThat(classes).doesNotContain("FilmFields");
+        assertThat(names).contains("MovieItemFields");
+        assertThat(names).doesNotContain("FilmFields");
     }
 
     @Test
     void recordType_notIncluded() {
-        var classes = generateNames("""
+        assertThat(generateNames("""
             type Container @record { value: String }
             type Query { dummy: String }
-            """);
-        assertThat(classes).doesNotContain("ContainerFields");
+            """)).doesNotContain("ContainerFields");
     }
 
     @Test
     void generatedClass_containsFieldMethod() {
-        var sources = generateSources("""
+        var filmFields = findSpec("FilmFields", """
             type Film @table(name: "film") { title: String }
             type Query { dummy: String }
             """);
-        var filmFields = sources.stream()
-            .filter(s -> s.contains("class FilmFields"))
-            .findFirst();
-        assertThat(filmFields).isPresent();
-        assertThat(filmFields.get()).contains("title(");
+        assertThat(filmFields.methodSpecs()).extracting(MethodSpec::name).contains("title");
     }
 
     @Test
     void notGeneratedField_isExcluded() {
-        var sources = generateSources("""
+        var filmFields = findSpec("FilmFields", """
             type Film @table(name: "film") { title: String, hidden: String @notGenerated }
             type Query { dummy: String }
             """);
-        var filmFields = sources.stream()
-            .filter(s -> s.contains("class FilmFields"))
-            .findFirst();
-        assertThat(filmFields).isPresent();
-        assertThat(filmFields.get()).contains("title(");
-        assertThat(filmFields.get()).doesNotContain("hidden(");
+        assertThat(filmFields.methodSpecs()).extracting(MethodSpec::name).contains("title");
+        assertThat(filmFields.methodSpecs()).extracting(MethodSpec::name).doesNotContain("hidden");
     }
 
     @Test
     void multipleTableTypes_eachProducesFieldsClass() {
-        var classes = generateNames("""
+        var names = generateNames("""
             type Film @table(name: "film") { title: String }
             type Actor @table(name: "actor") { name: String }
             type Query { dummy: String }
             """);
-        assertThat(classes).containsAnyOf("FilmFields", "ActorFields");
-        assertThat(classes).hasSize(3); // FilmFields, ActorFields, QueryFields
+        assertThat(names).containsAll(List.of("FilmFields", "ActorFields", "QueryFields"));
     }
 
     // ===== Helpers =====
@@ -126,10 +114,11 @@ class FieldsPipelineTest {
             .toList();
     }
 
-    private List<String> generateSources(String sdl) {
+    private TypeSpec findSpec(String className, String sdl) {
         return new FieldsClassGenerator(buildSchema(sdl)).generateAll().stream()
-            .map(t -> JavaFile.builder("test.pkg", t).indent("    ").build().toString())
-            .toList();
+            .filter(t -> t.name().equals(className))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Class not found: " + className));
     }
 
     private GraphitronSchema buildSchema(String schemaText) {

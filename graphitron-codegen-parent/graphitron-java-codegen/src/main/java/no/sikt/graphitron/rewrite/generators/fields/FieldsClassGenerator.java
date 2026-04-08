@@ -1,9 +1,9 @@
 package no.sikt.graphitron.rewrite.generators.fields;
 
-import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
+import no.sikt.graphitron.rewrite.generators.AbstractRewriteClassGenerator;
 import no.sikt.graphitron.rewrite.type.GraphitronType;
 
 import java.util.List;
@@ -23,7 +23,7 @@ import java.util.List;
  * <p>Generated files are placed in the {@code rewrite.types} sub-package of the configured
  * output package.
  */
-public class FieldsClassGenerator extends AbstractClassGenerator {
+public class FieldsClassGenerator extends AbstractRewriteClassGenerator {
 
     static final String SAVE_DIRECTORY = "rewrite.types";
 

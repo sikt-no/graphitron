@@ -1,15 +1,12 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
-import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.FieldSpec;
-import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.generators.AbstractRewriteClassGenerator;
 
 import javax.lang.model.element.Modifier;
-import java.io.File;
-import java.io.IOException;
 import java.util.List;
 
 /**
@@ -30,7 +27,7 @@ import java.util.List;
  * <p>Generated as a source file rather than shipped as a library dependency so that consuming
  * projects have no runtime dependency on Graphitron itself.
  */
-public class GraphitronValuesClassGenerator extends AbstractClassGenerator {
+public class GraphitronValuesClassGenerator extends AbstractRewriteClassGenerator {
 
     static final String SAVE_DIRECTORY = "rewrite";
     static final String CLASS_NAME = "GraphitronValues";
@@ -63,23 +60,5 @@ public class GraphitronValuesClassGenerator extends AbstractClassGenerator {
     @Override
     public String getFileNameSuffix() {
         return "";
-    }
-
-    @Override
-    public void writeToFile(TypeSpec generatedClass, String path, String packagePath, String directoryOverride) {
-        var file = JavaFile
-            .builder(packagePath + "." + directoryOverride, generatedClass)
-            .indent("    ")
-            .build();
-        try {
-            file.writeTo(new File(path));
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    @Override
-    public String writeToString(TypeSpec generatedClass) {
-        return JavaFile.builder("", generatedClass).indent("    ").build().toString();
     }
 }

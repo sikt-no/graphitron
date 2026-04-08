@@ -1,14 +1,14 @@
 package no.sikt.graphitron.rewrite.generators.fields;
 
-import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.generators.AbstractRewriteClassGenerator;
 import no.sikt.graphitron.rewrite.type.GraphitronType;
 import no.sikt.graphitron.rewrite.type.TableRef;
 import java.util.List;
 
 /**
- * {@link no.sikt.graphitron.generators.abstractions.ClassGenerator} that produces one
+ * {@link AbstractRewriteClassGenerator} that produces one
  * table class per {@link GraphitronType.TableType} in the schema.
  *
  * <p>Class names come from {@link TableRef.ResolvedTable#javaClassName()}, the simple name of the
@@ -19,7 +19,7 @@ import java.util.List;
  * <p>Generated files are placed in the {@code rewrite.tables} sub-package of the configured
  * output package.
  */
-public class TableClassGenerator extends AbstractClassGenerator {
+public class TableClassGenerator extends AbstractRewriteClassGenerator {
 
     static final String SAVE_DIRECTORY = "rewrite.tables";
 
