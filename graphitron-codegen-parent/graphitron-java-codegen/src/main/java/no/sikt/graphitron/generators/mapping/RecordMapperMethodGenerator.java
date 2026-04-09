@@ -11,6 +11,8 @@ import org.jetbrains.annotations.NotNull;
 import java.util.ArrayList;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ARGS;
+
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.outputPrefix;
 import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
@@ -68,7 +70,19 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
             } else if (!previousHadSource) {
                 innerCode.add(innerContext.getRecordSetMappingBlock());
             } else if (!innerField.createsDataFetcher() && !innerContext.hasTable()) {
-                innerCode.add(iterateRecords(innerContext));
+                if(toRecord) {
+                    var savedArgsVar = nextSavedArgsVar();
+                    innerCode.add(
+                            CodeBlock.builder()
+                                    .declare(savedArgsVar, "$N", VAR_ARGS)
+                                    .addStatement("$1N = $1N.child($2S)", VAR_ARGS, innerField.getName())
+                                    .add(iterateRecords(innerContext))
+                                    .addStatement("$N = $N", VAR_ARGS, savedArgsVar)
+                                    .build()
+                    );
+                } else {
+                    innerCode.add(iterateRecords(innerContext));
+                }
             }
 
             if (!innerCode.isEmpty()) {
@@ -87,7 +101,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
                     fieldCode.add(
                             CodeBlock
                                     .builder()
-                                    .beginControlFlow("if ($L)", toRecord ? argumentPresenceLookup(innerContext.getPath(), false) : selectionSetLookup(innerContext.getPath(), false, false))
+                                    .beginControlFlow("if ($L)", toRecord ?  CodeBlock.of("$L.hasField($S)", VAR_ARGS, innerField.getName()) : selectionSetLookup(innerContext.getPath(), false, false))
                                     .addIf(isType && previousHadSource, declareBlock)
                                     .add(innerCode.build())
                                     .addIf(isType && previousHadSource && !innerField.createsDataFetcher(), () -> innerContext.getSetMappingBlock(outputPrefix(varName)))

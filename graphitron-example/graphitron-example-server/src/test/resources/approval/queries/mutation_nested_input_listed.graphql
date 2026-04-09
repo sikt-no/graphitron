@@ -1,0 +1,11 @@
+# Verify per-item argument presence with deeply nested non-record wrapper inputs (listed)
+mutation TestingListedNestedInputType($in: [NestedInputType!]!) {
+    testingListedNestedInputType(in: $in) {
+        id
+        email
+        name {
+            firstName
+            lastName
+        }
+    }
+}

@@ -81,6 +81,16 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                     innerCode.add(innerContext.getFieldSetMappingBlock());
                 } else if (innerContext.hasRecordReference()) {
                     innerCode.add(innerContext.getRecordSetMappingBlock());
+                } else if (toRecord) {
+                    var savedArgsVar = nextSavedArgsVar();
+                    innerCode.add(
+                            CodeBlock.builder()
+                                    .declare(savedArgsVar, "$N", VAR_ARGS)
+                                    .addStatement("$1N = $1N.child($2S)", VAR_ARGS, innerField.getName())
+                                    .add(iterateRecords(innerContext))
+                                    .addStatement("$N = $N", VAR_ARGS, savedArgsVar)
+                                    .build()
+                    );
                 } else {
                     innerCode.add(iterateRecords(innerContext));
                 }
@@ -91,10 +101,22 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             if (!innerCode.isEmpty()) {
                 var notAlreadyDefined = innerContext.variableNotAlreadyDeclared();
                 var shouldDeclareVariable = notAlreadyDefined || innerContext.getTarget().createsDataFetcher();
-                var nullBlock = CodeBlock.ofIf(shouldDeclareVariable, "$N != null && ", varName);
+                var nullBlock = CodeBlock.ofIf(shouldDeclareVariable, "$N != null", varName);
+                var isNonRecordWrapper = innerContext.targetIsType() && !innerContext.hasRecordReference() && !innerContext.getTarget().createsDataFetcher();
+
+                var presenceCheck = isNonRecordWrapper && toRecord
+                        ? CodeBlock.empty()
+                        : toRecord
+                            ? CodeBlock.of("$L.hasField($S)", VAR_ARGS, innerField.getName())
+                            : selectionSetLookup(innerContext.getPath(), false, false);
+                var condition = nullBlock.isEmpty()
+                        ? presenceCheck
+                        : presenceCheck.isEmpty()
+                            ? nullBlock
+                            : CodeBlock.of("$L && $L", nullBlock, presenceCheck);
                 fieldCode
                         .declareIf(shouldDeclareVariable, varName, innerContext.getSourceGetCallBlock())
-                        .beginControlFlow("if ($L$L)", nullBlock, toRecord ? argumentPresenceLookup(innerContext.getPath(), false) : selectionSetLookup(innerContext.getPath(), false, false))
+                        .beginControlFlow("if ($L)", condition)
                         .add(innerCode.build())
                         .endControlFlow()
                         .add("\n");
@@ -205,9 +227,8 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             var listVarName = mapperNodeInputPrefix(field.getName());
             listVarNames.add(listVarName);
             var getterMapping = new MethodMapping(field.getName());
-            var fieldPath = context.getPath().isEmpty() ? field.getName() : context.getPath() + "/" + field.getName();
             code.declare(listVarName,
-                    "$L ? $L : null", FormatCodeBlocks.argumentPresenceLookup(fieldPath, false),
+                    "$L.hasField($S) ? $L : null", VAR_ARGS, field.getName(),
                     asMethodCall(inputVar, getterMapping.asGet()));
         }
 
@@ -273,9 +294,8 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
         var inputVar = namedIteratorPrefix(sourceName);
         var getterMapping = new MethodMapping(field.getName());
 
-        var fieldPath = context.getPath().isEmpty() ? field.getName() : context.getPath() + "/" + field.getName();
         return CodeBlock.builder()
-                .beginControlFlow("if ($L)", FormatCodeBlocks.argumentPresenceLookup(fieldPath, false))
+                .beginControlFlow("if ($N.hasField($S))", VAR_ARGS, field.getName())
                 .declare(VAR_NODE_ID_VALUE, asMethodCall(inputVar, getterMapping.asGet()))
                 .add(
                         wrapNotNull(
