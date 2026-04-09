@@ -98,7 +98,7 @@ class TablePipelineTest {
     // ===== Helpers =====
 
     private List<String> generate(String sdl) {
-        return new TableClassGenerator().generateAll(buildSchema(sdl)).stream()
+        return TableClassGenerator.generate(buildSchema(sdl)).stream()
             .map(t -> t.name())
             .toList();
     }

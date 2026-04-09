@@ -4,7 +4,6 @@ import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.generators.AbstractRewriteClassGenerator;
 
 import java.util.List;
 
@@ -22,21 +21,13 @@ import java.util.List;
  * <p>Generated files are placed in the {@code rewrite.resolvers} sub-package of the configured
  * output package.
  */
-public class SplitSourceClassGenerator extends AbstractRewriteClassGenerator {
+public class SplitSourceClassGenerator {
 
-    static final String SAVE_DIRECTORY = "rewrite.resolvers";
-
-    @Override
-    public List<TypeSpec> generateAll(GraphitronSchema schema) {
+    public static List<TypeSpec> generate(GraphitronSchema schema) {
         var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
         var codeGenerator = new SplitSourceCodeGenerator(tablesClass);
         return SplitSourceSpecBuilder.build(schema).stream()
             .map(codeGenerator::generate)
             .toList();
-    }
-
-    @Override
-    public String getDefaultSaveDirectoryName() {
-        return SAVE_DIRECTORY;
     }
 }

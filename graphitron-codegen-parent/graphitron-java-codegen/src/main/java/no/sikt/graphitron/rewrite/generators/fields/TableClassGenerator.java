@@ -2,14 +2,13 @@ package no.sikt.graphitron.rewrite.generators.fields;
 
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.generators.AbstractRewriteClassGenerator;
 import no.sikt.graphitron.rewrite.type.GraphitronType;
 import no.sikt.graphitron.rewrite.type.TableRef;
+
 import java.util.List;
 
 /**
- * {@link AbstractRewriteClassGenerator} that produces one
- * table class per {@link GraphitronType.TableType} in the schema.
+ * Produces one table class per {@link GraphitronType.TableType} in the schema.
  *
  * <p>Class names come from {@link TableRef.ResolvedTable#javaClassName()}, the simple name of the
  * jOOQ-generated table class obtained at catalog resolution time via reflection. This respects any
@@ -19,14 +18,10 @@ import java.util.List;
  * <p>Generated files are placed in the {@code rewrite.tables} sub-package of the configured
  * output package.
  */
-public class TableClassGenerator extends AbstractRewriteClassGenerator {
+public class TableClassGenerator {
 
-    static final String SAVE_DIRECTORY = "rewrite.tables";
-
-    private final TableCodeGenerator codeGenerator = new TableCodeGenerator();
-
-    @Override
-    public List<TypeSpec> generateAll(GraphitronSchema schema) {
+    public static List<TypeSpec> generate(GraphitronSchema schema) {
+        var codeGenerator = new TableCodeGenerator();
         return schema.types().values().stream()
             .filter(t -> t instanceof GraphitronType.TableType)
             .map(t -> ((GraphitronType.TableType) t).table())
@@ -37,11 +32,4 @@ public class TableClassGenerator extends AbstractRewriteClassGenerator {
             .map(codeGenerator::generate)
             .toList();
     }
-
-    @Override
-    public String getDefaultSaveDirectoryName() {
-        return SAVE_DIRECTORY;
-    }
-
-
 }

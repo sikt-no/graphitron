@@ -3,14 +3,12 @@ package no.sikt.graphitron.rewrite.generators.fields;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
-import no.sikt.graphitron.rewrite.generators.AbstractRewriteClassGenerator;
 import no.sikt.graphitron.rewrite.type.GraphitronType;
 
 import java.util.List;
 
 /**
- * Generator that produces one {@code <TypeName>Fields.java} per table-mapped or root GraphQL type
- * in the schema.
+ * Produces one {@code <TypeName>Fields.java} per table-mapped or root GraphQL type in the schema.
  *
  * <p>Class names are {@code <GraphQLTypeName>Fields} (e.g. {@code FilmFields} for GraphQL type
  * {@code Film}, {@code QueryFields} for the root {@code Query} type). This is distinct from the
@@ -23,29 +21,20 @@ import java.util.List;
  * <p>Generated files are placed in the {@code rewrite.types} sub-package of the configured
  * output package.
  */
-public class FieldsClassGenerator extends AbstractRewriteClassGenerator {
+public class FieldsClassGenerator {
 
-    static final String SAVE_DIRECTORY = "rewrite.types";
-
-    private final FieldsCodeGenerator codeGenerator = new FieldsCodeGenerator();
-
-    @Override
-    public List<TypeSpec> generateAll(GraphitronSchema schema) {
+    public static List<TypeSpec> generate(GraphitronSchema schema) {
+        var codeGenerator = new FieldsCodeGenerator();
         return schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof GraphitronType.TableType
                       || e.getValue() instanceof GraphitronType.RootType)
             .map(java.util.Map.Entry::getKey)
             .sorted()
-            .map(typeName -> generateForType(schema, typeName))
+            .map(typeName -> generateForType(schema, typeName, codeGenerator))
             .toList();
     }
 
-    @Override
-    public String getDefaultSaveDirectoryName() {
-        return SAVE_DIRECTORY;
-    }
-
-    private TypeSpec generateForType(GraphitronSchema schema, String typeName) {
+    private static TypeSpec generateForType(GraphitronSchema schema, String typeName, FieldsCodeGenerator codeGenerator) {
         var fieldNames = schema.fields().entrySet().stream()
             .filter(e -> e.getKey().getTypeName().equals(typeName))
             .map(java.util.Map.Entry::getValue)

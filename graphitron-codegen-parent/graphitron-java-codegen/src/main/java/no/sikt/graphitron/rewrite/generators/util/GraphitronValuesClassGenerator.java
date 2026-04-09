@@ -4,8 +4,6 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.generators.AbstractRewriteClassGenerator;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -28,35 +26,22 @@ import java.util.List;
  * <p>Generated as a source file rather than shipped as a library dependency so that consuming
  * projects have no runtime dependency on Graphitron itself.
  */
-public class GraphitronValuesClassGenerator extends AbstractRewriteClassGenerator {
+public class GraphitronValuesClassGenerator {
 
-    static final String SAVE_DIRECTORY = "rewrite";
     static final String CLASS_NAME = "GraphitronValues";
 
     private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName FIELD = ClassName.get("org.jooq", "Field");
 
-    @Override
-    public List<TypeSpec> generateAll(GraphitronSchema schema) {
-        return List.of(generateValuesClass());
-    }
-
-    private TypeSpec generateValuesClass() {
+    public static List<TypeSpec> generate() {
         var fieldType = ParameterizedTypeName.get(FIELD, ClassName.get(Integer.class));
         var idxField = FieldSpec.builder(fieldType, "GRAPHITRON_INPUT_IDX", Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
             .initializer("$T.field($S, $T.class)", DSL, "graphitron_input_idx", Integer.class)
             .build();
 
-        return TypeSpec.classBuilder(CLASS_NAME)
+        return List.of(TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC)
             .addField(idxField)
-            .build();
+            .build());
     }
-
-    @Override
-    public String getDefaultSaveDirectoryName() {
-        return SAVE_DIRECTORY;
-    }
-
-
 }

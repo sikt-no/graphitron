@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.generators.lookup;
 
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.generators.AbstractRewriteClassGenerator;
 
 import java.util.List;
 
@@ -18,21 +17,12 @@ import java.util.List;
  * <p>Generated files are placed in the {@code rewrite.resolvers} sub-package of the configured
  * output package.
  */
-public class LookupClassGenerator extends AbstractRewriteClassGenerator {
+public class LookupClassGenerator {
 
-    static final String SAVE_DIRECTORY = "rewrite.resolvers";
-
-    private final LookupCodeGenerator codeGenerator = new LookupCodeGenerator();
-
-    @Override
-    public List<TypeSpec> generateAll(GraphitronSchema schema) {
+    public static List<TypeSpec> generate(GraphitronSchema schema) {
+        var codeGenerator = new LookupCodeGenerator();
         return LookupSpecBuilder.build(schema).stream()
             .map(codeGenerator::generate)
             .toList();
-    }
-
-    @Override
-    public String getDefaultSaveDirectoryName() {
-        return SAVE_DIRECTORY;
     }
 }
