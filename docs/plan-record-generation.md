@@ -142,8 +142,8 @@ Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nest
 | `ColumnField` / `ColumnReferenceField` | `static T fieldName(env)` | `record.get(TABLE.COL)` from source |
 | `TableQueryField` — list | `static Result<Record> fieldName(env)` | `TableName.selectMany` |
 | `TableQueryField` — single | `static Record fieldName(env)` | `TableName.selectOne` |
-| `LookupQueryField` *(lookup field)* | `static List<Record> fieldName(env)` | `lookupFieldName(env, selectedField)` — synchronous, no DataLoader |
-| `LookupTableField` — table-mapped parent | `static Result<Record> fieldName(env)` | extract nested result from source `Record`; subquery built by `subselect<FieldName>` during parent query |
+| `LookupQueryField` *(lookup field)* | `static CompletableFuture<List<Record>> fieldName(env)` | `completedFuture(lookupFieldName(env, selectedField))` — synchronous DB call, no DataLoader |
+| `LookupTableField` — table-mapped parent | `static CompletableFuture<Result<Record>> fieldName(env)` | `completedFuture(…)` wrapping source `Record` extraction; subquery built by `subselect<FieldName>` during parent query |
 | `TableField` — list, no `@splitQuery` | `static Result<Record> fieldName(env)` | extract nested column from source `Record` |
 | `TableField` — single, no `@splitQuery` | `static Record fieldName(env)` | extract nested column from source `Record` |
 | `TableField` — `@splitQuery`, no `@lookupKey` *(result mapped TableField)*, returns `[T]` | `static CompletableFuture<List<Record>> fieldName(env)` | `loadFieldName(sourceRows, env, selectedField)` via DataLoader |
@@ -244,8 +244,8 @@ Extends `TableCodeGenerator` with `TableField` in table-mapped source context (n
 ### G6 — Split fields: `LookupQueryField`, table mapped `LookupTableField`, result mapped `TableField`, result mapped `LookupTableField`
 
 G6 generates, per affected field, a pair of methods in `rewrite.types.<TypeName>Fields`:
-1. A **data fetcher** — `static T fieldName(DataFetchingEnvironment env)` — either synchronous (for `LookupQueryField` and table-mapped `LookupTableField`) or a `CompletableFuture<T>` that registers/retrieves a DataLoader (for result mapped fields).
-2. A **bespoke method** — named `lookup<FieldName>`, `subselect<FieldName>`, or `load<FieldName>` — contains all SQL logic specific to this field. For DataLoader categories, this is the batch function body.
+1. A **data fetcher** — `static CompletableFuture<T> fieldName(DataFetchingEnvironment env)` — always async. For `LookupQueryField` and table-mapped `LookupTableField`, wraps a synchronous DB call in `CompletableFuture.completedFuture`. For result mapped fields, registers/retrieves a DataLoader.
+2. A **bespoke DB method** — named `lookup<FieldName>`, `subselect<FieldName>`, or `load<FieldName>` — always synchronous. Contains all SQL logic specific to this field.
 
 ---
 
@@ -298,9 +298,10 @@ Each bespoke method builds an indexed `VALUES(…)` derived table (prepending a 
 
 **`rewrite.types.LanguageFields`** — `LookupTableField`, table-mapped parent (correlated subquery, no DataLoader):
 ```java
-// Data fetcher — extracts nested multiset result from the source Record
-public static Result<Record> filmsByTitle(DataFetchingEnvironment env) {
-    return ((Record) env.getSource()).get("filmsByTitle", Result.class);
+// Data fetcher — async wrapper around source Record extraction; no DataLoader
+public static CompletableFuture<Result<Record>> filmsByTitle(DataFetchingEnvironment env) {
+    return CompletableFuture.completedFuture(
+        ((Record) env.getSource()).get("filmsByTitle", Result.class));
 }
 
 // Bespoke subquery-building method — called from Language.fields() during parent SELECT assembly.
@@ -355,10 +356,10 @@ public static List<Record> loadLanguage(List<Row> sourceRows, DataFetchingEnviro
 
 **`rewrite.types.QueryFields`** — `LookupQueryField` (synchronous, no DataLoader):
 ```java
-// Data fetcher — synchronous; no DataLoader
-public static List<Record> filmById(DataFetchingEnvironment env) {
+// Data fetcher — async wrapper around synchronous DB call; no DataLoader
+public static CompletableFuture<List<Record>> filmById(DataFetchingEnvironment env) {
     SelectedField sel = env.getSelectionSet().getField("filmById");
-    return lookupFilmById(env, sel);
+    return CompletableFuture.completedFuture(lookupFilmById(env, sel));
 }
 
 // Bespoke method — builds derived target table from sel.getArguments() @lookupKey values,
