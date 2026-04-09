@@ -42,6 +42,19 @@ If a generator needs a piece of information that is not present in the taxonomy,
 
 ### Generators already done
 
+**`TypeSpec` and file output**
+
+`TypeSpec` (from `graphitron-javapoet`, Graphitron's fork of Square's JavaPoet) is an in-memory model of a Java class, interface, or enum declaration. It holds the class name, modifiers, fields (`FieldSpec`), methods (`MethodSpec`), and nested types — everything needed to render a `.java` file. Generators build `TypeSpec` values using a fluent builder API (`TypeSpec.classBuilder("Film").addMethod(…).build()`); no string concatenation or template files are involved.
+
+`JavaFile` wraps a `TypeSpec` with a package name. Calling `.writeTo(File outputDir)` on a built `JavaFile` derives the directory path from the package name (dots → path separators), creates any missing directories, and writes the rendered Java source to `<outputDir>/<package/path>/<ClassName>.java`. Imports are resolved and emitted automatically.
+
+In `GraphQLRewriteGenerator.write()`:
+```java
+JavaFile.builder(packageName, spec).indent("    ").build()
+    .writeTo(new File(GeneratorConfig.outputDirectory()));
+```
+`packageName` is `GeneratorConfig.outputPackage() + "." + subPackage` (e.g. `no.example.rewrite.tables`). The output directory is Maven's `target/generated-sources/graphitron` (or equivalent), which is on the compile source root so the generated `.java` files are compiled as ordinary source.
+
 Each generator is a utility class with a single `public static List<TypeSpec> generate(GraphitronSchema)` method (or no-arg for schema-independent generators). There is no shared base class or interface. `GraphQLRewriteGenerator` calls each generator explicitly and owns the sub-package routing and file I/O.
 
 | Generator | Output | Notes |
