@@ -2,6 +2,9 @@ package no.sikt.graphitron.rewrite.generators.fields;
 
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.field.ChildField;
+import no.sikt.graphitron.rewrite.field.ColumnRef;
+import no.sikt.graphitron.rewrite.field.GraphitronField;
 import org.junit.jupiter.api.Test;
 
 import javax.lang.model.element.Modifier;
@@ -13,8 +16,13 @@ class FieldsCodeGeneratorTest {
 
     private static final FieldsCodeGenerator GEN = new FieldsCodeGenerator();
 
+    private static GraphitronField field(String name) {
+        return new ChildField.ColumnField("Film", name, null, name,
+            new ColumnRef.ResolvedColumn("COL", "java.lang.String"), false);
+    }
+
     private static TypeSpec spec(String typeName, List<String> fieldNames) {
-        return GEN.generate(typeName, fieldNames);
+        return GEN.generate(typeName, fieldNames.stream().map(FieldsCodeGeneratorTest::field).toList());
     }
 
     private static MethodSpec method(TypeSpec spec, String name) {
