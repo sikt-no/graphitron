@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.type.GraphitronType;
 
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -35,14 +36,13 @@ public class FieldsClassGenerator {
     }
 
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, FieldsCodeGenerator codeGenerator) {
-        var fieldNames = schema.fields().entrySet().stream()
+        var fields = schema.fields().entrySet().stream()
             .filter(e -> e.getKey().getTypeName().equals(typeName))
             .map(java.util.Map.Entry::getValue)
             .filter(f -> !(f instanceof GraphitronField.NotGeneratedField))
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
-            .map(GraphitronField::name)
-            .sorted()
+            .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
-        return codeGenerator.generate(typeName, fieldNames);
+        return codeGenerator.generate(typeName, fields);
     }
 }
