@@ -1,0 +1,30 @@
+{
+    "data": {
+        "testingListedNestedInputType": [
+            {
+                "id": "Q3VzdG9tZXI6MTAw",
+                "email": "updated@example.com",
+                "name": {
+                    "firstName": "UpdatedFirst",
+                    "lastName": "UpdatedLast"
+                }
+            },
+            {
+                "id": "Q3VzdG9tZXI6MTAx",
+                "email": "PEGGY.MYERS@sakilacustomer.org",
+                "name": {
+                    "firstName": "OnlyFirst",
+                    "lastName": "OnlyLast"
+                }
+            },
+            {
+                "id": "Q3VzdG9tZXI6MTAy",
+                "email": "CRYSTAL.FORD@sakilacustomer.org",
+                "name": {
+                    "firstName": "JustFirst",
+                    "lastName": "FORD"
+                }
+            }
+        ]
+    }
+}

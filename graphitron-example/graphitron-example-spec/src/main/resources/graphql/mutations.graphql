@@ -15,6 +15,9 @@ type Mutation {
     updateCityName(in: CityNameInput): City @mutation(typeName: UPDATE)
     updateTitleAndLanguageForFilm(in: [FilmWithRefInput]): [Film] @mutation(typeName: UPDATE)
 
+    testingListedNestedInputType(in: [NestedInputType!]!): [Customer] @mutation(typeName: UPDATE)
+    testingNestedInputType(in: NestedInputType!): [Customer] @mutation(typeName: UPDATE)
+
     upsertFilmWithTitleAndLanguage(in: [FilmWithRefInput]): [Film] @mutation(typeName: UPSERT)
     upsertCategory(in: CategoryNameInput): Category @mutation(typeName: UPSERT)
     upsertCategories(in: [CategoryNameInput]): [Category] @mutation(typeName: UPSERT)
@@ -102,4 +105,23 @@ type FilmsWrapper {
 input FilmActorValidationInput @table(name: "FILM_ACTOR") {
     id: ID! @nodeId(typeName: "FilmActor")
     actorId: ID @nodeId(typeName: "Actor") @reference(path: {key: "FILM_ACTOR__FILM_ACTOR_ACTOR_ID_FKEY"})
+}
+
+input NestedInputType @table(name: "CUSTOMER"){
+    id: ID! @nodeId(typeName: "Customer")
+    level0: NestedLevel0!
+}
+
+input NestedLevel0 {
+    first_name: String @field(name: "first_name")
+    level1: NestedLevel1
+}
+
+input NestedLevel1 {
+    last_name: String @field(name: "last_name")
+    level2: NestedLevel2
+}
+
+input NestedLevel2 {
+    email: String @field(name: "email")
 }
