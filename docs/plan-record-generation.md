@@ -262,9 +262,9 @@ G6 generates, per affected field, a pair of methods in `rewrite.types.<TypeName>
 
 **Derived target table** — a SQL `VALUES(…)` derived table built from `@lookupKey` argument values, read from `SelectedField`. Each argument value (or list element) is one row. Arguments without `@lookupKey` are never part of this table.
 
-**Lookup invariant**: blocking `@condition` on lookup fields ensures the result count is always exactly N × M (N sources × M lookup rows), which makes positional alignment unambiguous.
+**The derived target table is identical for every source in a batch.** The DataLoader is keyed to the GraphQL execution path, so all N parent records dispatched in the same batch share the same request arguments. M — the number of lookup rows — is therefore a constant for the entire batch. The derived target table is built once, not once per source.
 
-**Arguments are identical across all sources in a batch.** The DataLoader is keyed to the execution path (`loaderName` uses the GraphQL path), so all N source records in a batch share the same arguments. M is therefore a constant for the entire batch.
+**Lookup invariant**: because the derived target table is constant (M is fixed) and `@condition` is blocked, the result count is always exactly N × M. Positional alignment is unambiguous: result at position `(i, j)` corresponds to source row `i` and lookup row `j`.
 
 ---
 
