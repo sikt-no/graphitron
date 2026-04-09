@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.field.ChildField;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.QueryField;
 
@@ -47,6 +48,9 @@ public class FieldsCodeGenerator {
             if (field instanceof QueryField.LookupQueryField lookup) {
                 builder.addMethod(buildLookupDataFetcher(lookup));
                 builder.addMethod(buildLookupMethod(lookup));
+            } else if (field instanceof ChildField.TableField tf && tf.splitQuery()) {
+                builder.addMethod(buildSplitQueryDataFetcher(tf));
+                builder.addMethod(buildSplitRowsMethod(tf));
             } else {
                 builder.addMethod(buildFieldStub(field.name()));
             }
@@ -82,6 +86,26 @@ public class FieldsCodeGenerator {
             .returns(ParameterizedTypeName.get(LIST, RECORD))
             .addParameter(ENV, "env")
             .addParameter(SELECTED_FIELD, "sel")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    private MethodSpec buildSplitQueryDataFetcher(ChildField.TableField field) {
+        var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, ParameterizedTypeName.get(LIST, RECORD));
+        return MethodSpec.methodBuilder(field.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(returnType)
+            .addParameter(ENV, "env")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    private MethodSpec buildSplitRowsMethod(ChildField.TableField field) {
+        var sourcesType = ParameterizedTypeName.get(LIST, RECORD);
+        return MethodSpec.methodBuilder("rows" + capitalize(field.name()))
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(sourcesType, "sources")
             .addStatement("throw new $T()", UnsupportedOperationException.class)
             .build();
     }

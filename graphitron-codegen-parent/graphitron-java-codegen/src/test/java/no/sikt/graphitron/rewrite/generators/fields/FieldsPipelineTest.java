@@ -106,6 +106,50 @@ class FieldsPipelineTest {
         assertThat(names).containsAll(List.of("FilmFields", "ActorFields", "QueryFields"));
     }
 
+    // ===== @splitQuery fields =====
+
+    @Test
+    void splitQueryField_asyncDataFetcherIsInParentTypeFieldsClass() {
+        var languageFields = findSpec("LanguageFields", """
+            type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
+            type Film @table(name: "film") { title: String }
+            type Query { dummy: String }
+            extend type Language {
+                films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            """);
+        assertThat(languageFields.methodSpecs()).extracting(MethodSpec::name).contains("films");
+    }
+
+    @Test
+    void splitQueryField_asyncDataFetcherReturnsCompletableFuture() {
+        var languageFields = findSpec("LanguageFields", """
+            type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
+            type Film @table(name: "film") { title: String }
+            type Query { dummy: String }
+            extend type Language {
+                films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            """);
+        var films = languageFields.methodSpecs().stream()
+            .filter(m -> m.name().equals("films")).findFirst().orElseThrow();
+        assertThat(films.returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void splitQueryField_rowsMethodIsInParentTypeFieldsClass() {
+        var languageFields = findSpec("LanguageFields", """
+            type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
+            type Film @table(name: "film") { title: String }
+            type Query { dummy: String }
+            extend type Language {
+                films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            """);
+        assertThat(languageFields.methodSpecs()).extracting(MethodSpec::name).contains("rowsFilms");
+    }
+
     // ===== Helpers =====
 
     private List<String> generateNames(String sdl) {

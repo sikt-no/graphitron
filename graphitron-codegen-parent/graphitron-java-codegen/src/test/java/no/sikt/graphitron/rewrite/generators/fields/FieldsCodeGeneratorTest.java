@@ -4,7 +4,10 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.field.ChildField;
 import no.sikt.graphitron.rewrite.field.ColumnRef;
+import no.sikt.graphitron.rewrite.field.FieldConditionRef;
+import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
+import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import org.junit.jupiter.api.Test;
 
 import javax.lang.model.element.Modifier;
@@ -21,8 +24,18 @@ class FieldsCodeGeneratorTest {
             new ColumnRef.ResolvedColumn("COL", "java.lang.String"), false);
     }
 
+    private static GraphitronField splitQueryField(String parentType, String name) {
+        return new ChildField.TableField(parentType, name, null,
+            new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.List(false, false, null, List.of())),
+            List.of(), new FieldConditionRef.NoFieldCondition(), true, List.of());
+    }
+
     private static TypeSpec spec(String typeName, List<String> fieldNames) {
         return GEN.generate(typeName, fieldNames.stream().map(FieldsCodeGeneratorTest::field).toList());
+    }
+
+    private static TypeSpec specWithSplitQuery(String typeName, String fieldName) {
+        return GEN.generate(typeName, List.of(splitQueryField(typeName, fieldName)));
     }
 
     private static MethodSpec method(TypeSpec spec, String name) {
@@ -137,5 +150,81 @@ class FieldsCodeGeneratorTest {
         var w = method(spec("Film", List.of("title", "releaseYear")), "wiring");
         assertThat(w.code().toString()).contains("dataFetcher(\"title\"");
         assertThat(w.code().toString()).contains("dataFetcher(\"releaseYear\"");
+    }
+
+    // ===== @splitQuery TableField =====
+
+    @Test
+    void splitQuery_asyncDataFetcherIsPresent() {
+        assertThat(specWithSplitQuery("Language", "films").methodSpecs())
+            .extracting(MethodSpec::name)
+            .contains("films");
+    }
+
+    @Test
+    void splitQuery_asyncDataFetcherReturnsCompletableFuture() {
+        var m = method(specWithSplitQuery("Language", "films"), "films");
+        assertThat(m.returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void splitQuery_asyncDataFetcherIsPublicStatic() {
+        var m = method(specWithSplitQuery("Language", "films"), "films");
+        assertThat(m.modifiers()).containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
+    }
+
+    @Test
+    void splitQuery_asyncDataFetcherTakesEnv() {
+        var m = method(specWithSplitQuery("Language", "films"), "films");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void splitQuery_asyncDataFetcherThrowsUnsupportedOperationException() {
+        var m = method(specWithSplitQuery("Language", "films"), "films");
+        assertThat(m.code().toString()).contains("UnsupportedOperationException()");
+    }
+
+    @Test
+    void splitQuery_rowsMethodIsPresent() {
+        assertThat(specWithSplitQuery("Language", "films").methodSpecs())
+            .extracting(MethodSpec::name)
+            .contains("rowsFilms");
+    }
+
+    @Test
+    void splitQuery_rowsMethodNameCapitalizesFieldName() {
+        assertThat(specWithSplitQuery("Language", "actors").methodSpecs())
+            .extracting(MethodSpec::name)
+            .contains("rowsActors");
+    }
+
+    @Test
+    void splitQuery_rowsMethodIsPublicStatic() {
+        var m = method(specWithSplitQuery("Language", "films"), "rowsFilms");
+        assertThat(m.modifiers()).containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
+    }
+
+    @Test
+    void splitQuery_rowsMethodTakesListOfRecord() {
+        var m = method(specWithSplitQuery("Language", "films"), "rowsFilms");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("java.util.List<org.jooq.Record>");
+        assertThat(m.parameters()).extracting(p -> p.name())
+            .containsExactly("sources");
+    }
+
+    @Test
+    void splitQuery_rowsMethodThrowsUnsupportedOperationException() {
+        var m = method(specWithSplitQuery("Language", "films"), "rowsFilms");
+        assertThat(m.code().toString()).contains("UnsupportedOperationException()");
+    }
+
+    @Test
+    void splitQuery_wiringRegistersDataFetcherByName() {
+        var w = method(specWithSplitQuery("Language", "films"), "wiring");
+        assertThat(w.code().toString()).contains("dataFetcher(\"films\"");
     }
 }

@@ -5,7 +5,6 @@ import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.fields.FieldsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.fields.TableClassGenerator;
-import no.sikt.graphitron.rewrite.generators.splitquery.SplitSourceClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,7 +44,6 @@ public class GraphQLRewriteGenerator {
         }
 
         write(GraphitronValuesClassGenerator.generate(),          "rewrite");
-        write(SplitSourceClassGenerator.generate(schema),         "rewrite.resolvers");
         write(TableClassGenerator.generate(schema),               "rewrite.tables");
         write(FieldsClassGenerator.generate(schema),              "rewrite.types");
     }
