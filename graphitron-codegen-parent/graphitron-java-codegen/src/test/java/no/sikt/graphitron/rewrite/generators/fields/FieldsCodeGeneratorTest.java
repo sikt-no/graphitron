@@ -1,23 +1,44 @@
 package no.sikt.graphitron.rewrite.generators.fields;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.field.ArgumentSpec;
 import no.sikt.graphitron.rewrite.field.ChildField;
 import no.sikt.graphitron.rewrite.field.ColumnRef;
+import no.sikt.graphitron.rewrite.field.ExternalRef;
 import no.sikt.graphitron.rewrite.field.FieldConditionRef;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.field.ServiceMethodRef;
+import no.sikt.graphitron.rewrite.type.TableRef;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
+import java.util.Set;
 
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class FieldsCodeGeneratorTest {
 
     private static final FieldsCodeGenerator GEN = new FieldsCodeGenerator();
+
+    @BeforeEach
+    void setup() {
+        GeneratorConfig.setProperties(
+            Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE,
+            List.of(), Set.of(), List.of());
+    }
+
+    @AfterEach
+    void teardown() {
+        GeneratorConfig.clear();
+    }
 
     private static GraphitronField field(String name) {
         return new ChildField.ColumnField("Film", name, null, name,
@@ -30,12 +51,39 @@ class FieldsCodeGeneratorTest {
             List.of(), new FieldConditionRef.NoFieldCondition(), true, List.of());
     }
 
+    private static GraphitronField serviceField(String parentType, String name, boolean isList) {
+        var returnWrapper = isList
+            ? (FieldWrapper) new FieldWrapper.List(true, true, null, List.of())
+            : new FieldWrapper.Single(true);
+        var returnType = new ReturnTypeRef.TableBoundReturnType("Film",
+            new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of()),
+            returnWrapper);
+        var smr = new ServiceMethodRef.Resolved(
+            List.of(
+                new ServiceMethodRef.ServiceParamInfo("keys", "java.util.List", ServiceMethodRef.ParamKind.SOURCES),
+                new ServiceMethodRef.ServiceParamInfo("filter", "java.lang.String", ServiceMethodRef.ParamKind.ARG),
+                new ServiceMethodRef.ServiceParamInfo("tenantId", "java.lang.String", ServiceMethodRef.ParamKind.CONTEXT)
+            ),
+            "java.util.List"
+        );
+        return new ChildField.ServiceField(
+            parentType, name, null, returnType,
+            List.of(), new ExternalRef("no.example.FilmService", "getFilms"),
+            List.of(new ArgumentSpec("filter", "String", false, false, false, false, "filter")),
+            List.of("tenantId"), smr);
+    }
+
     private static TypeSpec spec(String typeName, List<String> fieldNames) {
-        return GEN.generate(typeName, fieldNames.stream().map(FieldsCodeGeneratorTest::field).toList());
+        return GEN.generate(typeName, null, fieldNames.stream().map(FieldsCodeGeneratorTest::field).toList());
     }
 
     private static TypeSpec specWithSplitQuery(String typeName, String fieldName) {
-        return GEN.generate(typeName, List.of(splitQueryField(typeName, fieldName)));
+        return GEN.generate(typeName, null, List.of(splitQueryField(typeName, fieldName)));
+    }
+
+    private static TypeSpec specWithServiceField(String parentType, String fieldName, boolean isList) {
+        var parentTable = new TableRef.ResolvedTable("language", "LANGUAGE", "Language", true, List.of("language_id"));
+        return GEN.generate(parentType, parentTable, List.of(serviceField(parentType, fieldName, isList)));
     }
 
     private static MethodSpec method(TypeSpec spec, String name) {
@@ -226,5 +274,133 @@ class FieldsCodeGeneratorTest {
     void splitQuery_wiringRegistersDataFetcherByName() {
         var w = method(specWithSplitQuery("Language", "films"), "wiring");
         assertThat(w.code().toString()).contains("dataFetcher(\"films\"");
+    }
+
+    // ===== @service field with TableBoundReturnType — data fetcher =====
+
+    @Test
+    void serviceField_list_dataFetcherIsPresent() {
+        assertThat(specWithServiceField("Language", "films", true).methodSpecs())
+            .extracting(MethodSpec::name)
+            .contains("films");
+    }
+
+    @Test
+    void serviceField_list_returnsCompletableFutureListRecord() {
+        var m = method(specWithServiceField("Language", "films", true), "films");
+        assertThat(m.returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void serviceField_list_codeContainsDataLoaderComputeIfAbsent() {
+        var m = method(specWithServiceField("Language", "films", true), "films");
+        assertThat(m.code().toString()).contains("computeIfAbsent");
+        assertThat(m.code().toString()).contains("newDataLoaderWithContext");
+    }
+
+    @Test
+    void serviceField_list_codeContainsSelectMany() {
+        var m = method(specWithServiceField("Language", "films", true), "loadFilms");
+        assertThat(m.code().toString()).contains("selectMany");
+    }
+
+    @Test
+    void serviceField_list_codeContainsPKRowKey() {
+        var m = method(specWithServiceField("Language", "films", true), "films");
+        assertThat(m.code().toString()).contains("LANGUAGE_ID");
+    }
+
+    @Test
+    void serviceField_list_wiringRegistersDataFetcherOnly() {
+        var w = method(specWithServiceField("Language", "films", true), "wiring");
+        assertThat(w.code().toString()).contains("dataFetcher(\"films\"");
+        assertThat(w.code().toString()).doesNotContain("dataFetcher(\"loadFilms\"");
+    }
+
+    @Test
+    void serviceField_single_returnsCompletableFutureRecord() {
+        var m = method(specWithServiceField("Language", "film", false), "film");
+        assertThat(m.returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<org.jooq.Record>");
+    }
+
+    @Test
+    void serviceField_single_codeContainsSelectOne() {
+        var m = method(specWithServiceField("Language", "film", false), "loadFilm");
+        assertThat(m.code().toString()).contains("selectOne");
+    }
+
+    @Test
+    void serviceField_unresolvedRef_fallsBackToObjectStub() {
+        var unresolvedField = new ChildField.ServiceField(
+            "Language", "films", null,
+            new ReturnTypeRef.TableBoundReturnType("Film",
+                new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of()),
+                new FieldWrapper.List(true, true, null, List.of())),
+            List.of(), new ExternalRef("no.example.FilmService", "getFilms"),
+            List.of(), List.of(), new ServiceMethodRef.Unresolved("test"));
+        var parentTable = new TableRef.ResolvedTable("language", "LANGUAGE", "Language", true, List.of("language_id"));
+        var m = method(GEN.generate("Language", parentTable, List.of(unresolvedField)), "films");
+        assertThat(m.returnType().toString()).isEqualTo("java.lang.Object");
+        assertThat(m.code().toString()).contains("UnsupportedOperationException()");
+    }
+
+    // ===== @service field — rows method =====
+
+    @Test
+    void serviceField_list_rowsMethodIsPresent() {
+        assertThat(specWithServiceField("Language", "films", true).methodSpecs())
+            .extracting(MethodSpec::name)
+            .contains("loadFilms");
+    }
+
+    @Test
+    void serviceField_list_rowsMethodIsPublicStatic() {
+        var m = method(specWithServiceField("Language", "films", true), "loadFilms");
+        assertThat(m.modifiers()).containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
+    }
+
+    @Test
+    void serviceField_list_rowsMethodParamsAreKeysEnvSel() {
+        var m = method(specWithServiceField("Language", "films", true), "loadFilms");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .containsExactly(
+                "java.util.List<org.jooq.Row>",
+                "graphql.schema.DataFetchingEnvironment",
+                "graphql.schema.SelectedField");
+        assertThat(m.parameters()).extracting(p -> p.name())
+            .containsExactly("keys", "dfe", "sel");
+    }
+
+    @Test
+    void serviceField_list_rowsMethodExtractsArgsFromDfe() {
+        var m = method(specWithServiceField("Language", "films", true), "loadFilms");
+        assertThat(m.code().toString()).contains("getArgument(\"filter\")");
+    }
+
+    @Test
+    void serviceField_list_rowsMethodExtractsContextFromGraphitronContext() {
+        var m = method(specWithServiceField("Language", "films", true), "loadFilms");
+        assertThat(m.code().toString()).contains("getContextArgument");
+        assertThat(m.code().toString()).contains("tenantId");
+    }
+
+    @Test
+    void serviceField_list_rowsMethodCallsService() {
+        var m = method(specWithServiceField("Language", "films", true), "loadFilms");
+        assertThat(m.code().toString()).contains("getFilms");
+    }
+
+    @Test
+    void serviceField_list_rowsMethodReturnsSelectMany() {
+        var m = method(specWithServiceField("Language", "films", true), "loadFilms");
+        assertThat(m.code().toString()).contains("selectMany");
+    }
+
+    @Test
+    void serviceField_single_rowsMethodReturnsSelectOne() {
+        var m = method(specWithServiceField("Language", "film", false), "loadFilm");
+        assertThat(m.code().toString()).contains("selectOne");
     }
 }

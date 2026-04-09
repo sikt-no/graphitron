@@ -150,6 +150,43 @@ class FieldsPipelineTest {
         assertThat(languageFields.methodSpecs()).extracting(MethodSpec::name).contains("rowsFilms");
     }
 
+    // ===== @service fields =====
+
+    @Test
+    void serviceField_dataFetcherReturnsCompletableFutureListRecord() {
+        var languageFields = findSpec("LanguageFields", """
+            type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
+            type Film @table(name: "film") { title: String }
+            type Query { dummy: String }
+            extend type Language {
+                films(filter: String): [Film!]! @service(
+                    service: {className: "no.sikt.graphitron.rewrite.generators.fields.TestFilmService", method: "getFilms"},
+                    contextArguments: ["tenantId"]
+                )
+            }
+            """);
+        var films = languageFields.methodSpecs().stream()
+            .filter(m -> m.name().equals("films")).findFirst().orElseThrow();
+        assertThat(films.returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void serviceField_rowsMethodIsNamedLoadPlusFieldName() {
+        var languageFields = findSpec("LanguageFields", """
+            type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
+            type Film @table(name: "film") { title: String }
+            type Query { dummy: String }
+            extend type Language {
+                films(filter: String): [Film!]! @service(
+                    service: {className: "no.sikt.graphitron.rewrite.generators.fields.TestFilmService", method: "getFilms"},
+                    contextArguments: ["tenantId"]
+                )
+            }
+            """);
+        assertThat(languageFields.methodSpecs()).extracting(MethodSpec::name).contains("loadFilms");
+    }
+
     // ===== Helpers =====
 
     private List<String> generateNames(String sdl) {

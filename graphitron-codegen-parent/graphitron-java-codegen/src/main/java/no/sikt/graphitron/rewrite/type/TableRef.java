@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.type;
 
+import java.util.List;
+
 /**
  * Represents the outcome of resolving a {@code @table} directive value to a jOOQ table class.
  *
@@ -31,8 +33,20 @@ public sealed interface TableRef permits TableRef.ResolvedTable, TableRef.Unreso
      * <p>{@code javaFieldName} is the field name in the generated jOOQ {@code Tables} class
      * (e.g. {@code "FILM"}). {@code hasPrimaryKey} is {@code true} when the jOOQ table has a
      * declared primary key, used for deterministic-ordering validation.
+     *
+     * <p>{@code primaryKeyColumnSqlNames} is the ordered list of SQL column names that form the
+     * primary key (e.g. {@code ["language_id"]}), populated from
+     * {@code table.getPrimaryKey().getFields()} at parse time. Empty when there is no primary key.
+     * Used by the DataLoader data-fetcher generator to build the {@code DSL.row(...)} key
+     * expression.
      */
-    record ResolvedTable(String tableName, String javaFieldName, String javaClassName, boolean hasPrimaryKey) implements TableRef {}
+    record ResolvedTable(
+        String tableName,
+        String javaFieldName,
+        String javaClassName,
+        boolean hasPrimaryKey,
+        List<String> primaryKeyColumnSqlNames
+    ) implements TableRef {}
 
     /**
      * A {@link TableRef} where the SQL table name could not be matched to any class in the

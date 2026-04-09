@@ -433,6 +433,42 @@ public class GraphitronSchemaValidator {
     private void validateServiceField(no.sikt.graphitron.rewrite.field.ChildField.ServiceField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
+
+        // DataLoader-based generation is only applicable when the return type is table-bound.
+        if (!(field.returnType() instanceof no.sikt.graphitron.rewrite.field.ReturnTypeRef.TableBoundReturnType)) {
+            return;
+        }
+
+        // Unresolved service method reference — cannot generate DataLoader code.
+        if (field.serviceMethodRef() instanceof no.sikt.graphitron.rewrite.field.ServiceMethodRef.Unresolved u) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': service method could not be resolved — " + u.reason(),
+                field.location()
+            ));
+            return;
+        }
+
+        // Parent type must be a table type with a resolved, single-column primary key.
+        var parentType = types.get(field.parentTypeName());
+        if (!(parentType instanceof no.sikt.graphitron.rewrite.type.GraphitronType.TableType tt)) {
+            return; // non-table parent; no DataLoader key needed
+        }
+        if (!(tt.table() instanceof ResolvedTable parentTable)) {
+            return; // unresolved parent table already reported by type validator
+        }
+        if (!parentTable.hasPrimaryKey()) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': @service on a table-bound return type requires the parent table '" + parentTable.tableName() + "' to have a primary key",
+                field.location()
+            ));
+            return;
+        }
+        if (parentTable.primaryKeyColumnSqlNames().size() > 1) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': composite primary keys are not yet supported for @service DataLoader generation (table '" + parentTable.tableName() + "')",
+                field.location()
+            ));
+        }
     }
     private void validateComputedField(no.sikt.graphitron.rewrite.field.ChildField.ComputedField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);

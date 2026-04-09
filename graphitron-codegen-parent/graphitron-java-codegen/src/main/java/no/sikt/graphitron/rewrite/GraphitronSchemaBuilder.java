@@ -63,6 +63,7 @@ import no.sikt.graphitron.rewrite.field.ArgumentRef;
 import no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.field.ExternalRef;
 import no.sikt.graphitron.rewrite.field.MethodRef;
+import no.sikt.graphitron.rewrite.field.ServiceMethodRef;
 import no.sikt.graphitron.rewrite.field.NodeTypeRef;
 import no.sikt.graphitron.rewrite.field.NodeTypeRef.ResolvedNodeType;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
@@ -416,7 +417,13 @@ public class GraphitronSchemaBuilder {
 
     private TableRef resolveTable(String sqlName) {
         return catalog.findTable(sqlName)
-            .<TableRef>map(e -> new ResolvedTable(sqlName, e.javaFieldName(), e.table().getClass().getSimpleName(), e.table().getPrimaryKey() != null))
+            .<TableRef>map(e -> {
+                var pk = e.table().getPrimaryKey();
+                List<String> pkCols = pk != null
+                    ? pk.getFields().stream().map(f -> f.getName()).toList()
+                    : List.of();
+                return new ResolvedTable(sqlName, e.javaFieldName(), e.table().getClass().getSimpleName(), pk != null, pkCols);
+            })
             .orElseGet(() -> new UnresolvedTable(sqlName));
     }
 
@@ -1106,12 +1113,18 @@ public class GraphitronSchemaBuilder {
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
+            ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
+            List<ArgumentSpec> arguments = parseArguments(fieldDef);
+            List<String> contextArguments = parseContextArguments(fieldDef, DIR_SERVICE);
+            Set<String> argNames = arguments.stream().map(ArgumentSpec::name).collect(Collectors.toSet());
+            ServiceMethodRef serviceMethodRef = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArguments));
             return new ServiceField(parentTypeName, name, location,
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
                 parseReferencePath(fieldDef),
-                parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF),
-                parseArguments(fieldDef),
-                parseContextArguments(fieldDef, DIR_SERVICE));
+                serviceRef,
+                arguments,
+                contextArguments,
+                serviceMethodRef);
         }
 
         String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
@@ -1127,12 +1140,18 @@ public class GraphitronSchemaBuilder {
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
+            ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
+            List<ArgumentSpec> arguments = parseArguments(fieldDef);
+            List<String> contextArguments = parseContextArguments(fieldDef, DIR_SERVICE);
+            Set<String> argNames = arguments.stream().map(ArgumentSpec::name).collect(Collectors.toSet());
+            ServiceMethodRef serviceMethodRef = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArguments));
             return new ServiceField(parentTypeName, name, location,
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
                 parseReferencePath(fieldDef),
-                parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF),
-                parseArguments(fieldDef),
-                parseContextArguments(fieldDef, DIR_SERVICE));
+                serviceRef,
+                arguments,
+                contextArguments,
+                serviceMethodRef);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) {
@@ -1382,6 +1401,51 @@ public class GraphitronSchemaBuilder {
      */
     private MethodRef resolveConditionRef(Map<String, Object> conditionMap) {
         return null;
+    }
+
+    /**
+     * Attempts to load the service class and method via reflection and classify each parameter.
+     *
+     * <p>Returns {@link ServiceMethodRef.Resolved} when the class and at least one matching method
+     * are found; {@link ServiceMethodRef.Unresolved} otherwise. Parameters whose name matches a
+     * GraphQL argument are classified {@link ServiceMethodRef.ParamKind#ARG}, parameters whose name
+     * matches a context key are classified {@link ServiceMethodRef.ParamKind#CONTEXT}, and all
+     * others (including parameters whose name is absent because the class was compiled without
+     * {@code -parameters}) are classified {@link ServiceMethodRef.ParamKind#SOURCES}.
+     */
+    private ServiceMethodRef reflectServiceMethod(ExternalRef serviceRef, Set<String> argNames, Set<String> ctxKeys) {
+        if (serviceRef == null || serviceRef.className() == null || serviceRef.methodName() == null) {
+            return new ServiceMethodRef.Unresolved("service reference is incomplete");
+        }
+        try {
+            Class<?> cls = Class.forName(serviceRef.className());
+            var methods = java.util.Arrays.stream(cls.getDeclaredMethods())
+                .filter(m -> m.getName().equals(serviceRef.methodName()))
+                .toList();
+            if (methods.isEmpty()) {
+                return new ServiceMethodRef.Unresolved(
+                    "method '" + serviceRef.methodName() + "' not found in class '" + serviceRef.className() + "'");
+            }
+            var method = methods.get(0);
+            var params = java.util.Arrays.stream(method.getParameters())
+                .map(p -> {
+                    String pName = p.isNamePresent() ? p.getName() : null;
+                    ServiceMethodRef.ParamKind kind;
+                    if (pName != null && argNames.contains(pName)) {
+                        kind = ServiceMethodRef.ParamKind.ARG;
+                    } else if (pName != null && ctxKeys.contains(pName)) {
+                        kind = ServiceMethodRef.ParamKind.CONTEXT;
+                    } else {
+                        kind = ServiceMethodRef.ParamKind.SOURCES;
+                    }
+                    String displayName = pName != null ? pName : p.getType().getSimpleName();
+                    return new ServiceMethodRef.ServiceParamInfo(displayName, p.getType().getName(), kind);
+                })
+                .toList();
+            return new ServiceMethodRef.Resolved(params, method.getReturnType().getName());
+        } catch (ClassNotFoundException e) {
+            return new ServiceMethodRef.Unresolved("class '" + serviceRef.className() + "' could not be loaded");
+        }
     }
 
     private String extractConditionQualifiedName(Map<String, Object> conditionMap) {

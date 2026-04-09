@@ -303,6 +303,13 @@ public sealed interface ChildField extends GraphitronField
      * of the {@code @service} directive.
      *
      * <p>{@code arguments} is the full list of GraphQL arguments on the field.
+     *
+     * <p>{@code serviceMethodRef} is the outcome of reflecting the service method at parse time:
+     * {@link ServiceMethodRef.Resolved} when the class and method were found (carrying the
+     * parameter list with {@link ServiceMethodRef.ParamKind} classifications), or
+     * {@link ServiceMethodRef.Unresolved} when reflection failed. The
+     * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error for
+     * {@code Unresolved} when the return type is table-bound.
      */
     record ServiceField(
         String parentTypeName,
@@ -312,7 +319,8 @@ public sealed interface ChildField extends GraphitronField
         List<ReferencePathElementRef> referencePath,
         ExternalRef serviceRef,
         List<ArgumentSpec> arguments,
-        List<String> contextArguments
+        List<String> contextArguments,
+        ServiceMethodRef serviceMethodRef
     ) implements ChildField {}
 
     /**

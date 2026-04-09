@@ -9,6 +9,9 @@ import no.sikt.graphitron.javapoet.WildcardTypeName;
 import javax.lang.model.element.Modifier;
 import java.util.List;
 
+import static javax.lang.model.element.Modifier.PUBLIC;
+import static javax.lang.model.element.Modifier.STATIC;
+
 /**
  * Generates a {@link TypeSpec} for one table class in {@code rewrite.tables}.
  *
@@ -39,18 +42,22 @@ public class TableCodeGenerator {
 
     private static final ClassName RESULT        = ClassName.get("org.jooq", "Result");
     private static final ClassName RECORD        = ClassName.get("org.jooq", "Record");
+    private static final ClassName ROW           = ClassName.get("org.jooq", "Row");
     private static final ClassName FIELD         = ClassName.get("org.jooq", "Field");
     private static final ClassName CONDITION     = ClassName.get("org.jooq", "Condition");
     private static final ClassName SORT_FIELD    = ClassName.get("org.jooq", "SortField");
     private static final ClassName LIST          = ClassName.get(List.class);
     private static final ClassName ENV           = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName SELECTION_SET = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
+    private static final ClassName SELECTED_FIELD = ClassName.get("graphql.schema", "SelectedField");
 
     public TypeSpec generate(String tableName) {
         return TypeSpec.classBuilder(tableName)
             .addModifiers(Modifier.PUBLIC)
             .addMethod(buildSelectManyMethod())
             .addMethod(buildSelectOneMethod())
+            .addMethod(buildSelectManyFromServiceMethod())
+            .addMethod(buildSelectOneFromServiceMethod())
             .addMethod(buildSubselectManyMethod())
             .addMethod(buildSubselectOneMethod())
             .build();
@@ -73,6 +80,29 @@ public class TableCodeGenerator {
             .returns(RECORD)
             .addParameter(ENV, "env")
             .addParameter(CONDITION, "condition")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    private MethodSpec buildSelectManyFromServiceMethod() {
+        var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        return MethodSpec.methodBuilder("selectMany")
+            .addModifiers(PUBLIC, STATIC)
+            .returns(ParameterizedTypeName.get(LIST, listOfRecord))
+            .addParameter(ParameterizedTypeName.get(LIST, ROW), "keys")
+            .addParameter(SELECTED_FIELD, "sel")
+            .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(Object.class)), "serviceRecords")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    private MethodSpec buildSelectOneFromServiceMethod() {
+        return MethodSpec.methodBuilder("selectOne")
+            .addModifiers(PUBLIC, STATIC)
+            .returns(ParameterizedTypeName.get(LIST, RECORD))
+            .addParameter(ParameterizedTypeName.get(LIST, ROW), "keys")
+            .addParameter(SELECTED_FIELD, "sel")
+            .addParameter(Object.class, "serviceRecord")
             .addStatement("throw new $T()", UnsupportedOperationException.class)
             .build();
     }

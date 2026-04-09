@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.type.GraphitronType;
+import no.sikt.graphitron.rewrite.type.TableRef;
 
 import java.util.Comparator;
 import java.util.List;
@@ -43,6 +44,19 @@ public class FieldsClassGenerator {
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
-        return codeGenerator.generate(typeName, fields);
+        TableRef parentTable = tableRefForType(schema, typeName);
+        return codeGenerator.generate(typeName, parentTable, fields);
+    }
+
+    /**
+     * Returns the {@link TableRef} for the given type name if the type is a
+     * {@link GraphitronType.TableType}, or {@code null} for root types and other non-table types.
+     */
+    private static TableRef tableRefForType(GraphitronSchema schema, String typeName) {
+        var type = schema.types().get(typeName);
+        if (type instanceof GraphitronType.TableType tt) {
+            return tt.table();
+        }
+        return null;
     }
 }
