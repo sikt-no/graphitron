@@ -42,9 +42,11 @@ If a generator needs a piece of information that is not present in the taxonomy,
 
 ### Generators already done
 
+Each generator is a utility class with a single `public static List<TypeSpec> generate(GraphitronSchema)` method (or no-arg for schema-independent generators). There is no shared base class or interface. `GraphQLRewriteGenerator` calls each generator explicitly and owns the sub-package routing and file I/O.
+
 | Generator | Output | Notes |
 |---|---|---|
-| `GraphitronValuesClassGenerator` | `GraphitronValues.java` in `rewrite` | Defines `GRAPHITRON_INPUT_IDX` |
+| `GraphitronValuesClassGenerator` | `GraphitronValues.java` in `rewrite` | No schema parameter — generates a fixed constant class. Defines `GRAPHITRON_INPUT_IDX`. |
 | `LookupClassGenerator` | *(transitional)* | Generates `<TypeName>Lookup::toInputRows`; superseded by DataLoader pattern — to be removed when DataLoader generation is implemented |
 | `SplitSourceClassGenerator` | *(transitional)* | Generates `<ParentType><FieldName>DerivedSource::rows`; superseded by DataLoader pattern — to be removed when DataLoader generation is implemented |
 | `TableClassGenerator` | `<TableName>.java` in `rewrite.tables` | Projection stubs only (`selectMany`, `selectOne`, `subselectMany`, `subselectOne`); named after the jOOQ table class. DataLoader batch methods are bespoke per-field and live in `rewrite.types` alongside their data fetchers. |

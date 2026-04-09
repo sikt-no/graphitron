@@ -86,7 +86,8 @@ TypeDefinitionRegistry
   │
   ▼  GraphitronSchemaValidator (accumulates errors; never throws; fails build after full scan)
   │
-  ▼  Generators                (consume GraphitronSchema; emit TypeSpec → .java files)
+  ▼  Generators                (static methods per generator; consume GraphitronSchema; emit TypeSpec → .java files)
+                               (GraphQLRewriteGenerator owns sub-package routing and file I/O)
 ```
 
 `GraphitronSchemaBuilder` operates on a `GraphQLSchema` assembled from the `TypeDefinitionRegistry` (same pattern as `SchemaTransformer.assembleSchema()`). It iterates `schema.getAllTypesAsList()` for type classification, then each `GraphQLObjectType`'s field definitions for field classification. Interface and union participant lists are populated in a second enrichment pass.
