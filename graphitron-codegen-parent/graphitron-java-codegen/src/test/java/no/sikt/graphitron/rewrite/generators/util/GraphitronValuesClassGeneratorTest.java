@@ -10,17 +10,17 @@ class GraphitronValuesClassGeneratorTest {
 
     @Test
     void generateAll_returnsExactlyOneClass() {
-        assertThat(GEN.generateAll()).hasSize(1);
+        assertThat(GEN.generateAll(null)).hasSize(1);
     }
 
     @Test
     void generatedClass_isNamedGraphitronValues() {
-        assertThat(GEN.generateAll().get(0).name()).isEqualTo("GraphitronValues");
+        assertThat(GEN.generateAll(null).get(0).name()).isEqualTo("GraphitronValues");
     }
 
     @Test
     void generatedClass_hasGraphitronInputIdxField() {
-        var field = GEN.generateAll().get(0).fieldSpecs().get(0);
+        var field = GEN.generateAll(null).get(0).fieldSpecs().get(0);
         assertThat(field.name()).isEqualTo("GRAPHITRON_INPUT_IDX");
         assertThat(field.type().toString()).isEqualTo("org.jooq.Field<java.lang.Integer>");
         assertThat(field.initializer().toString()).contains("graphitron_input_idx");

@@ -26,18 +26,11 @@ public class SplitSourceClassGenerator extends AbstractRewriteClassGenerator {
 
     static final String SAVE_DIRECTORY = "rewrite.resolvers";
 
-    private final List<SplitSourceSpec> specs;
-    private final SplitSourceCodeGenerator codeGenerator;
-
-    public SplitSourceClassGenerator(GraphitronSchema schema) {
-        this.specs = SplitSourceSpecBuilder.build(schema);
-        var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
-        this.codeGenerator = new SplitSourceCodeGenerator(tablesClass);
-    }
-
     @Override
-    public List<TypeSpec> generateAll() {
-        return specs.stream()
+    public List<TypeSpec> generateAll(GraphitronSchema schema) {
+        var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
+        var codeGenerator = new SplitSourceCodeGenerator(tablesClass);
+        return SplitSourceSpecBuilder.build(schema).stream()
             .map(codeGenerator::generate)
             .toList();
     }

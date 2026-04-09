@@ -98,8 +98,9 @@ class TablePipelineTest {
     // ===== Helpers =====
 
     private List<String> generate(String sdl) {
-        var gen = new TableClassGenerator(buildSchema(sdl));
-        return gen.generateAll().stream().map(t -> t.name()).toList();
+        return new TableClassGenerator().generateAll(buildSchema(sdl)).stream()
+            .map(t -> t.name())
+            .toList();
     }
 
     private GraphitronSchema buildSchema(String schemaText) {

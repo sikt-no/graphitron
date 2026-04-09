@@ -23,23 +23,17 @@ public class TableClassGenerator extends AbstractRewriteClassGenerator {
 
     static final String SAVE_DIRECTORY = "rewrite.tables";
 
-    private final List<String> tableNames;
     private final TableCodeGenerator codeGenerator = new TableCodeGenerator();
 
-    public TableClassGenerator(GraphitronSchema schema) {
-        this.tableNames = schema.types().values().stream()
+    @Override
+    public List<TypeSpec> generateAll(GraphitronSchema schema) {
+        return schema.types().values().stream()
             .filter(t -> t instanceof GraphitronType.TableType)
             .map(t -> ((GraphitronType.TableType) t).table())
             .filter(ref -> ref instanceof TableRef.ResolvedTable)
             .map(ref -> ((TableRef.ResolvedTable) ref).javaClassName())
             .distinct()
             .sorted()
-            .toList();
-    }
-
-    @Override
-    public List<TypeSpec> generateAll() {
-        return tableNames.stream()
             .map(codeGenerator::generate)
             .toList();
     }

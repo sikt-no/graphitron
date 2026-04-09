@@ -22,16 +22,11 @@ public class LookupClassGenerator extends AbstractRewriteClassGenerator {
 
     static final String SAVE_DIRECTORY = "rewrite.resolvers";
 
-    private final List<LookupSpec> specs;
     private final LookupCodeGenerator codeGenerator = new LookupCodeGenerator();
 
-    public LookupClassGenerator(GraphitronSchema schema) {
-        this.specs = LookupSpecBuilder.build(schema);
-    }
-
     @Override
-    public List<TypeSpec> generateAll() {
-        return specs.stream()
+    public List<TypeSpec> generateAll(GraphitronSchema schema) {
+        return LookupSpecBuilder.build(schema).stream()
             .map(codeGenerator::generate)
             .toList();
     }

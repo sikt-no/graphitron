@@ -109,13 +109,13 @@ class FieldsPipelineTest {
     // ===== Helpers =====
 
     private List<String> generateNames(String sdl) {
-        return new FieldsClassGenerator(buildSchema(sdl)).generateAll().stream()
+        return new FieldsClassGenerator().generateAll(buildSchema(sdl)).stream()
             .map(TypeSpec::name)
             .toList();
     }
 
     private TypeSpec findSpec(String className, String sdl) {
-        return new FieldsClassGenerator(buildSchema(sdl)).generateAll().stream()
+        return new FieldsClassGenerator().generateAll(buildSchema(sdl)).stream()
             .filter(t -> t.name().equals(className))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Class not found: " + className));

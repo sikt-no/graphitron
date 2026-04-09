@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.AbstractRewriteClassGenerator;
 
 import javax.lang.model.element.Modifier;
@@ -36,7 +37,7 @@ public class GraphitronValuesClassGenerator extends AbstractRewriteClassGenerato
     private static final ClassName FIELD = ClassName.get("org.jooq", "Field");
 
     @Override
-    public List<TypeSpec> generateAll() {
+    public List<TypeSpec> generateAll(GraphitronSchema schema) {
         return List.of(generateValuesClass());
     }
 

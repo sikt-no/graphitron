@@ -27,24 +27,16 @@ public class FieldsClassGenerator extends AbstractRewriteClassGenerator {
 
     static final String SAVE_DIRECTORY = "rewrite.types";
 
-    private final GraphitronSchema schema;
-    private final List<String> typeNames;
     private final FieldsCodeGenerator codeGenerator = new FieldsCodeGenerator();
 
-    public FieldsClassGenerator(GraphitronSchema schema) {
-        this.schema = schema;
-        this.typeNames = schema.types().entrySet().stream()
+    @Override
+    public List<TypeSpec> generateAll(GraphitronSchema schema) {
+        return schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof GraphitronType.TableType
                       || e.getValue() instanceof GraphitronType.RootType)
             .map(java.util.Map.Entry::getKey)
             .sorted()
-            .toList();
-    }
-
-    @Override
-    public List<TypeSpec> generateAll() {
-        return typeNames.stream()
-            .map(this::generateForType)
+            .map(typeName -> generateForType(schema, typeName))
             .toList();
     }
 
@@ -53,7 +45,7 @@ public class FieldsClassGenerator extends AbstractRewriteClassGenerator {
         return SAVE_DIRECTORY;
     }
 
-    private TypeSpec generateForType(String typeName) {
+    private TypeSpec generateForType(GraphitronSchema schema, String typeName) {
         var fieldNames = schema.fields().entrySet().stream()
             .filter(e -> e.getKey().getTypeName().equals(typeName))
             .map(java.util.Map.Entry::getValue)

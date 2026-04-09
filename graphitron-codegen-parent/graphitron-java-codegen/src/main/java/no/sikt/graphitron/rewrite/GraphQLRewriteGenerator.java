@@ -44,20 +44,20 @@ public class GraphQLRewriteGenerator {
             throw new RuntimeException("Rewrite schema validation failed with " + errors.size() + " error(s)");
         }
 
-        var generators = getGenerators(schema);
+        var generators = getGenerators();
         generators.parallelStream().forEach(g -> {
-            g.generateAllToDirectory(GeneratorConfig.outputDirectory(), GeneratorConfig.outputPackage());
+            g.generateAllToDirectory(schema, GeneratorConfig.outputDirectory(), GeneratorConfig.outputPackage());
             LOGGER.info("Rewrite: generated sources to: {}.{}", GeneratorConfig.outputPackage(), g.getDefaultSaveDirectoryName());
         });
     }
 
-    static List<AbstractRewriteClassGenerator> getGenerators(GraphitronSchema schema) {
+    static List<AbstractRewriteClassGenerator> getGenerators() {
         return List.of(
             new GraphitronValuesClassGenerator(),
-            new LookupClassGenerator(schema),
-            new SplitSourceClassGenerator(schema),
-            new TableClassGenerator(schema),
-            new FieldsClassGenerator(schema)
+            new LookupClassGenerator(),
+            new SplitSourceClassGenerator(),
+            new TableClassGenerator(),
+            new FieldsClassGenerator()
         );
     }
 }

@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
 
 import java.io.File;
 import java.io.IOException;
@@ -10,21 +11,25 @@ import java.util.List;
 /**
  * Base class for rewrite-pipeline class generators.
  *
- * <p>Subclasses implement {@link #generateAll()} and {@link #getDefaultSaveDirectoryName()}.
- * The pipeline entry point is {@link #generateAllToDirectory}.
+ * <p>Subclasses implement {@link #generateAll(GraphitronSchema)} and
+ * {@link #getDefaultSaveDirectoryName()}. The pipeline entry point is
+ * {@link #generateAllToDirectory}.
  */
 public abstract class AbstractRewriteClassGenerator {
 
-    /** Returns all {@link TypeSpec}s produced by this generator for the current schema. */
-    public abstract List<TypeSpec> generateAll();
+    /**
+     * Returns all {@link TypeSpec}s produced by this generator for the given schema.
+     * Generators that produce fixed output regardless of the schema may ignore the parameter.
+     */
+    public abstract List<TypeSpec> generateAll(GraphitronSchema schema);
 
     /** Returns the sub-package name within the output package (e.g. {@code "rewrite.tables"}). */
     public abstract String getDefaultSaveDirectoryName();
 
     /** Writes all generated classes to the given output directory and package. */
-    public final void generateAllToDirectory(String path, String packagePath) {
+    public final void generateAllToDirectory(GraphitronSchema schema, String path, String packagePath) {
         var packageName = packagePath + "." + getDefaultSaveDirectoryName();
-        generateAll().forEach(spec -> write(spec, path, packageName));
+        generateAll(schema).forEach(spec -> write(spec, path, packageName));
     }
 
     private void write(TypeSpec spec, String path, String packageName) {
