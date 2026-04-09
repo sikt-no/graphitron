@@ -142,7 +142,8 @@ Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nest
 | `ColumnField` / `ColumnReferenceField` | `static T fieldName(env)` | `record.get(TABLE.COL)` from source |
 | `TableQueryField` — list | `static Result<Record> fieldName(env)` | `TableName.selectMany` |
 | `TableQueryField` — single | `static Record fieldName(env)` | `TableName.selectOne` |
-| `LookupQueryField` *(lookup field)* | `static CompletableFuture<List<Record>> fieldName(env)` | `lookupFieldName(env, selectedField)` via DataLoader |
+| `LookupQueryField` *(lookup field)* | `static List<Record> fieldName(env)` | `lookupFieldName(env, selectedField)` — synchronous, no DataLoader |
+| `LookupTableField` — table-mapped parent | `static Result<Record> fieldName(env)` | extract nested result from source `Record`; subquery built by `subselect<FieldName>` during parent query |
 | `TableField` — list, no `@splitQuery` | `static Result<Record> fieldName(env)` | extract nested column from source `Record` |
 | `TableField` — single, no `@splitQuery` | `static Record fieldName(env)` | extract nested column from source `Record` |
 | `TableField` — `@splitQuery`, no `@lookupKey` *(result mapped TableField)*, returns `[T]` | `static CompletableFuture<List<Record>> fieldName(env)` | `loadFieldName(sourceRows, env, selectedField)` via DataLoader |
@@ -240,21 +241,22 @@ Extends `TableCodeGenerator` with `TableField` in table-mapped source context (n
 
 ---
 
-### G6 — DataLoader fields: `LookupQueryField`, result mapped `TableField`, result mapped `LookupTableField`
+### G6 — Split fields: `LookupQueryField`, table mapped `LookupTableField`, result mapped `TableField`, result mapped `LookupTableField`
 
 G6 generates, per affected field, a pair of methods in `rewrite.types.<TypeName>Fields`:
-1. A **data fetcher** — `static CompletableFuture<…> fieldName(DataFetchingEnvironment env)` — registers or retrieves the DataLoader and dispatches to it.
-2. A **bespoke batch method** — named `load<FieldName>` or `lookup<FieldName>` — executed by the DataLoader's batch function. Contains all SQL logic specific to this field.
+1. A **data fetcher** — `static T fieldName(DataFetchingEnvironment env)` — either synchronous (for `LookupQueryField` and table-mapped `LookupTableField`) or a `CompletableFuture<T>` that registers/retrieves a DataLoader (for result mapped fields).
+2. A **bespoke method** — named `lookup<FieldName>`, `subselect<FieldName>`, or `load<FieldName>` — contains all SQL logic specific to this field. For DataLoader categories, this is the batch function body.
 
 ---
 
-#### Three field categories
+#### G6 field categories
 
-| Category | Derived tables present | `@condition` / non-`@lookupKey` args | Pagination |
-|---|---|---|---|
-| **Lookup field** (`LookupQueryField`) | Derived target only | Blocked (lookup invariant) | Never — result count = M exactly |
-| **Result mapped `TableField`** (`@splitQuery`, no `@lookupKey` args) | Derived source only | Allowed — become WHERE on target | Allowed |
-| **Result mapped `LookupTableField`** (`@splitQuery` + `@lookupKey` args) | Both | Blocked (lookup invariant) | Never — result count = N × M |
+| Category | DataLoader | Derived tables present | `@condition` / non-`@lookupKey` args | Pagination |
+|---|---|---|---|---|
+| **Lookup field** (`LookupQueryField`) | No — synchronous | Derived target only | Blocked (lookup invariant) | Never — result count = M exactly |
+| **Table mapped `LookupTableField`** (`@splitQuery` + `@lookupKey`, table-mapped parent) | No — correlated subquery | Derived target only + correlated parent join | Blocked (lookup invariant) | Never |
+| **Result mapped `TableField`** (`@splitQuery`, no `@lookupKey` args) | Yes | Derived source only | Allowed — become WHERE on target | Allowed |
+| **Result mapped `LookupTableField`** (`@splitQuery` + `@lookupKey` args, result-mapped parent) | Yes | Both | Blocked (lookup invariant) | Never — result count = N × M |
 
 **Derived source table** — a SQL `VALUES(…)` derived table built from parent source records. Contains the FK-relevant columns from the parent: the parent's PK/unique-key columns when the FK is on the child side, or the parent's FK columns when the FK is on the parent side.
 
@@ -272,7 +274,8 @@ Arguments are unpacked from `SelectedField` inside the bespoke method — they a
 
 | Category | Bespoke method signature | Return type |
 |---|---|---|
-| Lookup field | `static List<Record> lookup<FieldName>(DataFetchingEnvironment env, SelectedField sel)` | `List<Record>` — M results total |
+| Lookup field (`LookupQueryField`) | `static List<Record> lookup<FieldName>(DataFetchingEnvironment env, SelectedField sel)` | `List<Record>` — M results total |
+| Table mapped LookupTableField | `static Field<Result<Record>> subselect<FieldName>(<ParentAlias> parentAlias, SelectedField sel)` | `Field<Result<Record>>` — jOOQ multiset subquery expression, embedded in parent SELECT |
 | Result mapped TableField — returns `[T]` | `static List<List<Record>> load<FieldName>(List<Row> sourceRows, DataFetchingEnvironment env, SelectedField sel)` | `List<List<Record>>` — one inner list per source |
 | Result mapped TableField — returns `T` | `static List<Record> load<FieldName>(List<Row> sourceRows, DataFetchingEnvironment env, SelectedField sel)` | `List<Record>` — one Record per source |
 | Result mapped TableField — paginated | `static List<List<Record>> load<FieldName>Page(List<Row> sourceRows, DataFetchingEnvironment env, SelectedField sel)` | `List<List<Record>>` — one page per source |
@@ -284,13 +287,39 @@ Arguments are unpacked from `SelectedField` inside the bespoke method — they a
 
 Each bespoke method builds an indexed `VALUES(…)` derived table (prepending a 1-based `idx` to each row), JOINs it against the target table, and partitions results back to one entry per input row using `idx`.
 
-- **Derived source only**: one `JOIN` — derived source ↔ target. One `idx` column.
-- **Derived target only**: one `JOIN` — derived target ↔ target. One `idx` column.
-- **Both derived tables**: two separate `JOIN`s — derived source ↔ target, derived target ↔ target. Two `idx` columns (`src_idx`, `tgt_idx`). NOT a pre-join of derived source × derived target (that would produce an N×M intermediate before hitting the target). Result at position `(i, j)` is retrieved by `src_idx = i+1 AND tgt_idx = j+1`.
+- **Derived target only (LookupQueryField)**: one `JOIN` — derived target ↔ target table. One `idx` column. Results are M rows total, ordered by `idx`.
+- **Derived target + correlated parent join (table-mapped LookupTableField)**: built as a `DSL.multiset(…)` correlated subquery. The FK join condition back to the parent row is baked into the generated method. The derived target table (`VALUES(…)`) is built from `sel.getArguments()` at execution time. No `idx` needed — multiset returns all matching rows per parent naturally.
+- **Derived source only (result mapped TableField)**: one `JOIN` — derived source ↔ target. One `idx` column.
+- **Both derived tables (result mapped LookupTableField)**: two separate `JOIN`s — derived source ↔ target, derived target ↔ target. Two `idx` columns (`src_idx`, `tgt_idx`). NOT a pre-join of derived source × derived target (that would produce an N×M intermediate before hitting the target). Result at position `(i, j)` is retrieved by `src_idx = i+1 AND tgt_idx = j+1`.
 
 ---
 
 #### Example sketches
+
+**`rewrite.types.LanguageFields`** — `LookupTableField`, table-mapped parent (correlated subquery, no DataLoader):
+```java
+// Data fetcher — extracts nested multiset result from the source Record
+public static Result<Record> filmsByTitle(DataFetchingEnvironment env) {
+    return ((Record) env.getSource()).get("filmsByTitle", Result.class);
+}
+
+// Bespoke subquery-building method — called from Language.fields() during parent SELECT assembly.
+// parentAlias is the Language table alias already in scope.
+// sel carries both sub-field selection AND @lookupKey argument values.
+// FK condition (film.language_id = parentAlias.language_id) is baked in.
+// Derived target table: VALUES(title_1), (title_2), … built from sel.getArguments().
+public static Field<Result<Record>> subselectFilmsByTitle(Language parentAlias, SelectedField sel) {
+    throw new UnsupportedOperationException();
+}
+```
+
+Called from `Language.fields(Language alias, DataFetchingFieldSelectionSet sel)`:
+```java
+if (sel.contains("filmsByTitle")) {
+    SelectedField filmsByTitleSel = sel.getField("filmsByTitle");
+    fields.add(LanguageFields.subselectFilmsByTitle(alias, filmsByTitleSel).as("filmsByTitle"));
+}
+```
 
 **`rewrite.types.LanguageFields`** — result mapped TableField, FK on child, returns `[T]`:
 ```java
@@ -324,11 +353,16 @@ public static List<Record> loadLanguage(List<Row> sourceRows, DataFetchingEnviro
 }
 ```
 
-**`rewrite.types.QueryFields`** — lookup field (no source rows):
+**`rewrite.types.QueryFields`** — `LookupQueryField` (synchronous, no DataLoader):
 ```java
-public static CompletableFuture<List<Record>> filmById(DataFetchingEnvironment env) { … }
+// Data fetcher — synchronous; no DataLoader
+public static List<Record> filmById(DataFetchingEnvironment env) {
+    SelectedField sel = env.getSelectionSet().getField("filmById");
+    return lookupFilmById(env, sel);
+}
 
-// Unpacks @lookupKey args from sel internally; result positionally aligned with lookup rows
+// Bespoke method — builds derived target table from sel.getArguments() @lookupKey values,
+// JOINs against film table; returns M rows positionally aligned with lookup rows.
 public static List<Record> lookupFilmById(DataFetchingEnvironment env, SelectedField sel) {
     throw new UnsupportedOperationException();
 }
