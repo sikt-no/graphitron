@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphitron.rewrite.field.FieldConditionRef;
+import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.ConditionOnlyRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkWithConditionRef;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
@@ -205,7 +206,10 @@ public class GraphitronSchemaValidator {
                         + "' on the return type's table",
                     field.location()
                 ));
-                default -> {}
+                case ArgumentRef.InputTypeArg.TableInputTypeArg ignored -> {} // valid lookup input type
+                case ArgumentRef.InputTypeArg.PlainInputTypeArg ignored -> {} // valid lookup input type
+                case ArgumentRef.ScalarArg.ColumnArg ignored            -> {} // valid scalar key argument
+                case ArgumentRef.ScalarArg.ParamArg ignored             -> {} // valid direct parameter
             }
         }
     }
@@ -236,7 +240,7 @@ public class GraphitronSchemaValidator {
                 l.defaultOrder() == null && l.orderByValues().isEmpty();
             case no.sikt.graphitron.rewrite.field.FieldWrapper.Connection c ->
                 c.defaultOrder() == null && c.orderByValues().isEmpty();
-            default -> false;
+            case no.sikt.graphitron.rewrite.field.FieldWrapper.Single ignored -> false; // single fields don't paginate
         };
         if (!needsCheck) return;
         if (table.hasPrimaryKey()) return;
@@ -380,9 +384,12 @@ public class GraphitronSchemaValidator {
         var lastStep = path.getLast();
         String fkTableSql = null, keyTableSql = null;
         switch (lastStep) {
-            case FkRef s             -> { fkTableSql = s.fkTableSqlName(); keyTableSql = s.keyTableSqlName(); }
+            case FkRef s              -> { fkTableSql = s.fkTableSqlName(); keyTableSql = s.keyTableSqlName(); }
             case FkWithConditionRef s -> { fkTableSql = s.fkTableSqlName(); keyTableSql = s.keyTableSqlName(); }
-            default                   -> { return; } // Can't check for condition-only or unresolved steps
+            case ConditionOnlyRef ignored          -> { return; } // no FK tables to check; condition method only
+            case UnresolvedKeyRef ignored          -> { return; } // unresolved FK already reported elsewhere
+            case UnresolvedConditionRef ignored    -> { return; } // unresolved condition already reported elsewhere
+            case UnresolvedKeyAndConditionRef ignored -> { return; } // both already reported elsewhere
         }
         var targetSqlName = targetTable.tableName();
         if (!fkTableSql.equalsIgnoreCase(targetSqlName) &&

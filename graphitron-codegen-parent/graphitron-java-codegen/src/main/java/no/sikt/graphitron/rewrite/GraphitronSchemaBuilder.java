@@ -88,6 +88,7 @@ import no.sikt.graphitron.rewrite.type.InputFieldSpec;
 import no.sikt.graphitron.rewrite.type.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.TableType;
+import no.sikt.graphitron.rewrite.type.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.type.KeyColumnRef;
 import no.sikt.graphitron.rewrite.type.KeyColumnRef.ResolvedKeyColumn;
@@ -311,10 +312,16 @@ public class GraphitronSchemaBuilder {
 
         // Second pass: enrich interface and union types with their participant lists.
         result.replaceAll((name, type) -> switch (type) {
-            case TableInterfaceType tit -> enrichTableInterfaceType(tit, result);
-            case InterfaceType it       -> enrichInterfaceType(it, result);
-            case UnionType ut           -> enrichUnionType(ut, result);
-            default                     -> type;
+            case TableInterfaceType tit  -> enrichTableInterfaceType(tit, result);
+            case InterfaceType it        -> enrichInterfaceType(it, result);
+            case UnionType ut            -> enrichUnionType(ut, result);
+            case TableType ignored       -> type;
+            case ResultType ignored      -> type;
+            case RootType ignored        -> type;
+            case ErrorType ignored       -> type;
+            case InputType ignored       -> type;
+            case TableInputType ignored  -> type;
+            case UnclassifiedType ignored -> type;
         });
 
         return result;
