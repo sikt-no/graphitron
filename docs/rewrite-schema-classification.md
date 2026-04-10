@@ -146,6 +146,14 @@ The same principle applies to `ServiceParam`: the generator's per-parameter loop
 
 This is consistent with the general rule that `JooqCatalog` and `GraphitronSchemaBuilder` are the only classes permitted to hold raw jOOQ or reflection types. If a generator needs information that is not yet in a taxonomy record, the fix is to add a component and extract the value in the builder — not to reach past the taxonomy boundary.
 
+### Narrow component types over broad interfaces
+
+Field record components are declared with the narrowest type the classifier can guarantee rather than the broad sealed-interface root. A field whose return type is always table-bound (e.g. `TableField`, `ServiceTableField`, `QueryTableField`) declares `ReturnTypeRef.TableBoundReturnType` directly; a field whose return type is always polymorphic (e.g. `InterfaceField`, `QueryNodeField`) declares `ReturnTypeRef.PolymorphicReturnType` directly; a field whose return type is always non-table (e.g. `ServiceRecordField`, `RecordField`) declares `ReturnTypeRef.OtherReturnType`.
+
+This pushes the classification certainty into the type system: code that receives a `ServiceTableField` knows its `returnType` is `TableBoundReturnType` without a runtime check; code that receives a `ServiceRecordField` knows `returnType` is `OtherReturnType`. Where the return type genuinely varies (mutation table fields, `TableMethodField`, `ConstructorField`, `ComputedField`), the broad `ReturnTypeRef` is retained.
+
+The same discipline applies to splitting semantically distinct variants into separate records rather than using a discriminating boolean or enum. `ServiceTableField` and `ServiceRecordField` exist as separate records (not a single `ServiceField` with a `kind` flag) precisely so that the return type can be narrowed in each.
+
 ### Sub-taxonomies for resolution outcomes
 
 Complex resolution outcomes get their own sealed type rather than being stored as raw strings. `SourcesRef` is a sub-taxonomy of `ServiceParam`, just as `TableRef` is a sub-taxonomy of `TableType` and `ColumnRef` is a sub-taxonomy of `ColumnField`. This pattern keeps each concept's complexity local and makes the taxonomy self-documenting: the type of a field tells you exactly what states it can be in.
@@ -199,21 +207,23 @@ GraphitronType
 GraphitronField
 ├── RootField
 │   ├── QueryField
-│   │   ├── LookupQueryField
-│   │   ├── TableQueryField
-│   │   ├── TableMethodQueryField
-│   │   ├── NodeQueryField
-│   │   ├── EntityQueryField
-│   │   ├── TableInterfaceQueryField
-│   │   ├── InterfaceQueryField
-│   │   ├── UnionQueryField
-│   │   └── ServiceQueryField
+│   │   ├── QueryLookupTableField
+│   │   ├── QueryTableField
+│   │   ├── QueryTableMethodTableField
+│   │   ├── QueryNodeField
+│   │   ├── QueryEntityField
+│   │   ├── QueryTableInterfaceField
+│   │   ├── QueryInterfaceField
+│   │   ├── QueryUnionField
+│   │   ├── QueryServiceTableField
+│   │   └── QueryServiceRecordField
 │   └── MutationField
-│       ├── InsertMutationField
-│       ├── UpdateMutationField
-│       ├── DeleteMutationField
-│       ├── UpsertMutationField
-│       └── ServiceMutationField
+│       ├── MutationInsertTableField
+│       ├── MutationUpdateTableField
+│       ├── MutationDeleteTableField
+│       ├── MutationUpsertTableField
+│       ├── MutationServiceTableField
+│       └── MutationServiceRecordField
 ├── ChildField
 │   ├── ColumnField
 │   ├── ColumnReferenceField
@@ -229,13 +239,19 @@ GraphitronField
 │   ├── UnionField
 │   ├── NestingField
 │   ├── ConstructorField
-│   ├── ServiceField
+│   ├── ServiceTableField
+│   ├── ServiceRecordField
+│   ├── RecordTableField
+│   ├── RecordLookupTableField
+│   ├── RecordField
 │   ├── ComputedField
 │   ├── PropertyField
 │   └── MultitableReferenceField
 ├── NotGeneratedField  (@notGenerated — classified but no data fetcher generated)
 └── UnclassifiedField  (reason: String)
 ```
+
+**Naming convention:** field types follow the pattern `{ParentType}{Target}{Mechanism}Field` for root fields (e.g. `QueryServiceTableField` = Query root + service mechanism + table-mapped return) and `{Target}{Mechanism}Field` or `{Source}{Target}Field` for child fields (e.g. `RecordTableField` = result-mapped source → table-mapped target). The `Table`/`Record` suffix on service and mutation variants identifies the return type: `TableField` variants return `TableBoundReturnType`; `RecordField` variants return `OtherReturnType`.
 
 **Field-level directive exclusivity:**
 
@@ -253,49 +269,68 @@ All create a new Graphitron scope or enter private service scope. Classification
 
 | Field type | Trigger | Return | Notes |
 |---|---|---|---|
-| `LookupQueryField` | `@lookupKey` on any argument | Always single | Strict 1:1 row-to-key; no pagination. If any arg is a list, return must also be a list. |
-| `TableQueryField` | Return type is `TableType` | Single / List / Connection | General table query. |
-| `TableMethodQueryField` | `@tableMethod` | Single / List / Connection | Developer supplies a pre-filtered `Table<?>`. Preferred over `ServiceQueryField` when logic fits a filtered table. |
-| `NodeQueryField` | Field name `node` | Always single | Relay `Query.node(id:)` — decodes global ID. |
-| `EntityQueryField` | Field name `_entities` | Always single | Apollo Federation `Query._entities(representations:)`. |
-| `TableInterfaceQueryField` | Return type is `TableInterfaceType` | Single / List / Connection | Single-table discriminated interface. |
-| `InterfaceQueryField` | Return type is `InterfaceType` | Single / List / Connection | Multi-table interface; each implementor has its own `@table`. |
-| `UnionQueryField` | Return type is `UnionType` | Single / List / Connection | All member types have `@table`. |
-| `ServiceQueryField` | `@service` — checked first | Always single | Private scope. A derived source table reconnects the result to the target scope if return type is table-mapped. |
+| `QueryLookupTableField` | `@lookupKey` on any argument | Single / List | Strict lookup semantics; no pagination. If any arg is a list, return must also be a list. `returnType` is `TableBoundReturnType`. |
+| `QueryTableField` | Return type is `TableType` | Single / List / Connection | General table query. `returnType` is `TableBoundReturnType`. |
+| `QueryTableMethodTableField` | `@tableMethod` | Single / List / Connection | Developer supplies a pre-filtered `Table<?>`. `returnType` is `TableBoundReturnType`. |
+| `QueryNodeField` | Field name `node` | Single | Relay `Query.node(id:)` — decodes global ID. `returnType` is `PolymorphicReturnType`. |
+| `QueryEntityField` | Field name `_entities` | List | Apollo Federation `Query._entities(representations:)`. `returnType` is `PolymorphicReturnType`. |
+| `QueryTableInterfaceField` | Return type is `TableInterfaceType` | Single / List / Connection | Single-table discriminated interface. `returnType` is `TableBoundReturnType`. |
+| `QueryInterfaceField` | Return type is `InterfaceType` | Single / List / Connection | Multi-table interface; each implementor has its own `@table`. `returnType` is `PolymorphicReturnType`. |
+| `QueryUnionField` | Return type is `UnionType` | Single / List / Connection | All member types have `@table`. `returnType` is `PolymorphicReturnType`. |
+| `QueryServiceTableField` | `@service` with table-mapped return — checked first | Single / List | Private scope; `returnType` is `TableBoundReturnType`. Carries `serviceMethodRef: ServiceMethodRef`. |
+| `QueryServiceRecordField` | `@service` with non-table return — checked first | Single / List | Private scope; `returnType` is `OtherReturnType`. |
 
 `hasLookupKeyAnywhere()` checks direct arguments for `@lookupKey`, then recursively checks input type fields (depth-capped at 10 levels to prevent infinite recursion on circular input type references).
 
 ### Mutation fields
 
-The only fields permitted to write to the database. All support access back into the graph via their return type (derived source table if table-mapped, derived source table on child fields if result-mapped), except `DeleteMutationField`.
+The only fields permitted to write to the database. All support access back into the graph via their return type (derived source table if table-mapped, derived source table on child fields if result-mapped), except `MutationDeleteTableField`.
 
-| Field type | Operation | Return |
-|---|---|---|
-| `InsertMutationField` | `@mutation(typeName: INSERT)` | Table-mapped or result-mapped (derived source table applies) |
-| `UpdateMutationField` | `@mutation(typeName: UPDATE)` | Table-mapped or result-mapped (derived source table applies) |
-| `DeleteMutationField` | `@mutation(typeName: DELETE)` | Success flag, count, or ordered input echo. No derived source table — deleted rows cannot be queried back. |
-| `UpsertMutationField` | `@mutation(typeName: UPSERT)` | Table-mapped or result-mapped (derived source table applies) |
-| `ServiceMutationField` | `@service` — checked first | Same derived source table rule as service fields |
+| Field type | Operation | Return type | Notes |
+|---|---|---|---|
+| `MutationInsertTableField` | `@mutation(typeName: INSERT)` | `ReturnTypeRef` (broad) | Derived source table applies. |
+| `MutationUpdateTableField` | `@mutation(typeName: UPDATE)` | `ReturnTypeRef` (broad) | Derived source table applies. |
+| `MutationDeleteTableField` | `@mutation(typeName: DELETE)` | `ReturnTypeRef` (broad) | No derived source table — deleted rows cannot be queried back. |
+| `MutationUpsertTableField` | `@mutation(typeName: UPSERT)` | `ReturnTypeRef` (broad) | Derived source table applies. |
+| `MutationServiceTableField` | `@service` with table-mapped return — checked first | `TableBoundReturnType` | Carries `serviceMethodRef: ServiceMethodRef`. Same private-scope rule as service fields. |
+| `MutationServiceRecordField` | `@service` with non-table return — checked first | `OtherReturnType` | No DataLoader. |
 
 ### Child fields
 
 Source context at generation time is derived from `schema.type(parentTypeName)` — `TableType` means table-mapped, `ResultType` means result-mapped.
 
-#### Graphitron projects through these
+#### Graphitron-managed scope — table-mapped source
 
 | Field type | Valid source contexts | Description |
 |---|---|---|
-| `TableField` | Table-mapped, result-mapped | Table-mapped target. No `@splitQuery`, no `@lookupKey`. Handles projection, ordering, pagination, nested scopes. In result-mapped context starts a new scope via DataLoader with a derived source table. |
-| `SplitTableField` | Table-mapped, result-mapped | `@splitQuery`, no `@lookupKey`. Always a DataLoader with a derived source table, even on a table-mapped parent. |
-| `LookupTableField` | Table-mapped, result-mapped | `@lookupKey`, no `@splitQuery`. Argument values form the derived target table. Table-mapped parent: correlated multiset subquery inlined in parent SELECT, no DataLoader. Result-mapped parent: new scope via DataLoader using both a derived source table (N parent rows) and the derived target table (M lookup rows, identical for all N). |
-| `SplitLookupTableField` | Table-mapped, result-mapped | `@splitQuery` + `@lookupKey`. Always a DataLoader with both a derived source table and a derived target table, regardless of parent context. |
-| `TableMethodField` | Table-mapped, result-mapped | `@tableMethod` — developer supplies a pre-filtered `Table<?>`. Joined using the same logic as `TableField`. |
-| `TableInterfaceField` | Table-mapped, result-mapped | Single-table discriminated interface target. |
-| `InterfaceField` | Table-mapped, result-mapped | Multi-table interface target. |
-| `UnionField` | Table-mapped, result-mapped | Union target. |
-| `NestingField` | Table-mapped | Target inherits the source table context; produces a nesting level without a new scope. |
+| `TableField` | Table-mapped, result-mapped | Table-mapped target. No `@splitQuery`, no `@lookupKey`. Handles projection, ordering, pagination, nested scopes. In result-mapped context starts a new scope via DataLoader with a derived source table. `returnType`: `TableBoundReturnType`. |
+| `SplitTableField` | Table-mapped, result-mapped | `@splitQuery`, no `@lookupKey`. Always a DataLoader with a derived source table, even on a table-mapped parent. `returnType`: `TableBoundReturnType`. |
+| `LookupTableField` | Table-mapped, result-mapped | `@lookupKey`, no `@splitQuery`. Argument values form the derived target table. Table-mapped parent: correlated multiset subquery inlined in parent SELECT, no DataLoader. Result-mapped parent: new scope via DataLoader using both a derived source table (N parent rows) and the derived target table (M lookup rows, identical for all N). `returnType`: `TableBoundReturnType`. |
+| `SplitLookupTableField` | Table-mapped, result-mapped | `@splitQuery` + `@lookupKey`. Always a DataLoader with both a derived source table and a derived target table, regardless of parent context. `returnType`: `TableBoundReturnType`. |
+| `TableMethodField` | Table-mapped, result-mapped | `@tableMethod` — developer supplies a pre-filtered `Table<?>`. Joined using the same logic as `TableField`. `returnType`: broad `ReturnTypeRef` (may be any sub-type). |
+| `TableInterfaceField` | Table-mapped, result-mapped | Single-table discriminated interface target. `returnType`: `TableBoundReturnType`. |
+| `InterfaceField` | Table-mapped, result-mapped | Multi-table interface target. `returnType`: `PolymorphicReturnType`. |
+| `UnionField` | Table-mapped, result-mapped | Union target. `returnType`: `PolymorphicReturnType`. |
+| `NestingField` | Table-mapped | Target inherits the source table context; produces a nesting level without a new scope. `returnType`: `TableBoundReturnType` copied from the parent's table context. |
 
-#### Graphitron does not project through these
+#### Graphitron-managed scope — result-mapped source
+
+These variants are classified when the **parent** type is `ResultType` (`@record`). They always open a new DataLoader scope.
+
+| Field type | Description |
+|---|---|
+| `RecordTableField` | Table-mapped target — result-mapped → table-mapped. Generates a DataLoader data fetcher with a derived source table built from the parent record. No `@lookupKey`. `returnType`: `TableBoundReturnType`. |
+| `RecordLookupTableField` | Table-mapped target with `@lookupKey` — result-mapped → table-mapped with lookup semantics. `returnType`: `TableBoundReturnType`. |
+| `RecordField` | Non-table return — result-mapped → result-mapped. Reads the named property from the parent record; no SQL. `columnName` identifies the property to access. `returnType`: `OtherReturnType`. |
+
+#### Service scope (private)
+
+| Field type | Valid source contexts | Description |
+|---|---|---|
+| `ServiceTableField` | Table-mapped, result-mapped | `@service` with table-mapped return — private scope, developer-provided SQL. Carries `serviceMethodRef: ServiceMethodRef` — resolved at schema-build time. When `serviceMethodRef` is `Resolved`, the generator emits a real DataLoader data fetcher and a `load<FieldName>` batch method; key type and expression are driven by the SOURCES parameter's `SourcesRef` variant. `returnType`: `TableBoundReturnType`. |
+| `ServiceRecordField` | Table-mapped, result-mapped | `@service` with non-table return — private scope, no DataLoader. Carries `serviceMethodRef: ServiceMethodRef`. `returnType`: `OtherReturnType`. |
+
+#### Terminal fields (no further projection)
 
 | Field type | Valid source contexts | Description |
 |---|---|---|
@@ -304,39 +339,64 @@ Source context at generation time is derived from `schema.type(parentTypeName)` 
 | `NodeIdField` | Table-mapped | `@nodeId` — encodes a Relay global ID from the source type's key columns. Source type must have `@node`. |
 | `NodeIdReferenceField` | Table-mapped | `@nodeId(typeName: ...)` — joins to the target type and encodes a Relay ID for that row. |
 | `ComputedField` | Table-mapped | `@externalField` — developer provides a jOOQ `Field<?>` included in the SELECT. |
-| `ConstructorField` | Table-mapped | Field-to-constructor-parameter mapping; Graphitron does not project through it. |
-| `ServiceField` | Table-mapped, result-mapped | `@service` — private scope. From result-mapped source, input is locked to what the record carries. A derived source table reconnects the result to the target scope if return type is table-mapped. Carries `serviceMethodRef: ServiceMethodRef` — resolved at schema-build time via reflection. When `returnType` is `TableBoundReturnType` and `serviceMethodRef` is `Resolved`, the generator emits a real DataLoader data fetcher and a `load<FieldName>` batch method; the key type and key expression are driven by the SOURCES parameter's `SourcesRef` variant. |
+| `ConstructorField` | Result-mapped | Field-to-constructor-parameter mapping on a `@record` type. |
 | `PropertyField` | Result-mapped | Reads a scalar or nested record property. Trivial data fetcher; no SQL. |
 | `MultitableReferenceField` | — | `@multitableReference` — not supported. Validator always reports an error; use `@service` instead. |
 
 ### Child field matrix
 
-Quick reference: which field type applies given target and source context.
+Quick reference: which field type applies given directive, target type, and source context. Classification for non-root fields checks the **parent** type to determine source context.
 
-| Target | Source context | Projects through | Stops here |
+| Target | Directive | Source context | Field type |
 |---|---|---|---|
-| Table-mapped | Table-mapped or result-mapped | `TableField`, `SplitTableField`, `TableMethodField` | — |
-| Table-mapped + `@lookupKey` | Table-mapped or result-mapped | `LookupTableField`, `SplitLookupTableField` | — |
-| Interface | Table-mapped or result-mapped | `TableInterfaceField`, `InterfaceField` | — |
-| Union | Table-mapped or result-mapped | `UnionField` | — |
-| Inherited table scope | Table-mapped | `NestingField` | — |
-| Column (own table) | Table-mapped | — | `ColumnField`, `NodeIdField` |
-| Column (via join) | Table-mapped | — | `ColumnReferenceField`, `NodeIdReferenceField` |
-| SQL expression | Table-mapped | — | `ComputedField` |
-| Service | Table-mapped or result-mapped | — | `ServiceField` |
-| Record property | Result-mapped | — | `PropertyField` |
-| Constructor | Table-mapped | — | `ConstructorField` |
-| Unsupported | — | — | `MultitableReferenceField` |
+| `TableType` | — | Table-mapped | `TableField` |
+| `TableType` | — | Result-mapped, no `@service` | `RecordTableField` |
+| `TableType` | `@splitQuery` | Table-mapped or result-mapped | `SplitTableField` |
+| `TableType` | `@lookupKey` (no `@service`) | Table-mapped or result-mapped | `LookupTableField` |
+| `TableType` | `@splitQuery` + `@lookupKey` | Table-mapped or result-mapped | `SplitLookupTableField` |
+| `TableType` | `@tableMethod` | Table-mapped or result-mapped | `TableMethodField` |
+| `TableType` | `@lookupKey`, no `@service` | Result-mapped | `RecordLookupTableField` |
+| `TableInterfaceType` | — | Table-mapped or result-mapped | `TableInterfaceField` |
+| `InterfaceType` | — | Table-mapped or result-mapped | `InterfaceField` |
+| `UnionType` | — | Table-mapped or result-mapped | `UnionField` |
+| Unclassified object type | — | Table-mapped | `NestingField` (inherits scope) |
+| Column (own table) | — | Table-mapped | `ColumnField` |
+| Column (own table) | `@nodeId` | Table-mapped | `NodeIdField` |
+| Column (joined table) | `@reference` | Table-mapped | `ColumnReferenceField` |
+| Column (joined table) | `@nodeId(typeName:)` | Table-mapped | `NodeIdReferenceField` |
+| jOOQ `Field<?>` expression | `@externalField` | Table-mapped | `ComputedField` |
+| Any | `@service` + table return | Table-mapped or result-mapped | `ServiceTableField` |
+| Any | `@service` + non-table return | Table-mapped or result-mapped | `ServiceRecordField` |
+| Non-table | — | Result-mapped | `RecordField` |
+| Non-table | `@constructor` | Result-mapped | `ConstructorField` |
+| Scalar property | — | Result-mapped | `PropertyField` |
+| — | `@multitableReference` | — | `MultitableReferenceField` (error) |
 
 ---
 
 ## Return Types and Wrappers
 
-**`ReturnTypeRef`** — outcome of resolving a field's return type against classified types:
-- `TableBoundReturnType` — type is a `TableType`; carries resolved `TableRef`
-- `OtherReturnType` — type exists but is not table-bound (result type, interface, union)
+**`ReturnTypeRef`** — sealed interface with three permits, outcome of resolving a field's return type against classified types. All variants carry `returnTypeName` and `wrapper: FieldWrapper`.
 
-Both carry `returnTypeName` and `wrapper: FieldWrapper`.
+```
+ReturnTypeRef
+├── TableBoundReturnType(returnTypeName, table: TableRef, wrapper)
+│     Graphitron generates the SQL query. The named type is a TableType or TableInterfaceType,
+│     or the field inherits its parent's table context (NestingField). table carries the
+│     jOOQ catalog resolution outcome.
+├── OtherReturnType  (sealed interface)
+│   ├── JavaRecordReturnType(returnTypeName, wrapper)         — backing class is a Java record
+│   ├── PojoReturnType(returnTypeName, wrapper)               — backing class is a plain Java class (default/stub)
+│   ├── JooqRecordReturnType(returnTypeName, wrapper)         — backing class is a jOOQ Record<?>
+│   └── JooqTableRecordReturnType(returnTypeName, table, wrapper) — backing class is a jOOQ TableRecord<?>
+│         Determined by reflecting on the backing class at parse time.
+└── PolymorphicReturnType(returnTypeName, wrapper)
+      Stub for multi-table polymorphic returns: GraphQL interfaces whose member types are each
+      backed by separate tables, unions, and Relay/Federation built-in fields (node, _entities).
+      Code generation for this case is not yet implemented.
+```
+
+**Which variant each field carries** is enforced by the component type of the field record. Table-returning fields (`TableField`, `SplitTableField`, `LookupTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`, `TableInterfaceField`, `NestingField`, `ServiceTableField`, `QueryServiceTableField`, `MutationServiceTableField`, `QueryTableField`, `QueryLookupTableField`, `QueryTableInterfaceField`) declare `ReturnTypeRef.TableBoundReturnType` directly. Service/record fields that return non-table types (`ServiceRecordField`, `RecordField`, `QueryServiceRecordField`, `MutationServiceRecordField`) declare `ReturnTypeRef.OtherReturnType`. Polymorphic fields (`InterfaceField`, `UnionField`, `QueryInterfaceField`, `QueryUnionField`, `QueryNodeField`, `QueryEntityField`) declare `ReturnTypeRef.PolymorphicReturnType`. Fields that may return any type (mutation table fields, `TableMethodField`, `ComputedField`, `ConstructorField`) declare the broad `ReturnTypeRef`.
 
 **`FieldWrapper`** — cardinality of the field's element type:
 - `Single(nullable)` — one instance or null
@@ -373,6 +433,8 @@ ArgumentRef
 ```
 
 All variants carry `name`, `typeName`, `nonNull`, `list`.
+
+`ArgumentRef` values are stored directly in field records as `List<ArgumentRef>`. There is no intermediate `ArgumentSpec` type — classification produces `ArgumentRef` values immediately and the field record holds them directly.
 
 ---
 
@@ -437,10 +499,10 @@ Name matching requires the `-parameters` compiler flag on the service class sour
 After the full scan, `GraphQLRewriteGenerator` logs all errors with source locations and throws a `RuntimeException` to fail the build.
 
 Additional rules:
-- **`LookupQueryField` cardinality** — list/scalar argument cardinality must match return type cardinality
+- **`QueryLookupTableField` cardinality** — list/scalar argument cardinality must match return type cardinality
 - **Reference path integrity** — each unresolved step in a path is reported
 - **Deterministic ordering** — tables without a primary key that appear in paginated queries must have `@defaultOrder` or `@orderBy` configured
-- **`ServiceField` with `TableBoundReturnType`** — the following additional checks apply when a `ServiceField` returns a table-mapped type:
+- **`ServiceTableField` (and `QueryServiceTableField` / `MutationServiceTableField`)** — the following additional checks apply when a service field returns a table-mapped type:
   - `serviceMethodRef` must be `Resolved` (reflection succeeded at schema-build time)
   - For each `SourcesParam`, the validator switches on its `SourcesRef`:
     - `RowKeyed(pkJavaTypes)` — when the parent table is resolved and has PK info, `pkJavaTypes` must equal `prt.primaryKeyColumnJavaTypes()` (e.g. `["java.lang.Long"]` for BIGINT)
@@ -449,6 +511,7 @@ Additional rules:
     - `Unrecognized` — always an error; reports the unrecognised type name
   - For `RowKeyed`/`RecordKeyed` sources: the parent table must have a primary key (`hasPrimaryKey`) and it must be single-column (composite PKs not yet supported)
   - For `TableRecordKeyed` sources: no PK constraint on the parent table (the whole record is the key, so column extraction is not needed)
+- **`ServiceRecordField`** — `serviceMethodRef` must be `Resolved`; unresolved reference is a build error
 
 ---
 
@@ -506,11 +569,11 @@ Outstanding testing gaps for this layer are tracked in [`plan-record-generation.
 | `rewrite/GraphQLRewriteGenerator.java` | Entry point: build → validate → dispatch generators |
 | `rewrite/ValidationError.java` | `message`, `location: SourceLocation` |
 | `rewrite/field/GraphitronField.java` | Root of the field type hierarchy |
-| `rewrite/field/ChildField.java` | Sealed branch: 14 child field variants |
-| `rewrite/field/QueryField.java` | Sealed branch: 9 query field variants |
-| `rewrite/field/MutationField.java` | Sealed branch: 5 mutation field variants |
-| `rewrite/field/ReturnTypeRef.java`, `FieldWrapper.java` | Return type + cardinality |
-| `rewrite/field/ArgumentRef.java` | Argument resolution: `InputTypeArg`, `ScalarArg`, `UnclassifiedArg` |
+| `rewrite/field/ChildField.java` | Sealed branch: 22 child field variants |
+| `rewrite/field/QueryField.java` | Sealed branch: 10 query field variants |
+| `rewrite/field/MutationField.java` | Sealed branch: 6 mutation field variants |
+| `rewrite/field/ReturnTypeRef.java`, `FieldWrapper.java` | Return type (3-permit sealed hierarchy) + cardinality |
+| `rewrite/field/ArgumentRef.java` | Argument resolution: `InputTypeArg`, `ScalarArg`, `UnclassifiedArg` — carried directly in field records (no intermediate `ArgumentSpec`) |
 | `rewrite/field/ReferencePathElementRef.java` | 6-variant FK + condition path step |
 | `rewrite/field/FieldConditionRef.java` | Field-level `@condition` resolution |
 | `rewrite/field/ColumnRef.java`, `NodeTypeRef.java` | Column and node type resolution |
