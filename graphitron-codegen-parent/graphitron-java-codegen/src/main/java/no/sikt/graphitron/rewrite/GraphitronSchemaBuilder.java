@@ -1439,7 +1439,7 @@ public class GraphitronSchemaBuilder {
                         kind = ServiceMethodRef.ParamKind.SOURCES;
                     }
                     String displayName = pName != null ? pName : p.getType().getSimpleName();
-                    return new ServiceMethodRef.ServiceParamInfo(displayName, p.getType().getName(), kind);
+                    return new ServiceMethodRef.ServiceParamInfo(displayName, p.getParameterizedType().getTypeName(), kind);
                 })
                 .toList();
             return new ServiceMethodRef.Resolved(params, method.getReturnType().getName());

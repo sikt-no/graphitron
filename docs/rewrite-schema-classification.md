@@ -356,10 +356,12 @@ All variants carry `name`, `typeName`, `nonNull`, `list`.
 - `Resolved` — `params: List<ServiceParamInfo>`, `returnTypeName: String`
 - `Unresolved` — `reason: String`
 
-`ServiceParamInfo` carries `name`, `typeName` (binary class name string), and `kind: ParamKind`:
-- `SOURCES` — the DataLoader batch-keys parameter, expected to be `List<Row>` containing parent PK rows; every param whose name is not in `argNames` or `ctxKeys` is classified here
+`ServiceParamInfo` carries `name`, `typeName` (full generic type string from `Parameter.getParameterizedType().getTypeName()`), and `kind: ParamKind`:
+- `SOURCES` — the DataLoader batch-keys parameter; every param whose name is not in `argNames` or `ctxKeys` is classified here. The validator checks that `typeName` is exactly `"java.util.List<org.jooq.Row>"`.
 - `ARG` — name matches a GraphQL argument declared on the field
 - `CONTEXT` — name matches an entry in the field's `contextArguments` list
+
+`typeName` uses `getParameterizedType().getTypeName()` (not `getType().getName()`), so generic parameters are preserved — e.g., `"java.util.List<org.jooq.Row>"` rather than `"java.util.List"`. This enables the validator to distinguish `List<Row>` from any other `List`.
 
 Name matching requires the `-parameters` compiler flag on the service class source. Without it, `p.isNamePresent()` is `false` and all parameters fall back to `SOURCES`. The validator then catches the missing `ARG`/`CONTEXT` matches.
 
@@ -389,6 +391,7 @@ Additional rules:
 - **Deterministic ordering** — tables without a primary key that appear in paginated queries must have `@defaultOrder` or `@orderBy` configured
 - **`ServiceField` with `TableBoundReturnType`** — the following additional checks apply when a `ServiceField` returns a table-mapped type:
   - `serviceMethodRef` must be `Resolved` (reflection succeeded at schema-build time)
+  - Every `SOURCES` param's `typeName` must be exactly `"java.util.List<org.jooq.Row>"`
   - The parent type's table must have a primary key (`hasPrimaryKey`)
   - The parent type's primary key must be single-column (composite PKs not yet supported)
   - Exactly one `ServiceParamInfo` must have `kind == SOURCES`

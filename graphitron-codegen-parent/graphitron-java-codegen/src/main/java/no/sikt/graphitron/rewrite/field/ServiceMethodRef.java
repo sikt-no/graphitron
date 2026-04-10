@@ -18,15 +18,18 @@ public sealed interface ServiceMethodRef
      *
      * <p>{@code params} lists all declared parameters in declaration order. Each entry carries the
      * parameter name (requires {@code -parameters} compiler flag on the service class), the fully
-     * qualified type name, and a {@link ParamKind} classifying how the value is obtained at runtime:
+     * qualified generic type name, and a {@link ParamKind} classifying how the value is obtained
+     * at runtime:
      * <ul>
-     *   <li>{@link ParamKind#SOURCES} — the batched parent-record PK rows ({@code List<Row>}).</li>
+     *   <li>{@link ParamKind#SOURCES} — the batched parent-record PK rows ({@code List<Row>}).
+     *       The validator enforces that the declared type is exactly
+     *       {@code java.util.List<org.jooq.Row>}.</li>
      *   <li>{@link ParamKind#ARG} — a GraphQL field argument extracted from the DFE.</li>
      *   <li>{@link ParamKind#CONTEXT} — a context value extracted via
      *       {@code GraphitronContext.getContextArgument}.</li>
      * </ul>
      *
-     * <p>{@code returnTypeName} is the fully qualified return type name (e.g.
+     * <p>{@code returnTypeName} is the raw (erased) return type name (e.g.
      * {@code "java.util.List"}) as returned by {@link Class#getName()}.
      */
     record Resolved(List<ServiceParamInfo> params, String returnTypeName) implements ServiceMethodRef {}
@@ -45,9 +48,12 @@ public sealed interface ServiceMethodRef
      *
      * <p>{@code name} is the parameter name from the compiled class (requires {@code -parameters}).
      *
-     * <p>{@code typeName} is the fully qualified type name (e.g. {@code "org.jooq.Row"} for a
-     * {@code Row} parameter, {@code "java.util.List"} for a {@code List<Row>} parameter).
-     * Parameterisation is not captured — the generator uses {@code kind} to determine the wire-up.
+     * <p>{@code typeName} is the fully qualified generic type name as returned by
+     * {@link java.lang.reflect.Parameter#getParameterizedType()} followed by
+     * {@link java.lang.reflect.Type#getTypeName()} (e.g. {@code "org.jooq.Row"} for a {@code Row}
+     * parameter, {@code "java.util.List<org.jooq.Row>"} for a {@code List<Row>} parameter).
+     * Generic parameters are preserved, enabling the validator to enforce that the SOURCES param is
+     * exactly {@code java.util.List<org.jooq.Row>}.
      *
      * <p>{@code kind} classifies how the value is obtained at runtime.
      */

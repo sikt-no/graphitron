@@ -7,11 +7,14 @@ import no.sikt.graphitron.rewrite.field.MethodRef;
 import no.sikt.graphitron.rewrite.field.ParamInfo;
 import no.sikt.graphitron.rewrite.field.ChildField.ServiceField;
 import no.sikt.graphitron.rewrite.field.ServiceMethodRef;
+import no.sikt.graphitron.rewrite.field.ServiceMethodRef.ParamKind;
+import no.sikt.graphitron.rewrite.field.ServiceMethodRef.ServiceParamInfo;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedConditionRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyRef;
+import no.sikt.graphitron.rewrite.type.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -53,7 +56,29 @@ class ServiceFieldValidationTest {
                 null, List.of(), List.of(), new ServiceMethodRef.Unresolved("test")),
             List.of(
                 "Field 'externalChild': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog",
-                "Field 'externalChild': condition method 'com.example.Conditions.liftCondition' could not be resolved"));
+                "Field 'externalChild': condition method 'com.example.Conditions.liftCondition' could not be resolved")),
+
+        SOURCES_WRONG_TYPE("SOURCES param is not List<Row> — validator rejects it",
+            new ServiceField("Film", "externalChild", null,
+                new ReturnTypeRef.TableBoundReturnType("Film",
+                    new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of("film_id")),
+                    new FieldWrapper.Single(true)),
+                List.of(), null, List.of(), List.of(),
+                new ServiceMethodRef.Resolved(
+                    List.of(new ServiceParamInfo("filmKeys", "java.util.List<java.lang.String>", ParamKind.SOURCES)),
+                    "java.lang.Object")),
+            List.of("Field 'externalChild': SOURCES parameter 'filmKeys' must be of type List<Row> (java.util.List<org.jooq.Row>), found: java.util.List<java.lang.String>")),
+
+        SOURCES_CORRECT_TYPE("SOURCES param is List<Row> — no error",
+            new ServiceField("Film", "externalChild", null,
+                new ReturnTypeRef.TableBoundReturnType("Film",
+                    new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of("film_id")),
+                    new FieldWrapper.Single(true)),
+                List.of(), null, List.of(), List.of(),
+                new ServiceMethodRef.Resolved(
+                    List.of(new ServiceParamInfo("filmKeys", "java.util.List<org.jooq.Row>", ParamKind.SOURCES)),
+                    "java.lang.Object")),
+            List.of());
 
         private final String description;
         private final GraphitronField field;

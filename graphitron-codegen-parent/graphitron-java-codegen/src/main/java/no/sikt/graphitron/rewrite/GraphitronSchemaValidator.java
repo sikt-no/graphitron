@@ -448,6 +448,16 @@ public class GraphitronSchemaValidator {
             return;
         }
 
+        // Validate SOURCES parameter type is List<org.jooq.Row>.
+        var smr = (no.sikt.graphitron.rewrite.field.ServiceMethodRef.Resolved) field.serviceMethodRef();
+        smr.params().stream()
+            .filter(p -> p.kind() == no.sikt.graphitron.rewrite.field.ServiceMethodRef.ParamKind.SOURCES)
+            .filter(p -> !"java.util.List<org.jooq.Row>".equals(p.typeName()))
+            .forEach(p -> errors.add(new ValidationError(
+                "Field '" + field.name() + "': SOURCES parameter '" + p.name() + "' must be of type List<Row> (java.util.List<org.jooq.Row>), found: " + p.typeName(),
+                field.location()
+            )));
+
         // Parent type must be a table type with a resolved, single-column primary key.
         var parentType = types.get(field.parentTypeName());
         if (!(parentType instanceof no.sikt.graphitron.rewrite.type.GraphitronType.TableType tt)) {

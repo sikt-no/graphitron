@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.generators.fields;
 
+import org.jooq.Row;
+
 import java.util.List;
 
 /**
@@ -8,7 +10,7 @@ import java.util.List;
  */
 public class TestFilmService {
 
-    public static List<Object> getFilms(List<Object> languageKeys, String filter, String tenantId) {
+    public static List<Object> getFilms(List<Row> languageKeys, String filter, String tenantId) {
         throw new UnsupportedOperationException();
     }
 }
