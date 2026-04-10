@@ -357,11 +357,11 @@ All variants carry `name`, `typeName`, `nonNull`, `list`.
 - `Unresolved` — `reason: String`
 
 `ServiceParamInfo` carries `name`, `typeName` (full generic type string from `Parameter.getParameterizedType().getTypeName()`), and `kind: ParamKind`:
-- `SOURCES` — the DataLoader batch-keys parameter; every param whose name is not in `argNames` or `ctxKeys` is classified here. The validator checks that `typeName` is exactly `"java.util.List<org.jooq.Row>"`.
+- `SOURCES` — the DataLoader batch-keys parameter; every param whose name is not in `argNames` or `ctxKeys` is classified here. The validator checks that `typeName` matches the parent PK exactly — e.g., `"java.util.List<org.jooq.Row1<java.lang.Long>>"` for a single BIGINT PK column.
 - `ARG` — name matches a GraphQL argument declared on the field
 - `CONTEXT` — name matches an entry in the field's `contextArguments` list
 
-`typeName` uses `getParameterizedType().getTypeName()` (not `getType().getName()`), so generic parameters are preserved — e.g., `"java.util.List<org.jooq.Row>"` rather than `"java.util.List"`. This enables the validator to distinguish `List<Row>` from any other `List`.
+`typeName` uses `getParameterizedType().getTypeName()` (not `getType().getName()`), so generic parameters are preserved. This enables the validator to enforce the full `Row1<T>` type (not just raw `Row`), matching the parent table's PK column types.
 
 Name matching requires the `-parameters` compiler flag on the service class source. Without it, `p.isNamePresent()` is `false` and all parameters fall back to `SOURCES`. The validator then catches the missing `ARG`/`CONTEXT` matches.
 
@@ -391,7 +391,7 @@ Additional rules:
 - **Deterministic ordering** — tables without a primary key that appear in paginated queries must have `@defaultOrder` or `@orderBy` configured
 - **`ServiceField` with `TableBoundReturnType`** — the following additional checks apply when a `ServiceField` returns a table-mapped type:
   - `serviceMethodRef` must be `Resolved` (reflection succeeded at schema-build time)
-  - Every `SOURCES` param's `typeName` must be exactly `"java.util.List<org.jooq.Row>"`
+  - Every `SOURCES` param's `typeName` must be `"java.util.List<org.jooq.RowN<T1,...>>"` matching the parent table's PK column Java types (e.g., `"java.util.List<org.jooq.Row1<java.lang.Long>>"` for a single BIGINT PK)
   - The parent type's table must have a primary key (`hasPrimaryKey`)
   - The parent type's primary key must be single-column (composite PKs not yet supported)
   - Exactly one `ServiceParamInfo` must have `kind == SOURCES`
@@ -463,7 +463,7 @@ Outstanding testing gaps for this layer are tracked in [`plan-record-generation.
 | `rewrite/field/ColumnRef.java`, `NodeTypeRef.java` | Column and node type resolution |
 | `rewrite/field/OrderSpec.java` | Sort specification |
 | `rewrite/type/GraphitronType.java` | Root of the type hierarchy |
-| `rewrite/type/TableRef.java` | `@table` → resolved table metadata (SQL name, Java field name, PK flag, PK column names). `ResolvedTable.primaryKeyColumnSqlName()` — single-column PK convenience accessor. |
+| `rewrite/type/TableRef.java` | `@table` → resolved table metadata (SQL name, Java field name, PK flag, PK SQL column names, PK Java column types). `ResolvedTable.primaryKeyColumnSqlName()` / `primaryKeyColumnJavaType()` — single-column PK convenience accessors. |
 | `rewrite/field/ServiceMethodRef.java` | `@service` method reflection — `Resolved`/`Unresolved`; `ServiceParamInfo` with `ParamKind` (SOURCES / ARG / CONTEXT) |
 | `rewrite/type/ParticipantRef.java` | Interface/union member resolution |
 | `rewrite/type/NodeRef.java`, `KeyColumnRef.java` | `@node` directive and key columns |

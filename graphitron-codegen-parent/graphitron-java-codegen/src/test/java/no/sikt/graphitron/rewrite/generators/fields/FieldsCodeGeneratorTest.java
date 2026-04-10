@@ -56,7 +56,7 @@ class FieldsCodeGeneratorTest {
             ? (FieldWrapper) new FieldWrapper.List(true, true, null, List.of())
             : new FieldWrapper.Single(true);
         var returnType = new ReturnTypeRef.TableBoundReturnType("Film",
-            new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of()),
+            new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()),
             returnWrapper);
         var smr = new ServiceMethodRef.Resolved(
             List.of(
@@ -82,7 +82,7 @@ class FieldsCodeGeneratorTest {
     }
 
     private static TypeSpec specWithServiceField(String parentType, String fieldName, boolean isList) {
-        var parentTable = new TableRef.ResolvedTable("language", "LANGUAGE", "Language", true, List.of("language_id"));
+        var parentTable = new TableRef.ResolvedTable("language", "LANGUAGE", "Language", true, List.of("language_id"), List.of("java.lang.Integer"));
         return GEN.generate(parentType, parentTable, List.of(serviceField(parentType, fieldName, isList)));
     }
 
@@ -336,11 +336,11 @@ class FieldsCodeGeneratorTest {
         var unresolvedField = new ChildField.ServiceField(
             "Language", "films", null,
             new ReturnTypeRef.TableBoundReturnType("Film",
-                new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of()),
+                new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()),
                 new FieldWrapper.List(true, true, null, List.of())),
             List.of(), new ExternalRef("no.example.FilmService", "getFilms"),
             List.of(), List.of(), new ServiceMethodRef.Unresolved("test"));
-        var parentTable = new TableRef.ResolvedTable("language", "LANGUAGE", "Language", true, List.of("language_id"));
+        var parentTable = new TableRef.ResolvedTable("language", "LANGUAGE", "Language", true, List.of("language_id"), List.of("java.lang.Integer"));
         var m = method(GEN.generate("Language", parentTable, List.of(unresolvedField)), "films");
         assertThat(m.returnType().toString()).isEqualTo("java.lang.Object");
         assertThat(m.code().toString()).contains("UnsupportedOperationException()");
@@ -366,7 +366,7 @@ class FieldsCodeGeneratorTest {
         var m = method(specWithServiceField("Language", "films", true), "loadFilms");
         assertThat(m.parameters()).extracting(p -> p.type().toString())
             .containsExactly(
-                "java.util.List<org.jooq.Row>",
+                "java.util.List<org.jooq.Row1<java.lang.Integer>>",
                 "graphql.schema.DataFetchingEnvironment",
                 "graphql.schema.SelectedField");
         assertThat(m.parameters()).extracting(p -> p.name())

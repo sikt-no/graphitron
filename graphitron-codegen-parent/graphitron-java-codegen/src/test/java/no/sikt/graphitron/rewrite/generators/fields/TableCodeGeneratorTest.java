@@ -182,7 +182,7 @@ class TableCodeGeneratorTest {
         var params = methodByFirstParam("Film", "selectMany", "Row").parameters();
         assertThat(params).extracting(p -> p.type().toString())
             .containsExactly(
-                "java.util.List<org.jooq.Row>",
+                "java.util.List<? extends org.jooq.Row>",
                 "graphql.schema.SelectedField",
                 "java.util.List<?>");
         assertThat(params).extracting(p -> p.name())
@@ -214,7 +214,7 @@ class TableCodeGeneratorTest {
         var params = methodByFirstParam("Film", "selectOne", "Row").parameters();
         assertThat(params).extracting(p -> p.type().toString())
             .containsExactly(
-                "java.util.List<org.jooq.Row>",
+                "java.util.List<? extends org.jooq.Row>",
                 "graphql.schema.SelectedField",
                 "java.lang.Object");
         assertThat(params).extracting(p -> p.name())

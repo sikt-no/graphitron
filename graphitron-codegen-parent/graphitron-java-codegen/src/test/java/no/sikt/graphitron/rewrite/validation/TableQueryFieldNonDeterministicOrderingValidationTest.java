@@ -28,12 +28,12 @@ class TableQueryFieldNonDeterministicOrderingValidationTest {
 
     /** Resolved return type backed by {@code film_list} (a view — no primary key). */
     private static ReturnTypeRef filmListReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("FilmList", new ResolvedTable("film_list", "FILM_LIST", "FilmList", false, List.of()), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("FilmList", new ResolvedTable("film_list", "FILM_LIST", "FilmList", false, List.of(), List.of()), wrapper);
     }
 
     /** Resolved return type backed by {@code film} (has a primary key). */
     private static ReturnTypeRef filmReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Film", new ResolvedTable("film", "FILM", "Film", true, List.of()), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Film", new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()), wrapper);
     }
 
     enum Case implements ValidatorCase {

@@ -61,22 +61,22 @@ class ServiceFieldValidationTest {
         SOURCES_WRONG_TYPE("SOURCES param is not List<Row> — validator rejects it",
             new ServiceField("Film", "externalChild", null,
                 new ReturnTypeRef.TableBoundReturnType("Film",
-                    new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of("film_id")),
+                    new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of("film_id"), List.of("java.lang.Integer")),
                     new FieldWrapper.Single(true)),
                 List.of(), null, List.of(), List.of(),
                 new ServiceMethodRef.Resolved(
                     List.of(new ServiceParamInfo("filmKeys", "java.util.List<java.lang.String>", ParamKind.SOURCES)),
                     "java.lang.Object")),
-            List.of("Field 'externalChild': SOURCES parameter 'filmKeys' must be of type List<Row> (java.util.List<org.jooq.Row>), found: java.util.List<java.lang.String>")),
+            List.of("Field 'externalChild': SOURCES parameter 'filmKeys' must be of type List<RowN<...>> (java.util.List<org.jooq.RowN<...>>), found: java.util.List<java.lang.String>")),
 
-        SOURCES_CORRECT_TYPE("SOURCES param is List<Row> — no error",
+        SOURCES_CORRECT_TYPE("SOURCES param is List<Row1<Integer>> matching PK — no error (fallback branch, parent is RootType)",
             new ServiceField("Film", "externalChild", null,
                 new ReturnTypeRef.TableBoundReturnType("Film",
-                    new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of("film_id")),
+                    new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of("film_id"), List.of("java.lang.Integer")),
                     new FieldWrapper.Single(true)),
                 List.of(), null, List.of(), List.of(),
                 new ServiceMethodRef.Resolved(
-                    List.of(new ServiceParamInfo("filmKeys", "java.util.List<org.jooq.Row>", ParamKind.SOURCES)),
+                    List.of(new ServiceParamInfo("filmKeys", "java.util.List<org.jooq.Row1<java.lang.Integer>>", ParamKind.SOURCES)),
                     "java.lang.Object")),
             List.of());
 

@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.field.ChildField;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
@@ -33,7 +34,8 @@ import java.util.List;
  *       {@code lookupFieldName(DataFetchingEnvironment env, SelectedField sel)} stub.</li>
  *   <li>For {@link ChildField.ServiceField} with a table-bound return type and a resolved service
  *       method reference: an async DataLoader-based data fetcher and a rows method
- *       {@code loadFieldName(List<Row>, DataFetchingEnvironment, SelectedField)} that extracts
+ *       {@code loadFieldName(List<Row1<T>>, DataFetchingEnvironment, SelectedField)} (where T is
+ *       the parent PK column Java type) that extracts
  *       arguments, calls the service, and delegates to the table's {@code selectMany}/
  *       {@code selectOne}.</li>
  *   <li>A {@code wiring()} method that registers each data fetcher by method reference.</li>
@@ -78,7 +80,7 @@ public class FieldsCodeGenerator {
                     && tb.table() instanceof TableRef.ResolvedTable rt
                     && parentTable instanceof TableRef.ResolvedTable prt) {
                 builder.addMethod(buildServiceDataFetcher(sf, smr, tb, prt, className));
-                builder.addMethod(buildServiceRowsMethod(sf, smr, tb, rt));
+                builder.addMethod(buildServiceRowsMethod(sf, smr, tb, rt, prt));
                 needsGraphitronContextHelper = true;
             } else if (field instanceof ChildField.TableField tf && tf.splitQuery()) {
                 builder.addMethod(buildSplitQueryDataFetcher(tf));
@@ -144,7 +146,10 @@ public class FieldsCodeGenerator {
         boolean isList = !(tb.wrapper() instanceof FieldWrapper.Single);
         var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
-        var loaderType = ParameterizedTypeName.get(DATA_LOADER, ROW, valueType);
+
+        // Compute the typed Row key type: Row1<T>, Row2<T1,T2>, etc., from parent PK column types.
+        TypeName rowKeyType = buildRowKeyType(prt.primaryKeyColumnJavaTypes());
+        var loaderType = ParameterizedTypeName.get(DATA_LOADER, rowKeyType, valueType);
 
         // Reference to the parent table constant, e.g. Tables.LANGUAGE
         var tablesClass = ClassName.get(GeneratorConfig.outputPackage() + ".tables", "Tables");
@@ -174,7 +179,7 @@ public class FieldsCodeGenerator {
                 loaderType, DATA_LOADER_FACTORY, lambdaBlock)
             .addStatement(
                 "$T key = $T.row((($T) env.getSource()).get($T.$L.$L))",
-                ROW, DSL, RECORD, tablesClass, tableField, pkColumn)
+                rowKeyType, DSL, RECORD, tablesClass, tableField, pkColumn)
             .addStatement("return loader.load(key, env)")
             .build();
     }
@@ -192,16 +197,20 @@ public class FieldsCodeGenerator {
             ChildField.ServiceField sf,
             ServiceMethodRef.Resolved smr,
             ReturnTypeRef.TableBoundReturnType tb,
-            TableRef.ResolvedTable rt) {
+            TableRef.ResolvedTable rt,
+            TableRef.ResolvedTable prt) {
 
         boolean isList = !(tb.wrapper() instanceof FieldWrapper.Single);
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         var returnType = isList ? ParameterizedTypeName.get(LIST, listOfRecord) : listOfRecord;
 
+        // Use typed Row1<T> for the keys parameter to match the service method signature.
+        TypeName rowKeyType = buildRowKeyType(prt.primaryKeyColumnJavaTypes());
+
         var builder = MethodSpec.methodBuilder("load" + capitalize(sf.name()))
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
-            .addParameter(ParameterizedTypeName.get(LIST, ROW), "keys")
+            .addParameter(ParameterizedTypeName.get(LIST, rowKeyType), "keys")
             .addParameter(ENV, "dfe")
             .addParameter(SELECTED_FIELD, "sel");
 
@@ -254,6 +263,23 @@ public class FieldsCodeGenerator {
             .addParameter(ENV, "env")
             .addStatement("return env.getGraphQlContext().get($S)", "graphitronContext")
             .build();
+    }
+
+    /**
+     * Builds the typed {@code Row1<T>} / {@code Row2<T1,T2>} / … key type for a DataLoader from
+     * the ordered list of primary-key column Java type names (e.g. {@code ["java.lang.Long"]}).
+     *
+     * <p>Falls back to the raw {@link #ROW} interface when the list is empty.
+     */
+    private static TypeName buildRowKeyType(List<String> pkJavaTypes) {
+        if (pkJavaTypes.isEmpty()) {
+            return ROW;
+        }
+        ClassName rowNClass = ClassName.get("org.jooq", "Row" + pkJavaTypes.size());
+        TypeName[] typeArgs = pkJavaTypes.stream()
+            .map(ClassName::bestGuess)
+            .toArray(TypeName[]::new);
+        return ParameterizedTypeName.get(rowNClass, typeArgs);
     }
 
     private MethodSpec buildSplitQueryDataFetcher(ChildField.TableField field) {

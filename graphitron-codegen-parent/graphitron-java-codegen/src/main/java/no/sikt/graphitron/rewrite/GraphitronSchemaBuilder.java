@@ -422,7 +422,10 @@ public class GraphitronSchemaBuilder {
                 List<String> pkCols = pk != null
                     ? pk.getFields().stream().map(f -> f.getName()).toList()
                     : List.of();
-                return new ResolvedTable(sqlName, e.javaFieldName(), e.table().getClass().getSimpleName(), pk != null, pkCols);
+                List<String> pkJavaTypes = pk != null
+                    ? pk.getFields().stream().map(f -> f.getType().getName()).toList()
+                    : List.of();
+                return new ResolvedTable(sqlName, e.javaFieldName(), e.table().getClass().getSimpleName(), pk != null, pkCols, pkJavaTypes);
             })
             .orElseGet(() -> new UnresolvedTable(sqlName));
     }

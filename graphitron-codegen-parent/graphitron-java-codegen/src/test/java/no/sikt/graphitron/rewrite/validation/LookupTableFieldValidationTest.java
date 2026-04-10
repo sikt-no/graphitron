@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LookupTableFieldValidationTest {
 
     private static ReturnTypeRef filmReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Film", new ResolvedTable("film", "FILM", "Film", true, List.of()), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Film", new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()), wrapper);
     }
 
     enum Case implements ValidatorCase {

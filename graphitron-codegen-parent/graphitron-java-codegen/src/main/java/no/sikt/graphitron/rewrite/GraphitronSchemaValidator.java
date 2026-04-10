@@ -448,15 +448,34 @@ public class GraphitronSchemaValidator {
             return;
         }
 
-        // Validate SOURCES parameter type is List<org.jooq.Row>.
+        // Validate SOURCES parameter type is List<RowN<T1, T2, ...>> matching the parent PK.
+        // We check this against the parent table's PK column Java types when available; if the
+        // parent type is not yet resolved (checked below), we do a looser check for List<Row*>.
         var smr = (no.sikt.graphitron.rewrite.field.ServiceMethodRef.Resolved) field.serviceMethodRef();
-        smr.params().stream()
-            .filter(p -> p.kind() == no.sikt.graphitron.rewrite.field.ServiceMethodRef.ParamKind.SOURCES)
-            .filter(p -> !"java.util.List<org.jooq.Row>".equals(p.typeName()))
-            .forEach(p -> errors.add(new ValidationError(
-                "Field '" + field.name() + "': SOURCES parameter '" + p.name() + "' must be of type List<Row> (java.util.List<org.jooq.Row>), found: " + p.typeName(),
-                field.location()
-            )));
+        var parentTypeForSources = types.get(field.parentTypeName());
+        if (parentTypeForSources instanceof no.sikt.graphitron.rewrite.type.GraphitronType.TableType ttSrc
+                && ttSrc.table() instanceof ResolvedTable prtSrc
+                && !prtSrc.primaryKeyColumnJavaTypes().isEmpty()) {
+            String expectedSourcesType = buildExpectedSourcesType(prtSrc.primaryKeyColumnJavaTypes());
+            smr.params().stream()
+                .filter(p -> p.kind() == no.sikt.graphitron.rewrite.field.ServiceMethodRef.ParamKind.SOURCES)
+                .filter(p -> !expectedSourcesType.equals(p.typeName()))
+                .forEach(p -> errors.add(new ValidationError(
+                    "Field '" + field.name() + "': SOURCES parameter '" + p.name()
+                        + "' must be of type " + expectedSourcesType + ", found: " + p.typeName(),
+                    field.location()
+                )));
+        } else {
+            // Parent not yet resolved or no PK info — fall back to checking List<org.jooq.Row*>.
+            smr.params().stream()
+                .filter(p -> p.kind() == no.sikt.graphitron.rewrite.field.ServiceMethodRef.ParamKind.SOURCES)
+                .filter(p -> !p.typeName().startsWith("java.util.List<org.jooq.Row"))
+                .forEach(p -> errors.add(new ValidationError(
+                    "Field '" + field.name() + "': SOURCES parameter '" + p.name()
+                        + "' must be of type List<RowN<...>> (java.util.List<org.jooq.RowN<...>>), found: " + p.typeName(),
+                    field.location()
+                )));
+        }
 
         // Parent type must be a table type with a resolved, single-column primary key.
         var parentType = types.get(field.parentTypeName());
@@ -480,6 +499,18 @@ public class GraphitronSchemaValidator {
             ));
         }
     }
+    /**
+     * Builds the expected fully-qualified generic type string for a SOURCES parameter given the
+     * ordered list of primary-key column Java type names.
+     *
+     * <p>Example: {@code ["java.lang.Long"]} → {@code "java.util.List<org.jooq.Row1<java.lang.Long>>"}
+     */
+    private static String buildExpectedSourcesType(List<String> pkJavaTypes) {
+        String rowClass = "org.jooq.Row" + pkJavaTypes.size();
+        String typeParams = String.join(", ", pkJavaTypes);
+        return "java.util.List<" + rowClass + "<" + typeParams + ">>";
+    }
+
     private void validateComputedField(no.sikt.graphitron.rewrite.field.ChildField.ComputedField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
     }

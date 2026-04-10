@@ -39,13 +39,21 @@ public sealed interface TableRef permits TableRef.ResolvedTable, TableRef.Unreso
      * {@code table.getPrimaryKey().getFields()} at parse time. Empty when there is no primary key.
      * Used by the DataLoader data-fetcher generator to build the {@code DSL.row(...)} key
      * expression.
+     *
+     * <p>{@code primaryKeyColumnJavaTypes} is the parallel list of binary Java class names for
+     * each primary-key column (e.g. {@code ["java.lang.Long"]} for a {@code BIGINT} column).
+     * Populated from {@code field.getType().getName()} on each PK field at parse time. Used by
+     * the validator to enforce that the SOURCES parameter is typed as {@code List<Row1<T>>} (not
+     * just {@code List<Row>}), and by the generator to emit the correct {@code Row1<T>} DataLoader
+     * key type and rows-method parameter.
      */
     record ResolvedTable(
         String tableName,
         String javaFieldName,
         String javaClassName,
         boolean hasPrimaryKey,
-        List<String> primaryKeyColumnSqlNames
+        List<String> primaryKeyColumnSqlNames,
+        List<String> primaryKeyColumnJavaTypes
     ) implements TableRef {
 
         /**
@@ -58,6 +66,17 @@ public sealed interface TableRef permits TableRef.ResolvedTable, TableRef.Unreso
          */
         public String primaryKeyColumnSqlName() {
             return primaryKeyColumnSqlNames.get(0);
+        }
+
+        /**
+         * Returns the binary Java class name of the single primary-key column
+         * (e.g. {@code "java.lang.Long"} for a {@code BIGINT} column).
+         *
+         * <p>Only valid when {@code hasPrimaryKey} is {@code true} and the PK is single-column.
+         * Do not call when {@code primaryKeyColumnJavaTypes} may be empty.
+         */
+        public String primaryKeyColumnJavaType() {
+            return primaryKeyColumnJavaTypes.get(0);
         }
     }
 
