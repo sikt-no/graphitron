@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class TableFieldValidationTest {
 
-    private static ReturnTypeRef actorReturn(FieldWrapper wrapper) {
+    private static ReturnTypeRef.TableBoundReturnType actorReturn(FieldWrapper wrapper) {
         return new ReturnTypeRef.TableBoundReturnType("Actor", new ResolvedTable("actor", "ACTOR", "Actor", true, List.of(), List.of()), wrapper);
     }
 

@@ -27,12 +27,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class QueryTableFieldNonDeterministicOrderingValidationTest {
 
     /** Resolved return type backed by {@code film_list} (a view — no primary key). */
-    private static ReturnTypeRef filmListReturn(FieldWrapper wrapper) {
+    private static ReturnTypeRef.TableBoundReturnType filmListReturn(FieldWrapper wrapper) {
         return new ReturnTypeRef.TableBoundReturnType("FilmList", new ResolvedTable("film_list", "FILM_LIST", "FilmList", false, List.of(), List.of()), wrapper);
     }
 
     /** Resolved return type backed by {@code film} (has a primary key). */
-    private static ReturnTypeRef filmReturn(FieldWrapper wrapper) {
+    private static ReturnTypeRef.TableBoundReturnType filmReturn(FieldWrapper wrapper) {
         return new ReturnTypeRef.TableBoundReturnType("Film", new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()), wrapper);
     }
 

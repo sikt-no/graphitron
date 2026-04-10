@@ -44,7 +44,7 @@ public sealed interface QueryField extends RootField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
+        ReturnTypeRef.TableBoundReturnType returnType,
         List<ArgumentRef> arguments
     ) implements QueryField {}
 
@@ -68,7 +68,7 @@ public sealed interface QueryField extends RootField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
+        ReturnTypeRef.TableBoundReturnType returnType,
         List<ArgumentSpec> arguments
     ) implements QueryField {}
 
@@ -90,7 +90,7 @@ public sealed interface QueryField extends RootField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
+        ReturnTypeRef.TableBoundReturnType returnType,
         ExternalRef tableMethodRef,
         List<ArgumentSpec> arguments,
         List<String> contextArguments

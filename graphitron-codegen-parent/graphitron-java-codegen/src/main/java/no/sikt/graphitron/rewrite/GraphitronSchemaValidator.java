@@ -224,15 +224,10 @@ public class GraphitronSchemaValidator {
     private void validateQueryTableField(no.sikt.graphitron.rewrite.field.QueryField.QueryTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
-        switch (field.returnType()) {
-            case ReturnTypeRef.TableBoundReturnType tb -> {
-                if (tb.table() instanceof ResolvedTable rt) {
-                    validateDeterministicOrdering(field.name(), field.location(), tb.wrapper(), rt, errors);
-                }
-                // UnresolvedTable: type validator reports the unresolved table; skip ordering check
-            }
-            case ReturnTypeRef.OtherReturnType ignored -> {} // non-table return; no ordering concern
+        if (field.returnType().table() instanceof ResolvedTable rt) {
+            validateDeterministicOrdering(field.name(), field.location(), field.returnType().wrapper(), rt, errors);
         }
+        // UnresolvedTable: type validator reports the unresolved table; skip ordering check
     }
 
     /**

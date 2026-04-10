@@ -561,7 +561,7 @@ public class GraphitronSchemaBuilder {
         GraphitronType elementType = types.get(elementTypeName);
 
         if (elementType instanceof TableType) {
-            var returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+            var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             var args = parseArguments(fieldDef);
             resolveInputTypeArgs(args, returnType);
             var referencePath = parseReferencePath(fieldDef);
@@ -841,23 +841,29 @@ public class GraphitronSchemaBuilder {
 
         if (hasLookupKeyAnywhere(fieldDef)) {
             var returnType = resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
-            var rt = (returnType instanceof ReturnTypeRef.TableBoundReturnType trt
-                && trt.table() instanceof TableRef.ResolvedTable r) ? r : null;
+            if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) {
+                return new GraphitronField.UnclassifiedField(parentTypeName, name, location,
+                    "@lookupKey requires a @table-annotated return type");
+            }
+            var rt = tb.table() instanceof TableRef.ResolvedTable r ? r : null;
             var arguments = parseArguments(fieldDef).stream()
                 .map(arg -> buildLookupArg(arg, rt))
                 .toList();
-            return new QueryField.QueryLookupTableField(parentTypeName, name, location,
-                returnType, arguments);
+            return new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, arguments);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             var returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+            if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) {
+                return new GraphitronField.UnclassifiedField(parentTypeName, name, location,
+                    "@tableMethod requires a @table-annotated return type");
+            }
             var args = parseArguments(fieldDef);
-            resolveInputTypeArgs(args, returnType);
+            resolveInputTypeArgs(args, tb);
             return new QueryField.QueryTableMethodTableField(parentTypeName, name, location,
-                returnType,
+                tb,
                 parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF),
                 args,
                 parseContextArguments(fieldDef, DIR_TABLE_METHOD));
@@ -868,7 +874,7 @@ public class GraphitronSchemaBuilder {
         GraphitronType elementType = types.get(elementTypeName);
 
         if (elementType instanceof TableType) {
-            var returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+            var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             var args = parseArguments(fieldDef);
             resolveInputTypeArgs(args, returnType);
             return new QueryField.QueryTableField(parentTypeName, name, location,

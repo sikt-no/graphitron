@@ -163,7 +163,7 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
+        ReturnTypeRef.TableBoundReturnType returnType,
         List<ReferencePathElementRef> referencePath,
         FieldConditionRef condition,
         List<ArgumentSpec> arguments
@@ -184,7 +184,7 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
+        ReturnTypeRef.TableBoundReturnType returnType,
         List<ReferencePathElementRef> referencePath,
         FieldConditionRef condition,
         List<ArgumentSpec> arguments
@@ -213,7 +213,7 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
+        ReturnTypeRef.TableBoundReturnType returnType,
         List<ReferencePathElementRef> referencePath,
         List<ArgumentSpec> arguments
     ) implements ChildField {}
@@ -235,7 +235,7 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
+        ReturnTypeRef.TableBoundReturnType returnType,
         List<ReferencePathElementRef> referencePath,
         List<ArgumentSpec> arguments
     ) implements ChildField {}

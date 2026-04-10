@@ -48,7 +48,9 @@ class FieldsCodeGeneratorTest {
 
     private static GraphitronField splitQueryField(String parentType, String name) {
         return new ChildField.SplitTableField(parentType, name, null,
-            new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.List(false, false, null, List.of())),
+            new ReturnTypeRef.TableBoundReturnType("Film",
+                new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()),
+                new FieldWrapper.List(false, false, null, List.of())),
             List.of(), new FieldConditionRef.NoFieldCondition(), List.of());
     }
 

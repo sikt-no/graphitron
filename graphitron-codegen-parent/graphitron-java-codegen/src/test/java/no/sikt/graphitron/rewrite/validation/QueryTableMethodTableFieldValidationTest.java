@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.OrderSpec;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.field.QueryField.QueryTableMethodTableField;
+import no.sikt.graphitron.rewrite.type.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -21,19 +22,19 @@ class QueryTableMethodTableFieldValidationTest {
 
         VALID("single cardinality — valid",
             new QueryTableMethodTableField("Query", "filmsByMethod", null,
-                new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), null, List.of(), List.of()),
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.Single(true)), null, List.of(), List.of()),
             List.of()),
 
         LIST_UNRESOLVED_INDEX("list cardinality: @defaultOrder references an index that could not be found — validation error",
             new QueryTableMethodTableField("Query", "filmsByMethod", null,
-                new ReturnTypeRef.OtherReturnType("Film",
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()),
                     new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedIndexOrder("IDX_MISSING"), "ASC"), List.of())),
                 null, List.of(), List.of()),
             List.of("Field 'filmsByMethod': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
 
         LIST_UNRESOLVED_PRIMARY_KEY("list cardinality: @defaultOrder uses primaryKey but the table has none — validation error",
             new QueryTableMethodTableField("Query", "filmsByMethod", null,
-                new ReturnTypeRef.OtherReturnType("Film",
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()),
                     new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "ASC"), List.of())),
                 null, List.of(), List.of()),
             List.of("Field 'filmsByMethod': primary key could not be resolved — the table may not have one"));
