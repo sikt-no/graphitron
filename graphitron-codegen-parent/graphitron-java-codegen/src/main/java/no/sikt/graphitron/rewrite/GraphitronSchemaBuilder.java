@@ -572,17 +572,17 @@ public class GraphitronSchemaBuilder {
 
         if (elementType instanceof TableInterfaceType) {
             return new TableInterfaceField(parentTypeName, name, location,
-                resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+                (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
         if (elementType instanceof InterfaceType) {
             return new InterfaceField(parentTypeName, name, location,
-                resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+                (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
         if (elementType instanceof UnionType) {
             return new UnionField(parentTypeName, name, location,
-                resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+                (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
         // NestingField: a plain object type in the schema with no Graphitron classification.
@@ -816,17 +816,17 @@ public class GraphitronSchemaBuilder {
             if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
                 return new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs, serviceMethodRef);
             }
-            return new QueryField.QueryServiceRecordField(parentTypeName, name, location, returnType, serviceRef, args, contextArgs);
+            return new QueryField.QueryServiceRecordField(parentTypeName, name, location, (ReturnTypeRef.OtherReturnType) returnType, serviceRef, args, contextArgs);
         }
 
         if (name.equals("_entities")) {
             return new QueryField.QueryEntityField(parentTypeName, name, location,
-                resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
+                (ReturnTypeRef.OtherReturnType) resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
         }
 
         if (name.equals("node")) {
             return new QueryField.QueryNodeField(parentTypeName, name, location,
-                resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
+                (ReturnTypeRef.OtherReturnType) resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
         }
 
         if (hasLookupKeyAnywhere(fieldDef)) {
@@ -876,15 +876,15 @@ public class GraphitronSchemaBuilder {
         }
         if (elementType instanceof TableInterfaceType) {
             return new QueryField.QueryTableInterfaceField(parentTypeName, name, location,
-                resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+                (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
         if (elementType instanceof InterfaceType) {
             return new QueryField.QueryInterfaceField(parentTypeName, name, location,
-                resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+                (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
         if (elementType instanceof UnionType) {
             return new QueryField.QueryUnionField(parentTypeName, name, location,
-                resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+                (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
         return new UnclassifiedField(parentTypeName, name, location,
@@ -913,7 +913,7 @@ public class GraphitronSchemaBuilder {
             if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
                 return new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs, serviceMethodRef);
             }
-            return new MutationField.MutationServiceRecordField(parentTypeName, name, location, returnType, serviceRef, args, contextArgs);
+            return new MutationField.MutationServiceRecordField(parentTypeName, name, location, (ReturnTypeRef.OtherReturnType) returnType, serviceRef, args, contextArgs);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_MUTATION)) {
@@ -1161,7 +1161,7 @@ public class GraphitronSchemaBuilder {
                 return new ServiceTableField(parentTypeName, name, location, tb,
                     parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
             }
-            return new ServiceRecordField(parentTypeName, name, location, returnType,
+            return new ServiceRecordField(parentTypeName, name, location, (ReturnTypeRef.OtherReturnType) returnType,
                 parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
         }
 
@@ -1195,7 +1195,7 @@ public class GraphitronSchemaBuilder {
         String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
             ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
-        return new RecordField(parentTypeName, name, location, returnType, columnName);
+        return new RecordField(parentTypeName, name, location, (ReturnTypeRef.OtherReturnType) returnType, columnName);
     }
 
     private GraphitronField classifyChildFieldOnTableType(GraphQLFieldDefinition fieldDef, String parentTypeName, TableType tableType) {
@@ -1217,7 +1217,7 @@ public class GraphitronSchemaBuilder {
                 return new ServiceTableField(parentTypeName, name, location, tb,
                     parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
             }
-            return new ServiceRecordField(parentTypeName, name, location, returnType,
+            return new ServiceRecordField(parentTypeName, name, location, (ReturnTypeRef.OtherReturnType) returnType,
                 parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
         }
 

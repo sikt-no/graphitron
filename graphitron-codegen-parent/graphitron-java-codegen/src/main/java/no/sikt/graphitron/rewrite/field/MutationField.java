@@ -118,7 +118,7 @@ public sealed interface MutationField extends RootField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
+        ReturnTypeRef.OtherReturnType returnType,
         ExternalRef serviceRef,
         List<ArgumentRef> arguments,
         List<String> contextArguments
