@@ -5,6 +5,7 @@ import graphql.language.SourceLocation;
 import java.util.List;
 
 import no.sikt.graphitron.rewrite.field.ArgumentRef;
+import no.sikt.graphitron.rewrite.field.ServiceMethodRef;
 
 /**
  * A field on the {@code Query} type. Read-only. All create a new scope or enter private service scope.
@@ -176,6 +177,10 @@ public sealed interface QueryField extends RootField
      *
      * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
      * of the {@code @service} directive.
+     *
+     * <p>{@code serviceMethodRef} is the resolved outcome of reflecting the service class and method
+     * at parse time. {@link ServiceMethodRef.Resolved} when the method could be located;
+     * {@link ServiceMethodRef.Unresolved} otherwise.
      */
     record QueryServiceTableField(
         String parentTypeName,
@@ -184,7 +189,8 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.TableBoundReturnType returnType,
         ExternalRef serviceRef,
         List<ArgumentRef> arguments,
-        List<String> contextArguments
+        List<String> contextArguments,
+        ServiceMethodRef serviceMethodRef
     ) implements QueryField {}
 
     /**

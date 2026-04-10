@@ -5,6 +5,7 @@ import graphql.language.SourceLocation;
 import java.util.List;
 
 import no.sikt.graphitron.rewrite.field.ArgumentRef;
+import no.sikt.graphitron.rewrite.field.ServiceMethodRef;
 
 /**
  * A field on the {@code Mutation} type. The only fields permitted to write to the database.
@@ -90,6 +91,10 @@ public sealed interface MutationField extends RootField
      *
      * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
      * of the {@code @service} directive.
+     *
+     * <p>{@code serviceMethodRef} is the resolved outcome of reflecting the service class and method
+     * at parse time. {@link ServiceMethodRef.Resolved} when the method could be located;
+     * {@link ServiceMethodRef.Unresolved} otherwise.
      */
     record MutationServiceTableField(
         String parentTypeName,
@@ -98,7 +103,8 @@ public sealed interface MutationField extends RootField
         ReturnTypeRef.TableBoundReturnType returnType,
         ExternalRef serviceRef,
         List<ArgumentRef> arguments,
-        List<String> contextArguments
+        List<String> contextArguments,
+        ServiceMethodRef serviceMethodRef
     ) implements MutationField {}
 
     /**

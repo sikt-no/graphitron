@@ -809,11 +809,14 @@ public class GraphitronSchemaBuilder {
             ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
             List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
-            var args = parseArguments(fieldDef).stream()
+            var rawArgs = parseArguments(fieldDef);
+            Set<String> argNames = rawArgs.stream().map(ArgumentSpec::name).collect(Collectors.toSet());
+            ServiceMethodRef serviceMethodRef = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArgs));
+            var args = rawArgs.stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();
             if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
-                return new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs);
+                return new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs, serviceMethodRef);
             }
             return new QueryField.QueryServiceRecordField(parentTypeName, name, location, returnType, serviceRef, args, contextArgs);
         }
@@ -904,11 +907,14 @@ public class GraphitronSchemaBuilder {
             ReturnTypeRef returnType = resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
             List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
-            var args = parseArguments(fieldDef).stream()
+            var rawArgs = parseArguments(fieldDef);
+            Set<String> argNames = rawArgs.stream().map(ArgumentSpec::name).collect(Collectors.toSet());
+            ServiceMethodRef serviceMethodRef = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArgs));
+            var args = rawArgs.stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();
             if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
-                return new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs);
+                return new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs, serviceMethodRef);
             }
             return new MutationField.MutationServiceRecordField(parentTypeName, name, location, returnType, serviceRef, args, contextArgs);
         }

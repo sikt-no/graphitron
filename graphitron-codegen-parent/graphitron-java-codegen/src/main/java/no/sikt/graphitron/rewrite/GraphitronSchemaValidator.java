@@ -269,6 +269,12 @@ public class GraphitronSchemaValidator {
     }
     private void validateQueryServiceTableField(no.sikt.graphitron.rewrite.field.QueryField.QueryServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
+        if (field.serviceMethodRef() instanceof no.sikt.graphitron.rewrite.field.ServiceMethodRef.Unresolved u) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': service method could not be resolved — " + u.reason(),
+                field.location()
+            ));
+        }
     }
     private void validateQueryServiceRecordField(no.sikt.graphitron.rewrite.field.QueryField.QueryServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
@@ -277,7 +283,14 @@ public class GraphitronSchemaValidator {
     private void validateMutationUpdateTableField(no.sikt.graphitron.rewrite.field.MutationField.MutationUpdateTableField field, List<ValidationError> errors) {}
     private void validateMutationDeleteTableField(no.sikt.graphitron.rewrite.field.MutationField.MutationDeleteTableField field, List<ValidationError> errors) {}
     private void validateMutationUpsertTableField(no.sikt.graphitron.rewrite.field.MutationField.MutationUpsertTableField field, List<ValidationError> errors) {}
-    private void validateMutationServiceTableField(no.sikt.graphitron.rewrite.field.MutationField.MutationServiceTableField field, List<ValidationError> errors) {}
+    private void validateMutationServiceTableField(no.sikt.graphitron.rewrite.field.MutationField.MutationServiceTableField field, List<ValidationError> errors) {
+        if (field.serviceMethodRef() instanceof no.sikt.graphitron.rewrite.field.ServiceMethodRef.Unresolved u) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': service method could not be resolved — " + u.reason(),
+                field.location()
+            ));
+        }
+    }
     private void validateMutationServiceRecordField(no.sikt.graphitron.rewrite.field.MutationField.MutationServiceRecordField field, List<ValidationError> errors) {}
     private void validateColumnField(no.sikt.graphitron.rewrite.field.ChildField.ColumnField field, List<ValidationError> errors) {
         if (field.column() instanceof UnresolvedColumn) {
