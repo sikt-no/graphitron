@@ -1,0 +1,7 @@
+type Query {
+  query(username: String! @field(name: "USERNAME") @reference(path: [{key: "STAFF__STAFF_STORE_ID_FKEY"}])): Store
+}
+
+type Store @table {
+  id: ID!
+}

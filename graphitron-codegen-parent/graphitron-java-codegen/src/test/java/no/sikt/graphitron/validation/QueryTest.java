@@ -354,4 +354,13 @@ public class QueryTest extends ValidationTest {
                 )
         );
     }
+
+    @Test
+    @DisplayName("Multi-step reference path with one-to-many on query argument is not supported")
+    void oneToManyMultiStepInputReference() {
+        assertErrorsContain("oneToManyMultiStepInputReference",
+                "Field 'email' on 'Query.cities' has a multi-step @reference path with a one-to-many relationship " +
+                        "from \"CITY\" to \"ADDRESS\" in a non-final step. This is not currently supported on filter inputs because it causes row duplication. " +
+                        "Use the @condition directive for complex cross-table filtering instead.");
+    }
 }

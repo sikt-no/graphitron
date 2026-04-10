@@ -10,6 +10,7 @@ import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
+import no.sikt.graphitron.definitions.mapping.TableRelationType;
 import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
 import no.sikt.graphql.schema.ProcessedSchema;
 
@@ -22,6 +23,7 @@ import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStr
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessage;
 import static no.sikt.graphql.directives.GenerationDirective.NODE_ID;
+import static no.sikt.graphql.directives.GenerationDirective.REFERENCE;
 
 /**
  * Validates table and key existence, reference paths, and required table fields.
@@ -36,6 +38,7 @@ class TableValidator extends AbstractSchemaValidator {
     void validate() {
         validateTablesAndKeys();
         validateRequiredTableFields();
+        validateOneToManyInputReferences();
     }
 
     private void validateTablesAndKeys() {
@@ -279,4 +282,66 @@ class TableValidator extends AbstractSchemaValidator {
             }
         }
     }
+
+    /**
+     * Validates that query arguments and input fields with multistep @reference paths do not contain
+     * one-to-many (REVERSE) joins in non-final steps. Such joins cause row duplication that cannot be resolved
+     * automatically. One-to-many in the final step is allowed, as it is handled by EXISTS subquery generation.
+     */
+    private void validateOneToManyInputReferences() {
+        allFields.forEach(field -> {
+            if (!field.hasNonReservedInputFields()) return;
+            var connectionNode = schema.getObjectOrConnectionNode(field);
+            if (connectionNode == null || !connectionNode.hasTable()) return;
+
+            var rootTable = connectionNode.getTable().getMappingName();
+            field.getNonReservedArguments()
+                    .forEach(arg -> validateNoOneToManyInNonFinalStep(arg, rootTable));
+            field.getNonReservedArguments().stream()
+                    .filter(schema::isInputType)
+                    .flatMap(arg -> schema.getInputType(arg).getFields().stream())
+                    .forEach(inputField -> validateNoOneToManyInNonFinalStep(inputField, rootTable));
+        });
+    }
+
+    /**
+     * Validates that a filter field's @reference path does not contain a one-to-many relationship in a non-final step.
+     * The total number of steps includes an implicit step from @nodeId if it targets a different table than the last
+     * explicit reference.
+     */
+    private void validateNoOneToManyInNonFinalStep(GenerationField field, String rootTable) {
+        var references = field.getFieldReferences();
+        var lastRefTable = resolveReferenceTargetTable(references, rootTable).orElse(rootTable);
+        var nodeType = schema.isNodeIdField(field) ? schema.getNodeTypeForNodeIdField(field).orElse(null) : null;
+        var hasImplicitNodeIdStep = nodeType != null && nodeType.hasTable()
+                && !nodeType.getTable().getMappingName().equals(lastRefTable);
+        var totalSteps = references.size() + (hasImplicitNodeIdStep ? 1 : 0);
+        if (totalSteps < 2) return;
+
+        var currentTable = rootTable;
+        for (int i = 0; i < references.size(); i++) {
+            var ref = references.get(i);
+            String nextTable;
+            if (ref.hasKey()) {
+                nextTable = resolveKeyOtherTable(ref.getKey().getName(), currentTable).orElse(null);
+            } else if (ref.hasTable()) {
+                nextTable = ref.getTable().getMappingName();
+            } else {
+                return;
+            }
+            if (nextTable == null) return;
+            if (i < totalSteps - 1) {
+                var relationType = inferRelationType(currentTable, nextTable, ref.hasKey() ? ref.getKey() : null);
+                if (relationType == TableRelationType.REVERSE_IMPLICIT || relationType == TableRelationType.REVERSE_KEY) {
+                    addErrorMessage(
+                            "Field %s has a multi-step @%s path with a one-to-many relationship " +
+                                    "from \"%s\" to \"%s\" in a non-final step. This is not currently supported on filter inputs because it causes row duplication. " +
+                                    "Use the @condition directive for complex cross-table filtering instead.",
+                            field.formatPath(), REFERENCE.getName(), currentTable, nextTable);
+                }
+            }
+            currentTable = nextTable;
+        }
+    }
+
 }
