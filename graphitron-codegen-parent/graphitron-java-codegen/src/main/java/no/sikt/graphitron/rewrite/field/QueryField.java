@@ -109,7 +109,7 @@ public sealed interface QueryField extends RootField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.OtherReturnType returnType
+        ReturnTypeRef.PolymorphicReturnType returnType
     ) implements QueryField {}
 
     /**
@@ -122,7 +122,7 @@ public sealed interface QueryField extends RootField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.OtherReturnType returnType
+        ReturnTypeRef.PolymorphicReturnType returnType
     ) implements QueryField {}
 
     /**
@@ -135,7 +135,7 @@ public sealed interface QueryField extends RootField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.OtherReturnType returnType
+        ReturnTypeRef.TableBoundReturnType returnType
     ) implements QueryField {}
 
     /**
@@ -148,7 +148,7 @@ public sealed interface QueryField extends RootField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.OtherReturnType returnType
+        ReturnTypeRef.PolymorphicReturnType returnType
     ) implements QueryField {}
 
     /**
@@ -161,7 +161,7 @@ public sealed interface QueryField extends RootField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.OtherReturnType returnType
+        ReturnTypeRef.PolymorphicReturnType returnType
     ) implements QueryField {}
 
     /**

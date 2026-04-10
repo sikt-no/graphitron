@@ -18,7 +18,7 @@ class QueryNodeFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("node query field — always valid",
-            new QueryNodeField("Query", "node", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true))),
+            new QueryNodeField("Query", "node", null, new ReturnTypeRef.PolymorphicReturnType("Film", new FieldWrapper.Single(true))),
             List.of());
 
         private final String description;

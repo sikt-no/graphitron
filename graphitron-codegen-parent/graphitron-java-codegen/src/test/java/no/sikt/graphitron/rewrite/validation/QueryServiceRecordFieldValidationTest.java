@@ -19,7 +19,7 @@ class QueryServiceRecordFieldValidationTest {
 
         VALID("service query field with non-table return — always valid",
             new QueryServiceRecordField("Query", "externalData", null,
-                new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)),
+                new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)),
                 null, List.of(), List.of()),
             List.of());
 

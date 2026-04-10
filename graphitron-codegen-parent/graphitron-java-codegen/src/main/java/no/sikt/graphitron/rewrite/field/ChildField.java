@@ -280,7 +280,7 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.OtherReturnType returnType
+        ReturnTypeRef.TableBoundReturnType returnType
     ) implements ChildField {}
 
     /**
@@ -293,7 +293,7 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.OtherReturnType returnType
+        ReturnTypeRef.PolymorphicReturnType returnType
     ) implements ChildField {}
 
     /**
@@ -306,20 +306,21 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.OtherReturnType returnType
+        ReturnTypeRef.PolymorphicReturnType returnType
     ) implements ChildField {}
 
     /**
      * A child field that inherits the source table context without introducing a new scope boundary.
      *
-     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema.
+     * <p>{@code returnType} carries the same {@link ReturnTypeRef.TableBoundReturnType} as the
+     * parent type — the nesting introduces a GraphQL grouping layer without changing the SQL table
+     * context.
      */
     record NestingField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.OtherReturnType returnType
+        ReturnTypeRef.TableBoundReturnType returnType
     ) implements ChildField {}
 
     /**

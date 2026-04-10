@@ -18,7 +18,7 @@ class QueryEntityFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("entity query field — always valid",
-            new QueryEntityField("Query", "_entities", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true))),
+            new QueryEntityField("Query", "_entities", null, new ReturnTypeRef.PolymorphicReturnType("Film", new FieldWrapper.Single(true))),
             List.of());
 
         private final String description;

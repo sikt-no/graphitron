@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.ChildField.NestingField;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.type.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -18,7 +19,7 @@ class NestingFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("nesting field — always valid",
-            new NestingField("Film", "nested", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true))),
+            new NestingField("Film", "nested", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef.UnresolvedTable("film"), new FieldWrapper.Single(true))),
             List.of());
 
         private final String description;

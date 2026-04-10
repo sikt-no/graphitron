@@ -533,7 +533,7 @@ public class GraphitronSchemaBuilder {
      * ({@code TableInterfaceField}, {@code InterfaceField}, {@code UnionField}, {@code ServiceField},
      * {@code ComputedField}) are added in P3.
      */
-    private GraphitronField classifyObjectReturnChildField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
+    private GraphitronField classifyObjectReturnChildField(GraphQLFieldDefinition fieldDef, String parentTypeName, TableType parentTableType) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
         String rawTypeName = baseTypeName(fieldDef);
@@ -572,24 +572,24 @@ public class GraphitronSchemaBuilder {
 
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
             return new TableInterfaceField(parentTypeName, name, location,
-                (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), buildWrapper(fieldDef)));
         }
 
         if (elementType instanceof InterfaceType interfaceType) {
             return new InterfaceField(parentTypeName, name, location,
-                (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
         if (elementType instanceof UnionType unionType) {
             return new UnionField(parentTypeName, name, location,
-                (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
         // NestingField: a plain object type in the schema with no Graphitron classification.
         // Its fields are resolved from the same table context as the parent.
         if (schema.getType(elementTypeName) instanceof GraphQLObjectType graphQLObjectType && elementType == null) {
             return new NestingField(parentTypeName, name, location,
-                new ReturnTypeRef.OtherReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.TableBoundReturnType(elementTypeName, parentTableType.table(), buildWrapper(fieldDef)));
         }
 
         // ConstructorField is intentionally not classified here — its directive and generation
@@ -813,20 +813,24 @@ public class GraphitronSchemaBuilder {
             var args = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();
-            if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
-                return new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs, serviceMethodRef);
-            }
-            return new QueryField.QueryServiceRecordField(parentTypeName, name, location, (ReturnTypeRef.OtherReturnType) returnType, serviceRef, args, contextArgs);
+            return switch (returnType) {
+                case ReturnTypeRef.TableBoundReturnType tb ->
+                    new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs, serviceMethodRef);
+                case ReturnTypeRef.OtherReturnType other ->
+                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, other, serviceRef, args, contextArgs);
+                case ReturnTypeRef.PolymorphicReturnType p ->
+                    new UnclassifiedField(parentTypeName, name, location, "@service returning a polymorphic type is not yet supported");
+            };
         }
 
         if (name.equals("_entities")) {
             return new QueryField.QueryEntityField(parentTypeName, name, location,
-                (ReturnTypeRef.OtherReturnType) resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
         }
 
         if (name.equals("node")) {
             return new QueryField.QueryNodeField(parentTypeName, name, location,
-                (ReturnTypeRef.OtherReturnType) resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
         }
 
         if (hasLookupKeyAnywhere(fieldDef)) {
@@ -876,15 +880,15 @@ public class GraphitronSchemaBuilder {
         }
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
             return new QueryField.QueryTableInterfaceField(parentTypeName, name, location,
-                (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), buildWrapper(fieldDef)));
         }
         if (elementType instanceof InterfaceType interfaceType) {
             return new QueryField.QueryInterfaceField(parentTypeName, name, location,
-                (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
         if (elementType instanceof UnionType unionType) {
             return new QueryField.QueryUnionField(parentTypeName, name, location,
-                (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
         return new UnclassifiedField(parentTypeName, name, location,
@@ -910,10 +914,14 @@ public class GraphitronSchemaBuilder {
             var args = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();
-            if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
-                return new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs, serviceMethodRef);
-            }
-            return new MutationField.MutationServiceRecordField(parentTypeName, name, location, (ReturnTypeRef.OtherReturnType) returnType, serviceRef, args, contextArgs);
+            return switch (returnType) {
+                case ReturnTypeRef.TableBoundReturnType tb ->
+                    new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs, serviceMethodRef);
+                case ReturnTypeRef.OtherReturnType other ->
+                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, other, serviceRef, args, contextArgs);
+                case ReturnTypeRef.PolymorphicReturnType p ->
+                    new UnclassifiedField(parentTypeName, name, location, "@service returning a polymorphic type is not yet supported");
+            };
         }
 
         if (fieldDef.hasAppliedDirective(DIR_MUTATION)) {
@@ -1156,13 +1164,16 @@ public class GraphitronSchemaBuilder {
             var arguments = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();
-            ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
-            if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
-                return new ServiceTableField(parentTypeName, name, location, tb,
-                    parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
-            }
-            return new ServiceRecordField(parentTypeName, name, location, (ReturnTypeRef.OtherReturnType) returnType,
-                parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
+            return switch (resolveReturnType(elementTypeName, buildWrapper(fieldDef))) {
+                case ReturnTypeRef.TableBoundReturnType tb ->
+                    new ServiceTableField(parentTypeName, name, location, tb,
+                        parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
+                case ReturnTypeRef.OtherReturnType other ->
+                    new ServiceRecordField(parentTypeName, name, location, other,
+                        parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
+                case ReturnTypeRef.PolymorphicReturnType p ->
+                    new UnclassifiedField(parentTypeName, name, location, "@service returning a polymorphic type is not yet supported");
+            };
         }
 
         if (isScalarOrEnum(fieldDef)) {
@@ -1175,27 +1186,28 @@ public class GraphitronSchemaBuilder {
         // Object return type on a result-mapped parent.
         String rawTypeName = baseTypeName(fieldDef);
         String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
-        ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
-
-        if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
-            var rt2 = tb.table() instanceof ResolvedTable r ? r : null;
-            var args = fieldDef.getArguments().stream()
-                .map(arg -> classifyArgument(arg, rt2, false))
-                .toList();
-            boolean hasLookupKey = hasLookupKeyAnywhere(fieldDef);
-            if (hasLookupKey) {
-                return new RecordLookupTableField(parentTypeName, name, location, tb,
-                    parseReferencePath(fieldDef), args);
-            }
-            return new RecordTableField(parentTypeName, name, location, tb,
-                parseReferencePath(fieldDef), new FieldConditionRef.NoFieldCondition(), args);
-        }
-
-        // Non-table object return (result-mapped or other) — nested record access.
         String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
             ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
-        return new RecordField(parentTypeName, name, location, (ReturnTypeRef.OtherReturnType) returnType, columnName);
+        return switch (resolveReturnType(elementTypeName, buildWrapper(fieldDef))) {
+            case ReturnTypeRef.TableBoundReturnType tb -> {
+                var rt2 = tb.table() instanceof ResolvedTable r ? r : null;
+                var args = fieldDef.getArguments().stream()
+                    .map(arg -> classifyArgument(arg, rt2, false))
+                    .toList();
+                boolean hasLookupKey = hasLookupKeyAnywhere(fieldDef);
+                if (hasLookupKey) {
+                    yield new RecordLookupTableField(parentTypeName, name, location, tb,
+                        parseReferencePath(fieldDef), args);
+                }
+                yield new RecordTableField(parentTypeName, name, location, tb,
+                    parseReferencePath(fieldDef), new FieldConditionRef.NoFieldCondition(), args);
+            }
+            case ReturnTypeRef.OtherReturnType other ->
+                new RecordField(parentTypeName, name, location, other, columnName);
+            case ReturnTypeRef.PolymorphicReturnType p ->
+                new UnclassifiedField(parentTypeName, name, location, "@record type returning a polymorphic type is not yet supported");
+        };
     }
 
     private GraphitronField classifyChildFieldOnTableType(GraphQLFieldDefinition fieldDef, String parentTypeName, TableType tableType) {
@@ -1212,13 +1224,16 @@ public class GraphitronSchemaBuilder {
             var arguments = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();
-            ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
-            if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
-                return new ServiceTableField(parentTypeName, name, location, tb,
-                    parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
-            }
-            return new ServiceRecordField(parentTypeName, name, location, (ReturnTypeRef.OtherReturnType) returnType,
-                parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
+            return switch (resolveReturnType(elementTypeName, buildWrapper(fieldDef))) {
+                case ReturnTypeRef.TableBoundReturnType tb ->
+                    new ServiceTableField(parentTypeName, name, location, tb,
+                        parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
+                case ReturnTypeRef.OtherReturnType other ->
+                    new ServiceRecordField(parentTypeName, name, location, other,
+                        parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
+                case ReturnTypeRef.PolymorphicReturnType p ->
+                    new UnclassifiedField(parentTypeName, name, location, "@service returning a polymorphic type is not yet supported");
+            };
         }
 
         if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) {
@@ -1243,7 +1258,7 @@ public class GraphitronSchemaBuilder {
         }
 
         if (!isScalarOrEnum(fieldDef)) {
-            return classifyObjectReturnChildField(fieldDef, parentTypeName);
+            return classifyObjectReturnChildField(fieldDef, parentTypeName, tableType);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_NODE_ID)) {
@@ -1278,14 +1293,16 @@ public class GraphitronSchemaBuilder {
 
     private ReturnTypeRef resolveReturnType(String targetTypeName, FieldWrapper wrapper) {
         GraphitronType target = types.get(targetTypeName);
-        if (target instanceof TableType tt) return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tt.table(), wrapper);
-        // OtherReturnType covers:
-        //  - classified non-table types (ResultType, InputType, interfaces, unions)
-        //  - scalars and enums (not classified by Graphitron but valid leaf types)
-        //  - directive-argument type names that don't match any schema type (e.g. @nodeId(typeName:))
-        //    — these are not validated by graphql-java, so the type may genuinely not exist;
-        //    downstream validators (e.g. UnresolvedNodeType) catch those errors.
-        return new ReturnTypeRef.OtherReturnType(targetTypeName, wrapper);
+        if (target instanceof TableType tt)
+            return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tt.table(), wrapper);
+        if (target instanceof TableInterfaceType tit)
+            return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tit.table(), wrapper);
+        if (target instanceof InterfaceType interfaceType || target instanceof UnionType unionType)
+            return new ReturnTypeRef.PolymorphicReturnType(targetTypeName, wrapper);
+        // PojoReturnType covers ResultType (backing class not yet reflected), scalars, enums,
+        // and directive-argument type names that don't match any schema type (@nodeId(typeName:)).
+        // Downstream validators (e.g. UnresolvedNodeType) report errors for missing types.
+        return new ReturnTypeRef.OtherReturnType.PojoReturnType(targetTypeName, wrapper);
     }
 
     private NodeTypeRef resolveNodeType(String targetTypeName) {

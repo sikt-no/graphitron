@@ -60,7 +60,7 @@ class NodeIdReferenceFieldValidationTest {
 
         TYPE_NOT_FOUND("typeName does not exist in the schema — specific not-found error",
             new NodeIdReferenceField("Film", "languageId", null, "UnknownType",
-                new ReturnTypeRef.OtherReturnType("UnknownType", new FieldWrapper.Single(true)),
+                new ReturnTypeRef.OtherReturnType.PojoReturnType("UnknownType", new FieldWrapper.Single(true)),
                 null,
                 new NotFoundNodeType(),
                 List.of()),
@@ -68,7 +68,7 @@ class NodeIdReferenceFieldValidationTest {
 
         TYPE_HAS_NO_NODE("typeName exists but has no @node directive — specific missing-@node error",
             new NodeIdReferenceField("Film", "languageId", null, "Film",
-                new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)),
+                new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)),
                 null,
                 new NoNodeDirectiveType(),
                 List.of()),
