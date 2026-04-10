@@ -119,6 +119,38 @@ This constraint keeps the taxonomy complete: if a generator needs information th
 
 ---
 
+## Design Principles
+
+### Sealed hierarchies over enums for typed information
+
+When different variants of a concept carry different data, use a sealed interface — not an enum with a shared field set. An enum forces every variant to have the same shape; a sealed record hierarchy gives each variant exactly the fields it needs.
+
+The `ServiceParam` hierarchy illustrates the pattern. The original `ServiceParamInfo(name, typeName, kind: ParamKind)` stored the kind as an enum but carried `typeName` for every variant even though `SourcesParam` doesn't need a flat type string — it needs a *classified* `SourcesRef`. Replacing the enum with sealed records made `SourcesRef` a natural embedded type and allowed the compiler to enforce exhaustiveness.
+
+`SourcesRef` itself follows the same pattern: `RowKeyed` and `RecordKeyed` carry `pkJavaTypes`, `TableRecordKeyed` carries `fqClassName`, and `Unrecognized` carries the raw type string for error messages. None of them are forced to carry fields they don't use.
+
+The rule of thumb: if the answer to "what data does this variant carry?" differs by variant, reach for a sealed interface.
+
+### Exhaustive `switch` as a safety net
+
+Sealed hierarchies compose naturally with switch expressions. Every switch over a sealed type is compiler-checked to be exhaustive — adding a new variant to the hierarchy immediately breaks every switch that doesn't handle it, making omissions impossible to ship silently.
+
+Both `GraphitronSchemaValidator` and `FieldsCodeGenerator` switch on `SourcesRef` rather than checking `instanceof` chains. This is not just style: when `SourcesRef` gains a new variant (e.g. `MultiColumnRowKeyed`), the compiler will identify every place that needs updating.
+
+The same principle applies to `ServiceParam`: the generator's per-parameter loop switches on `param` (exhaustive over `SourcesParam`, `ArgParam`, `ContextParam`) instead of testing `param.kind() == SOURCES`.
+
+### Classification belongs at the parse boundary
+
+`GraphitronSchemaBuilder.classifySourcesType()` is the only place that reads the reflection `java.lang.reflect.Type` tree to classify a SOURCES parameter. It converts raw reflection output into a `SourcesRef` value and stores it in `SourcesParam`. Everything downstream — validator, generator — switches on the pre-classified value and never touches reflection types.
+
+This is consistent with the general rule that `JooqCatalog` and `GraphitronSchemaBuilder` are the only classes permitted to hold raw jOOQ or reflection types. If a generator needs information that is not yet in a taxonomy record, the fix is to add a component and extract the value in the builder — not to reach past the taxonomy boundary.
+
+### Sub-taxonomies for resolution outcomes
+
+Complex resolution outcomes get their own sealed type rather than being stored as raw strings. `SourcesRef` is a sub-taxonomy of `ServiceParam`, just as `TableRef` is a sub-taxonomy of `TableType` and `ColumnRef` is a sub-taxonomy of `ColumnField`. This pattern keeps each concept's complexity local and makes the taxonomy self-documenting: the type of a field tells you exactly what states it can be in.
+
+---
+
 ## Type Classification (`GraphitronType`)
 
 Every GraphQL named type is classified into one `GraphitronType` variant. The builder reports violations as `UnclassifiedType(reason)`.
@@ -268,7 +300,7 @@ Source context at generation time is derived from `schema.type(parentTypeName)` 
 | `NodeIdReferenceField` | Table-mapped | `@nodeId(typeName: ...)` — joins to the target type and encodes a Relay ID for that row. |
 | `ComputedField` | Table-mapped | `@externalField` — developer provides a jOOQ `Field<?>` included in the SELECT. |
 | `ConstructorField` | Table-mapped | Field-to-constructor-parameter mapping; Graphitron does not project through it. |
-| `ServiceField` | Table-mapped, result-mapped | `@service` — private scope. From result-mapped source, input is locked to what the record carries. A derived source table reconnects the result to the target scope if return type is table-mapped. Carries `serviceMethodRef: ServiceMethodRef` — resolved at schema-build time via reflection. When `returnType` is `TableBoundReturnType` and `serviceMethodRef` is `Resolved`, the generator emits a real DataLoader data fetcher and a `load<FieldName>` batch method instead of a stub. |
+| `ServiceField` | Table-mapped, result-mapped | `@service` — private scope. From result-mapped source, input is locked to what the record carries. A derived source table reconnects the result to the target scope if return type is table-mapped. Carries `serviceMethodRef: ServiceMethodRef` — resolved at schema-build time via reflection. When `returnType` is `TableBoundReturnType` and `serviceMethodRef` is `Resolved`, the generator emits a real DataLoader data fetcher and a `load<FieldName>` batch method; the key type and key expression are driven by the SOURCES parameter's `SourcesRef` variant. |
 | `PropertyField` | Result-mapped | Reads a scalar or nested record property. Trivial data fetcher; no SQL. |
 | `MultitableReferenceField` | — | `@multitableReference` — not supported. Validator always reports an error; use `@service` instead. |
 
@@ -353,17 +385,31 @@ All variants carry `name`, `typeName`, `nonNull`, `list`.
 | `UnresolvedKeyAndConditionRef` | both failed |
 
 **`ServiceMethodRef`** — outcome of reflecting the method declared on a `@service` field, performed by `GraphitronSchemaBuilder` at schema-build time via `Class.forName`:
-- `Resolved` — `params: List<ServiceParamInfo>`, `returnTypeName: String`
+- `Resolved` — `params: List<ServiceParam>`, `returnTypeName: String`
 - `Unresolved` — `reason: String`
 
-`ServiceParamInfo` carries `name`, `typeName` (full generic type string from `Parameter.getParameterizedType().getTypeName()`), and `kind: ParamKind`:
-- `SOURCES` — the DataLoader batch-keys parameter; every param whose name is not in `argNames` or `ctxKeys` is classified here. The validator checks that `typeName` matches the parent PK exactly — e.g., `"java.util.List<org.jooq.Row1<java.lang.Long>>"` for a single BIGINT PK column.
-- `ARG` — name matches a GraphQL argument declared on the field
-- `CONTEXT` — name matches an entry in the field's `contextArguments` list
+`ServiceParam` is a sealed interface whose three variants carry only the data each kind needs:
 
-`typeName` uses `getParameterizedType().getTypeName()` (not `getType().getName()`), so generic parameters are preserved. This enables the validator to enforce the full `Row1<T>` type (not just raw `Row`), matching the parent table's PK column types.
+| Variant | What it represents | Key field |
+|---|---|---|
+| `SourcesParam(name, sourcesRef)` | The batched parent-record keys | `sourcesRef: SourcesRef` |
+| `ArgParam(name, typeName)` | A GraphQL field argument, extracted via `DFE.getArgument` | `typeName: String` |
+| `ContextParam(name, typeName)` | A context value, extracted via `GraphitronContext.getContextArgument` | `typeName: String` |
 
-Name matching requires the `-parameters` compiler flag on the service class source. Without it, `p.isNamePresent()` is `false` and all parameters fall back to `SOURCES`. The validator then catches the missing `ARG`/`CONTEXT` matches.
+**`SourcesRef`** — classifies the element type of a SOURCES `List<?>`, i.e. what `T` is in `List<T>`:
+
+| Variant | Element type | DataLoader key construction |
+|---|---|---|
+| `RowKeyed(pkJavaTypes)` | `RowN<T1,...>` — e.g. `Row1<Long>` | `DSL.row(((Record) env.getSource()).get(Tables.T.COL))` |
+| `RecordKeyed(pkJavaTypes)` | `RecordN<T1,...>` — e.g. `Record1<Long>` | `((Record) env.getSource()).into(Tables.T.COL)` |
+| `TableRecordKeyed(fqClassName)` | A `TableRecord` subclass — e.g. `LanguageRecord` | `(LanguageRecord) env.getSource()` |
+| `Unrecognized(typeName)` | Anything else | Validator reports an error |
+
+`pkJavaTypes` lists the binary Java class names of the PK type arguments in declaration order (e.g. `["java.lang.Long"]` for `Row1<Long>`). The builder extracts these from `Parameter.getParameterizedType()` by inspecting the `java.lang.reflect.ParameterizedType` tree — it does not parse strings.
+
+Classification is performed by `GraphitronSchemaBuilder.classifySourcesType()`, which is the only place that reads the reflection `Type` hierarchy for this purpose. Every parameter whose name is absent from `argNames` or `ctxKeys` is classified as `SourcesParam`; the `SourcesRef` sub-classification then identifies which key pattern the developer chose.
+
+Name matching requires the `-parameters` compiler flag on the service class source. Without it, `p.isNamePresent()` is `false` and all parameters fall back to `SourcesParam`. The validator then catches any missing `ARG`/`CONTEXT` parameters.
 
 **`FieldConditionRef`** — field-level `@condition` resolution:
 - `NoFieldCondition` — no `@condition` on field
@@ -391,11 +437,13 @@ Additional rules:
 - **Deterministic ordering** — tables without a primary key that appear in paginated queries must have `@defaultOrder` or `@orderBy` configured
 - **`ServiceField` with `TableBoundReturnType`** — the following additional checks apply when a `ServiceField` returns a table-mapped type:
   - `serviceMethodRef` must be `Resolved` (reflection succeeded at schema-build time)
-  - Every `SOURCES` param's `typeName` must be `"java.util.List<org.jooq.RowN<T1,...>>"` matching the parent table's PK column Java types (e.g., `"java.util.List<org.jooq.Row1<java.lang.Long>>"` for a single BIGINT PK)
-  - The parent type's table must have a primary key (`hasPrimaryKey`)
-  - The parent type's primary key must be single-column (composite PKs not yet supported)
-  - Exactly one `ServiceParamInfo` must have `kind == SOURCES`
-  - Every GraphQL argument name must have a matching `ARG` param; every `contextArguments` key must have a matching `CONTEXT` param
+  - For each `SourcesParam`, the validator switches on its `SourcesRef`:
+    - `RowKeyed(pkJavaTypes)` — when the parent table is resolved and has PK info, `pkJavaTypes` must equal `prt.primaryKeyColumnJavaTypes()` (e.g. `["java.lang.Long"]` for BIGINT)
+    - `RecordKeyed(pkJavaTypes)` — same check using `Record` prefix types
+    - `TableRecordKeyed` — no PK-type check; the whole parent record is the key
+    - `Unrecognized` — always an error; reports the unrecognised type name
+  - For `RowKeyed`/`RecordKeyed` sources: the parent table must have a primary key (`hasPrimaryKey`) and it must be single-column (composite PKs not yet supported)
+  - For `TableRecordKeyed` sources: no PK constraint on the parent table (the whole record is the key, so column extraction is not needed)
 
 ---
 
@@ -464,7 +512,8 @@ Outstanding testing gaps for this layer are tracked in [`plan-record-generation.
 | `rewrite/field/OrderSpec.java` | Sort specification |
 | `rewrite/type/GraphitronType.java` | Root of the type hierarchy |
 | `rewrite/type/TableRef.java` | `@table` → resolved table metadata (SQL name, Java field name, PK flag, PK SQL column names, PK Java column types). `ResolvedTable.primaryKeyColumnSqlName()` / `primaryKeyColumnJavaType()` — single-column PK convenience accessors. |
-| `rewrite/field/ServiceMethodRef.java` | `@service` method reflection — `Resolved`/`Unresolved`; `ServiceParamInfo` with `ParamKind` (SOURCES / ARG / CONTEXT) |
+| `rewrite/field/ServiceMethodRef.java` | `@service` method reflection — `Resolved`/`Unresolved`; sealed `ServiceParam` hierarchy (`SourcesParam`, `ArgParam`, `ContextParam`) |
+| `rewrite/field/SourcesRef.java` | Sealed taxonomy for the SOURCES parameter element type: `RowKeyed`, `RecordKeyed`, `TableRecordKeyed`, `Unrecognized` |
 | `rewrite/type/ParticipantRef.java` | Interface/union member resolution |
 | `rewrite/type/NodeRef.java`, `KeyColumnRef.java` | `@node` directive and key columns |
 | `rewrite/type/InputFieldRef.java` | `TableInputType` field resolution |
