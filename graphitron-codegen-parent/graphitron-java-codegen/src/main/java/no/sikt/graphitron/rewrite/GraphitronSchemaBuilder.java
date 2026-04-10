@@ -819,20 +819,23 @@ public class GraphitronSchemaBuilder {
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
-            return new QueryField.ServiceQueryField(parentTypeName, name, location,
-                resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
-                parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF),
-                parseArguments(fieldDef),
-                parseContextArguments(fieldDef, DIR_SERVICE));
+            ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+            ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
+            List<ArgumentSpec> args = parseArguments(fieldDef);
+            List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
+            if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
+                return new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs);
+            }
+            return new QueryField.QueryServiceRecordField(parentTypeName, name, location, returnType, serviceRef, args, contextArgs);
         }
 
         if (name.equals("_entities")) {
-            return new QueryField.EntityQueryField(parentTypeName, name, location,
+            return new QueryField.QueryEntityField(parentTypeName, name, location,
                 resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
         }
 
         if (name.equals("node")) {
-            return new QueryField.NodeQueryField(parentTypeName, name, location,
+            return new QueryField.QueryNodeField(parentTypeName, name, location,
                 resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
         }
 
@@ -843,7 +846,7 @@ public class GraphitronSchemaBuilder {
             var arguments = parseArguments(fieldDef).stream()
                 .map(arg -> buildLookupArg(arg, rt))
                 .toList();
-            return new QueryField.LookupQueryField(parentTypeName, name, location,
+            return new QueryField.QueryLookupTableField(parentTypeName, name, location,
                 returnType, arguments);
         }
 
@@ -853,7 +856,7 @@ public class GraphitronSchemaBuilder {
             var returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             var args = parseArguments(fieldDef);
             resolveInputTypeArgs(args, returnType);
-            return new QueryField.TableMethodQueryField(parentTypeName, name, location,
+            return new QueryField.QueryTableMethodTableField(parentTypeName, name, location,
                 returnType,
                 parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF),
                 args,
@@ -868,20 +871,20 @@ public class GraphitronSchemaBuilder {
             var returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             var args = parseArguments(fieldDef);
             resolveInputTypeArgs(args, returnType);
-            return new QueryField.TableQueryField(parentTypeName, name, location,
+            return new QueryField.QueryTableField(parentTypeName, name, location,
                 returnType,
                 args);
         }
         if (elementType instanceof TableInterfaceType) {
-            return new QueryField.TableInterfaceQueryField(parentTypeName, name, location,
+            return new QueryField.QueryTableInterfaceField(parentTypeName, name, location,
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
         if (elementType instanceof InterfaceType) {
-            return new QueryField.InterfaceQueryField(parentTypeName, name, location,
+            return new QueryField.QueryInterfaceField(parentTypeName, name, location,
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
         if (elementType instanceof UnionType) {
-            return new QueryField.UnionQueryField(parentTypeName, name, location,
+            return new QueryField.QueryUnionField(parentTypeName, name, location,
                 resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
@@ -900,11 +903,14 @@ public class GraphitronSchemaBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            return new MutationField.ServiceMutationField(parentTypeName, name, location,
-                resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)),
-                parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF),
-                parseArguments(fieldDef),
-                parseContextArguments(fieldDef, DIR_SERVICE));
+            ReturnTypeRef returnType = resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
+            ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
+            List<ArgumentSpec> args = parseArguments(fieldDef);
+            List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
+            if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
+                return new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs);
+            }
+            return new MutationField.MutationServiceRecordField(parentTypeName, name, location, returnType, serviceRef, args, contextArgs);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_MUTATION)) {
@@ -914,10 +920,10 @@ public class GraphitronSchemaBuilder {
                 ReturnTypeRef returnType = resolveReturnType(rawReturn, buildWrapper(fieldDef));
                 List<ArgumentSpec> arguments = parseArguments(fieldDef);
                 return switch (typeName) {
-                    case "INSERT" -> new MutationField.InsertMutationField(parentTypeName, name, location, returnType, arguments);
-                    case "UPDATE" -> new MutationField.UpdateMutationField(parentTypeName, name, location, returnType, arguments);
-                    case "DELETE" -> new MutationField.DeleteMutationField(parentTypeName, name, location, returnType, arguments);
-                    case "UPSERT" -> new MutationField.UpsertMutationField(parentTypeName, name, location, returnType, arguments);
+                    case "INSERT" -> new MutationField.MutationInsertTableField(parentTypeName, name, location, returnType, arguments);
+                    case "UPDATE" -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType, arguments);
+                    case "DELETE" -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType, arguments);
+                    case "UPSERT" -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, returnType, arguments);
                     default       -> new UnclassifiedField(parentTypeName, name, location,
                         "unknown @mutation(typeName:) value '" + typeName + "'");
                 };
@@ -968,7 +974,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * Classifies one argument of a {@code LookupQueryField} into the appropriate
+     * Classifies one argument of a {@code QueryLookupTableField} into the appropriate
      * {@link ArgumentRef} variant.
      *
      * <p>Arguments with {@code @orderBy} or {@code @condition} become

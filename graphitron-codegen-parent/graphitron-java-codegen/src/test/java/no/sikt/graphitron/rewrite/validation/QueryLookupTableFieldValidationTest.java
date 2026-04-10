@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.ArgumentRef;
-import no.sikt.graphitron.rewrite.field.QueryField.LookupQueryField;
+import no.sikt.graphitron.rewrite.field.QueryField.QueryLookupTableField;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -14,10 +14,10 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
-class LookupQueryFieldValidationTest {
+class QueryLookupTableFieldValidationTest {
 
-    private static LookupQueryField singleReturn(List<ArgumentRef> arguments) {
-        return new LookupQueryField("Query", "filmById", null,
+    private static QueryLookupTableField singleReturn(List<ArgumentRef> arguments) {
+        return new QueryLookupTableField("Query", "filmById", null,
             new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), arguments);
     }
 
@@ -32,7 +32,7 @@ class LookupQueryFieldValidationTest {
             List.of()),
 
         VALID_WITH_LIST_COLUMN_ARG("ScalarArg.ColumnArg list — valid with list return",
-            new LookupQueryField("Query", "filmById", null,
+            new QueryLookupTableField("Query", "filmById", null,
                 new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.List(true, true, null, List.of())),
                 List.of(new ArgumentRef.ScalarArg.ColumnArg("id", "ID", false, true, "FILM_ID", null))),
             List.of()),
@@ -46,7 +46,7 @@ class LookupQueryFieldValidationTest {
             List.of()),
 
         LIST_RETURN_NO_LIST_ARG("list return with no list arg — cardinality mismatch",
-            new LookupQueryField("Query", "filmById", null,
+            new QueryLookupTableField("Query", "filmById", null,
                 new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.List(true, true, null, List.of())),
                 List.of()),
             List.of("Field 'filmById': result type does not match input cardinality")),
@@ -56,7 +56,7 @@ class LookupQueryFieldValidationTest {
             List.of("Field 'filmById': result type does not match input cardinality")),
 
         CONNECTION_RETURN("connection return — never valid on lookup",
-            new LookupQueryField("Query", "filmById", null,
+            new QueryLookupTableField("Query", "filmById", null,
                 new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Connection(true, true, null, List.of())),
                 List.of()),
             List.of("Field 'filmById': lookup fields must not return a connection")),

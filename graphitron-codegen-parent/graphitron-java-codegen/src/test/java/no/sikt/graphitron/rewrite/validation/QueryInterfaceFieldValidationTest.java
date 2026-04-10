@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.field.DefaultOrderSpec;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.OrderSpec;
-import no.sikt.graphitron.rewrite.field.QueryField.UnionQueryField;
+import no.sikt.graphitron.rewrite.field.QueryField.QueryInterfaceField;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -15,23 +15,23 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
-class UnionQueryFieldValidationTest {
+class QueryInterfaceFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
         VALID("single cardinality — valid",
-            new UnionQueryField("Query", "search", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true))),
+            new QueryInterfaceField("Query", "persons", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true))),
             List.of()),
 
         LIST_UNRESOLVED_INDEX("list cardinality: @defaultOrder references an index that could not be found — validation error",
-            new UnionQueryField("Query", "search", null, new ReturnTypeRef.OtherReturnType("Film",
+            new QueryInterfaceField("Query", "persons", null, new ReturnTypeRef.OtherReturnType("Film",
                 new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedIndexOrder("IDX_MISSING"), "ASC"), List.of()))),
-            List.of("Field 'search': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
+            List.of("Field 'persons': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
 
         LIST_UNRESOLVED_PRIMARY_KEY("list cardinality: @defaultOrder uses primaryKey but the table has none — validation error",
-            new UnionQueryField("Query", "search", null, new ReturnTypeRef.OtherReturnType("Film",
+            new QueryInterfaceField("Query", "persons", null, new ReturnTypeRef.OtherReturnType("Film",
                 new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "ASC"), List.of()))),
-            List.of("Field 'search': primary key could not be resolved — the table may not have one"));
+            List.of("Field 'persons': primary key could not be resolved — the table may not have one"));
 
         private final String description;
         private final GraphitronField field;
@@ -50,7 +50,7 @@ class UnionQueryFieldValidationTest {
 
     @ParameterizedTest(name = "{0}")
     @EnumSource(Case.class)
-    void unionQueryFieldValidation(Case tc) {
+    void interfaceQueryFieldValidation(Case tc) {
         assertThat(validate(tc.field()))
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());

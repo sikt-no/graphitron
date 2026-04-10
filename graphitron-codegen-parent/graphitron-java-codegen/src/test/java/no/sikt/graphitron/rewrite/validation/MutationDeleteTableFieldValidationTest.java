@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.field.MutationField.DeleteMutationField;
+import no.sikt.graphitron.rewrite.field.MutationField.MutationDeleteTableField;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
@@ -13,12 +13,12 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
-class DeleteMutationFieldValidationTest {
+class MutationDeleteTableFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
         VALID("delete mutation field — always valid",
-            new DeleteMutationField("Mutation", "deleteFilm", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of()),
+            new MutationDeleteTableField("Mutation", "deleteFilm", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of()),
             List.of());
 
         private final String description;

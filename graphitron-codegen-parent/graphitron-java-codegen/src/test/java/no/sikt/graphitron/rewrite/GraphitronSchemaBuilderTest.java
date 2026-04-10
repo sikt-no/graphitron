@@ -1118,7 +1118,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         IMPLICIT_TABLE_FROM_LOOKUP_FIELD(
-            "input type without @table used on a LookupQueryField → promoted to TableInputType",
+            "input type without @table used on a QueryLookupTableField → promoted to TableInputType",
             """
             input CustomerInput { customerId: Int! @field(name: "customer_id") }
             type Customer @table(name: "customer") { customerId: Int! @field(name: "customer_id") }
@@ -1285,14 +1285,14 @@ class GraphitronSchemaBuilderTest {
      * Verifies that {@code hasLookupKeyAnywhere()} does not recurse infinitely on circular
      * input type references. A depth limit of 10 in {@code inputTypeHasLookupKey()} is the
      * guard. A field whose input chain reaches the limit without finding {@code @lookupKey}
-     * must be classified as a non-lookup query field (here {@code TableQueryField}) rather
+     * must be classified as a non-lookup query field (here {@code QueryTableField}) rather
      * than causing a stack overflow.
      */
     @Test
     void lookupKeySearch_depthGuardPreventsInfiniteRecursionOnCircularInputTypes() {
         // A → B → A … circular reference; no @lookupKey anywhere in the chain.
         // The guard stops at depth 10 and returns false, so the field falls through
-        // to TableQueryField classification.
+        // to QueryTableField classification.
         var schema = build("""
             input A { b: B }
             input B { a: A }
@@ -1301,8 +1301,8 @@ class GraphitronSchemaBuilderTest {
             """);
 
         assertThat(schema.field("Query", "films"))
-            .as("circular input chain with no @lookupKey → TableQueryField, not a stack overflow")
-            .isInstanceOf(QueryField.TableQueryField.class);
+            .as("circular input chain with no @lookupKey → QueryTableField, not a stack overflow")
+            .isInstanceOf(QueryField.QueryTableField.class);
     }
 
     // ===== Registry validation =====
@@ -1320,27 +1320,27 @@ class GraphitronSchemaBuilderTest {
     enum RootFieldCase {
 
         LOOKUP_QUERY_FIELD(
-            "field with @lookupKey list arg → LookupQueryField with list return",
+            "field with @lookupKey list arg → QueryLookupTableField with list return",
             """
             type Film @table(name: "film") { title: String }
             type Query { filmById(id: [ID] @lookupKey): [Film!]! }
             """,
             schema -> {
-                assertThat(schema.field("Query", "filmById")).isInstanceOf(QueryField.LookupQueryField.class);
-                var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
+                assertThat(schema.field("Query", "filmById")).isInstanceOf(QueryField.QueryLookupTableField.class);
+                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
                 assertThat(f.arguments()).hasSize(1);
                 assertThat(f.arguments().get(0).name()).isEqualTo("id");
                 assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class);
             }),
 
         LOOKUP_NESTED_IN_INPUT(
-            "@lookupKey nested in input type → field still classified as LookupQueryField",
+            "@lookupKey nested in input type → field still classified as QueryLookupTableField",
             """
             input FilmKey { id: ID @lookupKey }
             type Film @table(name: "film") { title: String }
             type Query { filmByKey(key: [FilmKey]): [Film!]! }
             """,
-            schema -> assertThat(schema.field("Query", "filmByKey")).isInstanceOf(QueryField.LookupQueryField.class)),
+            schema -> assertThat(schema.field("Query", "filmByKey")).isInstanceOf(QueryField.QueryLookupTableField.class)),
 
         LOOKUP_FIELD_COLUMN_ARG(
             "lookup field list arg whose column exists → ColumnArg with resolved jOOQ field",
@@ -1349,7 +1349,7 @@ class GraphitronSchemaBuilderTest {
             type Query { filmById(film_id: [ID] @lookupKey): [Film!]! }
             """,
             schema -> {
-                var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
+                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
                 assertThat(f.arguments()).hasSize(1);
                 assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.ScalarArg.ColumnArg.class);
                 var a = (ArgumentRef.ScalarArg.ColumnArg) f.arguments().get(0);
@@ -1365,7 +1365,7 @@ class GraphitronSchemaBuilderTest {
             type Query { filmById(unknownColumn: [String] @lookupKey): [Film!]! }
             """,
             schema -> {
-                var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
+                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
                 assertThat(f.arguments()).hasSize(1);
                 assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.ScalarArg.UnboundScalarArg.class);
                 var a = (ArgumentRef.ScalarArg.UnboundScalarArg) f.arguments().get(0);
@@ -1380,7 +1380,7 @@ class GraphitronSchemaBuilderTest {
             type Query { filmByKey(key: [FilmKey] @lookupKey): [Film!]! }
             """,
             schema -> {
-                var f = (QueryField.LookupQueryField) schema.field("Query", "filmByKey");
+                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmByKey");
                 assertThat(f.arguments()).hasSize(1);
                 assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.InputTypeArg.TableInputTypeArg.class);
                 assertThat(f.arguments().get(0).name()).isEqualTo("key");
@@ -1395,7 +1395,7 @@ class GraphitronSchemaBuilderTest {
             type Query { filmByKey(key: [FilmKey] @lookupKey): [Film!]! }
             """,
             schema -> {
-                var f = (QueryField.LookupQueryField) schema.field("Query", "filmByKey");
+                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmByKey");
                 assertThat(f.arguments()).hasSize(1);
                 assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.InputTypeArg.TableInputTypeArg.class);
                 // The type was promoted to TableInputType in types map
@@ -1413,7 +1413,7 @@ class GraphitronSchemaBuilderTest {
             type Query { filmById(film_id: [ID] @lookupKey, order: FilmOrder @orderBy): [Film!]! }
             """,
             schema -> {
-                var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
+                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
                 var orderArg = f.arguments().stream()
                     .filter(a -> a.name().equals("order"))
                     .findFirst().orElseThrow();
@@ -1431,7 +1431,7 @@ class GraphitronSchemaBuilderTest {
             type Query { filmById(film_id: [ID] @lookupKey, order: FilmOrder @orderBy): [Film!]! }
             """,
             schema -> {
-                var f = (QueryField.LookupQueryField) schema.field("Query", "filmById");
+                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
                 var orderArg = f.arguments().stream()
                     .filter(a -> a.name().equals("order"))
                     .findFirst().orElseThrow();
@@ -1441,12 +1441,12 @@ class GraphitronSchemaBuilderTest {
             }),
 
         TABLE_QUERY_FIELD(
-            "field returning @table type → TableQueryField",
+            "field returning @table type → QueryTableField",
             """
             type Film @table(name: "film") { title: String }
             type Query { films: [Film!]! }
             """,
-            schema -> assertThat(schema.field("Query", "films")).isInstanceOf(QueryField.TableQueryField.class)),
+            schema -> assertThat(schema.field("Query", "films")).isInstanceOf(QueryField.QueryTableField.class)),
 
         TABLE_QUERY_FIELD_WITH_ARGS(
             "table query field captures arguments",
@@ -1456,13 +1456,13 @@ class GraphitronSchemaBuilderTest {
             type Query { films(orderBy: FilmOrder @orderBy): [Film!]! }
             """,
             schema -> {
-                var f = (QueryField.TableQueryField) schema.field("Query", "films");
+                var f = (QueryField.QueryTableField) schema.field("Query", "films");
                 assertThat(f.arguments()).hasSize(1);
                 assertThat(f.arguments().get(0).orderBy()).isTrue();
             }),
 
         TABLE_METHOD_QUERY_FIELD(
-            "@tableMethod on root field → TableMethodQueryField",
+            "@tableMethod on root field → QueryTableMethodTableField",
             """
             type Film @table(name: "film") { title: String }
             type Query {
@@ -1471,60 +1471,60 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                assertThat(schema.field("Query", "filteredFilms")).isInstanceOf(QueryField.TableMethodQueryField.class);
-                var f = (QueryField.TableMethodQueryField) schema.field("Query", "filteredFilms");
+                assertThat(schema.field("Query", "filteredFilms")).isInstanceOf(QueryField.QueryTableMethodTableField.class);
+                var f = (QueryField.QueryTableMethodTableField) schema.field("Query", "filteredFilms");
                 assertThat(f.contextArguments()).containsExactly("tenantId");
             }),
 
         NODE_QUERY_FIELD(
-            "field named 'node' → NodeQueryField",
+            "field named 'node' → QueryNodeField",
             """
             interface Node { id: ID! }
             type Film implements Node @table(name: "film") { id: ID! title: String }
             type Query { node(id: ID!): Node }
             """,
-            schema -> assertThat(schema.field("Query", "node")).isInstanceOf(QueryField.NodeQueryField.class)),
+            schema -> assertThat(schema.field("Query", "node")).isInstanceOf(QueryField.QueryNodeField.class)),
 
         ENTITY_QUERY_FIELD(
-            "field named '_entities' → EntityQueryField",
+            "field named '_entities' → QueryEntityField",
             """
             scalar _Any
             union _Entity = Film
             type Film @table(name: "film") { title: String }
             type Query { _entities(representations: [_Any!]!): [_Entity]! }
             """,
-            schema -> assertThat(schema.field("Query", "_entities")).isInstanceOf(QueryField.EntityQueryField.class)),
+            schema -> assertThat(schema.field("Query", "_entities")).isInstanceOf(QueryField.QueryEntityField.class)),
 
         TABLE_INTERFACE_QUERY_FIELD(
-            "field returning table-interface type → TableInterfaceQueryField",
+            "field returning table-interface type → QueryTableInterfaceField",
             """
             interface Named @table(name: "named") @discriminate(on: "type") { name: String }
             type Film implements Named @table(name: "film") { name: String }
             type Query { named: Named }
             """,
-            schema -> assertThat(schema.field("Query", "named")).isInstanceOf(QueryField.TableInterfaceQueryField.class)),
+            schema -> assertThat(schema.field("Query", "named")).isInstanceOf(QueryField.QueryTableInterfaceField.class)),
 
         INTERFACE_QUERY_FIELD(
-            "field returning plain interface → InterfaceQueryField",
+            "field returning plain interface → QueryInterfaceField",
             """
             interface Named { name: String }
             type Film implements Named @table(name: "film") { name: String }
             type Query { named: Named }
             """,
-            schema -> assertThat(schema.field("Query", "named")).isInstanceOf(QueryField.InterfaceQueryField.class)),
+            schema -> assertThat(schema.field("Query", "named")).isInstanceOf(QueryField.QueryInterfaceField.class)),
 
         UNION_QUERY_FIELD(
-            "field returning union → UnionQueryField",
+            "field returning union → QueryUnionField",
             """
             type Film @table(name: "film") { title: String }
             type Actor @table(name: "actor") { name: String }
             union SearchResult = Film | Actor
             type Query { search: SearchResult }
             """,
-            schema -> assertThat(schema.field("Query", "search")).isInstanceOf(QueryField.UnionQueryField.class)),
+            schema -> assertThat(schema.field("Query", "search")).isInstanceOf(QueryField.QueryUnionField.class)),
 
         SERVICE_QUERY_FIELD(
-            "@service on root query field → ServiceQueryField",
+            "@service on root query field → QueryServiceTableField",
             """
             type Film @table(name: "film") { title: String }
             type Query {
@@ -1532,49 +1532,49 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                assertThat(schema.field("Query", "externalFilm")).isInstanceOf(QueryField.ServiceQueryField.class);
-                var f = (QueryField.ServiceQueryField) schema.field("Query", "externalFilm");
+                assertThat(schema.field("Query", "externalFilm")).isInstanceOf(QueryField.QueryServiceTableField.class);
+                var f = (QueryField.QueryServiceTableField) schema.field("Query", "externalFilm");
                 assertThat(f.contextArguments()).isEmpty();
             }),
 
         INSERT_MUTATION_FIELD(
-            "@mutation(typeName: INSERT) → InsertMutationField",
+            "@mutation(typeName: INSERT) → MutationInsertTableField",
             """
             type Film @table(name: "film") { title: String }
             type Query { x: String }
             type Mutation { createFilm: Film @mutation(typeName: INSERT) }
             """,
-            schema -> assertThat(schema.field("Mutation", "createFilm")).isInstanceOf(MutationField.InsertMutationField.class)),
+            schema -> assertThat(schema.field("Mutation", "createFilm")).isInstanceOf(MutationField.MutationInsertTableField.class)),
 
         UPDATE_MUTATION_FIELD(
-            "@mutation(typeName: UPDATE) → UpdateMutationField",
+            "@mutation(typeName: UPDATE) → MutationUpdateTableField",
             """
             type Film @table(name: "film") { title: String }
             type Query { x: String }
             type Mutation { updateFilm: Film @mutation(typeName: UPDATE) }
             """,
-            schema -> assertThat(schema.field("Mutation", "updateFilm")).isInstanceOf(MutationField.UpdateMutationField.class)),
+            schema -> assertThat(schema.field("Mutation", "updateFilm")).isInstanceOf(MutationField.MutationUpdateTableField.class)),
 
         DELETE_MUTATION_FIELD(
-            "@mutation(typeName: DELETE) → DeleteMutationField",
+            "@mutation(typeName: DELETE) → MutationDeleteTableField",
             """
             type Film @table(name: "film") { title: String }
             type Query { x: String }
             type Mutation { deleteFilm: Film @mutation(typeName: DELETE) }
             """,
-            schema -> assertThat(schema.field("Mutation", "deleteFilm")).isInstanceOf(MutationField.DeleteMutationField.class)),
+            schema -> assertThat(schema.field("Mutation", "deleteFilm")).isInstanceOf(MutationField.MutationDeleteTableField.class)),
 
         UPSERT_MUTATION_FIELD(
-            "@mutation(typeName: UPSERT) → UpsertMutationField",
+            "@mutation(typeName: UPSERT) → MutationUpsertTableField",
             """
             type Film @table(name: "film") { title: String }
             type Query { x: String }
             type Mutation { upsertFilm: Film @mutation(typeName: UPSERT) }
             """,
-            schema -> assertThat(schema.field("Mutation", "upsertFilm")).isInstanceOf(MutationField.UpsertMutationField.class)),
+            schema -> assertThat(schema.field("Mutation", "upsertFilm")).isInstanceOf(MutationField.MutationUpsertTableField.class)),
 
         SERVICE_MUTATION_FIELD(
-            "@service on mutation field → ServiceMutationField",
+            "@service on mutation field → MutationServiceTableField",
             """
             type Film @table(name: "film") { title: String }
             type Query { x: String }
@@ -1582,7 +1582,7 @@ class GraphitronSchemaBuilderTest {
                 externalMutation: Film @service(service: {className: "com.example.Svc", method: "run"})
             }
             """,
-            schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.ServiceMutationField.class));
+            schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.MutationServiceTableField.class));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -1877,7 +1877,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void serviceOnQueryWithTableReturnType_classifiesAsServiceQueryField() {
+    void serviceOnQueryWithTableReturnType_classifiesAsQueryServiceTableField() {
         // @service on a query returning a @table type is valid — @service drives classification.
         // Having a @table return type is not a conflicting directive; it is only a fallback
         // when no explicit directive is present.
@@ -1887,7 +1887,7 @@ class GraphitronSchemaBuilderTest {
                 film: Film @service(service: {className: "com.example.Svc", method: "get"})
             }
             """);
-        assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.ServiceQueryField.class);
+        assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.QueryServiceTableField.class);
     }
 
     // ===== Helper =====

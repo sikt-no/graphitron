@@ -8,10 +8,10 @@ import java.util.List;
  * A field on the {@code Query} type. Read-only. All create a new scope or enter private service scope.
  */
 public sealed interface QueryField extends RootField
-    permits QueryField.LookupQueryField, QueryField.TableQueryField, QueryField.TableMethodQueryField,
-            QueryField.NodeQueryField, QueryField.EntityQueryField,
-            QueryField.TableInterfaceQueryField, QueryField.InterfaceQueryField, QueryField.UnionQueryField,
-            QueryField.ServiceQueryField {
+    permits QueryField.QueryLookupTableField, QueryField.QueryTableField, QueryField.QueryTableMethodTableField,
+            QueryField.QueryNodeField, QueryField.QueryEntityField,
+            QueryField.QueryTableInterfaceField, QueryField.QueryInterfaceField, QueryField.QueryUnionField,
+            QueryField.QueryServiceTableField, QueryField.QueryServiceRecordField {
 
     /**
      * Triggered by {@code @lookupKey} on one or more arguments (including nested inside input types).
@@ -40,7 +40,7 @@ public sealed interface QueryField extends RootField
      *     {@link ArgumentRef.ScalarArg.ParamArg} covers non-column-bound method parameters;
      *     {@link ArgumentRef.UnclassifiedArg} marks arguments carrying unsupported directives.
      */
-    record LookupQueryField(
+    record QueryLookupTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
@@ -64,7 +64,7 @@ public sealed interface QueryField extends RootField
      * {@code @condition}, pagination arguments). The validator checks that any referenced input
      * types exist in the classified schema.
      */
-    record TableQueryField(
+    record QueryTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
@@ -86,7 +86,7 @@ public sealed interface QueryField extends RootField
      * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
      * of the {@code @tableMethod} directive.
      */
-    record TableMethodQueryField(
+    record QueryTableMethodTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
@@ -102,7 +102,7 @@ public sealed interface QueryField extends RootField
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
      * schema.
      */
-    record NodeQueryField(
+    record QueryNodeField(
         String parentTypeName,
         String name,
         SourceLocation location,
@@ -115,7 +115,7 @@ public sealed interface QueryField extends RootField
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
      * schema.
      */
-    record EntityQueryField(
+    record QueryEntityField(
         String parentTypeName,
         String name,
         SourceLocation location,
@@ -128,7 +128,7 @@ public sealed interface QueryField extends RootField
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
      * schema, with the {@link FieldWrapper} embedded.
      */
-    record TableInterfaceQueryField(
+    record QueryTableInterfaceField(
         String parentTypeName,
         String name,
         SourceLocation location,
@@ -141,7 +141,7 @@ public sealed interface QueryField extends RootField
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
      * schema, with the {@link FieldWrapper} embedded.
      */
-    record InterfaceQueryField(
+    record QueryInterfaceField(
         String parentTypeName,
         String name,
         SourceLocation location,
@@ -154,7 +154,7 @@ public sealed interface QueryField extends RootField
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
      * schema, with the {@link FieldWrapper} embedded.
      */
-    record UnionQueryField(
+    record QueryUnionField(
         String parentTypeName,
         String name,
         SourceLocation location,
@@ -162,10 +162,10 @@ public sealed interface QueryField extends RootField
     ) implements QueryField {}
 
     /**
-     * A root query field delegating to a developer-provided service class via {@code @service}.
+     * A root query field delegating to a developer-provided service class via {@code @service},
+     * where the return type is annotated with {@code @table} (service → table-mapped target).
      *
-     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema.
+     * <p>{@code returnType} is narrowed to {@link ReturnTypeRef.TableBoundReturnType}.
      *
      * <p>{@code serviceRef} is the {@code service: ExternalCodeReference!} argument of the
      * {@code @service} directive — the Java class and method to delegate to.
@@ -175,7 +175,24 @@ public sealed interface QueryField extends RootField
      * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
      * of the {@code @service} directive.
      */
-    record ServiceQueryField(
+    record QueryServiceTableField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.TableBoundReturnType returnType,
+        ExternalRef serviceRef,
+        List<ArgumentSpec> arguments,
+        List<String> contextArguments
+    ) implements QueryField {}
+
+    /**
+     * A root query field delegating to a developer-provided service class via {@code @service},
+     * where the return type is NOT table-mapped (service → record/scalar target).
+     *
+     * <p>{@code serviceRef}, {@code arguments}, and {@code contextArguments} have the same semantics
+     * as {@link QueryServiceTableField}.
+     */
+    record QueryServiceRecordField(
         String parentTypeName,
         String name,
         SourceLocation location,

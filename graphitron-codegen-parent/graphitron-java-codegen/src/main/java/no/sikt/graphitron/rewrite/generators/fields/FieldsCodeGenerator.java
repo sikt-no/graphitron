@@ -30,7 +30,7 @@ import java.util.List;
  * <ul>
  *   <li>For most fields: one {@code public static Object fieldName(DataFetchingEnvironment env)}
  *       stub throwing {@link UnsupportedOperationException}.</li>
- *   <li>For {@link QueryField.LookupQueryField}: an async data fetcher stub returning
+ *   <li>For {@link QueryField.QueryLookupTableField}: an async data fetcher stub returning
  *       {@code CompletableFuture<List<Record>>} and a bespoke synchronous
  *       {@code lookupFieldName(DataFetchingEnvironment env, SelectedField sel)} stub.</li>
  *   <li>For {@link ChildField.ServiceTableField} with a resolved service method reference:
@@ -72,7 +72,7 @@ public class FieldsCodeGenerator {
         boolean needsGraphitronContextHelper = false;
 
         for (var field : fields) {
-            if (field instanceof QueryField.LookupQueryField lookup) {
+            if (field instanceof QueryField.QueryLookupTableField lookup) {
                 builder.addMethod(buildLookupDataFetcher(lookup));
                 builder.addMethod(buildLookupMethod(lookup));
             } else if (field instanceof ChildField.ServiceTableField sf
@@ -108,7 +108,7 @@ public class FieldsCodeGenerator {
             .build();
     }
 
-    private MethodSpec buildLookupDataFetcher(QueryField.LookupQueryField field) {
+    private MethodSpec buildLookupDataFetcher(QueryField.QueryLookupTableField field) {
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, ParameterizedTypeName.get(LIST, RECORD));
         return MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -118,7 +118,7 @@ public class FieldsCodeGenerator {
             .build();
     }
 
-    private MethodSpec buildLookupMethod(QueryField.LookupQueryField field) {
+    private MethodSpec buildLookupMethod(QueryField.QueryLookupTableField field) {
         var methodName = "lookup" + capitalize(field.name());
         return MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)

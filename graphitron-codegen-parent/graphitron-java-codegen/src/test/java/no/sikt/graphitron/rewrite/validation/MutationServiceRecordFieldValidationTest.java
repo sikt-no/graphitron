@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
-import no.sikt.graphitron.rewrite.field.MutationField.InsertMutationField;
+import no.sikt.graphitron.rewrite.field.MutationField.MutationServiceRecordField;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -13,12 +13,12 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
-class InsertMutationFieldValidationTest {
+class MutationServiceRecordFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID("insert mutation field — always valid",
-            new InsertMutationField("Mutation", "createFilm", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of()),
+        VALID("service mutation field with non-table return — always valid",
+            new MutationServiceRecordField("Mutation", "externalMutation", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), null, List.of(), List.of()),
             List.of());
 
         private final String description;
@@ -38,7 +38,7 @@ class InsertMutationFieldValidationTest {
 
     @ParameterizedTest(name = "{0}")
     @EnumSource(Case.class)
-    void insertMutationFieldValidation(Case tc) {
+    void mutationServiceRecordFieldValidation(Case tc) {
         assertThat(validate(tc.field()))
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());

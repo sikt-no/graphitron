@@ -5,8 +5,8 @@ import no.sikt.graphitron.rewrite.field.DefaultOrderSpec;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.OrderSpec;
+import no.sikt.graphitron.rewrite.field.QueryField.QueryTableInterfaceField;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.field.QueryField.TableMethodQueryField;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -15,28 +15,23 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
-class TableMethodQueryFieldValidationTest {
+class QueryTableInterfaceFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
         VALID("single cardinality — valid",
-            new TableMethodQueryField("Query", "filmsByMethod", null,
-                new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), null, List.of(), List.of()),
+            new QueryTableInterfaceField("Query", "statuses", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true))),
             List.of()),
 
         LIST_UNRESOLVED_INDEX("list cardinality: @defaultOrder references an index that could not be found — validation error",
-            new TableMethodQueryField("Query", "filmsByMethod", null,
-                new ReturnTypeRef.OtherReturnType("Film",
-                    new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedIndexOrder("IDX_MISSING"), "ASC"), List.of())),
-                null, List.of(), List.of()),
-            List.of("Field 'filmsByMethod': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
+            new QueryTableInterfaceField("Query", "statuses", null, new ReturnTypeRef.OtherReturnType("Film",
+                new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedIndexOrder("IDX_MISSING"), "ASC"), List.of()))),
+            List.of("Field 'statuses': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
 
         LIST_UNRESOLVED_PRIMARY_KEY("list cardinality: @defaultOrder uses primaryKey but the table has none — validation error",
-            new TableMethodQueryField("Query", "filmsByMethod", null,
-                new ReturnTypeRef.OtherReturnType("Film",
-                    new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "ASC"), List.of())),
-                null, List.of(), List.of()),
-            List.of("Field 'filmsByMethod': primary key could not be resolved — the table may not have one"));
+            new QueryTableInterfaceField("Query", "statuses", null, new ReturnTypeRef.OtherReturnType("Film",
+                new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "ASC"), List.of()))),
+            List.of("Field 'statuses': primary key could not be resolved — the table may not have one"));
 
         private final String description;
         private final GraphitronField field;
@@ -55,7 +50,7 @@ class TableMethodQueryFieldValidationTest {
 
     @ParameterizedTest(name = "{0}")
     @EnumSource(Case.class)
-    void tableMethodQueryFieldValidation(Case tc) {
+    void tableQueryInterfaceFieldValidation(Case tc) {
         assertThat(validate(tc.field()))
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());

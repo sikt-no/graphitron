@@ -8,8 +8,8 @@ import java.util.List;
  * A field on the {@code Mutation} type. The only fields permitted to write to the database.
  */
 public sealed interface MutationField extends RootField
-    permits MutationField.InsertMutationField, MutationField.UpdateMutationField, MutationField.DeleteMutationField,
-            MutationField.UpsertMutationField, MutationField.ServiceMutationField {
+    permits MutationField.MutationInsertTableField, MutationField.MutationUpdateTableField, MutationField.MutationDeleteTableField,
+            MutationField.MutationUpsertTableField, MutationField.MutationServiceTableField, MutationField.MutationServiceRecordField {
 
     /**
      * A mutation field for {@code @mutation(typeName: INSERT)}.
@@ -19,7 +19,7 @@ public sealed interface MutationField extends RootField
      *
      * <p>{@code arguments} is the full list of GraphQL arguments on the field.
      */
-    record InsertMutationField(
+    record MutationInsertTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
@@ -35,7 +35,7 @@ public sealed interface MutationField extends RootField
      *
      * <p>{@code arguments} is the full list of GraphQL arguments on the field.
      */
-    record UpdateMutationField(
+    record MutationUpdateTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
@@ -51,7 +51,7 @@ public sealed interface MutationField extends RootField
      *
      * <p>{@code arguments} is the full list of GraphQL arguments on the field.
      */
-    record DeleteMutationField(
+    record MutationDeleteTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
@@ -67,7 +67,7 @@ public sealed interface MutationField extends RootField
      *
      * <p>{@code arguments} is the full list of GraphQL arguments on the field.
      */
-    record UpsertMutationField(
+    record MutationUpsertTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
@@ -76,20 +76,37 @@ public sealed interface MutationField extends RootField
     ) implements MutationField {}
 
     /**
-     * A mutation field delegating to a developer-provided service class via {@code @service}.
+     * A mutation field delegating to a developer-provided service class via {@code @service},
+     * where the return type is annotated with {@code @table} (service → table-mapped target).
      *
-     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema.
+     * <p>{@code returnType} is narrowed to {@link ReturnTypeRef.TableBoundReturnType}.
      *
      * <p>{@code serviceRef} is the {@code service: ExternalCodeReference!} argument of the
      * {@code @service} directive — the Java class and method to delegate to.
      *
+     * <p>{@code arguments} is the full list of GraphQL arguments on the field.
+     *
      * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
      * of the {@code @service} directive.
-     *
-     * <p>{@code arguments} is the full list of GraphQL arguments on the field.
      */
-    record ServiceMutationField(
+    record MutationServiceTableField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.TableBoundReturnType returnType,
+        ExternalRef serviceRef,
+        List<ArgumentSpec> arguments,
+        List<String> contextArguments
+    ) implements MutationField {}
+
+    /**
+     * A mutation field delegating to a developer-provided service class via {@code @service},
+     * where the return type is NOT table-mapped (service → record/scalar target).
+     *
+     * <p>{@code serviceRef}, {@code arguments}, and {@code contextArguments} have the same semantics
+     * as {@link MutationServiceTableField}.
+     */
+    record MutationServiceRecordField(
         String parentTypeName,
         String name,
         SourceLocation location,

@@ -66,20 +66,22 @@ public class GraphitronSchemaValidator {
 
     private void validateField(GraphitronField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         switch (field) {
-            case no.sikt.graphitron.rewrite.field.QueryField.LookupQueryField f        -> validateLookupQueryField(f, types, errors);
-            case no.sikt.graphitron.rewrite.field.QueryField.TableQueryField f         -> validateTableQueryField(f, types, errors);
-            case no.sikt.graphitron.rewrite.field.QueryField.TableMethodQueryField f   -> validateTableMethodQueryField(f, errors);
-            case no.sikt.graphitron.rewrite.field.QueryField.NodeQueryField f          -> validateNodeQueryField(f, errors);
-            case no.sikt.graphitron.rewrite.field.QueryField.EntityQueryField f        -> validateEntityQueryField(f, errors);
-            case no.sikt.graphitron.rewrite.field.QueryField.TableInterfaceQueryField f -> validateTableInterfaceQueryField(f, errors);
-            case no.sikt.graphitron.rewrite.field.QueryField.InterfaceQueryField f     -> validateInterfaceQueryField(f, errors);
-            case no.sikt.graphitron.rewrite.field.QueryField.UnionQueryField f         -> validateUnionQueryField(f, errors);
-            case no.sikt.graphitron.rewrite.field.QueryField.ServiceQueryField f       -> validateServiceQueryField(f, types, errors);
-            case no.sikt.graphitron.rewrite.field.MutationField.InsertMutationField f     -> validateInsertMutationField(f, errors);
-            case no.sikt.graphitron.rewrite.field.MutationField.UpdateMutationField f     -> validateUpdateMutationField(f, errors);
-            case no.sikt.graphitron.rewrite.field.MutationField.DeleteMutationField f     -> validateDeleteMutationField(f, errors);
-            case no.sikt.graphitron.rewrite.field.MutationField.UpsertMutationField f     -> validateUpsertMutationField(f, errors);
-            case no.sikt.graphitron.rewrite.field.MutationField.ServiceMutationField f    -> validateServiceMutationField(f, errors);
+            case no.sikt.graphitron.rewrite.field.QueryField.QueryLookupTableField f        -> validateQueryLookupTableField(f, types, errors);
+            case no.sikt.graphitron.rewrite.field.QueryField.QueryTableField f         -> validateQueryTableField(f, types, errors);
+            case no.sikt.graphitron.rewrite.field.QueryField.QueryTableMethodTableField f   -> validateQueryTableMethodTableField(f, errors);
+            case no.sikt.graphitron.rewrite.field.QueryField.QueryNodeField f          -> validateQueryNodeField(f, errors);
+            case no.sikt.graphitron.rewrite.field.QueryField.QueryEntityField f        -> validateQueryEntityField(f, errors);
+            case no.sikt.graphitron.rewrite.field.QueryField.QueryTableInterfaceField f -> validateQueryTableInterfaceField(f, errors);
+            case no.sikt.graphitron.rewrite.field.QueryField.QueryInterfaceField f     -> validateQueryInterfaceField(f, errors);
+            case no.sikt.graphitron.rewrite.field.QueryField.QueryUnionField f         -> validateQueryUnionField(f, errors);
+            case no.sikt.graphitron.rewrite.field.QueryField.QueryServiceTableField f       -> validateQueryServiceTableField(f, types, errors);
+            case no.sikt.graphitron.rewrite.field.QueryField.QueryServiceRecordField f      -> validateQueryServiceRecordField(f, types, errors);
+            case no.sikt.graphitron.rewrite.field.MutationField.MutationInsertTableField f     -> validateMutationInsertTableField(f, errors);
+            case no.sikt.graphitron.rewrite.field.MutationField.MutationUpdateTableField f     -> validateMutationUpdateTableField(f, errors);
+            case no.sikt.graphitron.rewrite.field.MutationField.MutationDeleteTableField f     -> validateMutationDeleteTableField(f, errors);
+            case no.sikt.graphitron.rewrite.field.MutationField.MutationUpsertTableField f     -> validateMutationUpsertTableField(f, errors);
+            case no.sikt.graphitron.rewrite.field.MutationField.MutationServiceTableField f    -> validateMutationServiceTableField(f, errors);
+            case no.sikt.graphitron.rewrite.field.MutationField.MutationServiceRecordField f   -> validateMutationServiceRecordField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.ColumnField f             -> validateColumnField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.ColumnReferenceField f    -> validateColumnReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.NodeIdField f             -> validateNodeIdField(f, errors);
@@ -180,7 +182,7 @@ public class GraphitronSchemaValidator {
 
     // --- Field validators (stubs — filled in as test classes are added) ---
 
-    private void validateLookupQueryField(no.sikt.graphitron.rewrite.field.QueryField.LookupQueryField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+    private void validateQueryLookupTableField(no.sikt.graphitron.rewrite.field.QueryField.QueryLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         boolean anyArgIsList = field.arguments().stream().anyMatch(ArgumentRef::list);
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.field.FieldWrapper.Connection) {
             errors.add(new ValidationError(
@@ -219,7 +221,7 @@ public class GraphitronSchemaValidator {
             }
         }
     }
-    private void validateTableQueryField(no.sikt.graphitron.rewrite.field.QueryField.TableQueryField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+    private void validateQueryTableField(no.sikt.graphitron.rewrite.field.QueryField.QueryTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
         switch (field.returnType()) {
@@ -257,28 +259,32 @@ public class GraphitronSchemaValidator {
             location
         ));
     }
-    private void validateTableMethodQueryField(no.sikt.graphitron.rewrite.field.QueryField.TableMethodQueryField field, List<ValidationError> errors) {
+    private void validateQueryTableMethodTableField(no.sikt.graphitron.rewrite.field.QueryField.QueryTableMethodTableField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
-    private void validateNodeQueryField(no.sikt.graphitron.rewrite.field.QueryField.NodeQueryField field, List<ValidationError> errors) {}
-    private void validateEntityQueryField(no.sikt.graphitron.rewrite.field.QueryField.EntityQueryField field, List<ValidationError> errors) {}
-    private void validateTableInterfaceQueryField(no.sikt.graphitron.rewrite.field.QueryField.TableInterfaceQueryField field, List<ValidationError> errors) {
+    private void validateQueryNodeField(no.sikt.graphitron.rewrite.field.QueryField.QueryNodeField field, List<ValidationError> errors) {}
+    private void validateQueryEntityField(no.sikt.graphitron.rewrite.field.QueryField.QueryEntityField field, List<ValidationError> errors) {}
+    private void validateQueryTableInterfaceField(no.sikt.graphitron.rewrite.field.QueryField.QueryTableInterfaceField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
-    private void validateInterfaceQueryField(no.sikt.graphitron.rewrite.field.QueryField.InterfaceQueryField field, List<ValidationError> errors) {
+    private void validateQueryInterfaceField(no.sikt.graphitron.rewrite.field.QueryField.QueryInterfaceField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
-    private void validateUnionQueryField(no.sikt.graphitron.rewrite.field.QueryField.UnionQueryField field, List<ValidationError> errors) {
+    private void validateQueryUnionField(no.sikt.graphitron.rewrite.field.QueryField.QueryUnionField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
-    private void validateServiceQueryField(no.sikt.graphitron.rewrite.field.QueryField.ServiceQueryField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+    private void validateQueryServiceTableField(no.sikt.graphitron.rewrite.field.QueryField.QueryServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
-    private void validateInsertMutationField(no.sikt.graphitron.rewrite.field.MutationField.InsertMutationField field, List<ValidationError> errors) {}
-    private void validateUpdateMutationField(no.sikt.graphitron.rewrite.field.MutationField.UpdateMutationField field, List<ValidationError> errors) {}
-    private void validateDeleteMutationField(no.sikt.graphitron.rewrite.field.MutationField.DeleteMutationField field, List<ValidationError> errors) {}
-    private void validateUpsertMutationField(no.sikt.graphitron.rewrite.field.MutationField.UpsertMutationField field, List<ValidationError> errors) {}
-    private void validateServiceMutationField(no.sikt.graphitron.rewrite.field.MutationField.ServiceMutationField field, List<ValidationError> errors) {}
+    private void validateQueryServiceRecordField(no.sikt.graphitron.rewrite.field.QueryField.QueryServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
+    }
+    private void validateMutationInsertTableField(no.sikt.graphitron.rewrite.field.MutationField.MutationInsertTableField field, List<ValidationError> errors) {}
+    private void validateMutationUpdateTableField(no.sikt.graphitron.rewrite.field.MutationField.MutationUpdateTableField field, List<ValidationError> errors) {}
+    private void validateMutationDeleteTableField(no.sikt.graphitron.rewrite.field.MutationField.MutationDeleteTableField field, List<ValidationError> errors) {}
+    private void validateMutationUpsertTableField(no.sikt.graphitron.rewrite.field.MutationField.MutationUpsertTableField field, List<ValidationError> errors) {}
+    private void validateMutationServiceTableField(no.sikt.graphitron.rewrite.field.MutationField.MutationServiceTableField field, List<ValidationError> errors) {}
+    private void validateMutationServiceRecordField(no.sikt.graphitron.rewrite.field.MutationField.MutationServiceRecordField field, List<ValidationError> errors) {}
     private void validateColumnField(no.sikt.graphitron.rewrite.field.ChildField.ColumnField field, List<ValidationError> errors) {
         if (field.column() instanceof UnresolvedColumn) {
             errors.add(new ValidationError(

@@ -75,7 +75,7 @@ public sealed interface ArgumentRef
          *
          * <p>The input type must have exactly one enum field whose values carry {@code @order}
          * directives ({@code sortFieldName}) and exactly one direction enum field ({@code directionFieldName}).
-         * Valid on {@link no.sikt.graphitron.rewrite.field.QueryField.TableQueryField}; the
+         * Valid on {@link no.sikt.graphitron.rewrite.field.QueryField.QueryTableField}; the
          * validator reports an error on lookup fields.
          *
          * <p>If the input type cannot be resolved to this structure (type not found, wrong number

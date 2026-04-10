@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
-import no.sikt.graphitron.rewrite.field.QueryField.ServiceQueryField;
+import no.sikt.graphitron.rewrite.field.QueryField.QueryNodeField;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -13,14 +13,12 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
-class ServiceQueryFieldValidationTest {
+class QueryNodeFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID("service query field — always valid",
-            new ServiceQueryField("Query", "externalData", null,
-                new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)),
-                null, List.of(), List.of()),
+        VALID("node query field — always valid",
+            new QueryNodeField("Query", "node", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true))),
             List.of());
 
         private final String description;
@@ -40,7 +38,7 @@ class ServiceQueryFieldValidationTest {
 
     @ParameterizedTest(name = "{0}")
     @EnumSource(Case.class)
-    void serviceQueryFieldValidation(Case tc) {
+    void nodeQueryFieldValidation(Case tc) {
         assertThat(validate(tc.field()))
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());

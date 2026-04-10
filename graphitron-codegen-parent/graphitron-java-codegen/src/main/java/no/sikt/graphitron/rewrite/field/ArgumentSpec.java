@@ -12,11 +12,11 @@ package no.sikt.graphitron.rewrite.field;
  * {@code ID}) are always valid. Any other {@code typeName} must resolve to a type in
  * {@link no.sikt.graphitron.rewrite.GraphitronSchema#types()}.
  *
- * <p>When the enclosing field is a {@link no.sikt.graphitron.rewrite.field.QueryField.LookupQueryField},
+ * <p>When the enclosing field is a {@link no.sikt.graphitron.rewrite.field.QueryField.QueryLookupTableField},
  * all arguments — regardless of whether {@code @lookupKey} appeared on them — participate equally
  * in the lookup semantics (list args are positionally correlated; scalar args are broadcast).
  * {@code @lookupKey} is a field-level classifier only: its presence on any argument in the arg
- * tree causes the field to be classified as a {@code LookupQueryField}. There is no per-argument
+ * tree causes the field to be classified as a {@code QueryLookupTableField}. There is no per-argument
  * semantic distinction.
  *
  * <p>{@code conditionArg} is {@code true} when the {@code @condition} directive is present on

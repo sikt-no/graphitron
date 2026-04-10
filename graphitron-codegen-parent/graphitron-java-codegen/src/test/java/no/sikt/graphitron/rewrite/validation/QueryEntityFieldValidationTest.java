@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.field.QueryField.EntityQueryField;
+import no.sikt.graphitron.rewrite.field.QueryField.QueryEntityField;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
@@ -13,12 +13,12 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
-class EntityQueryFieldValidationTest {
+class QueryEntityFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
         VALID("entity query field — always valid",
-            new EntityQueryField("Query", "_entities", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true))),
+            new QueryEntityField("Query", "_entities", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true))),
             List.of());
 
         private final String description;

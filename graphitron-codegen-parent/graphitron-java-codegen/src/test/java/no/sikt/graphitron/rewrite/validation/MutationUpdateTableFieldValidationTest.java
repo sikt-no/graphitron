@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
-import no.sikt.graphitron.rewrite.field.MutationField.UpsertMutationField;
+import no.sikt.graphitron.rewrite.field.MutationField.MutationUpdateTableField;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -13,12 +13,12 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
-class UpsertMutationFieldValidationTest {
+class MutationUpdateTableFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID("upsert mutation field — always valid",
-            new UpsertMutationField("Mutation", "upsertFilm", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of()),
+        VALID("update mutation field — always valid",
+            new MutationUpdateTableField("Mutation", "updateFilm", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of()),
             List.of());
 
         private final String description;
@@ -38,7 +38,7 @@ class UpsertMutationFieldValidationTest {
 
     @ParameterizedTest(name = "{0}")
     @EnumSource(Case.class)
-    void upsertMutationFieldValidation(Case tc) {
+    void updateMutationFieldValidation(Case tc) {
         assertThat(validate(tc.field()))
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());
