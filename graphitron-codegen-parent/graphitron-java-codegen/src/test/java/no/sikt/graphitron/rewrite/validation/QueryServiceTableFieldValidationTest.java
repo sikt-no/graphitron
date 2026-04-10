@@ -19,7 +19,7 @@ class QueryServiceTableFieldValidationTest {
 
     private static final ReturnTypeRef.TableBoundReturnType FILM_RETURN =
         new ReturnTypeRef.TableBoundReturnType("Film",
-            new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()),
+            new TableRef.ResolvedTable.Plain("film", "FILM", "Film", true, List.of(), List.of()),
             new FieldWrapper.Single(true));
 
     enum Case implements ValidatorCase {

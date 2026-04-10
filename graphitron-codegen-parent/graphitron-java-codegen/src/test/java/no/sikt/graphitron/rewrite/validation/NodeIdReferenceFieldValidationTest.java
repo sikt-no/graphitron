@@ -12,8 +12,9 @@ import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedCondit
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.type.NodeRef.NodeDirective;
 import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
+import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
+import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.WithNode;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -30,30 +31,30 @@ class NodeIdReferenceFieldValidationTest {
         TestConfiguration.setProperties();
     }
 
-    private static final ResolvedNodeType NODE = new ResolvedNodeType(new NodeDirective(null, List.of()));
+    private static final ResolvedNodeType NODE = new ResolvedNodeType(new WithNode("film", "FILM", "Film", true, List.of(), List.of(), null, List.of()));
 
     enum Case implements ValidatorCase {
 
         IMPLICIT_SINGLE_FK("exactly one FK between tables — implicit join, no errors",
             new NodeIdReferenceField("Inventory", "filmId", null, "Film",
-                new ReturnTypeRef.TableBoundReturnType("Film", new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.Single(true)),
-                new ResolvedTable("inventory", "INVENTORY", "Inventory", true, List.of(), List.of()),
+                new ReturnTypeRef.TableBoundReturnType("Film", new Plain("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.Single(true)),
+                new Plain("inventory", "INVENTORY", "Inventory", true, List.of(), List.of()),
                 NODE,
                 List.of()),
             List.of()),
 
         IMPLICIT_NO_FK("no FK between tables — error suggesting @reference",
             new NodeIdReferenceField("Film", "categoryId", null, "Category",
-                new ReturnTypeRef.TableBoundReturnType("Category", new ResolvedTable("category", "CATEGORY", "Category", true, List.of(), List.of()), new FieldWrapper.Single(true)),
-                new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()),
+                new ReturnTypeRef.TableBoundReturnType("Category", new Plain("category", "CATEGORY", "Category", true, List.of(), List.of()), new FieldWrapper.Single(true)),
+                new Plain("film", "FILM", "Film", true, List.of(), List.of()),
                 NODE,
                 List.of()),
             List.of("Field 'categoryId': no foreign key found between tables 'film' and 'category'; add a @reference directive to specify the join path")),
 
         IMPLICIT_MULTIPLE_FKS("multiple FKs between tables — error suggesting @reference",
             new NodeIdReferenceField("Film", "languageId", null, "Language",
-                new ReturnTypeRef.TableBoundReturnType("Language", new ResolvedTable("language", "LANGUAGE", "Language", true, List.of(), List.of()), new FieldWrapper.Single(true)),
-                new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()),
+                new ReturnTypeRef.TableBoundReturnType("Language", new Plain("language", "LANGUAGE", "Language", true, List.of(), List.of()), new FieldWrapper.Single(true)),
+                new Plain("film", "FILM", "Film", true, List.of(), List.of()),
                 NODE,
                 List.of()),
             List.of("Field 'languageId': multiple foreign keys found between tables 'film' and 'language'; add a @reference directive to specify the join path")),
@@ -76,32 +77,32 @@ class NodeIdReferenceFieldValidationTest {
 
         WITH_EXPLICIT_PATH("explicit FK path leading to the correct table — no errors",
             new NodeIdReferenceField("Film", "languageId", null, "Language",
-                new ReturnTypeRef.TableBoundReturnType("Language", new ResolvedTable("language", "LANGUAGE", "Language", true, List.of(), List.of()), new FieldWrapper.Single(true)),
-                new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()),
+                new ReturnTypeRef.TableBoundReturnType("Language", new Plain("language", "LANGUAGE", "Language", true, List.of(), List.of()), new FieldWrapper.Single(true)),
+                new Plain("film", "FILM", "Film", true, List.of(), List.of()),
                 NODE,
                 List.of(new FkRef("film_language_id_fkey", "language", "film", List.of(), List.of()))),
             List.of()),
 
         PATH_WRONG_TABLE("explicit FK path leading to the wrong table — one error",
             new NodeIdReferenceField("Film", "languageId", null, "Language",
-                new ReturnTypeRef.TableBoundReturnType("Language", new ResolvedTable("language", "LANGUAGE", "Language", true, List.of(), List.of()), new FieldWrapper.Single(true)),
-                new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()),
+                new ReturnTypeRef.TableBoundReturnType("Language", new Plain("language", "LANGUAGE", "Language", true, List.of(), List.of()), new FieldWrapper.Single(true)),
+                new Plain("film", "FILM", "Film", true, List.of(), List.of()),
                 NODE,
                 List.of(new FkRef("sequel_fkey", "film", "film", List.of(), List.of()))),
             List.of("Field 'languageId': @reference path does not lead to the table of type 'Language'")),
 
         UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog — one error",
             new NodeIdReferenceField("Film", "languageId", null, "Language",
-                new ReturnTypeRef.TableBoundReturnType("Language", new ResolvedTable("language", "LANGUAGE", "Language", true, List.of(), List.of()), new FieldWrapper.Single(true)),
-                new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()),
+                new ReturnTypeRef.TableBoundReturnType("Language", new Plain("language", "LANGUAGE", "Language", true, List.of(), List.of()), new FieldWrapper.Single(true)),
+                new Plain("film", "FILM", "Film", true, List.of(), List.of()),
                 NODE,
                 List.of(new UnresolvedKeyRef("FILM_LANGUAGE_FK"))),
             List.of("Field 'languageId': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog")),
 
         UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection — one error",
             new NodeIdReferenceField("Film", "languageId", null, "Language",
-                new ReturnTypeRef.TableBoundReturnType("Language", new ResolvedTable("language", "LANGUAGE", "Language", true, List.of(), List.of()), new FieldWrapper.Single(true)),
-                new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()),
+                new ReturnTypeRef.TableBoundReturnType("Language", new Plain("language", "LANGUAGE", "Language", true, List.of(), List.of()), new FieldWrapper.Single(true)),
+                new Plain("film", "FILM", "Film", true, List.of(), List.of()),
                 NODE,
                 List.of(new UnresolvedConditionRef("com.example.Conditions.languageCondition"))),
             List.of("Field 'languageId': condition method 'com.example.Conditions.languageCondition' could not be resolved"));

@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.type.GraphitronType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.type.ParticipantRef.BoundParticipant;
 import no.sikt.graphitron.rewrite.type.ParticipantRef.UnboundParticipant;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
+import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -24,14 +24,14 @@ class InterfaceTypeValidationTest {
 
         ALL_BOUND("all implementing types are table-bound — valid",
             new InterfaceType("Media", null, List.of(
-                new BoundParticipant("Film", new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()), null),
-                new BoundParticipant("Actor", new ResolvedTable("actor", "ACTOR", "Actor", true, List.of(), List.of()), null)
+                new BoundParticipant("Film", new Plain("film", "FILM", "Film", true, List.of(), List.of()), null),
+                new BoundParticipant("Actor", new Plain("actor", "ACTOR", "Actor", true, List.of(), List.of()), null)
             )),
             List.of()),
 
         ONE_UNBOUND("one implementing type is not table-bound — error",
             new InterfaceType("Media", null, List.of(
-                new BoundParticipant("Film", new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()), null),
+                new BoundParticipant("Film", new Plain("film", "FILM", "Film", true, List.of(), List.of()), null),
                 new UnboundParticipant("Description")
             )),
             List.of("Type 'Media': implementing type 'Description' is not table-bound (missing @table directive)")),

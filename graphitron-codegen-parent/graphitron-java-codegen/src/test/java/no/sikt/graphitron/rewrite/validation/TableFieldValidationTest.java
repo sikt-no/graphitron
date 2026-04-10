@@ -16,7 +16,7 @@ import no.sikt.graphitron.rewrite.field.ChildField.TableField;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedConditionRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyRef;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
+import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TableFieldValidationTest {
 
     private static ReturnTypeRef.TableBoundReturnType actorReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Actor", new ResolvedTable("actor", "ACTOR", "Actor", true, List.of(), List.of()), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Actor", new Plain("actor", "ACTOR", "Actor", true, List.of(), List.of()), wrapper);
     }
 
     enum Case implements ValidatorCase {

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.field;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.rewrite.type.NodeRef;
+import no.sikt.graphitron.rewrite.type.TableRef;
 import no.sikt.graphitron.rewrite.field.ColumnRef;
 import no.sikt.graphitron.rewrite.field.FieldConditionRef;
 import no.sikt.graphitron.rewrite.field.NodeTypeRef;
@@ -86,16 +86,17 @@ public sealed interface ChildField extends GraphitronField
      *
      * <p>{@code parentTypeName} is the name of the containing GraphQL type.
      *
-     * <p>{@code node} is the parent type's {@code @node} step: a
-     * {@link NodeRef.NodeDirective} carrying the optional {@code typeId} and
-     * the list of key columns when {@code @node} is present, or
-     * {@link NodeRef.NoNode} when it is absent (a validation error).
+     * <p>{@code table} is the parent type's resolved table. A
+     * {@link TableRef.ResolvedTable.WithNode} indicates that {@code @node} is present (valid);
+     * a {@link TableRef.ResolvedTable.Plain} indicates that {@code @node} is absent (a validation
+     * error); a {@link TableRef.UnresolvedTable} means the parent table did not resolve (a
+     * separate table-resolution error is reported instead).
      */
     record NodeIdField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        NodeRef node
+        TableRef table
     ) implements ChildField {}
 
     /**

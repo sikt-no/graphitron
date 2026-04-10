@@ -12,7 +12,11 @@ import java.util.List;
  * <p>The sealed hierarchy distinguishes two states:
  * <ul>
  *   <li>{@link ResolvedTable} — the table was found in the jOOQ catalog; carries the jOOQ class
- *       name, the Java field name, and a flag indicating whether the table has a primary key.</li>
+ *       name, the Java field name, and a flag indicating whether the table has a primary key.
+ *       {@link ResolvedTable.Plain} represents a table whose GraphQL type has no {@code @node}
+ *       directive; {@link ResolvedTable.WithNode} is the specialisation that also carries the
+ *       {@code @node} directive properties ({@code typeId} and {@code keyColumns}) for Relay
+ *       Global ID encoding.</li>
  *   <li>{@link UnresolvedTable} — the SQL table name could not be matched to any class in the
  *       jOOQ catalog. The
  *       {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports this as an error.</li>
@@ -42,19 +46,23 @@ public sealed interface TableRef permits TableRef.ResolvedTable, TableRef.Unreso
      *
      * <p>{@code primaryKeyColumnJavaTypes} is the parallel list of binary Java class names for
      * each primary-key column (e.g. {@code ["java.lang.Long"]} for a {@code BIGINT} column).
-     * Populated from {@code field.getType().getName()} on each PK field at parse time. Used by
-     * the validator to enforce that the SOURCES parameter is typed as {@code List<Row1<T>>} (not
-     * just {@code List<Row>}), and by the generator to emit the correct {@code Row1<T>} DataLoader
-     * key type and rows-method parameter.
+     * Populated from {@code field.getType().getName()} on each PK field at parse time.
+     *
+     * <p>Two specialisations exist:
+     * <ul>
+     *   <li>{@link Plain} — the owning GraphQL type has no {@code @node} directive.</li>
+     *   <li>{@link WithNode} — the owning GraphQL type also carries {@code @node}; adds the
+     *       optional {@code typeId} and the list of resolved key columns for Global ID encoding.</li>
+     * </ul>
      */
-    record ResolvedTable(
-        String tableName,
-        String javaFieldName,
-        String javaClassName,
-        boolean hasPrimaryKey,
-        List<String> primaryKeyColumnSqlNames,
-        List<String> primaryKeyColumnJavaTypes
-    ) implements TableRef {
+    sealed interface ResolvedTable extends TableRef
+        permits ResolvedTable.Plain, ResolvedTable.WithNode {
+
+        String javaFieldName();
+        String javaClassName();
+        boolean hasPrimaryKey();
+        List<String> primaryKeyColumnSqlNames();
+        List<String> primaryKeyColumnJavaTypes();
 
         /**
          * Returns the single primary-key column SQL name (e.g. {@code "language_id"}).
@@ -64,8 +72,8 @@ public sealed interface TableRef permits TableRef.ResolvedTable, TableRef.Unreso
          * that use the DataLoader pattern. Do not call when {@code primaryKeyColumnSqlNames} may
          * be empty or contain more than one element.
          */
-        public String primaryKeyColumnSqlName() {
-            return primaryKeyColumnSqlNames.get(0);
+        default String primaryKeyColumnSqlName() {
+            return primaryKeyColumnSqlNames().get(0);
         }
 
         /**
@@ -75,9 +83,46 @@ public sealed interface TableRef permits TableRef.ResolvedTable, TableRef.Unreso
          * <p>Only valid when {@code hasPrimaryKey} is {@code true} and the PK is single-column.
          * Do not call when {@code primaryKeyColumnJavaTypes} may be empty.
          */
-        public String primaryKeyColumnJavaType() {
-            return primaryKeyColumnJavaTypes.get(0);
+        default String primaryKeyColumnJavaType() {
+            return primaryKeyColumnJavaTypes().get(0);
         }
+
+        /**
+         * A resolved table whose owning GraphQL type has no {@code @node} directive.
+         */
+        record Plain(
+            String tableName,
+            String javaFieldName,
+            String javaClassName,
+            boolean hasPrimaryKey,
+            List<String> primaryKeyColumnSqlNames,
+            List<String> primaryKeyColumnJavaTypes
+        ) implements ResolvedTable {}
+
+        /**
+         * A resolved table whose owning GraphQL type also carries a {@code @node} directive.
+         * This is a specialisation of {@link ResolvedTable} that additionally carries the node
+         * directive properties used for Relay Global ID encoding.
+         *
+         * <p>{@code typeId} is the value of the {@code typeId} argument on the {@code @node}
+         * directive, or {@code null} when the argument was omitted.
+         *
+         * <p>{@code keyColumns} is the resolved list of {@code keyColumns} argument entries. Each
+         * entry is either a {@link KeyColumnRef.ResolvedKeyColumn} (column found in the jOOQ table)
+         * or a {@link KeyColumnRef.UnresolvedKeyColumn} (column name could not be matched). An empty
+         * list means the argument was omitted, in which case the primary key is used at
+         * code-generation time.
+         */
+        record WithNode(
+            String tableName,
+            String javaFieldName,
+            String javaClassName,
+            boolean hasPrimaryKey,
+            List<String> primaryKeyColumnSqlNames,
+            List<String> primaryKeyColumnJavaTypes,
+            String typeId,
+            List<KeyColumnRef> keyColumns
+        ) implements ResolvedTable {}
     }
 
     /**

@@ -44,9 +44,9 @@ import no.sikt.graphitron.rewrite.type.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.UnionType;
-import no.sikt.graphitron.rewrite.type.NodeRef.NodeDirective;
-import no.sikt.graphitron.rewrite.type.NodeRef.NoNode;
 import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
+import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
+import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.WithNode;
 import no.sikt.graphitron.rewrite.type.TableRef.UnresolvedTable;
 import no.sikt.graphql.schema.SchemaReadingHelper;
 import org.junit.jupiter.api.AfterEach;
@@ -302,7 +302,7 @@ class GraphitronSchemaBuilderTest {
 
     enum NodeIdFieldCase {
         WITH_NODE_DIRECTIVE(
-            "@nodeId on a type that also has @node stores the NodeDirective",
+            "@nodeId on a type that also has @node stores a WithNode table",
             """
             type Film @table(name: "film") @node(keyColumns: ["film_id"]) {
               id: ID! @nodeId
@@ -311,18 +311,18 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var field = (NodeIdField) schema.field("Film", "id");
-                assertThat(field.node()).isInstanceOf(NodeDirective.class);
+                assertThat(field.table()).isInstanceOf(WithNode.class);
             }),
 
         WITHOUT_NODE_DIRECTIVE(
-            "@nodeId on a type without @node stores NoNode",
+            "@nodeId on a type without @node stores a Plain table",
             """
             type Film @table(name: "film") { id: ID! @nodeId }
             type Query { film: Film }
             """,
             schema -> {
                 var field = (NodeIdField) schema.field("Film", "id");
-                assertThat(field.node()).isInstanceOf(NoNode.class);
+                assertThat(field.table()).isInstanceOf(Plain.class);
             });
 
         final String sdl;

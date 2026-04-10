@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ArgumentValidationTest {
 
-    private static final ReturnTypeRef.TableBoundReturnType FILM_RETURN = new ReturnTypeRef.TableBoundReturnType("Film", new no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.Single(true));
+    private static final ReturnTypeRef.TableBoundReturnType FILM_RETURN = new ReturnTypeRef.TableBoundReturnType("Film", new no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.Single(true));
 
     /**
      * Build a schema with the field on a {@link RootType} parent (avoids unresolved-table errors),

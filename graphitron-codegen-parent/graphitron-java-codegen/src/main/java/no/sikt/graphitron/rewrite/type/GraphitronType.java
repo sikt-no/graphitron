@@ -23,25 +23,22 @@ public sealed interface GraphitronType
      * A type annotated with {@code @table}. Full SQL generation applies.
      *
      * <p>{@code table} is the outcome of resolving the {@code @table} directive's SQL name against
-     * the jOOQ catalog: {@link TableRef.ResolvedTable} when the table was found (carrying the SQL
-     * name, Java field name and the jOOQ {@link org.jooq.Table} instance),
-     * {@link TableRef.UnresolvedTable} when it was not (carrying the SQL name that failed to
-     * resolve). The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error
-     * for {@code UnresolvedTable}.
+     * the jOOQ catalog. When the table was found it is a {@link TableRef.ResolvedTable}; if the
+     * owning type also carries {@code @node} it is further specialised as
+     * {@link TableRef.ResolvedTable.WithNode} (carrying the optional {@code typeId} and the list of
+     * key columns, each resolved against the jOOQ table via a {@link KeyColumnRef}). When the SQL
+     * name could not be matched it is a {@link TableRef.UnresolvedTable}.
      *
-     * <p>{@code node} captures whether a {@code @node} directive is present: {@link NodeRef.NoNode} when
-     * absent, {@link NodeRef.NodeDirective} when present (carrying the optional {@code typeId} and the
-     * list of key columns, each resolved against the jOOQ table via a {@link KeyColumnRef}).
-     * {@code @node} is only permitted on types that also carry {@code @table}, which is why it
-     * lives here rather than on a separate type variant. The
-     * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error for each
-     * {@link KeyColumnRef.UnresolvedKeyColumn} in the list.
+     * <p>{@code @node} is only permitted on types that also carry {@code @table}, which is why the
+     * node information lives on the {@link TableRef} rather than in a separate field.
+     * The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error for
+     * {@code UnresolvedTable} and for each {@link KeyColumnRef.UnresolvedKeyColumn} inside a
+     * {@code WithNode} table.
      */
     record TableType(
         String name,
         SourceLocation location,
-        TableRef table,
-        NodeRef node
+        TableRef table
     ) implements GraphitronType {}
 
     /**

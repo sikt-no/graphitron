@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.type.GraphitronType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.type.ParticipantRef.BoundParticipant;
 import no.sikt.graphitron.rewrite.type.ParticipantRef.UnboundParticipant;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
+import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -24,14 +24,14 @@ class UnionTypeValidationTest {
 
         ALL_BOUND("all member types are table-bound — valid",
             new UnionType("SearchResult", null, List.of(
-                new BoundParticipant("Film", new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()), null),
-                new BoundParticipant("Category", new ResolvedTable("category", "CATEGORY", "Category", true, List.of(), List.of()), null)
+                new BoundParticipant("Film", new Plain("film", "FILM", "Film", true, List.of(), List.of()), null),
+                new BoundParticipant("Category", new Plain("category", "CATEGORY", "Category", true, List.of(), List.of()), null)
             )),
             List.of()),
 
         ONE_UNBOUND("one member type is not table-bound — error",
             new UnionType("SearchResult", null, List.of(
-                new BoundParticipant("Film", new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()), null),
+                new BoundParticipant("Film", new Plain("film", "FILM", "Film", true, List.of(), List.of()), null),
                 new UnboundParticipant("Description")
             )),
             List.of("Type 'SearchResult': implementing type 'Description' is not table-bound (missing @table directive)")),

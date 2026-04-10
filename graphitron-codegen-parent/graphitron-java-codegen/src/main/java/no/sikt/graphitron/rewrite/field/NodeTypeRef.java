@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.field;
 
-import no.sikt.graphitron.rewrite.type.NodeRef.NodeDirective;
+import no.sikt.graphitron.rewrite.type.TableRef;
 
 /**
  * Outcome of resolving the {@code typeName} argument of {@code @nodeId(typeName: ...)} against
@@ -9,8 +9,9 @@ import no.sikt.graphitron.rewrite.type.NodeRef.NodeDirective;
  *
  * <p>{@link ResolvedNodeType} — the named type exists in the schema as a
  * {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableType} and carries {@code @node}.
- * The {@link NodeDirective} holds the {@code @node} directive properties ({@code typeId} and
- * {@code keyColumns}) used at code-generation time for Relay Global ID encoding.
+ * The {@link TableRef.ResolvedTable.WithNode} holds the {@code @node} directive properties
+ * ({@code typeId} and {@code keyColumns}) used at code-generation time for Relay Global ID
+ * encoding.
  *
  * <p>{@link NoNodeDirectiveType} — the named type exists in the schema but either is not a
  * {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableType} or does not carry {@code @node}.
@@ -31,9 +32,10 @@ public sealed interface NodeTypeRef
     /**
      * The type named by {@code @nodeId(typeName:)} was found in the schema as a
      * {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableType} with a {@code @node}
-     * directive. {@code node} carries the directive properties used for ID encoding.
+     * directive. {@code table} carries the {@link TableRef.ResolvedTable.WithNode} used for ID
+     * encoding, including the optional {@code typeId} and the resolved key columns.
      */
-    record ResolvedNodeType(NodeDirective node) implements NodeTypeRef {}
+    record ResolvedNodeType(TableRef.ResolvedTable.WithNode table) implements NodeTypeRef {}
 
     /**
      * The type named by {@code @nodeId(typeName:)} exists in the schema but either is not a

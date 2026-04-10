@@ -18,7 +18,6 @@ import no.sikt.graphitron.rewrite.field.NodeTypeRef.NoNodeDirectiveType;
 import no.sikt.graphitron.rewrite.field.NodeTypeRef.NotFoundNodeType;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.type.GraphitronType;
-import no.sikt.graphitron.rewrite.type.NodeRef.NodeDirective;
 import no.sikt.graphitron.rewrite.type.ParticipantRef.UnboundParticipant;
 import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
 import no.sikt.graphitron.rewrite.type.GraphitronType.TableType;
@@ -117,8 +116,8 @@ public class GraphitronSchemaValidator {
                 type.location()
             ));
         }
-        if (type.node() instanceof no.sikt.graphitron.rewrite.type.NodeRef.NodeDirective nd) {
-            for (var keyColumn : nd.keyColumns()) {
+        if (type.table() instanceof ResolvedTable.WithNode wn) {
+            for (var keyColumn : wn.keyColumns()) {
                 if (keyColumn instanceof no.sikt.graphitron.rewrite.type.KeyColumnRef.UnresolvedKeyColumn u) {
                     errors.add(new ValidationError(
                         "Type '" + type.name() + "': key column '" + u.name() + "' in @node could not be resolved in the jOOQ table",
@@ -329,7 +328,10 @@ public class GraphitronSchemaValidator {
         }
     }
     private void validateNodeIdField(no.sikt.graphitron.rewrite.field.ChildField.NodeIdField field, List<ValidationError> errors) {
-        if (field.node() instanceof no.sikt.graphitron.rewrite.type.NodeRef.NoNode) {
+        if (field.table() instanceof UnresolvedTable) {
+            return; // table error already reported on the type; skip the @node check
+        }
+        if (!(field.table() instanceof ResolvedTable.WithNode)) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': @nodeId requires the containing type to have @node",
                 field.location()

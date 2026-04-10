@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.type.GraphitronType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.type.ParticipantRef.BoundParticipant;
 import no.sikt.graphitron.rewrite.type.ParticipantRef.UnboundParticipant;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
+import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
 import no.sikt.graphitron.rewrite.type.TableRef.UnresolvedTable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -20,7 +20,7 @@ class TableInterfaceTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         RESOLVED("table name resolved — no implementing types",
-            new TableInterfaceType("FilmStatus", null, "status_type", new ResolvedTable("film_status", "FILM_STATUS", "FilmStatus", true, List.of(), List.of()), List.of()),
+            new TableInterfaceType("FilmStatus", null, "status_type", new Plain("film_status", "FILM_STATUS", "FilmStatus", true, List.of(), List.of()), List.of()),
             List.of()),
 
         UNRESOLVED_TABLE("table name could not be matched to a jOOQ table in the catalog",
@@ -29,18 +29,18 @@ class TableInterfaceTypeValidationTest {
 
         RESOLVED_WITH_BOUND_PARTICIPANTS("resolved table with table-bound implementing types — valid",
             new TableInterfaceType("FilmStatus", null, "status_type",
-                new ResolvedTable("film_status", "FILM_STATUS", "FilmStatus", true, List.of(), List.of()),
+                new Plain("film_status", "FILM_STATUS", "FilmStatus", true, List.of(), List.of()),
                 List.of(
-                    new BoundParticipant("NewFilm", new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()), null),
-                    new BoundParticipant("OldFilm", new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()), null)
+                    new BoundParticipant("NewFilm", new Plain("film", "FILM", "Film", true, List.of(), List.of()), null),
+                    new BoundParticipant("OldFilm", new Plain("film", "FILM", "Film", true, List.of(), List.of()), null)
                 )),
             List.of()),
 
         UNBOUND_PARTICIPANT("one implementing type is not table-bound — error",
             new TableInterfaceType("FilmStatus", null, "status_type",
-                new ResolvedTable("film_status", "FILM_STATUS", "FilmStatus", true, List.of(), List.of()),
+                new Plain("film_status", "FILM_STATUS", "FilmStatus", true, List.of(), List.of()),
                 List.of(
-                    new BoundParticipant("NewFilm", new ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()), null),
+                    new BoundParticipant("NewFilm", new Plain("film", "FILM", "Film", true, List.of(), List.of()), null),
                     new UnboundParticipant("FilmDescription")
                 )),
             List.of("Type 'FilmStatus': implementing type 'FilmDescription' is not table-bound (missing @table directive)")),

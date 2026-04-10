@@ -98,7 +98,7 @@ class ServiceFieldValidationTest {
         SOURCES_WRONG_TYPE("SOURCES param element type not recognized — validator rejects it",
             new ServiceTableField("Film", "externalChild", null,
                 new ReturnTypeRef.TableBoundReturnType("Film",
-                    new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of("film_id"), List.of("java.lang.Integer")),
+                    new TableRef.ResolvedTable.Plain("film", "FILM", "Film", true, List.of("film_id"), List.of("java.lang.Integer")),
                     new FieldWrapper.Single(true)),
                 List.of(), null, List.of(), List.of(),
                 new ServiceMethodRef.Resolved(
@@ -109,7 +109,7 @@ class ServiceFieldValidationTest {
         SOURCES_CORRECT_TYPE("SOURCES param is RowKeyed — no error (parent is RootType, no PK cross-check)",
             new ServiceTableField("Film", "externalChild", null,
                 new ReturnTypeRef.TableBoundReturnType("Film",
-                    new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of("film_id"), List.of("java.lang.Integer")),
+                    new TableRef.ResolvedTable.Plain("film", "FILM", "Film", true, List.of("film_id"), List.of("java.lang.Integer")),
                     new FieldWrapper.Single(true)),
                 List.of(), null, List.of(), List.of(),
                 new ServiceMethodRef.Resolved(
