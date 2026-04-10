@@ -95,15 +95,17 @@ Simple generator analogous to `GraphitronValuesClassGenerator`: emits a fixed cl
 
 ---
 
-### M3 — `getTenantId()`
+### M3 — `getDataLoaderName()` / `getTenantId()`
 
-Add `getTenantId()` to `GraphitronContext` in `graphitron-common`:
+`GraphitronContext` already exposes `getDataLoaderName(DataFetchingEnvironment env)`, which generated code uses directly to obtain the DataLoader registry key. This encapsulates path-based and tenant-aware isolation inside the SPI implementation rather than generating it inline.
+
+If multi-tenancy requires exposing `tenantId` to service calls, `getTenantId()` can be added to `GraphitronContext` in `graphitron-common`:
 
 ```java
 @NotNull Optional<String> getTenantId(DataFetchingEnvironment env);
 ```
 
-`DefaultGraphitronContext` returns `Optional.empty()`. Used in `loaderName()` for multi-tenant DataLoader key isolation.
+`DefaultGraphitronContext` would return `Optional.empty()`. This is deferred — generated DataLoader code does not currently reference `getTenantId` directly.
 
 ---
 
@@ -140,6 +142,10 @@ Result<Record>          selectMany(DataFetchingEnvironment env, Condition condit
 Record                  selectOne(DataFetchingEnvironment env, Condition condition)
 Field<Result<Record>>   subselectMany(DataFetchingFieldSelectionSet sel, Condition condition, List<SortField<?>> orderBy)
 Field<Record>           subselectOne(DataFetchingFieldSelectionSet sel, Condition condition)
+
+// Service-field batch variants — map N parent PK rows to N result sets:
+List<List<Record>>      selectMany(List<Row> keys, SelectedField sel, List<?> serviceRecords)
+List<Record>            selectOne(List<Row> keys, SelectedField sel, Object serviceRecord)
 ```
 
 These projection methods may eventually move to `rewrite.types.<TypeName>` but are in `rewrite.tables` for now.
@@ -166,6 +172,9 @@ Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nest
 | `TableField` — `@splitQuery`, no `@lookupKey` *(result mapped TableField)*, paginated | `static CompletableFuture<List<Record>> fieldName(env)` | `loadFieldNamePage(sourceRows, env, selectedField)` via DataLoader |
 | `TableField` — `@splitQuery` + `@lookupKey` *(result mapped LookupTableField)* | `static CompletableFuture<List<Record>> fieldName(env)` | `lookupFieldName(sourceRows, env, selectedField)` via DataLoader |
 | `InterfaceField` | `static Object fieldName(env)` | union over each implementor's `subselectMany` |
+| `ServiceField` — `TableBoundReturnType`, `Resolved` SMR, list | `static CompletableFuture<List<Record>> fieldName(env)` | DataLoader via `computeIfAbsent` + `getDataLoaderName`; `load<FieldName>(List<Row> keys, DataFetchingEnvironment dfe, SelectedField sel)` batch method calls service, then `TableName.selectMany(keys, sel, serviceResult)` |
+| `ServiceField` — `TableBoundReturnType`, `Resolved` SMR, single | `static CompletableFuture<Record> fieldName(env)` | Same DataLoader pattern; batch method calls `TableName.selectOne(keys, sel, serviceResult)` |
+| `ServiceField` — `OtherReturnType` or `Unresolved` SMR | `static Object fieldName(env)` | Stub — throws `UnsupportedOperationException` |
 | Mutation read-back | *(inside mutation fetcher)* | `TableName.selectMany` with derived source |
 
 ---
@@ -339,10 +348,10 @@ if (sel.contains("filmsByTitle")) {
 
 **`rewrite.types.LanguageFields`** — result mapped TableField, FK on child, returns `[T]`:
 ```java
-// Data fetcher
+// Data fetcher — DataLoader-based; loader name comes from GraphitronContext.getDataLoaderName(env)
+// Key is a jOOQ Row wrapping the parent record's single PK column value.
 public static CompletableFuture<List<Record>> films(DataFetchingEnvironment env) {
-    String name = loaderName(env.getExecutionStepInfo().getPath(),
-        graphitronContext(env).getTenantId(env));
+    String name = graphitronContext(env).getDataLoaderName(env);
     DataLoader<Row, List<Record>> loader = env.getDataLoaderRegistry()
         .computeIfAbsent(name, k -> DataLoaderFactory.newDataLoaderWithContext(
             (keys, batchEnv) -> {
@@ -350,12 +359,12 @@ public static CompletableFuture<List<Record>> films(DataFetchingEnvironment env)
                 SelectedField sel = dfe.getSelectionSet().getField("films");
                 return CompletableFuture.completedFuture(loadFilms(keys, dfe, sel));
             }));
-    Row key = DSL.row(((Record) env.getSource()).get(LANGUAGE.LANGUAGE_ID));
+    Row key = DSL.row(((Record) env.getSource()).get(Tables.LANGUAGE.LANGUAGE_ID));
     return loader.load(key, env);
 }
 
 // Bespoke batch method — joins derived source (language IDs) against film table
-public static List<List<Record>> loadFilms(List<Row> sourceRows, DataFetchingEnvironment env, SelectedField sel) {
+public static List<List<Record>> loadFilms(List<Row> keys, DataFetchingEnvironment dfe, SelectedField sel) {
     throw new UnsupportedOperationException();
 }
 ```
@@ -394,7 +403,7 @@ public static List<List<Record>> lookupFilmsByTitle(List<Row> sourceRows, DataFe
 }
 ```
 
-`loaderName` is a private static helper in the `*Fields` class — GraphQL path-based, not SQL.
+`graphitronContext(env).getDataLoaderName(env)` supplies the loader name — the implementation in `GraphitronContext` encapsulates path-based isolation (e.g. including the GraphQL execution path and tenant ID). A `private static GraphitronContext graphitronContext(DataFetchingEnvironment env)` helper is added once per `*Fields` class that uses the DataLoader pattern.
 
 ---
 
@@ -403,6 +412,10 @@ public static List<List<Record>> lookupFilmsByTitle(List<Row> sourceRows, DataFe
 `NodeIdField`, `NodeIdReferenceField`, `ComputedField`, `PropertyField`, `TableInterfaceField`, `InterfaceField`, `UnionField`, `NestingField`, `TableMethodField`, `ServiceField`.
 
 One wiring entry style per type. The testing contract requires at least one approval test file per type.
+
+**`ServiceField` DataLoader path — done.** When `returnType` is `TableBoundReturnType` and `serviceMethodRef` is `Resolved`, `FieldsCodeGenerator` generates a real DataLoader data fetcher and a `load<FieldName>(List<Row> keys, DataFetchingEnvironment dfe, SelectedField sel)` batch method. The batch method: (1) extracts `ARG` params via `dfe.getArgument`, (2) extracts `CONTEXT` params via `graphitronContext(dfe).getContextArgument`, (3) calls the service method, (4) delegates to `TableName.selectMany` or `TableName.selectOne`. All other `ServiceField` combinations fall back to the `Object` stub. Requires single-column PK on the parent table (validated). Requires `-parameters` compiler flag on service class source for arg/context name resolution.
+
+**Naming distinction:** `@splitQuery TableField` rows methods are named `rows<FieldName>` (current stubs); `ServiceField` batch methods are named `load<FieldName>`. When DataLoader generation is implemented for `@splitQuery TableField`, those stubs will be renamed `load<FieldName>` to match the bespoke method signature table above.
 
 ---
 
@@ -524,8 +537,8 @@ Once the record-based pipeline achieves full feature parity and the example serv
 | `graphitron-common/.../DefaultGraphitronContext.java` | Implement `getTenantId()` → `Optional.empty()` |
 | `graphitron-java-codegen/.../mappings/JavaPoetClassName.java` | Add `JOOQ_RECORD`, `JOOQ_RESULT`, `LIGHT_DATA_FETCHER`, `GRAPHITRON_FETCHERS` |
 | `rewrite/generators/util/GraphitronFetchersClassGenerator.java` | **New** |
-| `rewrite/generators/fields/TableCodeGenerator.java` | **Done** — four projection stubs (`selectMany`, `selectOne`, `subselectMany`, `subselectOne`); DataLoader batch methods are bespoke per-field in `FieldsCodeGenerator` |
+| `rewrite/generators/fields/TableCodeGenerator.java` | **Done** — six projection stubs: `selectMany(env, condition, orderBy)`, `selectOne(env, condition)`, `subselectMany`, `subselectOne`, plus service-field batch variants `selectMany(keys, sel, serviceRecords)` → `List<List<Record>>` and `selectOne(keys, sel, serviceRecord)` → `List<Record>` |
 | `rewrite/generators/fields/TableClassGenerator.java` | **Done** — iterates `TableType`s, uses `javaClassName` |
-| `rewrite/generators/fields/FieldsCodeGenerator.java` | **Done** — one stub per field + `wiring()` by method reference |
-| `rewrite/generators/fields/FieldsClassGenerator.java` | **Done** — iterates `TableType`s and `RootType`s |
+| `rewrite/generators/fields/FieldsCodeGenerator.java` | **Done** — one stub per field + `wiring()` by method reference; real DataLoader code for `ServiceField` with `TableBoundReturnType` + `Resolved` `ServiceMethodRef` |
+| `rewrite/generators/fields/FieldsClassGenerator.java` | **Done** — iterates `TableType`s and `RootType`s; looks up parent `TableRef` and passes it to the code generator |
 | `rewrite/GraphitronWiringClassGenerator.java` | **New** |

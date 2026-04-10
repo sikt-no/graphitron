@@ -142,7 +142,7 @@ GraphitronType
 ### Reference types
 
 **`TableRef`** — outcome of matching `@table(name:)` against the jOOQ catalog:
-- `ResolvedTable` — `tableName`, `javaFieldName`, `hasPrimaryKey: boolean`
+- `ResolvedTable` — `tableName`, `javaFieldName`, `javaClassName`, `hasPrimaryKey: boolean`, `primaryKeyColumnSqlNames: List<String>` (empty when no PK). Convenience accessor `primaryKeyColumnSqlName()` returns the single PK column name; only safe to call after the validator confirms a single-column PK.
 - `UnresolvedTable` — `tableName` only; validator reports an error
 - `tableName()` is present on both variants
 
@@ -268,7 +268,7 @@ Source context at generation time is derived from `schema.type(parentTypeName)` 
 | `NodeIdReferenceField` | Table-mapped | `@nodeId(typeName: ...)` — joins to the target type and encodes a Relay ID for that row. |
 | `ComputedField` | Table-mapped | `@externalField` — developer provides a jOOQ `Field<?>` included in the SELECT. |
 | `ConstructorField` | Table-mapped | Field-to-constructor-parameter mapping; Graphitron does not project through it. |
-| `ServiceField` | Table-mapped, result-mapped | `@service` — private scope. From result-mapped source, input is locked to what the record carries. A derived source table reconnects the result to the target scope if return type is table-mapped. |
+| `ServiceField` | Table-mapped, result-mapped | `@service` — private scope. From result-mapped source, input is locked to what the record carries. A derived source table reconnects the result to the target scope if return type is table-mapped. Carries `serviceMethodRef: ServiceMethodRef` — resolved at schema-build time via reflection. When `returnType` is `TableBoundReturnType` and `serviceMethodRef` is `Resolved`, the generator emits a real DataLoader data fetcher and a `load<FieldName>` batch method instead of a stub. |
 | `PropertyField` | Result-mapped | Reads a scalar or nested record property. Trivial data fetcher; no SQL. |
 | `MultitableReferenceField` | — | `@multitableReference` — not supported. Validator always reports an error; use `@service` instead. |
 
@@ -352,6 +352,17 @@ All variants carry `name`, `typeName`, `nonNull`, `list`.
 | `UnresolvedConditionRef` | condition method not found |
 | `UnresolvedKeyAndConditionRef` | both failed |
 
+**`ServiceMethodRef`** — outcome of reflecting the method declared on a `@service` field, performed by `GraphitronSchemaBuilder` at schema-build time via `Class.forName`:
+- `Resolved` — `params: List<ServiceParamInfo>`, `returnTypeName: String`
+- `Unresolved` — `reason: String`
+
+`ServiceParamInfo` carries `name`, `typeName` (binary class name string), and `kind: ParamKind`:
+- `SOURCES` — the DataLoader batch-keys parameter, expected to be `List<Row>` containing parent PK rows; every param whose name is not in `argNames` or `ctxKeys` is classified here
+- `ARG` — name matches a GraphQL argument declared on the field
+- `CONTEXT` — name matches an entry in the field's `contextArguments` list
+
+Name matching requires the `-parameters` compiler flag on the service class source. Without it, `p.isNamePresent()` is `false` and all parameters fall back to `SOURCES`. The validator then catches the missing `ARG`/`CONTEXT` matches.
+
 **`FieldConditionRef`** — field-level `@condition` resolution:
 - `NoFieldCondition` — no `@condition` on field
 - `ResolvedFieldCondition` — `method: MethodRef`, `override`, `contextArgs`
@@ -376,6 +387,12 @@ Additional rules:
 - **`LookupQueryField` cardinality** — list/scalar argument cardinality must match return type cardinality
 - **Reference path integrity** — each unresolved step in a path is reported
 - **Deterministic ordering** — tables without a primary key that appear in paginated queries must have `@defaultOrder` or `@orderBy` configured
+- **`ServiceField` with `TableBoundReturnType`** — the following additional checks apply when a `ServiceField` returns a table-mapped type:
+  - `serviceMethodRef` must be `Resolved` (reflection succeeded at schema-build time)
+  - The parent type's table must have a primary key (`hasPrimaryKey`)
+  - The parent type's primary key must be single-column (composite PKs not yet supported)
+  - Exactly one `ServiceParamInfo` must have `kind == SOURCES`
+  - Every GraphQL argument name must have a matching `ARG` param; every `contextArguments` key must have a matching `CONTEXT` param
 
 ---
 
@@ -443,7 +460,8 @@ Outstanding testing gaps for this layer are tracked in [`plan-record-generation.
 | `rewrite/field/ColumnRef.java`, `NodeTypeRef.java` | Column and node type resolution |
 | `rewrite/field/OrderSpec.java` | Sort specification |
 | `rewrite/type/GraphitronType.java` | Root of the type hierarchy |
-| `rewrite/type/TableRef.java` | `@table` → resolved table metadata (SQL name, Java field name, PK flag) |
+| `rewrite/type/TableRef.java` | `@table` → resolved table metadata (SQL name, Java field name, PK flag, PK column names). `ResolvedTable.primaryKeyColumnSqlName()` — single-column PK convenience accessor. |
+| `rewrite/field/ServiceMethodRef.java` | `@service` method reflection — `Resolved`/`Unresolved`; `ServiceParamInfo` with `ParamKind` (SOURCES / ARG / CONTEXT) |
 | `rewrite/type/ParticipantRef.java` | Interface/union member resolution |
 | `rewrite/type/NodeRef.java`, `KeyColumnRef.java` | `@node` directive and key columns |
 | `rewrite/type/InputFieldRef.java` | `TableInputType` field resolution |

@@ -46,7 +46,20 @@ public sealed interface TableRef permits TableRef.ResolvedTable, TableRef.Unreso
         String javaClassName,
         boolean hasPrimaryKey,
         List<String> primaryKeyColumnSqlNames
-    ) implements TableRef {}
+    ) implements TableRef {
+
+        /**
+         * Returns the single primary-key column SQL name (e.g. {@code "language_id"}).
+         *
+         * <p>Only valid when {@code hasPrimaryKey} is {@code true} and the PK is single-column,
+         * as enforced by {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} for fields
+         * that use the DataLoader pattern. Do not call when {@code primaryKeyColumnSqlNames} may
+         * be empty or contain more than one element.
+         */
+        public String primaryKeyColumnSqlName() {
+            return primaryKeyColumnSqlNames.get(0);
+        }
+    }
 
     /**
      * A {@link TableRef} where the SQL table name could not be matched to any class in the

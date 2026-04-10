@@ -149,7 +149,7 @@ public class FieldsCodeGenerator {
         // Reference to the parent table constant, e.g. Tables.LANGUAGE
         var tablesClass = ClassName.get(GeneratorConfig.outputPackage() + ".tables", "Tables");
         String tableField = prt.javaFieldName();
-        String pkColumn = prt.primaryKeyColumnSqlNames().get(0).toUpperCase();
+        String pkColumn = prt.primaryKeyColumnSqlName().toUpperCase();
         String rowsMethodName = "load" + capitalize(sf.name());
 
         // Build the inner DataLoader lambda as a code block
