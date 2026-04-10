@@ -34,7 +34,6 @@ import no.sikt.graphitron.rewrite.type.ErrorHandlerSpec;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.rewrite.field.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.field.ChildField.ColumnReferenceField;
-import no.sikt.graphitron.rewrite.field.ArgumentSpec;
 import no.sikt.graphitron.rewrite.field.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.field.ChildField.InterfaceField;
 import no.sikt.graphitron.rewrite.field.ChildField.MultitableReferenceField;
@@ -548,7 +547,7 @@ public class GraphitronSchemaBuilder {
         if (elementType instanceof TableType) {
             var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             var rt = returnType.table() instanceof ResolvedTable r ? r : null;
-            var args = parseArguments(fieldDef).stream()
+            var args = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, rt, false))
                 .toList();
             var referencePath = parseReferencePath(fieldDef);
@@ -809,10 +808,9 @@ public class GraphitronSchemaBuilder {
             ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
             List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
-            var rawArgs = parseArguments(fieldDef);
-            Set<String> argNames = rawArgs.stream().map(ArgumentSpec::name).collect(Collectors.toSet());
+            Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
             ServiceMethodRef serviceMethodRef = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArgs));
-            var args = rawArgs.stream()
+            var args = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();
             if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
@@ -838,7 +836,7 @@ public class GraphitronSchemaBuilder {
                     "@lookupKey requires a @table-annotated return type");
             }
             var rt = tb.table() instanceof TableRef.ResolvedTable r ? r : null;
-            var arguments = parseArguments(fieldDef).stream()
+            var arguments = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, rt, false))
                 .toList();
             return new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, arguments);
@@ -852,7 +850,7 @@ public class GraphitronSchemaBuilder {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location,
                     "@tableMethod requires a @table-annotated return type");
             }
-            var args = parseArguments(fieldDef).stream()
+            var args = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();
             return new QueryField.QueryTableMethodTableField(parentTypeName, name, location,
@@ -869,7 +867,7 @@ public class GraphitronSchemaBuilder {
         if (elementType instanceof TableType) {
             var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             var rt = returnType.table() instanceof ResolvedTable r ? r : null;
-            var args = parseArguments(fieldDef).stream()
+            var args = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, rt, false))
                 .toList();
             return new QueryField.QueryTableField(parentTypeName, name, location,
@@ -907,10 +905,9 @@ public class GraphitronSchemaBuilder {
             ReturnTypeRef returnType = resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
             List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
-            var rawArgs = parseArguments(fieldDef);
-            Set<String> argNames = rawArgs.stream().map(ArgumentSpec::name).collect(Collectors.toSet());
+            Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
             ServiceMethodRef serviceMethodRef = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArgs));
-            var args = rawArgs.stream()
+            var args = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();
             if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
@@ -924,7 +921,7 @@ public class GraphitronSchemaBuilder {
             if (typeName != null) {
                 String rawReturn = baseTypeName(fieldDef);
                 ReturnTypeRef returnType = resolveReturnType(rawReturn, buildWrapper(fieldDef));
-                var arguments = parseArguments(fieldDef).stream()
+                var arguments = fieldDef.getArguments().stream()
                     .map(arg -> classifyArgument(arg, null, true))
                     .toList();
                 return switch (typeName) {
@@ -982,20 +979,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * Classifies one argument of a {@code QueryLookupTableField} into the appropriate
-     * {@link ArgumentRef} variant.
-     *
-     * <p>Arguments with {@code @orderBy} or {@code @condition} become
-     * {@link ArgumentRef.InputTypeArg.PlainInputTypeArg} with the corresponding flag set — the
-     * validator rejects them on lookup fields.
-     * Arguments whose type is a user-defined input type (any entry in {@code types}) are resolved
-     * via {@link #resolveInputTypeImplicitly}: if the type is or becomes a
-     * {@link TableInputType}, a {@link ArgumentRef.InputTypeArg.TableInputTypeArg} is returned;
-     * otherwise a {@link ArgumentRef.InputTypeArg.PlainInputTypeArg}.
-     * Remaining (scalar) arguments are resolved against the return table via the catalog.
-     */
-    /**
-     * Classifies a single argument into an {@link ArgumentRef} variant.
+     * Classifies a single GraphQL argument into an {@link ArgumentRef} variant.
      *
      * <p>{@code rt} is the resolved table for column binding (may be {@code null} when the table
      * is unresolved or not applicable). {@code useParamForScalars} suppresses column binding:
@@ -1003,32 +987,37 @@ public class GraphitronSchemaBuilder {
      * service and method fields where scalars are forwarded as Java parameters rather than bound
      * to database columns).
      */
-    private ArgumentRef classifyArgument(ArgumentSpec arg, TableRef.ResolvedTable rt, boolean useParamForScalars) {
-        if (arg.conditionArg()) {
-            return new ArgumentRef.UnclassifiedArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
+    private ArgumentRef classifyArgument(GraphQLArgument arg, TableRef.ResolvedTable rt, boolean useParamForScalars) {
+        String name = arg.getName();
+        GraphQLType type = arg.getType();
+        boolean nonNull = type instanceof GraphQLNonNull;
+        boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
+        String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
+
+        if (arg.hasAppliedDirective(DIR_CONDITION)) {
+            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                 "@condition is only supported on field definitions, not on arguments");
         }
-        if (arg.orderBy()) {
-            return resolveOrderByArg(arg);
+        if (arg.hasAppliedDirective(DIR_ORDER_BY)) {
+            return resolveOrderByArg(arg, name, typeName, nonNull, list);
         }
-        if (types.containsKey(arg.typeName())) {
-            resolveInputTypeImplicitly(arg.typeName(), rt);
-            return types.get(arg.typeName()) instanceof TableInputType
-                ? new ArgumentRef.InputTypeArg.TableInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list())
-                : new ArgumentRef.InputTypeArg.PlainInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list());
+        if (types.containsKey(typeName)) {
+            resolveInputTypeImplicitly(typeName, rt);
+            return types.get(typeName) instanceof TableInputType
+                ? new ArgumentRef.InputTypeArg.TableInputTypeArg(name, typeName, nonNull, list)
+                : new ArgumentRef.InputTypeArg.PlainInputTypeArg(name, typeName, nonNull, list);
         }
         // Scalar arg
         if (useParamForScalars) {
-            return new ArgumentRef.ScalarArg.ParamArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list());
+            return new ArgumentRef.ScalarArg.ParamArg(name, typeName, nonNull, list);
         }
+        String columnName = argString(arg, DIR_FIELD, ARG_NAME).orElse(name);
         if (rt == null) {
-            return new ArgumentRef.ScalarArg.UnboundScalarArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), arg.columnName());
+            return new ArgumentRef.ScalarArg.UnboundScalarArg(name, typeName, nonNull, list, columnName);
         }
-        return catalog.findColumn(rt.tableName(), arg.columnName())
-            .<ArgumentRef>map(e -> new ArgumentRef.ScalarArg.ColumnArg(
-                arg.name(), arg.typeName(), arg.nonNull(), arg.list(), e.javaName(), e.columnClass()))
-            .orElseGet(() -> new ArgumentRef.ScalarArg.UnboundScalarArg(
-                arg.name(), arg.typeName(), arg.nonNull(), arg.list(), arg.columnName()));
+        return catalog.findColumn(rt.tableName(), columnName)
+            .<ArgumentRef>map(e -> new ArgumentRef.ScalarArg.ColumnArg(name, typeName, nonNull, list, e.javaName(), e.columnClass()))
+            .orElseGet(() -> new ArgumentRef.ScalarArg.UnboundScalarArg(name, typeName, nonNull, list, columnName));
     }
 
     /**
@@ -1039,11 +1028,11 @@ public class GraphitronSchemaBuilder {
      * other enum field (the direction field). Returns an {@link ArgumentRef.UnclassifiedArg} with
      * a descriptive reason if the structure is invalid.
      */
-    private ArgumentRef resolveOrderByArg(ArgumentSpec arg) {
-        var rawType = schema.getType(arg.typeName());
+    private ArgumentRef resolveOrderByArg(GraphQLArgument arg, String name, String typeName, boolean nonNull, boolean list) {
+        var rawType = schema.getType(typeName);
         if (!(rawType instanceof GraphQLInputObjectType inputType)) {
-            return new ArgumentRef.UnclassifiedArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
-                "@orderBy argument type '" + arg.typeName() + "' is not an input type");
+            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                "@orderBy argument type '" + typeName + "' is not an input type");
         }
         String sortFieldName = null;
         String directionFieldName = null;
@@ -1054,28 +1043,27 @@ public class GraphitronSchemaBuilder {
                 .anyMatch(v -> v.hasAppliedDirective("order"));
             if (isSortEnum) {
                 if (sortFieldName != null) {
-                    return new ArgumentRef.UnclassifiedArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
-                        "@orderBy input type '" + arg.typeName() + "' must have exactly one sort enum field, but found multiple");
+                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                        "@orderBy input type '" + typeName + "' must have exactly one sort enum field, but found multiple");
                 }
                 sortFieldName = field.getName();
             } else {
                 if (directionFieldName != null) {
-                    return new ArgumentRef.UnclassifiedArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
-                        "@orderBy input type '" + arg.typeName() + "' must have exactly one direction field, but found multiple");
+                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                        "@orderBy input type '" + typeName + "' must have exactly one direction field, but found multiple");
                 }
                 directionFieldName = field.getName();
             }
         }
         if (sortFieldName == null) {
-            return new ArgumentRef.UnclassifiedArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
-                "@orderBy input type '" + arg.typeName() + "' has no sort enum field (no enum values with @order)");
+            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                "@orderBy input type '" + typeName + "' has no sort enum field (no enum values with @order)");
         }
         if (directionFieldName == null) {
-            return new ArgumentRef.UnclassifiedArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
-                "@orderBy input type '" + arg.typeName() + "' has no direction field");
+            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                "@orderBy input type '" + typeName + "' has no direction field");
         }
-        return new ArgumentRef.InputTypeArg.OrderByArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
-            sortFieldName, directionFieldName);
+        return new ArgumentRef.InputTypeArg.OrderByArg(name, typeName, nonNull, list, sortFieldName, directionFieldName);
     }
 
     // ===== Conflict detection helpers =====
@@ -1162,11 +1150,10 @@ public class GraphitronSchemaBuilder {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
-            var rawArgs = parseArguments(fieldDef);
             List<String> contextArguments = parseContextArguments(fieldDef, DIR_SERVICE);
-            Set<String> argNames = rawArgs.stream().map(ArgumentSpec::name).collect(Collectors.toSet());
+            Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
             ServiceMethodRef serviceMethodRef = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArguments));
-            var arguments = rawArgs.stream()
+            var arguments = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();
             ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
@@ -1192,7 +1179,7 @@ public class GraphitronSchemaBuilder {
 
         if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
             var rt2 = tb.table() instanceof ResolvedTable r ? r : null;
-            var args = parseArguments(fieldDef).stream()
+            var args = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, rt2, false))
                 .toList();
             boolean hasLookupKey = hasLookupKeyAnywhere(fieldDef);
@@ -1219,11 +1206,10 @@ public class GraphitronSchemaBuilder {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
-            var rawArgs = parseArguments(fieldDef);
             List<String> contextArguments = parseContextArguments(fieldDef, DIR_SERVICE);
-            Set<String> argNames = rawArgs.stream().map(ArgumentSpec::name).collect(Collectors.toSet());
+            Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
             ServiceMethodRef serviceMethodRef = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArguments));
-            var arguments = rawArgs.stream()
+            var arguments = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();
             ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
@@ -1245,7 +1231,7 @@ public class GraphitronSchemaBuilder {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             var returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
-            var args = parseArguments(fieldDef).stream()
+            var args = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();
             return new TableMethodField(parentTypeName, name, location,
@@ -1345,28 +1331,6 @@ public class GraphitronSchemaBuilder {
         return catalog.findColumn(tableSqlName, columnName)
             .<ColumnRef>map(e -> new ResolvedColumn(e.javaName(), e.columnClass()))
             .orElseGet(UnresolvedColumn::new);
-    }
-
-    // ===== Argument parsing =====
-
-    /**
-     * Parses every argument on {@code fieldDef} into an {@link ArgumentSpec}.
-     */
-    private List<ArgumentSpec> parseArguments(GraphQLFieldDefinition fieldDef) {
-        return fieldDef.getArguments().stream()
-            .map(this::buildArgumentSpec)
-            .toList();
-    }
-
-    private ArgumentSpec buildArgumentSpec(GraphQLArgument arg) {
-        GraphQLType type = arg.getType();
-        boolean nonNull = type instanceof GraphQLNonNull;
-        boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
-        String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
-        boolean orderBy = arg.hasAppliedDirective(DIR_ORDER_BY);
-        boolean conditionArg = arg.hasAppliedDirective(DIR_CONDITION);
-        String columnName = argString(arg, DIR_FIELD, ARG_NAME).orElse(arg.getName());
-        return new ArgumentSpec(arg.getName(), typeName, nonNull, list, orderBy, conditionArg, columnName);
     }
 
     /**
