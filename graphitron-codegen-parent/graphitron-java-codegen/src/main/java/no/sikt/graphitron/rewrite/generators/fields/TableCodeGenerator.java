@@ -56,8 +56,10 @@ public class TableCodeGenerator {
             .addModifiers(Modifier.PUBLIC)
             .addMethod(buildSelectManyMethod())
             .addMethod(buildSelectOneMethod())
-            .addMethod(buildSelectManyFromServiceMethod())
-            .addMethod(buildSelectOneFromServiceMethod())
+            .addMethod(buildSelectManyFromRowServiceMethod())
+            .addMethod(buildSelectOneFromRowServiceMethod())
+            .addMethod(buildSelectManyFromRecordServiceMethod())
+            .addMethod(buildSelectOneFromRecordServiceMethod())
             .addMethod(buildSubselectManyMethod())
             .addMethod(buildSubselectOneMethod())
             .build();
@@ -84,7 +86,8 @@ public class TableCodeGenerator {
             .build();
     }
 
-    private MethodSpec buildSelectManyFromServiceMethod() {
+    /** Row-keyed service overload: {@code selectMany(List<? extends Row>, SelectedField, List<?>)}. */
+    private MethodSpec buildSelectManyFromRowServiceMethod() {
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         return MethodSpec.methodBuilder("selectMany")
             .addModifiers(PUBLIC, STATIC)
@@ -96,11 +99,44 @@ public class TableCodeGenerator {
             .build();
     }
 
-    private MethodSpec buildSelectOneFromServiceMethod() {
+    /** Row-keyed service overload: {@code selectOne(List<? extends Row>, SelectedField, Object)}. */
+    private MethodSpec buildSelectOneFromRowServiceMethod() {
         return MethodSpec.methodBuilder("selectOne")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(LIST, RECORD))
             .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(ROW)), "keys")
+            .addParameter(SELECTED_FIELD, "sel")
+            .addParameter(Object.class, "serviceRecord")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    /**
+     * Record-keyed service overload: {@code selectMany(List<? extends Record>, SelectedField, List<?>)}.
+     * Handles both {@code RecordN<T>}-keyed and {@code TableRecord}-keyed callers (both implement
+     * {@code org.jooq.Record}).
+     */
+    private MethodSpec buildSelectManyFromRecordServiceMethod() {
+        var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        return MethodSpec.methodBuilder("selectMany")
+            .addModifiers(PUBLIC, STATIC)
+            .returns(ParameterizedTypeName.get(LIST, listOfRecord))
+            .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(RECORD)), "keys")
+            .addParameter(SELECTED_FIELD, "sel")
+            .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(Object.class)), "serviceRecords")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    /**
+     * Record-keyed service overload: {@code selectOne(List<? extends Record>, SelectedField, Object)}.
+     * Handles both {@code RecordN<T>}-keyed and {@code TableRecord}-keyed callers.
+     */
+    private MethodSpec buildSelectOneFromRecordServiceMethod() {
+        return MethodSpec.methodBuilder("selectOne")
+            .addModifiers(PUBLIC, STATIC)
+            .returns(ParameterizedTypeName.get(LIST, RECORD))
+            .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(RECORD)), "keys")
             .addParameter(SELECTED_FIELD, "sel")
             .addParameter(Object.class, "serviceRecord")
             .addStatement("throw new $T()", UnsupportedOperationException.class)

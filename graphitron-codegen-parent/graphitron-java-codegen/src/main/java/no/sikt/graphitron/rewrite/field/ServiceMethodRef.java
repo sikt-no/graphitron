@@ -16,23 +16,13 @@ public sealed interface ServiceMethodRef
     /**
      * The service method was successfully resolved via reflection.
      *
-     * <p>{@code params} lists all declared parameters in declaration order. Each entry carries the
-     * parameter name (requires {@code -parameters} compiler flag on the service class), the fully
-     * qualified generic type name, and a {@link ParamKind} classifying how the value is obtained
-     * at runtime:
-     * <ul>
-     *   <li>{@link ParamKind#SOURCES} — the batched parent-record PK rows ({@code List<Row>}).
-     *       The validator enforces that the declared type is exactly
-     *       {@code java.util.List<org.jooq.Row>}.</li>
-     *   <li>{@link ParamKind#ARG} — a GraphQL field argument extracted from the DFE.</li>
-     *   <li>{@link ParamKind#CONTEXT} — a context value extracted via
-     *       {@code GraphitronContext.getContextArgument}.</li>
-     * </ul>
+     * <p>{@code params} lists all declared parameters in declaration order. Each entry is a
+     * {@link ServiceParam} variant classifying how the value is obtained at runtime.
      *
      * <p>{@code returnTypeName} is the raw (erased) return type name (e.g.
      * {@code "java.util.List"}) as returned by {@link Class#getName()}.
      */
-    record Resolved(List<ServiceParamInfo> params, String returnTypeName) implements ServiceMethodRef {}
+    record Resolved(List<ServiceParam> params, String returnTypeName) implements ServiceMethodRef {}
 
     /**
      * The service method could not be resolved via reflection.
@@ -44,30 +34,46 @@ public sealed interface ServiceMethodRef
     record Unresolved(String reason) implements ServiceMethodRef {}
 
     /**
-     * Reflection data for one parameter of a service method.
+     * One parameter of a service method, classified by how its value is obtained at runtime.
      *
-     * <p>{@code name} is the parameter name from the compiled class (requires {@code -parameters}).
-     *
-     * <p>{@code typeName} is the fully qualified generic type name as returned by
-     * {@link java.lang.reflect.Parameter#getParameterizedType()} followed by
-     * {@link java.lang.reflect.Type#getTypeName()} (e.g. {@code "org.jooq.Row"} for a {@code Row}
-     * parameter, {@code "java.util.List<org.jooq.Row>"} for a {@code List<Row>} parameter).
-     * Generic parameters are preserved, enabling the validator to enforce that the SOURCES param is
-     * exactly {@code java.util.List<org.jooq.Row>}.
-     *
-     * <p>{@code kind} classifies how the value is obtained at runtime.
+     * <ul>
+     *   <li>{@link SourcesParam} — the batched parent-record keys; the {@link SourcesRef}
+     *       classifies the element type of the {@code List<?>} (Row-keyed, Record-keyed, or
+     *       TableRecord-keyed).</li>
+     *   <li>{@link ArgParam} — a GraphQL field argument extracted from the DFE.</li>
+     *   <li>{@link ContextParam} — a context value extracted via
+     *       {@code GraphitronContext.getContextArgument}.</li>
+     * </ul>
      */
-    record ServiceParamInfo(String name, String typeName, ParamKind kind) {}
+    sealed interface ServiceParam
+        permits ServiceParam.SourcesParam, ServiceParam.ArgParam, ServiceParam.ContextParam {
 
-    /**
-     * Classifies how a service method parameter is bound at runtime.
-     */
-    enum ParamKind {
-        /** The batched PK rows from the parent records. Always {@code List<Row>}. */
-        SOURCES,
-        /** A GraphQL field argument; extracted via {@code DataFetchingEnvironment.getArgument}. */
-        ARG,
-        /** A context value; extracted via {@code GraphitronContext.getContextArgument}. */
-        CONTEXT
+        /** The parameter name from the compiled class (requires {@code -parameters}). */
+        String name();
+
+        /**
+         * The batched parent-record keys; element type is classified by {@link SourcesRef}.
+         * The generator passes {@code keys} in the service call and builds the DataLoader key
+         * expression from the {@link SourcesRef} variant.
+         */
+        record SourcesParam(String name, SourcesRef sourcesRef) implements ServiceParam {}
+
+        /**
+         * A GraphQL field argument; extracted via {@code DataFetchingEnvironment.getArgument}.
+         *
+         * <p>{@code typeName} is the fully qualified generic type name as returned by
+         * {@link java.lang.reflect.Parameter#getParameterizedType()} followed by
+         * {@link java.lang.reflect.Type#getTypeName()}.
+         */
+        record ArgParam(String name, String typeName) implements ServiceParam {}
+
+        /**
+         * A context value; extracted via {@code GraphitronContext.getContextArgument}.
+         *
+         * <p>{@code typeName} is the fully qualified generic type name as returned by
+         * {@link java.lang.reflect.Parameter#getParameterizedType()} followed by
+         * {@link java.lang.reflect.Type#getTypeName()}.
+         */
+        record ContextParam(String name, String typeName) implements ServiceParam {}
     }
 }

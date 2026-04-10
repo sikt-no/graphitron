@@ -64,6 +64,7 @@ import no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.field.ExternalRef;
 import no.sikt.graphitron.rewrite.field.MethodRef;
 import no.sikt.graphitron.rewrite.field.ServiceMethodRef;
+import no.sikt.graphitron.rewrite.field.SourcesRef;
 import no.sikt.graphitron.rewrite.field.NodeTypeRef;
 import no.sikt.graphitron.rewrite.field.NodeTypeRef.ResolvedNodeType;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
@@ -1411,10 +1412,11 @@ public class GraphitronSchemaBuilder {
      *
      * <p>Returns {@link ServiceMethodRef.Resolved} when the class and at least one matching method
      * are found; {@link ServiceMethodRef.Unresolved} otherwise. Parameters whose name matches a
-     * GraphQL argument are classified {@link ServiceMethodRef.ParamKind#ARG}, parameters whose name
-     * matches a context key are classified {@link ServiceMethodRef.ParamKind#CONTEXT}, and all
+     * GraphQL argument become {@link ServiceMethodRef.ServiceParam.ArgParam}, parameters whose name
+     * matches a context key become {@link ServiceMethodRef.ServiceParam.ContextParam}, and all
      * others (including parameters whose name is absent because the class was compiled without
-     * {@code -parameters}) are classified {@link ServiceMethodRef.ParamKind#SOURCES}.
+     * {@code -parameters}) become {@link ServiceMethodRef.ServiceParam.SourcesParam} with the
+     * element type classified by {@link #classifySourcesType}.
      */
     private ServiceMethodRef reflectServiceMethod(ExternalRef serviceRef, Set<String> argNames, Set<String> ctxKeys) {
         if (serviceRef == null || serviceRef.className() == null || serviceRef.methodName() == null) {
@@ -1433,22 +1435,75 @@ public class GraphitronSchemaBuilder {
             var params = java.util.Arrays.stream(method.getParameters())
                 .map(p -> {
                     String pName = p.isNamePresent() ? p.getName() : null;
-                    ServiceMethodRef.ParamKind kind;
-                    if (pName != null && argNames.contains(pName)) {
-                        kind = ServiceMethodRef.ParamKind.ARG;
-                    } else if (pName != null && ctxKeys.contains(pName)) {
-                        kind = ServiceMethodRef.ParamKind.CONTEXT;
-                    } else {
-                        kind = ServiceMethodRef.ParamKind.SOURCES;
-                    }
                     String displayName = pName != null ? pName : p.getType().getSimpleName();
-                    return new ServiceMethodRef.ServiceParamInfo(displayName, p.getParameterizedType().getTypeName(), kind);
+                    if (pName != null && argNames.contains(pName)) {
+                        return (ServiceMethodRef.ServiceParam) new ServiceMethodRef.ServiceParam.ArgParam(
+                            displayName, p.getParameterizedType().getTypeName());
+                    } else if (pName != null && ctxKeys.contains(pName)) {
+                        return (ServiceMethodRef.ServiceParam) new ServiceMethodRef.ServiceParam.ContextParam(
+                            displayName, p.getParameterizedType().getTypeName());
+                    } else {
+                        return (ServiceMethodRef.ServiceParam) new ServiceMethodRef.ServiceParam.SourcesParam(
+                            displayName, classifySourcesType(p.getParameterizedType()));
+                    }
                 })
                 .toList();
             return new ServiceMethodRef.Resolved(params, method.getReturnType().getName());
         } catch (ClassNotFoundException e) {
             return new ServiceMethodRef.Unresolved("class '" + serviceRef.className() + "' could not be loaded");
         }
+    }
+
+    /**
+     * Classifies the element type of a {@code List<?>} SOURCES parameter into a {@link SourcesRef}
+     * variant.
+     *
+     * <ul>
+     *   <li>{@code List<RowN<T1,...>>} → {@link SourcesRef.RowKeyed}</li>
+     *   <li>{@code List<RecordN<T1,...>>} → {@link SourcesRef.RecordKeyed}</li>
+     *   <li>{@code List<SomeTableRecord>} (a {@link org.jooq.TableRecord} subclass) →
+     *       {@link SourcesRef.TableRecordKeyed}</li>
+     *   <li>Anything else → {@link SourcesRef.Unrecognized}</li>
+     * </ul>
+     */
+    private static SourcesRef classifySourcesType(java.lang.reflect.Type paramType) {
+        if (!(paramType instanceof java.lang.reflect.ParameterizedType pt)
+                || pt.getRawType() != java.util.List.class) {
+            return new SourcesRef.Unrecognized(paramType.getTypeName());
+        }
+        java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
+        if (typeArgs.length != 1) {
+            return new SourcesRef.Unrecognized(paramType.getTypeName());
+        }
+        java.lang.reflect.Type elementType = typeArgs[0];
+
+        if (elementType instanceof java.lang.reflect.ParameterizedType ept
+                && ept.getRawType() instanceof Class<?> rawClass) {
+            String rawName = rawClass.getName();
+            if (rawName.startsWith("org.jooq.Row")) {
+                String suffix = rawName.substring("org.jooq.Row".length());
+                if (suffix.matches("\\d+")) {
+                    List<String> pkTypes = java.util.Arrays.stream(ept.getActualTypeArguments())
+                        .map(java.lang.reflect.Type::getTypeName)
+                        .toList();
+                    return new SourcesRef.RowKeyed(pkTypes);
+                }
+            }
+            if (rawName.startsWith("org.jooq.Record")) {
+                String suffix = rawName.substring("org.jooq.Record".length());
+                if (suffix.matches("\\d+")) {
+                    List<String> pkTypes = java.util.Arrays.stream(ept.getActualTypeArguments())
+                        .map(java.lang.reflect.Type::getTypeName)
+                        .toList();
+                    return new SourcesRef.RecordKeyed(pkTypes);
+                }
+            }
+        } else if (elementType instanceof Class<?> elementClass
+                && org.jooq.TableRecord.class.isAssignableFrom(elementClass)) {
+            return new SourcesRef.TableRecordKeyed(elementClass.getName());
+        }
+
+        return new SourcesRef.Unrecognized(paramType.getTypeName());
     }
 
     private String extractConditionQualifiedName(Map<String, Object> conditionMap) {

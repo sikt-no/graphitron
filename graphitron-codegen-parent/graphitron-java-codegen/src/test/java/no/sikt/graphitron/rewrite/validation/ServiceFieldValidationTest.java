@@ -7,8 +7,8 @@ import no.sikt.graphitron.rewrite.field.MethodRef;
 import no.sikt.graphitron.rewrite.field.ParamInfo;
 import no.sikt.graphitron.rewrite.field.ChildField.ServiceField;
 import no.sikt.graphitron.rewrite.field.ServiceMethodRef;
-import no.sikt.graphitron.rewrite.field.ServiceMethodRef.ParamKind;
-import no.sikt.graphitron.rewrite.field.ServiceMethodRef.ServiceParamInfo;
+import no.sikt.graphitron.rewrite.field.ServiceMethodRef.ServiceParam;
+import no.sikt.graphitron.rewrite.field.SourcesRef;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedConditionRef;
@@ -58,25 +58,25 @@ class ServiceFieldValidationTest {
                 "Field 'externalChild': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog",
                 "Field 'externalChild': condition method 'com.example.Conditions.liftCondition' could not be resolved")),
 
-        SOURCES_WRONG_TYPE("SOURCES param is not List<Row> — validator rejects it",
+        SOURCES_WRONG_TYPE("SOURCES param element type not recognized — validator rejects it",
             new ServiceField("Film", "externalChild", null,
                 new ReturnTypeRef.TableBoundReturnType("Film",
                     new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of("film_id"), List.of("java.lang.Integer")),
                     new FieldWrapper.Single(true)),
                 List.of(), null, List.of(), List.of(),
                 new ServiceMethodRef.Resolved(
-                    List.of(new ServiceParamInfo("filmKeys", "java.util.List<java.lang.String>", ParamKind.SOURCES)),
+                    List.of(new ServiceParam.SourcesParam("filmKeys", new SourcesRef.Unrecognized("java.util.List<java.lang.String>"))),
                     "java.lang.Object")),
-            List.of("Field 'externalChild': SOURCES parameter 'filmKeys' must be of type List<RowN<...>> (java.util.List<org.jooq.RowN<...>>), found: java.util.List<java.lang.String>")),
+            List.of("Field 'externalChild': SOURCES parameter 'filmKeys' type is not recognized — expected List<RowN<...>>, List<RecordN<...>>, or List<SomeTableRecord>, found: java.util.List<java.lang.String>")),
 
-        SOURCES_CORRECT_TYPE("SOURCES param is List<Row1<Integer>> matching PK — no error (fallback branch, parent is RootType)",
+        SOURCES_CORRECT_TYPE("SOURCES param is RowKeyed — no error (parent is RootType, no PK cross-check)",
             new ServiceField("Film", "externalChild", null,
                 new ReturnTypeRef.TableBoundReturnType("Film",
                     new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of("film_id"), List.of("java.lang.Integer")),
                     new FieldWrapper.Single(true)),
                 List.of(), null, List.of(), List.of(),
                 new ServiceMethodRef.Resolved(
-                    List.of(new ServiceParamInfo("filmKeys", "java.util.List<org.jooq.Row1<java.lang.Integer>>", ParamKind.SOURCES)),
+                    List.of(new ServiceParam.SourcesParam("filmKeys", new SourcesRef.RowKeyed(List.of("java.lang.Integer")))),
                     "java.lang.Object")),
             List.of());
 

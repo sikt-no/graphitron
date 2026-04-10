@@ -13,6 +13,7 @@ import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.QueryField;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.field.ServiceMethodRef;
+import no.sikt.graphitron.rewrite.field.SourcesRef;
 import no.sikt.graphitron.rewrite.type.TableRef;
 
 import javax.lang.model.element.Modifier;
@@ -135,6 +136,14 @@ public class FieldsCodeGenerator {
      *
      * <p>List/connection: returns {@code CompletableFuture<List<Record>>}.
      * Single: returns {@code CompletableFuture<Record>}.
+     *
+     * <p>The DataLoader key type and key construction expression are determined by the
+     * {@link SourcesRef} variant of the SOURCES parameter:
+     * <ul>
+     *   <li>{@link SourcesRef.RowKeyed} — key is {@code Row1<T>} built via {@code DSL.row(...)}</li>
+     *   <li>{@link SourcesRef.RecordKeyed} — key is {@code Record1<T>} built via {@code record.into(field)}</li>
+     *   <li>{@link SourcesRef.TableRecordKeyed} — key is the whole parent record cast to the declared table-record type</li>
+     * </ul>
      */
     private MethodSpec buildServiceDataFetcher(
             ChildField.ServiceField sf,
@@ -147,17 +156,22 @@ public class FieldsCodeGenerator {
         var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
 
-        // Compute the typed Row key type: Row1<T>, Row2<T1,T2>, etc., from parent PK column types.
-        TypeName rowKeyType = buildRowKeyType(prt.primaryKeyColumnJavaTypes());
-        var loaderType = ParameterizedTypeName.get(DATA_LOADER, rowKeyType, valueType);
+        var sourcesParam = smr.params().stream()
+            .filter(p -> p instanceof ServiceMethodRef.ServiceParam.SourcesParam)
+            .map(p -> (ServiceMethodRef.ServiceParam.SourcesParam) p)
+            .findFirst()
+            .orElseThrow();
 
-        // Reference to the parent table constant, e.g. Tables.LANGUAGE
-        var tablesClass = ClassName.get(GeneratorConfig.outputPackage() + ".tables", "Tables");
-        String tableField = prt.javaFieldName();
-        String pkColumn = prt.primaryKeyColumnSqlName().toUpperCase();
+        TypeName keyType = switch (sourcesParam.sourcesRef()) {
+            case SourcesRef.RowKeyed rk         -> buildRowKeyType(rk.pkJavaTypes());
+            case SourcesRef.RecordKeyed rk      -> buildRecordNKeyType(rk.pkJavaTypes());
+            case SourcesRef.TableRecordKeyed trk -> ClassName.bestGuess(trk.fqClassName());
+            case SourcesRef.Unrecognized u       -> ROW; // fallback (validated away)
+        };
+
+        var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         String rowsMethodName = "load" + capitalize(sf.name());
 
-        // Build the inner DataLoader lambda as a code block
         var lambdaBlock = CodeBlock.builder()
             .add("(keys, batchEnv) -> {\n")
             .indent()
@@ -168,7 +182,7 @@ public class FieldsCodeGenerator {
             .add("}")
             .build();
 
-        return MethodSpec.methodBuilder(sf.name())
+        var methodBuilder = MethodSpec.methodBuilder(sf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
             .addParameter(ENV, "env")
@@ -176,10 +190,32 @@ public class FieldsCodeGenerator {
             .addCode(
                 "$T loader = env.getDataLoaderRegistry()\n" +
                 "    .computeIfAbsent(name, k -> $T.newDataLoaderWithContext($L));\n",
-                loaderType, DATA_LOADER_FACTORY, lambdaBlock)
-            .addStatement(
-                "$T key = $T.row((($T) env.getSource()).get($T.$L.$L))",
-                rowKeyType, DSL, RECORD, tablesClass, tableField, pkColumn)
+                loaderType, DATA_LOADER_FACTORY, lambdaBlock);
+
+        // Emit the key expression — varies by SourcesRef variant.
+        var tablesClass = ClassName.get(GeneratorConfig.outputPackage() + ".tables", "Tables");
+        switch (sourcesParam.sourcesRef()) {
+            case SourcesRef.RowKeyed rk -> {
+                String tableField = prt.javaFieldName();
+                String pkColumn   = prt.primaryKeyColumnSqlName().toUpperCase();
+                methodBuilder.addStatement(
+                    "$T key = $T.row((($T) env.getSource()).get($T.$L.$L))",
+                    keyType, DSL, RECORD, tablesClass, tableField, pkColumn);
+            }
+            case SourcesRef.RecordKeyed rk -> {
+                String tableField = prt.javaFieldName();
+                String pkColumn   = prt.primaryKeyColumnSqlName().toUpperCase();
+                methodBuilder.addStatement(
+                    "$T key = (($T) env.getSource()).into($T.$L.$L)",
+                    keyType, RECORD, tablesClass, tableField, pkColumn);
+            }
+            case SourcesRef.TableRecordKeyed trk ->
+                methodBuilder.addStatement("$T key = ($T) env.getSource()", keyType, keyType);
+            case SourcesRef.Unrecognized u ->
+                methodBuilder.addStatement("Object key = null"); // validated away
+        }
+
+        return methodBuilder
             .addStatement("return loader.load(key, env)")
             .build();
     }
@@ -192,6 +228,14 @@ public class FieldsCodeGenerator {
      *   <li>Calls the service method with {@code keys} as the sources parameter.</li>
      *   <li>Returns via the table's {@code selectMany} or {@code selectOne}.</li>
      * </ol>
+     *
+     * <p>The {@code keys} parameter type mirrors the service method's SOURCES parameter type,
+     * derived from the {@link SourcesRef} variant:
+     * <ul>
+     *   <li>{@link SourcesRef.RowKeyed} — {@code List<Row1<T>>}</li>
+     *   <li>{@link SourcesRef.RecordKeyed} — {@code List<Record1<T>>}</li>
+     *   <li>{@link SourcesRef.TableRecordKeyed} — {@code List<SomeTableRecord>}</li>
+     * </ul>
      */
     private MethodSpec buildServiceRowsMethod(
             ChildField.ServiceField sf,
@@ -204,32 +248,42 @@ public class FieldsCodeGenerator {
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         var returnType = isList ? ParameterizedTypeName.get(LIST, listOfRecord) : listOfRecord;
 
-        // Use typed Row1<T> for the keys parameter to match the service method signature.
-        TypeName rowKeyType = buildRowKeyType(prt.primaryKeyColumnJavaTypes());
+        var sourcesParam = smr.params().stream()
+            .filter(p -> p instanceof ServiceMethodRef.ServiceParam.SourcesParam)
+            .map(p -> (ServiceMethodRef.ServiceParam.SourcesParam) p)
+            .findFirst()
+            .orElseThrow();
+
+        TypeName keysElementType = switch (sourcesParam.sourcesRef()) {
+            case SourcesRef.RowKeyed rk         -> buildRowKeyType(rk.pkJavaTypes());
+            case SourcesRef.RecordKeyed rk      -> buildRecordNKeyType(rk.pkJavaTypes());
+            case SourcesRef.TableRecordKeyed trk -> ClassName.bestGuess(trk.fqClassName());
+            case SourcesRef.Unrecognized u       -> ROW; // fallback (validated away)
+        };
 
         var builder = MethodSpec.methodBuilder("load" + capitalize(sf.name()))
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
-            .addParameter(ParameterizedTypeName.get(LIST, rowKeyType), "keys")
+            .addParameter(ParameterizedTypeName.get(LIST, keysElementType), "keys")
             .addParameter(ENV, "dfe")
             .addParameter(SELECTED_FIELD, "sel");
 
-        // Emit arg and context extraction statements
+        // Emit arg and context extraction statements using switch on ServiceParam
         for (var param : smr.params()) {
-            switch (param.kind()) {
-                case ARG -> builder.addStatement(
+            switch (param) {
+                case ServiceMethodRef.ServiceParam.ArgParam ap -> builder.addStatement(
                     "$T $L = dfe.getArgument($S)",
-                    Object.class, param.name(), param.name());
-                case CONTEXT -> builder.addStatement(
+                    Object.class, ap.name(), ap.name());
+                case ServiceMethodRef.ServiceParam.ContextParam cp -> builder.addStatement(
                     "$T $L = graphitronContext(dfe).getContextArgument(dfe, $S)",
-                    Object.class, param.name(), param.name());
-                case SOURCES -> {} // 'keys' is passed directly
+                    Object.class, cp.name(), cp.name());
+                case ServiceMethodRef.ServiceParam.SourcesParam sp -> {} // 'keys' is passed directly
             }
         }
 
-        // Build service call argument list
+        // Build service call argument list — SOURCES param replaced by 'keys'
         var serviceCallArgs = smr.params().stream()
-            .map(p -> p.kind() == ServiceMethodRef.ParamKind.SOURCES ? "keys" : p.name())
+            .map(p -> p instanceof ServiceMethodRef.ServiceParam.SourcesParam ? "keys" : p.name())
             .toList();
 
         builder.addStatement(
@@ -280,6 +334,23 @@ public class FieldsCodeGenerator {
             .map(ClassName::bestGuess)
             .toArray(TypeName[]::new);
         return ParameterizedTypeName.get(rowNClass, typeArgs);
+    }
+
+    /**
+     * Builds the typed {@code Record1<T>} / {@code Record2<T1,T2>} / … key type for a DataLoader
+     * from the ordered list of primary-key column Java type names (e.g. {@code ["java.lang.Long"]}).
+     *
+     * <p>Falls back to the raw {@link #RECORD} interface when the list is empty.
+     */
+    private static TypeName buildRecordNKeyType(List<String> pkJavaTypes) {
+        if (pkJavaTypes.isEmpty()) {
+            return RECORD;
+        }
+        ClassName recordNClass = ClassName.get("org.jooq", "Record" + pkJavaTypes.size());
+        TypeName[] typeArgs = pkJavaTypes.stream()
+            .map(ClassName::bestGuess)
+            .toArray(TypeName[]::new);
+        return ParameterizedTypeName.get(recordNClass, typeArgs);
     }
 
     private MethodSpec buildSplitQueryDataFetcher(ChildField.TableField field) {

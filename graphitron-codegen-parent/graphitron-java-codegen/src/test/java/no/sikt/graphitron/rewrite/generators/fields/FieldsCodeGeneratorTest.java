@@ -12,6 +12,7 @@ import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.field.ServiceMethodRef;
+import no.sikt.graphitron.rewrite.field.SourcesRef;
 import no.sikt.graphitron.rewrite.type.TableRef;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,9 +61,9 @@ class FieldsCodeGeneratorTest {
             returnWrapper);
         var smr = new ServiceMethodRef.Resolved(
             List.of(
-                new ServiceMethodRef.ServiceParamInfo("keys", "java.util.List", ServiceMethodRef.ParamKind.SOURCES),
-                new ServiceMethodRef.ServiceParamInfo("filter", "java.lang.String", ServiceMethodRef.ParamKind.ARG),
-                new ServiceMethodRef.ServiceParamInfo("tenantId", "java.lang.String", ServiceMethodRef.ParamKind.CONTEXT)
+                new ServiceMethodRef.ServiceParam.SourcesParam("keys", new SourcesRef.RowKeyed(List.of("java.lang.Integer"))),
+                new ServiceMethodRef.ServiceParam.ArgParam("filter", "java.lang.String"),
+                new ServiceMethodRef.ServiceParam.ContextParam("tenantId", "java.lang.String")
             ),
             "java.util.List"
         );
