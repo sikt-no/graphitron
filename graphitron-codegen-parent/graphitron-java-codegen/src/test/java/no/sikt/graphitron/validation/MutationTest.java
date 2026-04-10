@@ -170,9 +170,23 @@ public class MutationTest extends ValidationTest { // TODO: Some of these tests 
         try {
             GeneratorConfig.setFailOnMerge(true);
             assertErrorsContain("upsert", Set.of(CUSTOMER_INPUT_TABLE),
-                    "MERGE generation is disabled (failOnMerge is enabled), but mutation 'upsertCustomer' uses UPSERT.");
+                    "MERGE generation is disabled (failOnMerge is enabled), but mutation 'upsertCustomer' uses UPSERT. " +
+                            "Possible workaround is enabling generateUpsertAsStore.");
         } finally {
             GeneratorConfig.setFailOnMerge(false);
+        }
+    }
+
+    @Test
+    @DisplayName("Upsert mutation should not fail validation when both failOnMerge and generateUpsertAsStore is enabled")
+    void failOnMergeButStoreEnabled() {
+        try {
+            GeneratorConfig.setFailOnMerge(true);
+            GeneratorConfig.setGenerateUpsertAsStore(true);
+            getProcessedSchema("upsert", Set.of(CUSTOMER_INPUT_TABLE));
+        } finally {
+            GeneratorConfig.setFailOnMerge(false);
+            GeneratorConfig.setGenerateUpsertAsStore(false);
         }
     }
 }

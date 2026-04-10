@@ -94,11 +94,19 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     protected CodeGenerationThresholds codeGenerationThresholds;
 
     /**
-     * When enabled, code generation will fail if a MERGE (upsert) mutation is encountered.
+     * When enabled, code generation will fail if an upsert mutation with MERGE is encountered.
      */
     @Parameter(property = "graphitron.failOnMerge", defaultValue = "false")
     @SuppressWarnings("unused")
     protected boolean failOnMerge;
+
+    /**
+     * Use jOOQ store instead of merge for upsert mutations. When enabled, existing records are fetched
+     * before mutation and input fields are applied onto them, letting jOOQ decide INSERT vs UPDATE.
+     */
+    @Parameter(property = "graphitron.generateUpsertAsStore", defaultValue = "false")
+    @SuppressWarnings("unused")
+    protected boolean generateUpsertAsStore;
 
     @Parameter(property = "generate.optionalSelect")
     @SuppressWarnings("unused")
@@ -240,6 +248,11 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @Override
     public boolean validateOverlappingInputFields() {
         return validateOverlappingInputFields;
+    }
+
+    @Override
+    public boolean generateUpsertAsStore() {
+        return generateUpsertAsStore;
     }
 
     @Override

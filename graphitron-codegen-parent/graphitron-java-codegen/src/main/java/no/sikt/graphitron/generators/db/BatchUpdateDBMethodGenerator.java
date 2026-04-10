@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.db;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
@@ -30,12 +31,14 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
  * Generator that creates the default data mutation methods.
  */
 public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
-    private static final Map<MutationType, String> mutationConverter = Map.of(
-            MutationType.UPDATE, "batchUpdate",
-            MutationType.DELETE, "batchDelete",
-            MutationType.INSERT, "batchInsert",
-            MutationType.UPSERT, "batchMerge"
-    );
+    private static String batchMethodName(MutationType type) {
+        return switch (type) {
+            case UPDATE -> "batchUpdate";
+            case DELETE -> "batchDelete";
+            case INSERT -> "batchInsert";
+            case UPSERT -> GeneratorConfig.generateUpsertAsStore() ? "batchStore" : "batchMerge";
+        };
+    }
 
     private static final String VARIABLE_RECORD_LIST = internalPrefix("recordList"), CONFIG = internalPrefix("config");
 
@@ -51,7 +54,7 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
      */
     @Override
     public MethodSpec generate(ObjectField target) {
-        var recordMethod = mutationConverter.get(target.getMutationType());
+        var recordMethod = batchMethodName(target.getMutationType());
         if (recordMethod == null) {
             return MethodSpec.methodBuilder(target.getName()).build();
         }
@@ -75,7 +78,7 @@ public class BatchUpdateDBMethodGenerator extends DBMethodGenerator<ObjectField>
             recordInputs.forEach((name, type) -> code.addStatement("$N.$L($N)", VARIABLE_RECORD_LIST, type.isIterableWrapped() ? "addAll" : "add", inputPrefix(name)));
         }
 
-        if (target.hasMutationType() && target.getMutationType() == MutationType.UPSERT) {
+        if (target.hasMutationType() && target.getMutationType() == MutationType.UPSERT && !GeneratorConfig.generateUpsertAsStore()) {
             recordInputs.entrySet().stream()
                     .map(it -> findNodeIdInJooqRecordInputTypes(it.getKey(), it.getValue()))
                     .filter(Optional::isPresent)

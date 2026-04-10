@@ -83,6 +83,7 @@
                                 <externalReferenceImport>no.sikt.graphitron.example.service.CustomerWithExternalFields</externalReferenceImport>
                             </externalReferenceImports>
                             <makeNodeStrategy>true</makeNodeStrategy>
+                            <generateUpsertAsStore>true</generateUpsertAsStore>
                             <scalars>
                                 <class>
                                     <fullyQualifiedClassName>no.sikt.graphitron.example.service.ConsumerProvidedScalars</fullyQualifiedClassName>
