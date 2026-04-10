@@ -4,6 +4,8 @@ import graphql.language.SourceLocation;
 
 import java.util.List;
 
+import no.sikt.graphitron.rewrite.field.ArgumentRef;
+
 /**
  * A field on the {@code Mutation} type. The only fields permitted to write to the database.
  */
@@ -24,7 +26,7 @@ public sealed interface MutationField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        List<ArgumentSpec> arguments
+        List<ArgumentRef> arguments
     ) implements MutationField {}
 
     /**
@@ -40,7 +42,7 @@ public sealed interface MutationField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        List<ArgumentSpec> arguments
+        List<ArgumentRef> arguments
     ) implements MutationField {}
 
     /**
@@ -56,7 +58,7 @@ public sealed interface MutationField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        List<ArgumentSpec> arguments
+        List<ArgumentRef> arguments
     ) implements MutationField {}
 
     /**
@@ -72,7 +74,7 @@ public sealed interface MutationField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        List<ArgumentSpec> arguments
+        List<ArgumentRef> arguments
     ) implements MutationField {}
 
     /**
@@ -95,7 +97,7 @@ public sealed interface MutationField extends RootField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         ExternalRef serviceRef,
-        List<ArgumentSpec> arguments,
+        List<ArgumentRef> arguments,
         List<String> contextArguments
     ) implements MutationField {}
 
@@ -112,7 +114,7 @@ public sealed interface MutationField extends RootField
         SourceLocation location,
         ReturnTypeRef returnType,
         ExternalRef serviceRef,
-        List<ArgumentSpec> arguments,
+        List<ArgumentRef> arguments,
         List<String> contextArguments
     ) implements MutationField {}
 }

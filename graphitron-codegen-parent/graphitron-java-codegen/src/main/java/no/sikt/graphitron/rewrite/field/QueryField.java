@@ -4,6 +4,8 @@ import graphql.language.SourceLocation;
 
 import java.util.List;
 
+import no.sikt.graphitron.rewrite.field.ArgumentRef;
+
 /**
  * A field on the {@code Query} type. Read-only. All create a new scope or enter private service scope.
  */
@@ -69,7 +71,7 @@ public sealed interface QueryField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        List<ArgumentSpec> arguments
+        List<ArgumentRef> arguments
     ) implements QueryField {}
 
     /**
@@ -92,7 +94,7 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         ExternalRef tableMethodRef,
-        List<ArgumentSpec> arguments,
+        List<ArgumentRef> arguments,
         List<String> contextArguments
     ) implements QueryField {}
 
@@ -181,7 +183,7 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         ExternalRef serviceRef,
-        List<ArgumentSpec> arguments,
+        List<ArgumentRef> arguments,
         List<String> contextArguments
     ) implements QueryField {}
 
@@ -198,7 +200,7 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef returnType,
         ExternalRef serviceRef,
-        List<ArgumentSpec> arguments,
+        List<ArgumentRef> arguments,
         List<String> contextArguments
     ) implements QueryField {}
 }

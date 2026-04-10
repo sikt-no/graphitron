@@ -27,7 +27,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import no.sikt.graphitron.rewrite.field.ArgumentSpec;
 import no.sikt.graphitron.rewrite.type.InputFieldRef;
 import no.sikt.graphitron.rewrite.type.InputFieldSpec;
 
@@ -629,7 +628,7 @@ public class GraphitronSchemaValidator {
         ));
     }
 
-    private void validateArguments(String fieldName, SourceLocation location, List<ArgumentSpec> arguments, Map<String, GraphitronType> types, List<ValidationError> errors) {
+    private void validateArguments(String fieldName, SourceLocation location, List<ArgumentRef> arguments, Map<String, GraphitronType> types, List<ValidationError> errors) {
         // Type-existence of argument types is already guaranteed by graphql-java schema validation.
         // Graphitron-specific constraints will be added here as needed.
     }

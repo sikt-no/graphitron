@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.generators.fields;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.field.ArgumentSpec;
+import no.sikt.graphitron.rewrite.field.ArgumentRef;
 import no.sikt.graphitron.rewrite.field.ChildField;
 import no.sikt.graphitron.rewrite.field.ColumnRef;
 import no.sikt.graphitron.rewrite.field.ExternalRef;
@@ -72,7 +72,7 @@ class FieldsCodeGeneratorTest {
         return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
             List.of(), new ExternalRef("no.example.FilmService", "getFilms"),
-            List.of(new ArgumentSpec("filter", "String", false, false, false, false, "filter")),
+            List.of(new ArgumentRef.ScalarArg.ParamArg("filter", "String", false, false)),
             List.of("tenantId"), smr);
     }
 

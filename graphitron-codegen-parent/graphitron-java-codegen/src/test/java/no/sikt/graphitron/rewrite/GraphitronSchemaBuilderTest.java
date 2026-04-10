@@ -938,7 +938,7 @@ class GraphitronSchemaBuilderTest {
                 var f = (no.sikt.graphitron.rewrite.field.ChildField.LookupTableField) schema.field("Film", "actor");
                 assertThat(f.arguments()).hasSize(1);
                 assertThat(f.arguments().get(0).name()).isEqualTo("id");
-                assertThat(f.arguments().get(0).orderBy()).isFalse();
+                assertThat(f.arguments().get(0)).isNotInstanceOf(no.sikt.graphitron.rewrite.field.ArgumentRef.InputTypeArg.OrderByArg.class);
             }),
 
         TABLE_FIELD_ORDER_BY_ARG(
@@ -1449,16 +1449,18 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Query", "films")).isInstanceOf(QueryField.QueryTableField.class)),
 
         TABLE_QUERY_FIELD_WITH_ARGS(
-            "table query field captures arguments",
+            "table query field captures arguments — @orderBy with valid input type produces OrderByArg",
             """
+            enum FilmOrderField { TITLE @order(index: "IDX_TITLE") }
+            enum Direction { ASC DESC }
+            input FilmOrder { sortField: FilmOrderField! direction: Direction! }
             type Film @table(name: "film") { title: String }
-            enum FilmOrder { TITLE }
             type Query { films(orderBy: FilmOrder @orderBy): [Film!]! }
             """,
             schema -> {
                 var f = (QueryField.QueryTableField) schema.field("Query", "films");
                 assertThat(f.arguments()).hasSize(1);
-                assertThat(f.arguments().get(0).orderBy()).isTrue();
+                assertThat(f.arguments().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.field.ArgumentRef.InputTypeArg.OrderByArg.class);
             }),
 
         TABLE_METHOD_QUERY_FIELD(

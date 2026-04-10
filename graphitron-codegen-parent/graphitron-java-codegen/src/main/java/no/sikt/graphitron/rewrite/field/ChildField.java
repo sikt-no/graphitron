@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.field.FieldConditionRef;
 import no.sikt.graphitron.rewrite.field.NodeTypeRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef;
 import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
+import no.sikt.graphitron.rewrite.field.ArgumentRef;
 
 import java.util.List;
 
@@ -166,7 +167,7 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef.TableBoundReturnType returnType,
         List<ReferencePathElementRef> referencePath,
         FieldConditionRef condition,
-        List<ArgumentSpec> arguments
+        List<ArgumentRef> arguments
     ) implements ChildField {}
 
     /**
@@ -187,7 +188,7 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef.TableBoundReturnType returnType,
         List<ReferencePathElementRef> referencePath,
         FieldConditionRef condition,
-        List<ArgumentSpec> arguments
+        List<ArgumentRef> arguments
     ) implements ChildField {}
 
     /**
@@ -215,7 +216,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         List<ReferencePathElementRef> referencePath,
-        List<ArgumentSpec> arguments
+        List<ArgumentRef> arguments
     ) implements ChildField {}
 
     /**
@@ -237,7 +238,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         List<ReferencePathElementRef> referencePath,
-        List<ArgumentSpec> arguments
+        List<ArgumentRef> arguments
     ) implements ChildField {}
 
     /**
@@ -265,7 +266,7 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef returnType,
         List<ReferencePathElementRef> referencePath,
         ExternalRef tableMethodRef,
-        List<ArgumentSpec> arguments,
+        List<ArgumentRef> arguments,
         List<String> contextArguments
     ) implements ChildField {}
 
@@ -369,7 +370,7 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef.TableBoundReturnType returnType,
         List<ReferencePathElementRef> referencePath,
         ExternalRef serviceRef,
-        List<ArgumentSpec> arguments,
+        List<ArgumentRef> arguments,
         List<String> contextArguments,
         ServiceMethodRef serviceMethodRef
     ) implements ChildField {}
@@ -392,7 +393,7 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef returnType,
         List<ReferencePathElementRef> referencePath,
         ExternalRef serviceRef,
-        List<ArgumentSpec> arguments,
+        List<ArgumentRef> arguments,
         List<String> contextArguments,
         ServiceMethodRef serviceMethodRef
     ) implements ChildField {}
@@ -417,7 +418,7 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef.TableBoundReturnType returnType,
         List<ReferencePathElementRef> referencePath,
         FieldConditionRef condition,
-        List<ArgumentSpec> arguments
+        List<ArgumentRef> arguments
     ) implements ChildField {}
 
     /**
@@ -437,7 +438,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         List<ReferencePathElementRef> referencePath,
-        List<ArgumentSpec> arguments
+        List<ArgumentRef> arguments
     ) implements ChildField {}
 
     /**

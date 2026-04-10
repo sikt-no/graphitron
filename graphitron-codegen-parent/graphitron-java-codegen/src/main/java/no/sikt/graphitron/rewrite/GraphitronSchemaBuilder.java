@@ -269,21 +269,6 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * Resolves all input-type arguments in {@code args} against the given {@code returnType}.
-     * For each arg whose type is a known {@link InputType}, calls
-     * {@link #resolveInputTypeImplicitly} to promote or detect conflicts.
-     */
-    private void resolveInputTypeArgs(List<ArgumentSpec> args, ReturnTypeRef returnType) {
-        if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) return;
-        if (!(tb.table() instanceof ResolvedTable rt)) return;
-        for (var arg : args) {
-            if (types.containsKey(arg.typeName())) {
-                resolveInputTypeImplicitly(arg.typeName(), rt);
-            }
-        }
-    }
-
-    /**
      * Promotes an {@link InputType} to a {@link TableInputType} by resolving each field's column
      * against the given {@link ResolvedTable}.
      */
@@ -562,8 +547,10 @@ public class GraphitronSchemaBuilder {
 
         if (elementType instanceof TableType) {
             var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef));
-            var args = parseArguments(fieldDef);
-            resolveInputTypeArgs(args, returnType);
+            var rt = returnType.table() instanceof ResolvedTable r ? r : null;
+            var args = parseArguments(fieldDef).stream()
+                .map(arg -> classifyArgument(arg, rt, false))
+                .toList();
             var referencePath = parseReferencePath(fieldDef);
             boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
@@ -821,8 +808,10 @@ public class GraphitronSchemaBuilder {
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
-            List<ArgumentSpec> args = parseArguments(fieldDef);
             List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
+            var args = parseArguments(fieldDef).stream()
+                .map(arg -> classifyArgument(arg, null, true))
+                .toList();
             if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
                 return new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs);
             }
@@ -847,7 +836,7 @@ public class GraphitronSchemaBuilder {
             }
             var rt = tb.table() instanceof TableRef.ResolvedTable r ? r : null;
             var arguments = parseArguments(fieldDef).stream()
-                .map(arg -> buildLookupArg(arg, rt))
+                .map(arg -> classifyArgument(arg, rt, false))
                 .toList();
             return new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, arguments);
         }
@@ -860,8 +849,9 @@ public class GraphitronSchemaBuilder {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location,
                     "@tableMethod requires a @table-annotated return type");
             }
-            var args = parseArguments(fieldDef);
-            resolveInputTypeArgs(args, tb);
+            var args = parseArguments(fieldDef).stream()
+                .map(arg -> classifyArgument(arg, null, true))
+                .toList();
             return new QueryField.QueryTableMethodTableField(parentTypeName, name, location,
                 tb,
                 parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF),
@@ -875,8 +865,10 @@ public class GraphitronSchemaBuilder {
 
         if (elementType instanceof TableType) {
             var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef));
-            var args = parseArguments(fieldDef);
-            resolveInputTypeArgs(args, returnType);
+            var rt = returnType.table() instanceof ResolvedTable r ? r : null;
+            var args = parseArguments(fieldDef).stream()
+                .map(arg -> classifyArgument(arg, rt, false))
+                .toList();
             return new QueryField.QueryTableField(parentTypeName, name, location,
                 returnType,
                 args);
@@ -911,8 +903,10 @@ public class GraphitronSchemaBuilder {
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             ReturnTypeRef returnType = resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
-            List<ArgumentSpec> args = parseArguments(fieldDef);
             List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
+            var args = parseArguments(fieldDef).stream()
+                .map(arg -> classifyArgument(arg, null, true))
+                .toList();
             if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
                 return new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs);
             }
@@ -924,7 +918,9 @@ public class GraphitronSchemaBuilder {
             if (typeName != null) {
                 String rawReturn = baseTypeName(fieldDef);
                 ReturnTypeRef returnType = resolveReturnType(rawReturn, buildWrapper(fieldDef));
-                List<ArgumentSpec> arguments = parseArguments(fieldDef);
+                var arguments = parseArguments(fieldDef).stream()
+                    .map(arg -> classifyArgument(arg, null, true))
+                    .toList();
                 return switch (typeName) {
                     case "INSERT" -> new MutationField.MutationInsertTableField(parentTypeName, name, location, returnType, arguments);
                     case "UPDATE" -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType, arguments);
@@ -992,7 +988,16 @@ public class GraphitronSchemaBuilder {
      * otherwise a {@link ArgumentRef.InputTypeArg.PlainInputTypeArg}.
      * Remaining (scalar) arguments are resolved against the return table via the catalog.
      */
-    private ArgumentRef buildLookupArg(ArgumentSpec arg, TableRef.ResolvedTable rt) {
+    /**
+     * Classifies a single argument into an {@link ArgumentRef} variant.
+     *
+     * <p>{@code rt} is the resolved table for column binding (may be {@code null} when the table
+     * is unresolved or not applicable). {@code useParamForScalars} suppresses column binding:
+     * when {@code true}, scalar arguments become {@link ArgumentRef.ScalarArg.ParamArg} (used for
+     * service and method fields where scalars are forwarded as Java parameters rather than bound
+     * to database columns).
+     */
+    private ArgumentRef classifyArgument(ArgumentSpec arg, TableRef.ResolvedTable rt, boolean useParamForScalars) {
         if (arg.conditionArg()) {
             return new ArgumentRef.UnclassifiedArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
                 "@condition is only supported on field definitions, not on arguments");
@@ -1006,7 +1011,10 @@ public class GraphitronSchemaBuilder {
                 ? new ArgumentRef.InputTypeArg.TableInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list())
                 : new ArgumentRef.InputTypeArg.PlainInputTypeArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list());
         }
-        // Scalar arg — resolve against the return type's table
+        // Scalar arg
+        if (useParamForScalars) {
+            return new ArgumentRef.ScalarArg.ParamArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list());
+        }
         if (rt == null) {
             return new ArgumentRef.ScalarArg.UnboundScalarArg(arg.name(), arg.typeName(), arg.nonNull(), arg.list(), arg.columnName());
         }
@@ -1148,10 +1156,13 @@ public class GraphitronSchemaBuilder {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
-            List<ArgumentSpec> arguments = parseArguments(fieldDef);
+            var rawArgs = parseArguments(fieldDef);
             List<String> contextArguments = parseContextArguments(fieldDef, DIR_SERVICE);
-            Set<String> argNames = arguments.stream().map(ArgumentSpec::name).collect(Collectors.toSet());
+            Set<String> argNames = rawArgs.stream().map(ArgumentSpec::name).collect(Collectors.toSet());
             ServiceMethodRef serviceMethodRef = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArguments));
+            var arguments = rawArgs.stream()
+                .map(arg -> classifyArgument(arg, null, true))
+                .toList();
             ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
                 return new ServiceTableField(parentTypeName, name, location, tb,
@@ -1174,13 +1185,17 @@ public class GraphitronSchemaBuilder {
         ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
 
         if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
+            var rt2 = tb.table() instanceof ResolvedTable r ? r : null;
+            var args = parseArguments(fieldDef).stream()
+                .map(arg -> classifyArgument(arg, rt2, false))
+                .toList();
             boolean hasLookupKey = hasLookupKeyAnywhere(fieldDef);
             if (hasLookupKey) {
                 return new RecordLookupTableField(parentTypeName, name, location, tb,
-                    parseReferencePath(fieldDef), parseArguments(fieldDef));
+                    parseReferencePath(fieldDef), args);
             }
             return new RecordTableField(parentTypeName, name, location, tb,
-                parseReferencePath(fieldDef), new FieldConditionRef.NoFieldCondition(), parseArguments(fieldDef));
+                parseReferencePath(fieldDef), new FieldConditionRef.NoFieldCondition(), args);
         }
 
         // Non-table object return (result-mapped or other) — nested record access.
@@ -1198,10 +1213,13 @@ public class GraphitronSchemaBuilder {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
-            List<ArgumentSpec> arguments = parseArguments(fieldDef);
+            var rawArgs = parseArguments(fieldDef);
             List<String> contextArguments = parseContextArguments(fieldDef, DIR_SERVICE);
-            Set<String> argNames = arguments.stream().map(ArgumentSpec::name).collect(Collectors.toSet());
+            Set<String> argNames = rawArgs.stream().map(ArgumentSpec::name).collect(Collectors.toSet());
             ServiceMethodRef serviceMethodRef = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArguments));
+            var arguments = rawArgs.stream()
+                .map(arg -> classifyArgument(arg, null, true))
+                .toList();
             ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
                 return new ServiceTableField(parentTypeName, name, location, tb,
@@ -1221,8 +1239,9 @@ public class GraphitronSchemaBuilder {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             var returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
-            var args = parseArguments(fieldDef);
-            resolveInputTypeArgs(args, returnType);
+            var args = parseArguments(fieldDef).stream()
+                .map(arg -> classifyArgument(arg, null, true))
+                .toList();
             return new TableMethodField(parentTypeName, name, location,
                 returnType,
                 parseReferencePath(fieldDef),

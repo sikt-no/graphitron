@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.field.ArgumentSpec;
+import no.sikt.graphitron.rewrite.field.ArgumentRef;
 import no.sikt.graphitron.rewrite.field.ChildField.TableField;
 import no.sikt.graphitron.rewrite.field.FieldConditionRef;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
@@ -12,7 +12,6 @@ import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.type.GraphitronType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.RootType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.TableType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -23,7 +22,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Validates argument type resolution on fields that carry {@link ArgumentSpec} lists.
+ * Validates argument type resolution on fields that carry {@link ArgumentRef} lists.
  */
 class ArgumentValidationTest {
 
@@ -45,7 +44,7 @@ class ArgumentValidationTest {
         return validateField(field, Map.of());
     }
 
-    private static TableField tableField(List<ArgumentSpec> args) {
+    private static TableField tableField(List<ArgumentRef> args) {
         return new TableField("Film", "actors", null, FILM_RETURN, List.of(), new FieldConditionRef.NoFieldCondition(), args);
     }
 
@@ -57,17 +56,17 @@ class ArgumentValidationTest {
             List.of()),
 
         BUILTIN_SCALAR_ARG("argument with built-in scalar type — no errors",
-            tableField(List.of(new ArgumentSpec("limit", "Int", false, false, false, false, null))),
+            tableField(List.of(new ArgumentRef.ScalarArg.ParamArg("limit", "Int", false, false))),
             Map.of(),
             List.of()),
 
         KNOWN_INPUT_TYPE_ARG("argument referencing a known InputType — no errors",
-            tableField(List.of(new ArgumentSpec("filter", "FilmFilter", false, false, false, false, null))),
+            tableField(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("filter", "FilmFilter", false, false))),
             Map.of("FilmFilter", new InputType("FilmFilter", null, List.of())),
             List.of()),
 
         CUSTOM_SCALAR_ARG("argument with a custom scalar type — no errors (graphql-java validates scalars)",
-            tableField(List.of(new ArgumentSpec("createdAt", "DateTime", false, false, false, false, null))),
+            tableField(List.of(new ArgumentRef.ScalarArg.ParamArg("createdAt", "DateTime", false, false))),
             Map.of(),
             List.of());
 
