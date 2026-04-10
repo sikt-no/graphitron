@@ -1,26 +1,20 @@
 package no.sikt.graphitron.rewrite.field;
 
 /**
- * Represents the outcome of resolving a GraphQL field to a jOOQ column.
+ * A resolved column in a jOOQ table.
  *
- * <p>The sealed hierarchy has one state:
- * <ul>
- *   <li>{@link ResolvedColumn} — the column was found in the jOOQ table; carries the Java field
- *       name and the fully qualified column type class name.</li>
- * </ul>
+ * <p>{@code sqlName} is the SQL column name as it appears in the database (e.g. {@code "film_id"}).
+ * {@code javaName} is the Java field name in the jOOQ table class (e.g. {@code "FILM_ID"}).
+ * {@code columnClass} is the fully qualified Java class name of the column type
+ * (e.g. {@code "java.lang.Integer"}).
  *
- * <p>When a column cannot be resolved, the containing field is classified as
- * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} at build time rather
- * than carrying an unresolved state in the component.
+ * <p>Used wherever a column reference is needed — both for output field columns
+ * ({@link no.sikt.graphitron.rewrite.field.ChildField.ColumnField},
+ * {@link no.sikt.graphitron.rewrite.field.ChildField.ColumnReferenceField}) and for
+ * {@code @node} key columns ({@link no.sikt.graphitron.rewrite.type.NodeRef}).
+ *
+ * <p>When a column cannot be resolved the containing field or type is classified as
+ * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} or
+ * {@link no.sikt.graphitron.rewrite.type.GraphitronType.UnclassifiedType} at build time.
  */
-public sealed interface ColumnRef permits ColumnRef.ResolvedColumn {
-
-    /**
-     * A {@link ColumnRef} where the column was successfully resolved in the jOOQ table.
-     *
-     * <p>{@code javaName} is the Java field name in the jOOQ table class (e.g. {@code "TITLE"}
-     * for {@code FILM.TITLE}). {@code columnClass} is the fully qualified Java class name of the
-     * column type (e.g. {@code "java.lang.String"}).
-     */
-    record ResolvedColumn(String javaName, String columnClass) implements ColumnRef {}
-}
+public record ColumnRef(String sqlName, String javaName, String columnClass) {}

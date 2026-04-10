@@ -3,9 +3,8 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.type.GraphitronType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.UnionType;
-import no.sikt.graphitron.rewrite.type.ParticipantRef.BoundParticipant;
-import no.sikt.graphitron.rewrite.type.ParticipantRef.UnboundParticipant;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
+import no.sikt.graphitron.rewrite.type.ParticipantRef;
+import no.sikt.graphitron.rewrite.type.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -24,27 +23,10 @@ class UnionTypeValidationTest {
 
         ALL_BOUND("all member types are table-bound — valid",
             new UnionType("SearchResult", null, List.of(
-                new BoundParticipant("Film", new Plain("film", "FILM", "Film", true, List.of(), List.of()), null),
-                new BoundParticipant("Category", new Plain("category", "CATEGORY", "Category", true, List.of(), List.of()), null)
+                new ParticipantRef("Film", new TableRef("film", "FILM", "Film", true, List.of(), List.of()), null),
+                new ParticipantRef("Category", new TableRef("category", "CATEGORY", "Category", true, List.of(), List.of()), null)
             )),
-            List.of()),
-
-        ONE_UNBOUND("one member type is not table-bound — error",
-            new UnionType("SearchResult", null, List.of(
-                new BoundParticipant("Film", new Plain("film", "FILM", "Film", true, List.of(), List.of()), null),
-                new UnboundParticipant("Description")
-            )),
-            List.of("Type 'SearchResult': implementing type 'Description' is not table-bound (missing @table directive)")),
-
-        ALL_UNBOUND("all member types are not table-bound — one error per type",
-            new UnionType("SearchResult", null, List.of(
-                new UnboundParticipant("Film"),
-                new UnboundParticipant("Category")
-            )),
-            List.of(
-                "Type 'SearchResult': implementing type 'Film' is not table-bound (missing @table directive)",
-                "Type 'SearchResult': implementing type 'Category' is not table-bound (missing @table directive)"
-            ));
+            List.of());
 
         private final String description;
         private final GraphitronType type;

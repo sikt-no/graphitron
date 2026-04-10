@@ -13,7 +13,7 @@ import no.sikt.graphitron.rewrite.field.OrderSpec;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.field.SortFieldSpec;
 import no.sikt.graphitron.rewrite.field.ChildField.TableField;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
+import no.sikt.graphitron.rewrite.type.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TableFieldValidationTest {
 
     private static ReturnTypeRef.TableBoundReturnType actorReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Actor", new Plain("actor", "ACTOR", "Actor", true, List.of(), List.of()), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Actor", new TableRef("actor", "ACTOR", "Actor", true, List.of(), List.of()), wrapper);
     }
 
     enum Case implements ValidatorCase {
@@ -59,11 +59,6 @@ class TableFieldValidationTest {
                 new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()), true, List.of()), List.of()),
             List.of()),
 
-        FIELD_CONDITION_UNRESOLVED("unresolved @condition method on field — validation error",
-            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), new FieldConditionRef.UnresolvedFieldCondition(
-                "com.example.Conditions.missingCondition", false, List.of()), List.of()),
-            List.of("Field 'actors': condition method 'com.example.Conditions.missingCondition' could not be resolved")),
-
         DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields — valid",
             new TableField("Film", "actors", null,
                 actorReturn(new FieldWrapper.List(true, true,
@@ -82,31 +77,7 @@ class TableFieldValidationTest {
             new TableField("Film", "actors", null,
                 actorReturn(new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.PrimaryKeyOrder(), "ASC"), List.of())),
                 List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
-            List.of()),
-
-        DEFAULT_ORDER_UNRESOLVED_INDEX("@defaultOrder references an index that could not be found — validation error",
-            new TableField("Film", "actors", null,
-                actorReturn(new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedIndexOrder("IDX_MISSING"), "ASC"), List.of())),
-                List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
-            List.of("Field 'actors': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
-
-        DEFAULT_ORDER_UNRESOLVED_PRIMARY_KEY("@defaultOrder uses primaryKey but the table has none — validation error",
-            new TableField("Film", "actors", null,
-                actorReturn(new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "ASC"), List.of())),
-                List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
-            List.of("Field 'actors': primary key could not be resolved — the table may not have one")),
-
-        CONNECTION_DEFAULT_ORDER_UNRESOLVED_INDEX("connection cardinality: @defaultOrder references an index that could not be found — validation error",
-            new TableField("Film", "actors", null,
-                actorReturn(new FieldWrapper.Connection(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedIndexOrder("IDX_MISSING"), "ASC"), List.of())),
-                List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
-            List.of("Field 'actors': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
-
-        CONNECTION_DEFAULT_ORDER_UNRESOLVED_PRIMARY_KEY("connection cardinality: @defaultOrder uses primaryKey but the table has none — validation error",
-            new TableField("Film", "actors", null,
-                actorReturn(new FieldWrapper.Connection(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "ASC"), List.of())),
-                List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
-            List.of("Field 'actors': primary key could not be resolved — the table may not have one"));
+            List.of());
 
         private final String description;
         private final GraphitronField field;

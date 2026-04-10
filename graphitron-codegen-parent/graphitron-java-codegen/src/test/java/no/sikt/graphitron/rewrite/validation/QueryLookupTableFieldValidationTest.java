@@ -19,7 +19,7 @@ class QueryLookupTableFieldValidationTest {
 
     private static QueryLookupTableField singleReturn(List<ArgumentRef> arguments) {
         return new QueryLookupTableField("Query", "filmById", null,
-            new ReturnTypeRef.TableBoundReturnType("Film", new TableRef.ResolvedTable.Plain("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.Single(true)), arguments);
+            new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.Single(true)), arguments);
     }
 
     enum Case implements ValidatorCase {
@@ -34,7 +34,7 @@ class QueryLookupTableFieldValidationTest {
 
         VALID_WITH_LIST_COLUMN_ARG("ScalarArg.ColumnArg list — valid with list return",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef.ResolvedTable.Plain("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.List(true, true, null, List.of())),
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.List(true, true, null, List.of())),
                 List.of(new ArgumentRef.ScalarArg.ColumnArg("id", "ID", false, true, "FILM_ID", null))),
             List.of()),
 
@@ -48,7 +48,7 @@ class QueryLookupTableFieldValidationTest {
 
         LIST_RETURN_NO_LIST_ARG("list return with no list arg — cardinality mismatch",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef.ResolvedTable.Plain("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.List(true, true, null, List.of())),
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.List(true, true, null, List.of())),
                 List.of()),
             List.of("Field 'filmById': result type does not match input cardinality")),
 
@@ -58,7 +58,7 @@ class QueryLookupTableFieldValidationTest {
 
         CONNECTION_RETURN("connection return — never valid on lookup",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef.ResolvedTable.Plain("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.Connection(true, true, null, List.of())),
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.Connection(true, true, null, List.of())),
                 List.of()),
             List.of("Field 'filmById': lookup fields must not return a connection")),
 

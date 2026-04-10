@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.field.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
-import no.sikt.graphitron.rewrite.field.ColumnRef.ResolvedColumn;
+import no.sikt.graphitron.rewrite.field.ColumnRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -17,15 +17,15 @@ class ColumnFieldValidationTest {
     enum Case implements ValidatorCase {
 
         RESOLVED_IMPLICIT("no @field — column name defaults to the GraphQL field name",
-            new ColumnField("Film", "title", null, "title", new ResolvedColumn("TITLE", ""), false),
+            new ColumnField("Film", "title", null, "title", new ColumnRef("TITLE", "", ""), false),
             List.of()),
 
         RESOLVED_EXPLICIT("@field(name:) overrides the column name",
-            new ColumnField("Film", "title", null, "film_title", new ResolvedColumn("FILM_TITLE", ""), false),
+            new ColumnField("Film", "title", null, "film_title", new ColumnRef("FILM_TITLE", "", ""), false),
             List.of()),
 
         JAVA_NAME_PRESENT("@field(javaName:) is not supported — validation error",
-            new ColumnField("Film", "title", null, "title", new ResolvedColumn("TITLE", ""), true),
+            new ColumnField("Film", "title", null, "title", new ColumnRef("TITLE", "", ""), true),
             List.of("Field 'title': @field(javaName:) is not supported in record-based output"));
 
         private final String description;

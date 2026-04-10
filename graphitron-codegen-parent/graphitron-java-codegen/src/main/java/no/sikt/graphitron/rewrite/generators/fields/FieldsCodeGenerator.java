@@ -76,11 +76,9 @@ public class FieldsCodeGenerator {
                 builder.addMethod(buildLookupDataFetcher(lookup));
                 builder.addMethod(buildLookupMethod(lookup));
             } else if (field instanceof ChildField.ServiceTableField sf
-                    && sf.serviceMethodRef() instanceof ServiceMethodRef.Resolved smr
-                    && sf.returnType().table() instanceof TableRef.ResolvedTable rt
-                    && parentTable instanceof TableRef.ResolvedTable prt) {
-                builder.addMethod(buildServiceDataFetcher(sf, smr, sf.returnType(), prt, className));
-                builder.addMethod(buildServiceRowsMethod(sf, smr, sf.returnType(), rt, prt));
+                    && parentTable != null) {
+                builder.addMethod(buildServiceDataFetcher(sf, sf.serviceMethodRef(), sf.returnType(), parentTable, className));
+                builder.addMethod(buildServiceRowsMethod(sf, sf.serviceMethodRef(), sf.returnType(), sf.returnType().table(), parentTable));
                 needsGraphitronContextHelper = true;
             } else if (field instanceof ChildField.SplitTableField stf) {
                 builder.addMethod(buildSplitQueryDataFetcher(stf));
@@ -146,9 +144,9 @@ public class FieldsCodeGenerator {
      */
     private MethodSpec buildServiceDataFetcher(
             ChildField.ServiceTableField sf,
-            ServiceMethodRef.Resolved smr,
+            ServiceMethodRef smr,
             ReturnTypeRef.TableBoundReturnType tb,
-            TableRef.ResolvedTable prt,
+            TableRef prt,
             String className) {
 
         boolean isList = !(tb.wrapper() instanceof FieldWrapper.Single);
@@ -165,7 +163,6 @@ public class FieldsCodeGenerator {
             case SourcesRef.RowKeyed rk         -> buildRowKeyType(rk.pkJavaTypes());
             case SourcesRef.RecordKeyed rk      -> buildRecordNKeyType(rk.pkJavaTypes());
             case SourcesRef.TableRecordKeyed trk -> ClassName.bestGuess(trk.fqClassName());
-            case SourcesRef.Unrecognized u       -> ROW; // fallback (validated away)
         };
 
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
@@ -210,8 +207,6 @@ public class FieldsCodeGenerator {
             }
             case SourcesRef.TableRecordKeyed trk ->
                 methodBuilder.addStatement("$T key = ($T) env.getSource()", keyType, keyType);
-            case SourcesRef.Unrecognized u ->
-                methodBuilder.addStatement("Object key = null"); // validated away
         }
 
         return methodBuilder
@@ -238,10 +233,10 @@ public class FieldsCodeGenerator {
      */
     private MethodSpec buildServiceRowsMethod(
             ChildField.ServiceTableField sf,
-            ServiceMethodRef.Resolved smr,
+            ServiceMethodRef smr,
             ReturnTypeRef.TableBoundReturnType tb,
-            TableRef.ResolvedTable rt,
-            TableRef.ResolvedTable prt) {
+            TableRef rt,
+            TableRef prt) {
 
         boolean isList = !(tb.wrapper() instanceof FieldWrapper.Single);
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
@@ -257,7 +252,6 @@ public class FieldsCodeGenerator {
             case SourcesRef.RowKeyed rk         -> buildRowKeyType(rk.pkJavaTypes());
             case SourcesRef.RecordKeyed rk      -> buildRecordNKeyType(rk.pkJavaTypes());
             case SourcesRef.TableRecordKeyed trk -> ClassName.bestGuess(trk.fqClassName());
-            case SourcesRef.Unrecognized u       -> ROW; // fallback (validated away)
         };
 
         var builder = MethodSpec.methodBuilder("load" + capitalize(sf.name()))

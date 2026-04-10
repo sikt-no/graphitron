@@ -8,7 +8,7 @@ import no.sikt.graphitron.rewrite.field.OrderByEnumValueSpec;
 import no.sikt.graphitron.rewrite.field.OrderSpec;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.field.QueryField.QueryTableField;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
+import no.sikt.graphitron.rewrite.type.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -28,12 +28,12 @@ class QueryTableFieldNonDeterministicOrderingValidationTest {
 
     /** Resolved return type backed by {@code film_list} (a view — no primary key). */
     private static ReturnTypeRef.TableBoundReturnType filmListReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("FilmList", new Plain("film_list", "FILM_LIST", "FilmList", false, List.of(), List.of()), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("FilmList", new TableRef("film_list", "FILM_LIST", "FilmList", false, List.of(), List.of()), wrapper);
     }
 
     /** Resolved return type backed by {@code film} (has a primary key). */
     private static ReturnTypeRef.TableBoundReturnType filmReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Film", new Plain("film", "FILM", "Film", true, List.of(), List.of()), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", true, List.of(), List.of()), wrapper);
     }
 
     enum Case implements ValidatorCase {

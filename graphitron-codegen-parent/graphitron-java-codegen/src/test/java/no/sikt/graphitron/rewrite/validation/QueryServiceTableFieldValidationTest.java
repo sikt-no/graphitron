@@ -19,7 +19,7 @@ class QueryServiceTableFieldValidationTest {
 
     private static final ReturnTypeRef.TableBoundReturnType FILM_RETURN =
         new ReturnTypeRef.TableBoundReturnType("Film",
-            new TableRef.ResolvedTable.Plain("film", "FILM", "Film", true, List.of(), List.of()),
+            new TableRef("film", "FILM", "Film", true, List.of(), List.of()),
             new FieldWrapper.Single(true));
 
     enum Case implements ValidatorCase {
@@ -27,14 +27,8 @@ class QueryServiceTableFieldValidationTest {
         VALID("service query field with resolved method — no errors",
             new QueryServiceTableField("Query", "externalFilm", null,
                 FILM_RETURN, null, List.of(), List.of(),
-                new ServiceMethodRef.Resolved(List.of(), "void")),
-            List.of()),
-
-        UNRESOLVED_METHOD("service method could not be resolved — validation error",
-            new QueryServiceTableField("Query", "externalFilm", null,
-                FILM_RETURN, null, List.of(), List.of(),
-                new ServiceMethodRef.Unresolved("class 'com.example.FilmService' could not be loaded")),
-            List.of("Field 'externalFilm': service method could not be resolved — class 'com.example.FilmService' could not be loaded"));
+                new ServiceMethodRef(List.of(), "void")),
+            List.of());
 
         private final String description;
         private final GraphitronField field;

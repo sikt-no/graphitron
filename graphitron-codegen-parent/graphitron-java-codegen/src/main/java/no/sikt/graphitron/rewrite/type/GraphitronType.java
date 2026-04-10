@@ -22,23 +22,19 @@ public sealed interface GraphitronType
     /**
      * A type annotated with {@code @table}. Full SQL generation applies.
      *
-     * <p>{@code table} is the outcome of resolving the {@code @table} directive's SQL name against
-     * the jOOQ catalog. When the table was found it is a {@link TableRef.ResolvedTable}; if the
-     * owning type also carries {@code @node} it is further specialised as
-     * {@link TableRef.ResolvedTable.WithNode} (carrying the optional {@code typeId} and the list of
-     * key columns, each resolved against the jOOQ table via a {@link KeyColumnRef}). When the SQL
-     * name could not be matched it is a {@link TableRef.UnresolvedTable}.
+     * <p>{@code table} is the resolved jOOQ table (always present — a type whose {@code @table}
+     * name cannot be matched is classified as {@link UnclassifiedType} instead).
      *
-     * <p>{@code @node} is only permitted on types that also carry {@code @table}, which is why the
-     * node information lives on the {@link TableRef} rather than in a separate field.
-     * The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error for
-     * {@code UnresolvedTable} and for each {@link KeyColumnRef.UnresolvedKeyColumn} inside a
-     * {@code WithNode} table.
+     * <p>{@code node} carries the {@code @node} directive properties ({@code typeId} and key
+     * columns) when the type also has {@code @node}, or {@code null} when it does not. A type
+     * with {@code @node} but with an unresolvable key column is classified as
+     * {@link UnclassifiedType} instead.
      */
     record TableType(
         String name,
         SourceLocation location,
-        TableRef table
+        TableRef table,
+        NodeRef node
     ) implements GraphitronType {}
 
     /**
@@ -56,16 +52,11 @@ public sealed interface GraphitronType
      * An interface annotated with {@code @table} and {@code @discriminate}, where implementing
      * types have {@code @table} and {@code @discriminator}. Single-table interface pattern.
      *
-     * <p>{@code table} is the outcome of resolving the {@code @table} directive's SQL name against
-     * the jOOQ catalog: {@link TableRef.ResolvedTable} when the table was found,
-     * {@link TableRef.UnresolvedTable} when it was not. The SQL name is always available via
-     * {@link TableRef#tableName()}. The
-     * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error for
-     * {@code UnresolvedTable}.
+     * <p>{@code table} is the resolved jOOQ table (always present — failure to resolve produces
+     * {@link UnclassifiedType}).
      *
-     * <p>{@code participants} holds one {@link ParticipantRef} per implementing type.
-     * The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error for every
-     * {@link ParticipantRef.UnboundParticipant}.
+     * <p>{@code participants} holds one {@link ParticipantRef} per implementing type. Any
+     * unbound participant causes classification to fail with {@link UnclassifiedType}.
      */
     record TableInterfaceType(
         String name,
@@ -79,9 +70,8 @@ public sealed interface GraphitronType
      * An interface with no directives whose implementing types each have {@code @table}.
      * Multi-table interface pattern.
      *
-     * <p>{@code participants} holds one {@link ParticipantRef} per implementing type.
-     * The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error for every
-     * {@link ParticipantRef.UnboundParticipant}.
+     * <p>{@code participants} holds one {@link ParticipantRef} per implementing type. Any
+     * unbound participant causes classification to fail with {@link UnclassifiedType}.
      */
     record InterfaceType(
         String name,
@@ -92,9 +82,8 @@ public sealed interface GraphitronType
     /**
      * A union type whose member types all have {@code @table}.
      *
-     * <p>{@code participants} holds one {@link ParticipantRef} per member type.
-     * The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error for every
-     * {@link ParticipantRef.UnboundParticipant}.
+     * <p>{@code participants} holds one {@link ParticipantRef} per member type. Any
+     * unbound participant causes classification to fail with {@link UnclassifiedType}.
      */
     record UnionType(
         String name,
@@ -134,15 +123,10 @@ public sealed interface GraphitronType
      * A GraphQL input object type annotated with {@code @table}. Fields are resolved against the
      * jOOQ table, enabling use of this input type in generated lookup queries.
      *
-     * <p>{@code table} is the outcome of resolving the {@code @table} directive's SQL name against
-     * the jOOQ catalog: {@link TableRef.ResolvedTable} when found, {@link TableRef.UnresolvedTable}
-     * when not. The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error
-     * for {@code UnresolvedTable}.
-     *
-     * <p>{@code fields} holds one {@link InputFieldRef} per field in the input type (excluding
-     * {@code @notGenerated} fields). Each field is either a {@link InputFieldRef.TableInputField}
-     * (column resolved) or an {@link InputFieldRef.UnresolvedInputField} (column not found in the
-     * jOOQ table). The validator reports an error for every {@code UnresolvedInputField}.
+     * <p>{@code table} is the resolved jOOQ table (always present — failure to resolve produces
+     * {@link UnclassifiedType}). All {@code fields} are fully resolved {@link InputFieldRef}
+     * instances; any field whose column cannot be matched causes the whole type to be classified
+     * as {@link UnclassifiedType}.
      */
     record TableInputType(
         String name,

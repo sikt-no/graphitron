@@ -3,21 +3,13 @@ package no.sikt.graphitron.rewrite;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphitron.rewrite.field.FieldConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.ConditionOnlyRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkWithConditionRef;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.ArgumentRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.type.GraphitronType;
-import no.sikt.graphitron.rewrite.type.ParticipantRef.UnboundParticipant;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
 import no.sikt.graphitron.rewrite.type.GraphitronType.TableType;
-import no.sikt.graphitron.rewrite.type.TableRef.UnresolvedTable;
+import no.sikt.graphitron.rewrite.type.TableRef;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -106,32 +98,12 @@ public class GraphitronSchemaValidator {
     // --- Type validators (stubs — filled in as test classes are added) ---
 
     private void validateTableType(no.sikt.graphitron.rewrite.type.GraphitronType.TableType type, List<ValidationError> errors) {
-        if (type.table() instanceof UnresolvedTable unresolvedTable) {
-            errors.add(new ValidationError(
-                "Type '" + type.name() + "': table '" + type.table().tableName() + "' could not be resolved in the jOOQ catalog",
-                type.location()
-            ));
-        }
-        if (type.table() instanceof ResolvedTable.WithNode wn) {
-            for (var keyColumn : wn.keyColumns()) {
-                if (keyColumn instanceof no.sikt.graphitron.rewrite.type.KeyColumnRef.UnresolvedKeyColumn u) {
-                    errors.add(new ValidationError(
-                        "Type '" + type.name() + "': key column '" + u.name() + "' in @node could not be resolved in the jOOQ table",
-                        type.location()
-                    ));
-                }
-            }
-        }
+        // Unresolved tables and unresolved @node key columns are caught by the builder, which
+        // produces UnclassifiedType instead. Nothing more to validate here.
     }
     private void validateResultType(no.sikt.graphitron.rewrite.type.GraphitronType.ResultType type, List<ValidationError> errors) {}
     private void validateRootType(no.sikt.graphitron.rewrite.type.GraphitronType.RootType type, List<ValidationError> errors) {}
     private void validateTableInterfaceType(no.sikt.graphitron.rewrite.type.GraphitronType.TableInterfaceType type, List<ValidationError> errors) {
-        if (type.table() instanceof UnresolvedTable unresolvedTable) {
-            errors.add(new ValidationError(
-                "Type '" + type.name() + "': table '" + type.table().tableName() + "' could not be resolved in the jOOQ catalog",
-                type.location()
-            ));
-        }
         validateParticipants(type.name(), type.participants(), errors);
     }
     private void validateInterfaceType(no.sikt.graphitron.rewrite.type.GraphitronType.InterfaceType type, List<ValidationError> errors) {
@@ -147,31 +119,11 @@ public class GraphitronSchemaValidator {
     }
 
     private void validateTableInputType(no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType type, List<ValidationError> errors) {
-        if (type.table() instanceof UnresolvedTable unresolvedTable) {
-            errors.add(new ValidationError(
-                "Input type '" + type.name() + "': table '" + type.table().tableName() + "' could not be resolved in the jOOQ catalog",
-                type.location()
-            ));
-        }
-        for (var field : type.fields()) {
-            if (field instanceof InputFieldRef.UnresolvedInputField u) {
-                errors.add(new ValidationError(
-                    "Input type '" + type.name() + "', field '" + u.name() + "': column '" + u.columnName() + "' could not be resolved in the jOOQ table",
-                    type.location()
-                ));
-            }
-        }
+        // Unresolved tables and unresolved fields are caught by the builder (UnclassifiedType).
     }
 
     private void validateParticipants(String typeName, java.util.List<no.sikt.graphitron.rewrite.type.ParticipantRef> participants, List<ValidationError> errors) {
-        for (var participant : participants) {
-            if (participant instanceof UnboundParticipant u) {
-                errors.add(new ValidationError(
-                    "Type '" + typeName + "': implementing type '" + u.typeName() + "' is not table-bound (missing @table directive)",
-                    null
-                ));
-            }
-        }
+        // Unbound participants are caught by the builder (UnclassifiedType). Nothing to validate here.
     }
 
     // --- Field validators (stubs — filled in as test classes are added) ---
@@ -218,10 +170,7 @@ public class GraphitronSchemaValidator {
     private void validateQueryTableField(no.sikt.graphitron.rewrite.field.QueryField.QueryTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
-        if (field.returnType().table() instanceof ResolvedTable rt) {
-            validateDeterministicOrdering(field.name(), field.location(), field.returnType().wrapper(), rt, errors);
-        }
-        // UnresolvedTable: type validator reports the unresolved table; skip ordering check
+        validateDeterministicOrdering(field.name(), field.location(), field.returnType().wrapper(), field.returnType().table(), errors);
     }
 
     /**
@@ -231,7 +180,7 @@ public class GraphitronSchemaValidator {
      */
     private void validateDeterministicOrdering(
             String fieldName, SourceLocation location, no.sikt.graphitron.rewrite.field.FieldWrapper cardinality,
-            ResolvedTable table, List<ValidationError> errors) {
+            no.sikt.graphitron.rewrite.type.TableRef table, List<ValidationError> errors) {
         boolean needsCheck = switch (cardinality) {
             case no.sikt.graphitron.rewrite.field.FieldWrapper.List l ->
                 l.defaultOrder() == null && l.orderByValues().isEmpty();
@@ -264,12 +213,7 @@ public class GraphitronSchemaValidator {
     }
     private void validateQueryServiceTableField(no.sikt.graphitron.rewrite.field.QueryField.QueryServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
-        if (field.serviceMethodRef() instanceof no.sikt.graphitron.rewrite.field.ServiceMethodRef.Unresolved u) {
-            errors.add(new ValidationError(
-                "Field '" + field.name() + "': service method could not be resolved — " + u.reason(),
-                field.location()
-            ));
-        }
+        // Unresolved service method is caught by the builder (UnclassifiedField).
     }
     private void validateQueryServiceRecordField(no.sikt.graphitron.rewrite.field.QueryField.QueryServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
@@ -279,12 +223,7 @@ public class GraphitronSchemaValidator {
     private void validateMutationDeleteTableField(no.sikt.graphitron.rewrite.field.MutationField.MutationDeleteTableField field, List<ValidationError> errors) {}
     private void validateMutationUpsertTableField(no.sikt.graphitron.rewrite.field.MutationField.MutationUpsertTableField field, List<ValidationError> errors) {}
     private void validateMutationServiceTableField(no.sikt.graphitron.rewrite.field.MutationField.MutationServiceTableField field, List<ValidationError> errors) {
-        if (field.serviceMethodRef() instanceof no.sikt.graphitron.rewrite.field.ServiceMethodRef.Unresolved u) {
-            errors.add(new ValidationError(
-                "Field '" + field.name() + "': service method could not be resolved — " + u.reason(),
-                field.location()
-            ));
-        }
+        // Unresolved service method is caught by the builder (UnclassifiedField).
     }
     private void validateMutationServiceRecordField(no.sikt.graphitron.rewrite.field.MutationField.MutationServiceRecordField field, List<ValidationError> errors) {}
     private void validateColumnField(no.sikt.graphitron.rewrite.field.ChildField.ColumnField field, List<ValidationError> errors) {
@@ -322,11 +261,7 @@ public class GraphitronSchemaValidator {
             validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
             return;
         }
-        if (!(tb.table() instanceof ResolvedTable targetTable)) {
-            // Target type's table is unresolved; type validator reports that error
-            validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
-            return;
-        }
+        no.sikt.graphitron.rewrite.type.TableRef targetTable = tb.table();
 
         if (field.referencePath().isEmpty()) {
             // Implicit join: exactly one FK must exist between parent and target tables
@@ -359,16 +294,13 @@ public class GraphitronSchemaValidator {
         }
     }
 
-    private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<ReferencePathElementRef> path, String typeName, ResolvedTable targetTable, List<ValidationError> errors) {
+    private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<ReferencePathElementRef> path, String typeName, no.sikt.graphitron.rewrite.type.TableRef targetTable, List<ValidationError> errors) {
         var lastStep = path.getLast();
         String fkTableSql = null, keyTableSql = null;
         switch (lastStep) {
-            case FkRef s              -> { fkTableSql = s.fkTableSqlName(); keyTableSql = s.keyTableSqlName(); }
-            case FkWithConditionRef s -> { fkTableSql = s.fkTableSqlName(); keyTableSql = s.keyTableSqlName(); }
-            case ConditionOnlyRef ignored          -> { return; } // no FK tables to check; condition method only
-            case UnresolvedKeyRef ignored          -> { return; } // unresolved FK already reported elsewhere
-            case UnresolvedConditionRef ignored    -> { return; } // unresolved condition already reported elsewhere
-            case UnresolvedKeyAndConditionRef ignored -> { return; } // both already reported elsewhere
+            case no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkRef s              -> { fkTableSql = s.fkTableSqlName(); keyTableSql = s.keyTableSqlName(); }
+            case no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkWithConditionRef s -> { fkTableSql = s.fkTableSqlName(); keyTableSql = s.keyTableSqlName(); }
+            case no.sikt.graphitron.rewrite.field.ReferencePathElementRef.ConditionOnlyRef ignored -> { return; } // no FK tables to check
         }
         var targetSqlName = targetTable.tableName();
         if (!fkTableSql.equalsIgnoreCase(targetSqlName) &&
@@ -381,23 +313,11 @@ public class GraphitronSchemaValidator {
     }
     private void validateTableField(no.sikt.graphitron.rewrite.field.ChildField.TableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
-        if (field.condition() instanceof FieldConditionRef.UnresolvedFieldCondition u) {
-            errors.add(new ValidationError(
-                "Field '" + field.name() + "': condition method '" + u.qualifiedName() + "' could not be resolved",
-                field.location()
-            ));
-        }
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateSplitTableField(no.sikt.graphitron.rewrite.field.ChildField.SplitTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
-        if (field.condition() instanceof FieldConditionRef.UnresolvedFieldCondition u) {
-            errors.add(new ValidationError(
-                "Field '" + field.name() + "': condition method '" + u.qualifiedName() + "' could not be resolved",
-                field.location()
-            ));
-        }
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
@@ -442,21 +362,11 @@ public class GraphitronSchemaValidator {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
 
-        // Unresolved service method reference — cannot generate DataLoader code.
-        if (field.serviceMethodRef() instanceof no.sikt.graphitron.rewrite.field.ServiceMethodRef.Unresolved u) {
-            errors.add(new ValidationError(
-                "Field '" + field.name() + "': service method could not be resolved — " + u.reason(),
-                field.location()
-            ));
-            return;
-        }
-
         // Validate each SOURCES parameter's SourcesRef variant.
-        var smr = (no.sikt.graphitron.rewrite.field.ServiceMethodRef.Resolved) field.serviceMethodRef();
+        var smr = field.serviceMethodRef();
         var parentTypeForSources = types.get(field.parentTypeName());
-        List<String> parentPkJavaTypes = (parentTypeForSources instanceof no.sikt.graphitron.rewrite.type.GraphitronType.TableType ttSrc
-                && ttSrc.table() instanceof ResolvedTable prtSrc)
-            ? prtSrc.primaryKeyColumnJavaTypes()
+        List<String> parentPkJavaTypes = (parentTypeForSources instanceof TableType ttSrc)
+            ? ttSrc.table().primaryKeyColumnJavaTypes()
             : List.of();
 
         smr.params().stream()
@@ -486,13 +396,6 @@ public class GraphitronSchemaValidator {
                 case no.sikt.graphitron.rewrite.field.SourcesRef.TableRecordKeyed trk -> {
                     // The whole parent record is the key — no PK-column type check needed.
                 }
-                case no.sikt.graphitron.rewrite.field.SourcesRef.Unrecognized u -> {
-                    errors.add(new ValidationError(
-                        "Field '" + field.name() + "': SOURCES parameter '" + sp.name()
-                            + "' type is not recognized — expected List<RowN<...>>, List<RecordN<...>>,"
-                            + " or List<SomeTableRecord>, found: " + u.typeName(),
-                        field.location()));
-                }
             } });
 
         // For Row-keyed and Record-keyed, the parent must have a single-column PK so the key
@@ -508,12 +411,10 @@ public class GraphitronSchemaValidator {
         }
 
         var parentType = types.get(field.parentTypeName());
-        if (!(parentType instanceof no.sikt.graphitron.rewrite.type.GraphitronType.TableType tt)) {
+        if (!(parentType instanceof TableType tt)) {
             return; // non-table parent; no DataLoader key needed
         }
-        if (!(tt.table() instanceof ResolvedTable parentTable)) {
-            return; // unresolved parent table already reported by type validator
-        }
+        TableRef parentTable = tt.table();
         if (!parentTable.hasPrimaryKey()) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': @service on a table-bound return type requires the parent table '" + parentTable.tableName() + "' to have a primary key",
@@ -531,21 +432,9 @@ public class GraphitronSchemaValidator {
     private void validateServiceRecordField(no.sikt.graphitron.rewrite.field.ChildField.ServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
-        if (field.serviceMethodRef() instanceof no.sikt.graphitron.rewrite.field.ServiceMethodRef.Unresolved u) {
-            errors.add(new ValidationError(
-                "Field '" + field.name() + "': service method could not be resolved — " + u.reason(),
-                field.location()
-            ));
-        }
     }
     private void validateRecordTableField(no.sikt.graphitron.rewrite.field.ChildField.RecordTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
-        if (field.condition() instanceof FieldConditionRef.UnresolvedFieldCondition u) {
-            errors.add(new ValidationError(
-                "Field '" + field.name() + "': condition method '" + u.qualifiedName() + "' could not be resolved",
-                field.location()
-            ));
-        }
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
@@ -633,36 +522,14 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.field.OrderSpec.IndexOrder ignored -> {}
             case no.sikt.graphitron.rewrite.field.OrderSpec.FieldsOrder ignored -> {}
             case no.sikt.graphitron.rewrite.field.OrderSpec.PrimaryKeyOrder ignored -> {}
-            case no.sikt.graphitron.rewrite.field.OrderSpec.UnresolvedIndexOrder u -> errors.add(new ValidationError(
-                "Field '" + fieldName + "': index '" + u.indexName() + "' could not be resolved in the jOOQ catalog",
-                location));
-            case no.sikt.graphitron.rewrite.field.OrderSpec.UnresolvedPrimaryKeyOrder ignored -> errors.add(new ValidationError(
-                "Field '" + fieldName + "': primary key could not be resolved — the table may not have one",
-                location));
         }
     }
 
+    /**
+     * No-op: all path elements are guaranteed resolved by the builder (unresolved paths produce
+     * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} instead).
+     */
     private void validateReferencePath(String fieldName, SourceLocation location, List<ReferencePathElementRef> path, List<ValidationError> errors) {
-        for (var element : path) {
-            switch (element) {
-                case no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkRef ignored -> {}
-                case no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkWithConditionRef ignored -> {}
-                case no.sikt.graphitron.rewrite.field.ReferencePathElementRef.ConditionOnlyRef ignored -> {}
-                case UnresolvedKeyRef u -> errors.add(new ValidationError(
-                    "Field '" + fieldName + "': key '" + u.keyName() + "' could not be resolved in the jOOQ catalog",
-                    location));
-                case UnresolvedConditionRef u -> errors.add(new ValidationError(
-                    "Field '" + fieldName + "': condition method '" + u.qualifiedName() + "' could not be resolved",
-                    location));
-                case UnresolvedKeyAndConditionRef u -> {
-                    errors.add(new ValidationError(
-                        "Field '" + fieldName + "': key '" + u.keyName() + "' could not be resolved in the jOOQ catalog",
-                        location));
-                    errors.add(new ValidationError(
-                        "Field '" + fieldName + "': condition method '" + u.conditionName() + "' could not be resolved",
-                        location));
-                }
-            }
-        }
+        // All elements are resolved — builder rejects unresolved paths at classification time.
     }
 }

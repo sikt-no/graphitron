@@ -1,11 +1,11 @@
 package no.sikt.graphitron.rewrite.field;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.WithNode;
+import no.sikt.graphitron.rewrite.type.NodeRef;
+import no.sikt.graphitron.rewrite.type.TableRef;
 import no.sikt.graphitron.rewrite.field.ColumnRef;
 import no.sikt.graphitron.rewrite.field.FieldConditionRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
 import no.sikt.graphitron.rewrite.field.ArgumentRef;
 
 import java.util.List;
@@ -88,14 +88,14 @@ public sealed interface ChildField extends GraphitronField
      * appears on a type without {@code @node}, the builder returns an
      * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} instead.
      *
-     * <p>{@code node} is the parent type's {@link WithNode} table reference, carrying the
-     * optional {@code typeId} and the resolved key columns used for Relay Global ID encoding.
+     * <p>{@code node} is the parent type's {@link NodeRef}, carrying the optional {@code typeId}
+     * and the resolved key columns used for Relay Global ID encoding.
      */
     record NodeIdField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        WithNode node
+        NodeRef node
     ) implements ChildField {}
 
     /**
@@ -112,9 +112,9 @@ public sealed interface ChildField extends GraphitronField
      * {@link ReturnTypeRef.OtherReturnType} otherwise.
      *
      * <p>{@code parentTable} is the resolved table of the containing type, or {@code null} when
-     * the parent's table is unresolved. A null parent table skips the implicit FK count check.
+     * the parent type is not table-backed. A null parent table skips the implicit FK count check.
      *
-     * <p>{@code node} is the {@link WithNode} of the target type, carrying the {@code @node}
+     * <p>{@code node} is the {@link NodeRef} of the target type, carrying the {@code @node}
      * directive properties ({@code typeId} and {@code keyColumns}) used for Relay Global ID
      * encoding. Only constructed when the named type exists and carries {@code @node}; otherwise
      * the builder returns an
@@ -135,8 +135,8 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         String typeName,
         ReturnTypeRef targetType,
-        ResolvedTable parentTable,
-        WithNode node,
+        TableRef parentTable,
+        NodeRef node,
         List<ReferencePathElementRef> referencePath
     ) implements ChildField {}
 

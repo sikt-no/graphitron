@@ -19,7 +19,7 @@ class MutationServiceTableFieldValidationTest {
 
     private static final ReturnTypeRef.TableBoundReturnType FILM_RETURN =
         new ReturnTypeRef.TableBoundReturnType("Film",
-            new TableRef.ResolvedTable.Plain("film", "FILM", "Film", true, List.of(), List.of()),
+            new TableRef("film", "FILM", "Film", true, List.of(), List.of()),
             new FieldWrapper.Single(true));
 
     enum Case implements ValidatorCase {
@@ -27,14 +27,8 @@ class MutationServiceTableFieldValidationTest {
         VALID("service mutation field with resolved method — no errors",
             new MutationServiceTableField("Mutation", "externalMutation", null,
                 FILM_RETURN, null, List.of(), List.of(),
-                new ServiceMethodRef.Resolved(List.of(), "void")),
-            List.of()),
-
-        UNRESOLVED_METHOD("service method could not be resolved — validation error",
-            new MutationServiceTableField("Mutation", "externalMutation", null,
-                FILM_RETURN, null, List.of(), List.of(),
-                new ServiceMethodRef.Unresolved("class 'com.example.FilmService' could not be loaded")),
-            List.of("Field 'externalMutation': service method could not be resolved — class 'com.example.FilmService' could not be loaded"));
+                new ServiceMethodRef(List.of(), "void")),
+            List.of());
 
         private final String description;
         private final GraphitronField field;

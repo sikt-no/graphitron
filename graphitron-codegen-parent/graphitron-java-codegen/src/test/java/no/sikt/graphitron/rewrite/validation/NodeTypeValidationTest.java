@@ -1,13 +1,11 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.field.ColumnRef;
 import no.sikt.graphitron.rewrite.type.GraphitronType;
-import no.sikt.graphitron.rewrite.type.KeyColumnRef;
-import no.sikt.graphitron.rewrite.type.KeyColumnRef.ResolvedKeyColumn;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.WithNode;
+import no.sikt.graphitron.rewrite.type.NodeRef;
+import no.sikt.graphitron.rewrite.type.TableRef;
 import no.sikt.graphitron.rewrite.type.GraphitronType.TableType;
-import no.sikt.graphitron.rewrite.type.KeyColumnRef.UnresolvedKeyColumn;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -18,49 +16,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class NodeTypeValidationTest {
 
-    private static final Plain RESOLVED_FILM = new Plain("film", "FILM", "Film", true, List.of(), List.of());
+    private static final TableRef RESOLVED_FILM = new TableRef("film", "FILM", "Film", true, List.of(), List.of());
 
     enum Case implements TypeValidatorCase {
 
-        NO_NODE("no @node directive — Plain table, no errors",
-            new TableType("Film", null, RESOLVED_FILM),
+        NO_NODE("no @node directive — table without node, no errors",
+            new TableType("Film", null, RESOLVED_FILM, null),
             List.of()),
 
         NODE_NO_KEY_COLUMNS("@node with no keyColumns argument — empty list, no errors",
-            new TableType("Film", null,
-                new WithNode("film", "FILM", "Film", true, List.of(), List.of(), null, List.of())),
+            new TableType("Film", null, RESOLVED_FILM, new NodeRef(null, List.of())),
             List.of()),
 
         NODE_WITH_TYPE_ID("@node with typeId and no keyColumns — no errors",
-            new TableType("Film", null,
-                new WithNode("film", "FILM", "Film", true, List.of(), List.of(), "film", List.of())),
+            new TableType("Film", null, RESOLVED_FILM, new NodeRef("film", List.of())),
             List.of()),
 
         NODE_WITH_RESOLVED_KEY_COLUMN("@node with a key column resolved in the jOOQ table — no errors",
-            new TableType("Film", null,
-                new WithNode("film", "FILM", "Film", true, List.of(), List.of(), null, List.of(new ResolvedKeyColumn("film_id", "FILM_ID")))),
-            List.of()),
-
-        NODE_WITH_UNRESOLVED_KEY_COLUMN("@node with a key column not found in the jOOQ table — one error",
-            new TableType("Film", null,
-                new WithNode("film", "FILM", "Film", true, List.of(), List.of(), null, List.of(new UnresolvedKeyColumn("bad_col")))),
-            List.of("Type 'Film': key column 'bad_col' in @node could not be resolved in the jOOQ table")),
-
-        NODE_WITH_MIXED_KEY_COLUMNS("@node with one resolved and one unresolved key column — one error",
-            new TableType("Film", null,
-                new WithNode("film", "FILM", "Film", true, List.of(), List.of(), null, List.of(
-                    new ResolvedKeyColumn("film_id", "FILM_ID"),
-                    new UnresolvedKeyColumn("bad_col")))),
-            List.of("Type 'Film': key column 'bad_col' in @node could not be resolved in the jOOQ table")),
-
-        NODE_WITH_MULTIPLE_UNRESOLVED_KEY_COLUMNS("@node with multiple unresolved key columns — one error per column",
-            new TableType("Film", null,
-                new WithNode("film", "FILM", "Film", true, List.of(), List.of(), null, List.of(
-                    new UnresolvedKeyColumn("bad_col1"),
-                    new UnresolvedKeyColumn("bad_col2")))),
-            List.of(
-                "Type 'Film': key column 'bad_col1' in @node could not be resolved in the jOOQ table",
-                "Type 'Film': key column 'bad_col2' in @node could not be resolved in the jOOQ table"));
+            new TableType("Film", null, RESOLVED_FILM, new NodeRef(null, List.of(new ColumnRef("film_id", "FILM_ID", "")))),
+            List.of());
 
         private final String description;
         private final GraphitronType type;

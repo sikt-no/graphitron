@@ -9,21 +9,22 @@ import java.util.List;
  * for that field, in contrast with reference-path conditions (see {@link ReferencePathElementRef})
  * which affect how tables are joined.
  *
- * <p>The {@code override} flag (on the concrete variants) indicates that this condition should
- * replace any inherited condition rather than combine with it. {@code contextArgs} lists the names
- * of context arguments whose values are threaded through to the condition method.
+ * <p>The {@code override} flag (on {@link ResolvedFieldCondition}) indicates that this condition
+ * should replace any inherited condition rather than combine with it. {@code contextArgs} lists
+ * the names of context arguments whose values are threaded through to the condition method.
+ *
+ * <p>When a {@code @condition} method cannot be resolved via reflection the containing field is
+ * classified as
+ * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} at build time.
  *
  * <ul>
  *   <li>{@link NoFieldCondition} — no {@code @condition} directive is present on the field
  *   <li>{@link ResolvedFieldCondition} — the condition method was found via reflection
- *   <li>{@link UnresolvedFieldCondition} — the condition method could not be resolved;
- *       the {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error
  * </ul>
  */
 public sealed interface FieldConditionRef
     permits FieldConditionRef.NoFieldCondition,
-            FieldConditionRef.ResolvedFieldCondition,
-            FieldConditionRef.UnresolvedFieldCondition {
+            FieldConditionRef.ResolvedFieldCondition {
 
     /** No {@code @condition} directive is present on the field. */
     record NoFieldCondition() implements FieldConditionRef {}
@@ -31,13 +32,6 @@ public sealed interface FieldConditionRef
     /** The condition method was successfully resolved via reflection. */
     record ResolvedFieldCondition(
         MethodRef method,
-        boolean override,
-        List<String> contextArgs
-    ) implements FieldConditionRef {}
-
-    /** The condition method could not be resolved. {@code qualifiedName} is the raw value from the directive. */
-    record UnresolvedFieldCondition(
-        String qualifiedName,
         boolean override,
         List<String> contextArgs
     ) implements FieldConditionRef {}

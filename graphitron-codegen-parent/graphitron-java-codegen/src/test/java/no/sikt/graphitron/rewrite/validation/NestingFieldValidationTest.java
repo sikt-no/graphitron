@@ -19,7 +19,7 @@ class NestingFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("nesting field — always valid",
-            new NestingField("Film", "nested", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef.UnresolvedTable("film"), new FieldWrapper.Single(true))),
+            new NestingField("Film", "nested", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.Single(true))),
             List.of());
 
         private final String description;

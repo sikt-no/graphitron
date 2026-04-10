@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.field.ChildField.LookupTableField;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
+import no.sikt.graphitron.rewrite.type.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LookupTableFieldValidationTest {
 
     private static ReturnTypeRef.TableBoundReturnType filmReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Film", new Plain("film", "FILM", "Film", true, List.of(), List.of()), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", true, List.of(), List.of()), wrapper);
     }
 
     enum Case implements ValidatorCase {

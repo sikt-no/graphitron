@@ -3,9 +3,8 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.type.GraphitronType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.InterfaceType;
-import no.sikt.graphitron.rewrite.type.ParticipantRef.BoundParticipant;
-import no.sikt.graphitron.rewrite.type.ParticipantRef.UnboundParticipant;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
+import no.sikt.graphitron.rewrite.type.ParticipantRef;
+import no.sikt.graphitron.rewrite.type.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -24,27 +23,10 @@ class InterfaceTypeValidationTest {
 
         ALL_BOUND("all implementing types are table-bound — valid",
             new InterfaceType("Media", null, List.of(
-                new BoundParticipant("Film", new Plain("film", "FILM", "Film", true, List.of(), List.of()), null),
-                new BoundParticipant("Actor", new Plain("actor", "ACTOR", "Actor", true, List.of(), List.of()), null)
+                new ParticipantRef("Film", new TableRef("film", "FILM", "Film", true, List.of(), List.of()), null),
+                new ParticipantRef("Actor", new TableRef("actor", "ACTOR", "Actor", true, List.of(), List.of()), null)
             )),
-            List.of()),
-
-        ONE_UNBOUND("one implementing type is not table-bound — error",
-            new InterfaceType("Media", null, List.of(
-                new BoundParticipant("Film", new Plain("film", "FILM", "Film", true, List.of(), List.of()), null),
-                new UnboundParticipant("Description")
-            )),
-            List.of("Type 'Media': implementing type 'Description' is not table-bound (missing @table directive)")),
-
-        ALL_UNBOUND("all implementing types are not table-bound — one error per type",
-            new InterfaceType("Media", null, List.of(
-                new UnboundParticipant("Film"),
-                new UnboundParticipant("Book")
-            )),
-            List.of(
-                "Type 'Media': implementing type 'Film' is not table-bound (missing @table directive)",
-                "Type 'Media': implementing type 'Book' is not table-bound (missing @table directive)"
-            ));
+            List.of());
 
         private final String description;
         private final GraphitronType type;

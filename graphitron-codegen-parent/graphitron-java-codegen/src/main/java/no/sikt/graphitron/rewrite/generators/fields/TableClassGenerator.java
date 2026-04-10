@@ -10,10 +10,9 @@ import java.util.List;
 /**
  * Produces one table class per {@link GraphitronType.TableType} in the schema.
  *
- * <p>Class names come from {@link TableRef.ResolvedTable#javaClassName()}, the simple name of the
+ * <p>Class names come from {@link TableRef#javaClassName()}, the simple name of the
  * jOOQ-generated table class obtained at catalog resolution time via reflection. This respects any
- * custom jOOQ naming strategy. Only resolved tables are generated; unresolved entries (not found
- * in the jOOQ catalog) are skipped. The GraphQL type name may differ from the table class name.
+ * custom jOOQ naming strategy. The GraphQL type name may differ from the table class name.
  *
  * <p>Generated files are placed in the {@code rewrite.tables} sub-package of the configured
  * output package.
@@ -24,9 +23,7 @@ public class TableClassGenerator {
         var codeGenerator = new TableCodeGenerator();
         return schema.types().values().stream()
             .filter(t -> t instanceof GraphitronType.TableType)
-            .map(t -> ((GraphitronType.TableType) t).table())
-            .filter(ref -> ref instanceof TableRef.ResolvedTable)
-            .map(ref -> ((TableRef.ResolvedTable) ref).javaClassName())
+            .map(t -> ((GraphitronType.TableType) t).table().javaClassName())
             .distinct()
             .sorted()
             .map(codeGenerator::generate)

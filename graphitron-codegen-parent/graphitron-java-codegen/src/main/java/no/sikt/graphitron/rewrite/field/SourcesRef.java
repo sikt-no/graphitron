@@ -7,7 +7,10 @@ import java.util.List;
  * of a {@code @service} method.
  *
  * <p>The three recognised variants differ in what the DataLoader key is and how it is constructed
- * from the parent record at runtime:
+ * from the parent record at runtime. When the declared element type cannot be classified the
+ * containing field is classified as
+ * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} at build time (via
+ * the enclosing {@link ServiceMethodRef} failing to resolve).
  *
  * <ul>
  *   <li>{@link RowKeyed} — the service method takes {@code List<RowN<T1,...>>}. The DataLoader key
@@ -17,13 +20,10 @@ import java.util.List;
  *       {@code record.into(field1)}.</li>
  *   <li>{@link TableRecordKeyed} — the service method takes {@code List<SomeTableRecord>}. The
  *       DataLoader key is the whole parent record cast to the declared table-record type.</li>
- *   <li>{@link Unrecognized} — the declared element type could not be classified; the validator
- *       reports an error.</li>
  * </ul>
  */
 public sealed interface SourcesRef
-    permits SourcesRef.RowKeyed, SourcesRef.RecordKeyed,
-            SourcesRef.TableRecordKeyed, SourcesRef.Unrecognized {
+    permits SourcesRef.RowKeyed, SourcesRef.RecordKeyed, SourcesRef.TableRecordKeyed {
 
     /**
      * The service method takes {@code List<RowN<T1,...>>} (e.g. {@code List<Row1<Long>>}).
@@ -50,13 +50,4 @@ public sealed interface SourcesRef
      * extraction is needed.
      */
     record TableRecordKeyed(String fqClassName) implements SourcesRef {}
-
-    /**
-     * The declared element type of the SOURCES {@code List<?>} parameter could not be classified
-     * as any of the recognised variants.
-     *
-     * <p>The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error for
-     * this case.
-     */
-    record Unrecognized(String typeName) implements SourcesRef {}
 }

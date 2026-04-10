@@ -2,9 +2,8 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.type.GraphitronType;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
+import no.sikt.graphitron.rewrite.type.TableRef;
 import no.sikt.graphitron.rewrite.type.GraphitronType.TableType;
-import no.sikt.graphitron.rewrite.type.TableRef.UnresolvedTable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -17,13 +16,9 @@ class TableTypeValidationTest {
 
     enum Case implements TypeValidatorCase {
 
-        RESOLVED("table name resolved to a jOOQ Table",
-            new TableType("Film", null, new Plain("film", "FILM", "Film", true, List.of(), List.of())),
-            List.of()),
-
-        UNRESOLVED_TABLE("table name could not be matched to a jOOQ table in the catalog",
-            new TableType("Film", null, new UnresolvedTable("film")),
-            List.of("Type 'Film': table 'film' could not be resolved in the jOOQ catalog"));
+        RESOLVED("table name resolved to a jOOQ Table — no errors",
+            new TableType("Film", null, new TableRef("film", "FILM", "Film", true, List.of(), List.of()), null),
+            List.of());
 
         private final String description;
         private final GraphitronType type;

@@ -23,7 +23,7 @@ import no.sikt.graphitron.rewrite.field.ChildField.TableField;
 import no.sikt.graphitron.rewrite.field.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.field.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.field.ChildField.UnionField;
-import no.sikt.graphitron.rewrite.field.ColumnRef.ResolvedColumn;
+import no.sikt.graphitron.rewrite.field.ColumnRef;
 import no.sikt.graphitron.rewrite.field.DefaultOrderSpec;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.FieldConditionRef;
@@ -40,9 +40,8 @@ import no.sikt.graphitron.rewrite.type.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.UnionType;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.WithNode;
-import no.sikt.graphitron.rewrite.type.TableRef.UnresolvedTable;
+import no.sikt.graphitron.rewrite.type.NodeRef;
+import no.sikt.graphitron.rewrite.type.TableRef;
 import no.sikt.graphql.schema.SchemaReadingHelper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -87,7 +86,7 @@ class GraphitronSchemaBuilderTest {
                 var col = (ColumnField) schema.field("Film", "title");
                 assertThat(col).isInstanceOf(ColumnField.class);
                 assertThat(col.columnName()).isEqualTo("title");
-                assertThat(col.column()).isInstanceOf(ResolvedColumn.class);
+                assertThat(col.column()).isInstanceOf(ColumnRef.class);
                 assertThat(col.javaNamePresent()).isFalse();
             }),
 
@@ -129,15 +128,12 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Film", "rating")).isInstanceOf(ColumnField.class)),
 
         UNRESOLVED_TABLE(
-            "when the parent table does not exist in the DB, the field becomes an UnclassifiedField",
+            "when the parent table does not exist in the DB, the type becomes UnclassifiedType",
             """
             type NoSuchTable @table(name: "no_such_table") { title: String }
             type Query { x: NoSuchTable }
             """,
-            schema -> {
-                assertThat(((TableType) schema.type("NoSuchTable")).table()).isInstanceOf(UnresolvedTable.class);
-                assertThat(schema.field("NoSuchTable", "title")).isInstanceOf(UnclassifiedField.class);
-            });
+            schema -> assertThat(schema.type("NoSuchTable")).isInstanceOf(UnclassifiedType.class));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -300,7 +296,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var field = (NodeIdField) schema.field("Film", "id");
-                assertThat(field.node()).isInstanceOf(WithNode.class);
+                assertThat(field.node()).isInstanceOf(NodeRef.class);
             }),
 
         WITHOUT_NODE_DIRECTIVE(
@@ -705,7 +701,7 @@ class GraphitronSchemaBuilderTest {
             "@service on a @table parent returning scalar → ServiceRecordField",
             """
             type Film @table(name: "film") {
-                rating: String @service(service: {className: "com.example.RatingSvc", method: "get"})
+                rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
             }
             type Query { film: Film }
             """,
@@ -716,7 +712,7 @@ class GraphitronSchemaBuilderTest {
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
-                language: Language @service(service: {className: "com.example.Svc", method: "get"})
+                language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
             }
             type Query { film: Film }
             """,
@@ -846,7 +842,7 @@ class GraphitronSchemaBuilderTest {
         SERVICE_FIELD_ON_RESULT_TYPE(
             "@record parent + @service + scalar return → ServiceRecordField",
             """
-            type FilmDetails @record { rating: String @service(service: {className: "com.example.RatingSvc", method: "get"}) }
+            type FilmDetails @record { rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) }
             type Film @table(name: "film") { details: FilmDetails }
             type Query { film: Film }
             """,
@@ -941,7 +937,7 @@ class GraphitronSchemaBuilderTest {
             "@service with contextArguments — contextArguments populated",
             """
             type Film @table(name: "film") {
-                rating: String @service(service: {className: "com.example.Svc", method: "get"}, contextArguments: ["tenantId", "userId"])
+                rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}, contextArguments: ["tenantId", "userId"])
             }
             type Query { film: Film }
             """,
@@ -1064,37 +1060,32 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var it = (no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType) schema.type("CustomerInput");
-                assertThat(it.table()).isInstanceOf(no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.class);
+                assertThat(it.table()).isInstanceOf(no.sikt.graphitron.rewrite.type.TableRef.class);
                 assertThat(it.table().tableName()).isEqualTo("customer");
                 assertThat(it.fields()).hasSize(1);
-                assertThat(it.fields().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.type.InputFieldRef.TableInputField.class);
-                var f = (no.sikt.graphitron.rewrite.type.InputFieldRef.TableInputField) it.fields().get(0);
+                assertThat(it.fields().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.type.InputFieldRef.class);
+                var f = (no.sikt.graphitron.rewrite.type.InputFieldRef) it.fields().get(0);
                 assertThat(f.name()).isEqualTo("customerId");
                 assertThat(f.javaColumnName()).isEqualTo("CUSTOMER_ID");
             }),
 
         EXPLICIT_TABLE_UNRESOLVED_COLUMN(
-            "input type with @table but unknown column → UnresolvedInputField",
+            "input type with @table but unknown column → UnclassifiedType",
             """
             input CustomerInput @table(name: "customer") { noSuchField: Int! }
             type Query { x: String }
             """,
-            schema -> {
-                var it = (no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType) schema.type("CustomerInput");
-                assertThat(it.fields().get(0))
-                    .isInstanceOf(no.sikt.graphitron.rewrite.type.InputFieldRef.UnresolvedInputField.class);
-            }),
+            schema -> assertThat(schema.type("CustomerInput"))
+                .isInstanceOf(no.sikt.graphitron.rewrite.type.GraphitronType.UnclassifiedType.class)),
 
         EXPLICIT_TABLE_UNRESOLVED_TABLE(
-            "input type with @table pointing to unknown DB table → TableInputType with UnresolvedTable",
+            "input type with @table pointing to unknown DB table → UnclassifiedType",
             """
             input NoSuchInput @table(name: "no_such_table") { id: Int! }
             type Query { x: String }
             """,
-            schema -> {
-                var it = (no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType) schema.type("NoSuchInput");
-                assertThat(it.table()).isInstanceOf(no.sikt.graphitron.rewrite.type.TableRef.UnresolvedTable.class);
-            }),
+            schema -> assertThat(schema.type("NoSuchInput"))
+                .isInstanceOf(no.sikt.graphitron.rewrite.type.GraphitronType.UnclassifiedType.class)),
 
         IMPLICIT_TABLE_FROM_LOOKUP_FIELD(
             "input type without @table used on a QueryLookupTableField → promoted to TableInputType",
@@ -1109,7 +1100,7 @@ class GraphitronSchemaBuilderTest {
                 var it = (no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType) schema.type("CustomerInput");
                 assertThat(it.table().tableName()).isEqualTo("customer");
                 assertThat(it.fields().get(0))
-                    .isInstanceOf(no.sikt.graphitron.rewrite.type.InputFieldRef.TableInputField.class);
+                    .isInstanceOf(no.sikt.graphitron.rewrite.type.InputFieldRef.class);
             }),
 
         IMPLICIT_TABLE_CONFLICT(
@@ -1152,7 +1143,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 assertThat(schema.type("Film")).isInstanceOf(TableType.class);
-                assertThat(((TableType) schema.type("Film")).table()).isInstanceOf(ResolvedTable.class);
+                assertThat(((TableType) schema.type("Film")).table()).isInstanceOf(TableRef.class);
             }),
 
         TABLE_NAME_DEFAULTS_TO_LOWERCASE_TYPE_NAME(
@@ -1479,11 +1470,11 @@ class GraphitronSchemaBuilderTest {
         TABLE_INTERFACE_QUERY_FIELD(
             "field returning table-interface type → QueryTableInterfaceField",
             """
-            interface Named @table(name: "named") @discriminate(on: "type") { name: String }
-            type Film implements Named @table(name: "film") { name: String }
-            type Query { named: Named }
+            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+            type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+            type Query { media: MediaItem }
             """,
-            schema -> assertThat(schema.field("Query", "named")).isInstanceOf(QueryField.QueryTableInterfaceField.class)),
+            schema -> assertThat(schema.field("Query", "media")).isInstanceOf(QueryField.QueryTableInterfaceField.class)),
 
         INTERFACE_QUERY_FIELD(
             "field returning plain interface → QueryInterfaceField",
@@ -1509,7 +1500,7 @@ class GraphitronSchemaBuilderTest {
             """
             type Film @table(name: "film") { title: String }
             type Query {
-                externalFilm: Film @service(service: {className: "com.example.Svc", method: "get"})
+                externalFilm: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
             }
             """,
             schema -> {
@@ -1560,7 +1551,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { title: String }
             type Query { x: String }
             type Mutation {
-                externalMutation: Film @service(service: {className: "com.example.Svc", method: "run"})
+                externalMutation: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "run"})
             }
             """,
             schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.MutationServiceTableField.class));
@@ -1694,7 +1685,7 @@ class GraphitronSchemaBuilderTest {
             "@service and @externalField → UnclassifiedField with reason naming both",
             """
             type Film @table(name: "film") {
-                title: String @service(service: {className: "com.example.Svc", method: "get"}) @externalField
+                title: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) @externalField
             }
             type Query { film: Film }
             """,
@@ -1706,7 +1697,7 @@ class GraphitronSchemaBuilderTest {
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
                 language: Language
-                    @service(service: {className: "com.example.Svc", method: "get"})
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
                     @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
             }
             type Query { film: Film }
@@ -1717,7 +1708,7 @@ class GraphitronSchemaBuilderTest {
             "@service and @nodeId → UnclassifiedField with reason naming both",
             """
             type Film @table(name: "film") {
-                id: String @service(service: {className: "com.example.Svc", method: "get"}) @nodeId
+                id: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) @nodeId
             }
             type Query { film: Film }
             """,
@@ -1740,7 +1731,7 @@ class GraphitronSchemaBuilderTest {
             "@notGenerated and @service → UnclassifiedField with reason naming both",
             """
             type Film @table(name: "film") {
-                title: String @notGenerated @service(service: {className: "com.example.Svc", method: "get"})
+                title: String @notGenerated @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
             }
             type Query { film: Film }
             """,
@@ -1751,7 +1742,7 @@ class GraphitronSchemaBuilderTest {
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
-                language: Language @multitableReference @service(service: {className: "com.example.Svc", method: "get"})
+                language: Language @multitableReference @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
             }
             type Query { film: Film }
             """,
@@ -1793,7 +1784,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { title: String }
             type Query {
                 film(id: ID @lookupKey): Film
-                    @service(service: {className: "com.example.Svc", method: "get"})
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
             }
             """,
             "Query", "film", "@service", "@lookupKey"),
@@ -1804,7 +1795,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { title: String }
             type Query {
                 film: Film
-                    @service(service: {className: "com.example.Svc", method: "get"})
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
                     @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
             }
             """,
@@ -1828,7 +1819,7 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             type Mutation {
                 createFilm: Film
-                    @service(service: {className: "com.example.Svc", method: "run"})
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "run"})
                     @mutation(typeName: INSERT)
             }
             """,
@@ -1865,7 +1856,7 @@ class GraphitronSchemaBuilderTest {
         var schema = build("""
             type Film @table(name: "film") { title: String }
             type Query {
-                film: Film @service(service: {className: "com.example.Svc", method: "get"})
+                film: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
             }
             """);
         assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.QueryServiceTableField.class);

@@ -25,7 +25,7 @@ class ServiceFieldValidationTest {
 
     // ===== ServiceRecordField — non-table return type =====
 
-    private static final ServiceMethodRef RESOLVED_METHOD = new ServiceMethodRef.Resolved(List.of(), "void");
+    private static final ServiceMethodRef RESOLVED_METHOD = new ServiceMethodRef(List.of(), "void");
 
     enum RecordCase implements ValidatorCase {
 
@@ -38,12 +38,7 @@ class ServiceFieldValidationTest {
                 new ConditionOnlyRef(new MethodRef("com.example.Conditions.liftCondition", "org.jooq.Condition",
                     List.of(new ParamInfo("org.jooq.DSLContext", "ctx"))))),
                 null, List.of(), List.of(), RESOLVED_METHOD),
-            List.of()),
-
-        UNRESOLVED_METHOD("service method could not be reflected — validation error",
-            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(),
-                null, List.of(), List.of(), new ServiceMethodRef.Unresolved("method not found")),
-            List.of("Field 'externalChild': service method could not be resolved — method not found"));
+            List.of());
 
         private final String description;
         private final GraphitronField field;
@@ -72,24 +67,13 @@ class ServiceFieldValidationTest {
 
     enum TableCase implements ValidatorCase {
 
-        SOURCES_WRONG_TYPE("SOURCES param element type not recognized — validator rejects it",
-            new ServiceTableField("Film", "externalChild", null,
-                new ReturnTypeRef.TableBoundReturnType("Film",
-                    new TableRef.ResolvedTable.Plain("film", "FILM", "Film", true, List.of("film_id"), List.of("java.lang.Integer")),
-                    new FieldWrapper.Single(true)),
-                List.of(), null, List.of(), List.of(),
-                new ServiceMethodRef.Resolved(
-                    List.of(new ServiceParam.SourcesParam("filmKeys", new SourcesRef.Unrecognized("java.util.List<java.lang.String>"))),
-                    "java.lang.Object")),
-            List.of("Field 'externalChild': SOURCES parameter 'filmKeys' type is not recognized — expected List<RowN<...>>, List<RecordN<...>>, or List<SomeTableRecord>, found: java.util.List<java.lang.String>")),
-
         SOURCES_CORRECT_TYPE("SOURCES param is RowKeyed — no error (parent is RootType, no PK cross-check)",
             new ServiceTableField("Film", "externalChild", null,
                 new ReturnTypeRef.TableBoundReturnType("Film",
-                    new TableRef.ResolvedTable.Plain("film", "FILM", "Film", true, List.of("film_id"), List.of("java.lang.Integer")),
+                    new TableRef("film", "FILM", "Film", true, List.of("film_id"), List.of("java.lang.Integer")),
                     new FieldWrapper.Single(true)),
                 List.of(), null, List.of(), List.of(),
-                new ServiceMethodRef.Resolved(
+                new ServiceMethodRef(
                     List.of(new ServiceParam.SourcesParam("filmKeys", new SourcesRef.RowKeyed(List.of("java.lang.Integer")))),
                     "java.lang.Object")),
             List.of());

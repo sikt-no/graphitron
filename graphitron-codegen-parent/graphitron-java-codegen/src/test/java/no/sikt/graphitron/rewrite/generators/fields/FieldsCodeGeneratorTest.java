@@ -43,13 +43,13 @@ class FieldsCodeGeneratorTest {
 
     private static GraphitronField field(String name) {
         return new ChildField.ColumnField("Film", name, null, name,
-            new ColumnRef.ResolvedColumn("COL", "java.lang.String"), false);
+            new ColumnRef("COL", "", "java.lang.String"), false);
     }
 
     private static GraphitronField splitQueryField(String parentType, String name) {
         return new ChildField.SplitTableField(parentType, name, null,
             new ReturnTypeRef.TableBoundReturnType("Film",
-                new TableRef.ResolvedTable.Plain("film", "FILM", "Film", true, List.of(), List.of()),
+                new TableRef("film", "FILM", "Film", true, List.of(), List.of()),
                 new FieldWrapper.List(false, false, null, List.of())),
             List.of(), new FieldConditionRef.NoFieldCondition(), List.of());
     }
@@ -59,9 +59,9 @@ class FieldsCodeGeneratorTest {
             ? (FieldWrapper) new FieldWrapper.List(true, true, null, List.of())
             : new FieldWrapper.Single(true);
         var returnType = new ReturnTypeRef.TableBoundReturnType("Film",
-            new TableRef.ResolvedTable.Plain("film", "FILM", "Film", true, List.of(), List.of()),
+            new TableRef("film", "FILM", "Film", true, List.of(), List.of()),
             returnWrapper);
-        var smr = new ServiceMethodRef.Resolved(
+        var smr = new ServiceMethodRef(
             List.of(
                 new ServiceMethodRef.ServiceParam.SourcesParam("keys", new SourcesRef.RowKeyed(List.of("java.lang.Integer"))),
                 new ServiceMethodRef.ServiceParam.ArgParam("filter", "java.lang.String"),
@@ -85,7 +85,7 @@ class FieldsCodeGeneratorTest {
     }
 
     private static TypeSpec specWithServiceField(String parentType, String fieldName, boolean isList) {
-        var parentTable = new TableRef.ResolvedTable.Plain("language", "LANGUAGE", "Language", true, List.of("language_id"), List.of("java.lang.Integer"));
+        var parentTable = new TableRef("language", "LANGUAGE", "Language", true, List.of("language_id"), List.of("java.lang.Integer"));
         return GEN.generate(parentType, parentTable, List.of(serviceField(parentType, fieldName, isList)));
     }
 
@@ -332,21 +332,6 @@ class FieldsCodeGeneratorTest {
     void serviceField_single_codeContainsSelectOne() {
         var m = method(specWithServiceField("Language", "film", false), "loadFilm");
         assertThat(m.code().toString()).contains("selectOne");
-    }
-
-    @Test
-    void serviceField_unresolvedRef_fallsBackToObjectStub() {
-        var unresolvedField = new ChildField.ServiceTableField(
-            "Language", "films", null,
-            new ReturnTypeRef.TableBoundReturnType("Film",
-                new TableRef.ResolvedTable.Plain("film", "FILM", "Film", true, List.of(), List.of()),
-                new FieldWrapper.List(true, true, null, List.of())),
-            List.of(), new ExternalRef("no.example.FilmService", "getFilms"),
-            List.of(), List.of(), new ServiceMethodRef.Unresolved("test"));
-        var parentTable = new TableRef.ResolvedTable.Plain("language", "LANGUAGE", "Language", true, List.of("language_id"), List.of("java.lang.Integer"));
-        var m = method(GEN.generate("Language", parentTable, List.of(unresolvedField)), "films");
-        assertThat(m.returnType().toString()).isEqualTo("java.lang.Object");
-        assertThat(m.code().toString()).contains("UnsupportedOperationException()");
     }
 
     // ===== @service field — rows method =====
