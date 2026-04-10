@@ -47,9 +47,9 @@ class FieldsCodeGeneratorTest {
     }
 
     private static GraphitronField splitQueryField(String parentType, String name) {
-        return new ChildField.TableField(parentType, name, null,
+        return new ChildField.SplitTableField(parentType, name, null,
             new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.List(false, false, null, List.of())),
-            List.of(), new FieldConditionRef.NoFieldCondition(), true, List.of());
+            List.of(), new FieldConditionRef.NoFieldCondition(), List.of());
     }
 
     private static GraphitronField serviceField(String parentType, String name, boolean isList) {

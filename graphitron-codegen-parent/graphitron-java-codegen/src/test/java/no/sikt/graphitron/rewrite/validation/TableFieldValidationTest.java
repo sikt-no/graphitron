@@ -34,53 +34,53 @@ class TableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
-            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
-            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(new FkRef("film_actor_film_id_fkey", "film", "film_actor", List.of(), List.of())), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(new FkRef("film_actor_film_id_fkey", "film", "film_actor", List.of(), List.of())), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
         WITH_FK_AND_CONDITION("FK + resolved condition method in reference path",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(
                 new FkWithConditionRef("film_actor_film_id_fkey", "film", "film_actor",
-                    new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()), List.of(), List.of())), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+                    new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()), List.of(), List.of())), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
         WITH_CONDITION_ONLY("condition method only — no FK",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(
-                new ConditionOnlyRef(new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+                new ConditionOnlyRef(new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
         UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
-            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(new UnresolvedKeyRef("FILM_ACTOR_FK")), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(new UnresolvedKeyRef("FILM_ACTOR_FK")), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of("Field 'actors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog")),
 
         UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(
-                new UnresolvedConditionRef("com.example.Conditions.actorCondition")), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+                new UnresolvedConditionRef("com.example.Conditions.actorCondition")), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of("Field 'actors': condition method 'com.example.Conditions.actorCondition' could not be resolved")),
 
         UNRESOLVED_KEY_AND_CONDITION("both key and condition specified, neither could be resolved — two errors",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(
-                new UnresolvedKeyAndConditionRef("FILM_ACTOR_FK", "com.example.Conditions.actorCondition")), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+                new UnresolvedKeyAndConditionRef("FILM_ACTOR_FK", "com.example.Conditions.actorCondition")), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of(
                 "Field 'actors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog",
                 "Field 'actors': condition method 'com.example.Conditions.actorCondition' could not be resolved")),
 
         FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause; no errors",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), new FieldConditionRef.ResolvedFieldCondition(
-                new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()), false, List.of()), false, List.of()),
+                new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()), false, List.of()), List.of()),
             List.of()),
 
         FIELD_CONDITION_RESOLVED_OVERRIDE("resolved @condition with override:true — no errors",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), new FieldConditionRef.ResolvedFieldCondition(
-                new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()), true, List.of()), false, List.of()),
+                new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()), true, List.of()), List.of()),
             List.of()),
 
         FIELD_CONDITION_UNRESOLVED("unresolved @condition method on field — validation error",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), new FieldConditionRef.UnresolvedFieldCondition(
-                "com.example.Conditions.missingCondition", false, List.of()), false, List.of()),
+                "com.example.Conditions.missingCondition", false, List.of()), List.of()),
             List.of("Field 'actors': condition method 'com.example.Conditions.missingCondition' could not be resolved")),
 
         DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields — valid",
@@ -88,43 +88,43 @@ class TableFieldValidationTest {
                 actorReturn(new FieldWrapper.List(true, true,
                     new DefaultOrderSpec(new OrderSpec.FieldsOrder(List.of(new SortFieldSpec("actor_id", null))), "ASC"),
                     List.of())),
-                List.of(), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+                List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
         DEFAULT_ORDER_INDEX("@defaultOrder with named index — valid",
             new TableField("Film", "actors", null,
                 actorReturn(new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.IndexOrder("IDX_ACTOR_LAST_NAME"), "ASC"), List.of())),
-                List.of(), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+                List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
         DEFAULT_ORDER_PRIMARY_KEY("@defaultOrder with primaryKey mode — valid",
             new TableField("Film", "actors", null,
                 actorReturn(new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.PrimaryKeyOrder(), "ASC"), List.of())),
-                List.of(), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+                List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
         DEFAULT_ORDER_UNRESOLVED_INDEX("@defaultOrder references an index that could not be found — validation error",
             new TableField("Film", "actors", null,
                 actorReturn(new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedIndexOrder("IDX_MISSING"), "ASC"), List.of())),
-                List.of(), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+                List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of("Field 'actors': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
 
         DEFAULT_ORDER_UNRESOLVED_PRIMARY_KEY("@defaultOrder uses primaryKey but the table has none — validation error",
             new TableField("Film", "actors", null,
                 actorReturn(new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "ASC"), List.of())),
-                List.of(), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+                List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of("Field 'actors': primary key could not be resolved — the table may not have one")),
 
         CONNECTION_DEFAULT_ORDER_UNRESOLVED_INDEX("connection cardinality: @defaultOrder references an index that could not be found — validation error",
             new TableField("Film", "actors", null,
                 actorReturn(new FieldWrapper.Connection(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedIndexOrder("IDX_MISSING"), "ASC"), List.of())),
-                List.of(), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+                List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of("Field 'actors': index 'IDX_MISSING' could not be resolved in the jOOQ catalog")),
 
         CONNECTION_DEFAULT_ORDER_UNRESOLVED_PRIMARY_KEY("connection cardinality: @defaultOrder uses primaryKey but the table has none — validation error",
             new TableField("Film", "actors", null,
                 actorReturn(new FieldWrapper.Connection(true, true, new DefaultOrderSpec(new OrderSpec.UnresolvedPrimaryKeyOrder(), "ASC"), List.of())),
-                List.of(), new FieldConditionRef.NoFieldCondition(), false, List.of()),
+                List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of("Field 'actors': primary key could not be resolved — the table may not have one"));
 
         private final String description;

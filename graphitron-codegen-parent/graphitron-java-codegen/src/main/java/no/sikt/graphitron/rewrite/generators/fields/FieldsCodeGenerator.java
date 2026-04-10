@@ -83,9 +83,9 @@ public class FieldsCodeGenerator {
                 builder.addMethod(buildServiceDataFetcher(sf, smr, tb, prt, className));
                 builder.addMethod(buildServiceRowsMethod(sf, smr, tb, rt, prt));
                 needsGraphitronContextHelper = true;
-            } else if (field instanceof ChildField.TableField tf && tf.splitQuery()) {
-                builder.addMethod(buildSplitQueryDataFetcher(tf));
-                builder.addMethod(buildSplitRowsMethod(tf));
+            } else if (field instanceof ChildField.SplitTableField stf) {
+                builder.addMethod(buildSplitQueryDataFetcher(stf));
+                builder.addMethod(buildSplitRowsMethod(stf));
             } else {
                 builder.addMethod(buildFieldStub(field.name()));
             }
@@ -353,7 +353,7 @@ public class FieldsCodeGenerator {
         return ParameterizedTypeName.get(recordNClass, typeArgs);
     }
 
-    private MethodSpec buildSplitQueryDataFetcher(ChildField.TableField field) {
+    private MethodSpec buildSplitQueryDataFetcher(ChildField.SplitTableField field) {
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, ParameterizedTypeName.get(LIST, RECORD));
         return MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -363,7 +363,7 @@ public class FieldsCodeGenerator {
             .build();
     }
 
-    private MethodSpec buildSplitRowsMethod(ChildField.TableField field) {
+    private MethodSpec buildSplitRowsMethod(ChildField.SplitTableField field) {
         var sourcesType = ParameterizedTypeName.get(LIST, RECORD);
         return MethodSpec.methodBuilder("rows" + capitalize(field.name()))
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)

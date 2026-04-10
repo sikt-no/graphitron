@@ -561,16 +561,23 @@ public class GraphitronSchemaBuilder {
             var args = parseArguments(fieldDef);
             resolveInputTypeArgs(args, returnType);
             var referencePath = parseReferencePath(fieldDef);
-            if (fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY) && hasLookupKeyAnywhere(fieldDef)) {
+            boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
+            boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
+            if (hasSplitQuery && hasLookupKey) {
+                return new no.sikt.graphitron.rewrite.field.ChildField.SplitLookupTableField(
+                    parentTypeName, name, location, returnType, referencePath, args);
+            }
+            if (!hasSplitQuery && hasLookupKey) {
                 return new no.sikt.graphitron.rewrite.field.ChildField.LookupTableField(
                     parentTypeName, name, location, returnType, referencePath, args);
             }
+            if (hasSplitQuery) {
+                return new no.sikt.graphitron.rewrite.field.ChildField.SplitTableField(
+                    parentTypeName, name, location, returnType,
+                    referencePath, new FieldConditionRef.NoFieldCondition(), args);
+            }
             return new TableField(parentTypeName, name, location,
-                returnType,
-                referencePath,
-                new FieldConditionRef.NoFieldCondition(),
-                fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY),
-                args);
+                returnType, referencePath, new FieldConditionRef.NoFieldCondition(), args);
         }
 
         if (elementType instanceof TableInterfaceType) {

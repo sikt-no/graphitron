@@ -16,6 +16,8 @@ import no.sikt.graphitron.rewrite.field.ChildField.NodeIdField;
 import no.sikt.graphitron.rewrite.field.ChildField.NodeIdReferenceField;
 import no.sikt.graphitron.rewrite.field.ChildField.PropertyField;
 import no.sikt.graphitron.rewrite.field.ChildField.ServiceField;
+import no.sikt.graphitron.rewrite.field.ChildField.LookupTableField;
+import no.sikt.graphitron.rewrite.field.ChildField.SplitTableField;
 import no.sikt.graphitron.rewrite.field.ChildField.TableField;
 import no.sikt.graphitron.rewrite.field.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.field.ChildField.TableMethodField;
@@ -418,7 +420,7 @@ class GraphitronSchemaBuilderTest {
 
     enum TableFieldCase {
         SINGLE_RETURN_TYPE(
-            "object return type → Single cardinality, no splitQuery, NoFieldCondition, empty referencePath",
+            "object return type → Single cardinality, NoFieldCondition, empty referencePath",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") { language: Language }
@@ -427,7 +429,6 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var tf = (TableField) schema.field("Film", "language");
                 assertThat(tf.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
-                assertThat(tf.splitQuery()).isFalse();
                 assertThat(tf.condition()).isInstanceOf(FieldConditionRef.NoFieldCondition.class);
                 assertThat(tf.referencePath()).isEmpty();
             }),
@@ -459,13 +460,13 @@ class GraphitronSchemaBuilderTest {
             }),
 
         SPLIT_QUERY(
-            "@splitQuery sets splitQuery to true",
+            "@splitQuery — field classified as SplitTableField",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") { actors: [Actor!]! @splitQuery }
             type Query { film: Film }
             """,
-            schema -> assertThat(((TableField) schema.field("Film", "actors")).splitQuery()).isTrue()),
+            schema -> assertThat(schema.field("Film", "actors")).isInstanceOf(SplitTableField.class)),
 
         WITH_REFERENCE_PATH(
             "@reference(path:) populates the referencePath with one FkRef",
@@ -924,7 +925,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         TABLE_FIELD_LOOKUP_KEY_ARG(
-            "@lookupKey on a child-field argument — argument is captured, field remains TableField",
+            "@lookupKey on a child-field argument (no @splitQuery) — field classified as LookupTableField",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
@@ -933,7 +934,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.field.ChildField.TableField) schema.field("Film", "actor");
+                var f = (no.sikt.graphitron.rewrite.field.ChildField.LookupTableField) schema.field("Film", "actor");
                 assertThat(f.arguments()).hasSize(1);
                 assertThat(f.arguments().get(0).name()).isEqualTo("id");
                 assertThat(f.arguments().get(0).orderBy()).isFalse();

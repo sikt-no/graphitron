@@ -46,7 +46,7 @@ class ArgumentValidationTest {
     }
 
     private static TableField tableField(List<ArgumentSpec> args) {
-        return new TableField("Film", "actors", null, FILM_RETURN, List.of(), new FieldConditionRef.NoFieldCondition(), false, args);
+        return new TableField("Film", "actors", null, FILM_RETURN, List.of(), new FieldConditionRef.NoFieldCondition(), args);
     }
 
     enum Case {

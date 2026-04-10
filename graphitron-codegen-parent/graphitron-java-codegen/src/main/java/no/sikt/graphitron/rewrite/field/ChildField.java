@@ -17,7 +17,9 @@ import java.util.List;
 public sealed interface ChildField extends GraphitronField
     permits ChildField.ColumnField, ChildField.ColumnReferenceField,
             ChildField.NodeIdField, ChildField.NodeIdReferenceField,
-            ChildField.TableField, ChildField.LookupTableField, ChildField.TableMethodField,
+            ChildField.TableField, ChildField.SplitTableField,
+            ChildField.LookupTableField, ChildField.SplitLookupTableField,
+            ChildField.TableMethodField,
             ChildField.TableInterfaceField, ChildField.InterfaceField, ChildField.UnionField,
             ChildField.NestingField, ChildField.ConstructorField,
             ChildField.ServiceField, ChildField.ComputedField, ChildField.PropertyField,
@@ -136,7 +138,8 @@ public sealed interface ChildField extends GraphitronField
     ) implements ChildField {}
 
     /**
-     * A child field whose return type is annotated with {@code @table}.
+     * A child field whose return type is annotated with {@code @table} — inline join or DataLoader
+     * depending on source context. No {@code @splitQuery}, no {@code @lookupKey}.
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
      * schema, with the {@link FieldWrapper} embedded — {@link FieldWrapper.Single} for a 1:1 join,
@@ -152,8 +155,8 @@ public sealed interface ChildField extends GraphitronField
      * {@link FieldConditionRef.NoFieldCondition} when no {@code @condition} is present. The validator
      * reports an error for an {@link FieldConditionRef.UnresolvedFieldCondition}.
      *
-     * <p>{@code splitQuery} is {@code true} when the {@code @splitQuery} directive is present. This
-     * causes Graphitron to use a DataLoader instead of an inline subquery.
+     * <p>On a table-mapped parent this generates an inline SQL JOIN. On a result-mapped parent
+     * it always starts a new scope via DataLoader with a derived source table.
      */
     record TableField(
         String parentTypeName,
@@ -162,19 +165,42 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef returnType,
         List<ReferencePathElementRef> referencePath,
         FieldConditionRef condition,
-        boolean splitQuery,
         List<ArgumentSpec> arguments
     ) implements ChildField {}
 
     /**
-     * A {@code @splitQuery} child field whose arguments carry {@code @lookupKey} — a result mapped
-     * LookupTableField. Uses a derived source table (from parent records) and a derived target table
-     * (from {@code @lookupKey} argument values).
+     * A child field whose return type is annotated with {@code @table} and which carries
+     * {@code @splitQuery} — always a DataLoader, regardless of source context.
      *
-     * <p>Classified when {@code @splitQuery} is present on the field and {@code @lookupKey} appears
-     * on any argument (including nested inside input types). Distinct from {@link TableField} because
-     * the lookup invariant applies: the result count is always exactly N × M (N parent source rows ×
-     * M lookup argument values), which blocks {@code @condition} and connection-cardinality returns.
+     * <p>Identical to {@link TableField} in structure, but classified separately because
+     * {@code @splitQuery} forces a new scope via DataLoader even when the parent is table-mapped.
+     * Without {@code @splitQuery} a table-mapped parent would generate an inline JOIN instead.
+     *
+     * <p>{@code condition} is the resolved or unresolved field-level {@code @condition} directive, or
+     * {@link FieldConditionRef.NoFieldCondition} when no {@code @condition} is present.
+     */
+    record SplitTableField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef returnType,
+        List<ReferencePathElementRef> referencePath,
+        FieldConditionRef condition,
+        List<ArgumentSpec> arguments
+    ) implements ChildField {}
+
+    /**
+     * A child field whose arguments carry {@code @lookupKey} — no {@code @splitQuery}.
+     *
+     * <p>Classified when {@code @lookupKey} appears on any argument (including nested inside input
+     * types) and {@code @splitQuery} is absent. The lookup invariant applies: the result count is
+     * always exactly N × M (N parent source rows × M lookup argument values), which blocks
+     * {@code @condition} and connection-cardinality returns.
+     *
+     * <p>On a table-mapped parent this generates a correlated multiset subquery inlined in the
+     * parent SELECT (derived target table only, no DataLoader). On a result-mapped parent it starts
+     * a new scope via DataLoader using both a derived source table (N parent rows) and the derived
+     * target table (M lookup rows, identical for all N).
      *
      * <p>{@code returnType} carries the resolved return type with its {@link FieldWrapper}. Only
      * {@link FieldWrapper.Single} and {@link FieldWrapper.List} are valid; the validator rejects
@@ -183,6 +209,28 @@ public sealed interface ChildField extends GraphitronField
      * <p>{@code referencePath} and {@code arguments} have the same semantics as {@link TableField}.
      */
     record LookupTableField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef returnType,
+        List<ReferencePathElementRef> referencePath,
+        List<ArgumentSpec> arguments
+    ) implements ChildField {}
+
+    /**
+     * A child field whose arguments carry {@code @lookupKey} and which also carries
+     * {@code @splitQuery} — always a DataLoader, regardless of source context.
+     *
+     * <p>Identical to {@link LookupTableField} in structure, but classified separately because
+     * {@code @splitQuery} forces a DataLoader even when the parent is table-mapped, producing
+     * a full N-source × M-lookup DataLoader with both a derived source table and a derived target
+     * table. Without {@code @splitQuery} a table-mapped parent would instead inline a correlated
+     * multiset subquery.
+     *
+     * <p>{@code returnType}, {@code referencePath}, and {@code arguments} have the same semantics
+     * as {@link LookupTableField}.
+     */
+    record SplitLookupTableField(
         String parentTypeName,
         String name,
         SourceLocation location,

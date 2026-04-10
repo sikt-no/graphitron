@@ -85,7 +85,9 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.field.ChildField.NodeIdField f             -> validateNodeIdField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.NodeIdReferenceField f    -> validateNodeIdReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.TableField f              -> validateTableField(f, types, errors);
+            case no.sikt.graphitron.rewrite.field.ChildField.SplitTableField f        -> validateSplitTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.LookupTableField f       -> validateLookupTableField(f, types, errors);
+            case no.sikt.graphitron.rewrite.field.ChildField.SplitLookupTableField f  -> validateSplitLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.TableMethodField f        -> validateTableMethodField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.TableInterfaceField f     -> validateTableInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.InterfaceField f          -> validateInterfaceField(f, errors);
@@ -411,7 +413,29 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
+    private void validateSplitTableField(no.sikt.graphitron.rewrite.field.ChildField.SplitTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        if (field.condition() instanceof FieldConditionRef.UnresolvedFieldCondition u) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': condition method '" + u.qualifiedName() + "' could not be resolved",
+                field.location()
+            ));
+        }
+        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
+    }
     private void validateLookupTableField(no.sikt.graphitron.rewrite.field.ChildField.LookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.field.FieldWrapper.Connection) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': lookup fields must not return a connection",
+                field.location()
+            ));
+        }
+        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
+    }
+    private void validateSplitLookupTableField(no.sikt.graphitron.rewrite.field.ChildField.SplitLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.field.FieldWrapper.Connection) {
             errors.add(new ValidationError(

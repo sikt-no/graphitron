@@ -33,9 +33,10 @@ A Graphitron scope corresponds to one SQL statement. Fields within a scope contr
 | Boundary | Trigger |
 |---|---|
 | **Enter** | An unmapped root field reaches a table-mapped type — the first scope starts |
-| **Split** | `@splitQuery` on a `TableField` — new scope via DataLoader |
-| **Lookup split** | `@splitQuery` + `@lookupKey` on a `LookupTableField` — result-mapped parent: new scope via DataLoader (derived source + derived target); table-mapped parent: correlated subquery inlined in the current scope (derived target only, no DataLoader) |
-| **Record handoff** | A `TableField` on a result-mapped type, or a user-provided return (`@service`, `@tableMethod`) reaching a table-mapped type — new scope via DataLoader, keyed by the parent or returned `TableRecord`'s PK |
+| **Split** | `@splitQuery` on a `SplitTableField` — new scope via DataLoader |
+| **Lookup** | `@lookupKey` (no `@splitQuery`) on a `LookupTableField` — result-mapped parent: new scope via DataLoader (derived source + derived target); table-mapped parent: correlated subquery inlined in the current scope (derived target only, no DataLoader) |
+| **Split lookup** | `@splitQuery` + `@lookupKey` on a `SplitLookupTableField` — always a new scope via DataLoader with both derived tables, regardless of parent context |
+| **Record handoff** | A `TableField` or `LookupTableField` on a result-mapped type, or a user-provided return (`@service`, `@tableMethod`) reaching a table-mapped type — new scope via DataLoader, keyed by the parent or returned `TableRecord`'s PK |
 
 `@service` fields use a **private scope** — they create their own SQL statement independently and do not participate in any Graphitron-managed scope.
 
@@ -70,8 +71,8 @@ At large batch sizes, `VALUES` literals add parse overhead; switching to `unnest
 
 | Property | Effect |
 |---|---|
-| **`@splitQuery`** | Forces a new scope via DataLoader instead of a SQL join. Valid on `TableField`; error on result-mapped fields (they always start a new scope implicitly). |
-| **`@lookupKey`** | Argument values become the derived target table. Adds strict lookup semantics: `@condition` and pagination are both blocked to preserve the N × M result invariant. Always used with `@splitQuery`. |
+| **`@splitQuery`** | Forces a new scope via DataLoader instead of an inline SQL join. On a `TableField` (no `@lookupKey`) this produces a `SplitTableField`; on a field with `@lookupKey` this produces a `SplitLookupTableField`. Error on result-mapped fields (they always start a new scope implicitly). |
+| **`@lookupKey`** | Argument values become the derived target table. Adds strict lookup semantics: `@condition` and pagination are both blocked to preserve the N × M result invariant. Without `@splitQuery` produces a `LookupTableField`; combined with `@splitQuery` produces a `SplitLookupTableField`. |
 
 ---
 
@@ -219,7 +220,9 @@ GraphitronField
 │   ├── NodeIdField
 │   ├── NodeIdReferenceField
 │   ├── TableField
+│   ├── SplitTableField
 │   ├── LookupTableField
+│   ├── SplitLookupTableField
 │   ├── TableMethodField
 │   ├── TableInterfaceField
 │   ├── InterfaceField
@@ -282,8 +285,10 @@ Source context at generation time is derived from `schema.type(parentTypeName)` 
 
 | Field type | Valid source contexts | Description |
 |---|---|---|
-| `TableField` | Table-mapped, result-mapped | Table-mapped target. Handles projection, ordering, pagination, nested scopes. In result-mapped context starts a new scope via DataLoader with a derived source table. |
-| `LookupTableField` | Table-mapped, result-mapped | `@splitQuery` + `@lookupKey`. Argument values form the derived target table. Table-mapped parent: correlated multiset subquery inlined in parent SELECT, no DataLoader. Result-mapped parent: new scope via DataLoader using both a derived source table (N parent rows) and the derived target table (M lookup rows, identical for all N). |
+| `TableField` | Table-mapped, result-mapped | Table-mapped target. No `@splitQuery`, no `@lookupKey`. Handles projection, ordering, pagination, nested scopes. In result-mapped context starts a new scope via DataLoader with a derived source table. |
+| `SplitTableField` | Table-mapped, result-mapped | `@splitQuery`, no `@lookupKey`. Always a DataLoader with a derived source table, even on a table-mapped parent. |
+| `LookupTableField` | Table-mapped, result-mapped | `@lookupKey`, no `@splitQuery`. Argument values form the derived target table. Table-mapped parent: correlated multiset subquery inlined in parent SELECT, no DataLoader. Result-mapped parent: new scope via DataLoader using both a derived source table (N parent rows) and the derived target table (M lookup rows, identical for all N). |
+| `SplitLookupTableField` | Table-mapped, result-mapped | `@splitQuery` + `@lookupKey`. Always a DataLoader with both a derived source table and a derived target table, regardless of parent context. |
 | `TableMethodField` | Table-mapped, result-mapped | `@tableMethod` — developer supplies a pre-filtered `Table<?>`. Joined using the same logic as `TableField`. |
 | `TableInterfaceField` | Table-mapped, result-mapped | Single-table discriminated interface target. |
 | `InterfaceField` | Table-mapped, result-mapped | Multi-table interface target. |
@@ -310,8 +315,8 @@ Quick reference: which field type applies given target and source context.
 
 | Target | Source context | Projects through | Stops here |
 |---|---|---|---|
-| Table-mapped | Table-mapped or result-mapped | `TableField`, `TableMethodField` | — |
-| Table-mapped (lookup) | Table-mapped or result-mapped | `LookupTableField` | — |
+| Table-mapped | Table-mapped or result-mapped | `TableField`, `SplitTableField`, `TableMethodField` | — |
+| Table-mapped + `@lookupKey` | Table-mapped or result-mapped | `LookupTableField`, `SplitLookupTableField` | — |
 | Interface | Table-mapped or result-mapped | `TableInterfaceField`, `InterfaceField` | — |
 | Union | Table-mapped or result-mapped | `UnionField` | — |
 | Inherited table scope | Table-mapped | `NestingField` | — |
