@@ -13,9 +13,6 @@ import no.sikt.graphitron.rewrite.field.OrderSpec;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.field.SortFieldSpec;
 import no.sikt.graphitron.rewrite.field.ChildField.TableField;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -51,22 +48,6 @@ class TableFieldValidationTest {
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(
                 new ConditionOnlyRef(new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
-
-        UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
-            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(new UnresolvedKeyRef("FILM_ACTOR_FK")), new FieldConditionRef.NoFieldCondition(), List.of()),
-            List.of("Field 'actors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog")),
-
-        UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection",
-            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(
-                new UnresolvedConditionRef("com.example.Conditions.actorCondition")), new FieldConditionRef.NoFieldCondition(), List.of()),
-            List.of("Field 'actors': condition method 'com.example.Conditions.actorCondition' could not be resolved")),
-
-        UNRESOLVED_KEY_AND_CONDITION("both key and condition specified, neither could be resolved — two errors",
-            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(
-                new UnresolvedKeyAndConditionRef("FILM_ACTOR_FK", "com.example.Conditions.actorCondition")), new FieldConditionRef.NoFieldCondition(), List.of()),
-            List.of(
-                "Field 'actors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog",
-                "Field 'actors': condition method 'com.example.Conditions.actorCondition' could not be resolved")),
 
         FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause; no errors",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), new FieldConditionRef.ResolvedFieldCondition(

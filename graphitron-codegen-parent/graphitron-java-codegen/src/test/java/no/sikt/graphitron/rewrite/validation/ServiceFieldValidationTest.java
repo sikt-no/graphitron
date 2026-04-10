@@ -12,9 +12,6 @@ import no.sikt.graphitron.rewrite.field.ServiceMethodRef.ServiceParam;
 import no.sikt.graphitron.rewrite.field.SourcesRef;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.rewrite.type.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -42,26 +39,6 @@ class ServiceFieldValidationTest {
                     List.of(new ParamInfo("org.jooq.DSLContext", "ctx"))))),
                 null, List.of(), List.of(), RESOLVED_METHOD),
             List.of()),
-
-        UNRESOLVED_CONDITION("lift condition method present but could not be resolved via reflection",
-            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new UnresolvedConditionRef("com.example.Conditions.liftCondition")),
-                null, List.of(), List.of(), RESOLVED_METHOD),
-            List.of("Field 'externalChild': condition method 'com.example.Conditions.liftCondition' could not be resolved")),
-
-        UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
-            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new UnresolvedKeyRef("FILM_ACTOR_FK")),
-                null, List.of(), List.of(), RESOLVED_METHOD),
-            List.of("Field 'externalChild': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog")),
-
-        UNRESOLVED_KEY_AND_CONDITION("both key and condition specified, neither could be resolved — two errors",
-            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new UnresolvedKeyAndConditionRef("FILM_ACTOR_FK", "com.example.Conditions.liftCondition")),
-                null, List.of(), List.of(), RESOLVED_METHOD),
-            List.of(
-                "Field 'externalChild': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog",
-                "Field 'externalChild': condition method 'com.example.Conditions.liftCondition' could not be resolved")),
 
         UNRESOLVED_METHOD("service method could not be reflected — validation error",
             new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(),

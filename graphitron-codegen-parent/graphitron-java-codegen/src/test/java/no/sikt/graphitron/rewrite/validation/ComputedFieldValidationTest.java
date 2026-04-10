@@ -7,9 +7,6 @@ import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.ConditionOnlyRef;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.MethodRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -29,24 +26,7 @@ class ComputedFieldValidationTest {
         WITH_LIFT_CONDITION("lift condition with a resolved method",
             new ComputedField("Film", "fullTitle", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new ConditionOnlyRef(new MethodRef("com.example.Conditions.liftCondition", "org.jooq.Condition", List.of())))),
-            List.of()),
-
-        UNRESOLVED_CONDITION("lift condition method present but could not be resolved via reflection",
-            new ComputedField("Film", "fullTitle", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new UnresolvedConditionRef("com.example.Conditions.liftCondition"))),
-            List.of("Field 'fullTitle': condition method 'com.example.Conditions.liftCondition' could not be resolved")),
-
-        UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
-            new ComputedField("Film", "fullTitle", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new UnresolvedKeyRef("FILM_ACTOR_FK"))),
-            List.of("Field 'fullTitle': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog")),
-
-        UNRESOLVED_KEY_AND_CONDITION("both key and condition specified, neither could be resolved — two errors",
-            new ComputedField("Film", "fullTitle", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new UnresolvedKeyAndConditionRef("FILM_ACTOR_FK", "com.example.Conditions.liftCondition"))),
-            List.of(
-                "Field 'fullTitle': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog",
-                "Field 'fullTitle': condition method 'com.example.Conditions.liftCondition' could not be resolved"));
+            List.of());
 
         private final String description;
         private final GraphitronField field;

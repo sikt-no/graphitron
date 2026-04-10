@@ -59,7 +59,6 @@ import no.sikt.graphitron.rewrite.field.OrderSpec;
 import no.sikt.graphitron.rewrite.field.SortFieldSpec;
 import no.sikt.graphitron.rewrite.field.ColumnRef;
 import no.sikt.graphitron.rewrite.field.ColumnRef.ResolvedColumn;
-import no.sikt.graphitron.rewrite.field.ColumnRef.UnresolvedColumn;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.rewrite.field.ArgumentRef;
@@ -550,6 +549,10 @@ public class GraphitronSchemaBuilder {
                 .map(arg -> classifyArgument(arg, rt, false))
                 .toList();
             var referencePath = parseReferencePath(fieldDef);
+            var refPathError = findPathError(referencePath);
+            if (refPathError.isPresent()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, refPathError.get());
+            }
             boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
             if (hasSplitQuery && hasLookupKey) {
@@ -595,7 +598,7 @@ public class GraphitronSchemaBuilder {
         // semantics are not yet defined (planned future deliverable). Fields that would logically
         // map to ConstructorField fall through to UnclassifiedField, which the validator rejects
         // with a clear error, making the gap visible and enforced rather than silently ignored.
-        return new UnclassifiedField(parentTypeName, name, location,
+        return new UnclassifiedField(parentTypeName, name, location, fieldDef,
             "ConstructorField (child field on @table type returning a @record type) is not yet supported");
     }
 
@@ -754,7 +757,7 @@ public class GraphitronSchemaBuilder {
         if (!(parentType instanceof RootType)) {
             String conflict = detectChildFieldConflict(fieldDef);
             if (conflict != null) {
-                return new UnclassifiedField(parentTypeName, name, location, conflict);
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, conflict);
             }
         }
 
@@ -775,7 +778,7 @@ public class GraphitronSchemaBuilder {
             return classifyChildFieldOnResultType(fieldDef, parentTypeName);
         }
 
-        return new UnclassifiedField(parentTypeName, name, location,
+        return new UnclassifiedField(parentTypeName, name, location, fieldDef,
             "parent type '" + parentTypeName + "' has no supported Graphitron classification");
     }
 
@@ -788,7 +791,7 @@ public class GraphitronSchemaBuilder {
         if (parentTypeName.equals("Query")) {
             return classifyQueryField(fieldDef, parentTypeName);
         }
-        return new UnclassifiedField(parentTypeName, fieldDef.getName(), locationOf(fieldDef),
+        return new UnclassifiedField(parentTypeName, fieldDef.getName(), locationOf(fieldDef), fieldDef,
             "fields on '" + parentTypeName + "' (Subscription is not supported)");
     }
 
@@ -798,7 +801,7 @@ public class GraphitronSchemaBuilder {
 
         String conflict = detectQueryFieldConflict(fieldDef);
         if (conflict != null) {
-            return new UnclassifiedField(parentTypeName, name, location, conflict);
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, conflict);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
@@ -818,7 +821,7 @@ public class GraphitronSchemaBuilder {
                 case ReturnTypeRef.OtherReturnType other ->
                     new QueryField.QueryServiceRecordField(parentTypeName, name, location, other, serviceRef, args, contextArgs);
                 case ReturnTypeRef.PolymorphicReturnType p ->
-                    new UnclassifiedField(parentTypeName, name, location, "@service returning a polymorphic type is not yet supported");
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
             };
         }
 
@@ -835,7 +838,7 @@ public class GraphitronSchemaBuilder {
         if (hasLookupKeyAnywhere(fieldDef)) {
             var returnType = resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
             if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) {
-                return new GraphitronField.UnclassifiedField(parentTypeName, name, location,
+                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "@lookupKey requires a @table-annotated return type");
             }
             var rt = tb.table() instanceof TableRef.ResolvedTable r ? r : null;
@@ -850,7 +853,7 @@ public class GraphitronSchemaBuilder {
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
             var returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) {
-                return new GraphitronField.UnclassifiedField(parentTypeName, name, location,
+                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "@tableMethod requires a @table-annotated return type");
             }
             var args = fieldDef.getArguments().stream()
@@ -890,7 +893,7 @@ public class GraphitronSchemaBuilder {
                 new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
-        return new UnclassifiedField(parentTypeName, name, location,
+        return new UnclassifiedField(parentTypeName, name, location, fieldDef,
             "return type '" + elementTypeName + "' is not a @table, interface, or union Graphitron type; " +
             "@service, @lookupKey, and @tableMethod are all absent");
     }
@@ -900,7 +903,7 @@ public class GraphitronSchemaBuilder {
         SourceLocation location = locationOf(fieldDef);
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE) && fieldDef.hasAppliedDirective(DIR_MUTATION)) {
-            return new UnclassifiedField(parentTypeName, name, location,
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                 "@" + DIR_SERVICE + ", @" + DIR_MUTATION + " are mutually exclusive");
         }
 
@@ -919,7 +922,7 @@ public class GraphitronSchemaBuilder {
                 case ReturnTypeRef.OtherReturnType other ->
                     new MutationField.MutationServiceRecordField(parentTypeName, name, location, other, serviceRef, args, contextArgs);
                 case ReturnTypeRef.PolymorphicReturnType p ->
-                    new UnclassifiedField(parentTypeName, name, location, "@service returning a polymorphic type is not yet supported");
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
             };
         }
 
@@ -936,13 +939,13 @@ public class GraphitronSchemaBuilder {
                     case "UPDATE" -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType, arguments);
                     case "DELETE" -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType, arguments);
                     case "UPSERT" -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, returnType, arguments);
-                    default       -> new UnclassifiedField(parentTypeName, name, location,
+                    default       -> new UnclassifiedField(parentTypeName, name, location, fieldDef,
                         "unknown @mutation(typeName:) value '" + typeName + "'");
                 };
             }
         }
 
-        return new UnclassifiedField(parentTypeName, name, location,
+        return new UnclassifiedField(parentTypeName, name, location, fieldDef,
             "@" + DIR_SERVICE + " and @" + DIR_MUTATION + " are both absent on this mutation field");
     }
 
@@ -1163,15 +1166,20 @@ public class GraphitronSchemaBuilder {
             var arguments = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();
+            var servicePath = parseReferencePath(fieldDef);
+            var servicePathError = findPathError(servicePath);
+            if (servicePathError.isPresent()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePathError.get());
+            }
             return switch (resolveReturnType(elementTypeName, buildWrapper(fieldDef))) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new ServiceTableField(parentTypeName, name, location, tb,
-                        parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
+                        servicePath, serviceRef, arguments, contextArguments, serviceMethodRef);
                 case ReturnTypeRef.OtherReturnType other ->
                     new ServiceRecordField(parentTypeName, name, location, other,
-                        parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
+                        servicePath, serviceRef, arguments, contextArguments, serviceMethodRef);
                 case ReturnTypeRef.PolymorphicReturnType p ->
-                    new UnclassifiedField(parentTypeName, name, location, "@service returning a polymorphic type is not yet supported");
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
             };
         }
 
@@ -1188,6 +1196,11 @@ public class GraphitronSchemaBuilder {
         String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
             ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
+        var objectPath = parseReferencePath(fieldDef);
+        var objectPathError = findPathError(objectPath);
+        if (objectPathError.isPresent()) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, objectPathError.get());
+        }
         return switch (resolveReturnType(elementTypeName, buildWrapper(fieldDef))) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
                 var rt2 = tb.table() instanceof ResolvedTable r ? r : null;
@@ -1196,16 +1209,15 @@ public class GraphitronSchemaBuilder {
                     .toList();
                 boolean hasLookupKey = hasLookupKeyAnywhere(fieldDef);
                 if (hasLookupKey) {
-                    yield new RecordLookupTableField(parentTypeName, name, location, tb,
-                        parseReferencePath(fieldDef), args);
+                    yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath, args);
                 }
                 yield new RecordTableField(parentTypeName, name, location, tb,
-                    parseReferencePath(fieldDef), new FieldConditionRef.NoFieldCondition(), args);
+                    objectPath, new FieldConditionRef.NoFieldCondition(), args);
             }
             case ReturnTypeRef.OtherReturnType other ->
                 new RecordField(parentTypeName, name, location, other, columnName);
             case ReturnTypeRef.PolymorphicReturnType p ->
-                new UnclassifiedField(parentTypeName, name, location, "@record type returning a polymorphic type is not yet supported");
+                new UnclassifiedField(parentTypeName, name, location, fieldDef, "@record type returning a polymorphic type is not yet supported");
         };
     }
 
@@ -1223,22 +1235,32 @@ public class GraphitronSchemaBuilder {
             var arguments = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();
+            var servicePath = parseReferencePath(fieldDef);
+            var servicePathError = findPathError(servicePath);
+            if (servicePathError.isPresent()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePathError.get());
+            }
             return switch (resolveReturnType(elementTypeName, buildWrapper(fieldDef))) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new ServiceTableField(parentTypeName, name, location, tb,
-                        parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
+                        servicePath, serviceRef, arguments, contextArguments, serviceMethodRef);
                 case ReturnTypeRef.OtherReturnType other ->
                     new ServiceRecordField(parentTypeName, name, location, other,
-                        parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
+                        servicePath, serviceRef, arguments, contextArguments, serviceMethodRef);
                 case ReturnTypeRef.PolymorphicReturnType p ->
-                    new UnclassifiedField(parentTypeName, name, location, "@service returning a polymorphic type is not yet supported");
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
             };
         }
 
         if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) {
+            var externalPath = parseReferencePath(fieldDef);
+            var externalPathError = findPathError(externalPath);
+            if (externalPathError.isPresent()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, externalPathError.get());
+            }
             return new ComputedField(parentTypeName, name, location,
                 resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)),
-                parseReferencePath(fieldDef));
+                externalPath);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
@@ -1248,9 +1270,14 @@ public class GraphitronSchemaBuilder {
             var args = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();
+            var tableMethodPath = parseReferencePath(fieldDef);
+            var tableMethodPathError = findPathError(tableMethodPath);
+            if (tableMethodPathError.isPresent()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, tableMethodPathError.get());
+            }
             return new TableMethodField(parentTypeName, name, location,
                 returnType,
-                parseReferencePath(fieldDef),
+                tableMethodPath,
                 parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF),
                 args,
                 parseContextArguments(fieldDef, DIR_TABLE_METHOD));
@@ -1266,11 +1293,24 @@ public class GraphitronSchemaBuilder {
                 ReturnTypeRef targetType = resolveReturnType(typeName.get(), new FieldWrapper.Single(true));
                 ResolvedTable parentTable = tableType.table() instanceof ResolvedTable rt ? rt : null;
                 NodeTypeRef nodeType = resolveNodeType(typeName.get());
+                if (nodeType instanceof NodeTypeRef.NotFoundNodeType) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        "@nodeId(typeName:) type '" + typeName.get() + "' does not exist in the schema");
+                }
+                if (nodeType instanceof NodeTypeRef.NoNodeDirectiveType) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        "@nodeId(typeName:) type '" + typeName.get() + "' does not have @node");
+                }
+                var wn = ((NodeTypeRef.ResolvedNodeType) nodeType).table();
                 List<ReferencePathElementRef> path = parseReferencePath(fieldDef);
-                return new NodeIdReferenceField(parentTypeName, name, location, typeName.get(), targetType, parentTable, nodeType, path);
+                var nodeRefPathError = findPathError(path);
+                if (nodeRefPathError.isPresent()) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, nodeRefPathError.get());
+                }
+                return new NodeIdReferenceField(parentTypeName, name, location, typeName.get(), targetType, parentTable, wn, path);
             } else {
                 if (!(tableType.table() instanceof ResolvedTable.WithNode wn))
-                    return new UnclassifiedField(parentTypeName, name, location, "@nodeId requires the containing type to have @node");
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, "@nodeId requires the containing type to have @node");
                 return new NodeIdField(parentTypeName, name, location, wn);
             }
         }
@@ -1284,12 +1324,24 @@ public class GraphitronSchemaBuilder {
 
         if (fieldDef.hasAppliedDirective(DIR_REFERENCE)) {
             List<ReferencePathElementRef> path = parseReferencePath(fieldDef);
-            ColumnRef column = resolveColumnForReference(columnName, path, tableType);
-            return new ColumnReferenceField(parentTypeName, name, location, columnName, column, path, javaNamePresent);
+            var pathError = findPathError(path);
+            if (pathError.isPresent()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, pathError.get());
+            }
+            Optional<ResolvedColumn> column = resolveColumnForReference(columnName, path, tableType);
+            if (column.isEmpty()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    "column '" + columnName + "' could not be resolved in the jOOQ table");
+            }
+            return new ColumnReferenceField(parentTypeName, name, location, columnName, column.get(), path, javaNamePresent);
         }
 
-        ColumnRef column = resolveColumn(columnName, tableType);
-        return new ColumnField(parentTypeName, name, location, columnName, column, javaNamePresent);
+        Optional<ResolvedColumn> column = resolveColumn(columnName, tableType);
+        if (column.isEmpty()) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                "column '" + columnName + "' could not be resolved in the jOOQ table");
+        }
+        return new ColumnField(parentTypeName, name, location, columnName, column.get(), javaNamePresent);
     }
 
     private ReturnTypeRef resolveReturnType(String targetTypeName, FieldWrapper wrapper) {
@@ -1323,32 +1375,53 @@ public class GraphitronSchemaBuilder {
         return ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(fieldDef.getType())).getName();
     }
 
-    private ColumnRef resolveColumn(String columnName, TableType tableType) {
+    private Optional<ResolvedColumn> resolveColumn(String columnName, TableType tableType) {
         if (!(tableType.table() instanceof ResolvedTable resolvedTable)) {
-            return new UnresolvedColumn();
+            return Optional.empty();
         }
         return resolveColumnInTable(columnName, resolvedTable.tableName());
     }
 
-    private ColumnRef resolveColumnForReference(String columnName, List<ReferencePathElementRef> path, TableType sourceType) {
+    private Optional<ResolvedColumn> resolveColumnForReference(String columnName, List<ReferencePathElementRef> path, TableType sourceType) {
         if (!(sourceType.table() instanceof ResolvedTable rt)) {
-            return new UnresolvedColumn();
+            return Optional.empty();
         }
         String currentTableSqlName = rt.tableName();
         for (var step : path) {
             if (step instanceof FkRef fk) {
                 currentTableSqlName = fk.keyTableSqlName();
             } else {
-                return new UnresolvedColumn();
+                return Optional.empty();
             }
         }
         return resolveColumnInTable(columnName, currentTableSqlName);
     }
 
-    private ColumnRef resolveColumnInTable(String columnName, String tableSqlName) {
+    private Optional<ResolvedColumn> resolveColumnInTable(String columnName, String tableSqlName) {
         return catalog.findColumn(tableSqlName, columnName)
-            .<ColumnRef>map(e -> new ResolvedColumn(e.javaName(), e.columnClass()))
-            .orElseGet(UnresolvedColumn::new);
+            .map(e -> new ResolvedColumn(e.javaName(), e.columnClass()));
+    }
+
+    /**
+     * Checks a parsed reference path for unresolved elements and returns an error message string
+     * if any are found, or {@link Optional#empty()} when all elements are resolved.
+     */
+    private Optional<String> findPathError(List<ReferencePathElementRef> path) {
+        var errors = new ArrayList<String>();
+        for (var step : path) {
+            switch (step) {
+                case ReferencePathElementRef.UnresolvedKeyRef u ->
+                    errors.add("key '" + u.keyName() + "' could not be resolved in the jOOQ catalog");
+                case ReferencePathElementRef.UnresolvedConditionRef u ->
+                    errors.add("condition method '" + u.qualifiedName() + "' could not be resolved");
+                case ReferencePathElementRef.UnresolvedKeyAndConditionRef u -> {
+                    errors.add("key '" + u.keyName() + "' could not be resolved in the jOOQ catalog");
+                    errors.add("condition method '" + u.conditionName() + "' could not be resolved");
+                }
+                default -> {}
+            }
+        }
+        return errors.isEmpty() ? Optional.empty() : Optional.of(String.join("; ", errors));
     }
 
     /**

@@ -9,13 +9,9 @@ import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkWithConditionR
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.ArgumentRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef;
-import no.sikt.graphitron.rewrite.field.ColumnRef.UnresolvedColumn;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedConditionRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyRef;
-import no.sikt.graphitron.rewrite.field.NodeTypeRef.ResolvedNodeType;
-import no.sikt.graphitron.rewrite.field.NodeTypeRef.NoNodeDirectiveType;
-import no.sikt.graphitron.rewrite.field.NodeTypeRef.NotFoundNodeType;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.type.GraphitronType;
 import no.sikt.graphitron.rewrite.type.ParticipantRef.UnboundParticipant;
@@ -292,12 +288,6 @@ public class GraphitronSchemaValidator {
     }
     private void validateMutationServiceRecordField(no.sikt.graphitron.rewrite.field.MutationField.MutationServiceRecordField field, List<ValidationError> errors) {}
     private void validateColumnField(no.sikt.graphitron.rewrite.field.ChildField.ColumnField field, List<ValidationError> errors) {
-        if (field.column() instanceof UnresolvedColumn unresolvedColumn) {
-            errors.add(new ValidationError(
-                "Field '" + field.name() + "': column '" + field.columnName() + "' could not be resolved in the jOOQ table",
-                field.location()
-            ));
-        }
         if (field.javaNamePresent()) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': @field(javaName:) is not supported in record-based output",
@@ -306,12 +296,6 @@ public class GraphitronSchemaValidator {
         }
     }
     private void validateColumnReferenceField(no.sikt.graphitron.rewrite.field.ChildField.ColumnReferenceField field, List<ValidationError> errors) {
-        if (field.column() instanceof UnresolvedColumn unresolvedColumn) {
-            errors.add(new ValidationError(
-                "Field '" + field.name() + "': column '" + field.columnName() + "' could not be resolved in the jOOQ table",
-                field.location()
-            ));
-        }
         if (field.javaNamePresent()) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': @field(javaName:) is not supported in record-based output",
@@ -332,27 +316,8 @@ public class GraphitronSchemaValidator {
         // The absence-of-@node case is classified as UnclassifiedField in the builder.
     }
     private void validateNodeIdReferenceField(no.sikt.graphitron.rewrite.field.ChildField.NodeIdReferenceField field, List<ValidationError> errors) {
-        switch (field.nodeType()) {
-            case NotFoundNodeType ignored -> {
-                errors.add(new ValidationError(
-                    "Field '" + field.name() + "': type '" + field.typeName() + "' does not exist in the schema",
-                    field.location()
-                ));
-                validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
-                return;
-            }
-            case NoNodeDirectiveType ignored -> {
-                errors.add(new ValidationError(
-                    "Field '" + field.name() + "': type '" + field.typeName() + "' does not have @node",
-                    field.location()
-                ));
-                validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
-                return;
-            }
-            case ResolvedNodeType ignored -> {} // @node resolved; continue to table validation
-        }
-
-        // @node is resolved; use targetType for table-level FK and path validation
+        // @node is always resolved — builder returns UnclassifiedField if the type is missing or lacks @node
+        // Use targetType for table-level FK and path validation
         if (!(field.targetType() instanceof ReturnTypeRef.TableBoundReturnType tb)) {
             validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
             return;

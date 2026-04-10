@@ -4,7 +4,6 @@ import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.WithNode;
 import no.sikt.graphitron.rewrite.field.ColumnRef;
 import no.sikt.graphitron.rewrite.field.FieldConditionRef;
-import no.sikt.graphitron.rewrite.field.NodeTypeRef;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef;
 import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
 import no.sikt.graphitron.rewrite.field.ArgumentRef;
@@ -34,10 +33,10 @@ public sealed interface ChildField extends GraphitronField
      * <p>{@code columnName} is the database column name: the value of {@code @field(name:)} when
      * the directive is present, otherwise the GraphQL field name.
      *
-     * <p>{@code column} is the outcome of resolving {@code columnName} against the jOOQ table:
-     * {@link ColumnRef.ResolvedColumn} when the column was found, {@link ColumnRef.UnresolvedColumn}
-     * when it was not. The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an
-     * error for {@code UnresolvedColumn}.
+     * <p>{@code column} is the resolved column in the jOOQ table. When the column name cannot be
+     * matched, the builder returns an
+     * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} instead of
+     * constructing a {@code ColumnField}.
      *
      * <p>{@code javaNamePresent} is {@code true} when the {@code @field(javaName:)} argument was
      * supplied. This argument is not supported in record-based output and the validator reports an
@@ -58,14 +57,15 @@ public sealed interface ChildField extends GraphitronField
      * <p>{@code columnName} is the database column name: the value of {@code @field(name:)} when
      * the directive is present, otherwise the GraphQL field name.
      *
-     * <p>{@code column} is the outcome of resolving {@code columnName} against the jOOQ table:
-     * {@link ColumnRef.ResolvedColumn} when the column was found, {@link ColumnRef.UnresolvedColumn}
-     * when it was not. The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an
-     * error for {@code UnresolvedColumn}.
+     * <p>{@code column} is the resolved column in the joined jOOQ table. When the column name
+     * cannot be matched (or any reference path element is unresolved), the builder returns an
+     * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} instead of
+     * constructing a {@code ColumnReferenceField}.
      *
      * <p>{@code referencePath} is the ordered list of join steps from the source table to the target
      * column's table, extracted from {@code @reference(path:)}. Required — an empty list is a
-     * validation error.
+     * validation error. All elements are guaranteed to be resolved (the builder rejects unresolved
+     * path elements at classification time).
      *
      * <p>{@code javaNamePresent} is {@code true} when the {@code @field(javaName:)} argument was
      * supplied. This argument is not supported in record-based output and the validator reports an
@@ -114,20 +114,20 @@ public sealed interface ChildField extends GraphitronField
      * <p>{@code parentTable} is the resolved table of the containing type, or {@code null} when
      * the parent's table is unresolved. A null parent table skips the implicit FK count check.
      *
-     * <p>{@code nodeType} is the outcome of resolving {@code typeName} against the {@code @node}
-     * directive: {@link NodeTypeRef.ResolvedNodeType} when the named type exists as a table type
-     * with {@code @node} (carrying the directive properties for ID encoding),
-     * {@link NodeTypeRef.NoNodeDirectiveType} when the type exists but lacks {@code @node}, or
-     * {@link NodeTypeRef.NotFoundNodeType} when the type name does not match any schema type.
-     * The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports a distinct error
-     * for each failure case.
+     * <p>{@code node} is the {@link WithNode} of the target type, carrying the {@code @node}
+     * directive properties ({@code typeId} and {@code keyColumns}) used for Relay Global ID
+     * encoding. Only constructed when the named type exists and carries {@code @node}; otherwise
+     * the builder returns an
+     * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField}.
      *
      * <p>{@code referencePath} is the ordered list of join steps from the source table to the target
      * type's table, extracted from {@code @reference(path:)}. May be empty when there is exactly one
      * foreign key between the source and target tables (implicit join). The
      * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error when the path is
      * empty and there is no foreign key or more than one foreign key between the tables. When both a
-     * path and a {@code typeName} are supplied the path must lead to the target type's table.
+     * path and a {@code typeName} are supplied the path must lead to the target type's table. All
+     * elements are guaranteed to be resolved (the builder rejects unresolved path elements at
+     * classification time).
      */
     record NodeIdReferenceField(
         String parentTypeName,
@@ -136,7 +136,7 @@ public sealed interface ChildField extends GraphitronField
         String typeName,
         ReturnTypeRef targetType,
         ResolvedTable parentTable,
-        NodeTypeRef nodeType,
+        WithNode node,
         List<ReferencePathElementRef> referencePath
     ) implements ChildField {}
 

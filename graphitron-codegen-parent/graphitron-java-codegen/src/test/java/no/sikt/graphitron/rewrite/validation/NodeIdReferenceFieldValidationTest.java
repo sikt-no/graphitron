@@ -5,11 +5,6 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.rewrite.field.ChildField.NodeIdReferenceField;
-import no.sikt.graphitron.rewrite.field.NodeTypeRef.NoNodeDirectiveType;
-import no.sikt.graphitron.rewrite.field.NodeTypeRef.NotFoundNodeType;
-import no.sikt.graphitron.rewrite.field.NodeTypeRef.ResolvedNodeType;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
@@ -31,7 +26,7 @@ class NodeIdReferenceFieldValidationTest {
         TestConfiguration.setProperties();
     }
 
-    private static final ResolvedNodeType NODE = new ResolvedNodeType(new WithNode("film", "FILM", "Film", true, List.of(), List.of(), null, List.of()));
+    private static final WithNode NODE = new WithNode("film", "FILM", "Film", true, List.of(), List.of(), null, List.of());
 
     enum Case implements ValidatorCase {
 
@@ -59,22 +54,6 @@ class NodeIdReferenceFieldValidationTest {
                 List.of()),
             List.of("Field 'languageId': multiple foreign keys found between tables 'film' and 'language'; add a @reference directive to specify the join path")),
 
-        TYPE_NOT_FOUND("typeName does not exist in the schema — specific not-found error",
-            new NodeIdReferenceField("Film", "languageId", null, "UnknownType",
-                new ReturnTypeRef.OtherReturnType.PojoReturnType("UnknownType", new FieldWrapper.Single(true)),
-                null,
-                new NotFoundNodeType(),
-                List.of()),
-            List.of("Field 'languageId': type 'UnknownType' does not exist in the schema")),
-
-        TYPE_HAS_NO_NODE("typeName exists but has no @node directive — specific missing-@node error",
-            new NodeIdReferenceField("Film", "languageId", null, "Film",
-                new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)),
-                null,
-                new NoNodeDirectiveType(),
-                List.of()),
-            List.of("Field 'languageId': type 'Film' does not have @node")),
-
         WITH_EXPLICIT_PATH("explicit FK path leading to the correct table — no errors",
             new NodeIdReferenceField("Film", "languageId", null, "Language",
                 new ReturnTypeRef.TableBoundReturnType("Language", new Plain("language", "LANGUAGE", "Language", true, List.of(), List.of()), new FieldWrapper.Single(true)),
@@ -89,23 +68,7 @@ class NodeIdReferenceFieldValidationTest {
                 new Plain("film", "FILM", "Film", true, List.of(), List.of()),
                 NODE,
                 List.of(new FkRef("sequel_fkey", "film", "film", List.of(), List.of()))),
-            List.of("Field 'languageId': @reference path does not lead to the table of type 'Language'")),
-
-        UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog — one error",
-            new NodeIdReferenceField("Film", "languageId", null, "Language",
-                new ReturnTypeRef.TableBoundReturnType("Language", new Plain("language", "LANGUAGE", "Language", true, List.of(), List.of()), new FieldWrapper.Single(true)),
-                new Plain("film", "FILM", "Film", true, List.of(), List.of()),
-                NODE,
-                List.of(new UnresolvedKeyRef("FILM_LANGUAGE_FK"))),
-            List.of("Field 'languageId': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog")),
-
-        UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection — one error",
-            new NodeIdReferenceField("Film", "languageId", null, "Language",
-                new ReturnTypeRef.TableBoundReturnType("Language", new Plain("language", "LANGUAGE", "Language", true, List.of(), List.of()), new FieldWrapper.Single(true)),
-                new Plain("film", "FILM", "Film", true, List.of(), List.of()),
-                NODE,
-                List.of(new UnresolvedConditionRef("com.example.Conditions.languageCondition"))),
-            List.of("Field 'languageId': condition method 'com.example.Conditions.languageCondition' could not be resolved"));
+            List.of("Field 'languageId': @reference path does not lead to the table of type 'Language'"));
 
         private final String description;
         private final GraphitronField field;

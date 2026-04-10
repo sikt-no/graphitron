@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.field;
 
 import graphql.language.SourceLocation;
+import graphql.schema.GraphQLFieldDefinition;
 
 /**
  * Classifies every field in a GraphQL schema. The sealed hierarchy mirrors the field taxonomy.
@@ -30,6 +31,11 @@ public sealed interface GraphitronField
      * A field that could not be classified. A schema containing unclassified fields is invalid —
      * Graphitron terminates with an error identifying which fields need to be fixed.
      *
+     * <p>{@code definition} is the original {@link GraphQLFieldDefinition} from the assembled
+     * schema, providing full directive and argument context for rich error messages. May be
+     * {@code null} when the field is constructed outside the schema-building pipeline (e.g. in
+     * tests).
+     *
      * <p>{@code reason} describes why classification failed: either the directives required to
      * classify the field are absent, or two mutually exclusive directives were found together.
      * The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} includes the reason in its
@@ -39,6 +45,7 @@ public sealed interface GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
+        GraphQLFieldDefinition definition,
         String reason
     ) implements GraphitronField {}
 }

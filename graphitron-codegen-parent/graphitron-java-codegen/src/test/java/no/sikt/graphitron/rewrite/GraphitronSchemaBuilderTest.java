@@ -24,18 +24,14 @@ import no.sikt.graphitron.rewrite.field.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.field.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.field.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.field.ColumnRef.ResolvedColumn;
-import no.sikt.graphitron.rewrite.field.ColumnRef.UnresolvedColumn;
 import no.sikt.graphitron.rewrite.field.DefaultOrderSpec;
 import no.sikt.graphitron.rewrite.field.FieldWrapper;
 import no.sikt.graphitron.rewrite.field.FieldConditionRef;
 import no.sikt.graphitron.rewrite.field.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.rewrite.field.ArgumentRef;
 import no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField;
-import no.sikt.graphitron.rewrite.field.NodeTypeRef;
-import no.sikt.graphitron.rewrite.field.NodeTypeRef.ResolvedNodeType;
 import no.sikt.graphitron.rewrite.field.OrderSpec;
 import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyRef;
 import no.sikt.graphitron.rewrite.type.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.InterfaceType;
@@ -98,12 +94,12 @@ class GraphitronSchemaBuilderTest {
         EXPLICIT_FIELD_DIRECTIVE(
             "@field(name:) overrides the column name used for the DB lookup",
             """
-            type Film @table(name: "film") { title: String @field(name: "film_title") }
+            type Film @table(name: "film") { movieTitle: String @field(name: "title") }
             type Query { film: Film }
             """,
             schema -> {
-                var col = (ColumnField) schema.field("Film", "title");
-                assertThat(col.columnName()).isEqualTo("film_title");
+                var col = (ColumnField) schema.field("Film", "movieTitle");
+                assertThat(col.columnName()).isEqualTo("title");
                 assertThat(col.javaNamePresent()).isFalse();
             }),
 
@@ -116,13 +112,12 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(((ColumnField) schema.field("Film", "title")).javaNamePresent()).isTrue()),
 
         UNRESOLVED_COLUMN(
-            "field not present in the DB table produces an UnresolvedColumn reference",
+            "field not present in the DB table produces an UnclassifiedField",
             """
             type Film @table(name: "film") { doesNotExist: String }
             type Query { film: Film }
             """,
-            schema -> assertThat(((ColumnField) schema.field("Film", "doesNotExist")).column())
-                .isInstanceOf(UnresolvedColumn.class)),
+            schema -> assertThat(schema.field("Film", "doesNotExist")).isInstanceOf(UnclassifiedField.class)),
 
         ENUM_RETURN_TYPE(
             "a field whose return type is a GraphQL enum is still classified as a ColumnField",
@@ -134,15 +129,14 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Film", "rating")).isInstanceOf(ColumnField.class)),
 
         UNRESOLVED_TABLE(
-            "when the parent table does not exist in the DB, the field is still ColumnField with UnresolvedColumn",
+            "when the parent table does not exist in the DB, the field becomes an UnclassifiedField",
             """
             type NoSuchTable @table(name: "no_such_table") { title: String }
             type Query { x: NoSuchTable }
             """,
             schema -> {
                 assertThat(((TableType) schema.type("NoSuchTable")).table()).isInstanceOf(UnresolvedTable.class);
-                assertThat(((ColumnField) schema.field("NoSuchTable", "title")).column())
-                    .isInstanceOf(UnresolvedColumn.class);
+                assertThat(schema.field("NoSuchTable", "title")).isInstanceOf(UnclassifiedField.class);
             });
 
         final String sdl;
@@ -167,7 +161,7 @@ class GraphitronSchemaBuilderTest {
             "@reference with a lowercase SQL FK name resolves to FkRef",
             """
             type Film @table(name: "film") {
-              languageName: String @reference(path: [{key: "film_language_id_fkey"}])
+              languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query { film: Film }
             """,
@@ -181,7 +175,7 @@ class GraphitronSchemaBuilderTest {
             "@reference with a Java-constant-style FK name also resolves to FkRef",
             """
             type Film @table(name: "film") {
-              languageName: String @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+              languageName: String @field(name: "name") @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
             }
             type Query { film: Film }
             """,
@@ -192,29 +186,25 @@ class GraphitronSchemaBuilderTest {
             }),
 
         UNKNOWN_FK(
-            "@reference with an unknown key produces UnresolvedKeyRef",
+            "@reference with an unknown key produces an UnclassifiedField",
             """
             type Film @table(name: "film") {
               languageName: String @reference(path: [{key: "NO_SUCH_FK"}])
             }
             type Query { film: Film }
             """,
-            schema -> {
-                var ref = (ColumnReferenceField) schema.field("Film", "languageName");
-                assertThat(ref.referencePath()).hasSize(1);
-                assertThat(ref.referencePath().get(0)).isInstanceOf(UnresolvedKeyRef.class);
-            }),
+            schema -> assertThat(schema.field("Film", "languageName")).isInstanceOf(UnclassifiedField.class)),
 
         IMPLICIT_COLUMN_NAME(
             "column name defaults to the GraphQL field name when @field is absent",
             """
             type Film @table(name: "film") {
-              languageName: String @reference(path: [{key: "NO_SUCH_FK"}])
+              name: String @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(((ColumnReferenceField) schema.field("Film", "languageName")).columnName())
-                .isEqualTo("languageName")),
+            schema -> assertThat(((ColumnReferenceField) schema.field("Film", "name")).columnName())
+                .isEqualTo("name")),
 
         EXPLICIT_FIELD_DIRECTIVE(
             "@field(name:) overrides the column name on a ColumnReferenceField",
@@ -340,7 +330,7 @@ class GraphitronSchemaBuilderTest {
 
     enum NodeIdReferenceFieldCase {
         RESOLVED(
-            "typeName pointing to a @node type resolves to ResolvedNodeType with empty referencePath",
+            "typeName pointing to a @node type resolves to NodeIdReferenceField with a WithNode and empty referencePath",
             """
             type Language @table(name: "language") @node(keyColumns: ["language_id"]) {
               id: ID! @nodeId
@@ -353,12 +343,12 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var ref = (NodeIdReferenceField) schema.field("Film", "languageId");
                 assertThat(ref.typeName()).isEqualTo("Language");
-                assertThat(ref.nodeType()).isInstanceOf(ResolvedNodeType.class);
+                assertThat(ref.node()).isNotNull();
                 assertThat(ref.referencePath()).isEmpty();
             }),
 
         UNRESOLVED_TYPE_HAS_NO_NODE(
-            "typeName pointing to a type that exists but lacks @node → NoNodeDirectiveType",
+            "typeName pointing to a type that exists but lacks @node → UnclassifiedField",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -366,19 +356,17 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(((NodeIdReferenceField) schema.field("Film", "languageId")).nodeType())
-                .isInstanceOf(NodeTypeRef.NoNodeDirectiveType.class)),
+            schema -> assertThat(schema.field("Film", "languageId")).isInstanceOf(UnclassifiedField.class)),
 
         UNRESOLVED_TYPE_DOES_NOT_EXIST(
-            "typeName pointing to a type that does not exist at all → NotFoundNodeType",
+            "typeName pointing to a type that does not exist at all → UnclassifiedField",
             """
             type Film @table(name: "film") {
               languageId: ID! @nodeId(typeName: "NoSuchType")
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(((NodeIdReferenceField) schema.field("Film", "languageId")).nodeType())
-                .isInstanceOf(NodeTypeRef.NotFoundNodeType.class)),
+            schema -> assertThat(schema.field("Film", "languageId")).isInstanceOf(UnclassifiedField.class)),
 
         WITH_REFERENCE_PATH(
             "@reference(path:) on a @nodeId field populates the referencePath",
@@ -481,7 +469,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         MULTI_STEP_REFERENCE_PATH(
-            "@reference with two path elements produces a two-element referencePath (FkRef + UnresolvedKeyRef)",
+            "@reference with two path elements where the second is unknown → UnclassifiedField",
             """
             type City @table(name: "city") { name: String }
             type Film @table(name: "film") {
@@ -489,12 +477,7 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """,
-            schema -> {
-                var tf = (TableField) schema.field("Film", "city");
-                assertThat(tf.referencePath()).hasSize(2);
-                assertThat(tf.referencePath().get(0)).isInstanceOf(FkRef.class);
-                assertThat(tf.referencePath().get(1)).isInstanceOf(UnresolvedKeyRef.class);
-            }),
+            schema -> assertThat(schema.field("Film", "city")).isInstanceOf(UnclassifiedField.class)),
 
         CONDITION_IS_ALWAYS_NO_FIELD_CONDITION(
             "@condition support is deferred to P3; condition is always NoFieldCondition even with @reference",

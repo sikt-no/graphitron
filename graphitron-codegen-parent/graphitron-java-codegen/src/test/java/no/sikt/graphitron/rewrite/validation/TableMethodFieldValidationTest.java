@@ -8,9 +8,6 @@ import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.MethodRef;
 import no.sikt.graphitron.rewrite.field.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -37,26 +34,7 @@ class TableMethodFieldValidationTest {
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new ConditionOnlyRef(new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))),
                 null, List.of(), List.of()),
-            List.of()),
-
-        UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
-            new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)),
-                List.of(new UnresolvedKeyRef("FILM_ACTOR_FK")), null, List.of(), List.of()),
-            List.of("Field 'filteredActors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog")),
-
-        UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection",
-            new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new UnresolvedConditionRef("com.example.Conditions.actorCondition")),
-                null, List.of(), List.of()),
-            List.of("Field 'filteredActors': condition method 'com.example.Conditions.actorCondition' could not be resolved")),
-
-        UNRESOLVED_KEY_AND_CONDITION("both key and condition specified, neither could be resolved — two errors",
-            new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new UnresolvedKeyAndConditionRef("FILM_ACTOR_FK", "com.example.Conditions.actorCondition")),
-                null, List.of(), List.of()),
-            List.of(
-                "Field 'filteredActors': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog",
-                "Field 'filteredActors': condition method 'com.example.Conditions.actorCondition' could not be resolved"));
+            List.of());
 
         private final String description;
         private final GraphitronField field;

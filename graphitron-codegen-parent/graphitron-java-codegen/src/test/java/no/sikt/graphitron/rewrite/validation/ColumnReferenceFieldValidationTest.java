@@ -7,10 +7,6 @@ import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.MethodRef;
 import no.sikt.graphitron.rewrite.field.ColumnRef.ResolvedColumn;
-import no.sikt.graphitron.rewrite.field.ColumnRef.UnresolvedColumn;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyAndConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.UnresolvedKeyRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -38,11 +34,6 @@ class ColumnReferenceFieldValidationTest {
                 List.of(new ConditionOnlyRef(new MethodRef("com.example.Conditions.languageCondition", "org.jooq.Condition", List.of()))), false),
             List.of()),
 
-        UNRESOLVED_COLUMN("column name could not be matched to a jOOQ field in the joined table",
-            new ColumnReferenceField("Film", "languageName", null, "languageName", new UnresolvedColumn(),
-                List.of(new FkRef("film_language_id_fkey", "language", "film", List.of(), List.of())), false),
-            List.of("Field 'languageName': column 'languageName' could not be resolved in the jOOQ table")),
-
         JAVA_NAME_PRESENT("@field(javaName:) is not supported — validation error",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ResolvedColumn("NAME", ""),
                 List.of(new FkRef("film_language_id_fkey", "language", "film", List.of(), List.of())), true),
@@ -50,24 +41,7 @@ class ColumnReferenceFieldValidationTest {
 
         MISSING_PATH("no @reference directive — path is empty",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ResolvedColumn("NAME", ""), List.of(), false),
-            List.of("Field 'languageName': @reference path is required")),
-
-        UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
-            new ColumnReferenceField("Film", "languageName", null, "languageName", new ResolvedColumn("NAME", ""),
-                List.of(new UnresolvedKeyRef("FILM_LANGUAGE_FK")), false),
-            List.of("Field 'languageName': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog")),
-
-        UNRESOLVED_CONDITION("condition method present but could not be resolved via reflection",
-            new ColumnReferenceField("Film", "languageName", null, "languageName", new ResolvedColumn("NAME", ""),
-                List.of(new UnresolvedConditionRef("com.example.Conditions.languageCondition")), false),
-            List.of("Field 'languageName': condition method 'com.example.Conditions.languageCondition' could not be resolved")),
-
-        UNRESOLVED_KEY_AND_CONDITION("both key and condition specified, neither could be resolved — two errors",
-            new ColumnReferenceField("Film", "languageName", null, "languageName", new ResolvedColumn("NAME", ""),
-                List.of(new UnresolvedKeyAndConditionRef("FILM_LANGUAGE_FK", "com.example.Conditions.languageCondition")), false),
-            List.of(
-                "Field 'languageName': key 'FILM_LANGUAGE_FK' could not be resolved in the jOOQ catalog",
-                "Field 'languageName': condition method 'com.example.Conditions.languageCondition' could not be resolved"));
+            List.of("Field 'languageName': @reference path is required"));
 
         private final String description;
         private final GraphitronField field;

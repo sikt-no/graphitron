@@ -4,7 +4,6 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.field.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.ColumnRef.ResolvedColumn;
-import no.sikt.graphitron.rewrite.field.ColumnRef.UnresolvedColumn;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -25,19 +24,9 @@ class ColumnFieldValidationTest {
             new ColumnField("Film", "title", null, "film_title", new ResolvedColumn("FILM_TITLE", ""), false),
             List.of()),
 
-        UNRESOLVED_COLUMN("column name could not be matched to a jOOQ field in the table",
-            new ColumnField("Film", "title", null, "title", new UnresolvedColumn(), false),
-            List.of("Field 'title': column 'title' could not be resolved in the jOOQ table")),
-
         JAVA_NAME_PRESENT("@field(javaName:) is not supported — validation error",
             new ColumnField("Film", "title", null, "title", new ResolvedColumn("TITLE", ""), true),
-            List.of("Field 'title': @field(javaName:) is not supported in record-based output")),
-
-        JAVA_NAME_WITH_UNRESOLVED_COLUMN("@field(javaName:) + unresolved column — both errors reported",
-            new ColumnField("Film", "title", null, "bad_col", new UnresolvedColumn(), true),
-            List.of(
-                "Field 'title': column 'bad_col' could not be resolved in the jOOQ table",
-                "Field 'title': @field(javaName:) is not supported in record-based output"));
+            List.of("Field 'title': @field(javaName:) is not supported in record-based output"));
 
         private final String description;
         private final GraphitronField field;
