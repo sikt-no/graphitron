@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.ChildField.NodeIdField;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
 import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.WithNode;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -19,11 +18,7 @@ class NodeIdFieldValidationTest {
 
         VALID("parent type has @node — no errors",
             new NodeIdField("Film", "id", null, new WithNode("film", "FILM", "Film", true, List.of(), List.of(), null, List.of())),
-            List.of()),
-
-        PARENT_LACKS_NODE("parent type has no @node — one error",
-            new NodeIdField("Film", "id", null, new Plain("film", "FILM", "Film", true, List.of(), List.of())),
-            List.of("Field 'id': @nodeId requires the containing type to have @node"));
+            List.of());
 
         private final String description;
         private final GraphitronField field;

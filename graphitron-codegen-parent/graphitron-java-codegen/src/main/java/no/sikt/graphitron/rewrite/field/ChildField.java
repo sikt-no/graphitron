@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.field;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.rewrite.type.TableRef;
+import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.WithNode;
 import no.sikt.graphitron.rewrite.field.ColumnRef;
 import no.sikt.graphitron.rewrite.field.FieldConditionRef;
 import no.sikt.graphitron.rewrite.field.NodeTypeRef;
@@ -84,19 +84,18 @@ public sealed interface ChildField extends GraphitronField
     /**
      * An {@code @nodeId} field that encodes a Relay Global ID from the source type's key columns.
      *
-     * <p>{@code parentTypeName} is the name of the containing GraphQL type.
+     * <p>Only constructed when the containing type carries {@code @node}. When {@code @nodeId}
+     * appears on a type without {@code @node}, the builder returns an
+     * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} instead.
      *
-     * <p>{@code table} is the parent type's resolved table. A
-     * {@link TableRef.ResolvedTable.WithNode} indicates that {@code @node} is present (valid);
-     * a {@link TableRef.ResolvedTable.Plain} indicates that {@code @node} is absent (a validation
-     * error); a {@link TableRef.UnresolvedTable} means the parent table did not resolve (a
-     * separate table-resolution error is reported instead).
+     * <p>{@code node} is the parent type's {@link WithNode} table reference, carrying the
+     * optional {@code typeId} and the resolved key columns used for Relay Global ID encoding.
      */
     record NodeIdField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        TableRef table
+        WithNode node
     ) implements ChildField {}
 
     /**

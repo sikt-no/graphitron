@@ -1269,7 +1269,9 @@ public class GraphitronSchemaBuilder {
                 List<ReferencePathElementRef> path = parseReferencePath(fieldDef);
                 return new NodeIdReferenceField(parentTypeName, name, location, typeName.get(), targetType, parentTable, nodeType, path);
             } else {
-                return new NodeIdField(parentTypeName, name, location, tableType.table());
+                if (!(tableType.table() instanceof ResolvedTable.WithNode wn))
+                    return new UnclassifiedField(parentTypeName, name, location, "@nodeId requires the containing type to have @node");
+                return new NodeIdField(parentTypeName, name, location, wn);
             }
         }
 

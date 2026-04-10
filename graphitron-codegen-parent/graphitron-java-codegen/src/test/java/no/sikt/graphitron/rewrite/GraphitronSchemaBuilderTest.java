@@ -45,7 +45,6 @@ import no.sikt.graphitron.rewrite.type.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.type.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable;
-import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.Plain;
 import no.sikt.graphitron.rewrite.type.TableRef.ResolvedTable.WithNode;
 import no.sikt.graphitron.rewrite.type.TableRef.UnresolvedTable;
 import no.sikt.graphql.schema.SchemaReadingHelper;
@@ -302,7 +301,7 @@ class GraphitronSchemaBuilderTest {
 
     enum NodeIdFieldCase {
         WITH_NODE_DIRECTIVE(
-            "@nodeId on a type that also has @node stores a WithNode table",
+            "@nodeId on a type that also has @node — classified as NodeIdField with WithNode",
             """
             type Film @table(name: "film") @node(keyColumns: ["film_id"]) {
               id: ID! @nodeId
@@ -311,19 +310,16 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var field = (NodeIdField) schema.field("Film", "id");
-                assertThat(field.table()).isInstanceOf(WithNode.class);
+                assertThat(field.node()).isInstanceOf(WithNode.class);
             }),
 
         WITHOUT_NODE_DIRECTIVE(
-            "@nodeId on a type without @node stores a Plain table",
+            "@nodeId on a type without @node — classified as UnclassifiedField",
             """
             type Film @table(name: "film") { id: ID! @nodeId }
             type Query { film: Film }
             """,
-            schema -> {
-                var field = (NodeIdField) schema.field("Film", "id");
-                assertThat(field.table()).isInstanceOf(Plain.class);
-            });
+            schema -> assertThat(schema.field("Film", "id")).isInstanceOf(UnclassifiedField.class));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
