@@ -182,6 +182,7 @@ The options are the same for both goals.
   * `onExternalFields` - Enable optional selects for external fields.
 * `useJdbcBatchingForDeletes` - Enables JDBC batching for delete operations in generated mutations. Enabled by default. If disabled, improved delete query with returning clause will be generated.
 * `useJdbcBatchingForInserts` - Enables JDBC batching for insert operations in generated mutations. Enabled by default. If disabled, improved insert query with returning clause will be generated.
+* `failOnMerge` - When enabled, code generation will fail if a MERGE (upsert) mutation is encountered. Disabled by default.
 
 See the [pom.xml](https://github.com/sikt-no/graphitron/blob/main/graphitron-example/graphitron-example-spec/pom.xml)
 of _graphitron-example-spec_ for an example on how to configure these settings.

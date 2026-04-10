@@ -93,6 +93,13 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @SuppressWarnings("unused")
     protected CodeGenerationThresholds codeGenerationThresholds;
 
+    /**
+     * When enabled, code generation will fail if a MERGE (upsert) mutation is encountered.
+     */
+    @Parameter(property = "graphitron.failOnMerge", defaultValue = "false")
+    @SuppressWarnings("unused")
+    protected boolean failOnMerge;
+
     @Parameter(property = "generate.optionalSelect")
     @SuppressWarnings("unused")
     protected OptionalSelect optionalSelect;
@@ -233,5 +240,10 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @Override
     public boolean validateOverlappingInputFields() {
         return validateOverlappingInputFields;
+    }
+
+    @Override
+    public boolean failOnMerge() {
+        return failOnMerge;
     }
 }

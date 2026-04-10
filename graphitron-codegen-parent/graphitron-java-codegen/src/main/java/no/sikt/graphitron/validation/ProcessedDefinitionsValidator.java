@@ -3,9 +3,7 @@ package no.sikt.graphitron.validation;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphql.schema.ProcessedSchema;
 
-import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.validation.ValidationHandler.logWarnings;
 import static no.sikt.graphitron.validation.ValidationHandler.throwIfErrors;
@@ -22,12 +20,12 @@ public class ProcessedDefinitionsValidator {
 
     public ProcessedDefinitionsValidator(ProcessedSchema schema) {
         this.schema = schema;
-        allFields = Collections.unmodifiableList(schema
+        allFields = schema
                 .getObjects()
                 .values()
                 .stream()
                 .flatMap(it -> it.getFields().stream())
-                .collect(Collectors.toList()));
+                .toList();
 
         validators = List.of(
                 new InterfaceValidator(schema, allFields),

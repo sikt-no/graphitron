@@ -1,5 +1,6 @@
 package no.sikt.graphitron.validation;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.InputField;
@@ -70,6 +71,13 @@ class MutationValidator extends AbstractSchemaValidator {
                 .stream()
                 .filter(it -> it.hasMutationType() && !new InputParser(it, schema).hasJOOQRecords())
                 .forEach(it -> addErrorMessage("Mutations must have at least one table attached when generating resolvers with queries. Mutation '%s' has no tables attached.", it.getName()));
+
+        if (GeneratorConfig.failOnMerge()) {
+            mutations
+                    .stream()
+                    .filter(it -> it.hasMutationType() && it.getMutationType() == MutationType.UPSERT)
+                    .forEach(it -> addErrorMessage("MERGE generation is disabled (failOnMerge is enabled), but mutation '%s' uses UPSERT.", it.getName()));
+        }
     }
 
     private void validateMutationRequiredFields() {
@@ -191,7 +199,7 @@ class MutationValidator extends AbstractSchemaValidator {
             var possibleFixes = new ArrayList<>(idFields.stream().map(GenerationSourceField::formatPath).map(it -> "Make " + it + " non-nullable.").toList());
             if (schema.getNodeTypesWithTable(targetTable).size() == 1) {
                 possibleFixes.add(String.format("Add non-nullable node ID input field for type '%s'.",
-                        schema.getNodeTypesWithTable(targetTable).stream().findFirst().get().getName())
+                        schema.getNodeTypesWithTable(targetTable).stream().findFirst().orElseThrow().getName())
                 );
             }
 
