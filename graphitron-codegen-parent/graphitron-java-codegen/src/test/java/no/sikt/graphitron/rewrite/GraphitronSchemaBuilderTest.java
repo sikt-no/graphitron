@@ -15,7 +15,8 @@ import no.sikt.graphitron.rewrite.field.ChildField.NestingField;
 import no.sikt.graphitron.rewrite.field.ChildField.NodeIdField;
 import no.sikt.graphitron.rewrite.field.ChildField.NodeIdReferenceField;
 import no.sikt.graphitron.rewrite.field.ChildField.PropertyField;
-import no.sikt.graphitron.rewrite.field.ChildField.ServiceField;
+import no.sikt.graphitron.rewrite.field.ChildField.ServiceTableField;
+import no.sikt.graphitron.rewrite.field.ChildField.ServiceRecordField;
 import no.sikt.graphitron.rewrite.field.ChildField.LookupTableField;
 import no.sikt.graphitron.rewrite.field.ChildField.SplitTableField;
 import no.sikt.graphitron.rewrite.field.ChildField.TableField;
@@ -718,21 +719,21 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== ServiceField =====
+    // ===== ServiceTableField / ServiceRecordField =====
 
     enum ServiceFieldCase {
-        ON_TABLE_TYPE(
-            "@service on a @table parent → ServiceField",
+        ON_TABLE_TYPE_SCALAR_RETURN(
+            "@service on a @table parent returning scalar → ServiceRecordField",
             """
             type Film @table(name: "film") {
                 rating: String @service(service: {className: "com.example.RatingSvc", method: "get"})
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("Film", "rating")).isInstanceOf(ServiceField.class)),
+            schema -> assertThat(schema.field("Film", "rating")).isInstanceOf(ServiceRecordField.class)),
 
         TABLE_TYPE_RETURN(
-            "@service on @table parent returning another @table type → ServiceField with TableBoundReturnType",
+            "@service on @table parent returning another @table type → ServiceTableField",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -741,7 +742,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var f = (ServiceField) schema.field("Film", "language");
+                var f = (ServiceTableField) schema.field("Film", "language");
                 assertThat(f.returnType()).isInstanceOf(no.sikt.graphitron.rewrite.field.ReturnTypeRef.TableBoundReturnType.class);
                 assertThat(f.returnType().returnTypeName()).isEqualTo("Language");
             });
@@ -864,13 +865,13 @@ class GraphitronSchemaBuilderTest {
             }),
 
         SERVICE_FIELD_ON_RESULT_TYPE(
-            "@record parent + @service → ServiceField",
+            "@record parent + @service + scalar return → ServiceRecordField",
             """
             type FilmDetails @record { rating: String @service(service: {className: "com.example.RatingSvc", method: "get"}) }
             type Film @table(name: "film") { details: FilmDetails }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("FilmDetails", "rating")).isInstanceOf(ServiceField.class));
+            schema -> assertThat(schema.field("FilmDetails", "rating")).isInstanceOf(ServiceRecordField.class));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -966,7 +967,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.field.ChildField.ServiceField) schema.field("Film", "rating");
+                var f = (no.sikt.graphitron.rewrite.field.ChildField.ServiceRecordField) schema.field("Film", "rating");
                 assertThat(f.contextArguments()).containsExactly("tenantId", "userId");
             }),
 

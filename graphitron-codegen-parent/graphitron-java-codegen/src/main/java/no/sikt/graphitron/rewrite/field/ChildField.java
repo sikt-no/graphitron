@@ -22,7 +22,9 @@ public sealed interface ChildField extends GraphitronField
             ChildField.TableMethodField,
             ChildField.TableInterfaceField, ChildField.InterfaceField, ChildField.UnionField,
             ChildField.NestingField, ChildField.ConstructorField,
-            ChildField.ServiceField, ChildField.ComputedField, ChildField.PropertyField,
+            ChildField.ServiceTableField, ChildField.ServiceRecordField,
+            ChildField.RecordTableField, ChildField.RecordLookupTableField, ChildField.RecordField,
+            ChildField.ComputedField, ChildField.PropertyField,
             ChildField.MultitableReferenceField {
 
     /**
@@ -155,8 +157,7 @@ public sealed interface ChildField extends GraphitronField
      * {@link FieldConditionRef.NoFieldCondition} when no {@code @condition} is present. The validator
      * reports an error for an {@link FieldConditionRef.UnresolvedFieldCondition}.
      *
-     * <p>On a table-mapped parent this generates an inline SQL JOIN. On a result-mapped parent
-     * it always starts a new scope via DataLoader with a derived source table.
+     * <p>On a table-mapped parent this generates an inline SQL JOIN.
      */
     record TableField(
         String parentTypeName,
@@ -334,32 +335,57 @@ public sealed interface ChildField extends GraphitronField
     ) implements ChildField {}
 
     /**
-     * A child field delegating to a developer-provided service class via {@code @service}.
+     * A child field delegating to a developer-provided service class via {@code @service}, where
+     * the return type is annotated with {@code @table} (source → table-mapped target).
      *
-     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema.
+     * <p>Graphitron generates a DataLoader-based data fetcher. The parent type may be either
+     * table-mapped or result-mapped — the service method provides the SQL separately.
      *
-     * <p>{@code referencePath} is the ordered list of join steps extracted from {@code @reference(path:)},
-     * providing the lift condition that reconnects this field's result back to the parent table.
-     * Each element should carry a {@code condition} method — no FK is involved in lift conditions.
-     * Empty when no {@code @reference} directive is present.
+     * <p>{@code returnType} is narrowed to {@link ReturnTypeRef.TableBoundReturnType}; the
+     * classified schema guarantees that it resolved to a table-backed type.
+     *
+     * <p>{@code referencePath} is the ordered list of join steps from {@code @reference(path:)},
+     * providing lift conditions that reconnect results back to the parent. Each element should
+     * carry a {@code condition} method — no FK is involved. Empty when {@code @reference} is absent.
      *
      * <p>{@code serviceRef} is the {@code service: ExternalCodeReference!} argument of the
      * {@code @service} directive — the Java class and method to delegate to.
      *
+     * <p>{@code arguments} is the full list of GraphQL arguments on the field.
+     *
      * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
      * of the {@code @service} directive.
      *
-     * <p>{@code arguments} is the full list of GraphQL arguments on the field.
-     *
      * <p>{@code serviceMethodRef} is the outcome of reflecting the service method at parse time:
-     * {@link ServiceMethodRef.Resolved} when the class and method were found (carrying the
-     * parameter list as {@link ServiceMethodRef.ServiceParam} variants), or
+     * {@link ServiceMethodRef.Resolved} carrying the parameter list, or
      * {@link ServiceMethodRef.Unresolved} when reflection failed. The
-     * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error for
-     * {@code Unresolved} when the return type is table-bound.
+     * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error for the
+     * {@code Unresolved} case.
      */
-    record ServiceField(
+    record ServiceTableField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.TableBoundReturnType returnType,
+        List<ReferencePathElementRef> referencePath,
+        ExternalRef serviceRef,
+        List<ArgumentSpec> arguments,
+        List<String> contextArguments,
+        ServiceMethodRef serviceMethodRef
+    ) implements ChildField {}
+
+    /**
+     * A child field delegating to a developer-provided service class via {@code @service}, where
+     * the return type is NOT table-mapped (source → record/scalar target).
+     *
+     * <p>No DataLoader is generated. The service method is called directly from the data fetcher.
+     * Validation confirms the reflected method signature matches the declared arguments and context
+     * keys.
+     *
+     * <p>{@code referencePath}, {@code serviceRef}, {@code arguments}, {@code contextArguments},
+     * and {@code serviceMethodRef} have the same semantics as {@link ServiceTableField}.
+     */
+    record ServiceRecordField(
         String parentTypeName,
         String name,
         SourceLocation location,
@@ -369,6 +395,68 @@ public sealed interface ChildField extends GraphitronField
         List<ArgumentSpec> arguments,
         List<String> contextArguments,
         ServiceMethodRef serviceMethodRef
+    ) implements ChildField {}
+
+    /**
+     * A child field on a result-mapped parent whose return type is annotated with {@code @table} —
+     * always starts a new DataLoader scope (result-mapped → table-mapped target).
+     *
+     * <p>Classified when a field on a {@code @record} type returns a {@code @table}-annotated type,
+     * with no {@code @lookupKey} on its arguments. The generator derives a source table from the
+     * parent's data and opens a new SQL scope.
+     *
+     * <p>{@code returnType} is narrowed to {@link ReturnTypeRef.TableBoundReturnType}.
+     *
+     * <p>{@code referencePath}, {@code condition}, and {@code arguments} have the same semantics
+     * as {@link TableField}.
+     */
+    record RecordTableField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.TableBoundReturnType returnType,
+        List<ReferencePathElementRef> referencePath,
+        FieldConditionRef condition,
+        List<ArgumentSpec> arguments
+    ) implements ChildField {}
+
+    /**
+     * A child field on a result-mapped parent whose arguments carry {@code @lookupKey} and whose
+     * return type is annotated with {@code @table} (result-mapped → table-mapped target, lookup).
+     *
+     * <p>Classified when a field on a {@code @record} type returns a {@code @table}-annotated type
+     * and any argument carries {@code @lookupKey}.
+     *
+     * <p>{@code returnType} is narrowed to {@link ReturnTypeRef.TableBoundReturnType}.
+     *
+     * <p>{@code referencePath} and {@code arguments} have the same semantics as {@link LookupTableField}.
+     */
+    record RecordLookupTableField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.TableBoundReturnType returnType,
+        List<ReferencePathElementRef> referencePath,
+        List<ArgumentSpec> arguments
+    ) implements ChildField {}
+
+    /**
+     * A child field on a result-mapped parent whose return type is itself result-mapped —
+     * nested record access (result-mapped → result-mapped target).
+     *
+     * <p>Classified when a field on a {@code @record} type returns another {@code @record} type
+     * (or any non-table, non-scalar return). The generator accesses the named property on the
+     * source record.
+     *
+     * <p>{@code columnName} is the property name used when accessing the source record:
+     * the value of {@code @field(name:)} when present, otherwise the GraphQL field name.
+     */
+    record RecordField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef returnType,
+        String columnName
     ) implements ChildField {}
 
     /**

@@ -67,7 +67,7 @@ class FieldsCodeGeneratorTest {
             ),
             "java.util.List"
         );
-        return new ChildField.ServiceField(
+        return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
             List.of(), new ExternalRef("no.example.FilmService", "getFilms"),
             List.of(new ArgumentSpec("filter", "String", false, false, false, false, "filter")),
@@ -334,7 +334,7 @@ class FieldsCodeGeneratorTest {
 
     @Test
     void serviceField_unresolvedRef_fallsBackToObjectStub() {
-        var unresolvedField = new ChildField.ServiceField(
+        var unresolvedField = new ChildField.ServiceTableField(
             "Language", "films", null,
             new ReturnTypeRef.TableBoundReturnType("Film",
                 new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of(), List.of()),

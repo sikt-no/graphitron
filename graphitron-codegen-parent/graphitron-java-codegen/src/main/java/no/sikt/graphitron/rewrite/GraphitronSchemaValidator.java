@@ -94,7 +94,11 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.field.ChildField.UnionField f              -> validateUnionField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.NestingField f            -> validateNestingField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.ConstructorField f        -> validateConstructorField(f, errors);
-            case no.sikt.graphitron.rewrite.field.ChildField.ServiceField f            -> validateServiceField(f, types, errors);
+            case no.sikt.graphitron.rewrite.field.ChildField.ServiceTableField f       -> validateServiceTableField(f, types, errors);
+            case no.sikt.graphitron.rewrite.field.ChildField.ServiceRecordField f      -> validateServiceRecordField(f, types, errors);
+            case no.sikt.graphitron.rewrite.field.ChildField.RecordTableField f        -> validateRecordTableField(f, types, errors);
+            case no.sikt.graphitron.rewrite.field.ChildField.RecordLookupTableField f  -> validateRecordLookupTableField(f, types, errors);
+            case no.sikt.graphitron.rewrite.field.ChildField.RecordField f             -> validateRecordField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.ComputedField f           -> validateComputedField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.PropertyField f           -> validatePropertyField(f, errors);
             case no.sikt.graphitron.rewrite.field.ChildField.MultitableReferenceField f -> validateMultitableReferenceField(f, errors);
@@ -461,14 +465,9 @@ public class GraphitronSchemaValidator {
     }
     private void validateNestingField(no.sikt.graphitron.rewrite.field.ChildField.NestingField field, List<ValidationError> errors) {}
     private void validateConstructorField(no.sikt.graphitron.rewrite.field.ChildField.ConstructorField field, List<ValidationError> errors) {}
-    private void validateServiceField(no.sikt.graphitron.rewrite.field.ChildField.ServiceField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+    private void validateServiceTableField(no.sikt.graphitron.rewrite.field.ChildField.ServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
-
-        // DataLoader-based generation is only applicable when the return type is table-bound.
-        if (!(field.returnType() instanceof no.sikt.graphitron.rewrite.field.ReturnTypeRef.TableBoundReturnType)) {
-            return;
-        }
 
         // Unresolved service method reference — cannot generate DataLoader code.
         if (field.serviceMethodRef() instanceof no.sikt.graphitron.rewrite.field.ServiceMethodRef.Unresolved u) {
@@ -556,6 +555,39 @@ public class GraphitronSchemaValidator {
             ));
         }
     }
+    private void validateServiceRecordField(no.sikt.graphitron.rewrite.field.ChildField.ServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
+        if (field.serviceMethodRef() instanceof no.sikt.graphitron.rewrite.field.ServiceMethodRef.Unresolved u) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': service method could not be resolved — " + u.reason(),
+                field.location()
+            ));
+        }
+    }
+    private void validateRecordTableField(no.sikt.graphitron.rewrite.field.ChildField.RecordTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        if (field.condition() instanceof FieldConditionRef.UnresolvedFieldCondition u) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': condition method '" + u.qualifiedName() + "' could not be resolved",
+                field.location()
+            ));
+        }
+        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
+    }
+    private void validateRecordLookupTableField(no.sikt.graphitron.rewrite.field.ChildField.RecordLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.field.FieldWrapper.Connection) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': lookup fields must not return a connection",
+                field.location()
+            ));
+        }
+        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
+    }
+    private void validateRecordField(no.sikt.graphitron.rewrite.field.ChildField.RecordField field, List<ValidationError> errors) {}
 
     /**
      * Builds the fully-qualified generic type string for a Row-keyed or Record-keyed SOURCES

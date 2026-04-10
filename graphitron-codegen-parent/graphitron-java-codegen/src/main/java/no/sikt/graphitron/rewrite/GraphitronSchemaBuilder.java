@@ -42,7 +42,11 @@ import no.sikt.graphitron.rewrite.field.ChildField.NestingField;
 import no.sikt.graphitron.rewrite.field.ChildField.NodeIdField;
 import no.sikt.graphitron.rewrite.field.ChildField.NodeIdReferenceField;
 import no.sikt.graphitron.rewrite.field.ChildField.PropertyField;
-import no.sikt.graphitron.rewrite.field.ChildField.ServiceField;
+import no.sikt.graphitron.rewrite.field.ChildField.RecordField;
+import no.sikt.graphitron.rewrite.field.ChildField.RecordLookupTableField;
+import no.sikt.graphitron.rewrite.field.ChildField.RecordTableField;
+import no.sikt.graphitron.rewrite.field.ChildField.ServiceRecordField;
+import no.sikt.graphitron.rewrite.field.ChildField.ServiceTableField;
 import no.sikt.graphitron.rewrite.field.ChildField.TableField;
 import no.sikt.graphitron.rewrite.field.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.field.ChildField.TableMethodField;
@@ -1136,19 +1140,42 @@ public class GraphitronSchemaBuilder {
             List<String> contextArguments = parseContextArguments(fieldDef, DIR_SERVICE);
             Set<String> argNames = arguments.stream().map(ArgumentSpec::name).collect(Collectors.toSet());
             ServiceMethodRef serviceMethodRef = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArguments));
-            return new ServiceField(parentTypeName, name, location,
-                resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
-                parseReferencePath(fieldDef),
-                serviceRef,
-                arguments,
-                contextArguments,
-                serviceMethodRef);
+            ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+            if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
+                return new ServiceTableField(parentTypeName, name, location, tb,
+                    parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
+            }
+            return new ServiceRecordField(parentTypeName, name, location, returnType,
+                parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
         }
 
+        if (isScalarOrEnum(fieldDef)) {
+            String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
+                ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
+                : name;
+            return new PropertyField(parentTypeName, name, location, columnName);
+        }
+
+        // Object return type on a result-mapped parent.
+        String rawTypeName = baseTypeName(fieldDef);
+        String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
+        ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+
+        if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
+            boolean hasLookupKey = hasLookupKeyAnywhere(fieldDef);
+            if (hasLookupKey) {
+                return new RecordLookupTableField(parentTypeName, name, location, tb,
+                    parseReferencePath(fieldDef), parseArguments(fieldDef));
+            }
+            return new RecordTableField(parentTypeName, name, location, tb,
+                parseReferencePath(fieldDef), new FieldConditionRef.NoFieldCondition(), parseArguments(fieldDef));
+        }
+
+        // Non-table object return (result-mapped or other) — nested record access.
         String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
             ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
-        return new PropertyField(parentTypeName, name, location, columnName);
+        return new RecordField(parentTypeName, name, location, returnType, columnName);
     }
 
     private GraphitronField classifyChildFieldOnTableType(GraphQLFieldDefinition fieldDef, String parentTypeName, TableType tableType) {
@@ -1163,13 +1190,13 @@ public class GraphitronSchemaBuilder {
             List<String> contextArguments = parseContextArguments(fieldDef, DIR_SERVICE);
             Set<String> argNames = arguments.stream().map(ArgumentSpec::name).collect(Collectors.toSet());
             ServiceMethodRef serviceMethodRef = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArguments));
-            return new ServiceField(parentTypeName, name, location,
-                resolveReturnType(elementTypeName, buildWrapper(fieldDef)),
-                parseReferencePath(fieldDef),
-                serviceRef,
-                arguments,
-                contextArguments,
-                serviceMethodRef);
+            ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+            if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
+                return new ServiceTableField(parentTypeName, name, location, tb,
+                    parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
+            }
+            return new ServiceRecordField(parentTypeName, name, location, returnType,
+                parseReferencePath(fieldDef), serviceRef, arguments, contextArguments, serviceMethodRef);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) {

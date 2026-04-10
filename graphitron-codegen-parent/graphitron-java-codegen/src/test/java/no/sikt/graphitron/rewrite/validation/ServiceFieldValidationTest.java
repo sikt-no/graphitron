@@ -5,7 +5,8 @@ import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.ConditionOnlyRef
 import no.sikt.graphitron.rewrite.field.GraphitronField;
 import no.sikt.graphitron.rewrite.field.MethodRef;
 import no.sikt.graphitron.rewrite.field.ParamInfo;
-import no.sikt.graphitron.rewrite.field.ChildField.ServiceField;
+import no.sikt.graphitron.rewrite.field.ChildField.ServiceTableField;
+import no.sikt.graphitron.rewrite.field.ChildField.ServiceRecordField;
 import no.sikt.graphitron.rewrite.field.ServiceMethodRef;
 import no.sikt.graphitron.rewrite.field.ServiceMethodRef.ServiceParam;
 import no.sikt.graphitron.rewrite.field.SourcesRef;
@@ -25,41 +26,77 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ServiceFieldValidationTest {
 
-    enum Case implements ValidatorCase {
+    // ===== ServiceRecordField — non-table return type =====
 
-        NO_PATH("no @reference — no lift condition; valid when return type is not table-mapped",
-            new ServiceField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(), null, List.of(), List.of(), new ServiceMethodRef.Unresolved("test")),
+    private static final ServiceMethodRef RESOLVED_METHOD = new ServiceMethodRef.Resolved(List.of(), "void");
+
+    enum RecordCase implements ValidatorCase {
+
+        NO_PATH("no @reference — no lift condition; valid for non-table return",
+            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(), null, List.of(), List.of(), RESOLVED_METHOD),
             List.of()),
 
         WITH_LIFT_CONDITION("lift condition with a resolved method",
-            new ServiceField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(
+            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new ConditionOnlyRef(new MethodRef("com.example.Conditions.liftCondition", "org.jooq.Condition",
                     List.of(new ParamInfo("org.jooq.DSLContext", "ctx"))))),
-                null, List.of(), List.of(), new ServiceMethodRef.Unresolved("test")),
+                null, List.of(), List.of(), RESOLVED_METHOD),
             List.of()),
 
         UNRESOLVED_CONDITION("lift condition method present but could not be resolved via reflection",
-            new ServiceField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(
+            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new UnresolvedConditionRef("com.example.Conditions.liftCondition")),
-                null, List.of(), List.of(), new ServiceMethodRef.Unresolved("test")),
+                null, List.of(), List.of(), RESOLVED_METHOD),
             List.of("Field 'externalChild': condition method 'com.example.Conditions.liftCondition' could not be resolved")),
 
         UNRESOLVED_KEY("key name specified but FK could not be found in the jOOQ catalog",
-            new ServiceField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(
+            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new UnresolvedKeyRef("FILM_ACTOR_FK")),
-                null, List.of(), List.of(), new ServiceMethodRef.Unresolved("test")),
+                null, List.of(), List.of(), RESOLVED_METHOD),
             List.of("Field 'externalChild': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog")),
 
         UNRESOLVED_KEY_AND_CONDITION("both key and condition specified, neither could be resolved — two errors",
-            new ServiceField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(
+            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new UnresolvedKeyAndConditionRef("FILM_ACTOR_FK", "com.example.Conditions.liftCondition")),
-                null, List.of(), List.of(), new ServiceMethodRef.Unresolved("test")),
+                null, List.of(), List.of(), RESOLVED_METHOD),
             List.of(
                 "Field 'externalChild': key 'FILM_ACTOR_FK' could not be resolved in the jOOQ catalog",
                 "Field 'externalChild': condition method 'com.example.Conditions.liftCondition' could not be resolved")),
 
+        UNRESOLVED_METHOD("service method could not be reflected — validation error",
+            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType("Film", new FieldWrapper.Single(true)), List.of(),
+                null, List.of(), List.of(), new ServiceMethodRef.Unresolved("method not found")),
+            List.of("Field 'externalChild': service method could not be resolved — method not found"));
+
+        private final String description;
+        private final GraphitronField field;
+        private final List<String> errors;
+
+        RecordCase(String description, GraphitronField field, List<String> errors) {
+            this.description = description;
+            this.field = field;
+            this.errors = errors;
+        }
+
+        @Override public GraphitronField field() { return field; }
+        @Override public List<String> errors() { return errors; }
+        @Override public String toString() { return description; }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(RecordCase.class)
+    void serviceRecordFieldValidation(RecordCase tc) {
+        assertThat(validate(tc.field()))
+            .extracting(ValidationError::message)
+            .containsExactlyInAnyOrderElementsOf(tc.errors());
+    }
+
+    // ===== ServiceTableField — table-bound return type =====
+
+    enum TableCase implements ValidatorCase {
+
         SOURCES_WRONG_TYPE("SOURCES param element type not recognized — validator rejects it",
-            new ServiceField("Film", "externalChild", null,
+            new ServiceTableField("Film", "externalChild", null,
                 new ReturnTypeRef.TableBoundReturnType("Film",
                     new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of("film_id"), List.of("java.lang.Integer")),
                     new FieldWrapper.Single(true)),
@@ -70,7 +107,7 @@ class ServiceFieldValidationTest {
             List.of("Field 'externalChild': SOURCES parameter 'filmKeys' type is not recognized — expected List<RowN<...>>, List<RecordN<...>>, or List<SomeTableRecord>, found: java.util.List<java.lang.String>")),
 
         SOURCES_CORRECT_TYPE("SOURCES param is RowKeyed — no error (parent is RootType, no PK cross-check)",
-            new ServiceField("Film", "externalChild", null,
+            new ServiceTableField("Film", "externalChild", null,
                 new ReturnTypeRef.TableBoundReturnType("Film",
                     new TableRef.ResolvedTable("film", "FILM", "Film", true, List.of("film_id"), List.of("java.lang.Integer")),
                     new FieldWrapper.Single(true)),
@@ -84,7 +121,7 @@ class ServiceFieldValidationTest {
         private final GraphitronField field;
         private final List<String> errors;
 
-        Case(String description, GraphitronField field, List<String> errors) {
+        TableCase(String description, GraphitronField field, List<String> errors) {
             this.description = description;
             this.field = field;
             this.errors = errors;
@@ -96,8 +133,8 @@ class ServiceFieldValidationTest {
     }
 
     @ParameterizedTest(name = "{0}")
-    @EnumSource(Case.class)
-    void serviceFieldValidation(Case tc) {
+    @EnumSource(TableCase.class)
+    void serviceTableFieldValidation(TableCase tc) {
         assertThat(validate(tc.field()))
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());

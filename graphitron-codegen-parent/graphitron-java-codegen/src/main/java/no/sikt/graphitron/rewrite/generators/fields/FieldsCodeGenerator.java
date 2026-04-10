@@ -33,8 +33,8 @@ import java.util.List;
  *   <li>For {@link QueryField.LookupQueryField}: an async data fetcher stub returning
  *       {@code CompletableFuture<List<Record>>} and a bespoke synchronous
  *       {@code lookupFieldName(DataFetchingEnvironment env, SelectedField sel)} stub.</li>
- *   <li>For {@link ChildField.ServiceField} with a table-bound return type and a resolved service
- *       method reference: an async DataLoader-based data fetcher and a rows method
+ *   <li>For {@link ChildField.ServiceTableField} with a resolved service method reference:
+ *       an async DataLoader-based data fetcher and a rows method
  *       {@code loadFieldName(List<Row1<T>>, DataFetchingEnvironment, SelectedField)} (where T is
  *       the parent PK column Java type) that extracts
  *       arguments, calls the service, and delegates to the table's {@code selectMany}/
@@ -75,13 +75,12 @@ public class FieldsCodeGenerator {
             if (field instanceof QueryField.LookupQueryField lookup) {
                 builder.addMethod(buildLookupDataFetcher(lookup));
                 builder.addMethod(buildLookupMethod(lookup));
-            } else if (field instanceof ChildField.ServiceField sf
+            } else if (field instanceof ChildField.ServiceTableField sf
                     && sf.serviceMethodRef() instanceof ServiceMethodRef.Resolved smr
-                    && sf.returnType() instanceof ReturnTypeRef.TableBoundReturnType tb
-                    && tb.table() instanceof TableRef.ResolvedTable rt
+                    && sf.returnType().table() instanceof TableRef.ResolvedTable rt
                     && parentTable instanceof TableRef.ResolvedTable prt) {
-                builder.addMethod(buildServiceDataFetcher(sf, smr, tb, prt, className));
-                builder.addMethod(buildServiceRowsMethod(sf, smr, tb, rt, prt));
+                builder.addMethod(buildServiceDataFetcher(sf, smr, sf.returnType(), prt, className));
+                builder.addMethod(buildServiceRowsMethod(sf, smr, sf.returnType(), rt, prt));
                 needsGraphitronContextHelper = true;
             } else if (field instanceof ChildField.SplitTableField stf) {
                 builder.addMethod(buildSplitQueryDataFetcher(stf));
@@ -131,8 +130,8 @@ public class FieldsCodeGenerator {
     }
 
     /**
-     * Builds the DataLoader-based async data fetcher for a {@link ChildField.ServiceField} with a
-     * table-bound return type and a resolved service method.
+     * Builds the DataLoader-based async data fetcher for a {@link ChildField.ServiceTableField}
+     * with a resolved service method.
      *
      * <p>List/connection: returns {@code CompletableFuture<List<Record>>}.
      * Single: returns {@code CompletableFuture<Record>}.
@@ -146,7 +145,7 @@ public class FieldsCodeGenerator {
      * </ul>
      */
     private MethodSpec buildServiceDataFetcher(
-            ChildField.ServiceField sf,
+            ChildField.ServiceTableField sf,
             ServiceMethodRef.Resolved smr,
             ReturnTypeRef.TableBoundReturnType tb,
             TableRef.ResolvedTable prt,
@@ -221,7 +220,7 @@ public class FieldsCodeGenerator {
     }
 
     /**
-     * Builds the rows method for a {@link ChildField.ServiceField}. The rows method:
+     * Builds the rows method for a {@link ChildField.ServiceTableField}. The rows method:
      * <ol>
      *   <li>Extracts GraphQL arguments from the DFE.</li>
      *   <li>Extracts context values via {@code GraphitronContext.getContextArgument}.</li>
@@ -238,7 +237,7 @@ public class FieldsCodeGenerator {
      * </ul>
      */
     private MethodSpec buildServiceRowsMethod(
-            ChildField.ServiceField sf,
+            ChildField.ServiceTableField sf,
             ServiceMethodRef.Resolved smr,
             ReturnTypeRef.TableBoundReturnType tb,
             TableRef.ResolvedTable rt,
