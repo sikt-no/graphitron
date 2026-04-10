@@ -111,7 +111,7 @@ public class GraphitronSchemaValidator {
     // --- Type validators (stubs — filled in as test classes are added) ---
 
     private void validateTableType(no.sikt.graphitron.rewrite.type.GraphitronType.TableType type, List<ValidationError> errors) {
-        if (type.table() instanceof UnresolvedTable) {
+        if (type.table() instanceof UnresolvedTable unresolvedTable) {
             errors.add(new ValidationError(
                 "Type '" + type.name() + "': table '" + type.table().tableName() + "' could not be resolved in the jOOQ catalog",
                 type.location()
@@ -131,7 +131,7 @@ public class GraphitronSchemaValidator {
     private void validateResultType(no.sikt.graphitron.rewrite.type.GraphitronType.ResultType type, List<ValidationError> errors) {}
     private void validateRootType(no.sikt.graphitron.rewrite.type.GraphitronType.RootType type, List<ValidationError> errors) {}
     private void validateTableInterfaceType(no.sikt.graphitron.rewrite.type.GraphitronType.TableInterfaceType type, List<ValidationError> errors) {
-        if (type.table() instanceof UnresolvedTable) {
+        if (type.table() instanceof UnresolvedTable unresolvedTable) {
             errors.add(new ValidationError(
                 "Type '" + type.name() + "': table '" + type.table().tableName() + "' could not be resolved in the jOOQ catalog",
                 type.location()
@@ -152,7 +152,7 @@ public class GraphitronSchemaValidator {
     }
 
     private void validateTableInputType(no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType type, List<ValidationError> errors) {
-        if (type.table() instanceof UnresolvedTable) {
+        if (type.table() instanceof UnresolvedTable unresolvedTable) {
             errors.add(new ValidationError(
                 "Input type '" + type.name() + "': table '" + type.table().tableName() + "' could not be resolved in the jOOQ catalog",
                 type.location()
@@ -293,7 +293,7 @@ public class GraphitronSchemaValidator {
     }
     private void validateMutationServiceRecordField(no.sikt.graphitron.rewrite.field.MutationField.MutationServiceRecordField field, List<ValidationError> errors) {}
     private void validateColumnField(no.sikt.graphitron.rewrite.field.ChildField.ColumnField field, List<ValidationError> errors) {
-        if (field.column() instanceof UnresolvedColumn) {
+        if (field.column() instanceof UnresolvedColumn unresolvedColumn) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': column '" + field.columnName() + "' could not be resolved in the jOOQ table",
                 field.location()
@@ -307,7 +307,7 @@ public class GraphitronSchemaValidator {
         }
     }
     private void validateColumnReferenceField(no.sikt.graphitron.rewrite.field.ChildField.ColumnReferenceField field, List<ValidationError> errors) {
-        if (field.column() instanceof UnresolvedColumn) {
+        if (field.column() instanceof UnresolvedColumn unresolvedColumn) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': column '" + field.columnName() + "' could not be resolved in the jOOQ table",
                 field.location()

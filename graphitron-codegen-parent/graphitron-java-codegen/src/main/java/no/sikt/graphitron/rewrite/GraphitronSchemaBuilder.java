@@ -387,7 +387,7 @@ public class GraphitronSchemaBuilder {
             }
             return new InterfaceType(name, location, List.of());
         }
-        if (namedType instanceof GraphQLUnionType) {
+        if (namedType instanceof GraphQLUnionType graphQLUnionType) {
             return new UnionType(name, location, List.of());
         }
         return null;
@@ -544,7 +544,7 @@ public class GraphitronSchemaBuilder {
             : rawTypeName;
         GraphitronType elementType = types.get(elementTypeName);
 
-        if (elementType instanceof TableType) {
+        if (elementType instanceof TableType tableType) {
             var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             var rt = returnType.table() instanceof ResolvedTable r ? r : null;
             var args = fieldDef.getArguments().stream()
@@ -570,24 +570,24 @@ public class GraphitronSchemaBuilder {
                 returnType, referencePath, new FieldConditionRef.NoFieldCondition(), args);
         }
 
-        if (elementType instanceof TableInterfaceType) {
+        if (elementType instanceof TableInterfaceType tableInterfaceType) {
             return new TableInterfaceField(parentTypeName, name, location,
                 (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
-        if (elementType instanceof InterfaceType) {
+        if (elementType instanceof InterfaceType interfaceType) {
             return new InterfaceField(parentTypeName, name, location,
                 (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
-        if (elementType instanceof UnionType) {
+        if (elementType instanceof UnionType unionType) {
             return new UnionField(parentTypeName, name, location,
                 (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
         // NestingField: a plain object type in the schema with no Graphitron classification.
         // Its fields are resolved from the same table context as the parent.
-        if (schema.getType(elementTypeName) instanceof GraphQLObjectType && elementType == null) {
+        if (schema.getType(elementTypeName) instanceof GraphQLObjectType graphQLObjectType && elementType == null) {
             return new NestingField(parentTypeName, name, location,
                 new ReturnTypeRef.OtherReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
@@ -766,13 +766,13 @@ public class GraphitronSchemaBuilder {
             return new MultitableReferenceField(parentTypeName, name, location);
         }
 
-        if (parentType instanceof RootType) {
+        if (parentType instanceof RootType rootType) {
             return classifyRootField(fieldDef, parentTypeName);
         }
         if (parentType instanceof TableType tableType) {
             return classifyChildFieldOnTableType(fieldDef, parentTypeName, tableType);
         }
-        if (parentType instanceof ResultType) {
+        if (parentType instanceof ResultType resultType) {
             return classifyChildFieldOnResultType(fieldDef, parentTypeName);
         }
 
@@ -864,7 +864,7 @@ public class GraphitronSchemaBuilder {
         String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
         GraphitronType elementType = types.get(elementTypeName);
 
-        if (elementType instanceof TableType) {
+        if (elementType instanceof TableType tableType) {
             var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             var rt = returnType.table() instanceof ResolvedTable r ? r : null;
             var args = fieldDef.getArguments().stream()
@@ -874,15 +874,15 @@ public class GraphitronSchemaBuilder {
                 returnType,
                 args);
         }
-        if (elementType instanceof TableInterfaceType) {
+        if (elementType instanceof TableInterfaceType tableInterfaceType) {
             return new QueryField.QueryTableInterfaceField(parentTypeName, name, location,
                 (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
-        if (elementType instanceof InterfaceType) {
+        if (elementType instanceof InterfaceType interfaceType) {
             return new QueryField.QueryInterfaceField(parentTypeName, name, location,
                 (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
-        if (elementType instanceof UnionType) {
+        if (elementType instanceof UnionType unionType) {
             return new QueryField.QueryUnionField(parentTypeName, name, location,
                 (ReturnTypeRef.OtherReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
