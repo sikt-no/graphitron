@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.generators.fields;
+package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;

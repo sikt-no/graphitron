@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.generators.fields;
+package no.sikt.graphitron.rewrite.generators;
 
 import org.jooq.Row1;
 

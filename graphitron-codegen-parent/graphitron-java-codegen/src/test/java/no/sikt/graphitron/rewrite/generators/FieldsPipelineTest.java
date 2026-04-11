@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.generators.fields;
+package no.sikt.graphitron.rewrite.generators;
 
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
@@ -160,7 +160,7 @@ class FieldsPipelineTest {
             type Query { dummy: String }
             extend type Language {
                 films(filter: String): [Film!]! @service(
-                    service: {className: "no.sikt.graphitron.rewrite.generators.fields.TestFilmService", method: "getFilms"},
+                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilms"},
                     contextArguments: ["tenantId"]
                 )
             }
@@ -179,7 +179,7 @@ class FieldsPipelineTest {
             type Query { dummy: String }
             extend type Language {
                 films(filter: String): [Film!]! @service(
-                    service: {className: "no.sikt.graphitron.rewrite.generators.fields.TestFilmService", method: "getFilms"},
+                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilms"},
                     contextArguments: ["tenantId"]
                 )
             }
