@@ -20,7 +20,7 @@ package no.sikt.graphitron.rewrite.model;
  * {@code [Item]Wrapper} where each position may carry {@code !}; for {@link Connection} the
  * same positions apply to the connection wrapper and the {@code edges.node} type respectively.
  *
- * <p>Ordering configuration ({@link ColumnOrder}, {@link OrderByEnumValueSpec}) is carried
+ * <p>Ordering configuration ({@link ColumnOrder}, {@link NamedOrder}) is carried
  * on {@link List} and {@link Connection} only, as {@link Single} implies no ordering concern.
  */
 public sealed interface FieldWrapper
@@ -49,7 +49,7 @@ public sealed interface FieldWrapper
         boolean listNullable,
         boolean itemNullable,
         ColumnOrder defaultOrder,
-        java.util.List<OrderByEnumValueSpec> orderByValues
+        java.util.List<NamedOrder> orderByValues
     ) implements FieldWrapper {}
 
     /**
@@ -68,15 +68,15 @@ public sealed interface FieldWrapper
         boolean connectionNullable,
         boolean itemNullable,
         ColumnOrder defaultOrder,
-        java.util.List<OrderByEnumValueSpec> orderByValues
+        java.util.List<NamedOrder> orderByValues
     ) implements FieldWrapper {}
 
     /**
-     * The sort specification for a single value in an {@code @orderBy} input enum.
+     * A named sort specification: one client-selectable ordering option backed by a fully-resolved
+     * {@link ColumnOrder}.
      *
-     * <p>Each enum value is annotated with {@code @order} (or the deprecated {@code @index}),
-     * which this record normalises into a fully-resolved {@link ColumnOrder}. The {@code name}
-     * is the GraphQL enum value name (e.g. {@code "TITLE"}).
+     * <p>{@code name} is the GraphQL enum value name (e.g. {@code "TITLE"}). {@code order} is the
+     * resolved column ordering that this option maps to.
      */
-    record OrderByEnumValueSpec(String name, ColumnOrder order) {}
+    record NamedOrder(String name, ColumnOrder order) {}
 }

@@ -6,7 +6,7 @@ import no.sikt.graphitron.rewrite.model.ColumnOrder.ColumnOrderEntry;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.FieldWrapper.OrderByEnumValueSpec;
+import no.sikt.graphitron.rewrite.model.FieldWrapper.NamedOrder;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.QueryField.QueryTableField;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -65,8 +65,8 @@ class QueryTableFieldValidationTest {
             new QueryTableField("Query", "films", null,
                 filmReturn(new FieldWrapper.List(true, true, PK_ORDER,
                     List.of(
-                        new OrderByEnumValueSpec("TITLE", INDEX_ORDER),
-                        new OrderByEnumValueSpec("ID", PK_ORDER)))),
+                        new NamedOrder("TITLE", INDEX_ORDER),
+                        new NamedOrder("ID", PK_ORDER)))),
                 List.of()),
             List.of()),
 
@@ -75,8 +75,8 @@ class QueryTableFieldValidationTest {
                 filmReturn(new FieldWrapper.List(true, true,
                     INDEX_ORDER,
                     List.of(
-                        new OrderByEnumValueSpec("TITLE", INDEX_ORDER),
-                        new OrderByEnumValueSpec("ID", PK_ORDER)))),
+                        new NamedOrder("TITLE", INDEX_ORDER),
+                        new NamedOrder("ID", PK_ORDER)))),
                 List.of()),
             List.of());
 
