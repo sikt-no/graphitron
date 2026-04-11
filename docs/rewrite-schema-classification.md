@@ -91,7 +91,10 @@ TypeDefinitionRegistry
                                (GraphQLRewriteGenerator owns sub-package routing and file I/O)
 ```
 
-`GraphitronSchemaBuilder` operates on a `GraphQLSchema` assembled from the `TypeDefinitionRegistry` (same pattern as `SchemaTransformer.assembleSchema()`). It iterates `schema.getAllTypesAsList()` for type classification, then each `GraphQLObjectType`'s field definitions for field classification. Interface and union participant lists are populated in a second enrichment pass.
+`GraphitronSchemaBuilder` operates on a `GraphQLSchema` assembled from the `TypeDefinitionRegistry` (same pattern as `SchemaTransformer.assembleSchema()`). It runs classification in two steps:
+
+1. **Type classification** — iterates `schema.getAllTypesAsList()`. Each `OutputType` variant (`TableType`, `ResultType`, `RootType`) captures its `fieldCoordinates` directly from `GraphQLObjectType.getFieldDefinitions()` at this stage. Interface and union participant lists are populated in a second pass within `buildTypes()` once the full type map is available.
+2. **Field classification** — iterates each `GraphQLObjectType`'s field definitions and builds the flat `Map<FieldCoordinates, GraphitronField>` passed to `GraphitronSchema`.
 
 `GraphQLRewriteGenerator` (in `no.sikt.graphitron.rewrite`) is the entry point: it runs the builder, runs the validator, and dispatches generators in parallel.
 
@@ -102,7 +105,7 @@ Top-level container for the parsed schema. A record with two maps:
 - `Map<String, GraphitronType> types` — all classified types keyed by name
 - `Map<FieldCoordinates, GraphitronField> fields` — all classified fields keyed by `(typeName, fieldName)`
 
-Convenience accessors: `type(typeName)`, `field(typeName, fieldName)`.
+Convenience accessors: `type(typeName)`, `field(typeName, fieldName)`, `fieldsOf(typeName)` (returns all fields for a type in declaration order).
 
 ### `JooqCatalog`
 
@@ -166,9 +169,13 @@ Every GraphQL named type is classified into one `GraphitronType` variant. The bu
 
 ```
 GraphitronType
-├── TableType          (@table — full SQL generation)
-├── ResultType         (@record — runtime wiring only)
-├── RootType           (Query / Mutation — unmapped entry points)
+├── OutputType (sealed sub-interface — types that own output fields)
+│   │   Carries fieldCoordinates(): List<FieldCoordinates> — the schema coordinates of every
+│   │   field defined on the type, in declaration order. Use schema.fieldsOf(typeName) to
+│   │   retrieve the classified GraphitronField instances.
+│   ├── TableType          (@table — full SQL generation)
+│   ├── ResultType         (@record — runtime wiring only)
+│   └── RootType           (Query / Mutation — unmapped entry points)
 ├── TableInterfaceType (@table + @discriminate on interface)
 ├── InterfaceType      (no directives; implementors have @table)
 ├── UnionType          (all member types have @table)
