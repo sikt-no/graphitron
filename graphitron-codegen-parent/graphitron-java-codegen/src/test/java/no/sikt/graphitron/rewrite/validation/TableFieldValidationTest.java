@@ -2,16 +2,16 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.ConditionOnlyRef;
-import no.sikt.graphitron.rewrite.model.DefaultOrderSpec;
+import no.sikt.graphitron.rewrite.model.ColumnOrder;
+import no.sikt.graphitron.rewrite.model.ColumnOrderEntry;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.FieldConditionRef;
 import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkWithConditionRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
-import no.sikt.graphitron.rewrite.model.OrderSpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.model.SortFieldSpec;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -62,20 +62,24 @@ class TableFieldValidationTest {
         DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields — valid",
             new TableField("Film", "actors", null,
                 actorReturn(new FieldWrapper.List(true, true,
-                    new DefaultOrderSpec(new OrderSpec.FieldsOrder(List.of(new SortFieldSpec("actor_id", null))), "ASC"),
+                    new ColumnOrder(List.of(new ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
                     List.of())),
                 List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
         DEFAULT_ORDER_INDEX("@defaultOrder with named index — valid",
             new TableField("Film", "actors", null,
-                actorReturn(new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.IndexOrder("IDX_ACTOR_LAST_NAME"), "ASC"), List.of())),
+                actorReturn(new FieldWrapper.List(true, true,
+                    new ColumnOrder(List.of(new ColumnOrderEntry(new ColumnRef("last_name", "LAST_NAME", "java.lang.String"), null)), "ASC"),
+                    List.of())),
                 List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
         DEFAULT_ORDER_PRIMARY_KEY("@defaultOrder with primaryKey mode — valid",
             new TableField("Film", "actors", null,
-                actorReturn(new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.PrimaryKeyOrder(), "ASC"), List.of())),
+                actorReturn(new FieldWrapper.List(true, true,
+                    new ColumnOrder(List.of(new ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
+                    List.of())),
                 List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of());
 

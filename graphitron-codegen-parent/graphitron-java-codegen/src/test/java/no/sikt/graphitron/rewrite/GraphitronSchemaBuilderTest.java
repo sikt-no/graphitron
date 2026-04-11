@@ -23,14 +23,13 @@ import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
+import no.sikt.graphitron.rewrite.model.ColumnOrder;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.DefaultOrderSpec;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.FieldConditionRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.rewrite.model.ArgumentRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
-import no.sikt.graphitron.rewrite.model.OrderSpec;
 import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
@@ -488,23 +487,25 @@ class GraphitronSchemaBuilderTest {
                 .isInstanceOf(FieldConditionRef.NoFieldCondition.class)),
 
         DEFAULT_ORDER_INDEX(
-            "@defaultOrder(index:) on a list field produces IndexOrder with the given index name",
+            "@defaultOrder(index:) resolves index columns — columns from idx_actor_last_name",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
-                actors: [Actor!]! @defaultOrder(index: "idx_actor_name")
+                actors: [Actor!]! @defaultOrder(index: "idx_actor_last_name")
             }
             type Query { film: Film }
             """,
             schema -> {
                 var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
-                assertThat(cardinality.defaultOrder()).isNotNull();
-                var spec = (OrderSpec.IndexOrder) cardinality.defaultOrder().spec();
-                assertThat(spec.indexName()).isEqualTo("idx_actor_name");
+                ColumnOrder order = cardinality.defaultOrder();
+                assertThat(order).isNotNull();
+                assertThat(order.direction()).isEqualTo("ASC");
+                assertThat(order.columns()).hasSize(1);
+                assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
             }),
 
         DEFAULT_ORDER_PRIMARY_KEY(
-            "@defaultOrder(primaryKey: true) produces PrimaryKeyOrder",
+            "@defaultOrder(primaryKey: true) resolves PK columns — actor_id",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
@@ -514,11 +515,14 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
-                assertThat(cardinality.defaultOrder().spec()).isInstanceOf(OrderSpec.PrimaryKeyOrder.class);
+                ColumnOrder order = cardinality.defaultOrder();
+                assertThat(order).isNotNull();
+                assertThat(order.columns()).hasSize(1);
+                assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("actor_id");
             }),
 
         DEFAULT_ORDER_FIELDS(
-            "@defaultOrder(fields:) produces FieldsOrder with per-field column names and collations",
+            "@defaultOrder(fields:) resolves column names and preserves collations",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
@@ -528,16 +532,16 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
-                var fieldsOrder = (OrderSpec.FieldsOrder) cardinality.defaultOrder().spec();
-                assertThat(fieldsOrder.fields()).hasSize(2);
-                assertThat(fieldsOrder.fields().get(0).columnName()).isEqualTo("last_name");
-                assertThat(fieldsOrder.fields().get(0).collation()).isEqualTo("C");
-                assertThat(fieldsOrder.fields().get(1).columnName()).isEqualTo("first_name");
-                assertThat(fieldsOrder.fields().get(1).collation()).isNull();
+                ColumnOrder order = cardinality.defaultOrder();
+                assertThat(order.columns()).hasSize(2);
+                assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
+                assertThat(order.columns().get(0).collation()).isEqualTo("C");
+                assertThat(order.columns().get(1).column().sqlName()).isEqualToIgnoringCase("first_name");
+                assertThat(order.columns().get(1).collation()).isNull();
             }),
 
         DEFAULT_ORDER_DIRECTION_DESC(
-            "@defaultOrder(direction: DESC) stores the direction string",
+            "@defaultOrder(direction: DESC) stores the direction in ColumnOrder",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
@@ -551,20 +555,22 @@ class GraphitronSchemaBuilderTest {
             }),
 
         CONNECTION_WITH_DEFAULT_ORDER_INDEX(
-            "@defaultOrder(index:) on a connection field produces IndexOrder in Connection wrapper",
+            "@defaultOrder(index:) on a connection field resolves to ColumnOrder",
             """
             type Actor @table(name: "actor") { name: String }
             type ActorEdge { node: Actor cursor: String }
             type ActorConnection { edges: [ActorEdge] }
             type Film @table(name: "film") {
-                actors: ActorConnection @defaultOrder(index: "idx_actor_name")
+                actors: ActorConnection @defaultOrder(index: "idx_actor_last_name")
             }
             type Query { film: Film }
             """,
             schema -> {
                 var cardinality = (FieldWrapper.Connection) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
-                assertThat(cardinality.defaultOrder()).isNotNull();
-                assertThat(cardinality.defaultOrder().spec()).isInstanceOf(OrderSpec.IndexOrder.class);
+                ColumnOrder order = cardinality.defaultOrder();
+                assertThat(order).isNotNull();
+                assertThat(order.columns()).hasSize(1);
+                assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
             });
 
         final String sdl;

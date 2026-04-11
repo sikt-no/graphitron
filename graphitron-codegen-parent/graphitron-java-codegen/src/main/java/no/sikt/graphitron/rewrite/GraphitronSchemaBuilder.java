@@ -52,11 +52,10 @@ import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.QueryField;
-import no.sikt.graphitron.rewrite.model.DefaultOrderSpec;
+import no.sikt.graphitron.rewrite.model.ColumnOrder;
+import no.sikt.graphitron.rewrite.model.ColumnOrderEntry;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.FieldConditionRef;
-import no.sikt.graphitron.rewrite.model.OrderSpec;
-import no.sikt.graphitron.rewrite.model.SortFieldSpec;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
@@ -581,7 +580,10 @@ public class GraphitronSchemaBuilder {
         GraphitronType elementType = types.get(elementTypeName);
 
         if (elementType instanceof TableType tableType) {
-            var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+            var wrapper = buildWrapper(fieldDef, tableType.table().tableName());
+            if (wrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                "could not resolve @defaultOrder columns in table '" + tableType.table().tableName() + "'");
+            var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, wrapper);
             var referencePath = parsePath(fieldDef);
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, referencePath.errorMessage());
@@ -610,25 +612,31 @@ public class GraphitronSchemaBuilder {
         }
 
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
+            var wrapper = buildWrapper(fieldDef, tableInterfaceType.table().tableName());
+            if (wrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                "could not resolve @defaultOrder columns in table '" + tableInterfaceType.table().tableName() + "'");
             return new TableInterfaceField(parentTypeName, name, location,
-                new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), buildWrapper(fieldDef)));
+                new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper));
         }
 
         if (elementType instanceof InterfaceType interfaceType) {
             return new InterfaceField(parentTypeName, name, location,
-                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef, null)));
         }
 
         if (elementType instanceof UnionType unionType) {
             return new UnionField(parentTypeName, name, location,
-                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef, null)));
         }
 
         // NestingField: a plain object type in the schema with no Graphitron classification.
         // Its fields are resolved from the same table context as the parent.
         if (schema.getType(elementTypeName) instanceof GraphQLObjectType graphQLObjectType && elementType == null) {
+            var wrapper = buildWrapper(fieldDef, parentTableType.table().tableName());
+            if (wrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                "could not resolve @defaultOrder columns in table '" + parentTableType.table().tableName() + "'");
             return new NestingField(parentTypeName, name, location,
-                new ReturnTypeRef.TableBoundReturnType(elementTypeName, parentTableType.table(), buildWrapper(fieldDef)));
+                new ReturnTypeRef.TableBoundReturnType(elementTypeName, parentTableType.table(), wrapper));
         }
 
         // ConstructorField is intentionally not classified here — its directive and generation
@@ -642,20 +650,44 @@ public class GraphitronSchemaBuilder {
     // ===== Wrapper helpers =====
 
     /**
+     * Returns the SQL table name for a GraphQL type name when the type is table-backed
+     * ({@link GraphitronType.TableType} or {@link GraphitronType.TableInterfaceType}), or
+     * {@code null} when the type has no associated table.
+     */
+    private String getTableSqlNameForType(String typeName) {
+        var type = types.get(typeName);
+        if (type instanceof GraphitronType.TableType tt) return tt.table().tableName();
+        if (type instanceof GraphitronType.TableInterfaceType tit) return tit.table().tableName();
+        return null;
+    }
+
+    /**
      * Builds a {@link FieldWrapper} from the return type shape of the field and any
      * {@code @defaultOrder} directive.
      *
+     * <p>{@code tableSqlName} is the SQL name of the return type's table. When non-null,
+     * {@code @defaultOrder} columns are resolved against that table via the jOOQ catalog. When
+     * {@code null} (polymorphic or other return type), order resolution is skipped.
+     *
+     * <p>Returns {@code null} when a {@code @defaultOrder} directive is present but its column
+     * lookup fails; the caller must classify the field as
+     * {@link GraphitronField.UnclassifiedField} in that case.
+     *
      * <p>Connection is detected structurally — the return type must be a {@link GraphQLObjectType}
-     * that has an {@code edges} field whose element type in turn has a {@code node} field. This is
-     * more robust than the naming convention and is the authoritative Relay definition.
+     * that has an {@code edges} field whose element type in turn has a {@code node} field.
      *
      * <p>{@code @orderBy} enum value specs are not populated here — that is deferred to P4.
      */
-    private FieldWrapper buildWrapper(GraphQLFieldDefinition fieldDef) {
+    private FieldWrapper buildWrapper(GraphQLFieldDefinition fieldDef, String tableSqlName) {
         GraphQLType fieldType = fieldDef.getType();
         boolean outerNullable = !(fieldType instanceof GraphQLNonNull);
         GraphQLType unwrappedOnce = GraphQLTypeUtil.unwrapNonNull(fieldType);
-        DefaultOrderSpec defaultOrder = parseDefaultOrderSpec(fieldDef);
+
+        ColumnOrder defaultOrder = null;
+        if (tableSqlName != null && fieldDef.hasAppliedDirective(DIR_DEFAULT_ORDER)) {
+            defaultOrder = resolveColumnOrder(fieldDef, tableSqlName);
+            if (defaultOrder == null) return null;  // column resolution failed
+        }
 
         if (unwrappedOnce instanceof GraphQLList listType) {
             boolean itemNullable = !(listType.getWrappedType() instanceof GraphQLNonNull);
@@ -709,21 +741,26 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * Parses the {@code @defaultOrder} directive on a field into a {@link DefaultOrderSpec}, or
-     * returns {@code null} when the directive is absent.
+     * Resolves the {@code @defaultOrder} directive on a field into a fully-normalised
+     * {@link ColumnOrder} against {@code tableSqlName}.
      *
-     * <p>For {@code index:} and {@code primaryKey:} variants the resulting {@link OrderSpec} is
-     * a lookup-based spec ({@link OrderSpec.IndexOrder} / {@link OrderSpec.PrimaryKeyOrder}) that
-     * is later resolved against the jOOQ catalog by the validator. For {@code fields:} the spec is
-     * fully resolved at parse time.
+     * <p>All three source variants are resolved at build time:
+     * <ul>
+     *   <li>{@code index:} — columns come from the named index via the jOOQ catalog.</li>
+     *   <li>{@code primaryKey:} — columns come from the table's primary key.</li>
+     *   <li>{@code fields:} — each column name is looked up in the table via the jOOQ catalog.</li>
+     * </ul>
+     * Returns {@code null} when any lookup fails (index not found, PK absent, or a column name is
+     * unresolvable). The caller must treat {@code null} as a classification failure.
+     *
+     * <p>Only called when the directive is confirmed present.
      */
-    private DefaultOrderSpec parseDefaultOrderSpec(GraphQLFieldDefinition fieldDef) {
-        if (!fieldDef.hasAppliedDirective(DIR_DEFAULT_ORDER)) return null;
+    private ColumnOrder resolveColumnOrder(GraphQLFieldDefinition fieldDef, String tableSqlName) {
         var dir = fieldDef.getAppliedDirective(DIR_DEFAULT_ORDER);
 
         // direction has a default of ASC in the directive; absent arg means ASC.
-        var dirArg = dir.getArgument(ARG_DIRECTION);
         String direction = "ASC";
+        var dirArg = dir.getArgument(ARG_DIRECTION);
         if (dirArg != null) {
             Object dirVal = dirArg.getValue();
             if (dirVal instanceof EnumValue ev) direction = ev.getName();
@@ -736,7 +773,12 @@ public class GraphitronSchemaBuilder {
             String indexName = indexVal instanceof StringValue sv ? sv.getValue().strip()
                 : indexVal instanceof String s ? s.strip() : null;
             if (indexName != null) {
-                return new DefaultOrderSpec(new OrderSpec.IndexOrder(indexName), direction);
+                var colsOpt = catalog.findIndexColumns(tableSqlName, indexName);
+                if (colsOpt.isEmpty() || colsOpt.get().isEmpty()) return null;
+                var entries = colsOpt.get().stream()
+                    .map(ce -> new ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
+                    .toList();
+                return new ColumnOrder(entries, direction);
             }
         }
 
@@ -745,32 +787,35 @@ public class GraphitronSchemaBuilder {
             pkArg.getValue() instanceof BooleanValue bv ? bv.isValue()
             : Boolean.TRUE.equals(pkArg.getValue()));
         if (primaryKey) {
-            return new DefaultOrderSpec(new OrderSpec.PrimaryKeyOrder(), direction);
+            var pkCols = catalog.findPkColumns(tableSqlName);
+            if (pkCols.isEmpty()) return null;
+            var entries = pkCols.stream()
+                .map(ce -> new ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
+                .toList();
+            return new ColumnOrder(entries, direction);
         }
 
         var fieldsArg = dir.getArgument(ARG_FIELDS);
         if (fieldsArg != null) {
             Object value = fieldsArg.getValue();
             List<?> items = value instanceof List<?> l ? l : List.of(value);
-            var sortFields = items.stream()
-                .filter(v -> v instanceof Map)
-                .map(v -> parseSortFieldSpec(asMap(v)))
-                .toList();
-            return new DefaultOrderSpec(new OrderSpec.FieldsOrder(sortFields), direction);
+            var entries = new ArrayList<ColumnOrderEntry>();
+            for (var item : items) {
+                if (!(item instanceof Map)) continue;
+                var map = asMap(item);
+                Object nameRaw = map.get(ARG_NAME);
+                if (nameRaw == null) return null;
+                String colName = nameRaw.toString().strip();
+                String collation = Optional.ofNullable(map.get(ARG_COLLATE)).map(Object::toString).map(String::strip).orElse(null);
+                var ceOpt = catalog.findColumn(tableSqlName, colName);
+                if (ceOpt.isEmpty()) return null;
+                var ce = ceOpt.get();
+                entries.add(new ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), collation));
+            }
+            return new ColumnOrder(entries, direction);
         }
 
         return null;
-    }
-
-    private SortFieldSpec parseSortFieldSpec(Map<String, Object> item) {
-        // FieldSort uses `name` (database field name) and `collate` (optional collation).
-        Object nameRaw = item.get(ARG_NAME);
-        if (nameRaw == null) {
-            throw new IllegalStateException("Missing required 'name' in FieldSort");
-        }
-        String columnName = nameRaw.toString().strip();
-        String collation = Optional.ofNullable(item.get(ARG_COLLATE)).map(Object::toString).map(String::strip).orElse(null);
-        return new SortFieldSpec(columnName, collation);
     }
 
     // ===== Field classification =====
@@ -835,7 +880,10 @@ public class GraphitronSchemaBuilder {
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
-            ReturnTypeRef returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+            var wrapper = buildWrapper(fieldDef, getTableSqlNameForType(elementTypeName));
+            if (wrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                "could not resolve @defaultOrder columns for @service field");
+            ReturnTypeRef returnType = resolveReturnType(elementTypeName, wrapper);
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
             List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
             Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
@@ -860,16 +908,20 @@ public class GraphitronSchemaBuilder {
 
         if (name.equals("_entities")) {
             return new QueryField.QueryEntityField(parentTypeName, name, location,
-                new ReturnTypeRef.PolymorphicReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef, null)));
         }
 
         if (name.equals("node")) {
             return new QueryField.QueryNodeField(parentTypeName, name, location,
-                new ReturnTypeRef.PolymorphicReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef, null)));
         }
 
         if (hasLookupKeyAnywhere(fieldDef)) {
-            var returnType = resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
+            String lookupTypeName = baseTypeName(fieldDef);
+            var wrapper = buildWrapper(fieldDef, getTableSqlNameForType(lookupTypeName));
+            if (wrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                "could not resolve @defaultOrder columns for @lookupKey field");
+            var returnType = resolveReturnType(lookupTypeName, wrapper);
             if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "@lookupKey requires a @table-annotated return type");
@@ -883,7 +935,10 @@ public class GraphitronSchemaBuilder {
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
-            var returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+            var wrapper = buildWrapper(fieldDef, getTableSqlNameForType(elementTypeName));
+            if (wrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                "could not resolve @defaultOrder columns for @tableMethod field");
+            var returnType = resolveReturnType(elementTypeName, wrapper);
             if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "@tableMethod requires a @table-annotated return type");
@@ -903,25 +958,29 @@ public class GraphitronSchemaBuilder {
         GraphitronType elementType = types.get(elementTypeName);
 
         if (elementType instanceof TableType tableType) {
-            var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+            var wrapper = buildWrapper(fieldDef, tableType.table().tableName());
+            if (wrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                "could not resolve @defaultOrder columns in table '" + tableType.table().tableName() + "'");
+            var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, wrapper);
             var args = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, returnType.table(), false))
                 .toList();
-            return new QueryField.QueryTableField(parentTypeName, name, location,
-                returnType,
-                args);
+            return new QueryField.QueryTableField(parentTypeName, name, location, returnType, args);
         }
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
+            var wrapper = buildWrapper(fieldDef, tableInterfaceType.table().tableName());
+            if (wrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                "could not resolve @defaultOrder columns in table '" + tableInterfaceType.table().tableName() + "'");
             return new QueryField.QueryTableInterfaceField(parentTypeName, name, location,
-                new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), buildWrapper(fieldDef)));
+                new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper));
         }
         if (elementType instanceof InterfaceType interfaceType) {
             return new QueryField.QueryInterfaceField(parentTypeName, name, location,
-                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef, null)));
         }
         if (elementType instanceof UnionType unionType) {
             return new QueryField.QueryUnionField(parentTypeName, name, location,
-                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef, null)));
         }
 
         return new UnclassifiedField(parentTypeName, name, location, fieldDef,
@@ -939,7 +998,11 @@ public class GraphitronSchemaBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            ReturnTypeRef returnType = resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
+            String mutSvcTypeName = baseTypeName(fieldDef);
+            var wrapper = buildWrapper(fieldDef, getTableSqlNameForType(mutSvcTypeName));
+            if (wrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                "could not resolve @defaultOrder columns for @service mutation field");
+            ReturnTypeRef returnType = resolveReturnType(mutSvcTypeName, wrapper);
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
             List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
             Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
@@ -966,7 +1029,7 @@ public class GraphitronSchemaBuilder {
             String typeName = getMutationTypeName(fieldDef);
             if (typeName != null) {
                 String rawReturn = baseTypeName(fieldDef);
-                ReturnTypeRef returnType = resolveReturnType(rawReturn, buildWrapper(fieldDef));
+                ReturnTypeRef returnType = resolveReturnType(rawReturn, buildWrapper(fieldDef, getTableSqlNameForType(rawReturn)));
                 var arguments = fieldDef.getArguments().stream()
                     .map(arg -> classifyArgument(arg, null, true))
                     .toList();
@@ -1211,7 +1274,10 @@ public class GraphitronSchemaBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePath.errorMessage());
             }
             ServiceMethodRef serviceMethodRef = serviceReflection.ref();
-            return switch (resolveReturnType(elementTypeName, buildWrapper(fieldDef))) {
+            var rsvcWrapper = buildWrapper(fieldDef, getTableSqlNameForType(elementTypeName));
+            if (rsvcWrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                "could not resolve @defaultOrder columns for @service child field on result type");
+            return switch (resolveReturnType(elementTypeName, rsvcWrapper)) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new ServiceTableField(parentTypeName, name, location, tb,
                         servicePath.elements(), serviceRef, arguments, contextArguments, serviceMethodRef);
@@ -1240,7 +1306,7 @@ public class GraphitronSchemaBuilder {
         if (objectPath.hasError()) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, objectPath.errorMessage());
         }
-        return switch (resolveReturnType(elementTypeName, buildWrapper(fieldDef))) {
+        return switch (resolveReturnType(elementTypeName, buildWrapper(fieldDef, getTableSqlNameForType(elementTypeName)))) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
                 var args = fieldDef.getArguments().stream()
                     .map(arg -> classifyArgument(arg, tb.table(), false))
@@ -1282,7 +1348,10 @@ public class GraphitronSchemaBuilder {
             if (servicePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePath.errorMessage());
             }
-            return switch (resolveReturnType(elementTypeName, buildWrapper(fieldDef))) {
+            var svcWrapper = buildWrapper(fieldDef, getTableSqlNameForType(elementTypeName));
+            if (svcWrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                "could not resolve @defaultOrder columns for @service child field");
+            return switch (resolveReturnType(elementTypeName, svcWrapper)) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new ServiceTableField(parentTypeName, name, location, tb,
                         servicePath.elements(), serviceRef, arguments, contextArguments, serviceMethodRef);
@@ -1299,15 +1368,19 @@ public class GraphitronSchemaBuilder {
             if (externalPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, externalPath.errorMessage());
             }
+            String extTypeName = baseTypeName(fieldDef);
             return new ComputedField(parentTypeName, name, location,
-                resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)),
+                resolveReturnType(extTypeName, buildWrapper(fieldDef, getTableSqlNameForType(extTypeName))),
                 externalPath.elements());
         }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
-            var returnType = resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+            var tmWrapper = buildWrapper(fieldDef, getTableSqlNameForType(elementTypeName));
+            if (tmWrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                "could not resolve @defaultOrder columns for @tableMethod child field");
+            var returnType = resolveReturnType(elementTypeName, tmWrapper);
             var args = fieldDef.getArguments().stream()
                 .map(arg -> classifyArgument(arg, null, true))
                 .toList();

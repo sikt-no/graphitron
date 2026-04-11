@@ -1,11 +1,12 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.DefaultOrderSpec;
+import no.sikt.graphitron.rewrite.model.ColumnOrder;
+import no.sikt.graphitron.rewrite.model.ColumnOrderEntry;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.OrderByEnumValueSpec;
-import no.sikt.graphitron.rewrite.model.OrderSpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.QueryField.QueryTableField;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -25,6 +26,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * developer adds explicit ordering or acknowledges the risk.
  */
 class QueryTableFieldNonDeterministicOrderingValidationTest {
+
+    private static final ColumnRef STUB_COL = new ColumnRef("id", "ID", "java.lang.Long");
+    private static final ColumnOrder STUB_ORDER = new ColumnOrder(List.of(new ColumnOrderEntry(STUB_COL, null)), "ASC");
 
     /** Resolved return type backed by {@code film_list} (a view — no primary key). */
     private static ReturnTypeRef.TableBoundReturnType filmListReturn(FieldWrapper wrapper) {
@@ -53,9 +57,7 @@ class QueryTableFieldNonDeterministicOrderingValidationTest {
         PKLESS_TABLE_WITH_DEFAULT_ORDER(
             "list field on PK-less table with @defaultOrder — ordering guaranteed, no error",
             new QueryTableField("Query", "films", null,
-                filmListReturn(new FieldWrapper.List(true, true,
-                    new DefaultOrderSpec(new OrderSpec.FieldsOrder(List.of()), "ASC"),
-                    List.of())),
+                filmListReturn(new FieldWrapper.List(true, true, STUB_ORDER, List.of())),
                 List.of()),
             List.of()),
 
@@ -63,7 +65,7 @@ class QueryTableFieldNonDeterministicOrderingValidationTest {
             "list field on PK-less table with @orderBy enum values — ordering configurable, no error",
             new QueryTableField("Query", "films", null,
                 filmListReturn(new FieldWrapper.List(true, true, null,
-                    List.of(new OrderByEnumValueSpec("TITLE", new OrderSpec.FieldsOrder(List.of()))))),
+                    List.of(new OrderByEnumValueSpec("TITLE", STUB_ORDER)))),
                 List.of()),
             List.of()),
 

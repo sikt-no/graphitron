@@ -20,7 +20,7 @@ package no.sikt.graphitron.rewrite.model;
  * {@code [Item]Wrapper} where each position may carry {@code !}; for {@link Connection} the
  * same positions apply to the connection wrapper and the {@code edges.node} type respectively.
  *
- * <p>Ordering configuration ({@link DefaultOrderSpec}, {@link OrderByEnumValueSpec}) is carried
+ * <p>Ordering configuration ({@link ColumnOrder}, {@link OrderByEnumValueSpec}) is carried
  * on {@link List} and {@link Connection} only, as {@link Single} implies no ordering concern.
  */
 public sealed interface FieldWrapper
@@ -48,7 +48,7 @@ public sealed interface FieldWrapper
     record List(
         boolean listNullable,
         boolean itemNullable,
-        DefaultOrderSpec defaultOrder,
+        ColumnOrder defaultOrder,
         java.util.List<OrderByEnumValueSpec> orderByValues
     ) implements FieldWrapper {}
 
@@ -67,7 +67,7 @@ public sealed interface FieldWrapper
     record Connection(
         boolean connectionNullable,
         boolean itemNullable,
-        DefaultOrderSpec defaultOrder,
+        ColumnOrder defaultOrder,
         java.util.List<OrderByEnumValueSpec> orderByValues
     ) implements FieldWrapper {}
 }

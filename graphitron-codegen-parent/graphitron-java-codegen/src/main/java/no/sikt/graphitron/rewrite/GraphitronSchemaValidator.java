@@ -496,32 +496,12 @@ public class GraphitronSchemaValidator {
     }
 
     private void validateCardinality(String fieldName, SourceLocation location, no.sikt.graphitron.rewrite.model.FieldWrapper cardinality, List<ValidationError> errors) {
+        // Order specs are fully resolved to ColumnOrder at build time; no per-variant validation
+        // is needed here. The switch exhausts all cases to keep the compiler warning-free.
         switch (cardinality) {
             case no.sikt.graphitron.rewrite.model.FieldWrapper.Single ignored -> {}
-            case no.sikt.graphitron.rewrite.model.FieldWrapper.List l -> {
-                if (l.defaultOrder() != null) {
-                    validateOrderSpec(fieldName, location, l.defaultOrder().spec(), errors);
-                }
-                for (var enumValue : l.orderByValues()) {
-                    validateOrderSpec(fieldName, location, enumValue.spec(), errors);
-                }
-            }
-            case no.sikt.graphitron.rewrite.model.FieldWrapper.Connection c -> {
-                if (c.defaultOrder() != null) {
-                    validateOrderSpec(fieldName, location, c.defaultOrder().spec(), errors);
-                }
-                for (var enumValue : c.orderByValues()) {
-                    validateOrderSpec(fieldName, location, enumValue.spec(), errors);
-                }
-            }
-        }
-    }
-
-    private void validateOrderSpec(String fieldName, SourceLocation location, no.sikt.graphitron.rewrite.model.OrderSpec spec, List<ValidationError> errors) {
-        switch (spec) {
-            case no.sikt.graphitron.rewrite.model.OrderSpec.IndexOrder ignored -> {}
-            case no.sikt.graphitron.rewrite.model.OrderSpec.FieldsOrder ignored -> {}
-            case no.sikt.graphitron.rewrite.model.OrderSpec.PrimaryKeyOrder ignored -> {}
+            case no.sikt.graphitron.rewrite.model.FieldWrapper.List ignored -> {}
+            case no.sikt.graphitron.rewrite.model.FieldWrapper.Connection ignored -> {}
         }
     }
 

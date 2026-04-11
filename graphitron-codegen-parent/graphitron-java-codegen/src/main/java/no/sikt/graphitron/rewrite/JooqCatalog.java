@@ -71,6 +71,38 @@ public class JooqCatalog {
     }
 
     /**
+     * Return the columns of the named index on a table, in index-field order. Each column is
+     * resolved via {@link #findColumn(Table, String)}. Returns empty when the index is not found
+     * in the table or when any column cannot be resolved.
+     */
+    public Optional<java.util.List<ColumnEntry>> findIndexColumns(String tableSqlName, String indexName) {
+        return findTable(tableSqlName).flatMap(te ->
+            te.table().getIndexes().stream()
+                .filter(idx -> idx.getName().equalsIgnoreCase(indexName))
+                .findFirst()
+                .map(idx -> idx.getFields().stream()
+                    .map(sf -> findColumn(te.table(), sf.getName()))
+                    .<ColumnEntry>flatMap(Optional::stream)
+                    .toList()));
+    }
+
+    /**
+     * Return the primary-key columns of a table in key-field order, or an empty list when the
+     * table has no primary key or cannot be found. Each column is resolved via
+     * {@link #findColumn(Table, String)}.
+     */
+    public java.util.List<ColumnEntry> findPkColumns(String tableSqlName) {
+        return findTable(tableSqlName).map(te -> {
+            var pk = te.table().getPrimaryKey();
+            if (pk == null) return java.util.List.<ColumnEntry>of();
+            return pk.getFields().stream()
+                .map(f -> findColumn(te.table(), f.getName()))
+                .flatMap(Optional::stream)
+                .toList();
+        }).orElse(java.util.List.of());
+    }
+
+    /**
      * Find a column in a table by its SQL name. Returns the Java field name in the generated table
      * class (e.g. {@code "FILM_ID"}) and the fully qualified column type name. Uses reflection to
      * read the actual Java identifier name, which respects custom jOOQ naming strategies rather

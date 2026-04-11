@@ -1,13 +1,13 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.DefaultOrderSpec;
+import no.sikt.graphitron.rewrite.model.ColumnOrder;
+import no.sikt.graphitron.rewrite.model.ColumnOrderEntry;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.OrderByEnumValueSpec;
-import no.sikt.graphitron.rewrite.model.OrderSpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.model.SortFieldSpec;
 import no.sikt.graphitron.rewrite.model.QueryField.QueryTableField;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -19,6 +19,11 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 
 class QueryTableFieldValidationTest {
+
+    private static final ColumnRef TITLE_COL = new ColumnRef("title", "TITLE", "java.lang.String");
+    private static final ColumnRef ID_COL    = new ColumnRef("film_id", "FILM_ID", "java.lang.Long");
+    private static final ColumnOrder INDEX_ORDER = new ColumnOrder(List.of(new ColumnOrderEntry(TITLE_COL, null)), "ASC");
+    private static final ColumnOrder PK_ORDER    = new ColumnOrder(List.of(new ColumnOrderEntry(ID_COL, null)), "ASC");
 
     /** Resolved return type backed by {@code film} (has a primary key). */
     private static ReturnTypeRef.TableBoundReturnType filmReturn(FieldWrapper wrapper) {
@@ -33,42 +38,44 @@ class QueryTableFieldValidationTest {
 
         DEFAULT_ORDER_INDEX("@defaultOrder with index mode — valid",
             new QueryTableField("Query", "films", null,
-                filmReturn(new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.IndexOrder("IDX_TITLE"), "ASC"), List.of())),
+                filmReturn(new FieldWrapper.List(true, true, INDEX_ORDER, List.of())),
                 List.of()),
             List.of()),
 
         DEFAULT_ORDER_PRIMARY_KEY("@defaultOrder with primaryKey mode — valid",
             new QueryTableField("Query", "films", null,
-                filmReturn(new FieldWrapper.List(true, true, new DefaultOrderSpec(new OrderSpec.PrimaryKeyOrder(), "DESC"), List.of())),
+                filmReturn(new FieldWrapper.List(true, true,
+                    new ColumnOrder(List.of(new ColumnOrderEntry(ID_COL, null)), "DESC"), List.of())),
                 List.of()),
             List.of()),
 
         DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields — valid",
             new QueryTableField("Query", "films", null,
                 filmReturn(new FieldWrapper.List(true, true,
-                    new DefaultOrderSpec(
-                        new OrderSpec.FieldsOrder(List.of(new SortFieldSpec("title", null), new SortFieldSpec("film_id", "C"))),
+                    new ColumnOrder(List.of(
+                        new ColumnOrderEntry(TITLE_COL, null),
+                        new ColumnOrderEntry(ID_COL, "C")),
                         "ASC"),
                     List.of())),
                 List.of()),
             List.of()),
 
-        ORDER_BY_INDEX("@orderBy argument with @order(index:) enum values — valid",
+        ORDER_BY_INDEX("@orderBy argument with resolved ColumnOrder enum values — valid",
             new QueryTableField("Query", "films", null,
                 filmReturn(new FieldWrapper.List(true, true, null,
                     List.of(
-                        new OrderByEnumValueSpec("TITLE", new OrderSpec.IndexOrder("IDX_TITLE")),
-                        new OrderByEnumValueSpec("ID", new OrderSpec.PrimaryKeyOrder())))),
+                        new OrderByEnumValueSpec("TITLE", INDEX_ORDER),
+                        new OrderByEnumValueSpec("ID", PK_ORDER)))),
                 List.of()),
             List.of()),
 
         DEFAULT_ORDER_AND_ORDER_BY("@defaultOrder combined with @orderBy argument — valid",
             new QueryTableField("Query", "films", null,
                 filmReturn(new FieldWrapper.List(true, true,
-                    new DefaultOrderSpec(new OrderSpec.IndexOrder("IDX_TITLE"), "ASC"),
+                    INDEX_ORDER,
                     List.of(
-                        new OrderByEnumValueSpec("TITLE", new OrderSpec.IndexOrder("IDX_TITLE")),
-                        new OrderByEnumValueSpec("ID", new OrderSpec.PrimaryKeyOrder())))),
+                        new OrderByEnumValueSpec("TITLE", INDEX_ORDER),
+                        new OrderByEnumValueSpec("ID", PK_ORDER)))),
                 List.of()),
             List.of());
 
