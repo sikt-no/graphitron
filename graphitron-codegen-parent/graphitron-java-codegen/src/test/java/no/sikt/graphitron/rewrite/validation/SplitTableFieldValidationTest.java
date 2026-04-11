@@ -1,0 +1,81 @@
+package no.sikt.graphitron.rewrite.validation;
+
+import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.ConditionOnlyRef;
+import no.sikt.graphitron.rewrite.model.ColumnOrder;
+import no.sikt.graphitron.rewrite.model.ColumnOrder.ColumnOrderEntry;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.FieldConditionRef;
+import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkRef;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.ChildField.SplitTableField;
+import no.sikt.graphitron.rewrite.model.TableRef;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+
+import java.util.List;
+import java.util.Optional;
+
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
+import static org.assertj.core.api.Assertions.assertThat;
+
+class SplitTableFieldValidationTest {
+
+    private static ReturnTypeRef.TableBoundReturnType actorReturn(FieldWrapper wrapper) {
+        return new ReturnTypeRef.TableBoundReturnType("Actor", new TableRef("actor", "ACTOR", "Actor", Optional.of(List.of())), wrapper);
+    }
+
+    enum Case implements ValidatorCase {
+
+        NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
+            new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
+            List.of()),
+
+        WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
+            new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(new FkRef("film_actor_film_id_fkey", "film", "film_actor", List.of(), List.of())), new FieldConditionRef.NoFieldCondition(), List.of()),
+            List.of()),
+
+        WITH_CONDITION_ONLY("condition method only — no FK",
+            new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(
+                new ConditionOnlyRef(new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))), new FieldConditionRef.NoFieldCondition(), List.of()),
+            List.of()),
+
+        FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause; no errors",
+            new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), new FieldConditionRef.ResolvedFieldCondition(
+                new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()), false, List.of()), List.of()),
+            List.of()),
+
+        DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields — valid",
+            new SplitTableField("Film", "actors", null,
+                actorReturn(new FieldWrapper.List(true, true,
+                    new ColumnOrder(List.of(new ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
+                    List.of())),
+                List.of(), new FieldConditionRef.NoFieldCondition(), List.of()),
+            List.of());
+
+        private final String description;
+        private final GraphitronField field;
+        private final List<String> errors;
+
+        Case(String description, GraphitronField field, List<String> errors) {
+            this.description = description;
+            this.field = field;
+            this.errors = errors;
+        }
+
+        @Override public GraphitronField field() { return field; }
+        @Override public List<String> errors() { return errors; }
+        @Override public String toString() { return description; }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(Case.class)
+    void splitTableFieldValidation(Case tc) {
+        assertThat(validate(tc.field()))
+            .extracting(ValidationError::message)
+            .containsExactlyInAnyOrderElementsOf(tc.errors());
+    }
+}
