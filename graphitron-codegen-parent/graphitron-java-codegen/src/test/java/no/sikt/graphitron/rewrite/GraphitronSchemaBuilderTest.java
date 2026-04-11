@@ -1020,14 +1020,14 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var it = (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type("FilmInput");
-                assertThat(it.fields()).hasSize(2);
-                var title = it.fields().get(0);
+                assertThat(it.inputFields()).hasSize(2);
+                var title = it.inputFields().get(0);
                 assertThat(title.name()).isEqualTo("title");
                 assertThat(title.typeName()).isEqualTo("String");
                 assertThat(title.nonNull()).isTrue();
                 assertThat(title.list()).isFalse();
                 assertThat(title.columnName()).isEqualTo("title"); // defaults to field name
-                var year = it.fields().get(1);
+                var year = it.inputFields().get(1);
                 assertThat(year.typeName()).isEqualTo("Int");
                 assertThat(year.nonNull()).isFalse();
             }),
@@ -1040,7 +1040,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var it = (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type("FilmInput");
-                assertThat(it.fields().get(0).columnName()).isEqualTo("release_year");
+                assertThat(it.inputFields().get(0).columnName()).isEqualTo("release_year");
             }),
 
         INPUT_FIELD_NOT_GENERATED_EXCLUDED(
@@ -1051,8 +1051,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var it = (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type("FilmInput");
-                assertThat(it.fields()).hasSize(1);
-                assertThat(it.fields().get(0).name()).isEqualTo("title");
+                assertThat(it.inputFields()).hasSize(1);
+                assertThat(it.inputFields().get(0).name()).isEqualTo("title");
             }),
 
         INPUT_FIELD_LIST_TYPE(
@@ -1063,8 +1063,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var it = (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type("FilmInput");
-                assertThat(it.fields().get(0).list()).isTrue();
-                assertThat(it.fields().get(0).nonNull()).isTrue();
+                assertThat(it.inputFields().get(0).list()).isTrue();
+                assertThat(it.inputFields().get(0).nonNull()).isTrue();
             });
 
         final String sdl;
@@ -1095,9 +1095,9 @@ class GraphitronSchemaBuilderTest {
                 var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("CustomerInput");
                 assertThat(it.table()).isInstanceOf(no.sikt.graphitron.rewrite.model.TableRef.class);
                 assertThat(it.table().tableName()).isEqualTo("customer");
-                assertThat(it.fields()).hasSize(1);
-                assertThat(it.fields().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.model.InputFieldRef.class);
-                var f = (no.sikt.graphitron.rewrite.model.InputFieldRef) it.fields().get(0);
+                assertThat(it.inputFields()).hasSize(1);
+                assertThat(it.inputFields().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.model.InputFieldRef.class);
+                var f = (no.sikt.graphitron.rewrite.model.InputFieldRef) it.inputFields().get(0);
                 assertThat(f.name()).isEqualTo("customerId");
                 assertThat(f.javaColumnName()).isEqualTo("CUSTOMER_ID");
             }),
@@ -1132,7 +1132,7 @@ class GraphitronSchemaBuilderTest {
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType.class);
                 var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("CustomerInput");
                 assertThat(it.table().tableName()).isEqualTo("customer");
-                assertThat(it.fields().get(0))
+                assertThat(it.inputFields().get(0))
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.InputFieldRef.class);
             }),
 

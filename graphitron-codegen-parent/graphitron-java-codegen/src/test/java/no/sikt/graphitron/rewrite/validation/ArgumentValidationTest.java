@@ -35,7 +35,7 @@ class ArgumentValidationTest {
      */
     private static List<ValidationError> validateField(GraphitronField field, Map<String, GraphitronType> extraTypes) {
         var types = new java.util.LinkedHashMap<String, GraphitronType>();
-        types.put(field.parentTypeName(), new RootType(field.parentTypeName(), null));
+        types.put(field.parentTypeName(), new RootType(field.parentTypeName(), null, List.of()));
         types.putAll(extraTypes);
         var fields = Map.of(FieldCoordinates.coordinates(field.parentTypeName(), field.name()), field);
         return validate(new GraphitronSchema(types, fields));

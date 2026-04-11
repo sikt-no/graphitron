@@ -16,11 +16,11 @@ class RootTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         QUERY("root Query type — always valid",
-            new RootType("Query", null),
+            new RootType("Query", null, List.of()),
             List.of()),
 
         MUTATION("root Mutation type — always valid",
-            new RootType("Mutation", null),
+            new RootType("Mutation", null, List.of()),
             List.of());
 
         private final String description;

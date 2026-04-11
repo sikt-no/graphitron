@@ -18,7 +18,7 @@ class TableTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         RESOLVED("table name resolved to a jOOQ Table — no errors",
-            new TableType("Film", null, new TableRef("film", "FILM", "Film", Optional.of(List.of())), null),
+            new TableType("Film", null, new TableRef("film", "FILM", "Film", Optional.of(List.of())), null, List.of()),
             List.of());
 
         private final String description;

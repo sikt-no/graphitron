@@ -9,15 +9,29 @@ import java.util.List;
  * and is the authoritative source of source context for all fields defined on it.
  */
 public sealed interface GraphitronType
-    permits GraphitronType.TableType, GraphitronType.ResultType, GraphitronType.RootType,
-            GraphitronType.TableInterfaceType, GraphitronType.InterfaceType, GraphitronType.UnionType,
-            GraphitronType.ErrorType, GraphitronType.InputType, GraphitronType.TableInputType,
-            GraphitronType.UnclassifiedType {
+    permits GraphitronType.OutputType, GraphitronType.TableInterfaceType, GraphitronType.InterfaceType,
+            GraphitronType.UnionType, GraphitronType.ErrorType, GraphitronType.InputType,
+            GraphitronType.TableInputType, GraphitronType.UnclassifiedType {
 
     String name();
 
     /** SDL source location, or {@code null} for runtime-wired types with no SDL definition. */
     SourceLocation location();
+
+    /**
+     * A GraphQL object type that owns output fields ({@link GraphitronField} instances).
+     * Permitted subtypes are {@link TableType}, {@link ResultType}, and {@link RootType}.
+     *
+     * <p>{@code fields} holds every {@link GraphitronField} classified for this type —
+     * including {@link GraphitronField.NotGeneratedField} and
+     * {@link GraphitronField.UnclassifiedField} entries. Generators should filter those out;
+     * the validator turns {@code UnclassifiedField} into errors.
+     */
+    sealed interface OutputType extends GraphitronType
+        permits GraphitronType.TableType, GraphitronType.ResultType, GraphitronType.RootType {
+
+        List<GraphitronField> fields();
+    }
 
     /**
      * A type annotated with {@code @table}. Full SQL generation applies.
@@ -34,19 +48,28 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         TableRef table,
-        NodeRef node
-    ) implements GraphitronType {}
+        NodeRef node,
+        List<GraphitronField> fields
+    ) implements OutputType {}
 
     /**
      * A type annotated with {@code @record}. Runtime wiring only — no SQL until a new scope starts.
      */
-    record ResultType(String name, SourceLocation location) implements GraphitronType {}
+    record ResultType(
+        String name,
+        SourceLocation location,
+        List<GraphitronField> fields
+    ) implements OutputType {}
 
     /**
      * A root operation type (Query or Mutation). Unmapped — no source context, no SQL until
      * a scope is entered via a child field.
      */
-    record RootType(String name, SourceLocation location) implements GraphitronType {}
+    record RootType(
+        String name,
+        SourceLocation location,
+        List<GraphitronField> fields
+    ) implements OutputType {}
 
     /**
      * An interface annotated with {@code @table} and {@code @discriminate}, where implementing
@@ -106,7 +129,7 @@ public sealed interface GraphitronType
     /**
      * A GraphQL input object type. Carries the field list that generators and validators inspect.
      *
-     * <p>{@code fields} holds one {@link InputFieldSpec} per field in the input type, including
+     * <p>{@code inputFields} holds one {@link InputFieldSpec} per field in the input type, including
      * directive markers ({@code @orderBy}) that generators need. Fields
      * annotated with {@code @notGenerated} are excluded.
      *
@@ -116,7 +139,7 @@ public sealed interface GraphitronType
     record InputType(
         String name,
         SourceLocation location,
-        List<InputFieldSpec> fields
+        List<InputFieldSpec> inputFields
     ) implements GraphitronType {}
 
     /**
@@ -124,7 +147,7 @@ public sealed interface GraphitronType
      * jOOQ table, enabling use of this input type in generated lookup queries.
      *
      * <p>{@code table} is the resolved jOOQ table (always present — failure to resolve produces
-     * {@link UnclassifiedType}). All {@code fields} are fully resolved {@link InputFieldRef}
+     * {@link UnclassifiedType}). All {@code inputFields} are fully resolved {@link InputFieldRef}
      * instances; any field whose column cannot be matched causes the whole type to be classified
      * as {@link UnclassifiedType}.
      */
@@ -132,7 +155,7 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         TableRef table,
-        List<InputFieldRef> fields
+        List<InputFieldRef> inputFields
     ) implements GraphitronType {}
 
     /**

@@ -22,19 +22,19 @@ class NodeTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         NO_NODE("no @node directive — table without node, no errors",
-            new TableType("Film", null, RESOLVED_FILM, null),
+            new TableType("Film", null, RESOLVED_FILM, null, List.of()),
             List.of()),
 
         NODE_NO_KEY_COLUMNS("@node with no keyColumns argument — empty list, no errors",
-            new TableType("Film", null, RESOLVED_FILM, new NodeRef(null, List.of())),
+            new TableType("Film", null, RESOLVED_FILM, new NodeRef(null, List.of()), List.of()),
             List.of()),
 
         NODE_WITH_TYPE_ID("@node with typeId and no keyColumns — no errors",
-            new TableType("Film", null, RESOLVED_FILM, new NodeRef("film", List.of())),
+            new TableType("Film", null, RESOLVED_FILM, new NodeRef("film", List.of()), List.of()),
             List.of()),
 
         NODE_WITH_RESOLVED_KEY_COLUMN("@node with a key column resolved in the jOOQ table — no errors",
-            new TableType("Film", null, RESOLVED_FILM, new NodeRef(null, List.of(new ColumnRef("film_id", "FILM_ID", "")))),
+            new TableType("Film", null, RESOLVED_FILM, new NodeRef(null, List.of(new ColumnRef("film_id", "FILM_ID", ""))), List.of()),
             List.of());
 
         private final String description;

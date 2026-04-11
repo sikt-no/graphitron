@@ -208,7 +208,7 @@ public class GraphitronSchemaBuilder {
     private GraphitronSchema buildSchema() {
         validateDirectiveSchema();
         types = buildTypes();
-        var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
+        var fieldsByType = new LinkedHashMap<String, List<GraphitronField>>();
 
         schema.getAllTypesAsList().stream()
             .filter(t -> t instanceof GraphQLObjectType && !t.getName().startsWith("__"))
@@ -216,13 +216,27 @@ public class GraphitronSchemaBuilder {
             .forEach(objType -> {
                 var parentType = types.get(objType.getName());
                 if (parentType == null) return;
-                objType.getFieldDefinitions().forEach(fieldDef -> {
-                    var gField = classifyField(fieldDef, objType.getName(), parentType);
-                    fields.put(FieldCoordinates.coordinates(objType.getName(), fieldDef.getName()), gField);
-                });
+                var typeFields = new ArrayList<GraphitronField>();
+                objType.getFieldDefinitions().forEach(fieldDef ->
+                    typeFields.add(classifyField(fieldDef, objType.getName(), parentType)));
+                fieldsByType.put(objType.getName(), List.copyOf(typeFields));
             });
 
-        return new GraphitronSchema(types, fields);
+        // Attach classified fields to their owning OutputType records.
+        types.replaceAll((typeName, type) -> switch (type) {
+            case GraphitronType.TableType t -> new GraphitronType.TableType(
+                t.name(), t.location(), t.table(), t.node(),
+                fieldsByType.getOrDefault(typeName, List.of()));
+            case GraphitronType.ResultType t -> new GraphitronType.ResultType(
+                t.name(), t.location(),
+                fieldsByType.getOrDefault(typeName, List.of()));
+            case GraphitronType.RootType t -> new GraphitronType.RootType(
+                t.name(), t.location(),
+                fieldsByType.getOrDefault(typeName, List.of()));
+            default -> type;
+        });
+
+        return new GraphitronSchema(types);
     }
 
     /**
@@ -233,7 +247,7 @@ public class GraphitronSchemaBuilder {
     private GraphitronType promoteToTableInputType(InputType inputType, TableRef resolvedTable) {
         var errors = new ArrayList<String>();
         var resolvedFields = new ArrayList<InputFieldRef>();
-        for (var spec : inputType.fields()) {
+        for (var spec : inputType.inputFields()) {
             var found = catalog.findColumn(resolvedTable.tableName(), spec.columnName())
                 .map(e -> new InputFieldRef(spec.name(), spec.typeName(), spec.nonNull(), spec.list(),
                     resolvedTable, e.javaName(), e.columnClass()));
@@ -272,16 +286,14 @@ public class GraphitronSchemaBuilder {
 
         // Second pass: enrich interface and union types with their participant lists.
         result.replaceAll((name, type) -> switch (type) {
-            case TableInterfaceType tit  -> enrichTableInterfaceType(tit, result);
-            case InterfaceType it        -> enrichInterfaceType(it, result);
-            case UnionType ut            -> enrichUnionType(ut, result);
-            case TableType ignored       -> type;
-            case ResultType ignored      -> type;
-            case RootType ignored        -> type;
-            case ErrorType ignored       -> type;
-            case InputType ignored       -> type;
-            case TableInputType ignored  -> type;
-            case UnclassifiedType ignored -> type;
+            case TableInterfaceType tit       -> enrichTableInterfaceType(tit, result);
+            case InterfaceType it             -> enrichInterfaceType(it, result);
+            case UnionType ut                 -> enrichUnionType(ut, result);
+            case GraphitronType.OutputType ignored -> type;
+            case ErrorType ignored            -> type;
+            case InputType ignored            -> type;
+            case TableInputType ignored       -> type;
+            case UnclassifiedType ignored     -> type;
         });
 
         return result;
@@ -354,7 +366,7 @@ public class GraphitronSchemaBuilder {
 
         if (namedType instanceof GraphQLObjectType objType) {
             if (ROOT_TYPE_NAMES.contains(name)) {
-                return new RootType(name, location);
+                return new RootType(name, location, List.of());
             }
             String typeConflict = detectTypeDirectiveConflict(objType);
             if (typeConflict != null) {
@@ -364,7 +376,7 @@ public class GraphitronSchemaBuilder {
                 return buildTableType(objType);
             }
             if (objType.hasAppliedDirective(DIR_RECORD)) {
-                return new ResultType(name, location);
+                return new ResultType(name, location, List.of());
             }
             if (objType.hasAppliedDirective(DIR_ERROR)) {
                 return buildErrorType(objType);
@@ -393,7 +405,7 @@ public class GraphitronSchemaBuilder {
         }
         TableRef tableRef = tableOpt.get();
         if (!objType.hasAppliedDirective(DIR_NODE)) {
-            return new TableType(name, location, tableRef, null);
+            return new TableType(name, location, tableRef, null, List.of());
         }
         // @node: resolve key columns; any failure → UnclassifiedType
         String typeId = argString(objType, DIR_NODE, ARG_TYPE_ID).orElse(null);
@@ -411,7 +423,7 @@ public class GraphitronSchemaBuilder {
         if (!keyColumnErrors.isEmpty()) {
             return new UnclassifiedType(name, location, String.join("; ", keyColumnErrors));
         }
-        return new TableType(name, location, tableRef, new NodeRef(typeId, List.copyOf(keyColumns)));
+        return new TableType(name, location, tableRef, new NodeRef(typeId, List.copyOf(keyColumns)), List.of());
     }
 
     private GraphitronType buildTableInterfaceType(GraphQLInterfaceType iface) {

@@ -16,7 +16,7 @@ class ResultTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         VALID("result type — always valid",
-            new ResultType("FilmResult", null),
+            new ResultType("FilmResult", null, List.of()),
             List.of());
 
         private final String description;

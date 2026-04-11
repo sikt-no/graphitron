@@ -37,23 +37,21 @@ public class FieldsClassGenerator {
     }
 
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, FieldsCodeGenerator codeGenerator) {
-        var fields = schema.fields().entrySet().stream()
-            .filter(e -> e.getKey().getTypeName().equals(typeName))
-            .map(java.util.Map.Entry::getValue)
+        var type = (GraphitronType.OutputType) schema.type(typeName);
+        var fields = type.fields().stream()
             .filter(f -> !(f instanceof GraphitronField.NotGeneratedField))
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
-        TableRef parentTable = tableRefForType(schema, typeName);
+        TableRef parentTable = tableRefForType(type);
         return codeGenerator.generate(typeName, parentTable, fields);
     }
 
     /**
-     * Returns the {@link TableRef} for the given type name if the type is a
+     * Returns the {@link TableRef} for the given type if it is a
      * {@link GraphitronType.TableType}, or {@code null} for root types and other non-table types.
      */
-    private static TableRef tableRefForType(GraphitronSchema schema, String typeName) {
-        var type = schema.types().get(typeName);
+    private static TableRef tableRefForType(GraphitronType.OutputType type) {
         if (type instanceof GraphitronType.TableType tt) {
             return tt.table();
         }
