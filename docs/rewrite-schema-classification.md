@@ -569,7 +569,7 @@ Outstanding testing gaps for this layer are tracked in [`plan-record-generation.
 
 | File | Role |
 |---|---|
-| `rewrite/GraphitronSchema.java` | Container: `Map<String, GraphitronType>` + `Map<FieldCoordinates, GraphitronField>` |
+| `rewrite/GraphitronSchema.java` | Container: `Map<String, GraphitronType>` + `Map<FieldCoordinates, GraphitronField>`; `fieldsOf(typeName)` for per-type field lists |
 | `rewrite/GraphitronSchemaBuilder.java` | Parser: `TypeDefinitionRegistry` → `GraphitronSchema` |
 | `rewrite/GraphitronSchemaValidator.java` | Validator: accumulates `ValidationError` per sealed variant |
 | `rewrite/JooqCatalog.java` | jOOQ reflection wrapper: SQL name → `Table<?>` / `Field<?>` |
