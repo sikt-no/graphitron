@@ -103,6 +103,19 @@ public class JooqCatalog {
     }
 
     /**
+     * Returns all SQL column names for the given table, in the order they appear in the generated
+     * jOOQ table class. Returns an empty list when the table cannot be found.
+     */
+    public java.util.List<String> columnSqlNamesOf(String tableSqlName) {
+        return findTable(tableSqlName)
+            .map(te -> Arrays.stream(te.table().getClass().getFields())
+                .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
+                .map(f -> ((org.jooq.Field<?>) instanceFieldValue(f, te.table())).getName())
+                .toList())
+            .orElse(java.util.List.of());
+    }
+
+    /**
      * Find a column in a table by its SQL name. Returns the Java field name in the generated table
      * class (e.g. {@code "FILM_ID"}) and the fully qualified column type name. Uses reflection to
      * read the actual Java identifier name, which respects custom jOOQ naming strategies rather

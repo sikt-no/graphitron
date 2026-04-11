@@ -65,16 +65,7 @@ class QueryLookupTableFieldValidationTest {
 
         ORDERBY_ARG("@orderBy on a lookup field argument — not valid on lookup",
             singleReturn(List.of(new ArgumentRef.InputTypeArg.OrderByArg("order", "FilmOrder", false, false, "sortField", "direction"))),
-            List.of("Field 'filmById': @orderBy is not valid on a lookup field")),
-
-        UNCLASSIFIED_ARG("UnclassifiedArg — reports reason as error",
-            singleReturn(List.of(new ArgumentRef.UnclassifiedArg("filter", "String", false, false,
-                "@condition is only supported on field definitions, not on arguments"))),
-            List.of("Field 'filmById', argument 'filter': @condition is only supported on field definitions, not on arguments")),
-
-        UNBOUND_SCALAR_ARG("ScalarArg.UnboundScalarArg — reports column error",
-            singleReturn(List.of(new ArgumentRef.ScalarArg.UnboundScalarArg("tenantId", "String", false, false, "tenant_id"))),
-            List.of("Field 'filmById': argument 'tenantId' could not be resolved to column 'tenant_id' on the return type's table"));
+            List.of("Field 'filmById': @orderBy is not valid on a lookup field"));
 
         private final String description;
         private final GraphitronField field;

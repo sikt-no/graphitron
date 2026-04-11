@@ -90,6 +90,7 @@ import org.jooq.ForeignKey;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -630,9 +631,9 @@ public class GraphitronSchemaBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, referencePath.errorMessage());
             }
             var rt = returnType.table();
-            var args = fieldDef.getArguments().stream()
-                .map(arg -> classifyArgument(arg, rt, false))
-                .toList();
+            var argErrors1 = new ArrayList<String>();
+            var args = classifyArgsList(fieldDef, rt, false, argErrors1);
+            if (args == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors1));
             boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
             if (hasSplitQuery && hasLookupKey) {
@@ -963,9 +964,9 @@ public class GraphitronSchemaBuilder {
                     "service method could not be resolved — " + serviceReflection.failureReason());
             }
             ServiceMethodRef serviceMethodRef = serviceReflection.ref();
-            var args = fieldDef.getArguments().stream()
-                .map(arg -> classifyArgument(arg, null, true))
-                .toList();
+            var argErrors2 = new ArrayList<String>();
+            var args = classifyArgsList(fieldDef, null, true, argErrors2);
+            if (args == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors2));
             return switch (returnType) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs, serviceMethodRef);
@@ -996,9 +997,9 @@ public class GraphitronSchemaBuilder {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "@lookupKey requires a @table-annotated return type");
             }
-            var arguments = fieldDef.getArguments().stream()
-                .map(arg -> classifyArgument(arg, tb.table(), false))
-                .toList();
+            var argErrors3 = new ArrayList<String>();
+            var arguments = classifyArgsList(fieldDef, tb.table(), false, argErrors3);
+            if (arguments == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors3));
             return new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, arguments);
         }
 
@@ -1013,9 +1014,9 @@ public class GraphitronSchemaBuilder {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "@tableMethod requires a @table-annotated return type");
             }
-            var args = fieldDef.getArguments().stream()
-                .map(arg -> classifyArgument(arg, null, true))
-                .toList();
+            var argErrors4 = new ArrayList<String>();
+            var args = classifyArgsList(fieldDef, null, true, argErrors4);
+            if (args == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors4));
             return new QueryField.QueryTableMethodTableField(parentTypeName, name, location,
                 tb,
                 parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF),
@@ -1032,9 +1033,9 @@ public class GraphitronSchemaBuilder {
             if (wrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                 "could not resolve @defaultOrder columns in table '" + tableType.table().tableName() + "'");
             var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, wrapper);
-            var args = fieldDef.getArguments().stream()
-                .map(arg -> classifyArgument(arg, returnType.table(), false))
-                .toList();
+            var argErrors5 = new ArrayList<String>();
+            var args = classifyArgsList(fieldDef, returnType.table(), false, argErrors5);
+            if (args == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors5));
             return new QueryField.QueryTableField(parentTypeName, name, location, returnType, args);
         }
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
@@ -1082,9 +1083,9 @@ public class GraphitronSchemaBuilder {
                     "service method could not be resolved — " + serviceReflection.failureReason());
             }
             ServiceMethodRef serviceMethodRef = serviceReflection.ref();
-            var args = fieldDef.getArguments().stream()
-                .map(arg -> classifyArgument(arg, null, true))
-                .toList();
+            var argErrors6 = new ArrayList<String>();
+            var args = classifyArgsList(fieldDef, null, true, argErrors6);
+            if (args == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors6));
             return switch (returnType) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs, serviceMethodRef);
@@ -1100,9 +1101,9 @@ public class GraphitronSchemaBuilder {
             if (typeName != null) {
                 String rawReturn = baseTypeName(fieldDef);
                 ReturnTypeRef returnType = resolveReturnType(rawReturn, buildWrapper(fieldDef, getTableSqlNameForType(rawReturn)));
-                var arguments = fieldDef.getArguments().stream()
-                    .map(arg -> classifyArgument(arg, null, true))
-                    .toList();
+                var argErrors7 = new ArrayList<String>();
+                var arguments = classifyArgsList(fieldDef, null, true, argErrors7);
+                if (arguments == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors7));
                 return switch (typeName) {
                     case "INSERT" -> new MutationField.MutationInsertTableField(parentTypeName, name, location, returnType, arguments);
                     case "UPDATE" -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType, arguments);
@@ -1158,18 +1159,30 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
+     * Classifies all arguments on {@code fieldDef} against the table context {@code rt}.
+     * Returns the classified list, or {@code null} if any argument fails classification
+     * (in which case each failure reason has been appended to {@code errors}).
+     */
+    private List<ArgumentRef> classifyArgsList(
+            GraphQLFieldDefinition fieldDef, TableRef rt, boolean useParamForScalars, List<String> errors) {
+        var result = new ArrayList<ArgumentRef>(fieldDef.getArguments().size());
+        for (var arg : fieldDef.getArguments()) {
+            var classified = classifyArgument(arg, rt, useParamForScalars, errors);
+            if (classified != null) result.add(classified);
+        }
+        return errors.isEmpty() ? List.copyOf(result) : null;
+    }
+
+    /**
      * Classifies a single GraphQL argument into an {@link ArgumentRef} variant.
      *
      * <p>{@code rt} is the resolved return table of the enclosing field, used only for binding
      * scalar arguments to database columns (may be {@code null} when there is no table context).
-     * Input-type arguments are resolved purely from {@link #types}, which is fully populated
-     * before field classification starts — no implicit promotion is needed here.
-     *
-     * <p>{@code useParamForScalars} suppresses column binding: when {@code true}, scalar arguments
-     * become {@link ArgumentRef.ScalarArg.ParamArg} (used for service and method fields where
-     * scalars are forwarded as Java parameters rather than bound to database columns).
+     * {@code useParamForScalars} suppresses column binding: when {@code true}, scalar arguments
+     * become {@link ArgumentRef.ScalarArg.ParamArg}. Returns {@code null} and appends to
+     * {@code errors} when classification fails.
      */
-    private ArgumentRef classifyArgument(GraphQLArgument arg, TableRef rt, boolean useParamForScalars) {
+    private ArgumentRef classifyArgument(GraphQLArgument arg, TableRef rt, boolean useParamForScalars, List<String> errors) {
         String name = arg.getName();
         GraphQLType type = arg.getType();
         boolean nonNull = type instanceof GraphQLNonNull;
@@ -1177,11 +1190,11 @@ public class GraphitronSchemaBuilder {
         String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
 
         if (arg.hasAppliedDirective(DIR_CONDITION)) {
-            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                "@condition is only supported on field definitions, not on arguments");
+            errors.add("argument '" + name + "': @condition is only supported on field definitions, not on arguments");
+            return null;
         }
         if (arg.hasAppliedDirective(DIR_ORDER_BY)) {
-            return resolveOrderByArg(arg, name, typeName, nonNull, list);
+            return resolveOrderByArg(arg, name, typeName, nonNull, list, errors);
         }
         if (types.containsKey(typeName)) {
             return types.get(typeName) instanceof TableInputType
@@ -1194,11 +1207,19 @@ public class GraphitronSchemaBuilder {
         }
         String columnName = argString(arg, DIR_FIELD, ARG_NAME).orElse(name);
         if (rt == null) {
-            return new ArgumentRef.ScalarArg.UnboundScalarArg(name, typeName, nonNull, list, columnName);
+            errors.add("argument '" + name + "': column '" + columnName + "' could not be resolved (no table context)");
+            return null;
         }
-        return catalog.findColumn(rt.tableName(), columnName)
-            .<ArgumentRef>map(e -> new ArgumentRef.ScalarArg.ColumnArg(name, typeName, nonNull, list, e.javaName(), e.columnClass()))
-            .orElseGet(() -> new ArgumentRef.ScalarArg.UnboundScalarArg(name, typeName, nonNull, list, columnName));
+        var col = catalog.findColumn(rt.tableName(), columnName);
+        if (col.isEmpty()) {
+            var available = catalog.columnSqlNamesOf(rt.tableName()).stream()
+                .sorted(Comparator.comparingInt(c -> hammingDistance(columnName.toLowerCase(), c.toLowerCase())))
+                .toList();
+            String hint = available.isEmpty() ? "" : "; available columns: " + String.join(", ", available);
+            errors.add("argument '" + name + "': column '" + columnName + "' could not be resolved in table '" + rt.tableName() + "'" + hint);
+            return null;
+        }
+        return new ArgumentRef.ScalarArg.ColumnArg(name, typeName, nonNull, list, col.get().javaName(), col.get().columnClass());
     }
 
     /**
@@ -1206,14 +1227,14 @@ public class GraphitronSchemaBuilder {
      *
      * <p>Looks up the argument's input type in the schema and expects it to contain exactly one
      * enum field whose values carry {@code @order} directives (the sort field) and exactly one
-     * other enum field (the direction field). Returns an {@link ArgumentRef.UnclassifiedArg} with
-     * a descriptive reason if the structure is invalid.
+     * other enum field (the direction field). Appends to {@code errors} and returns {@code null}
+     * if the structure is invalid.
      */
-    private ArgumentRef resolveOrderByArg(GraphQLArgument arg, String name, String typeName, boolean nonNull, boolean list) {
+    private ArgumentRef resolveOrderByArg(GraphQLArgument arg, String name, String typeName, boolean nonNull, boolean list, List<String> errors) {
         var rawType = schema.getType(typeName);
         if (!(rawType instanceof GraphQLInputObjectType inputType)) {
-            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                "@orderBy argument type '" + typeName + "' is not an input type");
+            errors.add("argument '" + name + "': @orderBy argument type '" + typeName + "' is not an input type");
+            return null;
         }
         String sortFieldName = null;
         String directionFieldName = null;
@@ -1224,25 +1245,25 @@ public class GraphitronSchemaBuilder {
                 .anyMatch(v -> v.hasAppliedDirective("order"));
             if (isSortEnum) {
                 if (sortFieldName != null) {
-                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        "@orderBy input type '" + typeName + "' must have exactly one sort enum field, but found multiple");
+                    errors.add("argument '" + name + "': @orderBy input type '" + typeName + "' must have exactly one sort enum field, but found multiple");
+                    return null;
                 }
                 sortFieldName = field.getName();
             } else {
                 if (directionFieldName != null) {
-                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        "@orderBy input type '" + typeName + "' must have exactly one direction field, but found multiple");
+                    errors.add("argument '" + name + "': @orderBy input type '" + typeName + "' must have exactly one direction field, but found multiple");
+                    return null;
                 }
                 directionFieldName = field.getName();
             }
         }
         if (sortFieldName == null) {
-            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                "@orderBy input type '" + typeName + "' has no sort enum field (no enum values with @order)");
+            errors.add("argument '" + name + "': @orderBy input type '" + typeName + "' has no sort enum field (no enum values with @order)");
+            return null;
         }
         if (directionFieldName == null) {
-            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                "@orderBy input type '" + typeName + "' has no direction field");
+            errors.add("argument '" + name + "': @orderBy input type '" + typeName + "' has no direction field");
+            return null;
         }
         return new ArgumentRef.InputTypeArg.OrderByArg(name, typeName, nonNull, list, sortFieldName, directionFieldName);
     }
@@ -1338,9 +1359,9 @@ public class GraphitronSchemaBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "service method could not be resolved — " + serviceReflection.failureReason());
             }
-            var arguments = fieldDef.getArguments().stream()
-                .map(arg -> classifyArgument(arg, null, true))
-                .toList();
+            var argErrors8 = new ArrayList<String>();
+            var arguments = classifyArgsList(fieldDef, null, true, argErrors8);
+            if (arguments == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors8));
             var servicePath = parsePath(fieldDef);
             if (servicePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePath.errorMessage());
@@ -1380,9 +1401,9 @@ public class GraphitronSchemaBuilder {
         }
         return switch (resolveReturnType(elementTypeName, buildWrapper(fieldDef, getTableSqlNameForType(elementTypeName)))) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
-                var args = fieldDef.getArguments().stream()
-                    .map(arg -> classifyArgument(arg, tb.table(), false))
-                    .toList();
+                var argErrors9 = new ArrayList<String>();
+                var args = classifyArgsList(fieldDef, tb.table(), false, argErrors9);
+                if (args == null) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors9));
                 boolean hasLookupKey = hasLookupKeyAnywhere(fieldDef);
                 if (hasLookupKey) {
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), args);
@@ -1413,9 +1434,9 @@ public class GraphitronSchemaBuilder {
                     "service method could not be resolved — " + serviceReflection.failureReason());
             }
             ServiceMethodRef serviceMethodRef = serviceReflection.ref();
-            var arguments = fieldDef.getArguments().stream()
-                .map(arg -> classifyArgument(arg, null, true))
-                .toList();
+            var argErrors10 = new ArrayList<String>();
+            var arguments = classifyArgsList(fieldDef, null, true, argErrors10);
+            if (arguments == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors10));
             var servicePath = parsePath(fieldDef);
             if (servicePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePath.errorMessage());
@@ -1453,9 +1474,9 @@ public class GraphitronSchemaBuilder {
             if (tmWrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                 "could not resolve @defaultOrder columns for @tableMethod child field");
             var returnType = resolveReturnType(elementTypeName, tmWrapper);
-            var args = fieldDef.getArguments().stream()
-                .map(arg -> classifyArgument(arg, null, true))
-                .toList();
+            var argErrors11 = new ArrayList<String>();
+            var args = classifyArgsList(fieldDef, null, true, argErrors11);
+            if (args == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors11));
             var tableMethodPath = parsePath(fieldDef);
             if (tableMethodPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, tableMethodPath.errorMessage());
@@ -1968,5 +1989,21 @@ public class GraphitronSchemaBuilder {
             case GraphQLUnionType t     -> locationOf(t);
             default                     -> null;
         };
+    }
+
+    /**
+     * Hamming distance between two strings, with the shorter string zero-padded to the length of
+     * the longer. Counts the number of positions where the characters differ. Useful for sorting
+     * column name candidates by similarity to a search term.
+     */
+    private static int hammingDistance(String a, String b) {
+        int len = Math.max(a.length(), b.length());
+        int dist = 0;
+        for (int i = 0; i < len; i++) {
+            char ca = i < a.length() ? a.charAt(i) : 0;
+            char cb = i < b.length() ? b.charAt(i) : 0;
+            if (ca != cb) dist++;
+        }
+        return dist;
     }
 }

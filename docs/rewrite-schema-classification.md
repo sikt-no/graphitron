@@ -432,16 +432,16 @@ ArgumentRef
 │   ├── TableInputTypeArg    — resolved to TableInputType
 │   ├── OrderByArg           — carries @orderBy; sortFieldName, directionFieldName
 │   └── PlainInputTypeArg    — unresolved input type arg
-├── ScalarArg (sealed)
-│   ├── ColumnArg            — resolved to column; javaColumnName, columnClass: String
-│   ├── UnboundScalarArg     — column could not be matched; columnName: String
-│   └── ParamArg             — passed as direct Java parameter
-└── UnclassifiedArg          — unsupported directive; reason: String
+└── ScalarArg (sealed)
+    ├── ColumnArg            — resolved to column; javaColumnName, columnClass: String
+    └── ParamArg             — passed as direct Java parameter
 ```
 
 All variants carry `name`, `typeName`, `nonNull`, `list`.
 
 `ArgumentRef` values are stored directly in field records as `List<ArgumentRef>`. There is no intermediate `ArgumentSpec` type — classification produces `ArgumentRef` values immediately and the field record holds them directly.
+
+**No error-sentinel variants.** Any argument that cannot be classified (column not found in the table, `@condition` applied to an argument, malformed `@orderBy` structure) causes the **enclosing field** to become `UnclassifiedField(reason)` immediately. The error message names the failing argument and, for column lookup failures, lists the table's available columns sorted by Hamming distance from the attempted name. This ensures every `ArgumentRef` in a valid field is fully resolved.
 
 ---
 

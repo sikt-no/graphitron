@@ -916,21 +916,21 @@ class GraphitronSchemaBuilderTest {
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
-                actors(limit: Int!, ids: [ID!]): [Actor!]!
+                actors(actor_id: ID!, first_name: [String!]): [Actor!]!
             }
             type Query { film: Film }
             """,
             schema -> {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("Film", "actors");
                 assertThat(f.arguments()).hasSize(2);
-                var limit = f.arguments().get(0);
-                assertThat(limit.name()).isEqualTo("limit");
-                assertThat(limit.typeName()).isEqualTo("Int");
-                assertThat(limit.nonNull()).isTrue();
-                assertThat(limit.list()).isFalse();
-                var ids = f.arguments().get(1);
-                assertThat(ids.typeName()).isEqualTo("ID");
-                assertThat(ids.list()).isTrue();
+                var actorId = f.arguments().get(0);
+                assertThat(actorId.name()).isEqualTo("actor_id");
+                assertThat(actorId.typeName()).isEqualTo("ID");
+                assertThat(actorId.nonNull()).isTrue();
+                assertThat(actorId.list()).isFalse();
+                var firstName = f.arguments().get(1);
+                assertThat(firstName.typeName()).isEqualTo("String");
+                assertThat(firstName.list()).isTrue();
             }),
 
         TABLE_FIELD_LOOKUP_KEY_ARG(
@@ -938,32 +938,35 @@ class GraphitronSchemaBuilderTest {
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
-                actor(id: ID! @lookupKey): Actor
+                actor(actor_id: ID! @lookupKey): Actor
             }
             type Query { film: Film }
             """,
             schema -> {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.LookupTableField) schema.field("Film", "actor");
                 assertThat(f.arguments()).hasSize(1);
-                assertThat(f.arguments().get(0).name()).isEqualTo("id");
+                assertThat(f.arguments().get(0).name()).isEqualTo("actor_id");
                 assertThat(f.arguments().get(0)).isNotInstanceOf(no.sikt.graphitron.rewrite.model.ArgumentRef.InputTypeArg.OrderByArg.class);
             }),
 
         TABLE_FIELD_ORDER_BY_ARG(
-            "@orderBy on argument — orderBy flag is true",
+            "@orderBy arg with valid input type → classified as OrderByArg on TableField",
             """
-            enum ActorOrder { NAME }
+            enum ActorOrderField { FIRST_NAME @order(index: "IDX_ACTOR_LAST_NAME") }
+            enum Direction { ASC DESC }
+            input ActorOrder { sortField: ActorOrderField! direction: Direction! }
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
-                actors(orderBy: ActorOrder): [Actor!]!
+                actors(order: ActorOrder @orderBy): [Actor!]!
             }
             type Query { film: Film }
             """,
             schema -> {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("Film", "actors");
-                // @orderBy is only on the argument definition directive, not the enum value — check arg
                 assertThat(f.arguments()).hasSize(1);
-                assertThat(f.arguments().get(0).typeName()).isEqualTo("ActorOrder");
+                var orderArg = f.arguments().get(0);
+                assertThat(orderArg).isInstanceOf(no.sikt.graphitron.rewrite.model.ArgumentRef.InputTypeArg.OrderByArg.class);
+                assertThat(orderArg.typeName()).isEqualTo("ActorOrder");
             }),
 
         SERVICE_FIELD_CONTEXT_ARGS(
@@ -1326,13 +1329,13 @@ class GraphitronSchemaBuilderTest {
             "field with @lookupKey list arg → QueryLookupTableField with list return",
             """
             type Film @table(name: "film") { title: String }
-            type Query { filmById(id: [ID] @lookupKey): [Film!]! }
+            type Query { filmById(film_id: [ID] @lookupKey): [Film!]! }
             """,
             schema -> {
                 assertThat(schema.field("Query", "filmById")).isInstanceOf(QueryField.QueryLookupTableField.class);
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
                 assertThat(f.arguments()).hasSize(1);
-                assertThat(f.arguments().get(0).name()).isEqualTo("id");
+                assertThat(f.arguments().get(0).name()).isEqualTo("film_id");
                 assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class);
             }),
 
@@ -1362,17 +1365,16 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LOOKUP_FIELD_PLAIN_SCALAR_ARG(
-            "lookup field list arg with no matching column → UnboundScalarArg",
+            "lookup field list arg with no matching column → UnclassifiedField",
             """
             type Film @table(name: "film") { title: String }
             type Query { filmById(unknownColumn: [String] @lookupKey): [Film!]! }
             """,
             schema -> {
-                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
-                assertThat(f.arguments()).hasSize(1);
-                assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.ScalarArg.UnboundScalarArg.class);
-                var a = (ArgumentRef.ScalarArg.UnboundScalarArg) f.arguments().get(0);
-                assertThat(a.columnName()).isEqualTo("unknownColumn");
+                assertThat(schema.field("Query", "filmById"))
+                    .isInstanceOf(UnclassifiedField.class);
+                var uf = (UnclassifiedField) schema.field("Query", "filmById");
+                assertThat(uf.reason()).contains("unknownColumn");
             }),
 
         LOOKUP_FIELD_TABLE_INPUT_TYPE_ARG(
@@ -1427,20 +1429,17 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LOOKUP_FIELD_ORDERBY_ARG_BAD_STRUCTURE(
-            "@orderBy arg whose type is not an input type → UnclassifiedArg",
+            "@orderBy arg whose type is not an input type → UnclassifiedField",
             """
             enum FilmOrder { TITLE }
             type Film @table(name: "film") { title: String }
             type Query { filmById(film_id: [ID] @lookupKey, order: FilmOrder @orderBy): [Film!]! }
             """,
             schema -> {
-                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
-                var orderArg = f.arguments().stream()
-                    .filter(a -> a.name().equals("order"))
-                    .findFirst().orElseThrow();
-                assertThat(orderArg).isInstanceOf(ArgumentRef.UnclassifiedArg.class);
-                assertThat(((ArgumentRef.UnclassifiedArg) orderArg).reason())
-                    .contains("not an input type");
+                assertThat(schema.field("Query", "filmById"))
+                    .isInstanceOf(UnclassifiedField.class);
+                var uf = (UnclassifiedField) schema.field("Query", "filmById");
+                assertThat(uf.reason()).contains("not an input type");
             }),
 
         TABLE_QUERY_FIELD(

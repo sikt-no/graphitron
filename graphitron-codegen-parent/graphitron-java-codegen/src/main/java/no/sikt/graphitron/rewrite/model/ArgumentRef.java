@@ -3,7 +3,10 @@ package no.sikt.graphitron.rewrite.model;
 /**
  * Represents one argument on a field, with its resolved state.
  *
- * <p>The builder classifies each argument into exactly one variant during schema building:
+ * <p>The builder classifies each argument into exactly one variant during schema building.
+ * Arguments that cannot be classified (e.g. because a scalar column cannot be matched, or because
+ * an unsupported directive is present) cause the enclosing field to be classified as
+ * {@link GraphitronField.UnclassifiedField} instead — no error-sentinel variants exist here.
  *
  * <ul>
  *   <li>{@link InputTypeArg} — the argument type is a user-defined input type (sealed):
@@ -22,21 +25,17 @@ package no.sikt.graphitron.rewrite.model;
  *     <ul>
  *       <li>{@link ScalarArg.ColumnArg} — resolved against the return type's jOOQ table; carries
  *           the Java field name and the jOOQ {@link org.jooq.Field} instance.</li>
- *       <li>{@link ScalarArg.UnboundScalarArg} — column could not be matched; the validator
- *           reports an error.</li>
  *       <li>{@link ScalarArg.ParamArg} — scalar passed directly as a Java parameter without
  *           column binding (e.g. a context argument or method parameter).</li>
  *     </ul>
  *   </li>
- *   <li>{@link UnclassifiedArg} — the argument carries a directive that is not supported at the
- *       argument level (e.g. {@code @condition}). The validator reports an error.</li>
  * </ul>
  *
  * <p>Common GraphQL argument metadata ({@code name}, {@code typeName}, {@code nonNull},
  * {@code list}) is available on all variants.
  */
 public sealed interface ArgumentRef
-        permits ArgumentRef.InputTypeArg, ArgumentRef.ScalarArg, ArgumentRef.UnclassifiedArg {
+        permits ArgumentRef.InputTypeArg, ArgumentRef.ScalarArg {
 
     String name();
     String typeName();
@@ -79,8 +78,8 @@ public sealed interface ArgumentRef
          * validator reports an error on lookup fields.
          *
          * <p>If the input type cannot be resolved to this structure (type not found, wrong number
-         * of sort/direction fields), the builder produces an {@link ArgumentRef.UnclassifiedArg}
-         * instead.
+         * of sort/direction fields), the builder promotes the enclosing field to
+         * {@link GraphitronField.UnclassifiedField} instead.
          */
         record OrderByArg(
             String name,
@@ -105,11 +104,10 @@ public sealed interface ArgumentRef
     /**
      * Argument whose type is a scalar or enum.
      *
-     * <p>Three sub-variants cover the resolution states for scalar arguments.
+     * <p>Two sub-variants cover the resolution states for scalar arguments.
      */
     sealed interface ScalarArg extends ArgumentRef
             permits ArgumentRef.ScalarArg.ColumnArg,
-                    ArgumentRef.ScalarArg.UnboundScalarArg,
                     ArgumentRef.ScalarArg.ParamArg {
 
         /**
@@ -129,21 +127,6 @@ public sealed interface ArgumentRef
         ) implements ScalarArg {}
 
         /**
-         * Scalar argument whose column could not be matched in the return type's jOOQ table.
-         *
-         * <p>{@code columnName} is the SQL column name that was attempted (from
-         * {@code @field(name:)} or the GraphQL argument name). The validator reports this as an
-         * error when column binding is required.
-         */
-        record UnboundScalarArg(
-            String name,
-            String typeName,
-            boolean nonNull,
-            boolean list,
-            String columnName
-        ) implements ScalarArg {}
-
-        /**
          * Scalar argument passed directly as a Java parameter without column binding.
          *
          * <p>Used for context arguments, method parameters, and other scalars that are forwarded
@@ -156,18 +139,4 @@ public sealed interface ArgumentRef
             boolean list
         ) implements ScalarArg {}
     }
-
-    /**
-     * Argument that carries a directive not supported at the argument level.
-     *
-     * <p>Example: {@code @condition} is only valid on {@code FIELD_DEFINITION}; using it on an
-     * argument produces this variant. The validator reports {@code reason} as an error.
-     */
-    record UnclassifiedArg(
-        String name,
-        String typeName,
-        boolean nonNull,
-        boolean list,
-        String reason
-    ) implements ArgumentRef {}
 }
