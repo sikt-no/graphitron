@@ -62,7 +62,7 @@ class QueryTableFieldValidationTest {
 
         ORDER_BY_INDEX("@orderBy argument with resolved ColumnOrder enum values — valid",
             new QueryTableField("Query", "films", null,
-                filmReturn(new FieldWrapper.List(true, true, null,
+                filmReturn(new FieldWrapper.List(true, true, PK_ORDER,
                     List.of(
                         new OrderByEnumValueSpec("TITLE", INDEX_ORDER),
                         new OrderByEnumValueSpec("ID", PK_ORDER)))),

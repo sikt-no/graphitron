@@ -683,24 +683,53 @@ public class GraphitronSchemaBuilder {
         boolean outerNullable = !(fieldType instanceof GraphQLNonNull);
         GraphQLType unwrappedOnce = GraphQLTypeUtil.unwrapNonNull(fieldType);
 
-        ColumnOrder defaultOrder = null;
-        if (tableSqlName != null && fieldDef.hasAppliedDirective(DIR_DEFAULT_ORDER)) {
-            defaultOrder = resolveColumnOrder(fieldDef, tableSqlName);
-            if (defaultOrder == null) return null;  // column resolution failed
-        }
-
         if (unwrappedOnce instanceof GraphQLList listType) {
             boolean itemNullable = !(listType.getWrappedType() instanceof GraphQLNonNull);
-            return new FieldWrapper.List(outerNullable, itemNullable, defaultOrder, List.of());
+            var order = resolveDefaultOrder(fieldDef, tableSqlName);
+            if (order == null && tableSqlName != null) return null;
+            return new FieldWrapper.List(outerNullable, itemNullable, order, List.of());
         }
 
         String typeName = baseTypeName(fieldDef);
         if (isConnectionType(typeName)) {
             boolean itemNullable = connectionItemNullable(typeName);
-            return new FieldWrapper.Connection(outerNullable, itemNullable, defaultOrder, List.of());
+            var order = resolveDefaultOrder(fieldDef, tableSqlName);
+            if (order == null && tableSqlName != null) return null;
+            return new FieldWrapper.Connection(outerNullable, itemNullable, order, List.of());
         }
 
         return new FieldWrapper.Single(outerNullable);
+    }
+
+    /**
+     * Resolves the effective default order for a list or connection field.
+     *
+     * <p>When an explicit {@code @defaultOrder} directive is present, delegates to
+     * {@link #resolveColumnOrder}. When no directive is present and {@code tableSqlName} is
+     * non-null, falls back to the table's primary-key columns with ascending direction, giving
+     * every table-backed list field a deterministic ordering by default.
+     *
+     * <p>Returns {@code null} when:
+     * <ul>
+     *   <li>{@code tableSqlName} is {@code null} (non-table-bound field — ordering is opaque), or</li>
+     *   <li>{@code @defaultOrder} is present but column/index resolution fails, or</li>
+     *   <li>no {@code @defaultOrder} and the table has no primary key.</li>
+     * </ul>
+     * Callers that pass a non-null {@code tableSqlName} must treat a {@code null} return as a
+     * build failure and produce an {@link GraphitronField.UnclassifiedField}.
+     */
+    private ColumnOrder resolveDefaultOrder(GraphQLFieldDefinition fieldDef, String tableSqlName) {
+        if (tableSqlName == null) return null;
+        if (fieldDef.hasAppliedDirective(DIR_DEFAULT_ORDER)) {
+            return resolveColumnOrder(fieldDef, tableSqlName);
+        }
+        var pkCols = catalog.findPkColumns(tableSqlName);
+        if (pkCols.isEmpty()) return null;
+        return new ColumnOrder(
+            pkCols.stream()
+                .map(ce -> new ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
+                .toList(),
+            "ASC");
     }
 
     /**

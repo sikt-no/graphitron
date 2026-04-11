@@ -571,7 +571,34 @@ class GraphitronSchemaBuilderTest {
                 assertThat(order).isNotNull();
                 assertThat(order.columns()).hasSize(1);
                 assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
-            });
+            }),
+
+        NO_DEFAULT_ORDER_PK_FALLBACK(
+            "list field with no @defaultOrder on PK table — PK columns auto-filled as default order",
+            """
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]!
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
+                ColumnOrder order = cardinality.defaultOrder();
+                assertThat(order).isNotNull();
+                assertThat(order.direction()).isEqualTo("ASC");
+                assertThat(order.columns()).hasSize(1);
+                assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("actor_id");
+            }),
+
+        NO_DEFAULT_ORDER_PKLESS_TABLE(
+            "list field with no @defaultOrder on PK-less table — classified as UnclassifiedField",
+            """
+            type FilmList @table(name: "film_list") { title: String }
+            type Query { films: [FilmList!]! }
+            """,
+            schema -> assertThat(schema.field("Query", "films"))
+                .isInstanceOf(UnclassifiedField.class));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;

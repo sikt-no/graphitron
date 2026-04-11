@@ -170,32 +170,6 @@ public class GraphitronSchemaValidator {
     private void validateQueryTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
-        validateDeterministicOrdering(field.name(), field.location(), field.returnType().wrapper(), field.returnType().table(), errors);
-    }
-
-    /**
-     * Warns when a list or connection field returns rows from a PK-less table with no
-     * {@code @defaultOrder} and no {@code @orderBy} enum values. Without a primary key or explicit
-     * ordering, the result order is non-deterministic across pages and repeated calls.
-     */
-    private void validateDeterministicOrdering(
-            String fieldName, SourceLocation location, no.sikt.graphitron.rewrite.model.FieldWrapper cardinality,
-            no.sikt.graphitron.rewrite.model.TableRef table, List<ValidationError> errors) {
-        boolean needsCheck = switch (cardinality) {
-            case no.sikt.graphitron.rewrite.model.FieldWrapper.List l ->
-                l.defaultOrder() == null && l.orderByValues().isEmpty();
-            case no.sikt.graphitron.rewrite.model.FieldWrapper.Connection c ->
-                c.defaultOrder() == null && c.orderByValues().isEmpty();
-            case no.sikt.graphitron.rewrite.model.FieldWrapper.Single ignored -> false; // single fields don't paginate
-        };
-        if (!needsCheck) return;
-        if (table.hasPrimaryKey()) return;
-
-        errors.add(new ValidationError(
-            "Field '" + fieldName + "': table '" + table.tableName()
-                + "' has no @defaultOrder directive and no primary key — result ordering is non-deterministic",
-            location
-        ));
     }
     private void validateQueryTableMethodTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryTableMethodTableField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
