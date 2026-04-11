@@ -1416,7 +1416,7 @@ public class GraphitronSchemaBuilder {
             return new ReturnTypeRef.PolymorphicReturnType(targetTypeName, wrapper);
         // PojoReturnType covers ResultType (backing class not yet reflected), scalars, enums,
         // and directive-argument type names that don't match any schema type (@nodeId(typeName:)).
-        // Downstream validators (e.g. UnresolvedNodeType) report errors for missing types.
+        // Downstream validators report errors when required type metadata is absent.
         return new ReturnTypeRef.OtherReturnType.PojoReturnType(targetTypeName, wrapper);
     }
 

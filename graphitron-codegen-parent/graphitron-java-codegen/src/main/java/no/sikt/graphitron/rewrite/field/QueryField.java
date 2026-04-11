@@ -178,9 +178,10 @@ public sealed interface QueryField extends RootField
      * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
      * of the {@code @service} directive.
      *
-     * <p>{@code serviceMethodRef} is the resolved outcome of reflecting the service class and method
-     * at parse time. {@link ServiceMethodRef.Resolved} when the method could be located;
-     * {@link ServiceMethodRef.Unresolved} otherwise.
+     * <p>{@code serviceMethodRef} carries the reflected parameter list of the service method,
+     * captured at parse time. If reflection failed the containing field is classified as
+     * {@link no.sikt.graphitron.rewrite.field.UnclassifiedField} by the builder and does not
+     * appear here.
      */
     record QueryServiceTableField(
         String parentTypeName,

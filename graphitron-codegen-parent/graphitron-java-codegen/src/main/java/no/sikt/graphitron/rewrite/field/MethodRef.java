@@ -7,7 +7,8 @@ import java.util.List;
  *
  * <p>A {@code MethodRef} only appears inside {@link ConditionOnlyRef} or
  * {@link FkWithConditionRef} — both of which represent resolved states. All fields are
- * non-null. Unresolved conditions are represented by {@link UnresolvedConditionRef} instead.
+ * non-null. When condition resolution fails the builder classifies the containing field as
+ * {@link UnclassifiedField} rather than producing a {@code MethodRef}.
  *
  * <p>{@code qualifiedName} is the fully qualified method name derived from the
  * {@code ExternalCodeReference} input object, e.g.

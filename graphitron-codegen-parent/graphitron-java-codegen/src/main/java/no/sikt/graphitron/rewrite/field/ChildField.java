@@ -154,9 +154,10 @@ public sealed interface ChildField extends GraphitronField
      * used to override FK auto-inference. Empty when no {@code @reference} directive is present —
      * Graphitron will attempt to infer the foreign key automatically.
      *
-     * <p>{@code condition} is the resolved or unresolved field-level {@code @condition} directive, or
-     * {@link FieldConditionRef.NoFieldCondition} when no {@code @condition} is present. The validator
-     * reports an error for an {@link FieldConditionRef.UnresolvedFieldCondition}.
+     * <p>{@code condition} is the resolved field-level {@code @condition} directive, or
+     * {@link FieldConditionRef.NoFieldCondition} when no {@code @condition} is present. When the
+     * condition directive references a method that cannot be reflected, the containing field is
+     * classified as {@link UnclassifiedField} by the builder and does not appear here.
      *
      * <p>On a table-mapped parent this generates an inline SQL JOIN.
      */
@@ -358,11 +359,9 @@ public sealed interface ChildField extends GraphitronField
      * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
      * of the {@code @service} directive.
      *
-     * <p>{@code serviceMethodRef} is the outcome of reflecting the service method at parse time:
-     * {@link ServiceMethodRef.Resolved} carrying the parameter list, or
-     * {@link ServiceMethodRef.Unresolved} when reflection failed. The
-     * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error for the
-     * {@code Unresolved} case.
+     * <p>{@code serviceMethodRef} carries the reflected parameter list of the service method,
+     * captured at parse time. If reflection failed the containing field is classified as
+     * {@link UnclassifiedField} by the builder and does not appear here.
      */
     record ServiceTableField(
         String parentTypeName,
