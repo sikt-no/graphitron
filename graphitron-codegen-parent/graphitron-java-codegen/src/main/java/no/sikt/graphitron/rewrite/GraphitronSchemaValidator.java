@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Map;
 
 import no.sikt.graphitron.rewrite.model.InputFieldRef;
-import no.sikt.graphitron.rewrite.model.InputFieldSpec;
 
 /**
  * Validates a {@link GraphitronSchema}, collecting all errors rather than failing on the first.

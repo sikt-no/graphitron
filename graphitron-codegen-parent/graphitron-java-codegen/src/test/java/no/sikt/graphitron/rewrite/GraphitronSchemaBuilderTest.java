@@ -1016,59 +1016,13 @@ class GraphitronSchemaBuilderTest {
 
     enum InputTypeCase {
         BASIC_INPUT_TYPE(
-            "input type with scalar fields → InputType with InputFieldSpecs",
+            "input type with no @table → classified as InputType",
             """
             input FilmInput { title: String! releaseYear: Int }
             type Query { x: String }
             """,
-            schema -> {
-                var it = (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type("FilmInput");
-                assertThat(it.inputFields()).hasSize(2);
-                var title = it.inputFields().get(0);
-                assertThat(title.name()).isEqualTo("title");
-                assertThat(title.typeName()).isEqualTo("String");
-                assertThat(title.nonNull()).isTrue();
-                assertThat(title.list()).isFalse();
-                assertThat(title.columnName()).isEqualTo("title"); // defaults to field name
-                var year = it.inputFields().get(1);
-                assertThat(year.typeName()).isEqualTo("Int");
-                assertThat(year.nonNull()).isFalse();
-            }),
-
-        INPUT_FIELD_EXPLICIT_COLUMN_NAME(
-            "@field(name:) on input field → InputFieldSpec.columnName overridden",
-            """
-            input FilmInput { releaseYear: Int @field(name: "release_year") }
-            type Query { x: String }
-            """,
-            schema -> {
-                var it = (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type("FilmInput");
-                assertThat(it.inputFields().get(0).columnName()).isEqualTo("release_year");
-            }),
-
-        INPUT_FIELD_NOT_GENERATED_EXCLUDED(
-            "@notGenerated on input field — field excluded from InputType.fields",
-            """
-            input FilmInput { title: String releaseYear: Int @notGenerated }
-            type Query { x: String }
-            """,
-            schema -> {
-                var it = (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type("FilmInput");
-                assertThat(it.inputFields()).hasSize(1);
-                assertThat(it.inputFields().get(0).name()).isEqualTo("title");
-            }),
-
-        INPUT_FIELD_LIST_TYPE(
-            "list-wrapped input field → InputFieldSpec.list is true",
-            """
-            input FilmInput { tags: [String!]! }
-            type Query { x: String }
-            """,
-            schema -> {
-                var it = (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type("FilmInput");
-                assertThat(it.inputFields().get(0).list()).isTrue();
-                assertThat(it.inputFields().get(0).nonNull()).isTrue();
-            });
+            schema -> assertThat(schema.type("FilmInput"))
+                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.InputType.class));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;

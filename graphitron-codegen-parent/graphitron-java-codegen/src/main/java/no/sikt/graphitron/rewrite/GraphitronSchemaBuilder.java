@@ -77,7 +77,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType;
 import no.sikt.graphitron.rewrite.model.InputFieldRef;
-import no.sikt.graphitron.rewrite.model.InputFieldSpec;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
@@ -226,28 +225,28 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * Promotes an {@link InputType} to a {@link TableInputType} by resolving each field's column
-     * against the given {@link TableRef}. Returns {@link UnclassifiedType} when any field's column
-     * cannot be resolved.
+     * Resolves a list of raw input fields against a {@link TableRef} into a {@link TableInputType}.
+     * Returns {@link UnclassifiedType} when any field's column cannot be resolved.
      */
-    private GraphitronType promoteToTableInputType(InputType inputType, TableRef resolvedTable) {
+    private GraphitronType buildTableInputType(String name, SourceLocation location,
+            List<GraphQLInputObjectField> fields, TableRef tableRef) {
         var errors = new ArrayList<String>();
         var resolvedFields = new ArrayList<InputFieldRef>();
-        for (var spec : inputType.inputFields()) {
-            var found = catalog.findColumn(resolvedTable.tableName(), spec.columnName())
-                .map(e -> new InputFieldRef(spec.name(), spec.typeName(), spec.nonNull(), spec.list(),
-                    resolvedTable, e.javaName(), e.columnClass()));
-            if (found.isEmpty()) {
-                errors.add("field '" + spec.name() + "' column '" + spec.columnName() + "' could not be resolved in the jOOQ table"
-                    + candidateHint(spec.columnName(), catalog.columnSqlNamesOf(resolvedTable.tableName())));
+        for (var f : fields) {
+            var field = buildInputFieldRef(f, tableRef);
+            if (field.isEmpty()) {
+                String colName = f.hasAppliedDirective(DIR_FIELD)
+                    ? argString(f, DIR_FIELD, ARG_NAME).orElse(f.getName()) : f.getName();
+                errors.add("field '" + f.getName() + "' column '" + colName + "' could not be resolved in the jOOQ table"
+                    + candidateHint(colName, catalog.columnSqlNamesOf(tableRef.tableName())));
             } else {
-                resolvedFields.add(found.get());
+                resolvedFields.add(field.get());
             }
         }
         if (!errors.isEmpty()) {
-            return new UnclassifiedType(inputType.name(), inputType.location(), String.join("; ", errors));
+            return new UnclassifiedType(name, location, String.join("; ", errors));
         }
-        return new TableInputType(inputType.name(), inputType.location(), resolvedTable, List.copyOf(resolvedFields));
+        return new TableInputType(name, location, tableRef, List.copyOf(resolvedFields));
     }
 
     // ===== Type classification =====
@@ -471,6 +470,9 @@ public class GraphitronSchemaBuilder {
     private GraphitronType buildInputType(GraphQLInputObjectType inputType) {
         String name = inputType.getName();
         SourceLocation location = locationOf(inputType);
+        var filteredFields = inputType.getFieldDefinitions().stream()
+            .filter(f -> !f.hasAppliedDirective(DIR_NOT_GENERATED))
+            .toList();
         if (inputType.hasAppliedDirective(DIR_TABLE)) {
             String tableName = argString(inputType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
             Optional<TableRef> tableOpt = resolveTable(tableName);
@@ -478,43 +480,22 @@ public class GraphitronSchemaBuilder {
                 return new UnclassifiedType(name, location, "table '" + tableName + "' could not be resolved in the jOOQ catalog"
                     + candidateHint(tableName, catalog.allTableSqlNames()));
             }
-            TableRef tableRef = tableOpt.get();
-            var errors = new ArrayList<String>();
-            var resolvedFields = new ArrayList<InputFieldRef>();
-            for (var f : inputType.getFieldDefinitions().stream().filter(f -> !f.hasAppliedDirective(DIR_NOT_GENERATED)).toList()) {
-                Optional<InputFieldRef> field = buildInputFieldRef(f, tableRef);
-                if (field.isEmpty()) {
-                    String colName = f.hasAppliedDirective(DIR_FIELD)
-                        ? argString(f, DIR_FIELD, ARG_NAME).orElse(f.getName()) : f.getName();
-                    errors.add("field '" + f.getName() + "' column '" + colName + "' could not be resolved in the jOOQ table"
-                        + candidateHint(colName, catalog.columnSqlNamesOf(tableRef.tableName())));
-                } else {
-                    resolvedFields.add(field.get());
-                }
-            }
-            if (!errors.isEmpty()) {
-                return new UnclassifiedType(name, location, String.join("; ", errors));
-            }
-            return new TableInputType(name, location, tableRef, List.copyOf(resolvedFields));
+            return buildTableInputType(name, location, filteredFields, tableOpt.get());
         }
         // No @table — inspect all field usages across the schema to decide the final classification.
         // Fields annotated with @service, @tableMethod, or @mutation forward their inputs as Java
         // parameters rather than binding them to a database table; they are excluded here so they
         // do not force implicit table promotion.
-        List<InputFieldSpec> specFields = inputType.getFieldDefinitions().stream()
-            .filter(f -> !f.hasAppliedDirective(DIR_NOT_GENERATED))
-            .map(this::buildInputFieldSpec)
-            .toList();
         var tables = findReturnTablesForInput(name);
         if (tables.isEmpty()) {
-            return new InputType(name, location, specFields);
+            return new InputType(name, location);
         }
         if (tables.size() > 1) {
             var tableNames = String.join("', '", tables.keySet());
             return new UnclassifiedType(name, location,
                 "used as argument on fields with conflicting return tables: '" + tableNames + "'");
         }
-        return promoteToTableInputType(new InputType(name, location, specFields), tables.values().iterator().next());
+        return buildTableInputType(name, location, filteredFields, tables.values().iterator().next());
     }
 
     /**
@@ -572,21 +553,6 @@ public class GraphitronSchemaBuilder {
             : name;
         return catalog.findColumn(resolvedTable.tableName(), columnName)
             .map(e -> new InputFieldRef(name, typeName, nonNull, list, resolvedTable, e.javaName(), e.columnClass()));
-    }
-
-    private InputFieldSpec buildInputFieldSpec(GraphQLInputObjectField field) {
-        String name = field.getName();
-        GraphQLType type = field.getType();
-        boolean nonNull = type instanceof GraphQLNonNull;
-        boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
-        String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
-        boolean orderBy = field.hasAppliedDirective(DIR_ORDER_BY);
-        boolean hasFieldDir = field.hasAppliedDirective(DIR_FIELD);
-        String columnName = hasFieldDir
-            ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
-            : name;
-        boolean javaNamePresent = hasFieldDir && argString(field, DIR_FIELD, ARG_JAVA_NAME).isPresent();
-        return new InputFieldSpec(name, typeName, nonNull, list, orderBy, columnName, javaNamePresent);
     }
 
     private ErrorHandlerSpec parseErrorHandlerSpec(Map<String, Object> item) {

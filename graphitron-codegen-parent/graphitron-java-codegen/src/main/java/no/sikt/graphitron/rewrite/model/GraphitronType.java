@@ -127,19 +127,13 @@ public sealed interface GraphitronType
     ) implements GraphitronType {}
 
     /**
-     * A GraphQL input object type. Carries the field list that generators and validators inspect.
-     *
-     * <p>{@code inputFields} holds one {@link InputFieldSpec} per field in the input type, including
-     * directive markers ({@code @orderBy}) that generators need. Fields
-     * annotated with {@code @notGenerated} are excluded.
-     *
-     * <p>The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error for each
-     * field whose {@link InputFieldSpec#typeName()} does not resolve to a known type in the schema.
+     * A GraphQL input object type with no {@code @table} binding.
+     * Field-level details are not captured here — they will be added when input-type
+     * code generation is implemented.
      */
     record InputType(
         String name,
-        SourceLocation location,
-        List<InputFieldSpec> inputFields
+        SourceLocation location
     ) implements GraphitronType {}
 
     /**

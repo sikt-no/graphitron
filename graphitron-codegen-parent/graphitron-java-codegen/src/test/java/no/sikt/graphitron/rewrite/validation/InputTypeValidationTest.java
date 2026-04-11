@@ -5,7 +5,6 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
-import no.sikt.graphitron.rewrite.model.InputFieldSpec;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -32,20 +31,13 @@ class InputTypeValidationTest {
 
     enum Case {
 
-        SCALAR_FIELDS_NO_ERRORS("input type with only built-in scalars — no errors",
-            new InputType("FilmInput", null, List.of(
-                new InputFieldSpec("title", "String", true, false, false, "title", false),
-                new InputFieldSpec("year", "Int", false, false, false, "year", false))),
+        VALID("valid input type — no errors",
+            new InputType("FilmInput", null),
             List.of()),
 
         KNOWN_INPUT_TYPE_NO_ERROR("input field referencing another InputType in the schema — no error",
-            new InputType("CreateFilmInput", null, List.of(
-                new InputFieldSpec("translation", "TranslationInput", false, false, false, "translation", false))),
-            Map.of("TranslationInput", new InputType("TranslationInput", null, List.of())),
-            List.of()),
-
-        EMPTY_FIELDS_NO_ERRORS("input type with no fields — no errors",
-            new InputType("EmptyInput", null, List.of()),
+            new InputType("CreateFilmInput", null),
+            Map.of("TranslationInput", new InputType("TranslationInput", null)),
             List.of());
 
         private final String description;

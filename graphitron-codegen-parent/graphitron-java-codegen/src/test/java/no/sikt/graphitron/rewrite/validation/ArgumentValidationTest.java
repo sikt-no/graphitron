@@ -63,7 +63,7 @@ class ArgumentValidationTest {
 
         KNOWN_INPUT_TYPE_ARG("argument referencing a known InputType — no errors",
             tableField(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("filter", "FilmFilter", false, false))),
-            Map.of("FilmFilter", new InputType("FilmFilter", null, List.of())),
+            Map.of("FilmFilter", new InputType("FilmFilter", null)),
             List.of()),
 
         CUSTOM_SCALAR_ARG("argument with a custom scalar type — no errors (graphql-java validates scalars)",
