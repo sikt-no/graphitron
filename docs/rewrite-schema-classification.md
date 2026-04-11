@@ -196,7 +196,7 @@ GraphitronType
 
 **`NodeRef`** — whether a `TableType` carries `@node`:
 - `NoNode` — no directive
-- `NodeDirective` — `typeId: String` (nullable), `keyColumns: List<KeyColumnRef>` (resolved/unresolved)
+- `NodeDirective` — `typeId: String` (nullable), `keyColumns: List<ColumnRef>` (empty when argument omitted — PK used at codegen time)
 
 **`ParticipantRef`** — each implementing or member type of an interface or union:
 - `BoundParticipant` — type has `@table`; `typeName`, `table: TableRef`, `discriminatorValue` (from `@discriminator(value:)`, null when absent)
@@ -575,22 +575,22 @@ Outstanding testing gaps for this layer are tracked in [`plan-record-generation.
 | `rewrite/JooqCatalog.java` | jOOQ reflection wrapper: SQL name → `Table<?>` / `Field<?>` |
 | `rewrite/GraphQLRewriteGenerator.java` | Entry point: build → validate → dispatch generators |
 | `rewrite/ValidationError.java` | `message`, `location: SourceLocation` |
-| `rewrite/field/GraphitronField.java` | Root of the field type hierarchy |
-| `rewrite/field/ChildField.java` | Sealed branch: 22 child field variants |
-| `rewrite/field/QueryField.java` | Sealed branch: 10 query field variants |
-| `rewrite/field/MutationField.java` | Sealed branch: 6 mutation field variants |
-| `rewrite/field/ReturnTypeRef.java`, `FieldWrapper.java` | Return type (3-permit sealed hierarchy) + cardinality |
-| `rewrite/field/ArgumentRef.java` | Argument resolution: `InputTypeArg`, `ScalarArg`, `UnclassifiedArg` — carried directly in field records (no intermediate `ArgumentSpec`) |
-| `rewrite/field/ReferencePathElementRef.java` | 6-variant FK + condition path step |
-| `rewrite/field/FieldConditionRef.java` | Field-level `@condition` resolution |
-| `rewrite/field/ColumnRef.java`, `NodeTypeRef.java` | Column and node type resolution |
-| `rewrite/field/OrderSpec.java` | Sort specification |
-| `rewrite/type/GraphitronType.java` | Root of the type hierarchy |
-| `rewrite/type/TableRef.java` | `@table` → resolved table metadata (SQL name, Java field name, PK flag, PK SQL column names, PK Java column types). `ResolvedTable.primaryKeyColumnSqlName()` / `primaryKeyColumnJavaType()` — single-column PK convenience accessors. |
-| `rewrite/field/ServiceMethodRef.java` | `@service` method reflection — `Resolved`/`Unresolved`; sealed `ServiceParam` hierarchy (`SourcesParam`, `ArgParam`, `ContextParam`) |
-| `rewrite/field/SourcesRef.java` | Sealed taxonomy for the SOURCES parameter element type: `RowKeyed`, `RecordKeyed`, `TableRecordKeyed`, `Unrecognized` |
-| `rewrite/type/ParticipantRef.java` | Interface/union member resolution |
-| `rewrite/type/NodeRef.java`, `KeyColumnRef.java` | `@node` directive and key columns |
-| `rewrite/type/InputFieldRef.java` | `TableInputType` field resolution |
+| `rewrite/model/GraphitronField.java` | Root of the field type hierarchy |
+| `rewrite/model/ChildField.java` | Sealed branch: 22 child field variants |
+| `rewrite/model/QueryField.java` | Sealed branch: 10 query field variants |
+| `rewrite/model/MutationField.java` | Sealed branch: 6 mutation field variants |
+| `rewrite/model/ReturnTypeRef.java`, `FieldWrapper.java` | Return type (3-permit sealed hierarchy) + cardinality |
+| `rewrite/model/ArgumentRef.java` | Argument resolution: `InputTypeArg`, `ScalarArg` — carried directly in field records (no intermediate `ArgumentSpec`) |
+| `rewrite/model/ReferencePathElementRef.java` | 6-variant FK + condition path step |
+| `rewrite/model/FieldConditionRef.java` | Field-level `@condition` resolution |
+| `rewrite/model/ColumnRef.java` | Resolved column (SQL name, Java name, Java type) |
+| `rewrite/model/ColumnOrder.java` | Fully-resolved sort spec (index / PK / explicit fields, always resolved at build time) |
+| `rewrite/model/GraphitronType.java` | Root of the type hierarchy |
+| `rewrite/model/TableRef.java` | `@table` → resolved table metadata (SQL name, Java field name, PK flag, PK columns as `List<ColumnRef>`) |
+| `rewrite/model/ServiceMethodRef.java` | `@service` method reflection — `Resolved`/`Unresolved`; sealed `ServiceParam` hierarchy (`SourcesParam`, `ArgParam`, `ContextParam`) |
+| `rewrite/model/SourcesRef.java` | Sealed taxonomy for the SOURCES parameter element type: `RowKeyed`, `RecordKeyed`, `TableRecordKeyed`, `Unrecognized` |
+| `rewrite/model/ParticipantRef.java` | Interface/union member resolution |
+| `rewrite/model/NodeRef.java` | `@node` directive decoration: `typeId`, `keyColumns: List<ColumnRef>` |
+| `rewrite/model/InputFieldRef.java` | `TableInputType` field resolution |
 | `graphitron-common/.../GraphitronContext.java` | SPI: `getDslContext`, `getContextArgument`, `getDataLoaderName` |
 | `graphitron-common/.../GraphitronFetcherFactory.java` | `field(Field<T>)`, `nestedRecord(alias)`, `nestedResult(alias)` |
