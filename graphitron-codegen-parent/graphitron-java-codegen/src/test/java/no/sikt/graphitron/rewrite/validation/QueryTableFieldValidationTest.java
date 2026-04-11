@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.ColumnOrder;
-import no.sikt.graphitron.rewrite.model.ColumnOrder.ColumnOrderEntry;
+import no.sikt.graphitron.rewrite.model.FieldWrapper.ColumnOrder;
+import no.sikt.graphitron.rewrite.model.FieldWrapper.ColumnOrder.ColumnOrderEntry;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;

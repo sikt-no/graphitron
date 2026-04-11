@@ -23,7 +23,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
-import no.sikt.graphitron.rewrite.model.ColumnOrder;
+import no.sikt.graphitron.rewrite.model.FieldWrapper.ColumnOrder;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.FieldConditionRef;
