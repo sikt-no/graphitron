@@ -1,0 +1,403 @@
+package no.sikt.graphitron.rewrite.generators;
+
+import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.ServiceMethodRef;
+import no.sikt.graphitron.rewrite.model.SourcesRef;
+import no.sikt.graphitron.rewrite.model.TableRef;
+
+import javax.lang.model.element.Modifier;
+import java.util.List;
+
+/**
+ * Generates a {@link TypeSpec} for one {@code <TypeName>Fields} class in {@code rewrite.types}.
+ *
+ * <p>The class is named after the GraphQL type (e.g. {@code FilmFields} for GraphQL type
+ * {@code Film}). This is distinct from the SQL-scope class in {@code rewrite.tables}, which is
+ * named after the jOOQ table class.
+ *
+ * <p>Each class contains:
+ * <ul>
+ *   <li>For most fields: one {@code public static Object fieldName(DataFetchingEnvironment env)}
+ *       stub throwing {@link UnsupportedOperationException}.</li>
+ *   <li>For {@link QueryField.QueryLookupTableField}: an async data fetcher stub returning
+ *       {@code CompletableFuture<List<Record>>} and a bespoke synchronous
+ *       {@code lookupFieldName(DataFetchingEnvironment env, SelectedField sel)} stub.</li>
+ *   <li>For {@link ChildField.ServiceTableField} with a resolved service method reference:
+ *       an async DataLoader-based data fetcher and a rows method
+ *       {@code loadFieldName(List<Row1<T>>, DataFetchingEnvironment, SelectedField)} (where T is
+ *       the parent PK column Java type) that extracts
+ *       arguments, calls the service, and delegates to the table's {@code selectMany}/
+ *       {@code selectOne}.</li>
+ *   <li>A {@code wiring()} method that registers each data fetcher by method reference.</li>
+ * </ul>
+ */
+public class FieldsCodeGenerator {
+
+    private static final ClassName ENV               = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+    private static final ClassName SELECTED_FIELD    = ClassName.get("graphql.schema", "SelectedField");
+    private static final ClassName TYPE_WIRING       = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring");
+    private static final ClassName WIRING_BUILDER    = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring", "Builder");
+    private static final ClassName COMPLETABLE_FUTURE = ClassName.get("java.util.concurrent", "CompletableFuture");
+    private static final ClassName LIST              = ClassName.get("java.util", "List");
+    private static final ClassName RECORD            = ClassName.get("org.jooq", "Record");
+    private static final ClassName ROW               = ClassName.get("org.jooq", "Row");
+    private static final ClassName DSL               = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName DATA_LOADER       = ClassName.get("org.dataloader", "DataLoader");
+    private static final ClassName DATA_LOADER_FACTORY = ClassName.get("org.dataloader", "DataLoaderFactory");
+    private static final ClassName GRAPHITRON_CONTEXT = ClassName.get("no.sikt.graphql", "GraphitronContext");
+
+    /**
+     * Generates the {@code *Fields} class TypeSpec for the given GraphQL type.
+     *
+     * @param typeName    the GraphQL type name (e.g. {@code "Language"})
+     * @param parentTable the resolved {@link TableRef} for the type, or {@code null} for root types
+     * @param fields      the classified fields belonging to this type
+     */
+    public TypeSpec generate(String typeName, TableRef parentTable, List<GraphitronField> fields) {
+        var className = typeName + "Fields";
+        var builder = TypeSpec.classBuilder(className)
+            .addModifiers(Modifier.PUBLIC);
+
+        boolean needsGraphitronContextHelper = false;
+
+        for (var field : fields) {
+            if (field instanceof QueryField.QueryLookupTableField lookup) {
+                builder.addMethod(buildLookupDataFetcher(lookup));
+                builder.addMethod(buildLookupMethod(lookup));
+            } else if (field instanceof ChildField.ServiceTableField sf
+                    && parentTable != null) {
+                builder.addMethod(buildServiceDataFetcher(sf, sf.serviceMethodRef(), sf.returnType(), parentTable, className));
+                builder.addMethod(buildServiceRowsMethod(sf, sf.serviceMethodRef(), sf.returnType(), sf.returnType().table(), parentTable));
+                needsGraphitronContextHelper = true;
+            } else if (field instanceof ChildField.SplitTableField stf) {
+                builder.addMethod(buildSplitQueryDataFetcher(stf));
+                builder.addMethod(buildSplitRowsMethod(stf));
+            } else {
+                builder.addMethod(buildFieldStub(field.name()));
+            }
+        }
+
+        if (needsGraphitronContextHelper) {
+            builder.addMethod(buildGraphitronContextHelper());
+        }
+
+        builder.addMethod(buildWiringMethod(typeName, className, fields));
+
+        return builder.build();
+    }
+
+    private MethodSpec buildFieldStub(String fieldName) {
+        return MethodSpec.methodBuilder(fieldName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(ENV, "env")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    private MethodSpec buildLookupDataFetcher(QueryField.QueryLookupTableField field) {
+        var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, ParameterizedTypeName.get(LIST, RECORD));
+        return MethodSpec.methodBuilder(field.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(returnType)
+            .addParameter(ENV, "env")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    private MethodSpec buildLookupMethod(QueryField.QueryLookupTableField field) {
+        var methodName = "lookup" + capitalize(field.name());
+        return MethodSpec.methodBuilder(methodName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(LIST, RECORD))
+            .addParameter(ENV, "env")
+            .addParameter(SELECTED_FIELD, "sel")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    /**
+     * Builds the DataLoader-based async data fetcher for a {@link ChildField.ServiceTableField}
+     * with a resolved service method.
+     *
+     * <p>List/connection: returns {@code CompletableFuture<List<Record>>}.
+     * Single: returns {@code CompletableFuture<Record>}.
+     *
+     * <p>The DataLoader key type and key construction expression are determined by the
+     * {@link SourcesRef} variant of the SOURCES parameter:
+     * <ul>
+     *   <li>{@link SourcesRef.RowKeyed} — key is {@code RowN<T1,...>} built via {@code DSL.row(...)}</li>
+     *   <li>{@link SourcesRef.RecordKeyed} — key is {@code RecordN<T1,...>} built via {@code record.into(field1, field2, ...)}</li>
+     *   <li>{@link SourcesRef.TableRecordKeyed} — key is the whole parent record cast to the declared table-record type</li>
+     * </ul>
+     */
+    private MethodSpec buildServiceDataFetcher(
+            ChildField.ServiceTableField sf,
+            ServiceMethodRef smr,
+            ReturnTypeRef.TableBoundReturnType tb,
+            TableRef prt,
+            String className) {
+
+        boolean isList = !(tb.wrapper() instanceof FieldWrapper.Single);
+        var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
+        var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
+
+        var sourcesParam = smr.params().stream()
+            .filter(p -> p instanceof ServiceMethodRef.ServiceParam.SourcesParam)
+            .map(p -> (ServiceMethodRef.ServiceParam.SourcesParam) p)
+            .findFirst()
+            .orElseThrow();
+
+        TypeName keyType = switch (sourcesParam.sourcesRef()) {
+            case SourcesRef.RowKeyed rk         -> buildRowKeyType(rk.pkJavaTypes());
+            case SourcesRef.RecordKeyed rk      -> buildRecordNKeyType(rk.pkJavaTypes());
+            case SourcesRef.TableRecordKeyed trk -> ClassName.bestGuess(trk.fqClassName());
+        };
+
+        var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
+        String rowsMethodName = "load" + capitalize(sf.name());
+
+        var lambdaBlock = CodeBlock.builder()
+            .add("(keys, batchEnv) -> {\n")
+            .indent()
+            .addStatement("$T dfe = ($T) batchEnv.getKeyContextsList().get(0)", ENV, ENV)
+            .addStatement("$T sel = dfe.getSelectionSet().getField($S)", SELECTED_FIELD, sf.name())
+            .addStatement("return $T.completedFuture($L(keys, dfe, sel))", COMPLETABLE_FUTURE, rowsMethodName)
+            .unindent()
+            .add("}")
+            .build();
+
+        var methodBuilder = MethodSpec.methodBuilder(sf.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(returnType)
+            .addParameter(ENV, "env")
+            .addStatement("$T name = graphitronContext(env).getDataLoaderName(env)", String.class)
+            .addCode(
+                "$T loader = env.getDataLoaderRegistry()\n" +
+                "    .computeIfAbsent(name, k -> $T.newDataLoaderWithContext($L));\n",
+                loaderType, DATA_LOADER_FACTORY, lambdaBlock);
+
+        // Emit the key expression — varies by SourcesRef variant.
+        var tablesClass = ClassName.get(GeneratorConfig.outputPackage() + ".tables", "Tables");
+        switch (sourcesParam.sourcesRef()) {
+            case SourcesRef.RowKeyed rk -> {
+                String tableField = prt.javaFieldName();
+                List<ColumnRef> pkCols = prt.primaryKeyColumns().get();
+                var rowArgs = CodeBlock.builder();
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) rowArgs.add(", ");
+                    rowArgs.add("(($T) env.getSource()).get($T.$L.$L)",
+                        RECORD, tablesClass, tableField, pkCols.get(i).javaName());
+                }
+                methodBuilder.addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build());
+            }
+            case SourcesRef.RecordKeyed rk -> {
+                String tableField = prt.javaFieldName();
+                List<ColumnRef> pkCols = prt.primaryKeyColumns().get();
+                var intoArgs = CodeBlock.builder();
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) intoArgs.add(", ");
+                    intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
+                }
+                methodBuilder.addStatement("$T key = (($T) env.getSource()).into($L)",
+                    keyType, RECORD, intoArgs.build());
+            }
+            case SourcesRef.TableRecordKeyed trk ->
+                methodBuilder.addStatement("$T key = ($T) env.getSource()", keyType, keyType);
+        }
+
+        return methodBuilder
+            .addStatement("return loader.load(key, env)")
+            .build();
+    }
+
+    /**
+     * Builds the rows method for a {@link ChildField.ServiceTableField}. The rows method:
+     * <ol>
+     *   <li>Extracts GraphQL arguments from the DFE.</li>
+     *   <li>Extracts context values via {@code GraphitronContext.getContextArgument}.</li>
+     *   <li>Calls the service method with {@code keys} as the sources parameter.</li>
+     *   <li>Returns via the table's {@code selectMany} or {@code selectOne}.</li>
+     * </ol>
+     *
+     * <p>The {@code keys} parameter type mirrors the service method's SOURCES parameter type,
+     * derived from the {@link SourcesRef} variant:
+     * <ul>
+     *   <li>{@link SourcesRef.RowKeyed} — {@code List<RowN<T1,...>>}</li>
+     *   <li>{@link SourcesRef.RecordKeyed} — {@code List<RecordN<T1,...>>}</li>
+     *   <li>{@link SourcesRef.TableRecordKeyed} — {@code List<SomeTableRecord>}</li>
+     * </ul>
+     */
+    private MethodSpec buildServiceRowsMethod(
+            ChildField.ServiceTableField sf,
+            ServiceMethodRef smr,
+            ReturnTypeRef.TableBoundReturnType tb,
+            TableRef rt,
+            TableRef prt) {
+
+        boolean isList = !(tb.wrapper() instanceof FieldWrapper.Single);
+        var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        var returnType = isList ? ParameterizedTypeName.get(LIST, listOfRecord) : listOfRecord;
+
+        var sourcesParam = smr.params().stream()
+            .filter(p -> p instanceof ServiceMethodRef.ServiceParam.SourcesParam)
+            .map(p -> (ServiceMethodRef.ServiceParam.SourcesParam) p)
+            .findFirst()
+            .orElseThrow();
+
+        TypeName keysElementType = switch (sourcesParam.sourcesRef()) {
+            case SourcesRef.RowKeyed rk         -> buildRowKeyType(rk.pkJavaTypes());
+            case SourcesRef.RecordKeyed rk      -> buildRecordNKeyType(rk.pkJavaTypes());
+            case SourcesRef.TableRecordKeyed trk -> ClassName.bestGuess(trk.fqClassName());
+        };
+
+        var builder = MethodSpec.methodBuilder("load" + capitalize(sf.name()))
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(returnType)
+            .addParameter(ParameterizedTypeName.get(LIST, keysElementType), "keys")
+            .addParameter(ENV, "dfe")
+            .addParameter(SELECTED_FIELD, "sel");
+
+        // Emit arg and context extraction statements using switch on ServiceParam
+        for (var param : smr.params()) {
+            switch (param) {
+                case ServiceMethodRef.ServiceParam.ArgParam ap -> builder.addStatement(
+                    "$T $L = dfe.getArgument($S)",
+                    Object.class, ap.name(), ap.name());
+                case ServiceMethodRef.ServiceParam.ContextParam cp -> builder.addStatement(
+                    "$T $L = graphitronContext(dfe).getContextArgument(dfe, $S)",
+                    Object.class, cp.name(), cp.name());
+                case ServiceMethodRef.ServiceParam.SourcesParam sp -> {} // 'keys' is passed directly
+            }
+        }
+
+        // Build service call argument list — SOURCES param replaced by 'keys'
+        var serviceCallArgs = smr.params().stream()
+            .map(p -> p instanceof ServiceMethodRef.ServiceParam.SourcesParam ? "keys" : p.name())
+            .toList();
+
+        builder.addStatement(
+            "$T serviceResult = $L.$L($L)",
+            Object.class,
+            sf.serviceRef().className(),
+            sf.serviceRef().methodName(),
+            String.join(", ", serviceCallArgs));
+
+        // Return via table selectMany / selectOne
+        var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".tables", rt.javaClassName());
+        if (isList) {
+            builder.addStatement(
+                "return $T.selectMany(keys, sel, ($T<?>) serviceResult)",
+                tableClass, List.class);
+        } else {
+            builder.addStatement("return $T.selectOne(keys, sel, serviceResult)", tableClass);
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Private static helper added once per {@code *Fields} class that uses service-field DataLoader
+     * generation. Retrieves the {@link no.sikt.graphql.GraphitronContext} from the GraphQL context.
+     */
+    private MethodSpec buildGraphitronContextHelper() {
+        return MethodSpec.methodBuilder("graphitronContext")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(GRAPHITRON_CONTEXT)
+            .addParameter(ENV, "env")
+            .addStatement("return env.getGraphQlContext().get($S)", "graphitronContext")
+            .build();
+    }
+
+    /**
+     * Builds the typed {@code Row1<T>} / {@code Row2<T1,T2>} / … key type for a DataLoader from
+     * the ordered list of primary-key column Java type names (e.g. {@code ["java.lang.Long"]}).
+     *
+     * <p>Falls back to the raw {@link #ROW} interface when the list is empty.
+     */
+    private static TypeName buildRowKeyType(List<String> pkJavaTypes) {
+        if (pkJavaTypes.isEmpty()) {
+            return ROW;
+        }
+        ClassName rowNClass = ClassName.get("org.jooq", "Row" + pkJavaTypes.size());
+        TypeName[] typeArgs = pkJavaTypes.stream()
+            .map(ClassName::bestGuess)
+            .toArray(TypeName[]::new);
+        return ParameterizedTypeName.get(rowNClass, typeArgs);
+    }
+
+    /**
+     * Builds the typed {@code Record1<T>} / {@code Record2<T1,T2>} / … key type for a DataLoader
+     * from the ordered list of primary-key column Java type names (e.g. {@code ["java.lang.Long"]}).
+     *
+     * <p>Falls back to the raw {@link #RECORD} interface when the list is empty.
+     */
+    private static TypeName buildRecordNKeyType(List<String> pkJavaTypes) {
+        if (pkJavaTypes.isEmpty()) {
+            return RECORD;
+        }
+        ClassName recordNClass = ClassName.get("org.jooq", "Record" + pkJavaTypes.size());
+        TypeName[] typeArgs = pkJavaTypes.stream()
+            .map(ClassName::bestGuess)
+            .toArray(TypeName[]::new);
+        return ParameterizedTypeName.get(recordNClass, typeArgs);
+    }
+
+    private MethodSpec buildSplitQueryDataFetcher(ChildField.SplitTableField field) {
+        var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, ParameterizedTypeName.get(LIST, RECORD));
+        return MethodSpec.methodBuilder(field.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(returnType)
+            .addParameter(ENV, "env")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    private MethodSpec buildSplitRowsMethod(ChildField.SplitTableField field) {
+        var sourcesType = ParameterizedTypeName.get(LIST, RECORD);
+        return MethodSpec.methodBuilder("rows" + capitalize(field.name()))
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(sourcesType, "sources")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    private MethodSpec buildWiringMethod(String typeName, String className, List<GraphitronField> fields) {
+        var body = CodeBlock.builder()
+            .add("return $T.newTypeWiring($S)", TYPE_WIRING, typeName);
+
+        if (fields.isEmpty()) {
+            body.add(";\n");
+        } else {
+            body.indent();
+            for (var field : fields) {
+                body.add("\n.dataFetcher($S, $L::$L)", field.name(), className, field.name());
+            }
+            body.add(";\n");
+            body.unindent();
+        }
+
+        return MethodSpec.methodBuilder("wiring")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(WIRING_BUILDER)
+            .addCode(body.build())
+            .build();
+    }
+
+    private static String capitalize(String name) {
+        return name.isEmpty() ? name : Character.toUpperCase(name.charAt(0)) + name.substring(1);
+    }
+}
