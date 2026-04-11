@@ -29,6 +29,7 @@ public class FieldsClassGenerator {
         var codeGenerator = new FieldsCodeGenerator();
         return schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof GraphitronType.TableType
+                      || e.getValue() instanceof GraphitronType.NodeType
                       || e.getValue() instanceof GraphitronType.RootType)
             .map(java.util.Map.Entry::getKey)
             .sorted()
@@ -37,7 +38,7 @@ public class FieldsClassGenerator {
     }
 
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, FieldsCodeGenerator codeGenerator) {
-        var type = (GraphitronType.OutputType) schema.type(typeName);
+        var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.NotGeneratedField))
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
@@ -48,12 +49,13 @@ public class FieldsClassGenerator {
     }
 
     /**
-     * Returns the {@link TableRef} for the given type if it is a
-     * {@link GraphitronType.TableType}, or {@code null} for root types and other non-table types.
+     * Returns the {@link TableRef} for the given type if it is table-backed
+     * ({@link GraphitronType.TableType} or {@link GraphitronType.NodeType}),
+     * or {@code null} for root types and other non-table types.
      */
-    private static TableRef tableRefForType(GraphitronType.OutputType type) {
-        if (type instanceof GraphitronType.TableType tt) {
-            return tt.table();
+    private static TableRef tableRefForType(GraphitronType type) {
+        if (type instanceof GraphitronType.TableBackedType tbt) {
+            return tbt.table();
         }
         return null;
     }

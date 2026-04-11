@@ -35,11 +35,11 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
-import no.sikt.graphitron.rewrite.model.NodeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphql.schema.SchemaReadingHelper;
 import org.junit.jupiter.api.AfterEach;
@@ -286,7 +286,7 @@ class GraphitronSchemaBuilderTest {
 
     enum NodeIdFieldCase {
         WITH_NODE_DIRECTIVE(
-            "@nodeId on a type that also has @node — classified as NodeIdField with WithNode",
+            "@nodeId on a type that also has @node — classified as NodeIdField with resolved key columns",
             """
             type Film @table(name: "film") @node(keyColumns: ["film_id"]) {
               id: ID! @nodeId
@@ -295,7 +295,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var field = (NodeIdField) schema.field("Film", "id");
-                assertThat(field.node()).isInstanceOf(NodeRef.class);
+                assertThat(field.nodeKeyColumns()).isNotEmpty();
             }),
 
         WITHOUT_NODE_DIRECTIVE(
@@ -338,7 +338,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var ref = (NodeIdReferenceField) schema.field("Film", "languageId");
                 assertThat(ref.typeName()).isEqualTo("Language");
-                assertThat(ref.node()).isNotNull();
+                assertThat(ref.nodeKeyColumns()).isNotEmpty();
                 assertThat(ref.referencePath()).isEmpty();
             }),
 

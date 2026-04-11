@@ -10,9 +10,9 @@ import java.util.Map;
 /**
  * The parsed representation of a GraphQL schema. Holds all classified types and fields.
  *
- * <p>Types are keyed by name. Each {@link GraphitronType.OutputType} carries a
- * {@link GraphitronType.OutputType#fieldCoordinates()} list recording the schema coordinates of
- * its fields in declaration order.
+ * <p>Types are keyed by name. Output types ({@link GraphitronType.TableType},
+ * {@link GraphitronType.NodeType}, and {@link GraphitronType.RootType}) carry a
+ * {@code fieldCoordinates()} list recording the schema coordinates of their fields in declaration order.
  *
  * <p>The {@link #fields} map is the authoritative flat index of all classified fields, keyed by
  * {@link FieldCoordinates}. Use {@link #field} for O(1) point lookups and {@link #fieldsOf} to

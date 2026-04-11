@@ -3,9 +3,9 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.NodeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -21,20 +21,20 @@ class NodeTypeValidationTest {
 
     enum Case implements TypeValidatorCase {
 
-        NO_NODE("no @node directive — table without node, no errors",
-            new TableType("Film", null, RESOLVED_FILM, null, List.of()),
+        NO_NODE("no @node directive — plain @table type, no errors",
+            new TableType("Film", null, RESOLVED_FILM, List.of()),
             List.of()),
 
         NODE_NO_KEY_COLUMNS("@node with no keyColumns argument — empty list, no errors",
-            new TableType("Film", null, RESOLVED_FILM, new NodeRef(null, List.of()), List.of()),
+            new NodeType("Film", null, RESOLVED_FILM, null, List.of(), List.of()),
             List.of()),
 
         NODE_WITH_TYPE_ID("@node with typeId and no keyColumns — no errors",
-            new TableType("Film", null, RESOLVED_FILM, new NodeRef("film", List.of()), List.of()),
+            new NodeType("Film", null, RESOLVED_FILM, "film", List.of(), List.of()),
             List.of()),
 
         NODE_WITH_RESOLVED_KEY_COLUMN("@node with a key column resolved in the jOOQ table — no errors",
-            new TableType("Film", null, RESOLVED_FILM, new NodeRef(null, List.of(new ColumnRef("film_id", "FILM_ID", ""))), List.of()),
+            new NodeType("Film", null, RESOLVED_FILM, null, List.of(new ColumnRef("film_id", "FILM_ID", "")), List.of()),
             List.of());
 
         private final String description;

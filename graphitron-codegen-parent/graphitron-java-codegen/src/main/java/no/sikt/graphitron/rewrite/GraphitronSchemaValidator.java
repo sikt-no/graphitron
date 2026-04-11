@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.model.ArgumentRef;
 import no.sikt.graphitron.rewrite.model.ReferencePathElementRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import java.util.ArrayList;
@@ -37,6 +38,7 @@ public class GraphitronSchemaValidator {
     private void validateType(GraphitronType type, Map<String, GraphitronType> types, List<ValidationError> errors) {
         switch (type) {
             case no.sikt.graphitron.rewrite.model.GraphitronType.TableType t          -> validateTableType(t, errors);
+            case no.sikt.graphitron.rewrite.model.GraphitronType.NodeType t           -> validateNodeType(t, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronType.ResultType t         -> validateResultType(t, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronType.RootType t           -> validateRootType(t, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType t -> validateTableInterfaceType(t, errors);
@@ -97,8 +99,10 @@ public class GraphitronSchemaValidator {
     // --- Type validators (stubs — filled in as test classes are added) ---
 
     private void validateTableType(no.sikt.graphitron.rewrite.model.GraphitronType.TableType type, List<ValidationError> errors) {
-        // Unresolved tables and unresolved @node key columns are caught by the builder, which
-        // produces UnclassifiedType instead. Nothing more to validate here.
+        // Unresolved tables are caught by the builder (UnclassifiedType). Nothing more to validate here.
+    }
+    private void validateNodeType(no.sikt.graphitron.rewrite.model.GraphitronType.NodeType type, List<ValidationError> errors) {
+        // Unresolved tables and unresolved @node key columns are caught by the builder (UnclassifiedType).
     }
     private void validateResultType(no.sikt.graphitron.rewrite.model.GraphitronType.ResultType type, List<ValidationError> errors) {}
     private void validateRootType(no.sikt.graphitron.rewrite.model.GraphitronType.RootType type, List<ValidationError> errors) {}
@@ -218,7 +222,7 @@ public class GraphitronSchemaValidator {
         }
     }
     private void validateNodeIdField(no.sikt.graphitron.rewrite.model.ChildField.NodeIdField field, List<ValidationError> errors) {
-        // NodeIdField is only classified when the parent type carries @node (i.e. the TableType has a non-null NodeRef).
+        // NodeIdField is only classified when the parent type is a NodeType.
         // The absence-of-@node case is classified as UnclassifiedField in the builder.
     }
     private void validateNodeIdReferenceField(no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField field, List<ValidationError> errors) {
@@ -332,8 +336,8 @@ public class GraphitronSchemaValidator {
         // Validate each SOURCES parameter's SourcesRef variant.
         var smr = field.serviceMethodRef();
         var parentTypeForSources = types.get(field.parentTypeName());
-        List<String> parentPkJavaTypes = (parentTypeForSources instanceof TableType ttSrc)
-            ? ttSrc.table().primaryKeyColumns()
+        List<String> parentPkJavaTypes = (parentTypeForSources instanceof TableBackedType tbtSrc)
+            ? tbtSrc.table().primaryKeyColumns()
                 .map(cols -> cols.stream().map(no.sikt.graphitron.rewrite.model.ColumnRef::columnClass).toList())
                 .orElse(List.of())
             : List.of();
@@ -380,10 +384,10 @@ public class GraphitronSchemaValidator {
         }
 
         var parentType = types.get(field.parentTypeName());
-        if (!(parentType instanceof TableType tt)) {
+        if (!(parentType instanceof TableBackedType tbt)) {
             return; // non-table parent; no DataLoader key needed
         }
-        TableRef parentTable = tt.table();
+        TableRef parentTable = tbt.table();
         if (!parentTable.hasPrimaryKey()) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': @service on a table-bound return type requires the parent table '" + parentTable.tableName() + "' to have a primary key",

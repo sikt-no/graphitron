@@ -7,7 +7,6 @@ import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.model.NodeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -26,15 +25,13 @@ class NodeIdReferenceFieldValidationTest {
         TestConfiguration.setProperties();
     }
 
-    private static final NodeRef NODE = new NodeRef(null, List.of());
-
     enum Case implements ValidatorCase {
 
         IMPLICIT_SINGLE_FK("exactly one FK between tables — implicit join, no errors",
             new NodeIdReferenceField("Inventory", "filmId", null, "Film",
                 new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Single(true)),
                 new TableRef("inventory", "INVENTORY", "Inventory", Optional.of(List.of())),
-                NODE,
+                null, List.of(),
                 List.of()),
             List.of()),
 
@@ -42,7 +39,7 @@ class NodeIdReferenceFieldValidationTest {
             new NodeIdReferenceField("Film", "categoryId", null, "Category",
                 new ReturnTypeRef.TableBoundReturnType("Category", new TableRef("category", "CATEGORY", "Category", Optional.of(List.of())), new FieldWrapper.Single(true)),
                 new TableRef("film", "FILM", "Film", Optional.of(List.of())),
-                NODE,
+                null, List.of(),
                 List.of()),
             List.of("Field 'categoryId': no foreign key found between tables 'film' and 'category'; add a @reference directive to specify the join path")),
 
@@ -50,7 +47,7 @@ class NodeIdReferenceFieldValidationTest {
             new NodeIdReferenceField("Film", "languageId", null, "Language",
                 new ReturnTypeRef.TableBoundReturnType("Language", new TableRef("language", "LANGUAGE", "Language", Optional.of(List.of())), new FieldWrapper.Single(true)),
                 new TableRef("film", "FILM", "Film", Optional.of(List.of())),
-                NODE,
+                null, List.of(),
                 List.of()),
             List.of("Field 'languageId': multiple foreign keys found between tables 'film' and 'language'; add a @reference directive to specify the join path")),
 
@@ -58,7 +55,7 @@ class NodeIdReferenceFieldValidationTest {
             new NodeIdReferenceField("Film", "languageId", null, "Language",
                 new ReturnTypeRef.TableBoundReturnType("Language", new TableRef("language", "LANGUAGE", "Language", Optional.of(List.of())), new FieldWrapper.Single(true)),
                 new TableRef("film", "FILM", "Film", Optional.of(List.of())),
-                NODE,
+                null, List.of(),
                 List.of(new FkRef("film_language_id_fkey", "language", "film", List.of(), List.of()))),
             List.of()),
 
@@ -66,7 +63,7 @@ class NodeIdReferenceFieldValidationTest {
             new NodeIdReferenceField("Film", "languageId", null, "Language",
                 new ReturnTypeRef.TableBoundReturnType("Language", new TableRef("language", "LANGUAGE", "Language", Optional.of(List.of())), new FieldWrapper.Single(true)),
                 new TableRef("film", "FILM", "Film", Optional.of(List.of())),
-                NODE,
+                null, List.of(),
                 List.of(new FkRef("sequel_fkey", "film", "film", List.of(), List.of()))),
             List.of("Field 'languageId': @reference path does not lead to the table of type 'Language'")),
 
@@ -74,7 +71,7 @@ class NodeIdReferenceFieldValidationTest {
             new NodeIdReferenceField("SomeResult", "filmId", null, "Film",
                 new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Single(true)),
                 null, // non-table parent — null guard in validator skips the FK count check
-                NODE,
+                null, List.of(),
                 List.of()),
             List.of());
 

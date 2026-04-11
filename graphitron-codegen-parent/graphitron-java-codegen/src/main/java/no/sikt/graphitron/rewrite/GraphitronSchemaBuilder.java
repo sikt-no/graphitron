@@ -78,11 +78,12 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType;
 import no.sikt.graphitron.rewrite.model.InputFieldRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
-import no.sikt.graphitron.rewrite.model.NodeRef;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.jooq.ForeignKey;
@@ -275,7 +276,10 @@ public class GraphitronSchemaBuilder {
             case TableInterfaceType tit       -> enrichTableInterfaceType(tit, result);
             case InterfaceType it             -> enrichInterfaceType(it, result);
             case UnionType ut                 -> enrichUnionType(ut, result);
-            case GraphitronType.OutputType ignored -> type;
+            case TableType ignored            -> type;
+            case NodeType ignored             -> type;
+            case ResultType ignored           -> type;
+            case RootType ignored             -> type;
             case ErrorType ignored            -> type;
             case InputType ignored            -> type;
             case TableInputType ignored       -> type;
@@ -324,9 +328,9 @@ public class GraphitronSchemaBuilder {
         var errors = new ArrayList<String>();
         for (var typeName : typeNames) {
             var gt = types.get(typeName);
-            if (gt instanceof TableType tableType) {
+            if (gt instanceof TableBackedType tbt && !(gt instanceof TableInterfaceType)) {
                 String discriminatorValue = argString(schema.getObjectType(typeName), DIR_DISCRIMINATOR, ARG_VALUE).orElse(null);
-                result.add(new ParticipantRef(typeName, tableType.table(), discriminatorValue));
+                result.add(new ParticipantRef(typeName, tbt.table(), discriminatorValue));
             } else {
                 errors.add("implementing type '" + typeName + "' is not table-bound (missing @table directive)");
             }
@@ -398,7 +402,7 @@ public class GraphitronSchemaBuilder {
         }
         TableRef tableRef = tableOpt.get();
         if (!objType.hasAppliedDirective(DIR_NODE)) {
-            return new TableType(name, location, tableRef, null, fieldCoordinatesOf(objType));
+            return new TableType(name, location, tableRef, fieldCoordinatesOf(objType));
         }
         // @node: resolve key columns; any failure → UnclassifiedType
         String typeId = argString(objType, DIR_NODE, ARG_TYPE_ID).orElse(null);
@@ -417,7 +421,7 @@ public class GraphitronSchemaBuilder {
         if (!keyColumnErrors.isEmpty()) {
             return new UnclassifiedType(name, location, String.join("; ", keyColumnErrors));
         }
-        return new TableType(name, location, tableRef, new NodeRef(typeId, List.copyOf(keyColumns)), fieldCoordinatesOf(objType));
+        return new NodeType(name, location, tableRef, typeId, List.copyOf(keyColumns), fieldCoordinatesOf(objType));
     }
 
     private GraphitronType buildTableInterfaceType(GraphQLInterfaceType iface) {
@@ -582,7 +586,7 @@ public class GraphitronSchemaBuilder {
      * ({@code TableInterfaceField}, {@code InterfaceField}, {@code UnionField}, {@code ServiceField},
      * {@code ComputedField}) are added in P3.
      */
-    private GraphitronField classifyObjectReturnChildField(GraphQLFieldDefinition fieldDef, String parentTypeName, TableType parentTableType) {
+    private GraphitronField classifyObjectReturnChildField(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType parentTableType) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
         String rawTypeName = baseTypeName(fieldDef);
@@ -593,10 +597,10 @@ public class GraphitronSchemaBuilder {
             : rawTypeName;
         GraphitronType elementType = types.get(elementTypeName);
 
-        if (elementType instanceof TableType tableType) {
-            var wrapper = buildWrapper(fieldDef, tableType.table().tableName());
+        if (elementType instanceof TableBackedType tbt && !(elementType instanceof TableInterfaceType)) {
+            var wrapper = buildWrapper(fieldDef, tbt.table().tableName());
             if (wrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                "could not resolve @defaultOrder columns in table '" + tableType.table().tableName() + "'");
+                "could not resolve @defaultOrder columns in table '" + tbt.table().tableName() + "'");
             var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, wrapper);
             var referencePath = parsePath(fieldDef);
             if (referencePath.hasError()) {
@@ -670,8 +674,7 @@ public class GraphitronSchemaBuilder {
      */
     private String getTableSqlNameForType(String typeName) {
         var type = types.get(typeName);
-        if (type instanceof GraphitronType.TableType tt) return tt.table().tableName();
-        if (type instanceof GraphitronType.TableInterfaceType tit) return tit.table().tableName();
+        if (type instanceof TableBackedType tbt) return tbt.table().tableName();
         return null;
     }
 
@@ -887,8 +890,8 @@ public class GraphitronSchemaBuilder {
         if (parentType instanceof RootType rootType) {
             return classifyRootField(fieldDef, parentTypeName);
         }
-        if (parentType instanceof TableType tableType) {
-            return classifyChildFieldOnTableType(fieldDef, parentTypeName, tableType);
+        if (parentType instanceof TableBackedType tbt && !(parentType instanceof TableInterfaceType)) {
+            return classifyChildFieldOnTableType(fieldDef, parentTypeName, tbt);
         }
         if (parentType instanceof ResultType resultType) {
             return classifyChildFieldOnResultType(fieldDef, parentTypeName);
@@ -1000,10 +1003,10 @@ public class GraphitronSchemaBuilder {
         String elementTypeName = isConnectionType(rawTypeName) ? connectionElementTypeName(rawTypeName) : rawTypeName;
         GraphitronType elementType = types.get(elementTypeName);
 
-        if (elementType instanceof TableType tableType) {
-            var wrapper = buildWrapper(fieldDef, tableType.table().tableName());
+        if (elementType instanceof TableBackedType tbt && !(elementType instanceof TableInterfaceType)) {
+            var wrapper = buildWrapper(fieldDef, tbt.table().tableName());
             if (wrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                "could not resolve @defaultOrder columns in table '" + tableType.table().tableName() + "'");
+                "could not resolve @defaultOrder columns in table '" + tbt.table().tableName() + "'");
             var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, wrapper);
             var argErrors5 = new ArrayList<String>();
             var args = classifyArgsList(fieldDef, returnType.table(), false, argErrors5);
@@ -1387,7 +1390,7 @@ public class GraphitronSchemaBuilder {
         };
     }
 
-    private GraphitronField classifyChildFieldOnTableType(GraphQLFieldDefinition fieldDef, String parentTypeName, TableType tableType) {
+    private GraphitronField classifyChildFieldOnTableType(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType tableType) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
@@ -1472,24 +1475,23 @@ public class GraphitronSchemaBuilder {
                         "@nodeId(typeName:) type '" + typeName.get() + "' does not exist in the schema"
                         + candidateHint(typeName.get(), new ArrayList<>(types.keySet())));
                 }
-                if (!(targetGType instanceof TableType targetTableType) || targetTableType.node() == null) {
+                if (!(targetGType instanceof NodeType targetNodeType)) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                         "@nodeId(typeName:) type '" + typeName.get() + "' does not have @node");
                 }
-                NodeRef nodeRef = targetTableType.node();
                 TableRef parentTable = tableType.table();
                 var nodeRefPath = parsePath(fieldDef);
                 if (nodeRefPath.hasError()) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, nodeRefPath.errorMessage());
                 }
-                return new NodeIdReferenceField(parentTypeName, name, location, typeName.get(), targetType, parentTable, nodeRef, nodeRefPath.elements());
+                return new NodeIdReferenceField(parentTypeName, name, location, typeName.get(), targetType, parentTable,
+                    targetNodeType.typeId(), targetNodeType.nodeKeyColumns(), nodeRefPath.elements());
             } else {
-                NodeRef nodeRef = tableType.node();
-                if (nodeRef == null) {
+                if (!(tableType instanceof NodeType nodeType)) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                         "@nodeId requires the containing type to have @node");
                 }
-                return new NodeIdField(parentTypeName, name, location, nodeRef);
+                return new NodeIdField(parentTypeName, name, location, nodeType.typeId(), nodeType.nodeKeyColumns());
             }
         }
 
@@ -1524,11 +1526,11 @@ public class GraphitronSchemaBuilder {
         return new ColumnField(parentTypeName, name, location, columnName, column.get(), javaNamePresent);
     }
 
-    private Optional<ColumnRef> resolveColumn(String columnName, TableType tableType) {
+    private Optional<ColumnRef> resolveColumn(String columnName, TableBackedType tableType) {
         return resolveColumnInTable(columnName, tableType.table().tableName());
     }
 
-    private Optional<ColumnRef> resolveColumnForReference(String columnName, List<ReferencePathElementRef> path, TableType sourceType) {
+    private Optional<ColumnRef> resolveColumnForReference(String columnName, List<ReferencePathElementRef> path, TableBackedType sourceType) {
         String terminal = terminalTableSqlNameForReference(path, sourceType);
         if (terminal == null) return Optional.empty();
         return resolveColumnInTable(columnName, terminal);
@@ -1538,7 +1540,7 @@ public class GraphitronSchemaBuilder {
      * Walks the FK path to compute the terminal table SQL name. Returns {@code null} when any
      * path step is not a {@link FkRef} (i.e. the path is structurally invalid).
      */
-    private String terminalTableSqlNameForReference(List<ReferencePathElementRef> path, TableType sourceType) {
+    private String terminalTableSqlNameForReference(List<ReferencePathElementRef> path, TableBackedType sourceType) {
         String current = sourceType.table().tableName();
         for (var step : path) {
             if (!(step instanceof FkRef fk)) return null;
@@ -1554,10 +1556,8 @@ public class GraphitronSchemaBuilder {
 
     private ReturnTypeRef resolveReturnType(String targetTypeName, FieldWrapper wrapper) {
         GraphitronType target = types.get(targetTypeName);
-        if (target instanceof TableType tt)
-            return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tt.table(), wrapper);
-        if (target instanceof TableInterfaceType tit)
-            return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tit.table(), wrapper);
+        if (target instanceof TableBackedType tbt)
+            return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tbt.table(), wrapper);
         if (target instanceof InterfaceType interfaceType || target instanceof UnionType unionType)
             return new ReturnTypeRef.PolymorphicReturnType(targetTypeName, wrapper);
         // PojoReturnType covers ResultType (backing class not yet reflected), scalars, enums,

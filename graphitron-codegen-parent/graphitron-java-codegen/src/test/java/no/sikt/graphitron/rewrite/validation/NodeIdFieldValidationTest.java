@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.ChildField.NodeIdField;
-import no.sikt.graphitron.rewrite.model.NodeRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -17,7 +16,7 @@ class NodeIdFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("parent type has @node — no errors",
-            new NodeIdField("Film", "id", null, new NodeRef(null, List.of())),
+            new NodeIdField("Film", "id", null, null, List.of()),
             List.of());
 
         private final String description;

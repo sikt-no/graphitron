@@ -11,7 +11,7 @@ package no.sikt.graphitron.rewrite.model;
  * <p>Used wherever a column reference is needed — both for output field columns
  * ({@link no.sikt.graphitron.rewrite.model.ChildField.ColumnField},
  * {@link no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField}) and for
- * {@code @node} key columns ({@link no.sikt.graphitron.rewrite.model.NodeRef}).
+ * {@code @node} key columns ({@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType}).
  *
  * <p>When a column cannot be resolved the containing field or type is classified as
  * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} or

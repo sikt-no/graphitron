@@ -134,7 +134,7 @@ class ServiceFieldValidationTest {
         new TableRef("film", "FILM", "Film", Optional.empty());
 
     private static GraphitronType.TableType filmTableType(TableRef tableRef) {
-        return new GraphitronType.TableType("Film", null, tableRef, null, List.of());
+        return new GraphitronType.TableType("Film", null, tableRef, List.of());
     }
 
     private static final ReturnTypeRef.TableBoundReturnType FILM_RETURN =

@@ -21,10 +21,9 @@ import java.util.Optional;
  * ordered list of PK columns (each a fully resolved {@link ColumnRef}) populated from
  * {@code table.getPrimaryKey().getFields()} at parse time.
  *
- * <p>When the owning GraphQL type also carries {@code @node}, the {@code @node} directive
- * properties ({@code typeId} and key columns) are carried by a separate
- * {@link NodeRef} stored alongside this {@code TableRef} in
- * {@link GraphitronType.TableType}.
+ * <p>When the owning GraphQL type also carries {@code @node}, the type is classified as
+ * {@link GraphitronType.NodeType} instead of {@link GraphitronType.TableType}, with the
+ * {@code @node} directive properties ({@code typeId} and key columns) stored directly on it.
  */
 public record TableRef(
     String tableName,

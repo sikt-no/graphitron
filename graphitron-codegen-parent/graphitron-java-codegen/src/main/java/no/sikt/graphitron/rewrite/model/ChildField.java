@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.rewrite.model.NodeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldConditionRef;
@@ -88,14 +87,19 @@ public sealed interface ChildField extends GraphitronField
      * appears on a type without {@code @node}, the builder returns an
      * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} instead.
      *
-     * <p>{@code node} is the parent type's {@link NodeRef}, carrying the optional {@code typeId}
-     * and the resolved key columns used for Relay Global ID encoding.
+     * <p>{@code nodeTypeId} is the value of the {@code typeId} argument on the {@code @node}
+     * directive of the parent type, or {@code null} when the argument was omitted.
+     *
+     * <p>{@code nodeKeyColumns} is the resolved list of {@code keyColumns} from the parent type's
+     * {@code @node} directive. An empty list means the argument was omitted, in which case the
+     * primary key is used at code-generation time.
      */
     record NodeIdField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        NodeRef node
+        String nodeTypeId,
+        List<ColumnRef> nodeKeyColumns
     ) implements ChildField {}
 
     /**
@@ -114,10 +118,13 @@ public sealed interface ChildField extends GraphitronField
      * <p>{@code parentTable} is the resolved table of the containing type, or {@code null} when
      * the parent type is not table-backed. A null parent table skips the implicit FK count check.
      *
-     * <p>{@code node} is the {@link NodeRef} of the target type, carrying the {@code @node}
-     * directive properties ({@code typeId} and {@code keyColumns}) used for Relay Global ID
-     * encoding. Only constructed when the named type exists and carries {@code @node}; otherwise
-     * the builder returns an
+     * <p>{@code nodeTypeId} is the value of the {@code typeId} argument on the {@code @node}
+     * directive of the target type, or {@code null} when the argument was omitted.
+     *
+     * <p>{@code nodeKeyColumns} is the resolved list of {@code keyColumns} from the target type's
+     * {@code @node} directive used for Relay Global ID encoding. An empty list means the argument
+     * was omitted, in which case the primary key is used at code-generation time. Only constructed
+     * when the named type exists and carries {@code @node}; otherwise the builder returns an
      * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}.
      *
      * <p>{@code referencePath} is the ordered list of join steps from the source table to the target
@@ -136,7 +143,8 @@ public sealed interface ChildField extends GraphitronField
         String typeName,
         ReturnTypeRef targetType,
         TableRef parentTable,
-        NodeRef node,
+        String nodeTypeId,
+        List<ColumnRef> nodeKeyColumns,
         List<ReferencePathElementRef> referencePath
     ) implements ChildField {}
 

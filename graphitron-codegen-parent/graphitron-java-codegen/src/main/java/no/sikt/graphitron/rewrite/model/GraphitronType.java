@@ -10,9 +10,9 @@ import java.util.List;
  * and is the authoritative source of source context for all fields defined on it.
  */
 public sealed interface GraphitronType
-    permits GraphitronType.OutputType, GraphitronType.TableInterfaceType, GraphitronType.InterfaceType,
-            GraphitronType.UnionType, GraphitronType.ErrorType, GraphitronType.InputType,
-            GraphitronType.TableInputType, GraphitronType.UnclassifiedType {
+    permits GraphitronType.TableBackedType, GraphitronType.ResultType, GraphitronType.RootType,
+            GraphitronType.InterfaceType, GraphitronType.UnionType, GraphitronType.ErrorType,
+            GraphitronType.InputType, GraphitronType.TableInputType, GraphitronType.UnclassifiedType {
 
     String name();
 
@@ -20,37 +20,51 @@ public sealed interface GraphitronType
     SourceLocation location();
 
     /**
-     * A GraphQL object type that owns output fields. Permitted subtypes are {@link TableType},
-     * {@link ResultType}, and {@link RootType}.
-     *
-     * <p>{@code fieldCoordinates} holds the {@link FieldCoordinates} of every field defined on
-     * this type in the schema, in declaration order. Use {@link GraphitronSchema#fieldsOf} to
-     * obtain the classified {@link GraphitronField} instances.
+     * A GraphQL type backed by a resolved jOOQ table.
+     * All permitted sub-types carry a {@link TableRef} and generate SQL (SELECT or DML).
      */
-    sealed interface OutputType extends GraphitronType
-        permits GraphitronType.TableType, GraphitronType.ResultType, GraphitronType.RootType {
+    sealed interface TableBackedType extends GraphitronType
+        permits GraphitronType.TableType, GraphitronType.NodeType, GraphitronType.TableInterfaceType {
 
-        List<FieldCoordinates> fieldCoordinates();
+        TableRef table();
     }
 
     /**
-     * A type annotated with {@code @table}. Full SQL generation applies.
+     * A GraphQL object type annotated with {@code @table}, without {@code @node}.
+     * Full SQL generation applies.
      *
      * <p>{@code table} is the resolved jOOQ table (always present — a type whose {@code @table}
      * name cannot be matched is classified as {@link UnclassifiedType} instead).
-     *
-     * <p>{@code node} carries the {@code @node} directive properties ({@code typeId} and key
-     * columns) when the type also has {@code @node}, or {@code null} when it does not. A type
-     * with {@code @node} but with an unresolvable key column is classified as
-     * {@link UnclassifiedType} instead.
      */
     record TableType(
         String name,
         SourceLocation location,
         TableRef table,
-        NodeRef node,
         List<FieldCoordinates> fieldCoordinates
-    ) implements OutputType {}
+    ) implements TableBackedType {}
+
+    /**
+     * A GraphQL object type annotated with both {@code @table} and {@code @node}.
+     * Full SQL generation applies, plus Relay Global Object Identification.
+     *
+     * <p>{@code typeId} is the value of the {@code typeId} argument on the {@code @node}
+     * directive, or {@code null} when the argument was omitted.
+     *
+     * <p>{@code nodeKeyColumns} is the resolved list of {@code keyColumns} argument entries.
+     * An empty list means the argument was omitted, in which case the primary key is used
+     * at code-generation time.
+     *
+     * <p>A {@code @node} type with an unresolvable key column is classified as
+     * {@link UnclassifiedType} instead.
+     */
+    record NodeType(
+        String name,
+        SourceLocation location,
+        TableRef table,
+        String typeId,
+        List<ColumnRef> nodeKeyColumns,
+        List<FieldCoordinates> fieldCoordinates
+    ) implements TableBackedType {}
 
     /**
      * A type annotated with {@code @record}. Runtime wiring only — no SQL until a new scope starts.
@@ -59,7 +73,7 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         List<FieldCoordinates> fieldCoordinates
-    ) implements OutputType {}
+    ) implements GraphitronType {}
 
     /**
      * A root operation type (Query or Mutation). Unmapped — no source context, no SQL until
@@ -69,7 +83,7 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         List<FieldCoordinates> fieldCoordinates
-    ) implements OutputType {}
+    ) implements GraphitronType {}
 
     /**
      * An interface annotated with {@code @table} and {@code @discriminate}, where implementing
@@ -87,7 +101,7 @@ public sealed interface GraphitronType
         String discriminatorColumn,
         TableRef table,
         List<ParticipantRef> participants
-    ) implements GraphitronType {}
+    ) implements TableBackedType {}
 
     /**
      * An interface with no directives whose implementing types each have {@code @table}.
