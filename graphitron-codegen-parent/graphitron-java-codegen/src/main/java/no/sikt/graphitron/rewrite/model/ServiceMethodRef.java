@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
 
@@ -8,7 +8,7 @@ import java.util.List;
  * <p>A {@code ServiceMethodRef} is only constructed when the class and method are found via
  * reflection. When reflection fails (class not found, method not found, or incomplete service
  * reference) the containing field is classified as
- * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} at build time.
+ * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} at build time.
  *
  * <p>{@code params} lists all declared parameters in declaration order. Each entry is a
  * {@link ServiceParam} variant classifying how the value is obtained at runtime.

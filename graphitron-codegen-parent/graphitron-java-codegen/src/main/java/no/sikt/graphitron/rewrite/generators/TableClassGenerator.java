@@ -2,8 +2,8 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.type.GraphitronType;
-import no.sikt.graphitron.rewrite.type.TableRef;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.List;
 

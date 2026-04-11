@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.type;
+package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
 

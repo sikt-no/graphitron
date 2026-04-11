@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.field.GraphitronField;
-import no.sikt.graphitron.rewrite.field.GraphitronField.NotGeneratedField;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 

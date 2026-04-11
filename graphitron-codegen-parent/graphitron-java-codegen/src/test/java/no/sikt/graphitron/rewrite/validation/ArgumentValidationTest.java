@@ -3,15 +3,15 @@ package no.sikt.graphitron.rewrite.validation;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.field.ArgumentRef;
-import no.sikt.graphitron.rewrite.field.ChildField.TableField;
-import no.sikt.graphitron.rewrite.field.FieldConditionRef;
-import no.sikt.graphitron.rewrite.field.FieldWrapper;
-import no.sikt.graphitron.rewrite.field.GraphitronField;
-import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.type.GraphitronType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.InputType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.RootType;
+import no.sikt.graphitron.rewrite.model.ArgumentRef;
+import no.sikt.graphitron.rewrite.model.ChildField.TableField;
+import no.sikt.graphitron.rewrite.model.FieldConditionRef;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ArgumentValidationTest {
 
-    private static final ReturnTypeRef.TableBoundReturnType FILM_RETURN = new ReturnTypeRef.TableBoundReturnType("Film", new no.sikt.graphitron.rewrite.type.TableRef("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.Single(true));
+    private static final ReturnTypeRef.TableBoundReturnType FILM_RETURN = new ReturnTypeRef.TableBoundReturnType("Film", new no.sikt.graphitron.rewrite.model.TableRef("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.Single(true));
 
     /**
      * Build a schema with the field on a {@link RootType} parent (avoids unresolved-table errors),

@@ -2,10 +2,10 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.type.GraphitronType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.InputType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.RootType;
-import no.sikt.graphitron.rewrite.type.InputFieldSpec;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
+import no.sikt.graphitron.rewrite.model.InputFieldSpec;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 

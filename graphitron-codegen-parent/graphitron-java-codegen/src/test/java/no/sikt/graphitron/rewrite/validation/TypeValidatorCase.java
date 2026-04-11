@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
-import no.sikt.graphitron.rewrite.type.GraphitronType;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
 
 import java.util.List;
 

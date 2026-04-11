@@ -1,18 +1,18 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.ConditionOnlyRef;
-import no.sikt.graphitron.rewrite.field.GraphitronField;
-import no.sikt.graphitron.rewrite.field.MethodRef;
-import no.sikt.graphitron.rewrite.field.ParamInfo;
-import no.sikt.graphitron.rewrite.field.ChildField.ServiceTableField;
-import no.sikt.graphitron.rewrite.field.ChildField.ServiceRecordField;
-import no.sikt.graphitron.rewrite.field.ServiceMethodRef;
-import no.sikt.graphitron.rewrite.field.ServiceMethodRef.ServiceParam;
-import no.sikt.graphitron.rewrite.field.SourcesRef;
-import no.sikt.graphitron.rewrite.field.FieldWrapper;
-import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.type.TableRef;
+import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.ConditionOnlyRef;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.ParamInfo;
+import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
+import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
+import no.sikt.graphitron.rewrite.model.ServiceMethodRef;
+import no.sikt.graphitron.rewrite.model.ServiceMethodRef.ServiceParam;
+import no.sikt.graphitron.rewrite.model.SourcesRef;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 

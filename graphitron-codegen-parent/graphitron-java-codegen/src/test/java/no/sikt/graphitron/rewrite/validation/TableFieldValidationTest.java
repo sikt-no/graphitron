@@ -1,19 +1,19 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.ConditionOnlyRef;
-import no.sikt.graphitron.rewrite.field.DefaultOrderSpec;
-import no.sikt.graphitron.rewrite.field.FieldWrapper;
-import no.sikt.graphitron.rewrite.field.FieldConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkWithConditionRef;
-import no.sikt.graphitron.rewrite.field.GraphitronField;
-import no.sikt.graphitron.rewrite.field.MethodRef;
-import no.sikt.graphitron.rewrite.field.OrderSpec;
-import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.field.SortFieldSpec;
-import no.sikt.graphitron.rewrite.field.ChildField.TableField;
-import no.sikt.graphitron.rewrite.type.TableRef;
+import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.ConditionOnlyRef;
+import no.sikt.graphitron.rewrite.model.DefaultOrderSpec;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.FieldConditionRef;
+import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkRef;
+import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkWithConditionRef;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.OrderSpec;
+import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.SortFieldSpec;
+import no.sikt.graphitron.rewrite.model.ChildField.TableField;
+import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 

@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
 
@@ -10,7 +10,7 @@ import java.util.List;
  * object (a named index or the table's primary key) that must be resolved against the jOOQ catalog.
  * When resolved they can be normalised to a {@link FieldsOrder}; when the lookup fails the
  * containing field is classified as
- * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} at build time.
+ * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} at build time.
  *
  * <ul>
  *   <li>{@link IndexOrder} — sort by a named database index (from {@code @order(index:)},

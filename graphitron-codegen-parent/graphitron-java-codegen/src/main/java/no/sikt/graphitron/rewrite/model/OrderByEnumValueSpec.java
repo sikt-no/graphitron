@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
 /**
  * The sort specification for a single value in an {@code @orderBy} input enum.

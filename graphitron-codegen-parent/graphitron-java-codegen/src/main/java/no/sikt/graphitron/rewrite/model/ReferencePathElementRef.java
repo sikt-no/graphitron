@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
 import no.sikt.graphitron.rewrite.JooqCatalog.ColumnEntry;
 
@@ -10,7 +10,7 @@ import java.util.List;
  *
  * <p>All three variants are fully resolved — unresolvable path elements cause the containing
  * field to be classified as
- * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} at build time,
+ * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} at build time,
  * before any field record is constructed.
  *
  * <ul>

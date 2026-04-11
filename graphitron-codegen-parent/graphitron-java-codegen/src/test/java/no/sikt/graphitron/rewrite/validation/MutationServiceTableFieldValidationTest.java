@@ -1,12 +1,12 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.field.GraphitronField;
-import no.sikt.graphitron.rewrite.field.MutationField.MutationServiceTableField;
-import no.sikt.graphitron.rewrite.field.FieldWrapper;
-import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.field.ServiceMethodRef;
-import no.sikt.graphitron.rewrite.type.TableRef;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.ServiceMethodRef;
+import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 

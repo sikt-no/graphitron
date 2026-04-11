@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * generated class list.
  *
  * <p>Verifies that {@link TableClassGenerator} produces exactly one class per distinct SQL table
- * referenced by a {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableType}, named after
+ * referenced by a {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableType}, named after
  * the table (not the GraphQL type name), and skips all other types.
  */
 class TablePipelineTest {

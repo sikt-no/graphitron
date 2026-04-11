@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
 /**
  * Reflection data for one parameter of a condition or service method.

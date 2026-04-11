@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
 /**
  * A resolved column in a jOOQ table.
@@ -9,12 +9,12 @@ package no.sikt.graphitron.rewrite.field;
  * (e.g. {@code "java.lang.Integer"}).
  *
  * <p>Used wherever a column reference is needed — both for output field columns
- * ({@link no.sikt.graphitron.rewrite.field.ChildField.ColumnField},
- * {@link no.sikt.graphitron.rewrite.field.ChildField.ColumnReferenceField}) and for
- * {@code @node} key columns ({@link no.sikt.graphitron.rewrite.type.NodeRef}).
+ * ({@link no.sikt.graphitron.rewrite.model.ChildField.ColumnField},
+ * {@link no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField}) and for
+ * {@code @node} key columns ({@link no.sikt.graphitron.rewrite.model.NodeRef}).
  *
  * <p>When a column cannot be resolved the containing field or type is classified as
- * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} or
- * {@link no.sikt.graphitron.rewrite.type.GraphitronType.UnclassifiedType} at build time.
+ * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} or
+ * {@link no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType} at build time.
  */
 public record ColumnRef(String sqlName, String javaName, String columnClass) {}

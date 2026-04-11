@@ -4,44 +4,44 @@ import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.ErrorHandlerType;
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.rewrite.field.ChildField.ColumnField;
-import no.sikt.graphitron.rewrite.field.MutationField;
-import no.sikt.graphitron.rewrite.field.QueryField;
-import no.sikt.graphitron.rewrite.field.ChildField.ColumnReferenceField;
-import no.sikt.graphitron.rewrite.field.ChildField.ComputedField;
-import no.sikt.graphitron.rewrite.field.ChildField.InterfaceField;
-import no.sikt.graphitron.rewrite.field.ChildField.MultitableReferenceField;
-import no.sikt.graphitron.rewrite.field.ChildField.NestingField;
-import no.sikt.graphitron.rewrite.field.ChildField.NodeIdField;
-import no.sikt.graphitron.rewrite.field.ChildField.NodeIdReferenceField;
-import no.sikt.graphitron.rewrite.field.ChildField.PropertyField;
-import no.sikt.graphitron.rewrite.field.ChildField.ServiceTableField;
-import no.sikt.graphitron.rewrite.field.ChildField.ServiceRecordField;
-import no.sikt.graphitron.rewrite.field.ChildField.LookupTableField;
-import no.sikt.graphitron.rewrite.field.ChildField.SplitTableField;
-import no.sikt.graphitron.rewrite.field.ChildField.TableField;
-import no.sikt.graphitron.rewrite.field.ChildField.TableInterfaceField;
-import no.sikt.graphitron.rewrite.field.ChildField.TableMethodField;
-import no.sikt.graphitron.rewrite.field.ChildField.UnionField;
-import no.sikt.graphitron.rewrite.field.ColumnRef;
-import no.sikt.graphitron.rewrite.field.DefaultOrderSpec;
-import no.sikt.graphitron.rewrite.field.FieldWrapper;
-import no.sikt.graphitron.rewrite.field.FieldConditionRef;
-import no.sikt.graphitron.rewrite.field.GraphitronField.NotGeneratedField;
-import no.sikt.graphitron.rewrite.field.ArgumentRef;
-import no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField;
-import no.sikt.graphitron.rewrite.field.OrderSpec;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkRef;
-import no.sikt.graphitron.rewrite.type.GraphitronType.ErrorType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.InputType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.InterfaceType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.ResultType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.RootType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.TableType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.UnclassifiedType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.UnionType;
-import no.sikt.graphitron.rewrite.type.NodeRef;
-import no.sikt.graphitron.rewrite.type.TableRef;
+import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
+import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
+import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
+import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
+import no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField;
+import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
+import no.sikt.graphitron.rewrite.model.ChildField.NodeIdField;
+import no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField;
+import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
+import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
+import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
+import no.sikt.graphitron.rewrite.model.ChildField.LookupTableField;
+import no.sikt.graphitron.rewrite.model.ChildField.SplitTableField;
+import no.sikt.graphitron.rewrite.model.ChildField.TableField;
+import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
+import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
+import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.DefaultOrderSpec;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.FieldConditionRef;
+import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
+import no.sikt.graphitron.rewrite.model.ArgumentRef;
+import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
+import no.sikt.graphitron.rewrite.model.OrderSpec;
+import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkRef;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
+import no.sikt.graphitron.rewrite.model.NodeRef;
+import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphql.schema.SchemaReadingHelper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -436,7 +436,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var tf = (TableField) schema.field("Film", "actors");
                 assertThat(tf.returnType().wrapper()).isInstanceOf(FieldWrapper.Connection.class);
-                assertThat(tf.returnType()).isInstanceOf(no.sikt.graphitron.rewrite.field.ReturnTypeRef.TableBoundReturnType.class);
+                assertThat(tf.returnType()).isInstanceOf(no.sikt.graphitron.rewrite.model.ReturnTypeRef.TableBoundReturnType.class);
                 assertThat(tf.returnType().returnTypeName()).isEqualTo("Actor");
             }),
 
@@ -718,7 +718,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (ServiceTableField) schema.field("Film", "language");
-                assertThat(f.returnType()).isInstanceOf(no.sikt.graphitron.rewrite.field.ReturnTypeRef.TableBoundReturnType.class);
+                assertThat(f.returnType()).isInstanceOf(no.sikt.graphitron.rewrite.model.ReturnTypeRef.TableBoundReturnType.class);
                 assertThat(f.returnType().returnTypeName()).isEqualTo("Language");
             });
 
@@ -874,7 +874,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.field.ChildField.TableField) schema.field("Film", "actors");
+                var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("Film", "actors");
                 assertThat(f.arguments()).isEmpty();
             }),
 
@@ -888,7 +888,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.field.ChildField.TableField) schema.field("Film", "actors");
+                var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("Film", "actors");
                 assertThat(f.arguments()).hasSize(2);
                 var limit = f.arguments().get(0);
                 assertThat(limit.name()).isEqualTo("limit");
@@ -910,10 +910,10 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.field.ChildField.LookupTableField) schema.field("Film", "actor");
+                var f = (no.sikt.graphitron.rewrite.model.ChildField.LookupTableField) schema.field("Film", "actor");
                 assertThat(f.arguments()).hasSize(1);
                 assertThat(f.arguments().get(0).name()).isEqualTo("id");
-                assertThat(f.arguments().get(0)).isNotInstanceOf(no.sikt.graphitron.rewrite.field.ArgumentRef.InputTypeArg.OrderByArg.class);
+                assertThat(f.arguments().get(0)).isNotInstanceOf(no.sikt.graphitron.rewrite.model.ArgumentRef.InputTypeArg.OrderByArg.class);
             }),
 
         TABLE_FIELD_ORDER_BY_ARG(
@@ -927,7 +927,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.field.ChildField.TableField) schema.field("Film", "actors");
+                var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("Film", "actors");
                 // @orderBy is only on the argument definition directive, not the enum value — check arg
                 assertThat(f.arguments()).hasSize(1);
                 assertThat(f.arguments().get(0).typeName()).isEqualTo("ActorOrder");
@@ -942,7 +942,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.field.ChildField.ServiceRecordField) schema.field("Film", "rating");
+                var f = (no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField) schema.field("Film", "rating");
                 assertThat(f.contextArguments()).containsExactly("tenantId", "userId");
             }),
 
@@ -957,7 +957,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.field.ChildField.TableMethodField) schema.field("Film", "language");
+                var f = (no.sikt.graphitron.rewrite.model.ChildField.TableMethodField) schema.field("Film", "language");
                 assertThat(f.contextArguments()).containsExactly("tenantId");
             });
 
@@ -986,7 +986,7 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             """,
             schema -> {
-                var it = (no.sikt.graphitron.rewrite.type.GraphitronType.InputType) schema.type("FilmInput");
+                var it = (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type("FilmInput");
                 assertThat(it.fields()).hasSize(2);
                 var title = it.fields().get(0);
                 assertThat(title.name()).isEqualTo("title");
@@ -1006,7 +1006,7 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             """,
             schema -> {
-                var it = (no.sikt.graphitron.rewrite.type.GraphitronType.InputType) schema.type("FilmInput");
+                var it = (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type("FilmInput");
                 assertThat(it.fields().get(0).columnName()).isEqualTo("release_year");
             }),
 
@@ -1017,7 +1017,7 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             """,
             schema -> {
-                var it = (no.sikt.graphitron.rewrite.type.GraphitronType.InputType) schema.type("FilmInput");
+                var it = (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type("FilmInput");
                 assertThat(it.fields()).hasSize(1);
                 assertThat(it.fields().get(0).name()).isEqualTo("title");
             }),
@@ -1029,7 +1029,7 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             """,
             schema -> {
-                var it = (no.sikt.graphitron.rewrite.type.GraphitronType.InputType) schema.type("FilmInput");
+                var it = (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type("FilmInput");
                 assertThat(it.fields().get(0).list()).isTrue();
                 assertThat(it.fields().get(0).nonNull()).isTrue();
             });
@@ -1059,12 +1059,12 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             """,
             schema -> {
-                var it = (no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType) schema.type("CustomerInput");
-                assertThat(it.table()).isInstanceOf(no.sikt.graphitron.rewrite.type.TableRef.class);
+                var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("CustomerInput");
+                assertThat(it.table()).isInstanceOf(no.sikt.graphitron.rewrite.model.TableRef.class);
                 assertThat(it.table().tableName()).isEqualTo("customer");
                 assertThat(it.fields()).hasSize(1);
-                assertThat(it.fields().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.type.InputFieldRef.class);
-                var f = (no.sikt.graphitron.rewrite.type.InputFieldRef) it.fields().get(0);
+                assertThat(it.fields().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.model.InputFieldRef.class);
+                var f = (no.sikt.graphitron.rewrite.model.InputFieldRef) it.fields().get(0);
                 assertThat(f.name()).isEqualTo("customerId");
                 assertThat(f.javaColumnName()).isEqualTo("CUSTOMER_ID");
             }),
@@ -1076,7 +1076,7 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             """,
             schema -> assertThat(schema.type("CustomerInput"))
-                .isInstanceOf(no.sikt.graphitron.rewrite.type.GraphitronType.UnclassifiedType.class)),
+                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class)),
 
         EXPLICIT_TABLE_UNRESOLVED_TABLE(
             "input type with @table pointing to unknown DB table → UnclassifiedType",
@@ -1085,7 +1085,7 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             """,
             schema -> assertThat(schema.type("NoSuchInput"))
-                .isInstanceOf(no.sikt.graphitron.rewrite.type.GraphitronType.UnclassifiedType.class)),
+                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class)),
 
         IMPLICIT_TABLE_FROM_LOOKUP_FIELD(
             "input type without @table used on a QueryLookupTableField → promoted to TableInputType",
@@ -1096,11 +1096,11 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 assertThat(schema.type("CustomerInput"))
-                    .isInstanceOf(no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType.class);
-                var it = (no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType) schema.type("CustomerInput");
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType.class);
+                var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("CustomerInput");
                 assertThat(it.table().tableName()).isEqualTo("customer");
                 assertThat(it.fields().get(0))
-                    .isInstanceOf(no.sikt.graphitron.rewrite.type.InputFieldRef.class);
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.InputFieldRef.class);
             }),
 
         IMPLICIT_TABLE_CONFLICT(
@@ -1115,7 +1115,7 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> assertThat(schema.type("SharedInput"))
-                .isInstanceOf(no.sikt.graphitron.rewrite.type.GraphitronType.UnclassifiedType.class));
+                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -1370,7 +1370,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.InputTypeArg.TableInputTypeArg.class);
                 // The type was promoted to TableInputType in types map
                 assertThat(schema.type("FilmKey"))
-                    .isInstanceOf(no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType.class);
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType.class);
             }),
 
         LOOKUP_FIELD_ORDERBY_ARG(
@@ -1430,7 +1430,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (QueryField.QueryTableField) schema.field("Query", "films");
                 assertThat(f.arguments()).hasSize(1);
-                assertThat(f.arguments().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.field.ArgumentRef.InputTypeArg.OrderByArg.class);
+                assertThat(f.arguments().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.model.ArgumentRef.InputTypeArg.OrderByArg.class);
             }),
 
         TABLE_METHOD_QUERY_FIELD(

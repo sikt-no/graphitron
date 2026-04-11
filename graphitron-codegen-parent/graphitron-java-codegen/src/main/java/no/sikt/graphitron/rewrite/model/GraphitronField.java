@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
 import graphql.schema.GraphQLFieldDefinition;

@@ -1,18 +1,18 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.rewrite.type.NodeRef;
-import no.sikt.graphitron.rewrite.type.TableRef;
-import no.sikt.graphitron.rewrite.field.ColumnRef;
-import no.sikt.graphitron.rewrite.field.FieldConditionRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef;
-import no.sikt.graphitron.rewrite.field.ArgumentRef;
+import no.sikt.graphitron.rewrite.model.NodeRef;
+import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.FieldConditionRef;
+import no.sikt.graphitron.rewrite.model.ReferencePathElementRef;
+import no.sikt.graphitron.rewrite.model.ArgumentRef;
 
 import java.util.List;
 
 /**
  * A field on a non-root output type. Source context (table-mapped or result-mapped) is
- * determined by the parent {@link no.sikt.graphitron.rewrite.type.GraphitronType} at generation time.
+ * determined by the parent {@link no.sikt.graphitron.rewrite.model.GraphitronType} at generation time.
  */
 public sealed interface ChildField extends GraphitronField
     permits ChildField.ColumnField, ChildField.ColumnReferenceField,
@@ -35,7 +35,7 @@ public sealed interface ChildField extends GraphitronField
      *
      * <p>{@code column} is the resolved column in the jOOQ table. When the column name cannot be
      * matched, the builder returns an
-     * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} instead of
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} instead of
      * constructing a {@code ColumnField}.
      *
      * <p>{@code javaNamePresent} is {@code true} when the {@code @field(javaName:)} argument was
@@ -59,7 +59,7 @@ public sealed interface ChildField extends GraphitronField
      *
      * <p>{@code column} is the resolved column in the joined jOOQ table. When the column name
      * cannot be matched (or any reference path element is unresolved), the builder returns an
-     * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} instead of
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} instead of
      * constructing a {@code ColumnReferenceField}.
      *
      * <p>{@code referencePath} is the ordered list of join steps from the source table to the target
@@ -86,7 +86,7 @@ public sealed interface ChildField extends GraphitronField
      *
      * <p>Only constructed when the containing type carries {@code @node}. When {@code @nodeId}
      * appears on a type without {@code @node}, the builder returns an
-     * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} instead.
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} instead.
      *
      * <p>{@code node} is the parent type's {@link NodeRef}, carrying the optional {@code typeId}
      * and the resolved key columns used for Relay Global ID encoding.
@@ -118,7 +118,7 @@ public sealed interface ChildField extends GraphitronField
      * directive properties ({@code typeId} and {@code keyColumns}) used for Relay Global ID
      * encoding. Only constructed when the named type exists and carries {@code @node}; otherwise
      * the builder returns an
-     * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField}.
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}.
      *
      * <p>{@code referencePath} is the ordered list of join steps from the source table to the target
      * type's table, extracted from {@code @reference(path:)}. May be empty when there is exactly one

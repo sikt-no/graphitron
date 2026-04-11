@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.schema.FieldCoordinates;
-import no.sikt.graphitron.rewrite.field.GraphitronField;
-import no.sikt.graphitron.rewrite.type.GraphitronType;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
 
 import java.util.Map;
 

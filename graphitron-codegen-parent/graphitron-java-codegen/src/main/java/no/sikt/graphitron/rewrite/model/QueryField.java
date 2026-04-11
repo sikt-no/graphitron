@@ -1,11 +1,11 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
 
 import java.util.List;
 
-import no.sikt.graphitron.rewrite.field.ArgumentRef;
-import no.sikt.graphitron.rewrite.field.ServiceMethodRef;
+import no.sikt.graphitron.rewrite.model.ArgumentRef;
+import no.sikt.graphitron.rewrite.model.ServiceMethodRef;
 
 /**
  * A field on the {@code Query} type. Read-only. All create a new scope or enter private service scope.
@@ -58,7 +58,7 @@ public sealed interface QueryField extends RootField
      * schema, with the {@link FieldWrapper} embedded — {@link FieldWrapper.Single} for a single-item
      * lookup, {@link FieldWrapper.List} for a list result, or {@link FieldWrapper.Connection} for a
      * Relay paginated list. {@link ReturnTypeRef.TableBoundReturnType} carries the
-     * {@link no.sikt.graphitron.rewrite.type.TableRef} when the return type's table is resolved —
+     * {@link no.sikt.graphitron.rewrite.model.TableRef} when the return type's table is resolved —
      * used to detect non-deterministic ordering (list or connection with no {@code @defaultOrder}
      * and a PK-less table). The validator reports errors for unresolved ordering specs on list and
      * connection variants.
@@ -180,7 +180,7 @@ public sealed interface QueryField extends RootField
      *
      * <p>{@code serviceMethodRef} carries the reflected parameter list of the service method,
      * captured at parse time. If reflection failed the containing field is classified as
-     * {@link no.sikt.graphitron.rewrite.field.UnclassifiedField} by the builder and does not
+     * {@link no.sikt.graphitron.rewrite.model.UnclassifiedField} by the builder and does not
      * appear here.
      */
     record QueryServiceTableField(

@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
 /**
  * A parsed {@code @defaultOrder} directive: a normalised {@link OrderSpec} combined with a sort

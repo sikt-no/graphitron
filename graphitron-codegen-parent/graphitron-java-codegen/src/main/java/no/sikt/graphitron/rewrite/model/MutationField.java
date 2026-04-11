@@ -1,11 +1,11 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
 
 import java.util.List;
 
-import no.sikt.graphitron.rewrite.field.ArgumentRef;
-import no.sikt.graphitron.rewrite.field.ServiceMethodRef;
+import no.sikt.graphitron.rewrite.model.ArgumentRef;
+import no.sikt.graphitron.rewrite.model.ServiceMethodRef;
 
 /**
  * A field on the {@code Mutation} type. The only fields permitted to write to the database.
@@ -94,7 +94,7 @@ public sealed interface MutationField extends RootField
      *
      * <p>{@code serviceMethodRef} carries the reflected parameter list of the service method,
      * captured at parse time. If reflection failed the containing field is classified as
-     * {@link no.sikt.graphitron.rewrite.field.UnclassifiedField} by the builder and does not
+     * {@link no.sikt.graphitron.rewrite.model.UnclassifiedField} by the builder and does not
      * appear here.
      */
     record MutationServiceTableField(

@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.type;
+package no.sikt.graphitron.rewrite.model;
 
 /**
  * A field of a {@code @table}-annotated GraphQL input type, successfully resolved to a column

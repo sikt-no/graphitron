@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
 
@@ -9,7 +9,7 @@ import java.util.List;
  * <p>The three recognised variants differ in what the DataLoader key is and how it is constructed
  * from the parent record at runtime. When the declared element type cannot be classified the
  * containing field is classified as
- * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} at build time (via
+ * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} at build time (via
  * the enclosing {@link ServiceMethodRef} failing to resolve).
  *
  * <ul>

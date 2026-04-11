@@ -1,6 +1,6 @@
-package no.sikt.graphitron.rewrite.type;
+package no.sikt.graphitron.rewrite.model;
 
-import no.sikt.graphitron.rewrite.field.ColumnRef;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 
 import java.util.List;
 

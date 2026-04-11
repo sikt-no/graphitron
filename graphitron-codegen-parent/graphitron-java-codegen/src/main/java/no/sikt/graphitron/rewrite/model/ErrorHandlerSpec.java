@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.type;
+package no.sikt.graphitron.rewrite.model;
 
 import no.sikt.graphitron.configuration.ErrorHandlerType;
 

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
-import no.sikt.graphitron.rewrite.field.GraphitronField;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
 
 import java.util.List;
 

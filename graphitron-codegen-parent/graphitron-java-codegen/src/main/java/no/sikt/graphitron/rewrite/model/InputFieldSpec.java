@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.type;
+package no.sikt.graphitron.rewrite.model;
 
 /**
  * A field on a GraphQL input type, with the directive markers that generators need.

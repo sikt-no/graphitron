@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.type;
+package no.sikt.graphitron.rewrite.model;
 
 /**
  * An implementing or member type of an interface or union that carries {@code @table}.

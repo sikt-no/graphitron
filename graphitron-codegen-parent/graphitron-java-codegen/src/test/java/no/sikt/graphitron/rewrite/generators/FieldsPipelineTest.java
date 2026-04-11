@@ -24,8 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * generated class list.
  *
  * <p>Verifies that {@link FieldsClassGenerator} produces exactly one {@code *Fields} class per
- * {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableType} and
- * {@link no.sikt.graphitron.rewrite.type.GraphitronType.RootType}, named after the GraphQL type
+ * {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableType} and
+ * {@link no.sikt.graphitron.rewrite.model.GraphitronType.RootType}, named after the GraphQL type
  * (not the SQL table), and skips all other type categories.
  */
 class FieldsPipelineTest {

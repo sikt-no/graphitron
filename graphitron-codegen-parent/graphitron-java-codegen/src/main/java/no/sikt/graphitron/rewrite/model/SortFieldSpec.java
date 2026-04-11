@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
 /**
  * A single field in an explicit sort specification, parsed from {@code @order(fields:)} or

@@ -1,6 +1,6 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
-import no.sikt.graphitron.rewrite.type.TableRef;
+import no.sikt.graphitron.rewrite.model.TableRef;
 
 /**
  * Outcome of resolving the return type name of a field against the classified
@@ -8,10 +8,10 @@ import no.sikt.graphitron.rewrite.type.TableRef;
  * {@link FieldWrapper} that describes how the element type is wrapped (single, list, or connection).
  *
  * <p>{@link TableBoundReturnType} — Graphitron generates the SQL query. The named type is a
- * {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableType} or
- * {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableInterfaceType}, or the field
+ * {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableType} or
+ * {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType}, or the field
  * inherits its parent's table context ({@code NestingField}). {@code table} is always a fully
- * resolved {@link no.sikt.graphitron.rewrite.type.TableRef}; when the table name in
+ * resolved {@link no.sikt.graphitron.rewrite.model.TableRef}; when the table name in
  * {@code @table} cannot be found in the jOOQ catalog the builder classifies the containing
  * field as {@link UnclassifiedField} instead of emitting a {@link TableBoundReturnType}.
  *

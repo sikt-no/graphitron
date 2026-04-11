@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
 /**
  * Represents one argument on a field, with its resolved state.
@@ -9,7 +9,7 @@ package no.sikt.graphitron.rewrite.field;
  *   <li>{@link InputTypeArg} — the argument type is a user-defined input type (sealed):
  *     <ul>
  *       <li>{@link InputTypeArg.TableInputTypeArg} — the type was resolved to a
- *           {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType} (either via
+ *           {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType} (either via
  *           {@code @table} or by optimistic inference from the field's return type).</li>
  *       <li>{@link InputTypeArg.OrderByArg} — the argument carries {@code @orderBy}; its input
  *           type must have a specific structure (one enum with {@code @order} values, one
@@ -55,11 +55,11 @@ public sealed interface ArgumentRef
 
         /**
          * The type was resolved to a
-         * {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType}.
+         * {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType}.
          *
          * <p>Resolved either because the input type carries {@code @table}, or because the builder
          * inferred the table from the lookup field's return type. The actual
-         * {@link no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType} instance is
+         * {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType} instance is
          * available via {@link no.sikt.graphitron.rewrite.GraphitronSchema#types()}.
          */
         record TableInputTypeArg(
@@ -75,7 +75,7 @@ public sealed interface ArgumentRef
          *
          * <p>The input type must have exactly one enum field whose values carry {@code @order}
          * directives ({@code sortFieldName}) and exactly one direction enum field ({@code directionFieldName}).
-         * Valid on {@link no.sikt.graphitron.rewrite.field.QueryField.QueryTableField}; the
+         * Valid on {@link no.sikt.graphitron.rewrite.model.QueryField.QueryTableField}; the
          * validator reports an error on lookup fields.
          *
          * <p>If the input type cannot be resolved to this structure (type not found, wrong number

@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.field;
+package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
 
@@ -15,7 +15,7 @@ import java.util.List;
  *
  * <p>When a {@code @condition} method cannot be resolved via reflection the containing field is
  * classified as
- * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField} at build time.
+ * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} at build time.
  *
  * <ul>
  *   <li>{@link NoFieldCondition} — no {@code @condition} directive is present on the field

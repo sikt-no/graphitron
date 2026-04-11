@@ -30,63 +30,63 @@ import graphql.schema.idl.ScalarInfo;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.ErrorHandlerType;
-import no.sikt.graphitron.rewrite.type.ErrorHandlerSpec;
+import no.sikt.graphitron.rewrite.model.ErrorHandlerSpec;
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.rewrite.field.ChildField.ColumnField;
-import no.sikt.graphitron.rewrite.field.ChildField.ColumnReferenceField;
-import no.sikt.graphitron.rewrite.field.ChildField.ComputedField;
-import no.sikt.graphitron.rewrite.field.ChildField.InterfaceField;
-import no.sikt.graphitron.rewrite.field.ChildField.MultitableReferenceField;
-import no.sikt.graphitron.rewrite.field.ChildField.NestingField;
-import no.sikt.graphitron.rewrite.field.ChildField.NodeIdField;
-import no.sikt.graphitron.rewrite.field.ChildField.NodeIdReferenceField;
-import no.sikt.graphitron.rewrite.field.ChildField.PropertyField;
-import no.sikt.graphitron.rewrite.field.ChildField.RecordField;
-import no.sikt.graphitron.rewrite.field.ChildField.RecordLookupTableField;
-import no.sikt.graphitron.rewrite.field.ChildField.RecordTableField;
-import no.sikt.graphitron.rewrite.field.ChildField.ServiceRecordField;
-import no.sikt.graphitron.rewrite.field.ChildField.ServiceTableField;
-import no.sikt.graphitron.rewrite.field.ChildField.TableField;
-import no.sikt.graphitron.rewrite.field.ChildField.TableInterfaceField;
-import no.sikt.graphitron.rewrite.field.ChildField.TableMethodField;
-import no.sikt.graphitron.rewrite.field.ChildField.UnionField;
-import no.sikt.graphitron.rewrite.field.MutationField;
-import no.sikt.graphitron.rewrite.field.QueryField;
-import no.sikt.graphitron.rewrite.field.DefaultOrderSpec;
-import no.sikt.graphitron.rewrite.field.FieldWrapper;
-import no.sikt.graphitron.rewrite.field.FieldConditionRef;
-import no.sikt.graphitron.rewrite.field.OrderSpec;
-import no.sikt.graphitron.rewrite.field.SortFieldSpec;
-import no.sikt.graphitron.rewrite.field.ColumnRef;
-import no.sikt.graphitron.rewrite.field.GraphitronField;
-import no.sikt.graphitron.rewrite.field.GraphitronField.NotGeneratedField;
-import no.sikt.graphitron.rewrite.field.ArgumentRef;
-import no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField;
-import no.sikt.graphitron.rewrite.field.ExternalRef;
-import no.sikt.graphitron.rewrite.field.MethodRef;
-import no.sikt.graphitron.rewrite.field.ServiceMethodRef;
-import no.sikt.graphitron.rewrite.field.SourcesRef;
-import no.sikt.graphitron.rewrite.field.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.ConditionOnlyRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkRef;
-import no.sikt.graphitron.rewrite.field.ReferencePathElementRef.FkWithConditionRef;
-import no.sikt.graphitron.rewrite.type.GraphitronType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.ErrorType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.InputType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.InterfaceType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.ResultType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.TableInputType;
-import no.sikt.graphitron.rewrite.type.InputFieldRef;
-import no.sikt.graphitron.rewrite.type.InputFieldSpec;
-import no.sikt.graphitron.rewrite.type.GraphitronType.RootType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.TableInterfaceType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.TableType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.UnclassifiedType;
-import no.sikt.graphitron.rewrite.type.GraphitronType.UnionType;
-import no.sikt.graphitron.rewrite.type.NodeRef;
-import no.sikt.graphitron.rewrite.type.ParticipantRef;
-import no.sikt.graphitron.rewrite.type.TableRef;
+import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
+import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
+import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
+import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
+import no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField;
+import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
+import no.sikt.graphitron.rewrite.model.ChildField.NodeIdField;
+import no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField;
+import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
+import no.sikt.graphitron.rewrite.model.ChildField.RecordField;
+import no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField;
+import no.sikt.graphitron.rewrite.model.ChildField.RecordTableField;
+import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
+import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
+import no.sikt.graphitron.rewrite.model.ChildField.TableField;
+import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
+import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
+import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
+import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.DefaultOrderSpec;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.FieldConditionRef;
+import no.sikt.graphitron.rewrite.model.OrderSpec;
+import no.sikt.graphitron.rewrite.model.SortFieldSpec;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
+import no.sikt.graphitron.rewrite.model.ArgumentRef;
+import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
+import no.sikt.graphitron.rewrite.model.ExternalRef;
+import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.ServiceMethodRef;
+import no.sikt.graphitron.rewrite.model.SourcesRef;
+import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.ReferencePathElementRef;
+import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.ConditionOnlyRef;
+import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkRef;
+import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkWithConditionRef;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType;
+import no.sikt.graphitron.rewrite.model.InputFieldRef;
+import no.sikt.graphitron.rewrite.model.InputFieldSpec;
+import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
+import no.sikt.graphitron.rewrite.model.NodeRef;
+import no.sikt.graphitron.rewrite.model.ParticipantRef;
+import no.sikt.graphitron.rewrite.model.TableRef;
 import org.jooq.ForeignKey;
 
 import java.util.ArrayList;
@@ -593,15 +593,15 @@ public class GraphitronSchemaBuilder {
             boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
             if (hasSplitQuery && hasLookupKey) {
-                return new no.sikt.graphitron.rewrite.field.ChildField.SplitLookupTableField(
+                return new no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), args);
             }
             if (!hasSplitQuery && hasLookupKey) {
-                return new no.sikt.graphitron.rewrite.field.ChildField.LookupTableField(
+                return new no.sikt.graphitron.rewrite.model.ChildField.LookupTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), args);
             }
             if (hasSplitQuery) {
-                return new no.sikt.graphitron.rewrite.field.ChildField.SplitTableField(
+                return new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
                     parentTypeName, name, location, returnType,
                     referencePath.elements(), new FieldConditionRef.NoFieldCondition(), args);
             }
@@ -1685,7 +1685,7 @@ public class GraphitronSchemaBuilder {
      * Carries the result of {@link #parsePath}: either a fully resolved list of path elements or
      * an error message. When {@code errorMessage()} is non-null the {@code elements()} list is
      * empty and the containing field must be classified as
-     * {@link no.sikt.graphitron.rewrite.field.GraphitronField.UnclassifiedField}.
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}.
      */
     private record ParsedPath(List<ReferencePathElementRef> elements, String errorMessage) {
         boolean hasError() { return errorMessage != null; }
