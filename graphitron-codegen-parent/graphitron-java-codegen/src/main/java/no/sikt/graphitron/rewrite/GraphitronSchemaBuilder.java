@@ -53,7 +53,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ColumnOrder;
-import no.sikt.graphitron.rewrite.model.ColumnOrderEntry;
+import no.sikt.graphitron.rewrite.model.ColumnOrder.ColumnOrderEntry;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.FieldConditionRef;
 import no.sikt.graphitron.rewrite.model.ColumnRef;

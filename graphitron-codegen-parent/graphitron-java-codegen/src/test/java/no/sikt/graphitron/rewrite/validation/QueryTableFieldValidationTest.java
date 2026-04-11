@@ -2,11 +2,11 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ColumnOrder;
-import no.sikt.graphitron.rewrite.model.ColumnOrderEntry;
+import no.sikt.graphitron.rewrite.model.ColumnOrder.ColumnOrderEntry;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.OrderByEnumValueSpec;
+import no.sikt.graphitron.rewrite.model.FieldWrapper.OrderByEnumValueSpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.QueryField.QueryTableField;
 import no.sikt.graphitron.rewrite.model.TableRef;

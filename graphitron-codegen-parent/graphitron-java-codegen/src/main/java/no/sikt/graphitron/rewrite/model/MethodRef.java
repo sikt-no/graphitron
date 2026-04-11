@@ -5,10 +5,10 @@ import java.util.List;
 /**
  * A successfully resolved reference to a Java method, with reflection data captured at parse time.
  *
- * <p>A {@code MethodRef} only appears inside {@link ConditionOnlyRef} or
- * {@link FkWithConditionRef} — both of which represent resolved states. All fields are
- * non-null. When condition resolution fails the builder classifies the containing field as
- * {@link UnclassifiedField} rather than producing a {@code MethodRef}.
+ * <p>A {@code MethodRef} only appears inside {@link ReferencePathElementRef.ConditionOnlyRef} or
+ * {@link ReferencePathElementRef.FkWithConditionRef} — both of which represent resolved states.
+ * All fields are non-null. When condition resolution fails the builder classifies the containing
+ * field as {@link GraphitronField.UnclassifiedField} rather than producing a {@code MethodRef}.
  *
  * <p>{@code qualifiedName} is the fully qualified method name derived from the
  * {@code ExternalCodeReference} input object, e.g.
@@ -24,4 +24,17 @@ public record MethodRef(
     String qualifiedName,
     String returnTypeName,
     List<ParamInfo> params
-) {}
+) {
+
+    /**
+     * Reflection data for one parameter of a condition or service method.
+     *
+     * <p>{@code typeName} is the fully qualified type name (e.g. {@code "org.jooq.DSLContext"}).
+     * Used to match parameters by type when binding arguments at code-generation time.
+     *
+     * <p>{@code paramName} is the parameter name from the compiled class (requires
+     * {@code -parameters}). Used to match parameters by name when binding arguments at
+     * code-generation time.
+     */
+    public record ParamInfo(String typeName, String paramName) {}
+}

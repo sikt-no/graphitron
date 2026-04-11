@@ -4,7 +4,7 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.ConditionOnlyRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
-import no.sikt.graphitron.rewrite.model.ParamInfo;
+import no.sikt.graphitron.rewrite.model.MethodRef.ParamInfo;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
 import no.sikt.graphitron.rewrite.model.ServiceMethodRef;
