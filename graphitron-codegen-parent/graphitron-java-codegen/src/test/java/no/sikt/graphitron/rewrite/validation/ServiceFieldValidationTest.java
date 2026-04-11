@@ -196,7 +196,38 @@ class ServiceFieldValidationTest {
             "TableRecordKeyed — no PK constraint on parent table — no errors",
             filmTableType(FILM_TABLE_NO_PK),
             serviceField(new SourcesRef.TableRecordKeyed("no.sikt.graphitron.jooq.generated.tables.records.FilmRecord")),
-            List.of());
+            List.of()),
+
+        ROW_KEYED_COMPOSITE_PK_TYPE_MISMATCH(
+            "RowKeyed — composite PK parent AND wrong types — both the type-mismatch check and composite-PK check fire",
+            filmTableType(FILM_TABLE_COMPOSITE_PK),
+            new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
+                List.of(), null, List.of(), List.of(),
+                new ServiceMethodRef(
+                    // Single type arg; parent has 2-col PK — type list differs AND size > 1
+                    List.of(new ServiceParam.SourcesParam("filmKeys", new SourcesRef.RowKeyed(List.of("java.lang.Long")))),
+                    "java.lang.Object")),
+            List.of(
+                "Field 'externalChild': SOURCES parameter 'filmKeys' must be of type " +
+                    "java.util.List<org.jooq.Row2<java.lang.Integer, java.lang.Integer>>, found: " +
+                    "java.util.List<org.jooq.Row1<java.lang.Long>>",
+                "Field 'externalChild': composite primary keys are not yet supported for " +
+                    "@service DataLoader generation (table 'film')")),
+
+        MULTIPLE_SOURCES_ONE_WRONG(
+            "two SOURCES params, one correct RowKeyed and one wrong RowKeyed — only the wrong param errors",
+            filmTableType(FILM_TABLE_SINGLE_PK),
+            new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
+                List.of(), null, List.of(), List.of(),
+                new ServiceMethodRef(
+                    List.of(
+                        new ServiceParam.SourcesParam("filmKeys1", new SourcesRef.RowKeyed(List.of("java.lang.Integer"))),
+                        new ServiceParam.SourcesParam("filmKeys2", new SourcesRef.RowKeyed(List.of("java.lang.Long")))),
+                    "java.lang.Object")),
+            List.of(
+                "Field 'externalChild': SOURCES parameter 'filmKeys2' must be of type " +
+                    "java.util.List<org.jooq.Row1<java.lang.Integer>>, found: " +
+                    "java.util.List<org.jooq.Row1<java.lang.Long>>"));
 
         private final String description;
         private final GraphitronType parentType;

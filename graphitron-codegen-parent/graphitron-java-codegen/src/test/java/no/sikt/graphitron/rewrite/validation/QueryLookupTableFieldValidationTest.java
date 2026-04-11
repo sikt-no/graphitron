@@ -65,7 +65,23 @@ class QueryLookupTableFieldValidationTest {
 
         ORDERBY_ARG("@orderBy on a lookup field argument — not valid on lookup",
             singleReturn(List.of(new ArgumentRef.InputTypeArg.OrderByArg("order", "FilmOrder", false, false, "sortField", "direction"))),
-            List.of("Field 'filmById': @orderBy is not valid on a lookup field"));
+            List.of("Field 'filmById': @orderBy is not valid on a lookup field")),
+
+        MULTIPLE_ORDERBY_ARGS("two @orderBy arguments — one error per argument from the loop",
+            singleReturn(List.of(
+                new ArgumentRef.InputTypeArg.OrderByArg("order1", "FilmOrder", false, false, "sortField", "direction"),
+                new ArgumentRef.InputTypeArg.OrderByArg("order2", "FilmOrder", false, false, "sortField", "direction"))),
+            List.of(
+                "Field 'filmById': @orderBy is not valid on a lookup field",
+                "Field 'filmById': @orderBy is not valid on a lookup field")),
+
+        CONNECTION_AND_ORDERBY("connection return AND @orderBy arg — two independent errors from different branches",
+            new QueryLookupTableField("Query", "filmById", null,
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Connection(true, true, null, List.of())),
+                List.of(new ArgumentRef.InputTypeArg.OrderByArg("order", "FilmOrder", false, false, "sortField", "direction"))),
+            List.of(
+                "Field 'filmById': lookup fields must not return a connection",
+                "Field 'filmById': @orderBy is not valid on a lookup field"));
 
         private final String description;
         private final GraphitronField field;

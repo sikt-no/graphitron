@@ -68,7 +68,15 @@ class NodeIdReferenceFieldValidationTest {
                 new TableRef("film", "FILM", "Film", Optional.of(List.of())),
                 NODE,
                 List.of(new FkRef("sequel_fkey", "film", "film", List.of(), List.of()))),
-            List.of("Field 'languageId': @reference path does not lead to the table of type 'Language'"));
+            List.of("Field 'languageId': @reference path does not lead to the table of type 'Language'")),
+
+        NULL_PARENT_TABLE_IMPLICIT("null parentTable with empty path — FK check is silently skipped, no error produced",
+            new NodeIdReferenceField("SomeResult", "filmId", null, "Film",
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Single(true)),
+                null, // non-table parent — null guard in validator skips the FK count check
+                NODE,
+                List.of()),
+            List.of());
 
         private final String description;
         private final GraphitronField field;
