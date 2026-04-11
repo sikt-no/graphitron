@@ -193,14 +193,14 @@ public class FieldsCodeGenerator {
         switch (sourcesParam.sourcesRef()) {
             case SourcesRef.RowKeyed rk -> {
                 String tableField = prt.javaFieldName();
-                String pkColumn   = prt.primaryKeyColumnSqlName().toUpperCase();
+                String pkColumn   = prt.primaryKeyColumnSqlNames().get(0).toUpperCase();
                 methodBuilder.addStatement(
                     "$T key = $T.row((($T) env.getSource()).get($T.$L.$L))",
                     keyType, DSL, RECORD, tablesClass, tableField, pkColumn);
             }
             case SourcesRef.RecordKeyed rk -> {
                 String tableField = prt.javaFieldName();
-                String pkColumn   = prt.primaryKeyColumnSqlName().toUpperCase();
+                String pkColumn   = prt.primaryKeyColumnSqlNames().get(0).toUpperCase();
                 methodBuilder.addStatement(
                     "$T key = (($T) env.getSource()).into($T.$L.$L)",
                     keyType, RECORD, tablesClass, tableField, pkColumn);

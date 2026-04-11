@@ -16,8 +16,7 @@ import java.util.List;
  * (e.g. {@code "FILM"}). {@code javaClassName} is the simple class name of the generated jOOQ
  * table class (e.g. {@code "Film"}), taken directly from the live class via reflection.
  *
- * <p>{@code hasPrimaryKey} is {@code true} when the jOOQ table has a declared primary key,
- * used for deterministic-ordering validation.
+ * <p>{@code hasPrimaryKey} is {@code true} when the jOOQ table has a declared primary key.
  *
  * <p>{@code primaryKeyColumnSqlNames} is the ordered list of SQL column names that form the
  * primary key (e.g. {@code ["language_id"]}), populated from
@@ -38,28 +37,4 @@ public record TableRef(
     boolean hasPrimaryKey,
     List<String> primaryKeyColumnSqlNames,
     List<String> primaryKeyColumnJavaTypes
-) {
-
-    /**
-     * Returns the single primary-key column SQL name (e.g. {@code "language_id"}).
-     *
-     * <p>Only valid when {@code hasPrimaryKey} is {@code true} and the PK is single-column,
-     * as enforced by {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} for fields
-     * that use the DataLoader pattern. Do not call when {@code primaryKeyColumnSqlNames} may
-     * be empty or contain more than one element.
-     */
-    public String primaryKeyColumnSqlName() {
-        return primaryKeyColumnSqlNames.get(0);
-    }
-
-    /**
-     * Returns the binary Java class name of the single primary-key column
-     * (e.g. {@code "java.lang.Long"} for a {@code BIGINT} column).
-     *
-     * <p>Only valid when {@code hasPrimaryKey} is {@code true} and the PK is single-column.
-     * Do not call when {@code primaryKeyColumnJavaTypes} may be empty.
-     */
-    public String primaryKeyColumnJavaType() {
-        return primaryKeyColumnJavaTypes.get(0);
-    }
-}
+) {}
