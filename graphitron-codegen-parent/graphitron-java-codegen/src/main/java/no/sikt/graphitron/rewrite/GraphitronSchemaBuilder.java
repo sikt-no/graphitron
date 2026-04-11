@@ -226,28 +226,6 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * Optimistically promotes an {@link InputType} (no {@code @table}) to a
-     * {@link TableInputType} using {@code rt} as the implied table, or detects and records a
-     * conflict when the same input type has already been promoted with a different table.
-     *
-     * <p>Call this for every input-type argument encountered while building any field that has a
-     * resolved return table. The promotion/demotion is a side-effect on {@link #types}: no
-     * separate post-processing pass is needed.
-     */
-    private void resolveInputTypeImplicitly(String typeName, TableRef rt) {
-        if (rt == null) return;
-        var current = types.get(typeName);
-        if (current instanceof InputType it) {
-            types.put(typeName, promoteToTableInputType(it, rt));
-        } else if (current instanceof TableInputType tit
-                && !tit.table().tableName().equalsIgnoreCase(rt.tableName())) {
-            types.put(typeName, new GraphitronType.UnclassifiedType(typeName, tit.location(),
-                "used as an argument on fields with conflicting return tables: '"
-                + tit.table().tableName() + "' and '" + rt.tableName() + "'"));
-        }
-    }
-
-    /**
      * Promotes an {@link InputType} to a {@link TableInputType} by resolving each field's column
      * against the given {@link TableRef}. Returns {@link UnclassifiedType} when any field's column
      * cannot be resolved.
@@ -274,7 +252,10 @@ public class GraphitronSchemaBuilder {
     // ===== Type classification =====
 
     private Map<String, GraphitronType> buildTypes() {
-        // First pass: classify every type (interface/union participants are initially empty).
+        // First pass: classify every type. All types — including input types — are fully resolved
+        // here: input types without @table are classified by inspecting field usages in the schema
+        // (see buildInputType / findReturnTablesForInput). Interface and union participant lists
+        // are left empty at this stage because participant lookup requires the full type map.
         var result = new LinkedHashMap<String, GraphitronType>();
         schema.getAllTypesAsList().stream()
             .filter(t -> !t.getName().startsWith("__"))
@@ -506,11 +487,67 @@ public class GraphitronSchemaBuilder {
             }
             return new TableInputType(name, location, tableRef, List.copyOf(resolvedFields));
         }
-        List<InputFieldSpec> fields = inputType.getFieldDefinitions().stream()
+        // No @table — inspect all field usages across the schema to decide the final classification.
+        // Fields annotated with @service, @tableMethod, or @mutation forward their inputs as Java
+        // parameters rather than binding them to a database table; they are excluded here so they
+        // do not force implicit table promotion.
+        List<InputFieldSpec> specFields = inputType.getFieldDefinitions().stream()
             .filter(f -> !f.hasAppliedDirective(DIR_NOT_GENERATED))
             .map(this::buildInputFieldSpec)
             .toList();
-        return new InputType(name, location, fields);
+        var tables = findReturnTablesForInput(name);
+        if (tables.isEmpty()) {
+            return new InputType(name, location, specFields);
+        }
+        if (tables.size() > 1) {
+            var tableNames = String.join("', '", tables.keySet());
+            return new UnclassifiedType(name, location,
+                "used as argument on fields with conflicting return tables: '" + tableNames + "'");
+        }
+        return promoteToTableInputType(new InputType(name, location, specFields), tables.values().iterator().next());
+    }
+
+    /**
+     * Walks all field definitions in the schema and returns a map from lowercase SQL table name to
+     * {@link TableRef} for every distinct return table found on fields that:
+     * <ol>
+     *   <li>are defined on a {@link GraphQLObjectType},</li>
+     *   <li>have at least one argument whose base type is {@code inputTypeName},</li>
+     *   <li>are <em>not</em> annotated with {@code @service}, {@code @tableMethod}, or
+     *       {@code @mutation} (those directives forward their inputs as Java parameters and do not
+     *       imply a table binding), and</li>
+     *   <li>have a return type that is a {@link GraphQLObjectType} with {@code @table}.</li>
+     * </ol>
+     *
+     * <p>Used by {@link #buildInputType} to eagerly classify a non-{@code @table} input type
+     * as {@link GraphitronType.TableInputType} (one table), {@link GraphitronType.UnclassifiedType}
+     * (conflicting tables), or {@link GraphitronType.InputType} (no table usage) — entirely
+     * within the type-classification pass, without any dependency on field classification.
+     */
+    private Map<String, TableRef> findReturnTablesForInput(String inputTypeName) {
+        var tables = new LinkedHashMap<String, TableRef>();
+        for (var namedType : schema.getAllTypesAsList()) {
+            if (!(namedType instanceof GraphQLObjectType objType)) continue;
+            if (namedType.getName().startsWith("__")) continue;
+            for (var fieldDef : objType.getFieldDefinitions()) {
+                if (fieldDef.hasAppliedDirective(DIR_SERVICE)
+                        || fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)
+                        || fieldDef.hasAppliedDirective(DIR_MUTATION)) continue;
+                boolean usesInput = fieldDef.getArguments().stream()
+                    .anyMatch(arg -> inputTypeName.equals(
+                        ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(arg.getType())).getName()));
+                if (!usesInput) continue;
+                var returnBase = GraphQLTypeUtil.unwrapAll(fieldDef.getType());
+                if (!(returnBase instanceof GraphQLObjectType returnObj)) continue;
+                if (!returnObj.hasAppliedDirective(DIR_TABLE)) continue;
+                String tableName = argString(returnObj, DIR_TABLE, ARG_NAME)
+                    .orElse(returnObj.getName().toLowerCase());
+                if (!tables.containsKey(tableName.toLowerCase())) {
+                    resolveTable(tableName).ifPresent(tr -> tables.put(tableName.toLowerCase(), tr));
+                }
+            }
+        }
+        return tables;
     }
 
     private Optional<InputFieldRef> buildInputFieldRef(GraphQLInputObjectField field, TableRef resolvedTable) {
@@ -1120,11 +1157,14 @@ public class GraphitronSchemaBuilder {
     /**
      * Classifies a single GraphQL argument into an {@link ArgumentRef} variant.
      *
-     * <p>{@code rt} is the resolved table for column binding (may be {@code null} when the table
-     * is unresolved or not applicable). {@code useParamForScalars} suppresses column binding:
-     * when {@code true}, scalar arguments become {@link ArgumentRef.ScalarArg.ParamArg} (used for
-     * service and method fields where scalars are forwarded as Java parameters rather than bound
-     * to database columns).
+     * <p>{@code rt} is the resolved return table of the enclosing field, used only for binding
+     * scalar arguments to database columns (may be {@code null} when there is no table context).
+     * Input-type arguments are resolved purely from {@link #types}, which is fully populated
+     * before field classification starts — no implicit promotion is needed here.
+     *
+     * <p>{@code useParamForScalars} suppresses column binding: when {@code true}, scalar arguments
+     * become {@link ArgumentRef.ScalarArg.ParamArg} (used for service and method fields where
+     * scalars are forwarded as Java parameters rather than bound to database columns).
      */
     private ArgumentRef classifyArgument(GraphQLArgument arg, TableRef rt, boolean useParamForScalars) {
         String name = arg.getName();
@@ -1141,7 +1181,6 @@ public class GraphitronSchemaBuilder {
             return resolveOrderByArg(arg, name, typeName, nonNull, list);
         }
         if (types.containsKey(typeName)) {
-            resolveInputTypeImplicitly(typeName, rt);
             return types.get(typeName) instanceof TableInputType
                 ? new ArgumentRef.InputTypeArg.TableInputTypeArg(name, typeName, nonNull, list)
                 : new ArgumentRef.InputTypeArg.PlainInputTypeArg(name, typeName, nonNull, list);
