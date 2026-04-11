@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
+import graphql.schema.FieldCoordinates;
 
 import java.util.List;
 
@@ -19,18 +20,17 @@ public sealed interface GraphitronType
     SourceLocation location();
 
     /**
-     * A GraphQL object type that owns output fields ({@link GraphitronField} instances).
-     * Permitted subtypes are {@link TableType}, {@link ResultType}, and {@link RootType}.
+     * A GraphQL object type that owns output fields. Permitted subtypes are {@link TableType},
+     * {@link ResultType}, and {@link RootType}.
      *
-     * <p>{@code fields} holds every {@link GraphitronField} classified for this type —
-     * including {@link GraphitronField.NotGeneratedField} and
-     * {@link GraphitronField.UnclassifiedField} entries. Generators should filter those out;
-     * the validator turns {@code UnclassifiedField} into errors.
+     * <p>{@code fieldCoordinates} holds the {@link FieldCoordinates} of every field defined on
+     * this type in the schema, in declaration order. Use {@link GraphitronSchema#fieldsOf} to
+     * obtain the classified {@link GraphitronField} instances.
      */
     sealed interface OutputType extends GraphitronType
         permits GraphitronType.TableType, GraphitronType.ResultType, GraphitronType.RootType {
 
-        List<GraphitronField> fields();
+        List<FieldCoordinates> fieldCoordinates();
     }
 
     /**
@@ -49,7 +49,7 @@ public sealed interface GraphitronType
         SourceLocation location,
         TableRef table,
         NodeRef node,
-        List<GraphitronField> fields
+        List<FieldCoordinates> fieldCoordinates
     ) implements OutputType {}
 
     /**
@@ -58,7 +58,7 @@ public sealed interface GraphitronType
     record ResultType(
         String name,
         SourceLocation location,
-        List<GraphitronField> fields
+        List<FieldCoordinates> fieldCoordinates
     ) implements OutputType {}
 
     /**
@@ -68,7 +68,7 @@ public sealed interface GraphitronType
     record RootType(
         String name,
         SourceLocation location,
-        List<GraphitronField> fields
+        List<FieldCoordinates> fieldCoordinates
     ) implements OutputType {}
 
     /**

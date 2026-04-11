@@ -38,7 +38,7 @@ public class FieldsClassGenerator {
 
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, FieldsCodeGenerator codeGenerator) {
         var type = (GraphitronType.OutputType) schema.type(typeName);
-        var fields = type.fields().stream()
+        var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.NotGeneratedField))
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
             .sorted(Comparator.comparing(GraphitronField::name))
