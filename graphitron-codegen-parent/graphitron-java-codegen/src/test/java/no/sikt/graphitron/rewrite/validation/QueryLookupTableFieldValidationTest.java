@@ -29,22 +29,22 @@ class QueryLookupTableFieldValidationTest {
             singleReturn(List.of()),
             List.of()),
 
-        VALID_WITH_COLUMN_ARG("ScalarArg.ColumnArg scalar (no list) — valid with single return",
-            singleReturn(List.of(new ArgumentRef.ScalarArg.ColumnArg("id", "ID", false, false, "FILM_ID", null))),
+        VALID_WITH_COLUMN_ARG("ColumnFilterArg scalar (no list) — valid with single return",
+            singleReturn(List.of(new ArgumentRef.TableArg.ColumnFilterArg("id", "ID", false, false, "FILM_ID", null))),
             List.of()),
 
-        VALID_WITH_LIST_COLUMN_ARG("ScalarArg.ColumnArg list — valid with list return",
+        VALID_WITH_LIST_COLUMN_ARG("ColumnFilterArg list — valid with list return",
             new QueryLookupTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.List(true, true, null, List.of())),
-                List.of(new ArgumentRef.ScalarArg.ColumnArg("id", "ID", false, true, "FILM_ID", null))),
+                List.of(new ArgumentRef.TableArg.ColumnFilterArg("id", "ID", false, true, "FILM_ID", null))),
             List.of()),
 
-        VALID_WITH_TABLE_INPUT_TYPE_ARG("table input type arg — valid with single return",
-            singleReturn(List.of(new ArgumentRef.InputTypeArg.TableInputTypeArg("key", "FilmKey", false, false))),
+        VALID_WITH_TABLE_INPUT_TYPE_ARG("InputFilterArg — valid with single return",
+            singleReturn(List.of(new ArgumentRef.TableArg.InputFilterArg("key", "FilmKey", false, false))),
             List.of()),
 
-        VALID_WITH_PLAIN_INPUT_TYPE_ARG("plain input type arg — valid (error handled at type level)",
-            singleReturn(List.of(new ArgumentRef.InputTypeArg.PlainInputTypeArg("key", "FilmKey", false, false))),
+        VALID_WITH_OBJECT_PARAM_ARG("ObjectParamArg — valid (developer-owned type, no SQL generated)",
+            singleReturn(List.of(new ArgumentRef.MethodParamArg.ObjectParamArg("key", "FilmKey", false, false))),
             List.of()),
 
         LIST_RETURN_NO_LIST_ARG("list return with no list arg — cardinality mismatch",
@@ -54,7 +54,7 @@ class QueryLookupTableFieldValidationTest {
             List.of("Field 'filmById': result type does not match input cardinality")),
 
         SINGLE_RETURN_LIST_ARG("single return with list arg — cardinality mismatch",
-            singleReturn(List.of(new ArgumentRef.ScalarArg.ColumnArg("id", "ID", false, true, "FILM_ID", null))),
+            singleReturn(List.of(new ArgumentRef.TableArg.ColumnFilterArg("id", "ID", false, true, "FILM_ID", null))),
             List.of("Field 'filmById': result type does not match input cardinality")),
 
         CONNECTION_RETURN("connection return — never valid on lookup",
@@ -64,13 +64,13 @@ class QueryLookupTableFieldValidationTest {
             List.of("Field 'filmById': lookup fields must not return a connection")),
 
         ORDERBY_ARG("@orderBy on a lookup field argument — not valid on lookup",
-            singleReturn(List.of(new ArgumentRef.InputTypeArg.OrderByArg("order", "FilmOrder", false, false, "sortField", "direction"))),
+            singleReturn(List.of(new ArgumentRef.TableArg.OrderByArg("order", "FilmOrder", false, false, "sortField", "direction"))),
             List.of("Field 'filmById': @orderBy is not valid on a lookup field")),
 
         MULTIPLE_ORDERBY_ARGS("two @orderBy arguments — one error per argument from the loop",
             singleReturn(List.of(
-                new ArgumentRef.InputTypeArg.OrderByArg("order1", "FilmOrder", false, false, "sortField", "direction"),
-                new ArgumentRef.InputTypeArg.OrderByArg("order2", "FilmOrder", false, false, "sortField", "direction"))),
+                new ArgumentRef.TableArg.OrderByArg("order1", "FilmOrder", false, false, "sortField", "direction"),
+                new ArgumentRef.TableArg.OrderByArg("order2", "FilmOrder", false, false, "sortField", "direction"))),
             List.of(
                 "Field 'filmById': @orderBy is not valid on a lookup field",
                 "Field 'filmById': @orderBy is not valid on a lookup field")),
@@ -78,7 +78,7 @@ class QueryLookupTableFieldValidationTest {
         CONNECTION_AND_ORDERBY("connection return AND @orderBy arg — two independent errors from different branches",
             new QueryLookupTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Connection(true, true, null, List.of())),
-                List.of(new ArgumentRef.InputTypeArg.OrderByArg("order", "FilmOrder", false, false, "sortField", "direction"))),
+                List.of(new ArgumentRef.TableArg.OrderByArg("order", "FilmOrder", false, false, "sortField", "direction"))),
             List.of(
                 "Field 'filmById': lookup fields must not return a connection",
                 "Field 'filmById': @orderBy is not valid on a lookup field"));

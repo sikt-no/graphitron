@@ -73,7 +73,7 @@ class FieldsCodeGeneratorTest {
         return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
             List.of(), new ExternalRef("no.example.FilmService", "getFilms"),
-            List.of(new ArgumentRef.ScalarArg.ParamArg("filter", "String", false, false)),
+            List.of(new ArgumentRef.MethodParamArg.ScalarParamArg("filter", "String", false, false)),
             List.of("tenantId"), smr);
     }
 

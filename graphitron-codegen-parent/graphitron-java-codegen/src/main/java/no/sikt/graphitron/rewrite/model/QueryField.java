@@ -24,24 +24,14 @@ public sealed interface QueryField extends RootField
      * fill the batch). The {@code @lookupKey} directive is a field-level classifier only — there is
      * no per-argument semantic distinction between arguments that carry it and those that do not.
      *
-     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema. Must carry a {@link FieldWrapper.Single} wrapper — lookup fields return one result per
-     * key. The validator reports an error for list or connection wrappers.
+     * <p>{@code returnType} must carry a {@link FieldWrapper.Single} wrapper — lookup fields return
+     * one result per key. The validator reports an error for list or connection wrappers.
      *
-     * <p>{@code arguments} is the full list of arguments on the field. The validator rejects
-     * {@link ArgumentRef.InputTypeArg.OrderByArg} and {@link ArgumentRef.UnclassifiedArg} as
-     * incompatible with lookup semantics.
-     */
-    /**
-     * @param arguments all arguments classified into their resolved state. Each argument is
-     *     exactly one {@link ArgumentRef} variant: {@link ArgumentRef.InputTypeArg.TableInputTypeArg}
-     *     feeds the input-type lookup code path; {@link ArgumentRef.InputTypeArg.OrderByArg} is a
-     *     validator error on lookup fields; {@link ArgumentRef.InputTypeArg.PlainInputTypeArg} is
-     *     an unresolved input type (error handled at type level);
-     *     {@link ArgumentRef.ScalarArg.ColumnArg} and {@link ArgumentRef.ScalarArg.UnboundScalarArg}
-     *     represent scalar/list arguments with and without a resolved database column;
-     *     {@link ArgumentRef.ScalarArg.ParamArg} covers non-column-bound method parameters;
-     *     {@link ArgumentRef.UnclassifiedArg} marks arguments carrying unsupported directives.
+     * <p>{@code arguments} is the full list of arguments on the field.
+     * {@link ArgumentRef.TableArg.InputFilterArg} and {@link ArgumentRef.TableArg.ColumnFilterArg}
+     * are the expected lookup keys. {@link ArgumentRef.TableArg.OrderByArg} is rejected by the
+     * validator as incompatible with lookup semantics. {@link ArgumentRef.MethodParamArg} variants
+     * are passed through to the developer's method.
      */
     record QueryLookupTableField(
         String parentTypeName,

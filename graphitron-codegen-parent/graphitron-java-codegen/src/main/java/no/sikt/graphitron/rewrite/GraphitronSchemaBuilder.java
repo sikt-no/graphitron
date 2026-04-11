@@ -1151,7 +1151,7 @@ public class GraphitronSchemaBuilder {
      * <p>{@code rt} is the resolved return table of the enclosing field, used only for binding
      * scalar arguments to database columns (may be {@code null} when there is no table context).
      * {@code useParamForScalars} suppresses column binding: when {@code true}, scalar arguments
-     * become {@link ArgumentRef.ScalarArg.ParamArg}. Returns {@code null} and appends to
+     * become {@link ArgumentRef.MethodParamArg.ScalarParamArg}. Returns {@code null} and appends to
      * {@code errors} when classification fails.
      */
     private ArgumentRef classifyArgument(GraphQLArgument arg, TableRef rt, boolean useParamForScalars, List<String> errors) {
@@ -1170,12 +1170,12 @@ public class GraphitronSchemaBuilder {
         }
         if (types.containsKey(typeName)) {
             return types.get(typeName) instanceof TableInputType
-                ? new ArgumentRef.InputTypeArg.TableInputTypeArg(name, typeName, nonNull, list)
-                : new ArgumentRef.InputTypeArg.PlainInputTypeArg(name, typeName, nonNull, list);
+                ? new ArgumentRef.TableArg.InputFilterArg(name, typeName, nonNull, list)
+                : new ArgumentRef.MethodParamArg.ObjectParamArg(name, typeName, nonNull, list);
         }
         // Scalar arg
         if (useParamForScalars) {
-            return new ArgumentRef.ScalarArg.ParamArg(name, typeName, nonNull, list);
+            return new ArgumentRef.MethodParamArg.ScalarParamArg(name, typeName, nonNull, list);
         }
         String columnName = argString(arg, DIR_FIELD, ARG_NAME).orElse(name);
         if (rt == null) {
@@ -1188,11 +1188,11 @@ public class GraphitronSchemaBuilder {
                 + rt.tableName() + "'" + candidateHint(columnName, catalog.columnSqlNamesOf(rt.tableName())));
             return null;
         }
-        return new ArgumentRef.ScalarArg.ColumnArg(name, typeName, nonNull, list, col.get().javaName(), col.get().columnClass());
+        return new ArgumentRef.TableArg.ColumnFilterArg(name, typeName, nonNull, list, col.get().javaName(), col.get().columnClass());
     }
 
     /**
-     * Resolves an {@code @orderBy} argument to an {@link ArgumentRef.InputTypeArg.OrderByArg}.
+     * Resolves an {@code @orderBy} argument to an {@link ArgumentRef.TableArg.OrderByArg}.
      *
      * <p>Looks up the argument's input type in the schema and expects it to contain exactly one
      * enum field whose values carry {@code @order} directives (the sort field) and exactly one
@@ -1234,7 +1234,7 @@ public class GraphitronSchemaBuilder {
             errors.add("argument '" + name + "': @orderBy input type '" + typeName + "' has no direction field");
             return null;
         }
-        return new ArgumentRef.InputTypeArg.OrderByArg(name, typeName, nonNull, list, sortFieldName, directionFieldName);
+        return new ArgumentRef.TableArg.OrderByArg(name, typeName, nonNull, list, sortFieldName, directionFieldName);
     }
 
     // ===== Conflict detection helpers =====

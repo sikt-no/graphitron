@@ -145,14 +145,18 @@ public class GraphitronSchemaValidator {
         }
         for (var arg : field.arguments()) {
             switch (arg) {
-                case ArgumentRef.InputTypeArg.OrderByArg a -> errors.add(new ValidationError(
+                case ArgumentRef.TableArg.OrderByArg a -> errors.add(new ValidationError(
                     "Field '" + field.name() + "': @orderBy is not valid on a lookup field",
                     field.location()
                 ));
-                case ArgumentRef.InputTypeArg.TableInputTypeArg ignored -> {} // valid lookup input type
-                case ArgumentRef.InputTypeArg.PlainInputTypeArg ignored -> {} // valid lookup input type
-                case ArgumentRef.ScalarArg.ColumnArg ignored            -> {} // valid scalar key argument
-                case ArgumentRef.ScalarArg.ParamArg ignored             -> {} // valid direct parameter
+                case ArgumentRef.TableArg.InputFilterArg ignored    -> {} // valid lookup input filter
+                case ArgumentRef.TableArg.ColumnFilterArg ignored   -> {} // valid scalar key argument
+                case ArgumentRef.TableArg.FirstArg ignored          -> {} // valid pagination arg
+                case ArgumentRef.TableArg.LastArg ignored           -> {} // valid pagination arg
+                case ArgumentRef.TableArg.AfterArg ignored          -> {} // valid pagination arg
+                case ArgumentRef.TableArg.BeforeArg ignored         -> {} // valid pagination arg
+                case ArgumentRef.MethodParamArg.ObjectParamArg ignored -> {} // valid developer arg
+                case ArgumentRef.MethodParamArg.ScalarParamArg ignored -> {} // valid direct parameter
             }
         }
     }
