@@ -172,16 +172,21 @@ class ServiceFieldValidationTest {
                 "parent table 'film' to have a primary key")),
 
         ROW_KEYED_COMPOSITE_PK(
-            "RowKeyed — parent table has composite PK — composite PK error",
+            "RowKeyed — parent table has composite PK, types match — no errors",
             filmTableType(FILM_TABLE_COMPOSITE_PK),
             serviceField(new SourcesRef.RowKeyed(List.of("java.lang.Integer", "java.lang.Integer"))),
-            List.of("Field 'externalChild': composite primary keys are not yet supported for " +
-                "@service DataLoader generation (table 'film')")),
+            List.of()),
 
         RECORD_KEYED_MATCHING_TYPES(
             "RecordKeyed — types match parent PK — no errors",
             filmTableType(FILM_TABLE_SINGLE_PK),
             serviceField(new SourcesRef.RecordKeyed(List.of("java.lang.Integer"))),
+            List.of()),
+
+        RECORD_KEYED_COMPOSITE_PK(
+            "RecordKeyed — parent table has composite PK, types match — no errors",
+            filmTableType(FILM_TABLE_COMPOSITE_PK),
+            serviceField(new SourcesRef.RecordKeyed(List.of("java.lang.Integer", "java.lang.Integer"))),
             List.of()),
 
         RECORD_KEYED_TYPE_MISMATCH(
@@ -199,20 +204,18 @@ class ServiceFieldValidationTest {
             List.of()),
 
         ROW_KEYED_COMPOSITE_PK_TYPE_MISMATCH(
-            "RowKeyed — composite PK parent AND wrong types — both the type-mismatch check and composite-PK check fire",
+            "RowKeyed — composite PK parent AND wrong types — only the type-mismatch error fires",
             filmTableType(FILM_TABLE_COMPOSITE_PK),
             new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
                 List.of(), null, List.of(), List.of(),
                 new ServiceMethodRef(
-                    // Single type arg; parent has 2-col PK — type list differs AND size > 1
+                    // Single type arg; parent has 2-col PK — type list differs in both value and size
                     List.of(new ServiceParam.SourcesParam("filmKeys", new SourcesRef.RowKeyed(List.of("java.lang.Long")))),
                     "java.lang.Object")),
             List.of(
                 "Field 'externalChild': SOURCES parameter 'filmKeys' must be of type " +
                     "java.util.List<org.jooq.Row2<java.lang.Integer, java.lang.Integer>>, found: " +
-                    "java.util.List<org.jooq.Row1<java.lang.Long>>",
-                "Field 'externalChild': composite primary keys are not yet supported for " +
-                    "@service DataLoader generation (table 'film')")),
+                    "java.util.List<org.jooq.Row1<java.lang.Long>>")),
 
         MULTIPLE_SOURCES_ONE_WRONG(
             "two SOURCES params, one correct RowKeyed and one wrong RowKeyed — only the wrong param errors",

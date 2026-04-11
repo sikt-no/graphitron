@@ -8,6 +8,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.QueryField;
@@ -137,8 +138,8 @@ public class FieldsCodeGenerator {
      * <p>The DataLoader key type and key construction expression are determined by the
      * {@link SourcesRef} variant of the SOURCES parameter:
      * <ul>
-     *   <li>{@link SourcesRef.RowKeyed} — key is {@code Row1<T>} built via {@code DSL.row(...)}</li>
-     *   <li>{@link SourcesRef.RecordKeyed} — key is {@code Record1<T>} built via {@code record.into(field)}</li>
+     *   <li>{@link SourcesRef.RowKeyed} — key is {@code RowN<T1,...>} built via {@code DSL.row(...)}</li>
+     *   <li>{@link SourcesRef.RecordKeyed} — key is {@code RecordN<T1,...>} built via {@code record.into(field1, field2, ...)}</li>
      *   <li>{@link SourcesRef.TableRecordKeyed} — key is the whole parent record cast to the declared table-record type</li>
      * </ul>
      */
@@ -193,17 +194,25 @@ public class FieldsCodeGenerator {
         switch (sourcesParam.sourcesRef()) {
             case SourcesRef.RowKeyed rk -> {
                 String tableField = prt.javaFieldName();
-                String pkColumn   = prt.primaryKeyColumns().get().get(0).javaName();
-                methodBuilder.addStatement(
-                    "$T key = $T.row((($T) env.getSource()).get($T.$L.$L))",
-                    keyType, DSL, RECORD, tablesClass, tableField, pkColumn);
+                List<ColumnRef> pkCols = prt.primaryKeyColumns().get();
+                var rowArgs = CodeBlock.builder();
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) rowArgs.add(", ");
+                    rowArgs.add("(($T) env.getSource()).get($T.$L.$L)",
+                        RECORD, tablesClass, tableField, pkCols.get(i).javaName());
+                }
+                methodBuilder.addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build());
             }
             case SourcesRef.RecordKeyed rk -> {
                 String tableField = prt.javaFieldName();
-                String pkColumn   = prt.primaryKeyColumns().get().get(0).javaName();
-                methodBuilder.addStatement(
-                    "$T key = (($T) env.getSource()).into($T.$L.$L)",
-                    keyType, RECORD, tablesClass, tableField, pkColumn);
+                List<ColumnRef> pkCols = prt.primaryKeyColumns().get();
+                var intoArgs = CodeBlock.builder();
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) intoArgs.add(", ");
+                    intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
+                }
+                methodBuilder.addStatement("$T key = (($T) env.getSource()).into($L)",
+                    keyType, RECORD, intoArgs.build());
             }
             case SourcesRef.TableRecordKeyed trk ->
                 methodBuilder.addStatement("$T key = ($T) env.getSource()", keyType, keyType);
@@ -226,8 +235,8 @@ public class FieldsCodeGenerator {
      * <p>The {@code keys} parameter type mirrors the service method's SOURCES parameter type,
      * derived from the {@link SourcesRef} variant:
      * <ul>
-     *   <li>{@link SourcesRef.RowKeyed} — {@code List<Row1<T>>}</li>
-     *   <li>{@link SourcesRef.RecordKeyed} — {@code List<Record1<T>>}</li>
+     *   <li>{@link SourcesRef.RowKeyed} — {@code List<RowN<T1,...>>}</li>
+     *   <li>{@link SourcesRef.RecordKeyed} — {@code List<RecordN<T1,...>>}</li>
      *   <li>{@link SourcesRef.TableRecordKeyed} — {@code List<SomeTableRecord>}</li>
      * </ul>
      */

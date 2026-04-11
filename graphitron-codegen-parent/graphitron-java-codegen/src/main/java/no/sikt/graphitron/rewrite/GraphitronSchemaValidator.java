@@ -364,7 +364,7 @@ public class GraphitronSchemaValidator {
                 }
             } });
 
-        // For Row-keyed and Record-keyed, the parent must have a single-column PK so the key
+        // For Row-keyed and Record-keyed, the parent must have a PK so the key
         // expression can be built. TableRecordKeyed uses the whole parent record as the key.
         boolean hasRowOrRecordKeyed = smr.params().stream()
             .filter(p -> p instanceof no.sikt.graphitron.rewrite.model.ServiceMethodRef.ServiceParam.SourcesParam)
@@ -384,13 +384,6 @@ public class GraphitronSchemaValidator {
         if (!parentTable.hasPrimaryKey()) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': @service on a table-bound return type requires the parent table '" + parentTable.tableName() + "' to have a primary key",
-                field.location()
-            ));
-            return;
-        }
-        if (parentTable.primaryKeyColumns().map(List::size).orElse(0) > 1) {
-            errors.add(new ValidationError(
-                "Field '" + field.name() + "': composite primary keys are not yet supported for @service DataLoader generation (table '" + parentTable.tableName() + "')",
                 field.location()
             ));
         }
