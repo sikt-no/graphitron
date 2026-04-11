@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
@@ -49,7 +50,7 @@ class FieldsCodeGeneratorTest {
     private static GraphitronField splitQueryField(String parentType, String name) {
         return new ChildField.SplitTableField(parentType, name, null,
             new ReturnTypeRef.TableBoundReturnType("Film",
-                new TableRef("film", "FILM", "Film", true, List.of(), List.of()),
+                new TableRef("film", "FILM", "Film", Optional.of(List.of())),
                 new FieldWrapper.List(false, false, null, List.of())),
             List.of(), new FieldConditionRef.NoFieldCondition(), List.of());
     }
@@ -59,7 +60,7 @@ class FieldsCodeGeneratorTest {
             ? (FieldWrapper) new FieldWrapper.List(true, true, null, List.of())
             : new FieldWrapper.Single(true);
         var returnType = new ReturnTypeRef.TableBoundReturnType("Film",
-            new TableRef("film", "FILM", "Film", true, List.of(), List.of()),
+            new TableRef("film", "FILM", "Film", Optional.of(List.of())),
             returnWrapper);
         var smr = new ServiceMethodRef(
             List.of(
@@ -85,7 +86,7 @@ class FieldsCodeGeneratorTest {
     }
 
     private static TypeSpec specWithServiceField(String parentType, String fieldName, boolean isList) {
-        var parentTable = new TableRef("language", "LANGUAGE", "Language", true, List.of("language_id"), List.of("java.lang.Integer"));
+        var parentTable = new TableRef("language", "LANGUAGE", "Language", Optional.of(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer"))));
         return GEN.generate(parentType, parentTable, List.of(serviceField(parentType, fieldName, isList)));
     }
 

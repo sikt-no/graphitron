@@ -10,13 +10,14 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class NodeTypeValidationTest {
 
-    private static final TableRef RESOLVED_FILM = new TableRef("film", "FILM", "Film", true, List.of(), List.of());
+    private static final TableRef RESOLVED_FILM = new TableRef("film", "FILM", "Film", Optional.of(List.of()));
 
     enum Case implements TypeValidatorCase {
 

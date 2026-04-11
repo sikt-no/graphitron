@@ -12,11 +12,13 @@ import no.sikt.graphitron.rewrite.model.ServiceMethodRef.ServiceParam;
 import no.sikt.graphitron.rewrite.model.SourcesRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -70,7 +72,7 @@ class ServiceFieldValidationTest {
         SOURCES_CORRECT_TYPE("SOURCES param is RowKeyed — no error (parent is RootType, no PK cross-check)",
             new ServiceTableField("Film", "externalChild", null,
                 new ReturnTypeRef.TableBoundReturnType("Film",
-                    new TableRef("film", "FILM", "Film", true, List.of("film_id"), List.of("java.lang.Integer")),
+                    new TableRef("film", "FILM", "Film", Optional.of(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))),
                     new FieldWrapper.Single(true)),
                 List.of(), null, List.of(), List.of(),
                 new ServiceMethodRef(

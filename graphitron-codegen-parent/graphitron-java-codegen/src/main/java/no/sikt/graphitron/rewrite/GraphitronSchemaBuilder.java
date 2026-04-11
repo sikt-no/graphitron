@@ -449,13 +449,14 @@ public class GraphitronSchemaBuilder {
         return catalog.findTable(sqlName)
             .map(e -> {
                 var pk = e.table().getPrimaryKey();
-                List<String> pkCols = pk != null
-                    ? pk.getFields().stream().map(f -> f.getName()).toList()
-                    : List.of();
-                List<String> pkJavaTypes = pk != null
-                    ? pk.getFields().stream().map(f -> f.getType().getName()).toList()
-                    : List.of();
-                return new TableRef(sqlName, e.javaFieldName(), e.table().getClass().getSimpleName(), pk != null, pkCols, pkJavaTypes);
+                Optional<List<ColumnRef>> pkColumns = pk == null
+                    ? Optional.empty()
+                    : Optional.of(pk.getFields().stream()
+                        .map(f -> catalog.findColumn(e.table(), f.getName()))
+                        .<JooqCatalog.ColumnEntry>flatMap(Optional::stream)
+                        .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()))
+                        .toList());
+                return new TableRef(sqlName, e.javaFieldName(), e.table().getClass().getSimpleName(), pkColumns);
             });
     }
 

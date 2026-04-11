@@ -10,6 +10,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,7 +20,7 @@ class TableInterfaceFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("single cardinality — valid",
-            new TableInterfaceField("Film", "status", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.Single(true))),
+            new TableInterfaceField("Film", "status", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Single(true))),
             List.of());
 
         private final String description;

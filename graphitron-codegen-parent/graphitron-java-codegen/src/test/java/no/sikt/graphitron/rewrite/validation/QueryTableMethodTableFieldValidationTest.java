@@ -10,6 +10,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,7 +21,7 @@ class QueryTableMethodTableFieldValidationTest {
 
         VALID("single cardinality — valid",
             new QueryTableMethodTableField("Query", "filmsByMethod", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", true, List.of(), List.of()), new FieldWrapper.Single(true)), null, List.of(), List.of()),
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Single(true)), null, List.of(), List.of()),
             List.of());
 
         private final String description;

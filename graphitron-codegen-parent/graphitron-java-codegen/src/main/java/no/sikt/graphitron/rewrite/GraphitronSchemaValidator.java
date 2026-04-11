@@ -340,7 +340,9 @@ public class GraphitronSchemaValidator {
         var smr = field.serviceMethodRef();
         var parentTypeForSources = types.get(field.parentTypeName());
         List<String> parentPkJavaTypes = (parentTypeForSources instanceof TableType ttSrc)
-            ? ttSrc.table().primaryKeyColumnJavaTypes()
+            ? ttSrc.table().primaryKeyColumns()
+                .map(cols -> cols.stream().map(no.sikt.graphitron.rewrite.model.ColumnRef::columnClass).toList())
+                .orElse(List.of())
             : List.of();
 
         smr.params().stream()
@@ -396,7 +398,7 @@ public class GraphitronSchemaValidator {
             ));
             return;
         }
-        if (parentTable.primaryKeyColumnSqlNames().size() > 1) {
+        if (parentTable.primaryKeyColumns().map(List::size).orElse(0) > 1) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': composite primary keys are not yet supported for @service DataLoader generation (table '" + parentTable.tableName() + "')",
                 field.location()

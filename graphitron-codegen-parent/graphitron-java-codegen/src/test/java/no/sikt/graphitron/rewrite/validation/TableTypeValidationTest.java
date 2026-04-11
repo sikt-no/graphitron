@@ -8,6 +8,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,7 +18,7 @@ class TableTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         RESOLVED("table name resolved to a jOOQ Table — no errors",
-            new TableType("Film", null, new TableRef("film", "FILM", "Film", true, List.of(), List.of()), null),
+            new TableType("Film", null, new TableRef("film", "FILM", "Film", Optional.of(List.of())), null),
             List.of());
 
         private final String description;

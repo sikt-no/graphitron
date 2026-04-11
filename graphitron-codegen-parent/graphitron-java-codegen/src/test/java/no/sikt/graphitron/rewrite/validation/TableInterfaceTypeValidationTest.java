@@ -9,6 +9,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -18,15 +19,15 @@ class TableInterfaceTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         RESOLVED("table name resolved — no implementing types",
-            new TableInterfaceType("FilmStatus", null, "status_type", new TableRef("film_status", "FILM_STATUS", "FilmStatus", true, List.of(), List.of()), List.of()),
+            new TableInterfaceType("FilmStatus", null, "status_type", new TableRef("film_status", "FILM_STATUS", "FilmStatus", Optional.of(List.of())), List.of()),
             List.of()),
 
         RESOLVED_WITH_BOUND_PARTICIPANTS("resolved table with table-bound implementing types — valid",
             new TableInterfaceType("FilmStatus", null, "status_type",
-                new TableRef("film_status", "FILM_STATUS", "FilmStatus", true, List.of(), List.of()),
+                new TableRef("film_status", "FILM_STATUS", "FilmStatus", Optional.of(List.of())),
                 List.of(
-                    new ParticipantRef("NewFilm", new TableRef("film", "FILM", "Film", true, List.of(), List.of()), null),
-                    new ParticipantRef("OldFilm", new TableRef("film", "FILM", "Film", true, List.of(), List.of()), null)
+                    new ParticipantRef("NewFilm", new TableRef("film", "FILM", "Film", Optional.of(List.of())), null),
+                    new ParticipantRef("OldFilm", new TableRef("film", "FILM", "Film", Optional.of(List.of())), null)
                 )),
             List.of());
 
