@@ -128,8 +128,11 @@ public sealed interface GraphitronType
 
     /**
      * A GraphQL input object type with no {@code @table} binding.
-     * Field-level details are not captured here — they will be added when input-type
-     * code generation is implemented.
+     * The developer supplies the backing Java class (record, POJO, Map, JSON, etc.);
+     * Graphitron does not generate DML for it.
+     * This is the input-side counterpart of {@link ReturnTypeRef.OtherReturnType}.
+     * A backing-class discriminator will be added here when input-type code generation
+     * is implemented.
      */
     record InputType(
         String name,
@@ -137,8 +140,10 @@ public sealed interface GraphitronType
     ) implements GraphitronType {}
 
     /**
-     * A GraphQL input object type annotated with {@code @table}. Fields are resolved against the
-     * jOOQ table, enabling use of this input type in generated lookup queries.
+     * A GraphQL input object type annotated with {@code @table}.
+     * Graphitron owns the DML — fields are resolved against the jOOQ table so that
+     * INSERT/UPDATE/DELETE statements can be generated directly.
+     * This is the input-side counterpart of {@link ReturnTypeRef.TableBoundReturnType}.
      *
      * <p>{@code table} is the resolved jOOQ table (always present — failure to resolve produces
      * {@link UnclassifiedType}). All {@code inputFields} are fully resolved {@link InputFieldRef}
