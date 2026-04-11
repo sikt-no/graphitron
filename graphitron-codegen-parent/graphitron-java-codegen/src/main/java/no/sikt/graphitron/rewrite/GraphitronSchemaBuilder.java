@@ -238,7 +238,8 @@ public class GraphitronSchemaBuilder {
                 .map(e -> new InputFieldRef(spec.name(), spec.typeName(), spec.nonNull(), spec.list(),
                     resolvedTable, e.javaName(), e.columnClass()));
             if (found.isEmpty()) {
-                errors.add("field '" + spec.name() + "' column '" + spec.columnName() + "' could not be resolved in the jOOQ table");
+                errors.add("field '" + spec.name() + "' column '" + spec.columnName() + "' could not be resolved in the jOOQ table"
+                    + candidateHint(spec.columnName(), catalog.columnSqlNamesOf(resolvedTable.tableName())));
             } else {
                 resolvedFields.add(found.get());
             }
@@ -393,7 +394,8 @@ public class GraphitronSchemaBuilder {
         String tableName = argString(objType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
         Optional<TableRef> tableOpt = resolveTable(tableName);
         if (tableOpt.isEmpty()) {
-            return new UnclassifiedType(name, location, "table '" + tableName + "' could not be resolved in the jOOQ catalog");
+            return new UnclassifiedType(name, location, "table '" + tableName + "' could not be resolved in the jOOQ catalog"
+                + candidateHint(tableName, catalog.allTableSqlNames()));
         }
         TableRef tableRef = tableOpt.get();
         if (!objType.hasAppliedDirective(DIR_NODE)) {
@@ -407,7 +409,8 @@ public class GraphitronSchemaBuilder {
         for (String colName : keyColumnNames) {
             Optional<ColumnRef> kc = resolveKeyColumn(colName, tableRef.tableName());
             if (kc.isEmpty()) {
-                keyColumnErrors.add("key column '" + colName + "' in @node could not be resolved in the jOOQ table");
+                keyColumnErrors.add("key column '" + colName + "' in @node could not be resolved in the jOOQ table"
+                    + candidateHint(colName, catalog.columnSqlNamesOf(tableRef.tableName())));
             } else {
                 keyColumns.add(kc.get());
             }
@@ -424,7 +427,8 @@ public class GraphitronSchemaBuilder {
         String tableName = argString(iface, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
         Optional<TableRef> tableOpt = resolveTable(tableName);
         if (tableOpt.isEmpty()) {
-            return new UnclassifiedType(name, location, "table '" + tableName + "' could not be resolved in the jOOQ catalog");
+            return new UnclassifiedType(name, location, "table '" + tableName + "' could not be resolved in the jOOQ catalog"
+                + candidateHint(tableName, catalog.allTableSqlNames()));
         }
         String discriminatorColumn = argString(iface, DIR_DISCRIMINATE, ARG_ON).orElse(null);
         return new TableInterfaceType(name, location, discriminatorColumn, tableOpt.get(), List.of());
@@ -471,7 +475,8 @@ public class GraphitronSchemaBuilder {
             String tableName = argString(inputType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
             Optional<TableRef> tableOpt = resolveTable(tableName);
             if (tableOpt.isEmpty()) {
-                return new UnclassifiedType(name, location, "table '" + tableName + "' could not be resolved in the jOOQ catalog");
+                return new UnclassifiedType(name, location, "table '" + tableName + "' could not be resolved in the jOOQ catalog"
+                    + candidateHint(tableName, catalog.allTableSqlNames()));
             }
             TableRef tableRef = tableOpt.get();
             var errors = new ArrayList<String>();
@@ -481,7 +486,8 @@ public class GraphitronSchemaBuilder {
                 if (field.isEmpty()) {
                     String colName = f.hasAppliedDirective(DIR_FIELD)
                         ? argString(f, DIR_FIELD, ARG_NAME).orElse(f.getName()) : f.getName();
-                    errors.add("field '" + f.getName() + "' column '" + colName + "' could not be resolved in the jOOQ table");
+                    errors.add("field '" + f.getName() + "' column '" + colName + "' could not be resolved in the jOOQ table"
+                        + candidateHint(colName, catalog.columnSqlNamesOf(tableRef.tableName())));
                 } else {
                     resolvedFields.add(field.get());
                 }
@@ -1212,11 +1218,8 @@ public class GraphitronSchemaBuilder {
         }
         var col = catalog.findColumn(rt.tableName(), columnName);
         if (col.isEmpty()) {
-            var available = catalog.columnSqlNamesOf(rt.tableName()).stream()
-                .sorted(Comparator.comparingInt(c -> hammingDistance(columnName.toLowerCase(), c.toLowerCase())))
-                .toList();
-            String hint = available.isEmpty() ? "" : "; available columns: " + String.join(", ", available);
-            errors.add("argument '" + name + "': column '" + columnName + "' could not be resolved in table '" + rt.tableName() + "'" + hint);
+            errors.add("argument '" + name + "': column '" + columnName + "' could not be resolved in table '"
+                + rt.tableName() + "'" + candidateHint(columnName, catalog.columnSqlNamesOf(rt.tableName())));
             return null;
         }
         return new ArgumentRef.ScalarArg.ColumnArg(name, typeName, nonNull, list, col.get().javaName(), col.get().columnClass());
@@ -1500,7 +1503,8 @@ public class GraphitronSchemaBuilder {
                 var targetGType = types.get(typeName.get());
                 if (targetGType == null) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        "@nodeId(typeName:) type '" + typeName.get() + "' does not exist in the schema");
+                        "@nodeId(typeName:) type '" + typeName.get() + "' does not exist in the schema"
+                        + candidateHint(typeName.get(), new ArrayList<>(types.keySet())));
                 }
                 if (!(targetGType instanceof TableType targetTableType) || targetTableType.node() == null) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,
@@ -1537,8 +1541,10 @@ public class GraphitronSchemaBuilder {
             }
             Optional<ColumnRef> column = resolveColumnForReference(columnName, refPath.elements(), tableType);
             if (column.isEmpty()) {
+                String terminalTable = terminalTableSqlNameForReference(refPath.elements(), tableType);
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                    "column '" + columnName + "' could not be resolved in the jOOQ table");
+                    "column '" + columnName + "' could not be resolved in the jOOQ table"
+                    + (terminalTable != null ? candidateHint(columnName, catalog.columnSqlNamesOf(terminalTable)) : ""));
             }
             return new ColumnReferenceField(parentTypeName, name, location, columnName, column.get(), refPath.elements(), javaNamePresent);
         }
@@ -1546,7 +1552,8 @@ public class GraphitronSchemaBuilder {
         Optional<ColumnRef> column = resolveColumn(columnName, tableType);
         if (column.isEmpty()) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                "column '" + columnName + "' could not be resolved in the jOOQ table");
+                "column '" + columnName + "' could not be resolved in the jOOQ table"
+                + candidateHint(columnName, catalog.columnSqlNamesOf(tableType.table().tableName())));
         }
         return new ColumnField(parentTypeName, name, location, columnName, column.get(), javaNamePresent);
     }
@@ -1556,15 +1563,22 @@ public class GraphitronSchemaBuilder {
     }
 
     private Optional<ColumnRef> resolveColumnForReference(String columnName, List<ReferencePathElementRef> path, TableType sourceType) {
-        String currentTableSqlName = sourceType.table().tableName();
+        String terminal = terminalTableSqlNameForReference(path, sourceType);
+        if (terminal == null) return Optional.empty();
+        return resolveColumnInTable(columnName, terminal);
+    }
+
+    /**
+     * Walks the FK path to compute the terminal table SQL name. Returns {@code null} when any
+     * path step is not a {@link FkRef} (i.e. the path is structurally invalid).
+     */
+    private String terminalTableSqlNameForReference(List<ReferencePathElementRef> path, TableType sourceType) {
+        String current = sourceType.table().tableName();
         for (var step : path) {
-            if (step instanceof FkRef fk) {
-                currentTableSqlName = fk.keyTableSqlName();
-            } else {
-                return Optional.empty();
-            }
+            if (!(step instanceof FkRef fk)) return null;
+            current = fk.keyTableSqlName();
         }
-        return resolveColumnInTable(columnName, currentTableSqlName);
+        return current;
     }
 
     private Optional<ColumnRef> resolveColumnInTable(String columnName, String tableSqlName) {
@@ -1673,7 +1687,8 @@ public class GraphitronSchemaBuilder {
                     resolveFkColumns(f.getKey().getTable(), f.getKey().getFields()),
                     resolveFkColumns(f.getTable(), f.getFields())));
             } else {
-                errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog");
+                errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog"
+                    + candidateHint(keyName.get(), catalog.allForeignKeySqlNames()));
             }
             return;
         }
@@ -1692,7 +1707,8 @@ public class GraphitronSchemaBuilder {
                     resolveFkColumns(f.getKey().getTable(), f.getKey().getFields()),
                     resolveFkColumns(f.getTable(), f.getFields())));
             } else {
-                if (fk.isEmpty()) errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog");
+                if (fk.isEmpty()) errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog"
+                    + candidateHint(keyName.get(), catalog.allForeignKeySqlNames()));
                 if (resolved == null) errors.add("condition method '" + condName + "' could not be resolved");
             }
             return;
@@ -1748,8 +1764,13 @@ public class GraphitronSchemaBuilder {
                 .filter(m -> m.getName().equals(serviceRef.methodName()))
                 .toList();
             if (methods.isEmpty()) {
+                var declaredMethodNames = java.util.Arrays.stream(cls.getDeclaredMethods())
+                    .map(java.lang.reflect.Method::getName)
+                    .distinct()
+                    .toList();
                 return new ServiceReflectionResult(null,
-                    "method '" + serviceRef.methodName() + "' not found in class '" + serviceRef.className() + "'");
+                    "method '" + serviceRef.methodName() + "' not found in class '" + serviceRef.className() + "'"
+                    + candidateHint(serviceRef.methodName(), declaredMethodNames));
             }
             var method = methods.get(0);
             var params = new ArrayList<ServiceMethodRef.ServiceParam>();
@@ -1993,8 +2014,8 @@ public class GraphitronSchemaBuilder {
 
     /**
      * Hamming distance between two strings, with the shorter string zero-padded to the length of
-     * the longer. Counts the number of positions where the characters differ. Useful for sorting
-     * column name candidates by similarity to a search term.
+     * the longer. Counts the number of positions where the characters differ. Used to sort
+     * candidate name lists in error messages by similarity to the attempted name.
      */
     private static int hammingDistance(String a, String b) {
         int len = Math.max(a.length(), b.length());
@@ -2005,5 +2026,18 @@ public class GraphitronSchemaBuilder {
             if (ca != cb) dist++;
         }
         return dist;
+    }
+
+    /**
+     * Builds a {@code "; available: X, Y, Z"} hint string for error messages, listing
+     * {@code candidates} sorted by case-insensitive Hamming distance from {@code attempt}.
+     * Returns an empty string when {@code candidates} is empty.
+     */
+    private String candidateHint(String attempt, List<String> candidates) {
+        if (candidates.isEmpty()) return "";
+        String lc = attempt.toLowerCase();
+        return "; available: " + candidates.stream()
+            .sorted(Comparator.comparingInt(c -> hammingDistance(lc, c.toLowerCase())))
+            .collect(Collectors.joining(", "));
     }
 }

@@ -37,6 +37,31 @@ public class JooqCatalog {
     }
 
     /**
+     * Returns the SQL names of all tables known to the catalog, in the order they appear in the
+     * generated {@code Tables} class. Used to build candidate hints in error messages.
+     */
+    public java.util.List<String> allTableSqlNames() {
+        return catalog.schemaStream()
+            .flatMap(schema -> tablesClass(schema).stream())
+            .flatMap(cls -> Arrays.stream(cls.getFields()))
+            .filter(f -> Table.class.isAssignableFrom(f.getType()))
+            .map(f -> ((Table<?>) fieldValue(f)).getName())
+            .toList();
+    }
+
+    /**
+     * Returns the SQL constraint names of all foreign keys known to the catalog.
+     * Used to build candidate hints when a {@code @reference(key:)} name cannot be resolved.
+     */
+    public java.util.List<String> allForeignKeySqlNames() {
+        return catalog.schemaStream()
+            .flatMap(schema -> schema.getTables().stream())
+            .flatMap(table -> table.getReferences().stream())
+            .map(fk -> fk.getName())
+            .toList();
+    }
+
+    /**
      * Find a foreign key by name, searching all schemas in the catalog.
      * First tries matching by SQL constraint name (e.g. {@code "film_language_id_fkey"}),
      * then falls back to matching by the jOOQ-generated Java constant name
