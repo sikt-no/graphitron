@@ -141,6 +141,23 @@ public class JooqCatalog {
     }
 
     /**
+     * Returns all columns for the given table, in the order they appear in the generated jOOQ
+     * table class. Each entry includes the Java field name, fully qualified column type, SQL name,
+     * and nullability. Returns an empty list when the table cannot be found.
+     */
+    public java.util.List<ColumnEntry> allColumnsOf(String tableSqlName) {
+        return findTable(tableSqlName)
+            .map(te -> Arrays.stream(te.table().getClass().getFields())
+                .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
+                .map(f -> {
+                    var col = (org.jooq.Field<?>) instanceFieldValue(f, te.table());
+                    return new ColumnEntry(f.getName(), col.getType().getName(), col.getName(), col.getDataType().nullable());
+                })
+                .toList())
+            .orElse(java.util.List.of());
+    }
+
+    /**
      * Find a column in a table by its SQL name. Returns the Java field name in the generated table
      * class (e.g. {@code "FILM_ID"}) and the fully qualified column type name. Uses reflection to
      * read the actual Java identifier name, which respects custom jOOQ naming strategies rather
@@ -151,7 +168,7 @@ public class JooqCatalog {
             .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
             .map(f -> {
                 var col = (org.jooq.Field<?>) instanceFieldValue(f, table);
-                return new ColumnEntry(f.getName(), col.getType().getName(), col.getName());
+                return new ColumnEntry(f.getName(), col.getType().getName(), col.getName(), col.getDataType().nullable());
             })
             .filter(e -> sqlColumnName.equalsIgnoreCase(e.sqlName()))
             .findFirst();
@@ -212,7 +229,8 @@ public class JooqCatalog {
      * <p>{@code javaName} is the Java field name in the generated jOOQ table class
      * (e.g. {@code "FILM_ID"}). {@code columnClass} is the fully qualified Java type name of the
      * column (e.g. {@code "java.lang.Long"}). {@code sqlName} is the SQL column name used
-     * internally for filtering; it is not exposed beyond the catalog.
+     * internally for filtering; it is not exposed beyond the catalog. {@code nullable} reflects
+     * the column's nullability as declared in the jOOQ data type.
      */
-    public record ColumnEntry(String javaName, String columnClass, String sqlName) {}
+    public record ColumnEntry(String javaName, String columnClass, String sqlName, boolean nullable) {}
 }
