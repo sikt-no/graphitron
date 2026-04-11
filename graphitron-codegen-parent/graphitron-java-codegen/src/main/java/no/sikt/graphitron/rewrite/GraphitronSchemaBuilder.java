@@ -30,7 +30,6 @@ import graphql.schema.idl.ScalarInfo;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.ErrorHandlerType;
-import no.sikt.graphitron.rewrite.model.ErrorHandlerSpec;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
@@ -464,9 +463,9 @@ public class GraphitronSchemaBuilder {
         var handlersArg = dir.getArgument(ARG_HANDLERS);
         Object value = handlersArg.getValue();
         List<?> items = value instanceof List<?> l ? l : List.of(value);
-        List<ErrorHandlerSpec> handlers = items.stream()
+        List<ErrorType.Handler> handlers = items.stream()
             .filter(v -> v instanceof Map)
-            .map(v -> parseErrorHandlerSpec(asMap(v)))
+            .map(v -> parseErrorHandler(asMap(v)))
             .toList();
         return new ErrorType(name, location, handlers);
     }
@@ -559,7 +558,7 @@ public class GraphitronSchemaBuilder {
             .map(e -> new InputFieldRef(name, typeName, nonNull, list, resolvedTable, e.javaName(), e.columnClass()));
     }
 
-    private ErrorHandlerSpec parseErrorHandlerSpec(Map<String, Object> item) {
+    private ErrorType.Handler parseErrorHandler(Map<String, Object> item) {
         Object handlerRaw = item.get(ARG_HANDLER);
         ErrorHandlerType handlerType = handlerRaw != null
             ? ErrorHandlerType.valueOf(handlerRaw.toString())
@@ -572,7 +571,7 @@ public class GraphitronSchemaBuilder {
         String sqlState = Optional.ofNullable(item.get(ARG_SQL_STATE)).map(Object::toString).map(String::strip).orElse(null);
         String matches = Optional.ofNullable(item.get(ARG_MATCHES)).map(Object::toString).map(String::strip).orElse(null);
         String description = Optional.ofNullable(item.get(ARG_DESCRIPTION)).map(Object::toString).map(String::strip).orElse(null);
-        return new ErrorHandlerSpec(handlerType, className, code, sqlState, matches, description);
+        return new ErrorType.Handler(handlerType, className, code, sqlState, matches, description);
     }
 
     // ===== Object-return child field classification (P2+) =====

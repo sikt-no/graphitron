@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import graphql.language.SourceLocation;
 import graphql.schema.FieldCoordinates;
 
+import no.sikt.graphitron.configuration.ErrorHandlerType;
 import java.util.List;
 
 /**
@@ -131,14 +132,32 @@ public sealed interface GraphitronType
     /**
      * An object type annotated with {@code @error}. Maps Java exceptions to GraphQL error responses.
      *
-     * <p>{@code handlers} holds one {@link ErrorHandlerSpec} per entry in the {@code handlers}
+     * <p>{@code handlers} holds one {@link Handler} per entry in the {@code handlers}
      * argument of the {@code @error} directive.
      */
     record ErrorType(
         String name,
         SourceLocation location,
-        List<ErrorHandlerSpec> handlers
-    ) implements GraphitronType {}
+        List<Handler> handlers
+    ) implements GraphitronType {
+
+        /**
+         * One entry in the {@code handlers} argument of the {@code @error} directive.
+         *
+         * <p>{@code handlerType} is DATABASE or GENERIC.
+         * {@code className} is the fully-qualified Java exception class name; may be {@code null}
+         * for DATABASE handlers. {@code code}, {@code sqlState}, and {@code matches} are optional
+         * discriminators; {@code description} is an optional user-facing message.
+         */
+        public record Handler(
+            ErrorHandlerType handlerType,
+            String className,
+            String code,
+            String sqlState,
+            String matches,
+            String description
+        ) {}
+    }
 
     /**
      * A GraphQL input object type with no {@code @table} binding.
