@@ -25,24 +25,33 @@ public interface GraphitronContext {
      * Returns the name under which Graphitron will register and look up the DataLoader for the
      * field currently being resolved.
      *
-     * <p>The name must uniquely identify the <em>(parent type, field)</em> pair — for example
-     * {@code "Film/actors"} or {@code "User/orders"}. Graphitron calls this method once per source
-     * object (e.g. once per Film row) and uses {@code DataLoaderRegistry.computeIfAbsent} so that
-     * all calls for the same field within a single request share one DataLoader instance, enabling
-     * batching.
+     * <p>Graphitron calls this method once per source object (e.g. once per Film row) and uses
+     * {@code DataLoaderRegistry.computeIfAbsent} so that all calls for the same field position
+     * within a single request share one DataLoader instance, enabling batching.
      *
-     * <p><strong>Why the name must encode the field path:</strong> GraphQL-Java merges selection
-     * sets for all occurrences of the same field within a request, so every DataLoader consumer
-     * for a given (parent type, field) pair sees an identical selection set. A name that encodes
-     * the field path therefore guarantees both correct batching and a consistent view of which
-     * columns to fetch. Using the same name for different fields would cause them to share a
-     * DataLoader and batch incorrectly.
+     * <p><strong>The name must encode the full field path, not just the parent type and field
+     * name.</strong> Different parts of the same query can reach the same GraphQL type through
+     * different paths with different arguments and selection sets:
      *
-     * <p>The {@code env} parameter gives access to {@code env.getParentType().getName()} and
-     * {@code env.getField().getName()} if you want to derive the name automatically.
+     * <pre>{@code
+     * {
+     *   user   { friends { orders(status: "open")   { id total  } } }
+     *   topUser {          orders(status: "closed")  { id status } }
+     * }
+     * }</pre>
+     *
+     * Both resolve {@code User.orders}, but with different arguments and different selected fields.
+     * Using {@code "User/orders"} as the name for both would batch them into one DataLoader,
+     * causing incorrect results. The path — available as
+     * {@code env.getExecutionStepInfo().getPath()} — distinguishes them:
+     * {@code /user/friends/orders} vs {@code /topUser/orders}.
+     *
+     * <p>Strip integer segments (list indices) from the path before using it as the name:
+     * {@code /user/friends/0/orders} and {@code /user/friends/1/orders} are the same field
+     * position and must share a DataLoader for batching to work.
      *
      * @param env the DataFetchingEnvironment for the field currently being resolved
-     * @return a name that is unique per (parent type, field) pair
+     * @return a name that is unique per field path (without list indices) within the query
      */
     String getDataLoaderName(DataFetchingEnvironment env);
 }
