@@ -16,13 +16,12 @@ import java.util.List;
 public sealed interface ChildField extends GraphitronField
     permits ChildField.ColumnField, ChildField.ColumnReferenceField,
             ChildField.NodeIdField, ChildField.NodeIdReferenceField,
-            ChildField.TableField, ChildField.SplitTableField,
-            ChildField.LookupTableField, ChildField.SplitLookupTableField,
+            ChildField.TableTargetField,
             ChildField.TableMethodField,
-            ChildField.TableInterfaceField, ChildField.InterfaceField, ChildField.UnionField,
+            ChildField.InterfaceField, ChildField.UnionField,
             ChildField.NestingField, ChildField.ConstructorField,
-            ChildField.ServiceTableField, ChildField.ServiceRecordField,
-            ChildField.RecordTableField, ChildField.RecordLookupTableField, ChildField.RecordField,
+            ChildField.ServiceRecordField,
+            ChildField.RecordField,
             ChildField.ComputedField, ChildField.PropertyField,
             ChildField.MultitableReferenceField {
 
@@ -167,6 +166,27 @@ public sealed interface ChildField extends GraphitronField
     ) implements ChildField {}
 
     /**
+     * A child field whose result type is annotated with {@code @table}.
+     *
+     * <p>Mirrors {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType} on the type
+     * side. All sub-types navigate from the parent context to a new table scope via an optional join
+     * path, and carry a fully resolved {@link ReturnTypeRef.TableBoundReturnType}.
+     *
+     * <p>{@link NestingField} is intentionally excluded: it carries a {@link ReturnTypeRef.TableBoundReturnType}
+     * but does not navigate — it inherits the parent's table context unchanged.
+     */
+    sealed interface TableTargetField extends ChildField
+        permits ChildField.TableField, ChildField.SplitTableField,
+                ChildField.LookupTableField, ChildField.SplitLookupTableField,
+                ChildField.TableInterfaceField,
+                ChildField.ServiceTableField,
+                ChildField.RecordTableField, ChildField.RecordLookupTableField {
+
+        ReturnTypeRef.TableBoundReturnType returnType();
+        List<JoinStep> joinPath();
+    }
+
+    /**
      * A child field whose return type is annotated with {@code @table} — inline join or DataLoader
      * depending on source context. No {@code @splitQuery}, no {@code @lookupKey}.
      *
@@ -195,7 +215,7 @@ public sealed interface ChildField extends GraphitronField
         List<JoinStep> joinPath,
         FieldCondition condition,
         List<ArgumentRef> arguments
-    ) implements ChildField {}
+    ) implements TableTargetField {}
 
     /**
      * A child field whose return type is annotated with {@code @table} and which carries
@@ -216,7 +236,7 @@ public sealed interface ChildField extends GraphitronField
         List<JoinStep> joinPath,
         FieldCondition condition,
         List<ArgumentRef> arguments
-    ) implements ChildField {}
+    ) implements TableTargetField {}
 
     /**
      * A child field whose arguments carry {@code @lookupKey} — no {@code @splitQuery}.
@@ -244,7 +264,7 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef.TableBoundReturnType returnType,
         List<JoinStep> joinPath,
         List<ArgumentRef> arguments
-    ) implements ChildField {}
+    ) implements TableTargetField {}
 
     /**
      * A child field whose arguments carry {@code @lookupKey} and which also carries
@@ -266,7 +286,7 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef.TableBoundReturnType returnType,
         List<JoinStep> joinPath,
         List<ArgumentRef> arguments
-    ) implements ChildField {}
+    ) implements TableTargetField {}
 
     /**
      * A child field using {@code @tableMethod} — the developer provides a pre-filtered {@code Table<?>}.
@@ -315,7 +335,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         List<JoinStep> joinPath
-    ) implements ChildField {}
+    ) implements TableTargetField {}
 
     /**
      * A child field whose return type is a multi-table interface.
@@ -402,7 +422,7 @@ public sealed interface ChildField extends GraphitronField
         List<ArgumentRef> arguments,
         List<String> contextArguments,
         MethodRef method
-    ) implements ChildField {}
+    ) implements TableTargetField {}
 
     /**
      * A child field delegating to a developer-provided service class via {@code @service}, where
@@ -459,7 +479,7 @@ public sealed interface ChildField extends GraphitronField
         List<JoinStep> joinPath,
         FieldCondition condition,
         List<ArgumentRef> arguments
-    ) implements ChildField {}
+    ) implements TableTargetField {}
 
     /**
      * A child field on a result-mapped parent whose arguments carry {@code @lookupKey} and whose
@@ -479,7 +499,7 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef.TableBoundReturnType returnType,
         List<JoinStep> joinPath,
         List<ArgumentRef> arguments
-    ) implements ChildField {}
+    ) implements TableTargetField {}
 
     /**
      * A child field on a result-mapped parent whose return type is itself result-mapped —
