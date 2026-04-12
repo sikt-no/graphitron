@@ -1578,8 +1578,10 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * Returns an {@link ExternalRef} from the {@code ExternalCodeReference} input object at
-     * argument {@code argName} of the given directive on {@code fieldDef}.
+     * Parses the {@code ExternalCodeReference} input object at argument {@code argName} of the
+     * given directive on {@code fieldDef} and returns a builder-private {@code ExternalRef} holding
+     * the {@code className} and {@code method} strings. Returns {@code null} when the directive or
+     * argument is absent.
      */
     private ExternalRef parseExternalRef(GraphQLFieldDefinition fieldDef, String directiveName, String argName) {
         var dir = fieldDef.getAppliedDirective(directiveName);
