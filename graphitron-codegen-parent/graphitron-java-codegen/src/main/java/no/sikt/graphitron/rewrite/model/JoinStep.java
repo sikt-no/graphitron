@@ -8,31 +8,58 @@ package no.sikt.graphitron.rewrite.model;
  * be classified as {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}.
  *
  * <ul>
- *   <li>{@link FkJoin} — navigate via a jOOQ foreign key (INNER or LEFT JOIN via
- *       {@code .join(table).onKey(fk)}), with an optional WHERE filter on the enclosing
- *       SELECT.</li>
+ *   <li>{@link FkJoin} — navigate via a jOOQ foreign key ({@code .join(table).onKey(fk)}),
+ *       with an optional WHERE filter on the enclosing SELECT.</li>
  *   <li>{@link ConditionJoin} — navigate via a user-supplied condition method (no FK constraint);
  *       the condition becomes the ON clause of an explicit JOIN.</li>
  * </ul>
  *
- * <p><b>Contrast between the two variants:</b>
+ * <p><b>Variant contrast:</b>
  * <pre>
  *   FkJoin (key only):          .join(target).onKey(FK)
  *   FkJoin (key + whereFilter): .join(target).onKey(FK) ... .where(filter(src, target))
  *   ConditionJoin:              .join(target).on(condition(src, target))
  * </pre>
- * The critical difference is that {@code whereFilter} is a WHERE clause on the enclosing SELECT —
- * it does not affect the JOIN's ON clause. {@link ConditionJoin#condition} is the ON clause.
+ * {@code whereFilter} is a WHERE clause on the enclosing SELECT — it does not affect the JOIN's
+ * ON clause. {@link ConditionJoin#condition} is the ON clause.
+ *
+ * <h2>Cardinality invariant</h2>
+ *
+ * <p>A {@code @reference} join path must never change the cardinality of the source row set.
+ * Two structural rules enforce this:
+ *
+ * <ol>
+ *   <li><b>No row elimination.</b> A source row must always produce at least one output row.
+ *       This depends on the query structure the generator chooses:
+ *       <ul>
+ *         <li><em>Correlated subquery</em> (scalar or multiset subselect): the outer row
+ *             survives regardless of whether the inner join matches, so INNER JOIN is safe and
+ *             preferred inside the subquery. A non-matching inner join simply makes the subquery
+ *             return {@code NULL} or an empty array.</li>
+ *         <li><em>Flat batch join</em> (DataLoader / split query): all source keys must appear
+ *             in the result set so the DataLoader can align results to keys. INNER JOIN would
+ *             silently drop source rows where the FK is {@code NULL}. LEFT JOIN is mandatory.</li>
+ *       </ul>
+ *       The join type is therefore a <em>generation-time decision</em> based on query structure,
+ *       not a property of the step itself.</li>
+ *
+ *   <li><b>No unintended row multiplication.</b> Fan-out (one source row producing many output
+ *       rows) is only valid when the referencing field returns a list or connection — in which case
+ *       fan-out is the <em>intended</em> result, collected and grouped by the DataLoader. For a
+ *       single-value field, any fan-out is a schema error. The validator is responsible for
+ *       detecting mis-directed FK traversal (one-to-many navigation on a single-value field) and
+ *       rejecting it.</li>
+ * </ol>
  */
 public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin {
 
     /**
      * One hop navigated by a jOOQ foreign key.
      *
-     * <p>The generator emits {@code .join(targetTable).onKey(fk)} for this step, producing an
-     * INNER JOIN (or LEFT JOIN when the referencing field is nullable). The target table and FK
-     * constant are derived at code-generation time from the stored SQL names and FK constraint name
-     * using jOOQ's naming conventions.
+     * <p>The generator emits {@code .join(targetTable).onKey(fk)} for this step. Whether it is an
+     * INNER or LEFT JOIN depends on the surrounding query structure (see the interface-level
+     * cardinality invariant). The target table and FK constant are derived at code-generation time
+     * from the stored SQL names and FK constraint name using jOOQ's naming conventions.
      *
      * <p>{@code fkName} is the SQL constraint name (e.g. {@code "film_language_id_fkey"}), used to
      * look up the jOOQ FK constant (e.g. {@code Keys.FK_FILM__FILM_LANGUAGE_ID_FKEY}).
@@ -62,7 +89,7 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * database foreign key for this join step. Typical use: reconnecting a service or
      * {@code @externalField} result back to the parent table when no FK exists.
      *
-     * <p>Contrast with {@link FkJoin#whereFilter}: that field is a WHERE filter on the enclosing
+     * <p>Contrast with {@link FkJoin#whereFilter}: that field is a WHERE clause on the enclosing
      * SELECT; this condition is the JOIN's ON clause.
      */
     record ConditionJoin(MethodRef condition) implements JoinStep {}
