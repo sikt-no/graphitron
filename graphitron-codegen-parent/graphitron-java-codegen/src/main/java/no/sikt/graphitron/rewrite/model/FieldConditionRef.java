@@ -6,8 +6,8 @@ import java.util.List;
  * The outcome of resolving a field-level {@code @condition} directive.
  *
  * <p>A field-level condition adds a {@code WHERE} (or {@code AND}) clause to the query generated
- * for that field, in contrast with reference-path conditions (see {@link ReferencePathElementRef})
- * which affect how tables are joined.
+ * for that field, in contrast with reference-path conditions (see {@link JoinStep.FkJoin#whereFilter()} and
+ * {@link JoinStep.ConditionJoin}) which affect how tables are joined.
  *
  * <p>The {@code override} flag (on {@link ResolvedFieldCondition}) indicates that this condition
  * should replace any inherited condition rather than combine with it. {@code contextArgs} lists
