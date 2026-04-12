@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.ConditionOnlyRef;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
@@ -37,7 +37,7 @@ class ServiceFieldValidationTest {
 
         WITH_LIFT_CONDITION("lift condition with a resolved method",
             new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new ConditionOnlyRef(new MethodRef("com.example.Conditions", "liftCondition", "org.jooq.Condition",
+                new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "liftCondition", "org.jooq.Condition",
                     List.of(new MethodRef.Param("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))))),
                 List.of(), List.of(), RESOLVED_METHOD),
             List.of());

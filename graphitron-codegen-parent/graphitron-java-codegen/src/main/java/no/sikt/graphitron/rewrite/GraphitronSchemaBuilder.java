@@ -64,10 +64,9 @@ import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.SourcesRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.ConditionOnlyRef;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkRef;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkWithConditionRef;
+import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.JoinStep.ConditionJoin;
+import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
@@ -1532,20 +1531,21 @@ public class GraphitronSchemaBuilder {
         return resolveColumnInTable(columnName, tableType.table().tableName());
     }
 
-    private Optional<ColumnRef> resolveColumnForReference(String columnName, List<ReferencePathElementRef> path, TableBackedType sourceType) {
+    private Optional<ColumnRef> resolveColumnForReference(String columnName, List<JoinStep> path, TableBackedType sourceType) {
         String terminal = terminalTableSqlNameForReference(path, sourceType);
         if (terminal == null) return Optional.empty();
         return resolveColumnInTable(columnName, terminal);
     }
 
     /**
-     * Walks the FK path to compute the terminal table SQL name. Returns {@code null} when any
-     * path step is not a {@link FkRef} (i.e. the path is structurally invalid).
+     * Walks the FK join path to compute the terminal table SQL name. Returns {@code null} when any
+     * path step is not a {@link FkJoin} (i.e. the path contains a condition-only step, which
+     * does not imply a specific table).
      */
-    private String terminalTableSqlNameForReference(List<ReferencePathElementRef> path, TableBackedType sourceType) {
+    private String terminalTableSqlNameForReference(List<JoinStep> path, TableBackedType sourceType) {
         String current = sourceType.table().tableName();
         for (var step : path) {
-            if (!(step instanceof FkRef fk)) return null;
+            if (!(step instanceof FkJoin fk)) return null;
             current = fk.keyTableSqlName();
         }
         return current;
@@ -1622,7 +1622,7 @@ public class GraphitronSchemaBuilder {
         Object pathValue = pathArg.getValue();
         List<?> elements = pathValue instanceof List<?> l ? l : List.of(pathValue);
 
-        var resolvedElements = new ArrayList<ReferencePathElementRef>();
+        var resolvedElements = new ArrayList<JoinStep>();
         var errors = new ArrayList<String>();
 
         for (var v : elements) {
@@ -1637,7 +1637,7 @@ public class GraphitronSchemaBuilder {
         return new ParsedPath(List.copyOf(resolvedElements), null);
     }
 
-    private void parsePathElement(Map<String, Object> element, List<ReferencePathElementRef> out, List<String> errors) {
+    private void parsePathElement(Map<String, Object> element, List<JoinStep> out, List<String> errors) {
         Object keyRaw = element.get(ARG_KEY);
         Object conditionRaw = element.get(ARG_CONDITION);
 
@@ -1646,40 +1646,18 @@ public class GraphitronSchemaBuilder {
             .filter(s -> !s.isBlank());
         boolean hasCondition = conditionRaw instanceof Map;
 
-        if (keyName.isPresent() && !hasCondition) {
-            Optional<ForeignKey<?, ?>> fk = catalog.findForeignKey(keyName.get());
-            if (fk.isPresent()) {
-                var f = fk.get();
-                out.add(new FkRef(
-                    f.getName(),
-                    f.getKey().getTable().getName(),
-                    f.getTable().getName(),
-                    resolveFkColumns(f.getKey().getTable(), f.getKey().getFields()),
-                    resolveFkColumns(f.getTable(), f.getFields())));
-            } else {
-                errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog"
-                    + candidateHint(keyName.get(), catalog.allForeignKeySqlNames()));
-            }
+        if (keyName.isPresent() && hasCondition) {
+            errors.add("path element cannot specify both 'key' (FK join) and 'condition'");
             return;
         }
         if (keyName.isPresent()) {
             Optional<ForeignKey<?, ?>> fk = catalog.findForeignKey(keyName.get());
-            Map<String, Object> condMap = asMap(conditionRaw);
-            String condName = extractConditionQualifiedName(condMap);
-            MethodRef resolved = resolveConditionRef(condMap);
-            if (fk.isPresent() && resolved != null) {
+            if (fk.isPresent()) {
                 var f = fk.get();
-                out.add(new FkWithConditionRef(
-                    f.getName(),
-                    f.getKey().getTable().getName(),
-                    f.getTable().getName(),
-                    resolved,
-                    resolveFkColumns(f.getKey().getTable(), f.getKey().getFields()),
-                    resolveFkColumns(f.getTable(), f.getFields())));
+                out.add(new FkJoin(f.getName(), f.getKey().getTable().getName(), f.getTable().getName()));
             } else {
-                if (fk.isEmpty()) errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog"
+                errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog"
                     + candidateHint(keyName.get(), catalog.allForeignKeySqlNames()));
-                if (resolved == null) errors.add("condition method '" + condName + "' could not be resolved");
             }
             return;
         }
@@ -1687,7 +1665,7 @@ public class GraphitronSchemaBuilder {
             Map<String, Object> condMap = asMap(conditionRaw);
             MethodRef resolved = resolveConditionRef(condMap);
             if (resolved != null) {
-                out.add(new ConditionOnlyRef(resolved));
+                out.add(new ConditionJoin(resolved));
             } else {
                 errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
             }
@@ -1695,14 +1673,6 @@ public class GraphitronSchemaBuilder {
         }
         // A path element with neither 'key' nor 'condition' is structurally invalid.
         errors.add("path element has neither 'key' nor 'condition'");
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<JooqCatalog.ColumnEntry> resolveFkColumns(org.jooq.Table<?> table, List<?> fields) {
-        return ((List<org.jooq.TableField<?, ?>>) fields).stream()
-            .map(f -> catalog.findColumn(table, f.getName()).orElse(null))
-            .filter(java.util.Objects::nonNull)
-            .toList();
     }
 
     /**
@@ -1847,7 +1817,7 @@ public class GraphitronSchemaBuilder {
      * empty and the containing field must be classified as
      * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}.
      */
-    private record ParsedPath(List<ReferencePathElementRef> elements, String errorMessage) {
+    private record ParsedPath(List<JoinStep> elements, String errorMessage) {
         boolean hasError() { return errorMessage != null; }
     }
 

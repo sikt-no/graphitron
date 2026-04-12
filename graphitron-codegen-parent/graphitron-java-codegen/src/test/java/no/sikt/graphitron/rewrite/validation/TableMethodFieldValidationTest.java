@@ -1,9 +1,8 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.ConditionOnlyRef;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
@@ -27,13 +26,13 @@ class TableMethodFieldValidationTest {
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new FkRef("film_actor_film_id_fkey", "film", "film_actor", List.of(), List.of())),
+                new JoinStep.FkJoin("film_actor_film_id_fkey", "film", "film_actor")),
                 "com.example.TableMethods", "filteredActors", List.of(), List.of()),
             List.of()),
 
         WITH_CONDITION_ONLY("condition method only — no FK",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new ConditionOnlyRef(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()))),
+                new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()))),
                 "com.example.TableMethods", "filteredActors", List.of(), List.of()),
             List.of());
 

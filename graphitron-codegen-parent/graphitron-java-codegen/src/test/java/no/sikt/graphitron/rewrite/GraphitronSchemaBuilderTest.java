@@ -30,7 +30,7 @@ import no.sikt.graphitron.rewrite.model.FieldConditionRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.rewrite.model.ArgumentRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkRef;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
@@ -153,7 +153,7 @@ class GraphitronSchemaBuilderTest {
 
     enum ColumnReferenceFieldCase {
         KNOWN_FK_BY_SQL_NAME(
-            "@reference with a lowercase SQL FK name resolves to FkRef",
+            "@reference with a lowercase SQL FK name resolves to FkJoin",
             """
             type Film @table(name: "film") {
               languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
@@ -162,12 +162,12 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var ref = (ColumnReferenceField) schema.field("Film", "languageName");
-                assertThat(ref.referencePath()).hasSize(1);
-                assertThat(ref.referencePath().get(0)).isInstanceOf(FkRef.class);
+                assertThat(ref.joinPath()).hasSize(1);
+                assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
             }),
 
         KNOWN_FK_BY_JAVA_CONSTANT(
-            "@reference with a Java-constant-style FK name also resolves to FkRef",
+            "@reference with a Java-constant-style FK name also resolves to FkJoin",
             """
             type Film @table(name: "film") {
               languageName: String @field(name: "name") @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
@@ -176,8 +176,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var ref = (ColumnReferenceField) schema.field("Film", "languageName");
-                assertThat(ref.referencePath()).hasSize(1);
-                assertThat(ref.referencePath().get(0)).isInstanceOf(FkRef.class);
+                assertThat(ref.joinPath()).hasSize(1);
+                assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
             }),
 
         UNKNOWN_FK(
@@ -325,7 +325,7 @@ class GraphitronSchemaBuilderTest {
 
     enum NodeIdReferenceFieldCase {
         RESOLVED(
-            "typeName pointing to a @node type resolves to NodeIdReferenceField with a WithNode and empty referencePath",
+            "typeName pointing to a @node type resolves to NodeIdReferenceField with a WithNode and empty joinPath",
             """
             type Language @table(name: "language") @node(keyColumns: ["language_id"]) {
               id: ID! @nodeId
@@ -339,7 +339,7 @@ class GraphitronSchemaBuilderTest {
                 var ref = (NodeIdReferenceField) schema.field("Film", "languageId");
                 assertThat(ref.typeName()).isEqualTo("Language");
                 assertThat(ref.nodeKeyColumns()).isNotEmpty();
-                assertThat(ref.referencePath()).isEmpty();
+                assertThat(ref.joinPath()).isEmpty();
             }),
 
         UNRESOLVED_TYPE_HAS_NO_NODE(
@@ -364,7 +364,7 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Film", "languageId")).isInstanceOf(UnclassifiedField.class)),
 
         WITH_REFERENCE_PATH(
-            "@reference(path:) on a @nodeId field populates the referencePath",
+            "@reference(path:) on a @nodeId field populates the joinPath",
             """
             type Language @table(name: "language") @node(keyColumns: ["language_id"]) {
               id: ID! @nodeId
@@ -377,8 +377,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var ref = (NodeIdReferenceField) schema.field("Film", "languageId");
-                assertThat(ref.referencePath()).hasSize(1);
-                assertThat(ref.referencePath().get(0)).isInstanceOf(FkRef.class);
+                assertThat(ref.joinPath()).hasSize(1);
+                assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
             });
 
         final String sdl;
@@ -400,7 +400,7 @@ class GraphitronSchemaBuilderTest {
 
     enum TableFieldCase {
         SINGLE_RETURN_TYPE(
-            "object return type → Single cardinality, NoFieldCondition, empty referencePath",
+            "object return type → Single cardinality, NoFieldCondition, empty joinPath",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") { language: Language }
@@ -410,7 +410,7 @@ class GraphitronSchemaBuilderTest {
                 var tf = (TableField) schema.field("Film", "language");
                 assertThat(tf.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
                 assertThat(tf.condition()).isInstanceOf(FieldConditionRef.NoFieldCondition.class);
-                assertThat(tf.referencePath()).isEmpty();
+                assertThat(tf.joinPath()).isEmpty();
             }),
 
         LIST_RETURN_TYPE(
@@ -449,7 +449,7 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Film", "actors")).isInstanceOf(SplitTableField.class)),
 
         WITH_REFERENCE_PATH(
-            "@reference(path:) populates the referencePath with one FkRef",
+            "@reference(path:) populates the joinPath with one FkJoin",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -459,8 +459,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var tf = (TableField) schema.field("Film", "language");
-                assertThat(tf.referencePath()).hasSize(1);
-                assertThat(tf.referencePath().get(0)).isInstanceOf(FkRef.class);
+                assertThat(tf.joinPath()).hasSize(1);
+                assertThat(tf.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
             }),
 
         MULTI_STEP_REFERENCE_PATH(
@@ -660,7 +660,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         WITH_REFERENCE_PATH(
-            "@tableMethod + @reference(path:) populates the referencePath",
+            "@tableMethod + @reference(path:) populates the joinPath",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -672,8 +672,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var field = (TableMethodField) schema.field("Film", "language");
-                assertThat(field.referencePath()).hasSize(1);
-                assertThat(field.referencePath().get(0)).isInstanceOf(FkRef.class);
+                assertThat(field.joinPath()).hasSize(1);
+                assertThat(field.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
             });
 
         final String sdl;

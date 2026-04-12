@@ -1,14 +1,12 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.ConditionOnlyRef;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.FieldWrapper.ColumnOrder;
 import no.sikt.graphitron.rewrite.model.FieldWrapper.ColumnOrder.ColumnOrderEntry;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.FieldConditionRef;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkRef;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkWithConditionRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -36,18 +34,15 @@ class TableFieldValidationTest {
             List.of()),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
-            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(new FkRef("film_actor_film_id_fkey", "film", "film_actor", List.of(), List.of())), new FieldConditionRef.NoFieldCondition(), List.of()),
+            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
+                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "film", "film_actor")),
+                new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
-        WITH_FK_AND_CONDITION("FK + resolved condition method in reference path",
-            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(
-                new FkWithConditionRef("film_actor_film_id_fkey", "film", "film_actor",
-                    new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), List.of(), List.of())), new FieldConditionRef.NoFieldCondition(), List.of()),
-            List.of()),
-
-        WITH_CONDITION_ONLY("condition method only — no FK",
-            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(
-                new ConditionOnlyRef(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()))), new FieldConditionRef.NoFieldCondition(), List.of()),
+        WITH_CONDITION_ONLY("condition-only join step — no FK",
+            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
+                List.of(new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()))),
+                new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
         FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause; no errors",

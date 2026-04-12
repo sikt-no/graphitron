@@ -5,7 +5,7 @@ import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphitron.rewrite.model.FieldConditionRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.ArgumentRef;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
@@ -214,13 +214,13 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         }
-        if (field.referencePath().isEmpty()) {
+        if (field.joinPath().isEmpty()) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': @reference path is required",
                 field.location()
             ));
         } else {
-            validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+            validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
         }
     }
     private void validateNodeIdField(no.sikt.graphitron.rewrite.model.ChildField.NodeIdField field, List<ValidationError> errors) {
@@ -231,12 +231,12 @@ public class GraphitronSchemaValidator {
         // @node is always resolved — builder returns UnclassifiedField if the type is missing or lacks @node
         // Use targetType for table-level FK and path validation
         if (!(field.targetType() instanceof ReturnTypeRef.TableBoundReturnType tb)) {
-            validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+            validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
             return;
         }
         no.sikt.graphitron.rewrite.model.TableRef targetTable = tb.table();
 
-        if (field.referencePath().isEmpty()) {
+        if (field.joinPath().isEmpty()) {
             // Implicit join: exactly one FK must exist between parent and target tables
             var parentTable = field.parentTable();
             if (parentTable != null) {
@@ -262,18 +262,17 @@ public class GraphitronSchemaValidator {
             }
         } else {
             // Explicit reference path: validate steps and check it leads to the target type's table
-            validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
-            validateReferenceLeadsToType(field.name(), field.location(), field.referencePath(), field.typeName(), targetTable, errors);
+            validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
+            validateReferenceLeadsToType(field.name(), field.location(), field.joinPath(), field.typeName(), targetTable, errors);
         }
     }
 
-    private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<ReferencePathElementRef> path, String typeName, no.sikt.graphitron.rewrite.model.TableRef targetTable, List<ValidationError> errors) {
+    private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<JoinStep> path, String typeName, no.sikt.graphitron.rewrite.model.TableRef targetTable, List<ValidationError> errors) {
         var lastStep = path.getLast();
         String fkTableSql = null, keyTableSql = null;
         switch (lastStep) {
-            case no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkRef s              -> { fkTableSql = s.fkTableSqlName(); keyTableSql = s.keyTableSqlName(); }
-            case no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkWithConditionRef s -> { fkTableSql = s.fkTableSqlName(); keyTableSql = s.keyTableSqlName(); }
-            case no.sikt.graphitron.rewrite.model.ReferencePathElementRef.ConditionOnlyRef ignored -> { return; } // no FK tables to check
+            case JoinStep.FkJoin fk         -> { fkTableSql = fk.fkTableSqlName(); keyTableSql = fk.keyTableSqlName(); }
+            case JoinStep.ConditionJoin ignored -> { return; } // no FK tables to check
         }
         var targetSqlName = targetTable.tableName();
         if (!fkTableSql.equalsIgnoreCase(targetSqlName) &&
@@ -285,17 +284,17 @@ public class GraphitronSchemaValidator {
         }
     }
     private void validateTableField(no.sikt.graphitron.rewrite.model.ChildField.TableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateSplitTableField(no.sikt.graphitron.rewrite.model.ChildField.SplitTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.LookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': lookup fields must not return a connection",
@@ -306,7 +305,7 @@ public class GraphitronSchemaValidator {
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateSplitLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': lookup fields must not return a connection",
@@ -317,7 +316,7 @@ public class GraphitronSchemaValidator {
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateTableMethodField(no.sikt.graphitron.rewrite.model.ChildField.TableMethodField field, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateTableInterfaceField(no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField field, List<ValidationError> errors) {
@@ -332,7 +331,7 @@ public class GraphitronSchemaValidator {
     private void validateNestingField(no.sikt.graphitron.rewrite.model.ChildField.NestingField field, List<ValidationError> errors) {}
     private void validateConstructorField(no.sikt.graphitron.rewrite.model.ChildField.ConstructorField field, List<ValidationError> errors) {}
     private void validateServiceTableField(no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
 
         // Validate each SOURCES parameter's SourcesRef variant.
@@ -399,16 +398,16 @@ public class GraphitronSchemaValidator {
         }
     }
     private void validateServiceRecordField(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateRecordTableField(no.sikt.graphitron.rewrite.model.ChildField.RecordTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateRecordLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': lookup fields must not return a connection",
@@ -435,7 +434,7 @@ public class GraphitronSchemaValidator {
     }
 
     private void validateComputedField(no.sikt.graphitron.rewrite.model.ChildField.ComputedField field, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.referencePath(), errors);
+        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
     }
     private void validatePropertyField(no.sikt.graphitron.rewrite.model.ChildField.PropertyField field, List<ValidationError> errors) {}
     private void validateMultitableReferenceField(no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField field, List<ValidationError> errors) {
@@ -478,7 +477,7 @@ public class GraphitronSchemaValidator {
      * No-op: all path elements are guaranteed resolved by the builder (unresolved paths produce
      * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} instead).
      */
-    private void validateReferencePath(String fieldName, SourceLocation location, List<ReferencePathElementRef> path, List<ValidationError> errors) {
+    private void validateReferencePath(String fieldName, SourceLocation location, List<JoinStep> path, List<ValidationError> errors) {
         // All elements are resolved — builder rejects unresolved paths at classification time.
     }
 }

@@ -2,8 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.ConditionOnlyRef;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkRef;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -21,22 +20,22 @@ class ColumnReferenceFieldValidationTest {
 
         RESOLVED_IMPLICIT("no @field — column name defaults to the GraphQL field name; path resolved via FK",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new FkRef("film_language_id_fkey", "language", "film", List.of(), List.of())), false),
+                List.of(new JoinStep.FkJoin("film_language_id_fkey", "language", "film")), false),
             List.of()),
 
         RESOLVED_EXPLICIT("@field(name:) overrides the column name; path resolved via FK",
             new ColumnReferenceField("Film", "languageName", null, "language_name", new ColumnRef("NAME", "", ""),
-                List.of(new FkRef("film_language_id_fkey", "language", "film", List.of(), List.of())), false),
+                List.of(new JoinStep.FkJoin("film_language_id_fkey", "language", "film")), false),
             List.of()),
 
         CONDITION_METHOD("path resolved via condition method instead of a FK",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new ConditionOnlyRef(new MethodRef("com.example.Conditions", "languageCondition", "org.jooq.Condition", List.of()))), false),
+                List.of(new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "languageCondition", "org.jooq.Condition", List.of()))), false),
             List.of()),
 
         JAVA_NAME_PRESENT("@field(javaName:) is not supported — validation error",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new FkRef("film_language_id_fkey", "language", "film", List.of(), List.of())), true),
+                List.of(new JoinStep.FkJoin("film_language_id_fkey", "language", "film")), true),
             List.of("Field 'languageName': @field(javaName:) is not supported in record-based output")),
 
         MISSING_PATH("no @reference directive — path is empty",

@@ -4,7 +4,7 @@ import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldConditionRef;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ArgumentRef;
 
 import java.util.List;
@@ -61,7 +61,7 @@ public sealed interface ChildField extends GraphitronField
      * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} instead of
      * constructing a {@code ColumnReferenceField}.
      *
-     * <p>{@code referencePath} is the ordered list of join steps from the source table to the target
+     * <p>{@code joinPath} is the ordered list of join steps from the source table to the target
      * column's table, extracted from {@code @reference(path:)}. Required — an empty list is a
      * validation error. All elements are guaranteed to be resolved (the builder rejects unresolved
      * path elements at classification time).
@@ -76,7 +76,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         String columnName,
         ColumnRef column,
-        List<ReferencePathElementRef> referencePath,
+        List<JoinStep> joinPath,
         boolean javaNamePresent
     ) implements ChildField {}
 
@@ -127,7 +127,7 @@ public sealed interface ChildField extends GraphitronField
      * when the named type exists and carries {@code @node}; otherwise the builder returns an
      * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}.
      *
-     * <p>{@code referencePath} is the ordered list of join steps from the source table to the target
+     * <p>{@code joinPath} is the ordered list of join steps from the source table to the target
      * type's table, extracted from {@code @reference(path:)}. May be empty when there is exactly one
      * foreign key between the source and target tables (implicit join). The
      * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error when the path is
@@ -145,7 +145,7 @@ public sealed interface ChildField extends GraphitronField
         TableRef parentTable,
         String nodeTypeId,
         List<ColumnRef> nodeKeyColumns,
-        List<ReferencePathElementRef> referencePath
+        List<JoinStep> joinPath
     ) implements ChildField {}
 
     /**
@@ -158,7 +158,7 @@ public sealed interface ChildField extends GraphitronField
      * paginated list. The validator reports errors for unresolved ordering specs on list and
      * connection variants.
      *
-     * <p>{@code referencePath} is the ordered list of join steps extracted from {@code @reference(path:)},
+     * <p>{@code joinPath} is the ordered list of join steps extracted from {@code @reference(path:)},
      * used to override FK auto-inference. Empty when no {@code @reference} directive is present —
      * Graphitron will attempt to infer the foreign key automatically.
      *
@@ -174,7 +174,7 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        List<ReferencePathElementRef> referencePath,
+        List<JoinStep> joinPath,
         FieldConditionRef condition,
         List<ArgumentRef> arguments
     ) implements ChildField {}
@@ -195,7 +195,7 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        List<ReferencePathElementRef> referencePath,
+        List<JoinStep> joinPath,
         FieldConditionRef condition,
         List<ArgumentRef> arguments
     ) implements ChildField {}
@@ -217,14 +217,14 @@ public sealed interface ChildField extends GraphitronField
      * {@link FieldWrapper.Single} and {@link FieldWrapper.List} are valid; the validator rejects
      * {@link FieldWrapper.Connection}.
      *
-     * <p>{@code referencePath} and {@code arguments} have the same semantics as {@link TableField}.
+     * <p>{@code joinPath} and {@code arguments} have the same semantics as {@link TableField}.
      */
     record LookupTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        List<ReferencePathElementRef> referencePath,
+        List<JoinStep> joinPath,
         List<ArgumentRef> arguments
     ) implements ChildField {}
 
@@ -238,7 +238,7 @@ public sealed interface ChildField extends GraphitronField
      * table. Without {@code @splitQuery} a table-mapped parent would instead inline a correlated
      * multiset subquery.
      *
-     * <p>{@code returnType}, {@code referencePath}, and {@code arguments} have the same semantics
+     * <p>{@code returnType}, {@code joinPath}, and {@code arguments} have the same semantics
      * as {@link LookupTableField}.
      */
     record SplitLookupTableField(
@@ -246,7 +246,7 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        List<ReferencePathElementRef> referencePath,
+        List<JoinStep> joinPath,
         List<ArgumentRef> arguments
     ) implements ChildField {}
 
@@ -256,7 +256,7 @@ public sealed interface ChildField extends GraphitronField
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
      * schema, with the {@link FieldWrapper} embedded.
      *
-     * <p>{@code referencePath} is the ordered list of join steps extracted from {@code @reference(path:)},
+     * <p>{@code joinPath} is the ordered list of join steps extracted from {@code @reference(path:)},
      * used to override FK auto-inference. Empty when no {@code @reference} directive is present —
      * Graphitron will attempt to infer the foreign key automatically.
      *
@@ -274,7 +274,7 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        List<ReferencePathElementRef> referencePath,
+        List<JoinStep> joinPath,
         String tableMethodClassName,
         String tableMethodMethodName,
         List<ArgumentRef> arguments,
@@ -357,7 +357,7 @@ public sealed interface ChildField extends GraphitronField
      * <p>{@code returnType} is narrowed to {@link ReturnTypeRef.TableBoundReturnType}; the
      * classified schema guarantees that it resolved to a table-backed type.
      *
-     * <p>{@code referencePath} is the ordered list of join steps from {@code @reference(path:)},
+     * <p>{@code joinPath} is the ordered list of join steps from {@code @reference(path:)},
      * providing lift conditions that reconnect results back to the parent. Each element should
      * carry a {@code condition} method — no FK is involved. Empty when {@code @reference} is absent.
      *
@@ -375,7 +375,7 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        List<ReferencePathElementRef> referencePath,
+        List<JoinStep> joinPath,
         List<ArgumentRef> arguments,
         List<String> contextArguments,
         MethodRef method
@@ -389,7 +389,7 @@ public sealed interface ChildField extends GraphitronField
      * Validation confirms the reflected method signature matches the declared arguments and context
      * keys.
      *
-     * <p>{@code referencePath}, {@code arguments}, {@code contextArguments},
+     * <p>{@code joinPath}, {@code arguments}, {@code contextArguments},
      * and {@code serviceMethodRef} have the same semantics as {@link ServiceTableField}.
      */
     record ServiceRecordField(
@@ -397,7 +397,7 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         ReturnTypeRef.OtherReturnType returnType,
-        List<ReferencePathElementRef> referencePath,
+        List<JoinStep> joinPath,
         List<ArgumentRef> arguments,
         List<String> contextArguments,
         MethodRef method
@@ -413,7 +413,7 @@ public sealed interface ChildField extends GraphitronField
      *
      * <p>{@code returnType} is narrowed to {@link ReturnTypeRef.TableBoundReturnType}.
      *
-     * <p>{@code referencePath}, {@code condition}, and {@code arguments} have the same semantics
+     * <p>{@code joinPath}, {@code condition}, and {@code arguments} have the same semantics
      * as {@link TableField}.
      */
     record RecordTableField(
@@ -421,7 +421,7 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        List<ReferencePathElementRef> referencePath,
+        List<JoinStep> joinPath,
         FieldConditionRef condition,
         List<ArgumentRef> arguments
     ) implements ChildField {}
@@ -435,14 +435,14 @@ public sealed interface ChildField extends GraphitronField
      *
      * <p>{@code returnType} is narrowed to {@link ReturnTypeRef.TableBoundReturnType}.
      *
-     * <p>{@code referencePath} and {@code arguments} have the same semantics as {@link LookupTableField}.
+     * <p>{@code joinPath} and {@code arguments} have the same semantics as {@link LookupTableField}.
      */
     record RecordLookupTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        List<ReferencePathElementRef> referencePath,
+        List<JoinStep> joinPath,
         List<ArgumentRef> arguments
     ) implements ChildField {}
 
@@ -471,7 +471,7 @@ public sealed interface ChildField extends GraphitronField
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
      * schema.
      *
-     * <p>{@code referencePath} is the ordered list of join steps extracted from {@code @reference(path:)},
+     * <p>{@code joinPath} is the ordered list of join steps extracted from {@code @reference(path:)},
      * providing the lift condition that reconnects this field's result back to the parent table.
      * Each element should carry a {@code condition} method — no FK is involved in lift conditions.
      * Empty when no {@code @reference} directive is present.
@@ -481,7 +481,7 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        List<ReferencePathElementRef> referencePath
+        List<JoinStep> joinPath
     ) implements ChildField {}
 
     /**

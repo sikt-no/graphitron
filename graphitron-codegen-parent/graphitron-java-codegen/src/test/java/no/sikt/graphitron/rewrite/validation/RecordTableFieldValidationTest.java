@@ -1,8 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.ConditionOnlyRef;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.FkRef;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordTableField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.FieldConditionRef;
@@ -33,13 +32,13 @@ class RecordTableFieldValidationTest {
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new RecordTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)),
-                List.of(new FkRef("language_film_id_fkey", "language", "film", List.of(), List.of())),
+                List.of(new JoinStep.FkJoin("language_film_id_fkey", "language", "film")),
                 new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
-        WITH_CONDITION_ONLY("condition method only — no FK",
-            new RecordTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(
-                new ConditionOnlyRef(new MethodRef("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()))),
+        WITH_CONDITION_ONLY("condition-only join step — no FK",
+            new RecordTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)),
+                List.of(new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()))),
                 new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 

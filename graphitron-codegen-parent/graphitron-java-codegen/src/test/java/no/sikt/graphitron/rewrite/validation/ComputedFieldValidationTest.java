@@ -4,7 +4,7 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.model.ReferencePathElementRef.ConditionOnlyRef;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -25,7 +25,7 @@ class ComputedFieldValidationTest {
 
         WITH_LIFT_CONDITION("lift condition with a resolved method",
             new ComputedField("Film", "fullTitle", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new ConditionOnlyRef(new MethodRef("com.example.Conditions", "liftCondition", "org.jooq.Condition", List.of())))),
+                new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "liftCondition", "org.jooq.Condition", List.of())))),
             List.of());
 
         private final String description;
