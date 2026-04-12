@@ -408,13 +408,25 @@ public sealed interface ChildField extends GraphitronField
      * always starts a new DataLoader scope (result-mapped → table-mapped target).
      *
      * <p>Classified when a field on a {@code @record} type returns a {@code @table}-annotated type,
-     * with no {@code @lookupKey} on its arguments. The generator derives a source table from the
-     * parent's data and opens a new SQL scope.
+     * with no {@code @lookupKey} on its arguments. The generator materialises the parent record rows
+     * as a derived source table and opens a new SQL scope joined to the target table.
      *
      * <p>{@code returnType} is narrowed to {@link ReturnTypeRef.TableBoundReturnType}.
      *
-     * <p>{@code joinPath}, {@code condition}, and {@code arguments} have the same semantics
-     * as {@link TableField}.
+     * <p>{@code joinPath} has the same semantics as {@link TableField}: it is the chain of FK/condition
+     * steps connecting the parent record's <em>backing table</em> to the target type's table. An empty
+     * path means implicit FK inference — the generator must resolve the single FK between the record's
+     * backing table and the target table at code-generation time, just as it would for a {@link TableField}
+     * with an empty path.
+     *
+     * <p><b>Build-time connectivity validation gap:</b> the builder currently passes {@code null} as the
+     * source table when parsing {@code joinPath} for {@code RecordTableField}, so FK connectivity
+     * validation is skipped. This is because the record type's backing table is not yet tracked in
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronType}. Once it is, the call site in
+     * {@code GraphitronSchemaBuilder.classifyChildFieldOnResultType} should be updated to pass the
+     * backing table SQL name, matching what the {@code @table}-parent call sites already do.
+     *
+     * <p>{@code condition} and {@code arguments} have the same semantics as {@link TableField}.
      */
     record RecordTableField(
         String parentTypeName,
