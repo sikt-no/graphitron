@@ -73,7 +73,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType;
-import no.sikt.graphitron.rewrite.model.InputFieldRef;
+import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
@@ -229,9 +229,9 @@ public class GraphitronSchemaBuilder {
     private GraphitronType buildTableInputType(String name, SourceLocation location,
             List<GraphQLInputObjectField> fields, TableRef tableRef) {
         var errors = new ArrayList<String>();
-        var resolvedFields = new ArrayList<InputFieldRef>();
+        var resolvedFields = new ArrayList<InputField.ColumnField>();
         for (var f : fields) {
-            var field = buildInputFieldRef(f, tableRef);
+            var field = buildInputColumnField(f, name, tableRef);
             if (field.isEmpty()) {
                 String colName = f.hasAppliedDirective(DIR_FIELD)
                     ? argString(f, DIR_FIELD, ARG_NAME).orElse(f.getName()) : f.getName();
@@ -542,7 +542,7 @@ public class GraphitronSchemaBuilder {
         return tables;
     }
 
-    private Optional<InputFieldRef> buildInputFieldRef(GraphQLInputObjectField field, TableRef resolvedTable) {
+    private Optional<InputField.ColumnField> buildInputColumnField(GraphQLInputObjectField field, String parentTypeName, TableRef resolvedTable) {
         String name = field.getName();
         GraphQLType type = field.getType();
         boolean nonNull = type instanceof GraphQLNonNull;
@@ -553,7 +553,8 @@ public class GraphitronSchemaBuilder {
             ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
         return catalog.findColumn(resolvedTable.tableName(), columnName)
-            .map(e -> new InputFieldRef(name, typeName, nonNull, list, resolvedTable, e.javaName(), e.columnClass()));
+            .map(e -> new InputField.ColumnField(parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                new ColumnRef(e.sqlName(), e.javaName(), e.columnClass())));
     }
 
     private ErrorType.Handler parseErrorHandler(Map<String, Object> item) {
@@ -1986,6 +1987,11 @@ public class GraphitronSchemaBuilder {
     }
 
     private static SourceLocation locationOf(GraphQLFieldDefinition field) {
+        var def = field.getDefinition();
+        return def != null ? def.getSourceLocation() : null;
+    }
+
+    private static SourceLocation locationOf(GraphQLInputObjectField field) {
         var def = field.getDefinition();
         return def != null ? def.getSourceLocation() : null;
     }

@@ -15,7 +15,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import no.sikt.graphitron.rewrite.model.InputFieldRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.SourcesRef;
 
@@ -93,8 +92,9 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.ComputedField f           -> validateComputedField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.PropertyField f           -> validatePropertyField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField f -> validateMultitableReferenceField(f, errors);
-            case no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField f       -> validateNotGeneratedField(f, errors);
-            case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f       -> validateUnclassifiedField(f, errors);
+            case no.sikt.graphitron.rewrite.model.InputField.ColumnField f            -> validateInputColumnField(f, errors);
+            case no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField f -> validateNotGeneratedField(f, errors);
+            case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f -> validateUnclassifiedField(f, errors);
         }
     }
 
@@ -440,6 +440,9 @@ public class GraphitronSchemaValidator {
             "Field '" + field.name() + "': @multitableReference is not supported in record-based output",
             field.location()
         ));
+    }
+    private void validateInputColumnField(no.sikt.graphitron.rewrite.model.InputField.ColumnField field, List<ValidationError> errors) {
+        // Column resolution is guaranteed by the builder (unresolved → UnclassifiedType). Nothing to validate here.
     }
     private void validateNotGeneratedField(no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField field, List<ValidationError> errors) {}
     private void validateUnclassifiedType(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType type, List<ValidationError> errors) {

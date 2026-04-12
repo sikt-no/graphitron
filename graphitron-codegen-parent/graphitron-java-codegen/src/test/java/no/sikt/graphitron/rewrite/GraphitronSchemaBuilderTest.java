@@ -1053,10 +1053,10 @@ class GraphitronSchemaBuilderTest {
                 assertThat(it.table()).isInstanceOf(no.sikt.graphitron.rewrite.model.TableRef.class);
                 assertThat(it.table().tableName()).isEqualTo("customer");
                 assertThat(it.inputFields()).hasSize(1);
-                assertThat(it.inputFields().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.model.InputFieldRef.class);
-                var f = (no.sikt.graphitron.rewrite.model.InputFieldRef) it.inputFields().get(0);
+                assertThat(it.inputFields().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.ColumnField.class);
+                var f = (no.sikt.graphitron.rewrite.model.InputField.ColumnField) it.inputFields().get(0);
                 assertThat(f.name()).isEqualTo("customerId");
-                assertThat(f.javaColumnName()).isEqualTo("CUSTOMER_ID");
+                assertThat(f.column().javaName()).isEqualTo("CUSTOMER_ID");
             }),
 
         EXPLICIT_TABLE_UNRESOLVED_COLUMN(
@@ -1090,7 +1090,7 @@ class GraphitronSchemaBuilderTest {
                 var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("CustomerInput");
                 assertThat(it.table().tableName()).isEqualTo("customer");
                 assertThat(it.inputFields().get(0))
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.InputFieldRef.class);
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.ColumnField.class);
             }),
 
         IMPLICIT_TABLE_CONFLICT(

@@ -8,7 +8,7 @@ import graphql.schema.GraphQLFieldDefinition;
  * Every leaf type is a Java record carrying the properties needed for code generation.
  */
 public sealed interface GraphitronField
-    permits RootField, ChildField, GraphitronField.NotGeneratedField, GraphitronField.UnclassifiedField {
+    permits RootField, ChildField, InputField, GraphitronField.NotGeneratedField, GraphitronField.UnclassifiedField {
 
     /** The name of the parent GraphQL type that defines this field. */
     String parentTypeName();
