@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.model.ServiceMethodRef;
+import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -27,8 +27,8 @@ class QueryServiceTableFieldValidationTest {
 
         VALID("service query field with resolved method — no errors",
             new QueryServiceTableField("Query", "externalFilm", null,
-                FILM_RETURN, null, List.of(), List.of(),
-                new ServiceMethodRef(List.of(), "void")),
+                FILM_RETURN, List.of(), List.of(),
+                new MethodRef("com.example.Service", "method", "void", List.of())),
             List.of());
 
         private final String description;

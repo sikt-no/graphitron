@@ -5,7 +5,6 @@ import graphql.language.SourceLocation;
 import java.util.List;
 
 import no.sikt.graphitron.rewrite.model.ArgumentRef;
-import no.sikt.graphitron.rewrite.model.ServiceMethodRef;
 
 /**
  * A field on the {@code Mutation} type. The only fields permitted to write to the database.
@@ -84,35 +83,30 @@ public sealed interface MutationField extends RootField
      *
      * <p>{@code returnType} is narrowed to {@link ReturnTypeRef.TableBoundReturnType}.
      *
-     * <p>{@code serviceRef} is the {@code service: ExternalCodeReference!} argument of the
-     * {@code @service} directive — the Java class and method to delegate to.
+     * <p>{@code method} carries the class name, method name, and reflected parameter list of the
+     * service method, captured at parse time. If reflection failed the containing field is classified
+     * as {@link no.sikt.graphitron.rewrite.model.UnclassifiedField} by the builder.
      *
      * <p>{@code arguments} is the full list of GraphQL arguments on the field.
      *
      * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
      * of the {@code @service} directive.
-     *
-     * <p>{@code serviceMethodRef} carries the reflected parameter list of the service method,
-     * captured at parse time. If reflection failed the containing field is classified as
-     * {@link no.sikt.graphitron.rewrite.model.UnclassifiedField} by the builder and does not
-     * appear here.
      */
     record MutationServiceTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        ExternalRef serviceRef,
         List<ArgumentRef> arguments,
         List<String> contextArguments,
-        ServiceMethodRef serviceMethodRef
+        MethodRef method
     ) implements MutationField {}
 
     /**
      * A mutation field delegating to a developer-provided service class via {@code @service},
      * where the return type is NOT table-mapped (service → record/scalar target).
      *
-     * <p>{@code serviceRef}, {@code arguments}, and {@code contextArguments} have the same semantics
+     * <p>{@code arguments}, {@code contextArguments}, and {@code method} have the same semantics
      * as {@link MutationServiceTableField}.
      */
     record MutationServiceRecordField(
@@ -120,8 +114,8 @@ public sealed interface MutationField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef.OtherReturnType returnType,
-        ExternalRef serviceRef,
         List<ArgumentRef> arguments,
-        List<String> contextArguments
+        List<String> contextArguments,
+        MethodRef method
     ) implements MutationField {}
 }

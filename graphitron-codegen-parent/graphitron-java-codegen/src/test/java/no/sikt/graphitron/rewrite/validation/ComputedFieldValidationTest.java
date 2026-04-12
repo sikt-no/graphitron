@@ -25,7 +25,7 @@ class ComputedFieldValidationTest {
 
         WITH_LIFT_CONDITION("lift condition with a resolved method",
             new ComputedField("Film", "fullTitle", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new ConditionOnlyRef(new MethodRef("com.example.Conditions.liftCondition", "org.jooq.Condition", List.of())))),
+                new ConditionOnlyRef(new MethodRef("com.example.Conditions", "liftCondition", "org.jooq.Condition", List.of())))),
             List.of());
 
         private final String description;

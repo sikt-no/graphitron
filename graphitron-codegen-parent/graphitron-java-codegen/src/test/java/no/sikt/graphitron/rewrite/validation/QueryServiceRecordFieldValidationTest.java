@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.QueryField.QueryServiceRecordField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -20,7 +21,8 @@ class QueryServiceRecordFieldValidationTest {
         VALID("service query field with non-table return — always valid",
             new QueryServiceRecordField("Query", "externalData", null,
                 new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)),
-                null, List.of(), List.of()),
+                List.of(), List.of(),
+                new MethodRef("com.example.Service", "method", "void", List.of())),
             List.of());
 
         private final String description;

@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -18,7 +19,10 @@ class MutationServiceRecordFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("service mutation field with non-table return — always valid",
-            new MutationServiceRecordField("Mutation", "externalMutation", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), null, List.of(), List.of()),
+            new MutationServiceRecordField("Mutation", "externalMutation", null,
+                new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)),
+                List.of(), List.of(),
+                new MethodRef("com.example.Service", "method", "void", List.of())),
             List.of());
 
         private final String description;

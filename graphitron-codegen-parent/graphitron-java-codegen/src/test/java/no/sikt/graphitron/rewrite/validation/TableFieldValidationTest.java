@@ -42,22 +42,22 @@ class TableFieldValidationTest {
         WITH_FK_AND_CONDITION("FK + resolved condition method in reference path",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(
                 new FkWithConditionRef("film_actor_film_id_fkey", "film", "film_actor",
-                    new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()), List.of(), List.of())), new FieldConditionRef.NoFieldCondition(), List.of()),
+                    new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), List.of(), List.of())), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
         WITH_CONDITION_ONLY("condition method only — no FK",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(
-                new ConditionOnlyRef(new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))), new FieldConditionRef.NoFieldCondition(), List.of()),
+                new ConditionOnlyRef(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()))), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
         FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause; no errors",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), new FieldConditionRef.ResolvedFieldCondition(
-                new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()), false, List.of()), List.of()),
+                new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), false, List.of()), List.of()),
             List.of()),
 
         FIELD_CONDITION_RESOLVED_OVERRIDE("resolved @condition with override:true — no errors",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), new FieldConditionRef.ResolvedFieldCondition(
-                new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()), true, List.of()), List.of()),
+                new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), true, List.of()), List.of()),
             List.of()),
 
         DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields — valid",

@@ -12,8 +12,9 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.model.ServiceMethodRef;
 import no.sikt.graphitron.rewrite.model.SourcesRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
@@ -78,8 +79,8 @@ public class FieldsCodeGenerator {
                 builder.addMethod(buildLookupMethod(lookup));
             } else if (field instanceof ChildField.ServiceTableField sf
                     && parentTable != null) {
-                builder.addMethod(buildServiceDataFetcher(sf, sf.serviceMethodRef(), sf.returnType(), parentTable, className));
-                builder.addMethod(buildServiceRowsMethod(sf, sf.serviceMethodRef(), sf.returnType(), sf.returnType().table(), parentTable));
+                builder.addMethod(buildServiceDataFetcher(sf, sf.method(), sf.returnType(), parentTable, className));
+                builder.addMethod(buildServiceRowsMethod(sf, sf.method(), sf.returnType(), sf.returnType().table(), parentTable));
                 needsGraphitronContextHelper = true;
             } else if (field instanceof ChildField.SplitTableField stf) {
                 builder.addMethod(buildSplitQueryDataFetcher(stf));
@@ -145,7 +146,7 @@ public class FieldsCodeGenerator {
      */
     private MethodSpec buildServiceDataFetcher(
             ChildField.ServiceTableField sf,
-            ServiceMethodRef smr,
+            MethodRef smr,
             ReturnTypeRef.TableBoundReturnType tb,
             TableRef prt,
             String className) {
@@ -155,15 +156,16 @@ public class FieldsCodeGenerator {
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
 
         var sourcesParam = smr.params().stream()
-            .filter(p -> p instanceof ServiceMethodRef.ServiceParam.SourcesParam)
-            .map(p -> (ServiceMethodRef.ServiceParam.SourcesParam) p)
+            .filter(p -> p.source() instanceof ParamSource.Sources)
             .findFirst()
             .orElseThrow();
+        var sourcesRef = ((ParamSource.Sources) sourcesParam.source()).sourcesRef();
 
-        TypeName keyType = switch (sourcesParam.sourcesRef()) {
-            case SourcesRef.RowKeyed rk         -> buildRowKeyType(rk.pkJavaTypes());
-            case SourcesRef.RecordKeyed rk      -> buildRecordNKeyType(rk.pkJavaTypes());
+        TypeName keyType = switch (sourcesRef) {
+            case SourcesRef.RowKeyed rk          -> buildRowKeyType(rk.pkJavaTypes());
+            case SourcesRef.RecordKeyed rk       -> buildRecordNKeyType(rk.pkJavaTypes());
             case SourcesRef.TableRecordKeyed trk -> ClassName.bestGuess(trk.fqClassName());
+            case SourcesRef.ResultKeyed rk       -> ClassName.bestGuess(rk.fqClassName());
         };
 
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
@@ -191,7 +193,7 @@ public class FieldsCodeGenerator {
 
         // Emit the key expression — varies by SourcesRef variant.
         var tablesClass = ClassName.get(GeneratorConfig.outputPackage() + ".tables", "Tables");
-        switch (sourcesParam.sourcesRef()) {
+        switch (sourcesRef) {
             case SourcesRef.RowKeyed rk -> {
                 String tableField = prt.javaFieldName();
                 List<ColumnRef> pkCols = prt.primaryKeyColumns().get();
@@ -215,6 +217,8 @@ public class FieldsCodeGenerator {
                     keyType, RECORD, intoArgs.build());
             }
             case SourcesRef.TableRecordKeyed trk ->
+                methodBuilder.addStatement("$T key = ($T) env.getSource()", keyType, keyType);
+            case SourcesRef.ResultKeyed rk ->
                 methodBuilder.addStatement("$T key = ($T) env.getSource()", keyType, keyType);
         }
 
@@ -242,7 +246,7 @@ public class FieldsCodeGenerator {
      */
     private MethodSpec buildServiceRowsMethod(
             ChildField.ServiceTableField sf,
-            ServiceMethodRef smr,
+            MethodRef smr,
             ReturnTypeRef.TableBoundReturnType tb,
             TableRef rt,
             TableRef prt) {
@@ -252,15 +256,16 @@ public class FieldsCodeGenerator {
         var returnType = isList ? ParameterizedTypeName.get(LIST, listOfRecord) : listOfRecord;
 
         var sourcesParam = smr.params().stream()
-            .filter(p -> p instanceof ServiceMethodRef.ServiceParam.SourcesParam)
-            .map(p -> (ServiceMethodRef.ServiceParam.SourcesParam) p)
+            .filter(p -> p.source() instanceof ParamSource.Sources)
             .findFirst()
             .orElseThrow();
+        var sourcesRef = ((ParamSource.Sources) sourcesParam.source()).sourcesRef();
 
-        TypeName keysElementType = switch (sourcesParam.sourcesRef()) {
-            case SourcesRef.RowKeyed rk         -> buildRowKeyType(rk.pkJavaTypes());
-            case SourcesRef.RecordKeyed rk      -> buildRecordNKeyType(rk.pkJavaTypes());
+        TypeName keysElementType = switch (sourcesRef) {
+            case SourcesRef.RowKeyed rk          -> buildRowKeyType(rk.pkJavaTypes());
+            case SourcesRef.RecordKeyed rk       -> buildRecordNKeyType(rk.pkJavaTypes());
             case SourcesRef.TableRecordKeyed trk -> ClassName.bestGuess(trk.fqClassName());
+            case SourcesRef.ResultKeyed rk       -> ClassName.bestGuess(rk.fqClassName());
         };
 
         var builder = MethodSpec.methodBuilder("load" + capitalize(sf.name()))
@@ -270,29 +275,29 @@ public class FieldsCodeGenerator {
             .addParameter(ENV, "dfe")
             .addParameter(SELECTED_FIELD, "sel");
 
-        // Emit arg and context extraction statements using switch on ServiceParam
+        // Emit arg and context extraction statements using switch on ParamSource
         for (var param : smr.params()) {
-            switch (param) {
-                case ServiceMethodRef.ServiceParam.ArgParam ap -> builder.addStatement(
+            switch (param.source()) {
+                case ParamSource.Arg a -> builder.addStatement(
                     "$T $L = dfe.getArgument($S)",
-                    Object.class, ap.name(), ap.name());
-                case ServiceMethodRef.ServiceParam.ContextParam cp -> builder.addStatement(
+                    Object.class, param.name(), param.name());
+                case ParamSource.Context c -> builder.addStatement(
                     "$T $L = graphitronContext(dfe).getContextArgument(dfe, $S)",
-                    Object.class, cp.name(), cp.name());
-                case ServiceMethodRef.ServiceParam.SourcesParam sp -> {} // 'keys' is passed directly
+                    Object.class, param.name(), param.name());
+                default -> {} // Sources: 'keys' is passed directly; others not applicable here
             }
         }
 
         // Build service call argument list — SOURCES param replaced by 'keys'
         var serviceCallArgs = smr.params().stream()
-            .map(p -> p instanceof ServiceMethodRef.ServiceParam.SourcesParam ? "keys" : p.name())
+            .map(p -> p.source() instanceof ParamSource.Sources ? "keys" : p.name())
             .toList();
 
         builder.addStatement(
             "$T serviceResult = $L.$L($L)",
             Object.class,
-            sf.serviceRef().className(),
-            sf.serviceRef().methodName(),
+            smr.className(),
+            smr.methodName(),
             String.join(", ", serviceCallArgs));
 
         // Return via table selectMany / selectOne

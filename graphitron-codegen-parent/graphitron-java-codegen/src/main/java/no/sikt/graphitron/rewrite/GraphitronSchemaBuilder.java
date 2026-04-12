@@ -60,9 +60,8 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.rewrite.model.ArgumentRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
-import no.sikt.graphitron.rewrite.model.ExternalRef;
 import no.sikt.graphitron.rewrite.model.MethodRef;
-import no.sikt.graphitron.rewrite.model.ServiceMethodRef;
+import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.SourcesRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.ReferencePathElementRef;
@@ -932,20 +931,20 @@ public class GraphitronSchemaBuilder {
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
             List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
             Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
-            ServiceReflectionResult serviceReflection = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArgs));
+            ServiceReflectionResult serviceReflection = reflectServiceMethod(serviceRef.className(), serviceRef.methodName(), argNames, new java.util.HashSet<>(contextArgs));
             if (serviceReflection.failed()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "service method could not be resolved — " + serviceReflection.failureReason());
             }
-            ServiceMethodRef serviceMethodRef = serviceReflection.ref();
+            MethodRef method = serviceReflection.ref();
             var argErrors2 = new ArrayList<String>();
             var args = classifyArgsList(fieldDef, null, true, argErrors2);
             if (args == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors2));
             return switch (returnType) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
-                    new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs, serviceMethodRef);
+                    new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, args, contextArgs, method);
                 case ReturnTypeRef.OtherReturnType other ->
-                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, other, serviceRef, args, contextArgs);
+                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, other, args, contextArgs, method);
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
             };
@@ -991,9 +990,11 @@ public class GraphitronSchemaBuilder {
             var argErrors4 = new ArrayList<String>();
             var args = classifyArgsList(fieldDef, null, true, argErrors4);
             if (args == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors4));
+            var qtmRef = parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
             return new QueryField.QueryTableMethodTableField(parentTypeName, name, location,
                 tb,
-                parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF),
+                qtmRef != null ? qtmRef.className() : null,
+                qtmRef != null ? qtmRef.methodName() : null,
                 args,
                 parseContextArguments(fieldDef, DIR_TABLE_METHOD));
         }
@@ -1051,20 +1052,20 @@ public class GraphitronSchemaBuilder {
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
             List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
             Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
-            ServiceReflectionResult serviceReflection = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArgs));
+            ServiceReflectionResult serviceReflection = reflectServiceMethod(serviceRef.className(), serviceRef.methodName(), argNames, new java.util.HashSet<>(contextArgs));
             if (serviceReflection.failed()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "service method could not be resolved — " + serviceReflection.failureReason());
             }
-            ServiceMethodRef serviceMethodRef = serviceReflection.ref();
+            MethodRef method = serviceReflection.ref();
             var argErrors6 = new ArrayList<String>();
             var args = classifyArgsList(fieldDef, null, true, argErrors6);
             if (args == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors6));
             return switch (returnType) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
-                    new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, serviceRef, args, contextArgs, serviceMethodRef);
+                    new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, args, contextArgs, method);
                 case ReturnTypeRef.OtherReturnType other ->
-                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, other, serviceRef, args, contextArgs);
+                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, other, args, contextArgs, method);
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
             };
@@ -1325,7 +1326,7 @@ public class GraphitronSchemaBuilder {
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
             List<String> contextArguments = parseContextArguments(fieldDef, DIR_SERVICE);
             Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
-            ServiceReflectionResult serviceReflection = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArguments));
+            ServiceReflectionResult serviceReflection = reflectServiceMethod(serviceRef.className(), serviceRef.methodName(), argNames, new java.util.HashSet<>(contextArguments));
             if (serviceReflection.failed()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "service method could not be resolved — " + serviceReflection.failureReason());
@@ -1337,17 +1338,17 @@ public class GraphitronSchemaBuilder {
             if (servicePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePath.errorMessage());
             }
-            ServiceMethodRef serviceMethodRef = serviceReflection.ref();
+            MethodRef method = serviceReflection.ref();
             var rsvcWrapper = buildWrapper(fieldDef, getTableSqlNameForType(elementTypeName));
             if (rsvcWrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                 "could not resolve @defaultOrder columns for @service child field on result type");
             return switch (resolveReturnType(elementTypeName, rsvcWrapper)) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new ServiceTableField(parentTypeName, name, location, tb,
-                        servicePath.elements(), serviceRef, arguments, contextArguments, serviceMethodRef);
+                        servicePath.elements(), arguments, contextArguments, method);
                 case ReturnTypeRef.OtherReturnType other ->
                     new ServiceRecordField(parentTypeName, name, location, other,
-                        servicePath.elements(), serviceRef, arguments, contextArguments, serviceMethodRef);
+                        servicePath.elements(), arguments, contextArguments, method);
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
             };
@@ -1399,12 +1400,12 @@ public class GraphitronSchemaBuilder {
             ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
             List<String> contextArguments = parseContextArguments(fieldDef, DIR_SERVICE);
             Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
-            ServiceReflectionResult serviceReflection = reflectServiceMethod(serviceRef, argNames, new java.util.HashSet<>(contextArguments));
+            ServiceReflectionResult serviceReflection = reflectServiceMethod(serviceRef.className(), serviceRef.methodName(), argNames, new java.util.HashSet<>(contextArguments));
             if (serviceReflection.failed()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "service method could not be resolved — " + serviceReflection.failureReason());
             }
-            ServiceMethodRef serviceMethodRef = serviceReflection.ref();
+            MethodRef method = serviceReflection.ref();
             var argErrors10 = new ArrayList<String>();
             var arguments = classifyArgsList(fieldDef, null, true, argErrors10);
             if (arguments == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors10));
@@ -1418,10 +1419,10 @@ public class GraphitronSchemaBuilder {
             return switch (resolveReturnType(elementTypeName, svcWrapper)) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new ServiceTableField(parentTypeName, name, location, tb,
-                        servicePath.elements(), serviceRef, arguments, contextArguments, serviceMethodRef);
+                        servicePath.elements(), arguments, contextArguments, method);
                 case ReturnTypeRef.OtherReturnType other ->
                     new ServiceRecordField(parentTypeName, name, location, other,
-                        servicePath.elements(), serviceRef, arguments, contextArguments, serviceMethodRef);
+                        servicePath.elements(), arguments, contextArguments, method);
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
             };
@@ -1452,10 +1453,12 @@ public class GraphitronSchemaBuilder {
             if (tableMethodPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, tableMethodPath.errorMessage());
             }
+            var tmRef = parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
             return new TableMethodField(parentTypeName, name, location,
                 returnType,
                 tableMethodPath.elements(),
-                parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF),
+                tmRef != null ? tmRef.className() : null,
+                tmRef != null ? tmRef.methodName() : null,
                 args,
                 parseContextArguments(fieldDef, DIR_TABLE_METHOD));
         }
@@ -1713,20 +1716,18 @@ public class GraphitronSchemaBuilder {
      *
      * <p>Returns a successful {@link ServiceReflectionResult} when the class and at least one
      * matching method are found and all parameters can be classified. Returns a failed result
-     * otherwise. Parameters whose name matches a GraphQL argument become
-     * {@link ServiceMethodRef.ServiceParam.ArgParam}, parameters whose name matches a context key
-     * become {@link ServiceMethodRef.ServiceParam.ContextParam}, and all others become
-     * {@link ServiceMethodRef.ServiceParam.SourcesParam} with the element type classified by
-     * {@link #classifySourcesType}.
+     * otherwise. Parameters whose name matches a GraphQL argument get {@link ParamSource.Arg},
+     * parameters whose name matches a context key get {@link ParamSource.Context}, and all others
+     * get {@link ParamSource.Sources} with the element type classified by {@link #classifySourcesType}.
      */
-    private ServiceReflectionResult reflectServiceMethod(ExternalRef serviceRef, Set<String> argNames, Set<String> ctxKeys) {
-        if (serviceRef == null || serviceRef.className() == null || serviceRef.methodName() == null) {
+    private ServiceReflectionResult reflectServiceMethod(String className, String methodName, Set<String> argNames, Set<String> ctxKeys) {
+        if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, "service reference is incomplete");
         }
         try {
-            Class<?> cls = Class.forName(serviceRef.className());
+            Class<?> cls = Class.forName(className);
             var methods = java.util.Arrays.stream(cls.getDeclaredMethods())
-                .filter(m -> m.getName().equals(serviceRef.methodName()))
+                .filter(m -> m.getName().equals(methodName))
                 .toList();
             if (methods.isEmpty()) {
                 var declaredMethodNames = java.util.Arrays.stream(cls.getDeclaredMethods())
@@ -1734,35 +1735,34 @@ public class GraphitronSchemaBuilder {
                     .distinct()
                     .toList();
                 return new ServiceReflectionResult(null,
-                    "method '" + serviceRef.methodName() + "' not found in class '" + serviceRef.className() + "'"
-                    + candidateHint(serviceRef.methodName(), declaredMethodNames));
+                    "method '" + methodName + "' not found in class '" + className + "'"
+                    + candidateHint(methodName, declaredMethodNames));
             }
-            var method = methods.get(0);
-            var params = new ArrayList<ServiceMethodRef.ServiceParam>();
-            for (var p : method.getParameters()) {
+            var javaMethod = methods.get(0);
+            var params = new ArrayList<MethodRef.Param>();
+            for (var p : javaMethod.getParameters()) {
                 String pName = p.isNamePresent() ? p.getName() : null;
                 String displayName = pName != null ? pName : p.getType().getSimpleName();
+                String typeName = p.getParameterizedType().getTypeName();
                 if (pName != null && argNames.contains(pName)) {
-                    params.add(new ServiceMethodRef.ServiceParam.ArgParam(
-                        displayName, p.getParameterizedType().getTypeName()));
+                    params.add(new MethodRef.Param(displayName, typeName, new ParamSource.Arg()));
                 } else if (pName != null && ctxKeys.contains(pName)) {
-                    params.add(new ServiceMethodRef.ServiceParam.ContextParam(
-                        displayName, p.getParameterizedType().getTypeName()));
+                    params.add(new MethodRef.Param(displayName, typeName, new ParamSource.Context()));
                 } else {
                     Optional<SourcesRef> sourcesRef = classifySourcesType(p.getParameterizedType());
                     if (sourcesRef.isEmpty()) {
                         return new ServiceReflectionResult(null,
-                            "parameter '" + displayName + "' in method '" + serviceRef.methodName()
-                            + "' has an unrecognized sources type: '" + p.getParameterizedType().getTypeName() + "'");
+                            "parameter '" + displayName + "' in method '" + methodName
+                            + "' has an unrecognized sources type: '" + typeName + "'");
                     }
-                    params.add(new ServiceMethodRef.ServiceParam.SourcesParam(displayName, sourcesRef.get()));
+                    params.add(new MethodRef.Param(displayName, typeName, new ParamSource.Sources(sourcesRef.get())));
                 }
             }
             return new ServiceReflectionResult(
-                new ServiceMethodRef(List.copyOf(params), method.getReturnType().getName()),
+                new MethodRef(className, methodName, javaMethod.getReturnType().getName(), List.copyOf(params)),
                 null);
         } catch (ClassNotFoundException e) {
-            return new ServiceReflectionResult(null, "class '" + serviceRef.className() + "' could not be loaded");
+            return new ServiceReflectionResult(null, "class '" + className + "' could not be loaded");
         }
     }
 
@@ -1827,11 +1827,17 @@ public class GraphitronSchemaBuilder {
 
     /**
      * Carries the result of {@link #reflectServiceMethod}: either a successfully resolved
-     * {@link ServiceMethodRef} or a failure reason string.
+     * {@link MethodRef} or a failure reason string.
      */
-    private record ServiceReflectionResult(ServiceMethodRef ref, String failureReason) {
+    private record ServiceReflectionResult(MethodRef ref, String failureReason) {
         boolean failed() { return failureReason != null; }
     }
+
+    /**
+     * Builder-private holder for the raw {@code className} and {@code methodName} parsed from an
+     * {@code ExternalCodeReference} input object before reflection is performed.
+     */
+    private record ExternalRef(String className, String methodName) {}
 
     /**
      * Carries the result of {@link #parsePath}: either a fully resolved list of path elements or

@@ -6,12 +6,12 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.model.ArgumentRef;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.ExternalRef;
 import no.sikt.graphitron.rewrite.model.FieldConditionRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.model.ServiceMethodRef;
 import no.sikt.graphitron.rewrite.model.SourcesRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.api.AfterEach;
@@ -62,19 +62,19 @@ class FieldsCodeGeneratorTest {
         var returnType = new ReturnTypeRef.TableBoundReturnType("Film",
             new TableRef("film", "FILM", "Film", Optional.of(List.of())),
             returnWrapper);
-        var smr = new ServiceMethodRef(
+        var method = new MethodRef(
+            "no.example.FilmService", "getFilms", "java.util.List",
             List.of(
-                new ServiceMethodRef.ServiceParam.SourcesParam("keys", new SourcesRef.RowKeyed(List.of("java.lang.Integer"))),
-                new ServiceMethodRef.ServiceParam.ArgParam("filter", "java.lang.String"),
-                new ServiceMethodRef.ServiceParam.ContextParam("tenantId", "java.lang.String")
-            ),
-            "java.util.List"
+                new MethodRef.Param("keys", "java.util.List<org.jooq.Row1<java.lang.Integer>>", new ParamSource.Sources(new SourcesRef.RowKeyed(List.of("java.lang.Integer")))),
+                new MethodRef.Param("filter", "java.lang.String", new ParamSource.Arg()),
+                new MethodRef.Param("tenantId", "java.lang.String", new ParamSource.Context())
+            )
         );
         return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
-            List.of(), new ExternalRef("no.example.FilmService", "getFilms"),
+            List.of(),
             List.of(new ArgumentRef.MethodParamArg.ScalarParamArg("filter", "String", false, false)),
-            List.of("tenantId"), smr);
+            List.of("tenantId"), method);
     }
 
     private static TypeSpec spec(String typeName, List<String> fieldNames) {

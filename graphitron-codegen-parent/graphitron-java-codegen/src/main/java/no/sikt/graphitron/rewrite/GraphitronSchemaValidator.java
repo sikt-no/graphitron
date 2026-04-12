@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 
 import no.sikt.graphitron.rewrite.model.InputFieldRef;
+import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.SourcesRef;
 
 /**
  * Validates a {@link GraphitronSchema}, collecting all errors rather than failing on the first.
@@ -334,7 +336,7 @@ public class GraphitronSchemaValidator {
         validateArguments(field.name(), field.location(), field.arguments(), types, errors);
 
         // Validate each SOURCES parameter's SourcesRef variant.
-        var smr = field.serviceMethodRef();
+        var smr = field.method();
         var parentTypeForSources = types.get(field.parentTypeName());
         List<String> parentPkJavaTypes = (parentTypeForSources instanceof TableBackedType tbtSrc)
             ? tbtSrc.table().primaryKeyColumns()
@@ -343,41 +345,42 @@ public class GraphitronSchemaValidator {
             : List.of();
 
         smr.params().stream()
-            .filter(p -> p instanceof no.sikt.graphitron.rewrite.model.ServiceMethodRef.ServiceParam.SourcesParam)
-            .map(p -> (no.sikt.graphitron.rewrite.model.ServiceMethodRef.ServiceParam.SourcesParam) p)
-            .forEach(sp -> { switch (sp.sourcesRef()) {
-                case no.sikt.graphitron.rewrite.model.SourcesRef.RowKeyed rk -> {
+            .filter(p -> p.source() instanceof ParamSource.Sources)
+            .forEach(p -> { switch (((ParamSource.Sources) p.source()).sourcesRef()) {
+                case SourcesRef.RowKeyed rk -> {
                     if (!parentPkJavaTypes.isEmpty() && !rk.pkJavaTypes().equals(parentPkJavaTypes)) {
                         String expected = buildExpectedKeysType("Row", parentPkJavaTypes);
                         String found    = buildExpectedKeysType("Row", rk.pkJavaTypes());
                         errors.add(new ValidationError(
-                            "Field '" + field.name() + "': SOURCES parameter '" + sp.name()
+                            "Field '" + field.name() + "': SOURCES parameter '" + p.name()
                                 + "' must be of type " + expected + ", found: " + found,
                             field.location()));
                     }
                 }
-                case no.sikt.graphitron.rewrite.model.SourcesRef.RecordKeyed rk -> {
+                case SourcesRef.RecordKeyed rk -> {
                     if (!parentPkJavaTypes.isEmpty() && !rk.pkJavaTypes().equals(parentPkJavaTypes)) {
                         String expected = buildExpectedKeysType("Record", parentPkJavaTypes);
                         String found    = buildExpectedKeysType("Record", rk.pkJavaTypes());
                         errors.add(new ValidationError(
-                            "Field '" + field.name() + "': SOURCES parameter '" + sp.name()
+                            "Field '" + field.name() + "': SOURCES parameter '" + p.name()
                                 + "' must be of type " + expected + ", found: " + found,
                             field.location()));
                     }
                 }
-                case no.sikt.graphitron.rewrite.model.SourcesRef.TableRecordKeyed trk -> {
+                case SourcesRef.TableRecordKeyed trk -> {
                     // The whole parent record is the key — no PK-column type check needed.
+                }
+                case SourcesRef.ResultKeyed rk -> {
+                    // The whole parent result object is the key — no PK-column type check needed.
                 }
             } });
 
         // For Row-keyed and Record-keyed, the parent must have a PK so the key
-        // expression can be built. TableRecordKeyed uses the whole parent record as the key.
+        // expression can be built. TableRecordKeyed and ResultKeyed use the whole parent as the key.
         boolean hasRowOrRecordKeyed = smr.params().stream()
-            .filter(p -> p instanceof no.sikt.graphitron.rewrite.model.ServiceMethodRef.ServiceParam.SourcesParam)
-            .map(p -> (no.sikt.graphitron.rewrite.model.ServiceMethodRef.ServiceParam.SourcesParam) p)
-            .anyMatch(sp -> sp.sourcesRef() instanceof no.sikt.graphitron.rewrite.model.SourcesRef.RowKeyed
-                         || sp.sourcesRef() instanceof no.sikt.graphitron.rewrite.model.SourcesRef.RecordKeyed);
+            .filter(p -> p.source() instanceof ParamSource.Sources)
+            .anyMatch(p -> ((ParamSource.Sources) p.source()).sourcesRef() instanceof SourcesRef.RowKeyed
+                        || ((ParamSource.Sources) p.source()).sourcesRef() instanceof SourcesRef.RecordKeyed);
 
         if (!hasRowOrRecordKeyed) {
             return; // TableRecordKeyed — no PK constraint on the parent table

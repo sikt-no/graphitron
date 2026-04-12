@@ -39,14 +39,14 @@ class RecordTableFieldValidationTest {
 
         WITH_CONDITION_ONLY("condition method only — no FK",
             new RecordTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(
-                new ConditionOnlyRef(new MethodRef("com.example.Conditions.filmCondition", "org.jooq.Condition", List.of()))),
+                new ConditionOnlyRef(new MethodRef("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()))),
                 new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
         FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause; no errors",
             new RecordTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true, null, List.of())), List.of(),
                 new FieldConditionRef.ResolvedFieldCondition(
-                    new MethodRef("com.example.Conditions.filmCondition", "org.jooq.Condition", List.of()), false, List.of()),
+                    new MethodRef("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()), false, List.of()),
                 List.of()),
             List.of()),
 

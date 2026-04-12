@@ -40,12 +40,12 @@ class SplitTableFieldValidationTest {
 
         WITH_CONDITION_ONLY("condition method only — no FK",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(
-                new ConditionOnlyRef(new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()))), new FieldConditionRef.NoFieldCondition(), List.of()),
+                new ConditionOnlyRef(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()))), new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 
         FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause; no errors",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), new FieldConditionRef.ResolvedFieldCondition(
-                new MethodRef("com.example.Conditions.actorCondition", "org.jooq.Condition", List.of()), false, List.of()), List.of()),
+                new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), false, List.of()), List.of()),
             List.of()),
 
         DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields — valid",

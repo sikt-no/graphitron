@@ -6,7 +6,6 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldConditionRef;
 import no.sikt.graphitron.rewrite.model.ReferencePathElementRef;
 import no.sikt.graphitron.rewrite.model.ArgumentRef;
-import no.sikt.graphitron.rewrite.model.ServiceMethodRef;
 
 import java.util.List;
 
@@ -379,7 +378,7 @@ public sealed interface ChildField extends GraphitronField
         List<ReferencePathElementRef> referencePath,
         List<ArgumentRef> arguments,
         List<String> contextArguments,
-        ServiceMethodRef serviceMethodRef
+        MethodRef method
     ) implements ChildField {}
 
     /**
@@ -401,7 +400,7 @@ public sealed interface ChildField extends GraphitronField
         List<ReferencePathElementRef> referencePath,
         List<ArgumentRef> arguments,
         List<String> contextArguments,
-        ServiceMethodRef serviceMethodRef
+        MethodRef method
     ) implements ChildField {}
 
     /**
