@@ -8,8 +8,10 @@ package no.sikt.graphitron.rewrite.model;
  * be classified as {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}.
  *
  * <ul>
- *   <li>{@link FkJoin} — navigate via a jOOQ foreign key, using {@code .join(table).onKey(fk)}.</li>
- *   <li>{@link ConditionJoin} — navigate via a user-supplied condition method (no FK constraint).</li>
+ *   <li>{@link FkJoin} — navigate via a jOOQ foreign key, using {@code .join(table).onKey(fk)},
+ *       with an optional WHERE filter applied after the join.</li>
+ *   <li>{@link ConditionJoin} — navigate via a user-supplied condition method (no FK constraint);
+ *       the condition is the ON clause of the join.</li>
  * </ul>
  */
 public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin {
@@ -26,18 +28,26 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * {@code keyTableSqlName} is the SQL name of the referenced (key-side) table (e.g.
      * {@code "language"}). {@code fkTableSqlName} is the SQL name of the referencing (FK-side)
      * table (e.g. {@code "film"}).
+     *
+     * <p>{@code whereFilter} is an optional user-supplied condition method resolved from a
+     * {@code condition} argument on the same {@code @reference} path element as the {@code key}.
+     * When present the generator appends a {@code .where()} / {@code .and()} filter after the join,
+     * passing both the source-table alias and the newly-joined table alias as arguments. This is
+     * {@code null} when no {@code condition} argument was specified alongside the key.
      */
     record FkJoin(
         String fkName,
         String keyTableSqlName,
-        String fkTableSqlName
+        String fkTableSqlName,
+        MethodRef whereFilter
     ) implements JoinStep {}
 
     /**
      * One hop navigated by a user-supplied condition method (no FK constraint involved).
      *
-     * <p>Used when there is no database foreign key for this join step — the condition method
-     * supplies the join predicate directly. Typical use: reconnecting a service or
+     * <p>The condition method is the ON clause of the join: the generator emits
+     * {@code .join(targetTable).on(condition(sourceAlias, targetAlias))}. Used when there is no
+     * database foreign key for this join step. Typical use: reconnecting a service or
      * {@code @externalField} result back to the parent table when no FK exists.
      */
     record ConditionJoin(MethodRef condition) implements JoinStep {}

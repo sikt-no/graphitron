@@ -20,12 +20,12 @@ class ColumnReferenceFieldValidationTest {
 
         RESOLVED_IMPLICIT("no @field — column name defaults to the GraphQL field name; path resolved via FK",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.FkJoin("film_language_id_fkey", "language", "film")), false),
+                List.of(new JoinStep.FkJoin("film_language_id_fkey", "language", "film", null)), false),
             List.of()),
 
         RESOLVED_EXPLICIT("@field(name:) overrides the column name; path resolved via FK",
             new ColumnReferenceField("Film", "languageName", null, "language_name", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.FkJoin("film_language_id_fkey", "language", "film")), false),
+                List.of(new JoinStep.FkJoin("film_language_id_fkey", "language", "film", null)), false),
             List.of()),
 
         CONDITION_METHOD("path resolved via condition method instead of a FK",
@@ -35,7 +35,7 @@ class ColumnReferenceFieldValidationTest {
 
         JAVA_NAME_PRESENT("@field(javaName:) is not supported — validation error",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.FkJoin("film_language_id_fkey", "language", "film")), true),
+                List.of(new JoinStep.FkJoin("film_language_id_fkey", "language", "film", null)), true),
             List.of("Field 'languageName': @field(javaName:) is not supported in record-based output")),
 
         MISSING_PATH("no @reference directive — path is empty",

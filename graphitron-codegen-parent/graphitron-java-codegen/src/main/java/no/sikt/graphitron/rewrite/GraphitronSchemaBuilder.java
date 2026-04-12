@@ -1647,14 +1647,25 @@ public class GraphitronSchemaBuilder {
         boolean hasCondition = conditionRaw instanceof Map;
 
         if (keyName.isPresent() && hasCondition) {
-            errors.add("path element cannot specify both 'key' (FK join) and 'condition'");
+            // key + condition on the same element means: FK join + optional WHERE filter.
+            // The condition is resolved as a whereFilter passed to both source and target aliases.
+            Optional<ForeignKey<?, ?>> fk = catalog.findForeignKey(keyName.get());
+            Map<String, Object> condMap = asMap(conditionRaw);
+            MethodRef resolvedCond = resolveConditionRef(condMap);
+            if (fk.isPresent()) {
+                var f = fk.get();
+                out.add(new FkJoin(f.getName(), f.getKey().getTable().getName(), f.getTable().getName(), resolvedCond));
+            } else {
+                errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog"
+                    + candidateHint(keyName.get(), catalog.allForeignKeySqlNames()));
+            }
             return;
         }
         if (keyName.isPresent()) {
             Optional<ForeignKey<?, ?>> fk = catalog.findForeignKey(keyName.get());
             if (fk.isPresent()) {
                 var f = fk.get();
-                out.add(new FkJoin(f.getName(), f.getKey().getTable().getName(), f.getTable().getName()));
+                out.add(new FkJoin(f.getName(), f.getKey().getTable().getName(), f.getTable().getName(), null));
             } else {
                 errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog"
                     + candidateHint(keyName.get(), catalog.allForeignKeySqlNames()));
