@@ -34,6 +34,9 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.JavaRecordType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
@@ -893,6 +896,81 @@ class GraphitronSchemaBuilderTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(NonTableParentCase.class)
     void nonTableParentFieldClassification(NonTableParentCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== ResultType backing-class classification =====
+
+    enum ResultTypeCase {
+        NO_CLASS(
+            "@record with no backing class → PojoResultType with null fqClassName",
+            """
+            type FilmDetails @record { id: ID }
+            type Query { foo: String }
+            """,
+            schema -> {
+                var t = (PojoResultType) schema.type("FilmDetails");
+                assertThat(t.fqClassName()).isNull();
+            }),
+
+        POJO_CLASS(
+            "@record with plain Java class → PojoResultType with fqClassName",
+            """
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) { id: ID }
+            type Query { foo: String }
+            """,
+            schema -> {
+                var t = (PojoResultType) schema.type("FilmDetails");
+                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.DummyRecord");
+            }),
+
+        JAVA_RECORD_CLASS(
+            "@record with Java record class → JavaRecordType with fqClassName",
+            """
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto"}) { id: ID }
+            type Query { foo: String }
+            """,
+            schema -> {
+                var t = (JavaRecordType) schema.type("FilmDetails");
+                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto");
+            }),
+
+        JOOQ_TABLE_RECORD_CLASS(
+            "@record with jOOQ TableRecord class → JooqTableRecordType with fqClassName and resolved table",
+            """
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.FilmRecord"}) { id: ID }
+            type Query { foo: String }
+            """,
+            schema -> {
+                var t = (JooqTableRecordType) schema.type("FilmDetails");
+                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.FilmRecord");
+                assertThat(t.table()).isNotNull();
+                assertThat(t.table().tableName()).isEqualTo("film");
+            }),
+
+        UNKNOWN_CLASS(
+            "@record with unresolvable class → UnclassifiedType with explanation",
+            """
+            type FilmDetails @record(record: {className: "com.example.nonexistent.Missing"}) { id: ID }
+            type Query { foo: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("FilmDetails");
+                assertThat(t.reason()).contains("com.example.nonexistent.Missing").contains("could not be loaded");
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        ResultTypeCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(ResultTypeCase.class)
+    void resultTypeBackingClassClassification(ResultTypeCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 

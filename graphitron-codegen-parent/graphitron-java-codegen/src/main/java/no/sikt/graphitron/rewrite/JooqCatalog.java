@@ -62,6 +62,21 @@ public class JooqCatalog {
     }
 
     /**
+     * Find a table by its jOOQ record class. Returns the table whose
+     * {@link org.jooq.Table#getRecordType()} equals {@code recordClass}, or empty when no match
+     * is found (e.g. the record comes from a different catalog).
+     */
+    public Optional<TableEntry> findTableByRecordClass(Class<?> recordClass) {
+        return catalog.schemaStream()
+            .flatMap(schema -> tablesClass(schema).stream())
+            .flatMap(cls -> Arrays.stream(cls.getFields()))
+            .filter(f -> Table.class.isAssignableFrom(f.getType()))
+            .map(f -> new TableEntry(f.getName(), (Table<?>) fieldValue(f)))
+            .filter(e -> e.table().getRecordType().equals(recordClass))
+            .findFirst();
+    }
+
+    /**
      * Find a foreign key by name, searching all schemas in the catalog.
      * First tries matching by SQL constraint name (e.g. {@code "film_language_id_fkey"}),
      * then falls back to matching by the jOOQ-generated Java constant name

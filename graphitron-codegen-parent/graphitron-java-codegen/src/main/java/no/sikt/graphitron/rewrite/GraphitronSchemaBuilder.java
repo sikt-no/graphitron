@@ -144,6 +144,7 @@ public class GraphitronSchemaBuilder {
 
     // Argument names for the directives above.
     private static final String ARG_CONTEXT_ARGUMENTS = "contextArguments";
+    private static final String ARG_RECORD = "record";
     private static final String ARG_SERVICE_REF = "service";
     private static final String ARG_TABLE_METHOD_REF = "tableMethodReference";
     private static final String ARG_METHOD = "method";
@@ -363,7 +364,7 @@ public class GraphitronSchemaBuilder {
                 return buildTableType(objType);
             }
             if (objType.hasAppliedDirective(DIR_RECORD)) {
-                return new GraphitronType.PojoResultType(name, location, fieldCoordinatesOf(objType));
+                return buildResultType(objType, name, location);
             }
             if (objType.hasAppliedDirective(DIR_ERROR)) {
                 return buildErrorType(objType);
@@ -421,6 +422,51 @@ public class GraphitronSchemaBuilder {
         return new NodeType(name, location, tableRef, typeId, List.copyOf(keyColumns), fieldCoordinatesOf(objType));
     }
 
+    /**
+     * Reflects on the backing Java class named in {@code @record(record: {className:})} and
+     * constructs the appropriate {@link GraphitronType.ResultType} sub-type:
+     * <ul>
+     *   <li>{@link GraphitronType.JavaRecordType} — the class is a Java {@code record}</li>
+     *   <li>{@link GraphitronType.JooqTableRecordType} — the class extends {@code org.jooq.TableRecord}</li>
+     *   <li>{@link GraphitronType.JooqRecordType} — the class implements {@code org.jooq.Record} but is not a TableRecord</li>
+     *   <li>{@link GraphitronType.PojoResultType} — any other class, or when {@code className} is absent</li>
+     * </ul>
+     * Returns {@link GraphitronType.UnclassifiedType} when the named class cannot be loaded.
+     */
+    private GraphitronType buildResultType(GraphQLObjectType objType, String name, SourceLocation location) {
+        var fcs = fieldCoordinatesOf(objType);
+        var dir = objType.getAppliedDirective(DIR_RECORD);
+        if (dir == null) return new GraphitronType.PojoResultType(name, location, fcs, null);
+        var recordArg = dir.getArgument(ARG_RECORD);
+        if (recordArg == null || recordArg.getValue() == null) {
+            return new GraphitronType.PojoResultType(name, location, fcs, null);
+        }
+        Map<String, Object> ref = asMap(recordArg.getValue());
+        String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME))
+            .map(Object::toString)
+            .orElse(null);
+        if (className == null) {
+            return new GraphitronType.PojoResultType(name, location, fcs, null);
+        }
+        try {
+            Class<?> cls = Class.forName(className);
+            if (cls.isRecord()) {
+                return new GraphitronType.JavaRecordType(name, location, fcs, className);
+            }
+            if (org.jooq.TableRecord.class.isAssignableFrom(cls)) {
+                TableRef table = resolveTableByRecordClass(cls).orElse(null);
+                return new GraphitronType.JooqTableRecordType(name, location, fcs, className, table);
+            }
+            if (org.jooq.Record.class.isAssignableFrom(cls)) {
+                return new GraphitronType.JooqRecordType(name, location, fcs, className);
+            }
+            return new GraphitronType.PojoResultType(name, location, fcs, className);
+        } catch (ClassNotFoundException e) {
+            return new UnclassifiedType(name, location,
+                "record backing class '" + className + "' could not be loaded");
+        }
+    }
+
     private GraphitronType buildTableInterfaceType(GraphQLInterfaceType iface) {
         String name = iface.getName();
         SourceLocation location = locationOf(iface);
@@ -435,18 +481,24 @@ public class GraphitronSchemaBuilder {
     }
 
     private Optional<TableRef> resolveTable(String sqlName) {
-        return catalog.findTable(sqlName)
-            .map(e -> {
-                var pk = e.table().getPrimaryKey();
-                Optional<List<ColumnRef>> pkColumns = pk == null
-                    ? Optional.empty()
-                    : Optional.of(pk.getFields().stream()
-                        .map(f -> catalog.findColumn(e.table(), f.getName()))
-                        .<JooqCatalog.ColumnEntry>flatMap(Optional::stream)
-                        .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()))
-                        .toList());
-                return new TableRef(sqlName, e.javaFieldName(), e.table().getClass().getSimpleName(), pkColumns);
-            });
+        return catalog.findTable(sqlName).map(e -> buildTableRef(e, sqlName));
+    }
+
+    private Optional<TableRef> resolveTableByRecordClass(Class<?> recordClass) {
+        return catalog.findTableByRecordClass(recordClass)
+            .map(e -> buildTableRef(e, e.table().getName()));
+    }
+
+    private TableRef buildTableRef(JooqCatalog.TableEntry e, String sqlName) {
+        var pk = e.table().getPrimaryKey();
+        Optional<List<ColumnRef>> pkColumns = pk == null
+            ? Optional.empty()
+            : Optional.of(pk.getFields().stream()
+                .map(f -> catalog.findColumn(e.table(), f.getName()))
+                .<JooqCatalog.ColumnEntry>flatMap(Optional::stream)
+                .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()))
+                .toList());
+        return new TableRef(sqlName, e.javaFieldName(), e.table().getClass().getSimpleName(), pkColumns);
     }
 
     private Optional<ColumnRef> resolveKeyColumn(String colName, String tableSqlName) {

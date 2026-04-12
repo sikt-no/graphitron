@@ -70,9 +70,9 @@ public sealed interface GraphitronType
     /**
      * A type annotated with {@code @record}. Runtime wiring only — no SQL until a new scope starts.
      *
-     * <p>The sub-type identifies the backing Java representation. Backing-class reflection is not
-     * yet implemented, so the builder always constructs {@link PojoResultType}; the other sub-types
-     * are aspirational and will be populated once reflection is added.
+     * <p>The sub-type identifies the backing Java representation. The builder reflects on the class
+     * named in {@code @record(record: {className: ...})} at build time. When no {@code className}
+     * is provided, the type is classified as {@link PojoResultType} with a {@code null} backing class.
      */
     sealed interface ResultType extends GraphitronType
         permits GraphitronType.JavaRecordType, GraphitronType.PojoResultType,
@@ -81,38 +81,53 @@ public sealed interface GraphitronType
         List<FieldCoordinates> fieldCoordinates();
     }
 
-    /** A {@code @record} type backed by a Java {@code record} class. */
+    /**
+     * A {@code @record} type backed by a Java {@code record} class.
+     * {@code fqClassName} is the binary class name, e.g. {@code "com.example.FilmDto"}.
+     */
     record JavaRecordType(
         String name,
         SourceLocation location,
-        List<FieldCoordinates> fieldCoordinates
+        List<FieldCoordinates> fieldCoordinates,
+        String fqClassName
     ) implements ResultType {}
 
     /**
-     * A {@code @record} type backed by a plain Java class (POJO).
-     * Default until backing-class reflection is implemented.
+     * A {@code @record} type backed by a plain Java class (POJO), or one whose backing class
+     * was not specified in the directive ({@code fqClassName} is {@code null} in that case).
      */
     record PojoResultType(
         String name,
         SourceLocation location,
-        List<FieldCoordinates> fieldCoordinates
+        List<FieldCoordinates> fieldCoordinates,
+        String fqClassName
     ) implements ResultType {}
 
-    /** A {@code @record} type backed by a jOOQ {@code Record<?>} (not table-bound). */
+    /**
+     * A {@code @record} type backed by a jOOQ {@code Record<?>} (not table-bound).
+     * {@code fqClassName} is the binary class name of the jOOQ record class.
+     */
     record JooqRecordType(
         String name,
         SourceLocation location,
-        List<FieldCoordinates> fieldCoordinates
+        List<FieldCoordinates> fieldCoordinates,
+        String fqClassName
     ) implements ResultType {}
 
     /**
      * A {@code @record} type backed by a jOOQ {@code TableRecord<?>}.
-     * {@code table} is the resolved jOOQ table this record is bound to.
+     *
+     * <p>{@code fqClassName} is the binary class name of the jOOQ table-record class.
+     *
+     * <p>{@code table} is the resolved jOOQ table this record is bound to, found by matching
+     * {@link org.jooq.Table#getRecordType()} against the backing class. May be {@code null}
+     * when the backing class comes from a catalog not loaded at build time.
      */
     record JooqTableRecordType(
         String name,
         SourceLocation location,
         List<FieldCoordinates> fieldCoordinates,
+        String fqClassName,
         TableRef table
     ) implements ResultType {}
 
