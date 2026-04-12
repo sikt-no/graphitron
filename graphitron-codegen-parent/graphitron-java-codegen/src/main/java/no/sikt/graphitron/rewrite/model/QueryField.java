@@ -192,7 +192,7 @@ public sealed interface QueryField extends RootField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.OtherReturnType returnType,
+        ReturnTypeRef returnType,
         List<ArgumentRef> arguments,
         List<String> contextArguments,
         MethodRef method

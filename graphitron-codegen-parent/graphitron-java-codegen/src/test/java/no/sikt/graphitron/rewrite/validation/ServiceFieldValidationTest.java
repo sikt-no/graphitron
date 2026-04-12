@@ -32,11 +32,11 @@ class ServiceFieldValidationTest {
     enum RecordCase implements ValidatorCase {
 
         NO_PATH("no @reference — no lift condition; valid for non-table return",
-            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(), List.of(), List.of(), RESOLVED_METHOD),
+            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true)), List.of(), List.of(), List.of(), RESOLVED_METHOD),
             List.of()),
 
         WITH_LIFT_CONDITION("lift condition with a resolved method",
-            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
+            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "liftCondition", "org.jooq.Condition",
                     List.of(new MethodRef.Param("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))))),
                 List.of(), List.of(), RESOLVED_METHOD),

@@ -363,7 +363,7 @@ public class GraphitronSchemaBuilder {
                 return buildTableType(objType);
             }
             if (objType.hasAppliedDirective(DIR_RECORD)) {
-                return new ResultType(name, location, fieldCoordinatesOf(objType));
+                return new GraphitronType.PojoResultType(name, location, fieldCoordinatesOf(objType));
             }
             if (objType.hasAppliedDirective(DIR_ERROR)) {
                 return buildErrorType(objType);
@@ -943,8 +943,10 @@ public class GraphitronSchemaBuilder {
             return switch (returnType) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, args, contextArgs, method);
-                case ReturnTypeRef.OtherReturnType other ->
-                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, other, args, contextArgs, method);
+                case ReturnTypeRef.ResultReturnType r ->
+                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, r, args, contextArgs, method);
+                case ReturnTypeRef.ScalarReturnType s ->
+                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, s, args, contextArgs, method);
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
             };
@@ -1064,8 +1066,10 @@ public class GraphitronSchemaBuilder {
             return switch (returnType) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, args, contextArgs, method);
-                case ReturnTypeRef.OtherReturnType other ->
-                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, other, args, contextArgs, method);
+                case ReturnTypeRef.ResultReturnType r ->
+                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, r, args, contextArgs, method);
+                case ReturnTypeRef.ScalarReturnType s ->
+                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, s, args, contextArgs, method);
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
             };
@@ -1346,8 +1350,11 @@ public class GraphitronSchemaBuilder {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new ServiceTableField(parentTypeName, name, location, tb,
                         servicePath.elements(), arguments, contextArguments, method);
-                case ReturnTypeRef.OtherReturnType other ->
-                    new ServiceRecordField(parentTypeName, name, location, other,
+                case ReturnTypeRef.ResultReturnType r ->
+                    new ServiceRecordField(parentTypeName, name, location, r,
+                        servicePath.elements(), arguments, contextArguments, method);
+                case ReturnTypeRef.ScalarReturnType s ->
+                    new ServiceRecordField(parentTypeName, name, location, s,
                         servicePath.elements(), arguments, contextArguments, method);
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
@@ -1383,8 +1390,10 @@ public class GraphitronSchemaBuilder {
                 yield new RecordTableField(parentTypeName, name, location, tb,
                     objectPath.elements(), new FieldConditionRef.NoFieldCondition(), args);
             }
-            case ReturnTypeRef.OtherReturnType other ->
-                new RecordField(parentTypeName, name, location, other, columnName);
+            case ReturnTypeRef.ResultReturnType r ->
+                new RecordField(parentTypeName, name, location, r, columnName);
+            case ReturnTypeRef.ScalarReturnType s ->
+                new RecordField(parentTypeName, name, location, s, columnName);
             case ReturnTypeRef.PolymorphicReturnType p ->
                 new UnclassifiedField(parentTypeName, name, location, fieldDef, "@record type returning a polymorphic type is not yet supported");
         };
@@ -1421,8 +1430,11 @@ public class GraphitronSchemaBuilder {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new ServiceTableField(parentTypeName, name, location, tb,
                         servicePath.elements(), arguments, contextArguments, method);
-                case ReturnTypeRef.OtherReturnType other ->
-                    new ServiceRecordField(parentTypeName, name, location, other,
+                case ReturnTypeRef.ResultReturnType r ->
+                    new ServiceRecordField(parentTypeName, name, location, r,
+                        servicePath.elements(), arguments, contextArguments, method);
+                case ReturnTypeRef.ScalarReturnType s ->
+                    new ServiceRecordField(parentTypeName, name, location, s,
                         servicePath.elements(), arguments, contextArguments, method);
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
@@ -1562,12 +1574,14 @@ public class GraphitronSchemaBuilder {
         GraphitronType target = types.get(targetTypeName);
         if (target instanceof TableBackedType tbt)
             return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tbt.table(), wrapper);
-        if (target instanceof InterfaceType interfaceType || target instanceof UnionType unionType)
+        if (target instanceof InterfaceType || target instanceof UnionType)
             return new ReturnTypeRef.PolymorphicReturnType(targetTypeName, wrapper);
-        // PojoReturnType covers ResultType (backing class not yet reflected), scalars, enums,
-        // and directive-argument type names that don't match any schema type (@nodeId(typeName:)).
+        if (target instanceof ResultType)
+            return new ReturnTypeRef.ResultReturnType(targetTypeName, wrapper);
+        // ScalarReturnType covers scalars, enums, and directive-argument type names that
+        // don't match any schema type (@nodeId(typeName:)).
         // Downstream validators report errors when required type metadata is absent.
-        return new ReturnTypeRef.OtherReturnType.PojoReturnType(targetTypeName, wrapper);
+        return new ReturnTypeRef.ScalarReturnType(targetTypeName, wrapper);
     }
 
     private boolean isScalarOrEnum(GraphQLFieldDefinition fieldDef) {

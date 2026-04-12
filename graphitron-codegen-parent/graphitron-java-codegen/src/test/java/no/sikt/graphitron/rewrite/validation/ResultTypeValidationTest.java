@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -16,7 +16,7 @@ class ResultTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         VALID("result type — always valid",
-            new ResultType("FilmResult", null, List.of()),
+            new PojoResultType("FilmResult", null, List.of()),
             List.of());
 
         private final String description;

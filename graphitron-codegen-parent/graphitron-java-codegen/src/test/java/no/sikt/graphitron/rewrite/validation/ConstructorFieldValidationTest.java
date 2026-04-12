@@ -18,7 +18,7 @@ class ConstructorFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("constructor field — always valid",
-            new ConstructorField("Film", "constructed", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true))),
+            new ConstructorField("Film", "constructed", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true))),
             List.of());
 
         private final String description;

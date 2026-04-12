@@ -18,7 +18,7 @@ class MutationUpsertTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("upsert mutation field — always valid",
-            new MutationUpsertTableField("Mutation", "upsertFilm", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of()),
+            new MutationUpsertTableField("Mutation", "upsertFilm", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of()),
             List.of());
 
         private final String description;

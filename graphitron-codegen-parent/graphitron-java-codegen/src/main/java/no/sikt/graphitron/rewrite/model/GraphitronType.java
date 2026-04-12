@@ -69,12 +69,52 @@ public sealed interface GraphitronType
 
     /**
      * A type annotated with {@code @record}. Runtime wiring only — no SQL until a new scope starts.
+     *
+     * <p>The sub-type identifies the backing Java representation. Backing-class reflection is not
+     * yet implemented, so the builder always constructs {@link PojoResultType}; the other sub-types
+     * are aspirational and will be populated once reflection is added.
      */
-    record ResultType(
+    sealed interface ResultType extends GraphitronType
+        permits GraphitronType.JavaRecordType, GraphitronType.PojoResultType,
+                GraphitronType.JooqRecordType, GraphitronType.JooqTableRecordType {
+
+        List<FieldCoordinates> fieldCoordinates();
+    }
+
+    /** A {@code @record} type backed by a Java {@code record} class. */
+    record JavaRecordType(
         String name,
         SourceLocation location,
         List<FieldCoordinates> fieldCoordinates
-    ) implements GraphitronType {}
+    ) implements ResultType {}
+
+    /**
+     * A {@code @record} type backed by a plain Java class (POJO).
+     * Default until backing-class reflection is implemented.
+     */
+    record PojoResultType(
+        String name,
+        SourceLocation location,
+        List<FieldCoordinates> fieldCoordinates
+    ) implements ResultType {}
+
+    /** A {@code @record} type backed by a jOOQ {@code Record<?>} (not table-bound). */
+    record JooqRecordType(
+        String name,
+        SourceLocation location,
+        List<FieldCoordinates> fieldCoordinates
+    ) implements ResultType {}
+
+    /**
+     * A {@code @record} type backed by a jOOQ {@code TableRecord<?>}.
+     * {@code table} is the resolved jOOQ table this record is bound to.
+     */
+    record JooqTableRecordType(
+        String name,
+        SourceLocation location,
+        List<FieldCoordinates> fieldCoordinates,
+        TableRef table
+    ) implements ResultType {}
 
     /**
      * A root operation type (Query or Mutation). Unmapped — no source context, no SQL until
@@ -163,7 +203,8 @@ public sealed interface GraphitronType
      * A GraphQL input object type with no {@code @table} binding.
      * The developer supplies the backing Java class (record, POJO, Map, JSON, etc.);
      * Graphitron does not generate DML for it.
-     * This is the input-side counterpart of {@link ReturnTypeRef.OtherReturnType}.
+     * This is the input-side counterpart of {@link ReturnTypeRef.ResultReturnType} and
+     * {@link ReturnTypeRef.ScalarReturnType}.
      * A backing-class discriminator will be added here when input-type code generation
      * is implemented.
      */

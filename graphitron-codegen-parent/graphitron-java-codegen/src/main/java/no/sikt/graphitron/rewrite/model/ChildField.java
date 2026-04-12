@@ -112,8 +112,9 @@ public sealed interface ChildField extends GraphitronField
      *
      * <p>{@code targetType} is the outcome of resolving {@code typeName} against the classified
      * schema: {@link ReturnTypeRef.TableBoundReturnType} when the named type exists and is a
-     * table-backed type (carrying the table ref for FK and path validation), or
-     * {@link ReturnTypeRef.OtherReturnType} otherwise.
+     * table-backed type (carrying the table ref for FK and path validation),
+     * {@link ReturnTypeRef.ResultReturnType} for {@code @record}-annotated types, or
+     * {@link ReturnTypeRef.ScalarReturnType} otherwise.
      *
      * <p>{@code parentTable} is the resolved table of the containing type, or {@code null} when
      * the parent type is not table-backed. A null parent table skips the implicit FK count check.
@@ -396,7 +397,7 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.OtherReturnType returnType,
+        ReturnTypeRef returnType,
         List<JoinStep> joinPath,
         List<ArgumentRef> arguments,
         List<String> contextArguments,
@@ -473,7 +474,7 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.OtherReturnType returnType,
+        ReturnTypeRef returnType,
         String columnName
     ) implements ChildField {}
 
