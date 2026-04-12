@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldConditionRef;
 import no.sikt.graphitron.rewrite.model.ReferencePathElementRef;
 import no.sikt.graphitron.rewrite.model.ArgumentRef;
+import no.sikt.graphitron.rewrite.model.ServiceMethodRef;
 
 import java.util.List;
 
@@ -260,8 +261,9 @@ public sealed interface ChildField extends GraphitronField
      * used to override FK auto-inference. Empty when no {@code @reference} directive is present —
      * Graphitron will attempt to infer the foreign key automatically.
      *
-     * <p>{@code tableMethodRef} is the {@code tableMethodReference: ExternalCodeReference!} argument
-     * of the {@code @tableMethod} directive — the Java method that returns the pre-filtered table.
+     * <p>{@code tableMethodClassName} and {@code tableMethodMethodName} are from the
+     * {@code tableMethodReference: ExternalCodeReference!} argument of the {@code @tableMethod}
+     * directive — the Java class and method that return the pre-filtered table.
      *
      * <p>{@code arguments} is the full list of GraphQL arguments on the field.
      *
@@ -274,7 +276,8 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef returnType,
         List<ReferencePathElementRef> referencePath,
-        ExternalRef tableMethodRef,
+        String tableMethodClassName,
+        String tableMethodMethodName,
         List<ArgumentRef> arguments,
         List<String> contextArguments
     ) implements ChildField {}
@@ -359,17 +362,14 @@ public sealed interface ChildField extends GraphitronField
      * providing lift conditions that reconnect results back to the parent. Each element should
      * carry a {@code condition} method — no FK is involved. Empty when {@code @reference} is absent.
      *
-     * <p>{@code serviceRef} is the {@code service: ExternalCodeReference!} argument of the
-     * {@code @service} directive — the Java class and method to delegate to.
+     * <p>{@code serviceMethodRef} carries the class name, method name, and reflected parameter
+     * list of the service method, captured at parse time. If reflection failed the containing
+     * field is classified as {@link UnclassifiedField} by the builder and does not appear here.
      *
      * <p>{@code arguments} is the full list of GraphQL arguments on the field.
      *
      * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
      * of the {@code @service} directive.
-     *
-     * <p>{@code serviceMethodRef} carries the reflected parameter list of the service method,
-     * captured at parse time. If reflection failed the containing field is classified as
-     * {@link UnclassifiedField} by the builder and does not appear here.
      */
     record ServiceTableField(
         String parentTypeName,
@@ -377,7 +377,6 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         List<ReferencePathElementRef> referencePath,
-        ExternalRef serviceRef,
         List<ArgumentRef> arguments,
         List<String> contextArguments,
         ServiceMethodRef serviceMethodRef
@@ -391,7 +390,7 @@ public sealed interface ChildField extends GraphitronField
      * Validation confirms the reflected method signature matches the declared arguments and context
      * keys.
      *
-     * <p>{@code referencePath}, {@code serviceRef}, {@code arguments}, {@code contextArguments},
+     * <p>{@code referencePath}, {@code arguments}, {@code contextArguments},
      * and {@code serviceMethodRef} have the same semantics as {@link ServiceTableField}.
      */
     record ServiceRecordField(
@@ -400,7 +399,6 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.OtherReturnType returnType,
         List<ReferencePathElementRef> referencePath,
-        ExternalRef serviceRef,
         List<ArgumentRef> arguments,
         List<String> contextArguments,
         ServiceMethodRef serviceMethodRef

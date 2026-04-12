@@ -10,13 +10,18 @@ import java.util.List;
  * reference) the containing field is classified as
  * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} at build time.
  *
+ * <p>{@code className} is the binary class name of the service class, e.g.
+ * {@code "com.example.FilmService"}.
+ *
+ * <p>{@code methodName} is the method name on that class, e.g. {@code "getFilms"}.
+ *
  * <p>{@code params} lists all declared parameters in declaration order. Each entry is a
  * {@link ServiceParam} variant classifying how the value is obtained at runtime.
  *
  * <p>{@code returnTypeName} is the raw (erased) return type name (e.g.
  * {@code "java.util.List"}) as returned by {@link Class#getName()}.
  */
-public record ServiceMethodRef(List<ServiceParam> params, String returnTypeName) {
+public record ServiceMethodRef(String className, String methodName, List<ServiceParam> params, String returnTypeName) {
 
     /**
      * One parameter of a service method, classified by how its value is obtained at runtime.

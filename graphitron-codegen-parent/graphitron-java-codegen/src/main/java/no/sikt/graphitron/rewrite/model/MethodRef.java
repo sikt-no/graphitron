@@ -10,9 +10,10 @@ import java.util.List;
  * All fields are non-null. When condition resolution fails the builder classifies the containing
  * field as {@link GraphitronField.UnclassifiedField} rather than producing a {@code MethodRef}.
  *
- * <p>{@code qualifiedName} is the fully qualified method name derived from the
- * {@code ExternalCodeReference} input object, e.g.
- * {@code "com.example.CustomerConditions.activeCustomers"}.
+ * <p>{@code className} is the binary class name derived from the {@code ExternalCodeReference}
+ * input object, e.g. {@code "com.example.CustomerConditions"}.
+ *
+ * <p>{@code methodName} is the method name, e.g. {@code "activeCustomers"}.
  *
  * <p>{@code returnTypeName} is the fully qualified return type of the method (e.g.
  * {@code "org.jooq.Condition"}).
@@ -21,7 +22,8 @@ import java.util.List;
  * method takes no parameters.
  */
 public record MethodRef(
-    String qualifiedName,
+    String className,
+    String methodName,
     String returnTypeName,
     List<ParamInfo> params
 ) {
