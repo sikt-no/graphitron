@@ -11,6 +11,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.PojoInputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -63,7 +64,7 @@ class ArgumentValidationTest {
 
         KNOWN_INPUT_TYPE_ARG("argument referencing a known InputType — no errors",
             tableField(List.of(new ArgumentRef.MethodParamArg.ObjectParamArg("filter", "FilmFilter", false, false))),
-            Map.of("FilmFilter", new InputType("FilmFilter", null)),
+            Map.of("FilmFilter", new PojoInputType("FilmFilter", null, null)),
             List.of()),
 
         CUSTOM_SCALAR_ARG("argument with a custom scalar type — no errors (graphql-java validates scalars)",

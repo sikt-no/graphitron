@@ -216,17 +216,61 @@ public sealed interface GraphitronType
 
     /**
      * A GraphQL input object type with no {@code @table} binding.
-     * The developer supplies the backing Java class (record, POJO, Map, JSON, etc.);
-     * Graphitron does not generate DML for it.
+     * The developer supplies the backing Java class; Graphitron does not generate DML for it.
      * This is the input-side counterpart of {@link ReturnTypeRef.ResultReturnType} and
      * {@link ReturnTypeRef.ScalarReturnType}.
-     * A backing-class discriminator will be added here when input-type code generation
-     * is implemented.
+     *
+     * <p>The sub-type identifies the backing Java representation. The builder reflects on the class
+     * named in {@code @record(record: {className: ...})} at build time. When no {@code className}
+     * is provided the type is classified as {@link PojoInputType} with a {@code null} backing class.
      */
-    record InputType(
+    sealed interface InputType extends GraphitronType
+        permits GraphitronType.JavaRecordInputType, GraphitronType.PojoInputType,
+                GraphitronType.JooqRecordInputType, GraphitronType.JooqTableRecordInputType {}
+
+    /**
+     * A non-table input type backed by a Java {@code record} class.
+     * {@code fqClassName} is the binary class name.
+     */
+    record JavaRecordInputType(
         String name,
-        SourceLocation location
-    ) implements GraphitronType {}
+        SourceLocation location,
+        String fqClassName
+    ) implements InputType {}
+
+    /**
+     * A non-table input type backed by a plain Java class (POJO), or one whose backing class
+     * was not specified in the directive ({@code fqClassName} is {@code null} in that case).
+     */
+    record PojoInputType(
+        String name,
+        SourceLocation location,
+        String fqClassName
+    ) implements InputType {}
+
+    /**
+     * A non-table input type backed by a jOOQ {@code Record<?>} (not table-bound).
+     * {@code fqClassName} is the binary class name of the jOOQ record class.
+     */
+    record JooqRecordInputType(
+        String name,
+        SourceLocation location,
+        String fqClassName
+    ) implements InputType {}
+
+    /**
+     * A non-table input type backed by a jOOQ {@code TableRecord<?>}.
+     *
+     * <p>{@code fqClassName} is the binary class name. {@code table} is the resolved jOOQ table
+     * found by matching {@link org.jooq.Table#getRecordType()} against the backing class.
+     * May be {@code null} when the backing class comes from a catalog not loaded at build time.
+     */
+    record JooqTableRecordInputType(
+        String name,
+        SourceLocation location,
+        String fqClassName,
+        TableRef table
+    ) implements InputType {}
 
     /**
      * A GraphQL input object type annotated with {@code @table}.

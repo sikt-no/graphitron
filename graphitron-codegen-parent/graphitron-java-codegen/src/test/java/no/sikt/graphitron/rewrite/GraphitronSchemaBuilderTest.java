@@ -34,8 +34,11 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.JavaRecordInputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.JavaRecordType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordInputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.PojoInputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
@@ -1100,7 +1103,64 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             """,
             schema -> assertThat(schema.type("FilmInput"))
-                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.InputType.class));
+                .isInstanceOf(InputType.class)),
+
+        NO_CLASS(
+            "@record with no backing class → PojoInputType with null fqClassName",
+            """
+            input FilmInput @record { id: ID }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (PojoInputType) schema.type("FilmInput");
+                assertThat(t.fqClassName()).isNull();
+            }),
+
+        POJO_CLASS(
+            "@record with plain Java class → PojoInputType with fqClassName",
+            """
+            input FilmInput @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) { id: ID }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (PojoInputType) schema.type("FilmInput");
+                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.DummyRecord");
+            }),
+
+        JAVA_RECORD_CLASS(
+            "@record with Java record class → JavaRecordInputType with fqClassName",
+            """
+            input FilmInput @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto"}) { id: ID }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (JavaRecordInputType) schema.type("FilmInput");
+                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto");
+            }),
+
+        JOOQ_TABLE_RECORD_CLASS(
+            "@record with jOOQ TableRecord class → JooqTableRecordInputType with fqClassName and resolved table",
+            """
+            input FilmInput @record(record: {className: "no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.FilmRecord"}) { id: ID }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (JooqTableRecordInputType) schema.type("FilmInput");
+                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.FilmRecord");
+                assertThat(t.table()).isNotNull();
+                assertThat(t.table().tableName()).isEqualTo("film");
+            }),
+
+        UNKNOWN_CLASS(
+            "@record with unresolvable class → UnclassifiedType with explanation",
+            """
+            input FilmInput @record(record: {className: "com.example.nonexistent.Missing"}) { id: ID }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("FilmInput");
+                assertThat(t.reason()).contains("com.example.nonexistent.Missing").contains("could not be loaded");
+            });
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;

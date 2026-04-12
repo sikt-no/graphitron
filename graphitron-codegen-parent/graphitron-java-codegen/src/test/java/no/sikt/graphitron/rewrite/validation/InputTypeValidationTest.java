@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.PojoInputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -32,12 +33,12 @@ class InputTypeValidationTest {
     enum Case {
 
         VALID("valid input type — no errors",
-            new InputType("FilmInput", null),
+            new PojoInputType("FilmInput", null, null),
             List.of()),
 
         KNOWN_INPUT_TYPE_NO_ERROR("input field referencing another InputType in the schema — no error",
-            new InputType("CreateFilmInput", null),
-            Map.of("TranslationInput", new InputType("TranslationInput", null)),
+            new PojoInputType("CreateFilmInput", null, null),
+            Map.of("TranslationInput", new PojoInputType("TranslationInput", null, null)),
             List.of());
 
         private final String description;

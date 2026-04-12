@@ -541,7 +541,7 @@ public class GraphitronSchemaBuilder {
         // do not force implicit table promotion.
         var tables = findReturnTablesForInput(name);
         if (tables.isEmpty()) {
-            return new InputType(name, location);
+            return buildNonTableInputType(inputType, name, location);
         }
         if (tables.size() > 1) {
             var tableNames = String.join("', '", tables.keySet());
@@ -549,6 +549,45 @@ public class GraphitronSchemaBuilder {
                 "used as argument on fields with conflicting return tables: '" + tableNames + "'");
         }
         return buildTableInputType(name, location, filteredFields, tables.values().iterator().next());
+    }
+
+    /**
+     * Reflects on the backing Java class named in {@code @record(record: {className:})} and
+     * constructs the appropriate {@link GraphitronType.InputType} sub-type.
+     * The classification rules are identical to {@link #buildResultType} — see that method's
+     * Javadoc for details. The only difference is that input types carry no {@code fieldCoordinates}.
+     */
+    private GraphitronType buildNonTableInputType(GraphQLInputObjectType inputType, String name, SourceLocation location) {
+        var dir = inputType.getAppliedDirective(DIR_RECORD);
+        if (dir == null) return new GraphitronType.PojoInputType(name, location, null);
+        var recordArg = dir.getArgument(ARG_RECORD);
+        if (recordArg == null || recordArg.getValue() == null) {
+            return new GraphitronType.PojoInputType(name, location, null);
+        }
+        Map<String, Object> ref = asMap(recordArg.getValue());
+        String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME))
+            .map(Object::toString)
+            .orElse(null);
+        if (className == null) {
+            return new GraphitronType.PojoInputType(name, location, null);
+        }
+        try {
+            Class<?> cls = Class.forName(className);
+            if (cls.isRecord()) {
+                return new GraphitronType.JavaRecordInputType(name, location, className);
+            }
+            if (org.jooq.TableRecord.class.isAssignableFrom(cls)) {
+                TableRef table = resolveTableByRecordClass(cls).orElse(null);
+                return new GraphitronType.JooqTableRecordInputType(name, location, className, table);
+            }
+            if (org.jooq.Record.class.isAssignableFrom(cls)) {
+                return new GraphitronType.JooqRecordInputType(name, location, className);
+            }
+            return new GraphitronType.PojoInputType(name, location, className);
+        } catch (ClassNotFoundException e) {
+            return new UnclassifiedType(name, location,
+                "record backing class '" + className + "' could not be loaded");
+        }
     }
 
     /**
