@@ -269,18 +269,16 @@ public class GraphitronSchemaValidator {
 
     private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<JoinStep> path, String typeName, no.sikt.graphitron.rewrite.model.TableRef targetTable, List<ValidationError> errors) {
         var lastStep = path.getLast();
-        String fkTableSql = null, keyTableSql = null;
         switch (lastStep) {
-            case JoinStep.FkJoin fk         -> { fkTableSql = fk.fkTableSqlName(); keyTableSql = fk.keyTableSqlName(); }
-            case JoinStep.ConditionJoin ignored -> { return; } // no FK tables to check
-        }
-        var targetSqlName = targetTable.tableName();
-        if (!fkTableSql.equalsIgnoreCase(targetSqlName) &&
-            !keyTableSql.equalsIgnoreCase(targetSqlName)) {
-            errors.add(new ValidationError(
-                "Field '" + fieldName + "': @reference path does not lead to the table of type '" + typeName + "'",
-                location
-            ));
+            case JoinStep.FkJoin fk -> {
+                if (!fk.targetTableSqlName().equalsIgnoreCase(targetTable.tableName())) {
+                    errors.add(new ValidationError(
+                        "Field '" + fieldName + "': @reference path does not lead to the table of type '" + typeName + "'",
+                        location
+                    ));
+                }
+            }
+            case JoinStep.ConditionJoin ignored -> { /* no FK tables to check */ }
         }
     }
     private void validateTableField(no.sikt.graphitron.rewrite.model.ChildField.TableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {

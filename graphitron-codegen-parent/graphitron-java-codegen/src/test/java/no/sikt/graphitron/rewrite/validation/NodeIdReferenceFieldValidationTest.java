@@ -56,7 +56,7 @@ class NodeIdReferenceFieldValidationTest {
                 new ReturnTypeRef.TableBoundReturnType("Language", new TableRef("language", "LANGUAGE", "Language", Optional.of(List.of())), new FieldWrapper.Single(true)),
                 new TableRef("film", "FILM", "Film", Optional.of(List.of())),
                 null, List.of(),
-                List.of(new JoinStep.FkJoin("film_language_id_fkey", "language", "film", null))),
+                List.of(new JoinStep.FkJoin("film_language_id_fkey", "language", null))),
             List.of()),
 
         PATH_WRONG_TABLE("explicit FK path leading to the wrong table — one error",
@@ -64,7 +64,7 @@ class NodeIdReferenceFieldValidationTest {
                 new ReturnTypeRef.TableBoundReturnType("Language", new TableRef("language", "LANGUAGE", "Language", Optional.of(List.of())), new FieldWrapper.Single(true)),
                 new TableRef("film", "FILM", "Film", Optional.of(List.of())),
                 null, List.of(),
-                List.of(new JoinStep.FkJoin("sequel_fkey", "film", "film", null))),
+                List.of(new JoinStep.FkJoin("sequel_fkey", "film", null))),
             List.of("Field 'languageId': @reference path does not lead to the table of type 'Language'")),
 
         NULL_PARENT_TABLE_IMPLICIT("null parentTable with empty path — FK check is silently skipped, no error produced",

@@ -1546,7 +1546,7 @@ public class GraphitronSchemaBuilder {
         String current = sourceType.table().tableName();
         for (var step : path) {
             if (!(step instanceof FkJoin fk)) return null;
-            current = fk.keyTableSqlName();
+            current = fk.targetTableSqlName();
         }
         return current;
     }
@@ -1612,7 +1612,27 @@ public class GraphitronSchemaBuilder {
      * Returns a {@code ParsedPath} with a non-null {@code errorMessage()} when any path element
      * cannot be resolved (FK not found in jOOQ catalog, condition unresolved, etc.).
      */
+    /**
+     * Parses the {@code @reference(path:)} directive on {@code fieldDef} into a {@link ParsedPath}.
+     * Delegates to {@link #parsePath(GraphQLFieldDefinition, String)} with no known source table.
+     *
+     * <p>Returns {@code ParsedPath(List.of(), null)} when no {@code @reference} directive is present.
+     * Returns a {@code ParsedPath} with a non-null {@code errorMessage()} when any path element
+     * cannot be resolved.
+     */
     private ParsedPath parsePath(GraphQLFieldDefinition fieldDef) {
+        return parsePath(fieldDef, null);
+    }
+
+    /**
+     * Parses the {@code @reference(path:)} directive on {@code fieldDef} into a {@link ParsedPath},
+     * threading {@code startSqlTableName} through the chain to validate connectivity and determine
+     * the correct traversal direction for each FK step.
+     *
+     * <p>When {@code startSqlTableName} is {@code null} (no table-backed source context), direction
+     * is inferred as forward (FK-side → key-side) and connectivity is not validated.
+     */
+    private ParsedPath parsePath(GraphQLFieldDefinition fieldDef, String startSqlTableName) {
         var directive = fieldDef.getAppliedDirective(DIR_REFERENCE);
         if (directive == null) return new ParsedPath(List.of(), null);
 
@@ -1624,10 +1644,17 @@ public class GraphitronSchemaBuilder {
 
         var resolvedElements = new ArrayList<JoinStep>();
         var errors = new ArrayList<String>();
+        String currentSource = startSqlTableName;
 
         for (var v : elements) {
             if (v instanceof Map<?, ?>) {
-                parsePathElement(asMap(v), resolvedElements, errors);
+                parsePathElement(asMap(v), currentSource, resolvedElements, errors);
+                // Propagate the target of the last resolved step as the source for the next step.
+                // Condition joins don't carry table information, so source tracking is suspended.
+                if (!resolvedElements.isEmpty()) {
+                    var last = resolvedElements.getLast();
+                    currentSource = last instanceof FkJoin fk ? fk.targetTableSqlName() : null;
+                }
             }
         }
 
@@ -1637,7 +1664,16 @@ public class GraphitronSchemaBuilder {
         return new ParsedPath(List.copyOf(resolvedElements), null);
     }
 
-    private void parsePathElement(Map<String, Object> element, List<JoinStep> out, List<String> errors) {
+    /**
+     * Resolves one {@code @reference} path element into a {@link JoinStep} and appends it to
+     * {@code out}. Errors are accumulated in {@code errors}.
+     *
+     * <p>{@code currentSourceSqlName} is the SQL table name at the current position in the chain,
+     * or {@code null} when the source is not a table-backed type. When non-null, FK connectivity is
+     * validated (the FK must touch the current source table) and traversal direction is determined
+     * precisely. When null, forward traversal (FK-side → key-side) is assumed without validation.
+     */
+    private void parsePathElement(Map<String, Object> element, String currentSourceSqlName, List<JoinStep> out, List<String> errors) {
         Object keyRaw = element.get(ARG_KEY);
         Object conditionRaw = element.get(ARG_CONDITION);
 
@@ -1646,30 +1682,32 @@ public class GraphitronSchemaBuilder {
             .filter(s -> !s.isBlank());
         boolean hasCondition = conditionRaw instanceof Map;
 
-        if (keyName.isPresent() && hasCondition) {
-            // key + condition on the same element means: FK join + optional WHERE filter.
-            // The condition is resolved as a whereFilter passed to both source and target aliases.
-            Optional<ForeignKey<?, ?>> fk = catalog.findForeignKey(keyName.get());
-            Map<String, Object> condMap = asMap(conditionRaw);
-            MethodRef resolvedCond = resolveConditionRef(condMap);
-            if (fk.isPresent()) {
-                var f = fk.get();
-                out.add(new FkJoin(f.getName(), f.getKey().getTable().getName(), f.getTable().getName(), resolvedCond));
-            } else {
-                errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog"
-                    + candidateHint(keyName.get(), catalog.allForeignKeySqlNames()));
-            }
-            return;
-        }
         if (keyName.isPresent()) {
             Optional<ForeignKey<?, ?>> fk = catalog.findForeignKey(keyName.get());
-            if (fk.isPresent()) {
-                var f = fk.get();
-                out.add(new FkJoin(f.getName(), f.getKey().getTable().getName(), f.getTable().getName(), null));
-            } else {
+            if (fk.isEmpty()) {
                 errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog"
                     + candidateHint(keyName.get(), catalog.allForeignKeySqlNames()));
+                return;
             }
+            var f = fk.get();
+            String fkSideTable  = f.getTable().getName();         // table carrying the FK column
+            String keySideTable = f.getKey().getTable().getName(); // table with the PK
+            String targetSqlName;
+            if (currentSourceSqlName == null) {
+                // No table context: assume forward direction (FK-side → key-side), no validation.
+                targetSqlName = keySideTable;
+            } else if (currentSourceSqlName.equalsIgnoreCase(fkSideTable)) {
+                targetSqlName = keySideTable;  // forward: FK-side → key-side
+            } else if (currentSourceSqlName.equalsIgnoreCase(keySideTable)) {
+                targetSqlName = fkSideTable;   // reverse: key-side → FK-side
+            } else {
+                errors.add("key '" + f.getName() + "' does not connect to table '" + currentSourceSqlName + "'"
+                    + candidateHint(currentSourceSqlName, List.of(fkSideTable, keySideTable)));
+                return;
+            }
+            // key + condition on the same element: FK join + WHERE filter.
+            MethodRef whereFilter = hasCondition ? resolveConditionRef(asMap(conditionRaw)) : null;
+            out.add(new FkJoin(f.getName(), targetSqlName, whereFilter));
             return;
         }
         if (hasCondition) {

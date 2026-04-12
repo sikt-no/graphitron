@@ -26,7 +26,7 @@ class TableMethodFieldValidationTest {
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.OtherReturnType.PojoReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new JoinStep.FkJoin("film_actor_film_id_fkey", "film", "film_actor", null)),
+                new JoinStep.FkJoin("film_actor_film_id_fkey", "film_actor", null)),
                 "com.example.TableMethods", "filteredActors", List.of(), List.of()),
             List.of()),
 

@@ -35,7 +35,7 @@ class TableFieldValidationTest {
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "film", "film_actor", null)),
+                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "film_actor", null)),
                 new FieldConditionRef.NoFieldCondition(), List.of()),
             List.of()),
 

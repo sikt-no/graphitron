@@ -59,13 +59,15 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * <p>The generator emits {@code .join(targetTable).onKey(fk)} for this step. Whether it is an
      * INNER or LEFT JOIN depends on the surrounding query structure (see the interface-level
      * cardinality invariant). The target table and FK constant are derived at code-generation time
-     * from the stored SQL names and FK constraint name using jOOQ's naming conventions.
+     * from the stored SQL name and FK constraint name using jOOQ's naming conventions.
      *
      * <p>{@code fkName} is the SQL constraint name (e.g. {@code "film_language_id_fkey"}), used to
      * look up the jOOQ FK constant (e.g. {@code Keys.FK_FILM__FILM_LANGUAGE_ID_FKEY}).
-     * {@code keyTableSqlName} is the SQL name of the referenced (key-side) table (e.g.
-     * {@code "language"}). {@code fkTableSqlName} is the SQL name of the referencing (FK-side)
-     * table (e.g. {@code "film"}).
+     * {@code targetTableSqlName} is the SQL name of the table this step navigates <em>to</em>
+     * (e.g. {@code "language"} when traversing film → language, or {@code "film"} when traversing
+     * in reverse). The source table is always known from the previous step or from the parent type;
+     * only the destination needs to be stored. The builder validates that each FK step actually
+     * connects to the current source table, catching broken chains at build time.
      *
      * <p>{@code whereFilter} is an optional user-supplied condition method resolved from a
      * {@code condition} argument on the same {@code @reference} path element as the {@code key}.
@@ -76,8 +78,7 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      */
     record FkJoin(
         String fkName,
-        String keyTableSqlName,
-        String fkTableSqlName,
+        String targetTableSqlName,
         MethodRef whereFilter
     ) implements JoinStep {}
 
