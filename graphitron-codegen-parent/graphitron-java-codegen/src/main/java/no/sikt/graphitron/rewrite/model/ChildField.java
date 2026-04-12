@@ -184,6 +184,7 @@ public sealed interface ChildField extends GraphitronField
 
         ReturnTypeRef.TableBoundReturnType returnType();
         List<JoinStep> joinPath();
+        FieldCondition condition();
     }
 
     /**
@@ -263,6 +264,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         List<JoinStep> joinPath,
+        FieldCondition condition,
         List<ArgumentRef> arguments
     ) implements TableTargetField {}
 
@@ -285,6 +287,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         List<JoinStep> joinPath,
+        FieldCondition condition,
         List<ArgumentRef> arguments
     ) implements TableTargetField {}
 
@@ -334,7 +337,8 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        List<JoinStep> joinPath
+        List<JoinStep> joinPath,
+        FieldCondition condition
     ) implements TableTargetField {}
 
     /**
@@ -419,6 +423,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         List<JoinStep> joinPath,
+        FieldCondition condition,
         List<ArgumentRef> arguments,
         List<String> contextArguments,
         MethodRef method
@@ -498,6 +503,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         List<JoinStep> joinPath,
+        FieldCondition condition,
         List<ArgumentRef> arguments
     ) implements TableTargetField {}
 

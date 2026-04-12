@@ -24,15 +24,15 @@ class LookupTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID_SINGLE("single return — valid",
-            new LookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of()),
+            new LookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), null, List.of()),
             List.of()),
 
         VALID_LIST("list return — valid",
-            new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true, null, List.of())), List.of(), List.of()),
+            new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true, null, List.of())), List.of(), null, List.of()),
             List.of()),
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field",
-            new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true, null, List.of())), List.of(), List.of()),
+            new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true, null, List.of())), List.of(), null, List.of()),
             List.of("Field 'films': lookup fields must not return a connection"));
 
         private final String description;

@@ -702,11 +702,11 @@ public class GraphitronSchemaBuilder {
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
             if (hasSplitQuery && hasLookupKey) {
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField(
-                    parentTypeName, name, location, returnType, referencePath.elements(), args);
+                    parentTypeName, name, location, returnType, referencePath.elements(), null, args);
             }
             if (!hasSplitQuery && hasLookupKey) {
                 return new no.sikt.graphitron.rewrite.model.ChildField.LookupTableField(
-                    parentTypeName, name, location, returnType, referencePath.elements(), args);
+                    parentTypeName, name, location, returnType, referencePath.elements(), null, args);
             }
             if (hasSplitQuery) {
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
@@ -727,7 +727,7 @@ public class GraphitronSchemaBuilder {
             }
             return new TableInterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper),
-                referencePath.elements());
+                referencePath.elements(), null);
         }
 
         if (elementType instanceof InterfaceType interfaceType) {
@@ -1444,7 +1444,7 @@ public class GraphitronSchemaBuilder {
             return switch (resolveReturnType(elementTypeName, rsvcWrapper)) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new ServiceTableField(parentTypeName, name, location, tb,
-                        servicePath.elements(), arguments, contextArguments, method);
+                        servicePath.elements(), null, arguments, contextArguments, method);
                 case ReturnTypeRef.ResultReturnType r ->
                     new ServiceRecordField(parentTypeName, name, location, r,
                         servicePath.elements(), arguments, contextArguments, method);
@@ -1480,7 +1480,7 @@ public class GraphitronSchemaBuilder {
                 if (args == null) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors9));
                 boolean hasLookupKey = hasLookupKeyAnywhere(fieldDef);
                 if (hasLookupKey) {
-                    yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), args);
+                    yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), null, args);
                 }
                 yield new RecordTableField(parentTypeName, name, location, tb,
                     objectPath.elements(), null, args);
@@ -1524,7 +1524,7 @@ public class GraphitronSchemaBuilder {
             return switch (resolveReturnType(elementTypeName, svcWrapper)) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new ServiceTableField(parentTypeName, name, location, tb,
-                        servicePath.elements(), arguments, contextArguments, method);
+                        servicePath.elements(), null, arguments, contextArguments, method);
                 case ReturnTypeRef.ResultReturnType r ->
                     new ServiceRecordField(parentTypeName, name, location, r,
                         servicePath.elements(), arguments, contextArguments, method);

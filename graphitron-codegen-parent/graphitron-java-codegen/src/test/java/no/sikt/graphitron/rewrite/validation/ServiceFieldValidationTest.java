@@ -74,7 +74,7 @@ class ServiceFieldValidationTest {
                 new ReturnTypeRef.TableBoundReturnType("Film",
                     new TableRef("film", "FILM", "Film", Optional.of(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))),
                     new FieldWrapper.Single(true)),
-                List.of(), List.of(), List.of(),
+                List.of(), null, List.of(), List.of(),
                 new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
                     List.of(new MethodRef.Param("filmKeys", "java.util.List", new ParamSource.Sources(new SourcesRef.RowKeyed(List.of("java.lang.Integer"))))))),
             List.of());
@@ -139,7 +139,7 @@ class ServiceFieldValidationTest {
 
     private static ServiceTableField serviceField(SourcesRef sourcesRef) {
         return new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
-            List.of(), List.of(), List.of(),
+            List.of(), null, List.of(), List.of(),
             new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
                 List.of(new MethodRef.Param("filmKeys", "java.util.List", new ParamSource.Sources(sourcesRef)))));
     }
@@ -203,7 +203,7 @@ class ServiceFieldValidationTest {
             "RowKeyed — composite PK parent AND wrong types — only the type-mismatch error fires",
             filmTableType(FILM_TABLE_COMPOSITE_PK),
             new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
-                List.of(), List.of(), List.of(),
+                List.of(), null, List.of(), List.of(),
                 new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
                     // Single type arg; parent has 2-col PK — type list differs in both value and size
                     List.of(new MethodRef.Param("filmKeys", "java.util.List", new ParamSource.Sources(new SourcesRef.RowKeyed(List.of("java.lang.Long"))))))),
@@ -216,7 +216,7 @@ class ServiceFieldValidationTest {
             "two SOURCES params, one correct RowKeyed and one wrong RowKeyed — only the wrong param errors",
             filmTableType(FILM_TABLE_SINGLE_PK),
             new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
-                List.of(), List.of(), List.of(),
+                List.of(), null, List.of(), List.of(),
                 new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
                     List.of(
                         new MethodRef.Param("filmKeys1", "java.util.List", new ParamSource.Sources(new SourcesRef.RowKeyed(List.of("java.lang.Integer")))),

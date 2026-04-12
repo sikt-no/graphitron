@@ -24,15 +24,15 @@ class SplitLookupTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID_SINGLE("single return — valid",
-            new SplitLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of()),
+            new SplitLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), null, List.of()),
             List.of()),
 
         VALID_LIST("list return — valid",
-            new SplitLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true, null, List.of())), List.of(), List.of()),
+            new SplitLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true, null, List.of())), List.of(), null, List.of()),
             List.of()),
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field",
-            new SplitLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true, null, List.of())), List.of(), List.of()),
+            new SplitLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true, null, List.of())), List.of(), null, List.of()),
             List.of("Field 'films': lookup fields must not return a connection"));
 
         private final String description;

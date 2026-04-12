@@ -71,7 +71,7 @@ class FieldsCodeGeneratorTest {
         );
         return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
-            List.of(),
+            List.of(), null,
             List.of(new ArgumentRef.MethodParamArg.ScalarParamArg("filter", "String", false, false)),
             List.of("tenantId"), method);
     }
