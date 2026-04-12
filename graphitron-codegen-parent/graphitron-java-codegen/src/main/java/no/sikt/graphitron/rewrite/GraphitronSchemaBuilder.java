@@ -721,8 +721,13 @@ public class GraphitronSchemaBuilder {
             var wrapper = buildWrapper(fieldDef, tableInterfaceType.table().tableName());
             if (wrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                 "could not resolve @defaultOrder columns in table '" + tableInterfaceType.table().tableName() + "'");
+            var referencePath = parsePath(fieldDef, parentTableType.table().tableName());
+            if (referencePath.hasError()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, referencePath.errorMessage());
+            }
             return new TableInterfaceField(parentTypeName, name, location,
-                new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper));
+                new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper),
+                referencePath.elements());
         }
 
         if (elementType instanceof InterfaceType interfaceType) {

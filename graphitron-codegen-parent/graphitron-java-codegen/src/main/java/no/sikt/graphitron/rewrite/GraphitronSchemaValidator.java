@@ -317,6 +317,7 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateTableInterfaceField(no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField field, List<ValidationError> errors) {
+        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateInterfaceField(no.sikt.graphitron.rewrite.model.ChildField.InterfaceField field, List<ValidationError> errors) {

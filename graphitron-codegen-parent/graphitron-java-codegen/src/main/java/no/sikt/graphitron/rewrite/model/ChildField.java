@@ -300,16 +300,21 @@ public sealed interface ChildField extends GraphitronField
     ) implements ChildField {}
 
     /**
-     * A child field whose return type is a single-table interface.
+     * A child field whose return type is a single-table interface ({@code @table} + {@code @discriminate}).
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
      * schema, with the {@link FieldWrapper} embedded.
+     *
+     * <p>{@code joinPath} is the ordered list of join steps from {@code @reference(path:)},
+     * used to override FK auto-inference when navigating from the parent table to the shared
+     * discriminator table. Empty when no {@code @reference} directive is present.
      */
     record TableInterfaceField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType
+        ReturnTypeRef.TableBoundReturnType returnType,
+        List<JoinStep> joinPath
     ) implements ChildField {}
 
     /**
