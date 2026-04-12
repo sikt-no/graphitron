@@ -1986,31 +1986,38 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * Hamming distance between two strings, with the shorter string zero-padded to the length of
-     * the longer. Counts the number of positions where the characters differ. Used to sort
-     * candidate name lists in error messages by similarity to the attempted name.
+     * Levenshtein distance between two strings: the minimum number of single-character insertions,
+     * deletions, or substitutions needed to transform {@code a} into {@code b}. Uses two-row DP,
+     * O(m*n) time and O(n) space. Used to sort candidate name lists in error messages by similarity
+     * to the attempted name.
      */
-    private static int hammingDistance(String a, String b) {
-        int len = Math.max(a.length(), b.length());
-        int dist = 0;
-        for (int i = 0; i < len; i++) {
-            char ca = i < a.length() ? a.charAt(i) : 0;
-            char cb = i < b.length() ? b.charAt(i) : 0;
-            if (ca != cb) dist++;
+    private static int levenshteinDistance(String a, String b) {
+        int m = a.length(), n = b.length();
+        int[] prev = new int[n + 1], curr = new int[n + 1];
+        for (int j = 0; j <= n; j++) prev[j] = j;
+        for (int i = 1; i <= m; i++) {
+            curr[0] = i;
+            for (int j = 1; j <= n; j++) {
+                if (a.charAt(i - 1) == b.charAt(j - 1))
+                    curr[j] = prev[j - 1];
+                else
+                    curr[j] = 1 + Math.min(prev[j - 1], Math.min(prev[j], curr[j - 1]));
+            }
+            int[] tmp = prev; prev = curr; curr = tmp;
         }
-        return dist;
+        return prev[n];
     }
 
     /**
      * Builds a {@code "; available: X, Y, Z"} hint string for error messages, listing
-     * {@code candidates} sorted by case-insensitive Hamming distance from {@code attempt}.
+     * {@code candidates} sorted by case-insensitive Levenshtein distance from {@code attempt}.
      * Returns an empty string when {@code candidates} is empty.
      */
     private String candidateHint(String attempt, List<String> candidates) {
         if (candidates.isEmpty()) return "";
         String lc = attempt.toLowerCase();
         return "; available: " + candidates.stream()
-            .sorted(Comparator.comparingInt(c -> hammingDistance(lc, c.toLowerCase())))
+            .sorted(Comparator.comparingInt(c -> levenshteinDistance(lc, c.toLowerCase())))
             .collect(Collectors.joining(", "));
     }
 }
