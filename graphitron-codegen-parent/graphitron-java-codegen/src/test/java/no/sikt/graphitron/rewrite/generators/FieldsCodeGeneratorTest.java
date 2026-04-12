@@ -6,7 +6,6 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.model.ArgumentRef;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.FieldConditionRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
@@ -52,7 +51,7 @@ class FieldsCodeGeneratorTest {
             new ReturnTypeRef.TableBoundReturnType("Film",
                 new TableRef("film", "FILM", "Film", Optional.of(List.of())),
                 new FieldWrapper.List(false, false, null, List.of())),
-            List.of(), new FieldConditionRef.NoFieldCondition(), List.of());
+            List.of(), null, List.of());
     }
 
     private static GraphitronField serviceField(String parentType, String name, boolean isList) {

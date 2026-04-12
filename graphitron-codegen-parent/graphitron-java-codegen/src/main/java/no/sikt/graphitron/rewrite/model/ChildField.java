@@ -3,8 +3,8 @@ package no.sikt.graphitron.rewrite.model;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.FieldConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ArgumentRef;
 
 import java.util.List;
@@ -25,6 +25,23 @@ public sealed interface ChildField extends GraphitronField
             ChildField.RecordTableField, ChildField.RecordLookupTableField, ChildField.RecordField,
             ChildField.ComputedField, ChildField.PropertyField,
             ChildField.MultitableReferenceField {
+
+    /**
+     * The resolved {@code @condition} directive on a table-backed field.
+     *
+     * <p>{@code method} is the resolved condition method. {@code override} is the value of the
+     * {@code override} argument — when {@code true}, this condition replaces any inherited
+     * condition rather than combining with it. {@code contextArgs} lists the names of context
+     * arguments threaded through to the condition method at call time.
+     *
+     * <p>A {@code null} {@code condition} field on the enclosing field record means no
+     * {@code @condition} directive is present.
+     */
+    record FieldCondition(
+        MethodRef method,
+        boolean override,
+        List<String> contextArgs
+    ) {}
 
     /**
      * A scalar or enum field bound to a column on the source table.
@@ -164,9 +181,9 @@ public sealed interface ChildField extends GraphitronField
      * Graphitron will attempt to infer the foreign key automatically.
      *
      * <p>{@code condition} is the resolved field-level {@code @condition} directive, or
-     * {@link FieldConditionRef.NoFieldCondition} when no {@code @condition} is present. When the
-     * condition directive references a method that cannot be reflected, the containing field is
-     * classified as {@link UnclassifiedField} by the builder and does not appear here.
+     * {@code null} when no {@code @condition} is present. When the condition directive references
+     * a method that cannot be reflected, the containing field is classified as
+     * {@link UnclassifiedField} by the builder and does not appear here.
      *
      * <p>On a table-mapped parent this generates an inline SQL JOIN.
      */
@@ -176,7 +193,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         List<JoinStep> joinPath,
-        FieldConditionRef condition,
+        FieldCondition condition,
         List<ArgumentRef> arguments
     ) implements ChildField {}
 
@@ -188,8 +205,8 @@ public sealed interface ChildField extends GraphitronField
      * {@code @splitQuery} forces a new scope via DataLoader even when the parent is table-mapped.
      * Without {@code @splitQuery} a table-mapped parent would generate an inline JOIN instead.
      *
-     * <p>{@code condition} is the resolved or unresolved field-level {@code @condition} directive, or
-     * {@link FieldConditionRef.NoFieldCondition} when no {@code @condition} is present.
+     * <p>{@code condition} is the resolved field-level {@code @condition} directive, or
+     * {@code null} when no {@code @condition} is present.
      */
     record SplitTableField(
         String parentTypeName,
@@ -197,7 +214,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         List<JoinStep> joinPath,
-        FieldConditionRef condition,
+        FieldCondition condition,
         List<ArgumentRef> arguments
     ) implements ChildField {}
 
@@ -435,7 +452,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         List<JoinStep> joinPath,
-        FieldConditionRef condition,
+        FieldCondition condition,
         List<ArgumentRef> arguments
     ) implements ChildField {}
 

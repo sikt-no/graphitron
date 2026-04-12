@@ -5,7 +5,6 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ArgumentRef;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
-import no.sikt.graphitron.rewrite.model.FieldConditionRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -47,7 +46,7 @@ class ArgumentValidationTest {
     }
 
     private static TableField tableField(List<ArgumentRef> args) {
-        return new TableField("Film", "actors", null, FILM_RETURN, List.of(), new FieldConditionRef.NoFieldCondition(), args);
+        return new TableField("Film", "actors", null, FILM_RETURN, List.of(), null, args);
     }
 
     enum Case {

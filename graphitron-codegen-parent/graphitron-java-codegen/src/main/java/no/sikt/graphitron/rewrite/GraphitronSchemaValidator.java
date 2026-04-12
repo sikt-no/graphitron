@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.mappings.TableReflection;
-import no.sikt.graphitron.rewrite.model.FieldConditionRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.ArgumentRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;

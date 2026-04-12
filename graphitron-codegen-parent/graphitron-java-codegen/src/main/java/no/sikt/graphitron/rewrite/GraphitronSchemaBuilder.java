@@ -54,7 +54,6 @@ import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper.ColumnOrder;
 import no.sikt.graphitron.rewrite.model.FieldWrapper.ColumnOrder.ColumnOrderEntry;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.model.FieldConditionRef;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
@@ -712,10 +711,10 @@ public class GraphitronSchemaBuilder {
             if (hasSplitQuery) {
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
                     parentTypeName, name, location, returnType,
-                    referencePath.elements(), new FieldConditionRef.NoFieldCondition(), args);
+                    referencePath.elements(), null, args);
             }
             return new TableField(parentTypeName, name, location,
-                returnType, referencePath.elements(), new FieldConditionRef.NoFieldCondition(), args);
+                returnType, referencePath.elements(), null, args);
         }
 
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
@@ -1479,7 +1478,7 @@ public class GraphitronSchemaBuilder {
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), args);
                 }
                 yield new RecordTableField(parentTypeName, name, location, tb,
-                    objectPath.elements(), new FieldConditionRef.NoFieldCondition(), args);
+                    objectPath.elements(), null, args);
             }
             case ReturnTypeRef.ResultReturnType r ->
                 new RecordField(parentTypeName, name, location, r, columnName);

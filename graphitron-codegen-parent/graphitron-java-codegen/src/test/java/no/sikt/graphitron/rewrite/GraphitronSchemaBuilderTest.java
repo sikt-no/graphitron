@@ -26,7 +26,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper.ColumnOrder;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.model.FieldConditionRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.rewrite.model.ArgumentRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
@@ -406,7 +405,7 @@ class GraphitronSchemaBuilderTest {
 
     enum TableFieldCase {
         SINGLE_RETURN_TYPE(
-            "object return type → Single cardinality, NoFieldCondition, empty joinPath",
+            "object return type → Single cardinality, null condition, empty joinPath",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") { language: Language }
@@ -415,7 +414,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var tf = (TableField) schema.field("Film", "language");
                 assertThat(tf.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
-                assertThat(tf.condition()).isInstanceOf(FieldConditionRef.NoFieldCondition.class);
+                assertThat(tf.condition()).isNull();
                 assertThat(tf.joinPath()).isEmpty();
             }),
 
@@ -480,8 +479,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Film", "city")).isInstanceOf(UnclassifiedField.class)),
 
-        CONDITION_IS_ALWAYS_NO_FIELD_CONDITION(
-            "@condition support is deferred to P3; condition is always NoFieldCondition even with @reference",
+        CONDITION_IS_ALWAYS_NULL(
+            "@condition support is deferred to P3; condition is always null even with @reference",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -490,7 +489,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> assertThat(((TableField) schema.field("Film", "language")).condition())
-                .isInstanceOf(FieldConditionRef.NoFieldCondition.class)),
+                .isNull()),
 
         DEFAULT_ORDER_INDEX(
             "@defaultOrder(index:) resolves index columns — columns from idx_actor_last_name",
