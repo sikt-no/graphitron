@@ -599,7 +599,7 @@ public class GraphitronSchemaBuilder {
             if (wrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                 "could not resolve @defaultOrder columns in table '" + tbt.table().tableName() + "'");
             var returnType = (ReturnTypeRef.TableBoundReturnType) resolveReturnType(elementTypeName, wrapper);
-            var referencePath = parsePath(fieldDef);
+            var referencePath = parsePath(fieldDef, parentTableType.table().tableName());
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, referencePath.errorMessage());
             }
@@ -1408,6 +1408,7 @@ public class GraphitronSchemaBuilder {
             var argErrors10 = new ArrayList<String>();
             var arguments = classifyArgsList(fieldDef, null, true, argErrors10);
             if (arguments == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors10));
+            // Service reconnect path: starts from the service return type's table (not the parent).
             var servicePath = parsePath(fieldDef);
             if (servicePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePath.errorMessage());
@@ -1428,7 +1429,7 @@ public class GraphitronSchemaBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) {
-            var externalPath = parsePath(fieldDef);
+            var externalPath = parsePath(fieldDef, tableType.table().tableName());
             if (externalPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, externalPath.errorMessage());
             }
@@ -1448,7 +1449,7 @@ public class GraphitronSchemaBuilder {
             var argErrors11 = new ArrayList<String>();
             var args = classifyArgsList(fieldDef, null, true, argErrors11);
             if (args == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors11));
-            var tableMethodPath = parsePath(fieldDef);
+            var tableMethodPath = parsePath(fieldDef, tableType.table().tableName());
             if (tableMethodPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, tableMethodPath.errorMessage());
             }
@@ -1481,7 +1482,7 @@ public class GraphitronSchemaBuilder {
                         "@nodeId(typeName:) type '" + typeName.get() + "' does not have @node");
                 }
                 TableRef parentTable = tableType.table();
-                var nodeRefPath = parsePath(fieldDef);
+                var nodeRefPath = parsePath(fieldDef, tableType.table().tableName());
                 if (nodeRefPath.hasError()) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, nodeRefPath.errorMessage());
                 }
@@ -1504,7 +1505,7 @@ public class GraphitronSchemaBuilder {
             && argString(fieldDef, DIR_FIELD, ARG_JAVA_NAME).isPresent();
 
         if (fieldDef.hasAppliedDirective(DIR_REFERENCE)) {
-            var refPath = parsePath(fieldDef);
+            var refPath = parsePath(fieldDef, tableType.table().tableName());
             if (refPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, refPath.errorMessage());
             }
