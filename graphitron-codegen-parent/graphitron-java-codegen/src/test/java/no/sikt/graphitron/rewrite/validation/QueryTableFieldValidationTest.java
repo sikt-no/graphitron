@@ -34,20 +34,20 @@ class QueryTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("no ordering directives — always valid",
-            new QueryTableField("Query", "films", null, filmReturn(new FieldWrapper.Single(true)), List.of()),
+            new QueryTableField("Query", "films", null, filmReturn(new FieldWrapper.Single(true)), null, List.of()),
             List.of()),
 
         DEFAULT_ORDER_INDEX("@defaultOrder with index mode — valid",
             new QueryTableField("Query", "films", null,
                 filmReturn(new FieldWrapper.List(true, true, INDEX_ORDER, List.of())),
-                List.of()),
+                null, List.of()),
             List.of()),
 
         DEFAULT_ORDER_PRIMARY_KEY("@defaultOrder with primaryKey mode — valid",
             new QueryTableField("Query", "films", null,
                 filmReturn(new FieldWrapper.List(true, true,
                     new ColumnOrder(List.of(new ColumnOrderEntry(ID_COL, null)), "DESC"), List.of())),
-                List.of()),
+                null, List.of()),
             List.of()),
 
         DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields — valid",
@@ -58,7 +58,7 @@ class QueryTableFieldValidationTest {
                         new ColumnOrderEntry(ID_COL, "C")),
                         "ASC"),
                     List.of())),
-                List.of()),
+                null, List.of()),
             List.of()),
 
         ORDER_BY_INDEX("@orderBy argument with resolved ColumnOrder enum values — valid",
@@ -67,7 +67,7 @@ class QueryTableFieldValidationTest {
                     List.of(
                         new NamedOrder("TITLE", INDEX_ORDER),
                         new NamedOrder("ID", PK_ORDER)))),
-                List.of()),
+                null, List.of()),
             List.of()),
 
         DEFAULT_ORDER_AND_ORDER_BY("@defaultOrder combined with @orderBy argument — valid",
@@ -77,7 +77,7 @@ class QueryTableFieldValidationTest {
                     List.of(
                         new NamedOrder("TITLE", INDEX_ORDER),
                         new NamedOrder("ID", PK_ORDER)))),
-                List.of()),
+                null, List.of()),
             List.of());
 
         private final String description;

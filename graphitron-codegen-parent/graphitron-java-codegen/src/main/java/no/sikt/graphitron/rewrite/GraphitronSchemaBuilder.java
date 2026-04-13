@@ -1070,7 +1070,7 @@ public class GraphitronSchemaBuilder {
             var argErrors3 = new ArrayList<String>();
             var arguments = classifyArgsList(fieldDef, tb.table(), false, argErrors3);
             if (arguments == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors3));
-            return new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, arguments);
+            return new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, null, arguments);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
@@ -1108,14 +1108,14 @@ public class GraphitronSchemaBuilder {
             var argErrors5 = new ArrayList<String>();
             var args = classifyArgsList(fieldDef, returnType.table(), false, argErrors5);
             if (args == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", argErrors5));
-            return new QueryField.QueryTableField(parentTypeName, name, location, returnType, args);
+            return new QueryField.QueryTableField(parentTypeName, name, location, returnType, null, args);
         }
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef, tableInterfaceType.table().tableName());
             if (wrapper == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                 "could not resolve @defaultOrder columns in table '" + tableInterfaceType.table().tableName() + "'");
             return new QueryField.QueryTableInterfaceField(parentTypeName, name, location,
-                new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper));
+                new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper), null);
         }
         if (elementType instanceof InterfaceType interfaceType) {
             return new QueryField.QueryInterfaceField(parentTypeName, name, location,

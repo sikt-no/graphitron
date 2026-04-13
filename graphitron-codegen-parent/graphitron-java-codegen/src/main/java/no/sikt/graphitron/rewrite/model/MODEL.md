@@ -205,15 +205,12 @@ graph TD
     %% ================================================================
     CFA -. "⚠ condition\nnot yet modelled" .-> FC
     IFA -. "⚠ condition\nnot yet modelled" .-> FC
-    QTF -. "⚠ condition\nnot yet modelled" .-> FC
-    QLF -. "⚠ condition\nnot yet modelled" .-> FC
-    QTI -. "⚠ condition\nnot yet modelled" .-> FC
+    QTF -. "condition" .-> FC
+    QLF -. "condition" .-> FC
+    QTI -. "condition" .-> FC
 
     style CFA stroke:#D35400,stroke-dasharray:5 3
     style IFA stroke:#D35400,stroke-dasharray:5 3
-    style QTF stroke:#D35400,stroke-dasharray:5 3
-    style QLF stroke:#D35400,stroke-dasharray:5 3
-    style QTI stroke:#D35400,stroke-dasharray:5 3
 ```
 
 ---
@@ -255,10 +252,11 @@ The only structural difference is that root fields have no `joinPath` — there 
 to FK-navigate from. **`condition` is not a difference**: `@condition` on a root query field is
 critical functionality (it is the primary way to filter the top-level result set, e.g.
 `activeCustomers: [Customer] @condition(..., override: true)`). `QueryTableField`,
-`QueryLookupTableField`, and `QueryTableInterfaceField` are all missing `FieldCondition condition`
-— this is a model gap, not an intentional omission. Whether a shared interface between root and
-child table-bound fields could capture the common parts (`returnType · condition · arguments`) is
-worth exploring.
+`QueryLookupTableField`, and `QueryTableInterfaceField` now carry `FieldCondition condition`
+alongside their `ChildField` counterparts. Whether a shared interface between root and child
+table-bound fields could capture the common parts (`returnType · condition · arguments`) is
+worth exploring. `QueryTableMethodTableField` and `QueryServiceTableField` intentionally do not
+carry condition — the developer-controlled method/service replaces SQL generation entirely.
 
 ### `TableTargetField` interface vs. `NestingField`
 

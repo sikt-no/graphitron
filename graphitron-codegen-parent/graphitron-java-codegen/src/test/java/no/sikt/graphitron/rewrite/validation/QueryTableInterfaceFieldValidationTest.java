@@ -20,7 +20,7 @@ class QueryTableInterfaceFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("single cardinality — valid",
-            new QueryTableInterfaceField("Query", "statuses", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Single(true))),
+            new QueryTableInterfaceField("Query", "statuses", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Single(true)), null),
             List.of());
 
         private final String description;

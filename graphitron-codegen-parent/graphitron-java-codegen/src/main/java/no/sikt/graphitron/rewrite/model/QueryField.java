@@ -5,6 +5,7 @@ import graphql.language.SourceLocation;
 import java.util.List;
 
 import no.sikt.graphitron.rewrite.model.ArgumentRef;
+import no.sikt.graphitron.rewrite.model.ChildField.FieldCondition;
 
 /**
  * A field on the {@code Query} type. Read-only. All create a new scope or enter private service scope.
@@ -26,6 +27,11 @@ public sealed interface QueryField extends RootField
      * <p>{@code returnType} must carry a {@link FieldWrapper.Single} wrapper — lookup fields return
      * one result per key. The validator reports an error for list or connection wrappers.
      *
+     * <p>{@code condition} is the resolved {@code @condition} directive on this field, or
+     * {@code null} if absent. When present, the condition method is called with the target table
+     * alias and all argument values as positional parameters. With {@code override: true}, all
+     * argument column-equality predicates are suppressed and only the condition call is emitted.
+     *
      * <p>{@code arguments} is the full list of arguments on the field.
      * {@link ArgumentRef.TableArg.InputFilterArg} and {@link ArgumentRef.TableArg.ColumnFilterArg}
      * are the expected lookup keys. {@link ArgumentRef.TableArg.OrderByArg} is rejected by the
@@ -37,6 +43,7 @@ public sealed interface QueryField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
+        FieldCondition condition,
         List<ArgumentRef> arguments
     ) implements QueryField {}
 
@@ -52,6 +59,11 @@ public sealed interface QueryField extends RootField
      * and a PK-less table). The validator reports errors for unresolved ordering specs on list and
      * connection variants.
      *
+     * <p>{@code condition} is the resolved {@code @condition} directive on this field, or
+     * {@code null} if absent. When present, the condition method is called with the target table
+     * alias and all argument values as positional parameters. With {@code override: true}, all
+     * argument column-equality predicates are suppressed and only the condition call is emitted.
+     *
      * <p>{@code arguments} is the full list of arguments on the field (e.g. {@code @orderBy},
      * {@code @condition}, pagination arguments). The validator checks that any referenced input
      * types exist in the classified schema.
@@ -61,6 +73,7 @@ public sealed interface QueryField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
+        FieldCondition condition,
         List<ArgumentRef> arguments
     ) implements QueryField {}
 
@@ -121,12 +134,17 @@ public sealed interface QueryField extends RootField
      *
      * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
      * schema, with the {@link FieldWrapper} embedded.
+     *
+     * <p>{@code condition} is the resolved {@code @condition} directive on this field, or
+     * {@code null} if absent. When present, the condition method is called with the target table
+     * alias and all argument values as positional parameters.
      */
     record QueryTableInterfaceField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType
+        ReturnTypeRef.TableBoundReturnType returnType,
+        FieldCondition condition
     ) implements QueryField {}
 
     /**
