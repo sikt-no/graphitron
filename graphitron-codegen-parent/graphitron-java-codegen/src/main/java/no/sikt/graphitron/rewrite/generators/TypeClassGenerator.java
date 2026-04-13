@@ -60,6 +60,7 @@ public class TypeClassGenerator {
     private static final ClassName CONDITION      = ClassName.get("org.jooq", "Condition");
     private static final ClassName SORT_FIELD     = ClassName.get("org.jooq", "SortField");
     private static final ClassName DSL_CONTEXT    = ClassName.get("org.jooq", "DSLContext");
+    private static final ClassName DSL            = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName LIST           = ClassName.get(List.class);
     private static final ClassName ENV            = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName SELECTION_SET  = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
@@ -102,8 +103,8 @@ public class TypeClassGenerator {
             .addMethod(buildSelectOneFromRowServiceMethod())
             .addMethod(buildSelectManyFromRecordServiceMethod())
             .addMethod(buildSelectOneFromRecordServiceMethod())
-            .addMethod(buildSubselectManyMethod())
-            .addMethod(buildSubselectOneMethod())
+            .addMethod(buildSubselectManyMethod(tableRef))
+            .addMethod(buildSubselectOneMethod(tableRef))
             .build();
     }
 
@@ -271,12 +272,16 @@ public class TypeClassGenerator {
      * Subselect overload for inline list fields:
      * {@code subselectMany(env, sel, condition, orderBy)}.
      *
-     * <p>{@code env} provides the GraphQL context (DSLContext, context arguments, tenant ID).
-     * {@code sel} is the {@code SelectedField} for the child field being resolved — its
-     * {@code getSelectionSet()} drives column selection via {@code fields()}, and its
-     * {@code getArguments()} provides argument values for WHERE clauses.
+     * <p>Returns a jOOQ {@code multiset} expression — a passive field expression that is embedded
+     * into the parent SELECT and executed in the same round-trip. The alias
+     * ({@code sel.getResultKey()}) tells the parent record which key to use when storing the
+     * nested result.
+     *
+     * <p>{@code env} is included for consistency with all table methods (context arguments, tenant
+     * ID); the plain multiset body does not need it.
      */
-    private static MethodSpec buildSubselectManyMethod() {
+    private static MethodSpec buildSubselectManyMethod(TableRef tableRef) {
+        var tablesClass = tablesClassName();
         return MethodSpec.methodBuilder("subselectMany")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(FIELD, ParameterizedTypeName.get(RESULT, RECORD)))
@@ -284,22 +289,34 @@ public class TypeClassGenerator {
             .addParameter(SELECTED_FIELD, "sel")
             .addParameter(CONDITION, "condition")
             .addParameter(sortFieldList(), "orderBy")
-            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName())
+            .addStatement(
+                "return $T.multiset($T.select(fields(sel.getSelectionSet())).from(table).where(condition).orderBy(orderBy)).as(sel.getResultKey())",
+                DSL, DSL)
             .build();
     }
 
     /**
      * Subselect overload for inline single fields:
      * {@code subselectOne(env, sel, condition)}.
+     *
+     * <p>Uses {@code multiset(...).limit(1)} and {@code convertFrom} to peel the first
+     * (only) row out of the nested result, returning {@code Field<Record>} rather than
+     * {@code Field<Result<Record>>}. Returns {@code null} when the multiset is empty
+     * (i.e. the join produced no row — treated as a nullable single).
      */
-    private static MethodSpec buildSubselectOneMethod() {
+    private static MethodSpec buildSubselectOneMethod(TableRef tableRef) {
+        var tablesClass = tablesClassName();
         return MethodSpec.methodBuilder("subselectOne")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(FIELD, RECORD))
             .addParameter(ENV, "env")
             .addParameter(SELECTED_FIELD, "sel")
             .addParameter(CONDITION, "condition")
-            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName())
+            .addStatement(
+                "return $T.multiset($T.select(fields(sel.getSelectionSet())).from(table).where(condition).limit(1)).as(sel.getResultKey()).convertFrom(r -> r.isEmpty() ? null : r.get(0))",
+                DSL, DSL)
             .build();
     }
 
