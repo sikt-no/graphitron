@@ -1,8 +1,8 @@
 # Plan: Split GraphitronSchemaBuilder into Four Components
 
-## Status: IN PROGRESS (3 of 5 files complete)
+## Status: COMPLETE (5 of 5 files done)
 
-**Branch:** `claude/validation-test-coverage-plan-r8PAv`
+**Branch:** `claude/validation-test-coverage-plan-EcOP7`
 
 ---
 
@@ -21,8 +21,8 @@ isolation, testable independently, and easier to evolve.
 | `BuildContext.java` | Shared state + stateless utilities | ✅ Done |
 | `ServiceCatalog.java` | Reflection + jOOQ catalog lookups | ✅ Done |
 | `TypeBuilder.java` | Two-pass type classification | ✅ Done |
-| `FieldBuilder.java` | Field classification (all classifyXxx methods) | ❌ TODO |
-| `GraphitronSchemaBuilder.java` | Thin orchestrator (~80 lines) | ❌ TODO (currently 2154 lines, untouched) |
+| `FieldBuilder.java` | Field classification (all classifyXxx methods) | ✅ Done |
+| `GraphitronSchemaBuilder.java` | Thin orchestrator (~100 lines) | ✅ Done |
 
 All five files are package-private (`no.sikt.graphitron.rewrite`).
 The only public API is `GraphitronSchemaBuilder.build(TypeDefinitionRegistry)`,
