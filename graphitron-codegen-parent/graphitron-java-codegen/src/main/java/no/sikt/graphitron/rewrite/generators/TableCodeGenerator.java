@@ -1,10 +1,13 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.rewrite.model.TableRef;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -40,22 +43,30 @@ import static javax.lang.model.element.Modifier.STATIC;
  */
 public class TableCodeGenerator {
 
-    private static final ClassName RESULT        = ClassName.get("org.jooq", "Result");
-    private static final ClassName RECORD        = ClassName.get("org.jooq", "Record");
-    private static final ClassName ROW           = ClassName.get("org.jooq", "Row");
-    private static final ClassName FIELD         = ClassName.get("org.jooq", "Field");
-    private static final ClassName CONDITION     = ClassName.get("org.jooq", "Condition");
-    private static final ClassName SORT_FIELD    = ClassName.get("org.jooq", "SortField");
-    private static final ClassName LIST          = ClassName.get(List.class);
-    private static final ClassName ENV           = ClassName.get("graphql.schema", "DataFetchingEnvironment");
-    private static final ClassName SELECTION_SET = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
+    private static final ClassName RESULT         = ClassName.get("org.jooq", "Result");
+    private static final ClassName RECORD         = ClassName.get("org.jooq", "Record");
+    private static final ClassName ROW            = ClassName.get("org.jooq", "Row");
+    private static final ClassName FIELD          = ClassName.get("org.jooq", "Field");
+    private static final ClassName CONDITION      = ClassName.get("org.jooq", "Condition");
+    private static final ClassName SORT_FIELD     = ClassName.get("org.jooq", "SortField");
+    private static final ClassName DSL_CONTEXT    = ClassName.get("org.jooq", "DSLContext");
+    private static final ClassName LIST           = ClassName.get(List.class);
+    private static final ClassName ENV            = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+    private static final ClassName SELECTION_SET  = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
     private static final ClassName SELECTED_FIELD = ClassName.get("graphql.schema", "SelectedField");
+    private static final ClassName GRAPHITRON_CONTEXT = ClassName.get("no.sikt.graphql", "GraphitronContext");
 
-    public TypeSpec generate(String tableName) {
-        return TypeSpec.classBuilder(tableName)
+    /**
+     * Generates the table class with real method bodies for {@code selectMany} and
+     * {@code selectOne}, and stub bodies for the remaining overloads.
+     *
+     * @param tableRef the resolved table reference with jOOQ field/class names
+     */
+    public TypeSpec generate(TableRef tableRef) {
+        return TypeSpec.classBuilder(tableRef.javaClassName())
             .addModifiers(Modifier.PUBLIC)
-            .addMethod(buildSelectManyMethod())
-            .addMethod(buildSelectOneMethod())
+            .addMethod(buildSelectManyMethod(tableRef))
+            .addMethod(buildSelectOneMethod(tableRef))
             .addMethod(buildSelectManyFromRowServiceMethod())
             .addMethod(buildSelectOneFromRowServiceMethod())
             .addMethod(buildSelectManyFromRecordServiceMethod())
@@ -65,25 +76,68 @@ public class TableCodeGenerator {
             .build();
     }
 
-    private MethodSpec buildSelectManyMethod() {
+    /**
+     * Generates a {@code selectMany} method that:
+     * <ol>
+     *   <li>Obtains a {@link org.jooq.DSLContext} from the {@code GraphitronContext}.</li>
+     *   <li>Selects all columns from the table using {@code table.fields()}.</li>
+     *   <li>Applies the WHERE {@code condition} (when non-null).</li>
+     *   <li>Applies the ORDER BY {@code orderBy} list.</li>
+     *   <li>Fetches and returns the result.</li>
+     * </ol>
+     */
+    private MethodSpec buildSelectManyMethod(TableRef tableRef) {
+        var tablesClass = tablesClassName();
         return MethodSpec.methodBuilder("selectMany")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(RESULT, RECORD))
             .addParameter(ENV, "env")
             .addParameter(CONDITION, "condition")
             .addParameter(sortFieldList(), "orderBy")
-            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .addStatement("$T dsl = (($T) env.getGraphQlContext().get($S)).getDslContext()",
+                DSL_CONTEXT, GRAPHITRON_CONTEXT, "graphitronContext")
+            .addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName())
+            .addCode(CodeBlock.builder()
+                .add("return dsl\n")
+                .indent()
+                .add(".select(table.fields())\n")
+                .add(".from(table)\n")
+                .add(".where(condition)\n")
+                .add(".orderBy(orderBy)\n")
+                .add(".fetch();\n")
+                .unindent()
+                .build())
             .build();
     }
 
-    private MethodSpec buildSelectOneMethod() {
+    /**
+     * Generates a {@code selectOne} method that selects all columns from the table,
+     * applies the WHERE {@code condition}, and fetches a single row.
+     */
+    private MethodSpec buildSelectOneMethod(TableRef tableRef) {
+        var tablesClass = tablesClassName();
         return MethodSpec.methodBuilder("selectOne")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(RECORD)
             .addParameter(ENV, "env")
             .addParameter(CONDITION, "condition")
-            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .addStatement("$T dsl = (($T) env.getGraphQlContext().get($S)).getDslContext()",
+                DSL_CONTEXT, GRAPHITRON_CONTEXT, "graphitronContext")
+            .addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName())
+            .addCode(CodeBlock.builder()
+                .add("return dsl\n")
+                .indent()
+                .add(".select(table.fields())\n")
+                .add(".from(table)\n")
+                .add(".where(condition)\n")
+                .add(".fetchOne();\n")
+                .unindent()
+                .build())
             .build();
+    }
+
+    private static ClassName tablesClassName() {
+        return ClassName.get(GeneratorConfig.outputPackage() + ".tables", "Tables");
     }
 
     /** Row-keyed service overload: {@code selectMany(List<? extends Row>, SelectedField, List<?>)}. */

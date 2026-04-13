@@ -23,9 +23,14 @@ public class TableClassGenerator {
         var codeGenerator = new TableCodeGenerator();
         return schema.types().values().stream()
             .filter(t -> t instanceof GraphitronType.TableType)
-            .map(t -> ((GraphitronType.TableType) t).table().javaClassName())
-            .distinct()
-            .sorted()
+            .map(t -> ((GraphitronType.TableType) t).table())
+            .collect(java.util.stream.Collectors.toMap(
+                TableRef::javaClassName,
+                t -> t,
+                (a, b) -> a,
+                java.util.LinkedHashMap::new))
+            .values().stream()
+            .sorted(java.util.Comparator.comparing(TableRef::javaClassName))
             .map(codeGenerator::generate)
             .toList();
     }

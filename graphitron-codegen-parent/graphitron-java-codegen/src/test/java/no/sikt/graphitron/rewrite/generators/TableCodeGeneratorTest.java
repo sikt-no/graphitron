@@ -1,19 +1,43 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.TableRef;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.lang.model.element.Modifier;
+import java.util.List;
 
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class TableCodeGeneratorTest {
 
     private static final TableCodeGenerator GEN = new TableCodeGenerator();
 
+    @BeforeEach
+    void setup() {
+        GeneratorConfig.setProperties(
+            java.util.Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE,
+            java.util.List.of(), java.util.Set.of(), java.util.List.of());
+    }
+
+    @AfterEach
+    void teardown() {
+        GeneratorConfig.clear();
+    }
+
+    private static TableRef tableRef(String sqlName, String javaFieldName, String javaClassName) {
+        return new TableRef(sqlName, javaFieldName, javaClassName,
+            List.of(new ColumnRef("id", "ID", "java.lang.Integer")));
+    }
+
     private static TypeSpec spec(String tableName) {
-        return GEN.generate(tableName);
+        return GEN.generate(tableRef(tableName.toLowerCase(), tableName.toUpperCase(), tableName));
     }
 
     private static MethodSpec method(String tableName, String methodName) {
@@ -86,9 +110,14 @@ class TableCodeGeneratorTest {
     }
 
     @Test
-    void selectMany_throwsUnsupportedOperationException() {
-        assertThat(method("Film", "selectMany").code().toString())
-            .contains("UnsupportedOperationException()");
+    void selectMany_queriesTable() {
+        var code = method("Film", "selectMany").code().toString();
+        assertThat(code).contains("getDslContext()");
+        assertThat(code).contains(".select(table.fields())");
+        assertThat(code).contains(".from(table)");
+        assertThat(code).contains(".where(condition)");
+        assertThat(code).contains(".orderBy(orderBy)");
+        assertThat(code).contains(".fetch()");
     }
 
     // ===== selectOne =====
