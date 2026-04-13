@@ -18,7 +18,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.schema;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
@@ -39,7 +38,7 @@ class ServiceFieldValidationTest {
         WITH_LIFT_CONDITION("lift condition with a resolved method",
             new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "liftCondition", "org.jooq.Condition",
-                    List.of(new MethodRef.Param("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))))),
+                    List.of(new MethodRef.Param.Typed("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))))),
                 RESOLVED_METHOD),
             List.of());
 
@@ -73,11 +72,11 @@ class ServiceFieldValidationTest {
         SOURCES_CORRECT_TYPE("SOURCES param is RowKeyed — no error (parent is RootType, no PK cross-check)",
             new ServiceTableField("Film", "externalChild", null,
                 new ReturnTypeRef.TableBoundReturnType("Film",
-                    new TableRef("film", "FILM", "Film", Optional.of(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))),
+                    new TableRef("film", "FILM", "Film", List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))),
                     new FieldWrapper.Single(true)),
                 List.of(), List.of(), new OrderBySpec.None(), null,
                 new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
-                    List.of(new MethodRef.Param("filmKeys", "java.util.List", new ParamSource.Sources(new SourcesRef.RowKeyed(List.of("java.lang.Integer"))))))),
+                    List.of(new MethodRef.Param.Sourced("filmKeys", new SourcesRef.RowKeyed(List.of("java.lang.Integer")))))),
             List.of());
 
         private final String description;
@@ -120,16 +119,16 @@ class ServiceFieldValidationTest {
 
     private static final TableRef FILM_TABLE_SINGLE_PK =
         new TableRef("film", "FILM", "Film",
-            Optional.of(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))));
+            List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")));
 
     private static final TableRef FILM_TABLE_COMPOSITE_PK =
         new TableRef("film", "FILM", "Film",
-            Optional.of(List.of(
+            List.of(
                 new ColumnRef("film_id",    "FILM_ID",    "java.lang.Integer"),
-                new ColumnRef("language_id","LANGUAGE_ID","java.lang.Integer"))));
+                new ColumnRef("language_id","LANGUAGE_ID","java.lang.Integer")));
 
     private static final TableRef FILM_TABLE_NO_PK =
-        new TableRef("film", "FILM", "Film", Optional.empty());
+        new TableRef("film", "FILM", "Film", List.of());
 
     private static GraphitronType.TableType filmTableType(TableRef tableRef) {
         return new GraphitronType.TableType("Film", null, tableRef, List.of());
@@ -142,7 +141,7 @@ class ServiceFieldValidationTest {
         return new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
             List.of(), List.of(), new OrderBySpec.None(), null,
             new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
-                List.of(new MethodRef.Param("filmKeys", "java.util.List", new ParamSource.Sources(sourcesRef)))));
+                List.of(new MethodRef.Param.Sourced("filmKeys", sourcesRef))));
     }
 
     enum TablePkValidationCase implements TablePkCase {
@@ -207,7 +206,7 @@ class ServiceFieldValidationTest {
                 List.of(), List.of(), new OrderBySpec.None(), null,
                 new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
                     // Single type arg; parent has 2-col PK — type list differs in both value and size
-                    List.of(new MethodRef.Param("filmKeys", "java.util.List", new ParamSource.Sources(new SourcesRef.RowKeyed(List.of("java.lang.Long"))))))),
+                    List.of(new MethodRef.Param.Sourced("filmKeys", new SourcesRef.RowKeyed(List.of("java.lang.Long")))))),
             List.of(
                 "Field 'externalChild': SOURCES parameter 'filmKeys' must be of type " +
                     "java.util.List<org.jooq.Row2<java.lang.Integer, java.lang.Integer>>, found: " +
@@ -220,8 +219,8 @@ class ServiceFieldValidationTest {
                 List.of(), List.of(), new OrderBySpec.None(), null,
                 new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
                     List.of(
-                        new MethodRef.Param("filmKeys1", "java.util.List", new ParamSource.Sources(new SourcesRef.RowKeyed(List.of("java.lang.Integer")))),
-                        new MethodRef.Param("filmKeys2", "java.util.List", new ParamSource.Sources(new SourcesRef.RowKeyed(List.of("java.lang.Long"))))))),
+                        new MethodRef.Param.Sourced("filmKeys1", new SourcesRef.RowKeyed(List.of("java.lang.Integer"))),
+                        new MethodRef.Param.Sourced("filmKeys2", new SourcesRef.RowKeyed(List.of("java.lang.Long")))))),
             List.of(
                 "Field 'externalChild': SOURCES parameter 'filmKeys2' must be of type " +
                     "java.util.List<org.jooq.Row1<java.lang.Integer>>, found: " +

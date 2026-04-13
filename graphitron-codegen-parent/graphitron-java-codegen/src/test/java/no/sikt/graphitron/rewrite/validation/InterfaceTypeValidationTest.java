@@ -24,8 +24,8 @@ class InterfaceTypeValidationTest {
 
         ALL_BOUND("all implementing types are table-bound — valid",
             new InterfaceType("Media", null, List.of(
-                new ParticipantRef("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), null),
-                new ParticipantRef("Actor", new TableRef("actor", "ACTOR", "Actor", Optional.of(List.of())), null)
+                new ParticipantRef("Film", new TableRef("film", "FILM", "Film", List.of()), null),
+                new ParticipantRef("Actor", new TableRef("actor", "ACTOR", "Actor", List.of()), null)
             )),
             List.of());
 

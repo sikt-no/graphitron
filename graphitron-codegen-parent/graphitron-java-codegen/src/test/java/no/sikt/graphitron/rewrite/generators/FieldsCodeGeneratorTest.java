@@ -19,7 +19,6 @@ import org.junit.jupiter.api.Test;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
@@ -49,7 +48,7 @@ class FieldsCodeGeneratorTest {
     private static GraphitronField splitQueryField(String parentType, String name) {
         return new ChildField.SplitTableField(parentType, name, null,
             new ReturnTypeRef.TableBoundReturnType("Film",
-                new TableRef("film", "FILM", "Film", Optional.of(List.of())),
+                new TableRef("film", "FILM", "Film", List.of()),
                 new FieldWrapper.List(false, false)),
             List.of(), List.of(), new OrderBySpec.None(), null);
     }
@@ -59,14 +58,14 @@ class FieldsCodeGeneratorTest {
             ? (FieldWrapper) new FieldWrapper.List(true, true)
             : new FieldWrapper.Single(true);
         var returnType = new ReturnTypeRef.TableBoundReturnType("Film",
-            new TableRef("film", "FILM", "Film", Optional.of(List.of())),
+            new TableRef("film", "FILM", "Film", List.of()),
             returnWrapper);
         var method = new MethodRef(
             "no.example.FilmService", "getFilms", "java.util.List",
             List.of(
-                new MethodRef.Param("keys", "java.util.List<org.jooq.Row1<java.lang.Integer>>", new ParamSource.Sources(new SourcesRef.RowKeyed(List.of("java.lang.Integer")))),
-                new MethodRef.Param("filter", "java.lang.String", new ParamSource.Arg()),
-                new MethodRef.Param("tenantId", "java.lang.String", new ParamSource.Context())
+                new MethodRef.Param.Sourced("keys", new SourcesRef.RowKeyed(List.of("java.lang.Integer"))),
+                new MethodRef.Param.Typed("filter", "java.lang.String", new ParamSource.Arg()),
+                new MethodRef.Param.Typed("tenantId", "java.lang.String", new ParamSource.Context())
             )
         );
         return new ChildField.ServiceTableField(
@@ -83,7 +82,7 @@ class FieldsCodeGeneratorTest {
     }
 
     private static TypeSpec specWithServiceField(String parentType, String fieldName, boolean isList) {
-        var parentTable = new TableRef("language", "LANGUAGE", "Language", Optional.of(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer"))));
+        var parentTable = new TableRef("language", "LANGUAGE", "Language", List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer")));
         return GEN.generate(parentType, parentTable, List.of(serviceField(parentType, fieldName, isList)));
     }
 

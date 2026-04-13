@@ -21,7 +21,7 @@ class TableInterfaceFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("single cardinality — valid",
-            new TableInterfaceField("Film", "status", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null),
+            new TableInterfaceField("Film", "status", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null),
             List.of());
 
         private final String description;

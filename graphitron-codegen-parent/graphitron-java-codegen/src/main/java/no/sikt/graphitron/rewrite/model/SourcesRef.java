@@ -61,4 +61,32 @@ public sealed interface SourcesRef
      * that reconnect a result-mapped parent back into table-query context.
      */
     record ResultKeyed(String fqClassName) implements SourcesRef {}
+
+    /**
+     * Returns the fully qualified generic Java type name for the {@code List<?>} parameter
+     * that corresponds to this {@link SourcesRef} variant.
+     *
+     * <p>Examples:
+     * <ul>
+     *   <li>{@code RowKeyed(["java.lang.Integer"])} →
+     *       {@code "java.util.List<org.jooq.Row1<java.lang.Integer>>"}</li>
+     *   <li>{@code RecordKeyed(["java.lang.Integer", "java.lang.Long"])} →
+     *       {@code "java.util.List<org.jooq.Record2<java.lang.Integer, java.lang.Long>>"}</li>
+     *   <li>{@code TableRecordKeyed("...FilmRecord")} →
+     *       {@code "java.util.List<...FilmRecord>"}</li>
+     * </ul>
+     */
+    static String javaTypeName(SourcesRef ref) {
+        return switch (ref) {
+            case RowKeyed rk    -> rowOrRecordListType("org.jooq.Row", rk.pkJavaTypes());
+            case RecordKeyed rk -> rowOrRecordListType("org.jooq.Record", rk.pkJavaTypes());
+            case TableRecordKeyed trk -> "java.util.List<" + trk.fqClassName() + ">";
+            case ResultKeyed rk       -> "java.util.List<" + rk.fqClassName() + ">";
+        };
+    }
+
+    private static String rowOrRecordListType(String prefix, List<String> typeArgs) {
+        return "java.util.List<" + prefix + typeArgs.size()
+            + "<" + String.join(", ", typeArgs) + ">>";
+    }
 }

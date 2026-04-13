@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class NodeTypeValidationTest {
 
-    private static final TableRef RESOLVED_FILM = new TableRef("film", "FILM", "Film", Optional.of(List.of()));
+    private static final TableRef RESOLVED_FILM = new TableRef("film", "FILM", "Film", List.of());
 
     enum Case implements TypeValidatorCase {
 

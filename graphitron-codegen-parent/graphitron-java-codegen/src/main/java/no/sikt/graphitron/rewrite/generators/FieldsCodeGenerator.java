@@ -156,10 +156,11 @@ public class FieldsCodeGenerator {
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
 
         var sourcesParam = smr.params().stream()
-            .filter(p -> p.source() instanceof ParamSource.Sources)
+            .filter(p -> p instanceof MethodRef.Param.Sourced)
+            .map(p -> (MethodRef.Param.Sourced) p)
             .findFirst()
             .orElseThrow();
-        var sourcesRef = ((ParamSource.Sources) sourcesParam.source()).sourcesRef();
+        var sourcesRef = sourcesParam.sourcesRef();
 
         TypeName keyType = switch (sourcesRef) {
             case SourcesRef.RowKeyed rk          -> buildRowKeyType(rk.pkJavaTypes());
@@ -196,7 +197,7 @@ public class FieldsCodeGenerator {
         switch (sourcesRef) {
             case SourcesRef.RowKeyed rk -> {
                 String tableField = prt.javaFieldName();
-                List<ColumnRef> pkCols = prt.primaryKeyColumns().get();
+                List<ColumnRef> pkCols = prt.primaryKeyColumns();
                 var rowArgs = CodeBlock.builder();
                 for (int i = 0; i < pkCols.size(); i++) {
                     if (i > 0) rowArgs.add(", ");
@@ -207,7 +208,7 @@ public class FieldsCodeGenerator {
             }
             case SourcesRef.RecordKeyed rk -> {
                 String tableField = prt.javaFieldName();
-                List<ColumnRef> pkCols = prt.primaryKeyColumns().get();
+                List<ColumnRef> pkCols = prt.primaryKeyColumns();
                 var intoArgs = CodeBlock.builder();
                 for (int i = 0; i < pkCols.size(); i++) {
                     if (i > 0) intoArgs.add(", ");
@@ -256,10 +257,11 @@ public class FieldsCodeGenerator {
         var returnType = isList ? ParameterizedTypeName.get(LIST, listOfRecord) : listOfRecord;
 
         var sourcesParam = smr.params().stream()
-            .filter(p -> p.source() instanceof ParamSource.Sources)
+            .filter(p -> p instanceof MethodRef.Param.Sourced)
+            .map(p -> (MethodRef.Param.Sourced) p)
             .findFirst()
             .orElseThrow();
-        var sourcesRef = ((ParamSource.Sources) sourcesParam.source()).sourcesRef();
+        var sourcesRef = sourcesParam.sourcesRef();
 
         TypeName keysElementType = switch (sourcesRef) {
             case SourcesRef.RowKeyed rk          -> buildRowKeyType(rk.pkJavaTypes());
@@ -277,20 +279,21 @@ public class FieldsCodeGenerator {
 
         // Emit arg and context extraction statements using switch on ParamSource
         for (var param : smr.params()) {
-            switch (param.source()) {
+            if (param instanceof MethodRef.Param.Typed t) switch (t.source()) {
                 case ParamSource.Arg a -> builder.addStatement(
                     "$T $L = dfe.getArgument($S)",
-                    Object.class, param.name(), param.name());
+                    Object.class, t.name(), t.name());
                 case ParamSource.Context c -> builder.addStatement(
                     "$T $L = graphitronContext(dfe).getContextArgument(dfe, $S)",
-                    Object.class, param.name(), param.name());
-                default -> {} // Sources: 'keys' is passed directly; others not applicable here
+                    Object.class, t.name(), t.name());
+                default -> {} // DslContext, Table, SourceTable: not applicable in service rows method
             }
+            // MethodRef.Param.Sourced: 'keys' is passed as the first argument directly
         }
 
         // Build service call argument list — SOURCES param replaced by 'keys'
         var serviceCallArgs = smr.params().stream()
-            .map(p -> p.source() instanceof ParamSource.Sources ? "keys" : p.name())
+            .map(p -> p instanceof MethodRef.Param.Sourced ? "keys" : p.name())
             .toList();
 
         builder.addStatement(

@@ -24,7 +24,7 @@ class QueryLookupTableFieldValidationTest {
 
     private static QueryLookupTableField singleReturn(List<WhereFilter> filters, OrderBySpec orderBy) {
         return new QueryLookupTableField("Query", "filmById", null,
-            new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Single(true)),
+            new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)),
             filters, orderBy, null);
     }
 
@@ -40,7 +40,7 @@ class QueryLookupTableFieldValidationTest {
 
         VALID_WITH_LIST_COLUMN_ARG("ColumnFilter list — valid with list return",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.List(true, true)),
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.List(true, true)),
                 List.of(new WhereFilter.ColumnFilter("id", "ID", false, true, FILM_ID_COL)), new OrderBySpec.None(), null),
             List.of()),
 
@@ -50,7 +50,7 @@ class QueryLookupTableFieldValidationTest {
 
         LIST_RETURN_NO_LIST_ARG("list return with no list filter — cardinality mismatch",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.List(true, true)),
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.List(true, true)),
                 List.of(), new OrderBySpec.None(), null),
             List.of("Field 'filmById': result type does not match input cardinality")),
 
@@ -60,7 +60,7 @@ class QueryLookupTableFieldValidationTest {
 
         CONNECTION_RETURN("connection return — never valid on lookup",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Connection(true, true)),
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, true)),
                 List.of(), new OrderBySpec.None(), null),
             List.of("Field 'filmById': lookup fields must not return a connection")),
 
@@ -70,7 +70,7 @@ class QueryLookupTableFieldValidationTest {
 
         CONNECTION_AND_ORDERBY("connection return AND @orderBy — two independent errors",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Connection(true, true)),
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, true)),
                 List.of(), new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "direction", List.of(), null), null),
             List.of(
                 "Field 'filmById': lookup fields must not return a connection",

@@ -15,7 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.SourcesRef;
 
 /**
@@ -323,14 +323,14 @@ public class GraphitronSchemaValidator {
         var smr = field.method();
         var parentTypeForSources = types.get(field.parentTypeName());
         List<String> parentPkJavaTypes = (parentTypeForSources instanceof TableBackedType tbtSrc)
-            ? tbtSrc.table().primaryKeyColumns()
-                .map(cols -> cols.stream().map(no.sikt.graphitron.rewrite.model.ColumnRef::columnClass).toList())
-                .orElse(List.of())
+            ? tbtSrc.table().primaryKeyColumns().stream()
+                .map(no.sikt.graphitron.rewrite.model.ColumnRef::columnClass)
+                .toList()
             : List.of();
 
         smr.params().stream()
-            .filter(p -> p.source() instanceof ParamSource.Sources)
-            .forEach(p -> { switch (((ParamSource.Sources) p.source()).sourcesRef()) {
+            .filter(p -> p instanceof MethodRef.Param.Sourced)
+            .forEach(p -> { switch (((MethodRef.Param.Sourced) p).sourcesRef()) {
                 case SourcesRef.RowKeyed rk -> {
                     if (!parentPkJavaTypes.isEmpty() && !rk.pkJavaTypes().equals(parentPkJavaTypes)) {
                         String expected = buildExpectedKeysType("Row", parentPkJavaTypes);
@@ -362,9 +362,9 @@ public class GraphitronSchemaValidator {
         // For Row-keyed and Record-keyed, the parent must have a PK so the key
         // expression can be built. TableRecordKeyed and ResultKeyed use the whole parent as the key.
         boolean hasRowOrRecordKeyed = smr.params().stream()
-            .filter(p -> p.source() instanceof ParamSource.Sources)
-            .anyMatch(p -> ((ParamSource.Sources) p.source()).sourcesRef() instanceof SourcesRef.RowKeyed
-                        || ((ParamSource.Sources) p.source()).sourcesRef() instanceof SourcesRef.RecordKeyed);
+            .filter(p -> p instanceof MethodRef.Param.Sourced)
+            .map(p -> ((MethodRef.Param.Sourced) p).sourcesRef())
+            .anyMatch(s -> s instanceof SourcesRef.RowKeyed || s instanceof SourcesRef.RecordKeyed);
 
         if (!hasRowOrRecordKeyed) {
             return; // TableRecordKeyed — no PK constraint on the parent table

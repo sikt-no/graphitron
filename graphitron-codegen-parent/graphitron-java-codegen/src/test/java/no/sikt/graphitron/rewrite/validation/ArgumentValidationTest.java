@@ -28,7 +28,7 @@ class ArgumentValidationTest {
 
     private static final ReturnTypeRef.TableBoundReturnType FILM_RETURN =
         new ReturnTypeRef.TableBoundReturnType("Film",
-            new TableRef("film", "FILM", "Film", Optional.of(List.of())),
+            new TableRef("film", "FILM", "Film", List.of()),
             new FieldWrapper.Single(true));
 
     private static TableField tableField(List<WhereFilter> filters) {

@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SplitLookupTableFieldValidationTest {
 
     private static ReturnTypeRef.TableBoundReturnType filmReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), wrapper);
     }
 
     enum Case implements ValidatorCase {

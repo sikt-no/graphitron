@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
  * A jOOQ table resolved from a {@code @table} directive value.
@@ -29,9 +28,9 @@ public record TableRef(
     String tableName,
     String javaFieldName,
     String javaClassName,
-    Optional<List<ColumnRef>> primaryKeyColumns
+    List<ColumnRef> primaryKeyColumns
 ) {
     public boolean hasPrimaryKey() {
-        return primaryKeyColumns.isPresent();
+        return !primaryKeyColumns.isEmpty();
     }
 }

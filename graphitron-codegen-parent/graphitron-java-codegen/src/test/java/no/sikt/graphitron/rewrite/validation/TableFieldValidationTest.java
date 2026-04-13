@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TableFieldValidationTest {
 
     private static ReturnTypeRef.TableBoundReturnType actorReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Actor", new TableRef("actor", "ACTOR", "Actor", Optional.of(List.of())), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Actor", new TableRef("actor", "ACTOR", "Actor", List.of()), wrapper);
     }
 
     enum Case implements ValidatorCase {

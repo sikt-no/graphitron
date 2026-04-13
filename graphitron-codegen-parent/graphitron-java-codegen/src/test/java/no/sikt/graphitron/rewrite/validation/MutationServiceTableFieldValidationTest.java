@@ -20,7 +20,7 @@ class MutationServiceTableFieldValidationTest {
 
     private static final ReturnTypeRef.TableBoundReturnType FILM_RETURN =
         new ReturnTypeRef.TableBoundReturnType("Film",
-            new TableRef("film", "FILM", "Film", Optional.of(List.of())),
+            new TableRef("film", "FILM", "Film", List.of()),
             new FieldWrapper.Single(true));
 
     enum Case implements ValidatorCase {

@@ -490,13 +490,13 @@ public class GraphitronSchemaBuilder {
 
     private TableRef buildTableRef(JooqCatalog.TableEntry e, String sqlName) {
         var pk = e.table().getPrimaryKey();
-        Optional<List<ColumnRef>> pkColumns = pk == null
-            ? Optional.empty()
-            : Optional.of(pk.getFields().stream()
+        List<ColumnRef> pkColumns = pk == null
+            ? List.of()
+            : pk.getFields().stream()
                 .map(f -> catalog.findColumn(e.table(), f.getName()))
                 .<JooqCatalog.ColumnEntry>flatMap(Optional::stream)
                 .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()))
-                .toList());
+                .toList();
         return new TableRef(sqlName, e.javaFieldName(), e.table().getClass().getSimpleName(), pkColumns);
     }
 
@@ -1873,9 +1873,9 @@ public class GraphitronSchemaBuilder {
                 String displayName = pName != null ? pName : p.getType().getSimpleName();
                 String typeName = p.getParameterizedType().getTypeName();
                 if (pName != null && argNames.contains(pName)) {
-                    params.add(new MethodRef.Param(displayName, typeName, new ParamSource.Arg()));
+                    params.add(new MethodRef.Param.Typed(displayName, typeName, new ParamSource.Arg()));
                 } else if (pName != null && ctxKeys.contains(pName)) {
-                    params.add(new MethodRef.Param(displayName, typeName, new ParamSource.Context()));
+                    params.add(new MethodRef.Param.Typed(displayName, typeName, new ParamSource.Context()));
                 } else {
                     Optional<SourcesRef> sourcesRef = classifySourcesType(p.getParameterizedType());
                     if (sourcesRef.isEmpty()) {
@@ -1883,7 +1883,7 @@ public class GraphitronSchemaBuilder {
                             "parameter '" + displayName + "' in method '" + methodName
                             + "' has an unrecognized sources type: '" + typeName + "'");
                     }
-                    params.add(new MethodRef.Param(displayName, typeName, new ParamSource.Sources(sourcesRef.get())));
+                    params.add(new MethodRef.Param.Sourced(displayName, sourcesRef.get()));
                 }
             }
             return new ServiceReflectionResult(

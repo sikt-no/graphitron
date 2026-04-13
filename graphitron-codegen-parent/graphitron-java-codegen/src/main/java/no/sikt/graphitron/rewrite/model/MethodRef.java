@@ -29,15 +29,48 @@ public record MethodRef(
     /**
      * Reflection data for one parameter of a resolved method.
      *
+     * <p>Two variants:
+     * <ul>
+     *   <li>{@link Typed} — all non-SOURCES parameters ({@code Arg}, {@code Context},
+     *       {@code DslContext}, {@code Table}, {@code SourceTable}). The Java type is captured
+     *       from reflection and stored explicitly.</li>
+     *   <li>{@link Sourced} — a DataLoader batch-key parameter ({@code Sources}). The Java type
+     *       is derived from the {@link SourcesRef} variant so no separate {@code typeName} is
+     *       stored; {@link #typeName()} and {@link #source()} are computed on demand.</li>
+     * </ul>
+     *
      * <p>{@code name} is the parameter name from the compiled class (requires {@code -parameters}).
-     *
-     * <p>{@code typeName} is the fully qualified generic type name as returned by
-     * {@link java.lang.reflect.Parameter#getParameterizedType()} followed by
-     * {@link java.lang.reflect.Type#getTypeName()}.
-     *
-     * <p>{@code source} classifies where the runtime value for this parameter comes from.
-     * The generator switches on the {@link ParamSource} variant to emit the correct binding
-     * expression.
      */
-    public record Param(String name, String typeName, ParamSource source) {}
+    public sealed interface Param permits Param.Typed, Param.Sourced {
+        String name();
+        String typeName();
+        ParamSource source();
+
+        /**
+         * A parameter with an explicit type and source classification.
+         * Used for {@link ParamSource.Arg}, {@link ParamSource.Context},
+         * {@link ParamSource.DslContext}, {@link ParamSource.Table}, and
+         * {@link ParamSource.SourceTable} parameters.
+         *
+         * <p>{@code typeName} is the fully qualified generic type name as returned by
+         * {@link java.lang.reflect.Parameter#getParameterizedType()} followed by
+         * {@link java.lang.reflect.Type#getTypeName()}.
+         */
+        record Typed(String name, String typeName, ParamSource source) implements Param {}
+
+        /**
+         * A DataLoader batch-key parameter whose Java type is fully determined by the
+         * {@link SourcesRef} variant — no separate {@code typeName} field is needed.
+         *
+         * <p>{@link #typeName()} returns the derived generic list type
+         * (e.g. {@code "java.util.List<org.jooq.Row1<java.lang.Integer>>"} for
+         * {@link SourcesRef.RowKeyed} with one {@code Integer} PK column).
+         *
+         * <p>{@link #source()} returns {@code new ParamSource.Sources(sourcesRef)}.
+         */
+        record Sourced(String name, SourcesRef sourcesRef) implements Param {
+            @Override public String typeName() { return SourcesRef.javaTypeName(sourcesRef); }
+            @Override public ParamSource source() { return new ParamSource.Sources(sourcesRef); }
+        }
+    }
 }
