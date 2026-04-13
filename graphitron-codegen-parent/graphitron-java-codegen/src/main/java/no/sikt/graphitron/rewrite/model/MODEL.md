@@ -205,9 +205,15 @@ graph TD
     %% ================================================================
     CFA -. "⚠ condition\nnot yet modelled" .-> FC
     IFA -. "⚠ condition\nnot yet modelled" .-> FC
+    QTF -. "⚠ condition\nnot yet modelled" .-> FC
+    QLF -. "⚠ condition\nnot yet modelled" .-> FC
+    QTI -. "⚠ condition\nnot yet modelled" .-> FC
 
     style CFA stroke:#D35400,stroke-dasharray:5 3
     style IFA stroke:#D35400,stroke-dasharray:5 3
+    style QTF stroke:#D35400,stroke-dasharray:5 3
+    style QLF stroke:#D35400,stroke-dasharray:5 3
+    style QTI stroke:#D35400,stroke-dasharray:5 3
 ```
 
 ---
@@ -233,7 +239,7 @@ These could potentially be collapsed into fewer types with boolean flags, or fur
 sealed interfaces (e.g., `StandardTableField permits TableField, SplitTableField`,
 `RecordBoundField permits RecordTableField, RecordLookupTableField`).
 
-### `QueryField` mirrors `ChildField`
+### `QueryField` mirrors `ChildField` — and is missing `condition`
 
 Several `QueryField` variants structurally mirror their `ChildField` counterparts:
 
@@ -245,9 +251,14 @@ Several `QueryField` variants structurally mirror their `ChildField` counterpart
 | `QueryServiceTableField` | `ServiceTableField` |
 | `QueryServiceRecordField` | `ServiceRecordField` |
 
-The key differences are: root fields have no `joinPath` (no FK navigation from a parent) and no
-`condition` (field-level condition applies to the whole query, not a child JOIN). Whether a shared
-interface could capture the common parts is worth exploring.
+The only structural difference is that root fields have no `joinPath` — there is no parent table
+to FK-navigate from. **`condition` is not a difference**: `@condition` on a root query field is
+critical functionality (it is the primary way to filter the top-level result set, e.g.
+`activeCustomers: [Customer] @condition(..., override: true)`). `QueryTableField`,
+`QueryLookupTableField`, and `QueryTableInterfaceField` are all missing `FieldCondition condition`
+— this is a model gap, not an intentional omission. Whether a shared interface between root and
+child table-bound fields could capture the common parts (`returnType · condition · arguments`) is
+worth exploring.
 
 ### `TableTargetField` interface vs. `NestingField`
 
