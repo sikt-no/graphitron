@@ -123,6 +123,49 @@ class FieldBuilder {
         this.svc = svc;
     }
 
+    // ===== Shared resolution helpers =====
+
+    private record ServiceResolution(MethodRef method, ReturnTypeRef returnType, String error) {}
+
+    /**
+     * Resolves the {@code @service} directive on a field: unwraps connection types, parses the
+     * external reference, reflects the service method, and returns the resolved method + return type.
+     * Returns a non-null {@code error} when resolution fails.
+     */
+    private ServiceResolution resolveServiceField(GraphQLFieldDefinition fieldDef) {
+        String rawTypeName = baseTypeName(fieldDef);
+        String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
+        ReturnTypeRef returnType = ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+        ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
+        List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
+        Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
+        var result = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(), argNames, new java.util.HashSet<>(contextArgs));
+        if (result.failed()) {
+            return new ServiceResolution(null, null, "service method could not be resolved — " + result.failureReason());
+        }
+        return new ServiceResolution(result.ref(), returnType, null);
+    }
+
+    private record TableFieldComponents(List<WhereFilter> filters, OrderBySpec orderBy, PaginationSpec pagination, String error) {}
+
+    /**
+     * Resolves the filter, order-by, and pagination components for a table-bound list field.
+     * Returns a non-null {@code error} when any component fails to resolve.
+     */
+    private TableFieldComponents resolveTableFieldComponents(GraphQLFieldDefinition fieldDef, TableRef table) {
+        var filterErrors = new ArrayList<String>();
+        var filters = buildFilters(fieldDef, table, filterErrors);
+        if (filters == null) return new TableFieldComponents(null, null, null, String.join("; ", filterErrors));
+        var orderErrors = new ArrayList<String>();
+        var orderBy = buildOrderBySpec(fieldDef, table.tableName(), orderErrors);
+        if (orderBy == null) {
+            String msg = !orderErrors.isEmpty() ? String.join("; ", orderErrors)
+                : "could not resolve @defaultOrder columns in table '" + table.tableName() + "'";
+            return new TableFieldComponents(null, null, null, msg);
+        }
+        return new TableFieldComponents(filters, orderBy, buildPaginationSpec(fieldDef), null);
+    }
+
     // ===== Object-return child field classification =====
 
     /**
@@ -152,30 +195,24 @@ class FieldBuilder {
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, referencePath.errorMessage());
             }
-            var filterErrors = new ArrayList<String>();
-            var filters = buildFilters(fieldDef, returnType.table(), filterErrors);
-            if (filters == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", filterErrors));
-            var orderErrors = new ArrayList<String>();
-            var orderBy = buildOrderBySpec(fieldDef, tbt.table().tableName(), orderErrors);
-            if (orderBy == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                !orderErrors.isEmpty() ? String.join("; ", orderErrors) : "could not resolve @defaultOrder columns in table '" + tbt.table().tableName() + "'");
-            var pagination = buildPaginationSpec(fieldDef);
+            var tfc = resolveTableFieldComponents(fieldDef, returnType.table());
+            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
             boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
             if (hasSplitQuery && hasLookupKey) {
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField(
-                    parentTypeName, name, location, returnType, referencePath.elements(), filters, orderBy, pagination);
+                    parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
             }
             if (!hasSplitQuery && hasLookupKey) {
                 return new no.sikt.graphitron.rewrite.model.ChildField.LookupTableField(
-                    parentTypeName, name, location, returnType, referencePath.elements(), filters, orderBy, pagination);
+                    parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
             }
             if (hasSplitQuery) {
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
-                    parentTypeName, name, location, returnType, referencePath.elements(), filters, orderBy, pagination);
+                    parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
             }
             return new TableField(parentTypeName, name, location,
-                returnType, referencePath.elements(), filters, orderBy, pagination);
+                returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
 
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
@@ -184,16 +221,11 @@ class FieldBuilder {
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, referencePath.errorMessage());
             }
-            var orderErrors = new ArrayList<String>();
-            var orderBy = buildOrderBySpec(fieldDef, tableInterfaceType.table().tableName(), orderErrors);
-            if (orderBy == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                !orderErrors.isEmpty() ? String.join("; ", orderErrors) : "could not resolve @defaultOrder columns in table '" + tableInterfaceType.table().tableName() + "'");
-            var filterErrors = new ArrayList<String>();
-            var filters = buildFilters(fieldDef, tableInterfaceType.table(), filterErrors);
-            if (filters == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", filterErrors));
+            var tfc = resolveTableFieldComponents(fieldDef, tableInterfaceType.table());
+            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
             return new TableInterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper),
-                referencePath.elements(), filters, orderBy, buildPaginationSpec(fieldDef));
+                referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
 
         if (elementType instanceof InterfaceType interfaceType) {
@@ -565,25 +597,17 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            String rawTypeName = baseTypeName(fieldDef);
-            String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
-            ReturnTypeRef returnType = ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef));
-            ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
-            List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
-            Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
-            ServiceCatalog.ServiceReflectionResult serviceReflection = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(), argNames, new java.util.HashSet<>(contextArgs));
-            if (serviceReflection.failed()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                    "service method could not be resolved — " + serviceReflection.failureReason());
+            var svcResult = resolveServiceField(fieldDef);
+            if (svcResult.error() != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
             }
-            MethodRef method = serviceReflection.ref();
-            return switch (returnType) {
+            return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
-                    new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, method);
+                    new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, svcResult.method());
                 case ReturnTypeRef.ResultReturnType r ->
-                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, r, method);
+                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, r, svcResult.method());
                 case ReturnTypeRef.ScalarReturnType s ->
-                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, s, method);
+                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, s, svcResult.method());
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
             };
@@ -606,14 +630,9 @@ class FieldBuilder {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "@lookupKey requires a @table-annotated return type");
             }
-            var filterErrors = new ArrayList<String>();
-            var filters = buildFilters(fieldDef, tb.table(), filterErrors);
-            if (filters == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", filterErrors));
-            var orderErrors = new ArrayList<String>();
-            var orderBy = buildOrderBySpec(fieldDef, tb.table().tableName(), orderErrors);
-            if (orderBy == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                !orderErrors.isEmpty() ? String.join("; ", orderErrors) : "could not resolve @defaultOrder columns for @lookupKey field");
-            return new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, filters, orderBy, buildPaginationSpec(fieldDef));
+            var tfc = resolveTableFieldComponents(fieldDef, tb.table());
+            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
+            return new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
@@ -639,26 +658,16 @@ class FieldBuilder {
         if (elementType instanceof TableBackedType tbt && !(elementType instanceof TableInterfaceType)) {
             var wrapper = buildWrapper(fieldDef);
             var returnType = (ReturnTypeRef.TableBoundReturnType) ctx.resolveReturnType(elementTypeName, wrapper);
-            var filterErrors = new ArrayList<String>();
-            var filters = buildFilters(fieldDef, returnType.table(), filterErrors);
-            if (filters == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", filterErrors));
-            var orderErrors = new ArrayList<String>();
-            var orderBy = buildOrderBySpec(fieldDef, tbt.table().tableName(), orderErrors);
-            if (orderBy == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                !orderErrors.isEmpty() ? String.join("; ", orderErrors) : "could not resolve @defaultOrder columns in table '" + tbt.table().tableName() + "'");
-            return new QueryField.QueryTableField(parentTypeName, name, location, returnType, filters, orderBy, buildPaginationSpec(fieldDef));
+            var tfc = resolveTableFieldComponents(fieldDef, returnType.table());
+            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
+            return new QueryField.QueryTableField(parentTypeName, name, location, returnType, tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);
-            var orderErrors = new ArrayList<String>();
-            var orderBy = buildOrderBySpec(fieldDef, tableInterfaceType.table().tableName(), orderErrors);
-            if (orderBy == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                !orderErrors.isEmpty() ? String.join("; ", orderErrors) : "could not resolve @defaultOrder columns in table '" + tableInterfaceType.table().tableName() + "'");
-            var filterErrors = new ArrayList<String>();
-            var filters = buildFilters(fieldDef, tableInterfaceType.table(), filterErrors);
-            if (filters == null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", filterErrors));
+            var tfc = resolveTableFieldComponents(fieldDef, tableInterfaceType.table());
+            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
             return new QueryField.QueryTableInterfaceField(parentTypeName, name, location,
-                new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper), filters, orderBy, buildPaginationSpec(fieldDef));
+                new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper), tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
         if (elementType instanceof InterfaceType interfaceType) {
             return new QueryField.QueryInterfaceField(parentTypeName, name, location,
@@ -684,24 +693,17 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            String mutSvcTypeName = baseTypeName(fieldDef);
-            ReturnTypeRef returnType = ctx.resolveReturnType(mutSvcTypeName, buildWrapper(fieldDef));
-            ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
-            List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
-            Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
-            ServiceCatalog.ServiceReflectionResult serviceReflection = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(), argNames, new java.util.HashSet<>(contextArgs));
-            if (serviceReflection.failed()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                    "service method could not be resolved — " + serviceReflection.failureReason());
+            var svcResult = resolveServiceField(fieldDef);
+            if (svcResult.error() != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
             }
-            MethodRef method = serviceReflection.ref();
-            return switch (returnType) {
+            return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
-                    new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, method);
+                    new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, svcResult.method());
                 case ReturnTypeRef.ResultReturnType r ->
-                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, r, method);
+                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, r, svcResult.method());
                 case ReturnTypeRef.ScalarReturnType s ->
-                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, s, method);
+                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, s, svcResult.method());
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
             };
@@ -836,29 +838,22 @@ class FieldBuilder {
         SourceLocation location = locationOf(fieldDef);
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            String rawTypeName = baseTypeName(fieldDef);
-            String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
-            ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
-            List<String> contextArguments = parseContextArguments(fieldDef, DIR_SERVICE);
-            Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
-            ServiceCatalog.ServiceReflectionResult serviceReflection = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(), argNames, new java.util.HashSet<>(contextArguments));
-            if (serviceReflection.failed()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                    "service method could not be resolved — " + serviceReflection.failureReason());
+            var svcResult = resolveServiceField(fieldDef);
+            if (svcResult.error() != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
             }
             var servicePath = parsePath(fieldDef);
             if (servicePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePath.errorMessage());
             }
-            MethodRef method = serviceReflection.ref();
-            return switch (ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef))) {
+            return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new ServiceTableField(parentTypeName, name, location, tb,
-                        servicePath.elements(), List.of(), new OrderBySpec.None(), null, method);
+                        servicePath.elements(), List.of(), new OrderBySpec.None(), null, svcResult.method());
                 case ReturnTypeRef.ResultReturnType r ->
-                    new ServiceRecordField(parentTypeName, name, location, r, servicePath.elements(), method);
+                    new ServiceRecordField(parentTypeName, name, location, r, servicePath.elements(), svcResult.method());
                 case ReturnTypeRef.ScalarReturnType s ->
-                    new ServiceRecordField(parentTypeName, name, location, s, servicePath.elements(), method);
+                    new ServiceRecordField(parentTypeName, name, location, s, servicePath.elements(), svcResult.method());
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
             };
@@ -883,19 +878,12 @@ class FieldBuilder {
         }
         return switch (ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef))) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
-                var filterErrors = new ArrayList<String>();
-                var filters = buildFilters(fieldDef, tb.table(), filterErrors);
-                if (filters == null) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, String.join("; ", filterErrors));
-                var orderErrors = new ArrayList<String>();
-                var orderBy = buildOrderBySpec(fieldDef, tb.table().tableName(), orderErrors);
-                if (orderBy == null) yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                    !orderErrors.isEmpty() ? String.join("; ", orderErrors) : "could not resolve @defaultOrder columns in table '" + tb.table().tableName() + "'");
-                var pagination = buildPaginationSpec(fieldDef);
-                boolean hasLookupKey = hasLookupKeyAnywhere(fieldDef);
-                if (hasLookupKey) {
-                    yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), filters, orderBy, pagination);
+                var tfc = resolveTableFieldComponents(fieldDef, tb.table());
+                if (tfc.error() != null) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
+                if (hasLookupKeyAnywhere(fieldDef)) {
+                    yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
                 }
-                yield new RecordTableField(parentTypeName, name, location, tb, objectPath.elements(), filters, orderBy, pagination);
+                yield new RecordTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
             }
             case ReturnTypeRef.ResultReturnType r ->
                 new RecordField(parentTypeName, name, location, r, columnName);
@@ -911,30 +899,23 @@ class FieldBuilder {
         SourceLocation location = locationOf(fieldDef);
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            String rawTypeName = baseTypeName(fieldDef);
-            String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
-            ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
-            List<String> contextArguments = parseContextArguments(fieldDef, DIR_SERVICE);
-            Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
-            ServiceCatalog.ServiceReflectionResult serviceReflection = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(), argNames, new java.util.HashSet<>(contextArguments));
-            if (serviceReflection.failed()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                    "service method could not be resolved — " + serviceReflection.failureReason());
+            var svcResult = resolveServiceField(fieldDef);
+            if (svcResult.error() != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
             }
-            MethodRef method = serviceReflection.ref();
             // Service reconnect path: starts from the service return type's table (not the parent).
             var servicePath = parsePath(fieldDef);
             if (servicePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePath.errorMessage());
             }
-            return switch (ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef))) {
+            return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new ServiceTableField(parentTypeName, name, location, tb,
-                        servicePath.elements(), List.of(), new OrderBySpec.None(), null, method);
+                        servicePath.elements(), List.of(), new OrderBySpec.None(), null, svcResult.method());
                 case ReturnTypeRef.ResultReturnType r ->
-                    new ServiceRecordField(parentTypeName, name, location, r, servicePath.elements(), method);
+                    new ServiceRecordField(parentTypeName, name, location, r, servicePath.elements(), svcResult.method());
                 case ReturnTypeRef.ScalarReturnType s ->
-                    new ServiceRecordField(parentTypeName, name, location, s, servicePath.elements(), method);
+                    new ServiceRecordField(parentTypeName, name, location, s, servicePath.elements(), svcResult.method());
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
             };
