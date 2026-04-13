@@ -36,8 +36,15 @@ class TableCodeGeneratorTest {
             List.of(new ColumnRef("id", "ID", "java.lang.Integer")));
     }
 
+    private static final List<TableCodeGenerator.ScalarColumn> FILM_COLUMNS = List.of(
+        new TableCodeGenerator.ScalarColumn("title", "TITLE"),
+        new TableCodeGenerator.ScalarColumn("filmId", "FILM_ID")
+    );
+
     private static TypeSpec spec(String tableName) {
-        return GEN.generate(tableRef(tableName.toLowerCase(), tableName.toUpperCase(), tableName));
+        return GEN.generate(
+            tableRef(tableName.toLowerCase(), tableName.toUpperCase(), tableName),
+            FILM_COLUMNS);
     }
 
     private static MethodSpec method(String tableName, String methodName) {
@@ -73,10 +80,11 @@ class TableCodeGeneratorTest {
     // ===== All eight methods present =====
 
     @Test
-    void generate_allEightMethodsArePresent() {
-        assertThat(spec("Film").methodSpecs()).hasSize(8);
+    void generate_allNineMethodsArePresent() {
+        assertThat(spec("Film").methodSpecs()).hasSize(9);
         assertThat(spec("Film").methodSpecs()).extracting(MethodSpec::name)
             .containsExactlyInAnyOrder(
+                "fields",                     // SELECT list assembly
                 "selectMany", "selectOne",   // root query
                 "selectMany", "selectOne",   // Row-keyed service
                 "selectMany", "selectOne",   // Record-keyed service
@@ -113,11 +121,34 @@ class TableCodeGeneratorTest {
     void selectMany_queriesTable() {
         var code = method("Film", "selectMany").code().toString();
         assertThat(code).contains("getDslContext()");
-        assertThat(code).contains(".select(table.fields())");
+        assertThat(code).contains(".select(fields(env.getSelectionSet()))");
         assertThat(code).contains(".from(table)");
         assertThat(code).contains(".where(condition)");
         assertThat(code).contains(".orderBy(orderBy)");
         assertThat(code).contains(".fetch()");
+    }
+
+    // ===== fields =====
+
+    @Test
+    void fields_isPublicStatic() {
+        assertThat(method("Film", "fields").modifiers())
+            .containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
+    }
+
+    @Test
+    void fields_checksSelectionSetPerColumn() {
+        var code = method("Film", "fields").code().toString();
+        assertThat(code).contains("sel.contains(\"title\")");
+        assertThat(code).contains("fields.add(table.TITLE)");
+        assertThat(code).contains("sel.contains(\"filmId\")");
+        assertThat(code).contains("fields.add(table.FILM_ID)");
+    }
+
+    @Test
+    void fields_returnsListOfField() {
+        assertThat(method("Film", "fields").returnType().toString())
+            .isEqualTo("java.util.List<org.jooq.Field<?>>");
     }
 
     // ===== selectOne =====

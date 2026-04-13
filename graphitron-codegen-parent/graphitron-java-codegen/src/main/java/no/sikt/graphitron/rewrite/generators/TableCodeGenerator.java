@@ -7,9 +7,11 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import javax.lang.model.element.Modifier;
+import java.util.ArrayList;
 import java.util.List;
 
 import static javax.lang.model.element.Modifier.PUBLIC;
@@ -55,16 +57,29 @@ public class TableCodeGenerator {
     private static final ClassName SELECTION_SET  = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
     private static final ClassName SELECTED_FIELD = ClassName.get("graphql.schema", "SelectedField");
     private static final ClassName GRAPHITRON_CONTEXT = ClassName.get("no.sikt.graphql", "GraphitronContext");
+    private static final ClassName ARRAY_LIST = ClassName.get(ArrayList.class);
 
     /**
-     * Generates the table class with real method bodies for {@code selectMany} and
-     * {@code selectOne}, and stub bodies for the remaining overloads.
+     * Maps a GraphQL field name to its resolved jOOQ column java name, used to generate the
+     * {@code fields()} method that assembles the SELECT list based on the selection set.
+     */
+    public record ScalarColumn(String graphqlFieldName, String jooqColumnJavaName) {}
+
+    /**
+     * Generates the table class with:
+     * <ul>
+     *   <li>{@code fields()} — selection-set-aware SELECT list assembly</li>
+     *   <li>{@code selectMany} / {@code selectOne} — root query methods using {@code fields()}</li>
+     *   <li>Remaining overloads as stubs</li>
+     * </ul>
      *
      * @param tableRef the resolved table reference with jOOQ field/class names
+     * @param scalarColumns the scalar columns to include in {@code fields()}, in declaration order
      */
-    public TypeSpec generate(TableRef tableRef) {
+    public TypeSpec generate(TableRef tableRef, List<ScalarColumn> scalarColumns) {
         return TypeSpec.classBuilder(tableRef.javaClassName())
             .addModifiers(Modifier.PUBLIC)
+            .addMethod(buildFieldsMethod(tableRef, scalarColumns))
             .addMethod(buildSelectManyMethod(tableRef))
             .addMethod(buildSelectOneMethod(tableRef))
             .addMethod(buildSelectManyFromRowServiceMethod())
@@ -77,19 +92,49 @@ public class TableCodeGenerator {
     }
 
     /**
-     * Generates a {@code selectMany} method that:
-     * <ol>
-     *   <li>Obtains a {@link org.jooq.DSLContext} from the {@code GraphitronContext}.</li>
-     *   <li>Selects all columns from the table using {@code table.fields()}.</li>
-     *   <li>Applies the WHERE {@code condition} (when non-null).</li>
-     *   <li>Applies the ORDER BY {@code orderBy} list.</li>
-     *   <li>Fetches and returns the result.</li>
-     * </ol>
+     * Generates a {@code fields()} method that assembles the SELECT list based on the
+     * {@link graphql.schema.DataFetchingFieldSelectionSet}. Only columns whose GraphQL field
+     * name appears in the selection set are included.
+     *
+     * <p>Generated code pattern:
+     * <pre>{@code
+     * public static List<Field<?>> fields(DataFetchingFieldSelectionSet sel) {
+     *     var table = Tables.FILM;
+     *     var fields = new ArrayList<Field<?>>();
+     *     if (sel.contains("title"))  fields.add(table.TITLE);
+     *     if (sel.contains("filmId")) fields.add(table.FILM_ID);
+     *     return fields;
+     * }
+     * }</pre>
+     */
+    private MethodSpec buildFieldsMethod(TableRef tableRef, List<ScalarColumn> scalarColumns) {
+        var tablesClass = tablesClassName();
+        var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
+        var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
+
+        var builder = MethodSpec.methodBuilder("fields")
+            .addModifiers(PUBLIC, STATIC)
+            .returns(listOfField)
+            .addParameter(SELECTION_SET, "sel")
+            .addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName())
+            .addStatement("var fields = new $T<$T>()", ARRAY_LIST, fieldWildcard);
+
+        for (var col : scalarColumns) {
+            builder.addStatement("if (sel.contains($S)) fields.add(table.$L)",
+                col.graphqlFieldName(), col.jooqColumnJavaName());
+        }
+
+        builder.addStatement("return fields");
+        return builder.build();
+    }
+
+    /**
+     * Generates a {@code selectMany} method that uses {@code fields(sel)} for the SELECT list.
      */
     private MethodSpec buildSelectManyMethod(TableRef tableRef) {
         var tablesClass = tablesClassName();
         return MethodSpec.methodBuilder("selectMany")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(RESULT, RECORD))
             .addParameter(ENV, "env")
             .addParameter(CONDITION, "condition")
@@ -100,7 +145,7 @@ public class TableCodeGenerator {
             .addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
-                .add(".select(table.fields())\n")
+                .add(".select(fields(env.getSelectionSet()))\n")
                 .add(".from(table)\n")
                 .add(".where(condition)\n")
                 .add(".orderBy(orderBy)\n")
@@ -111,13 +156,12 @@ public class TableCodeGenerator {
     }
 
     /**
-     * Generates a {@code selectOne} method that selects all columns from the table,
-     * applies the WHERE {@code condition}, and fetches a single row.
+     * Generates a {@code selectOne} method that uses {@code fields(sel)} for the SELECT list.
      */
     private MethodSpec buildSelectOneMethod(TableRef tableRef) {
         var tablesClass = tablesClassName();
         return MethodSpec.methodBuilder("selectOne")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addModifiers(PUBLIC, STATIC)
             .returns(RECORD)
             .addParameter(ENV, "env")
             .addParameter(CONDITION, "condition")
@@ -127,7 +171,7 @@ public class TableCodeGenerator {
             .addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
-                .add(".select(table.fields())\n")
+                .add(".select(fields(env.getSelectionSet()))\n")
                 .add(".from(table)\n")
                 .add(".where(condition)\n")
                 .add(".fetchOne();\n")

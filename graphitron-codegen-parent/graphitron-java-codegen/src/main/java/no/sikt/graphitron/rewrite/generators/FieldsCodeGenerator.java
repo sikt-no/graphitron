@@ -85,6 +85,8 @@ public class FieldsCodeGenerator {
             } else if (field instanceof ChildField.SplitTableField stf) {
                 builder.addMethod(buildSplitQueryDataFetcher(stf));
                 builder.addMethod(buildSplitRowsMethod(stf));
+            } else if (field instanceof ChildField.ColumnField cf && parentTable != null) {
+                builder.addMethod(buildColumnFieldFetcher(cf, parentTable));
             } else {
                 builder.addMethod(buildFieldStub(field.name()));
             }
@@ -97,6 +99,28 @@ public class FieldsCodeGenerator {
         builder.addMethod(buildWiringMethod(typeName, className, fields));
 
         return builder.build();
+    }
+
+    /**
+     * Generates a data fetcher for a {@link ChildField.ColumnField} that reads the column value
+     * directly from the jOOQ {@code Record} in the source position.
+     *
+     * <p>Generated code:
+     * <pre>{@code
+     * public static Object title(DataFetchingEnvironment env) {
+     *     return ((Record) env.getSource()).get(Tables.FILM.TITLE);
+     * }
+     * }</pre>
+     */
+    private MethodSpec buildColumnFieldFetcher(ChildField.ColumnField cf, TableRef parentTable) {
+        var tablesClass = ClassName.get(GeneratorConfig.outputPackage() + ".tables", "Tables");
+        return MethodSpec.methodBuilder(cf.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(ENV, "env")
+            .addStatement("return (($T) env.getSource()).get($T.$L.$L)",
+                RECORD, tablesClass, parentTable.javaFieldName(), cf.column().javaName())
+            .build();
     }
 
     private MethodSpec buildFieldStub(String fieldName) {
