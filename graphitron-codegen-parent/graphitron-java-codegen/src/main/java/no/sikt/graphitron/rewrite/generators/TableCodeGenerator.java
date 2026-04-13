@@ -145,7 +145,7 @@ public class TableCodeGenerator {
             .addParameter(ENV, "env")
             .addParameter(CONDITION, "condition")
             .addParameter(sortFieldList(), "orderBy")
-            .addStatement("$T dsl = (($T) env.getGraphQlContext().get($S)).getDslContext()",
+            .addStatement("$T dsl = (($T) env.getGraphQlContext().get($S)).getDslContext(env)",
                 DSL_CONTEXT, GRAPHITRON_CONTEXT, "graphitronContext")
             .addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName())
             .addCode(CodeBlock.builder()
@@ -171,7 +171,7 @@ public class TableCodeGenerator {
             .returns(RECORD)
             .addParameter(ENV, "env")
             .addParameter(CONDITION, "condition")
-            .addStatement("$T dsl = (($T) env.getGraphQlContext().get($S)).getDslContext()",
+            .addStatement("$T dsl = (($T) env.getGraphQlContext().get($S)).getDslContext(env)",
                 DSL_CONTEXT, GRAPHITRON_CONTEXT, "graphitronContext")
             .addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName())
             .addCode(CodeBlock.builder()
@@ -187,13 +187,13 @@ public class TableCodeGenerator {
     }
 
     private static ClassName tablesClassName() {
-        return ClassName.get(GeneratorConfig.outputPackage() + ".tables", "Tables");
+        return ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
     }
 
-    /** Row-keyed service overload: {@code selectMany(List<? extends Row>, env, sel, List<?>)}. */
+    /** Row-keyed service overload: {@code selectManyByRowKeys(List<? extends Row>, env, sel, List<?>)}. */
     private MethodSpec buildSelectManyFromRowServiceMethod() {
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
-        return MethodSpec.methodBuilder("selectMany")
+        return MethodSpec.methodBuilder("selectManyByRowKeys")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(LIST, listOfRecord))
             .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(ROW)), "keys")
@@ -204,9 +204,9 @@ public class TableCodeGenerator {
             .build();
     }
 
-    /** Row-keyed service overload: {@code selectOne(List<? extends Row>, env, sel, Object)}. */
+    /** Row-keyed service overload: {@code selectOneByRowKeys(List<? extends Row>, env, sel, Object)}. */
     private MethodSpec buildSelectOneFromRowServiceMethod() {
-        return MethodSpec.methodBuilder("selectOne")
+        return MethodSpec.methodBuilder("selectOneByRowKeys")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(LIST, RECORD))
             .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(ROW)), "keys")
@@ -218,13 +218,13 @@ public class TableCodeGenerator {
     }
 
     /**
-     * Record-keyed service overload: {@code selectMany(List<? extends Record>, env, sel, List<?>)}.
+     * Record-keyed service overload: {@code selectManyByRecordKeys(List<? extends Record>, env, sel, List<?>)}.
      * Handles both {@code RecordN<T>}-keyed and {@code TableRecord}-keyed callers (both implement
      * {@code org.jooq.Record}).
      */
     private MethodSpec buildSelectManyFromRecordServiceMethod() {
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
-        return MethodSpec.methodBuilder("selectMany")
+        return MethodSpec.methodBuilder("selectManyByRecordKeys")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(LIST, listOfRecord))
             .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(RECORD)), "keys")
@@ -236,11 +236,11 @@ public class TableCodeGenerator {
     }
 
     /**
-     * Record-keyed service overload: {@code selectOne(List<? extends Record>, env, sel, Object)}.
+     * Record-keyed service overload: {@code selectOneByRecordKeys(List<? extends Record>, env, sel, Object)}.
      * Handles both {@code RecordN<T>}-keyed and {@code TableRecord}-keyed callers.
      */
     private MethodSpec buildSelectOneFromRecordServiceMethod() {
-        return MethodSpec.methodBuilder("selectOne")
+        return MethodSpec.methodBuilder("selectOneByRecordKeys")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(LIST, RECORD))
             .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(RECORD)), "keys")

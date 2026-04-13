@@ -119,7 +119,7 @@ public class FieldsCodeGenerator {
      * }</pre>
      */
     private MethodSpec buildColumnFieldFetcher(ChildField.ColumnField cf, TableRef parentTable) {
-        var tablesClass = ClassName.get(GeneratorConfig.outputPackage() + ".tables", "Tables");
+        var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
         return MethodSpec.methodBuilder(cf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object.class)
@@ -140,7 +140,7 @@ public class FieldsCodeGenerator {
     private MethodSpec buildQueryTableFieldFetcher(QueryField.QueryTableField qtf) {
         var tableRef = qtf.returnType().table();
         var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.tables", tableRef.javaClassName());
-        var tablesClass = ClassName.get(GeneratorConfig.outputPackage() + ".tables", "Tables");
+        var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
         boolean isList = !(qtf.returnType().wrapper() instanceof FieldWrapper.Single);
 
         var returnType = isList
@@ -178,23 +178,26 @@ public class FieldsCodeGenerator {
             code.addStatement("var condition = $T.noCondition()", DSL);
             for (var filter : filters) {
                 if (filter instanceof WhereFilter.ColumnFilter cf) {
+                    var colType = ClassName.bestGuess(cf.column().columnClass());
                     if (cf.nonNull()) {
                         if (cf.list()) {
                             code.addStatement("condition = condition.and($T.$L.$L.in(env.<$T<$T>>getArgument($S)))",
                                 tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
-                                LIST, Object.class, cf.name());
+                                LIST, colType, cf.name());
                         } else {
-                            code.addStatement("condition = condition.and($T.$L.$L.eq(env.getArgument($S)))",
-                                tablesClass, tableRef.javaFieldName(), cf.column().javaName(), cf.name());
+                            code.addStatement("condition = condition.and($T.$L.$L.eq(env.<$T>getArgument($S)))",
+                                tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
+                                colType, cf.name());
                         }
                     } else {
                         if (cf.list()) {
                             code.addStatement("if (env.getArgument($S) != null) condition = condition.and($T.$L.$L.in(env.<$T<$T>>getArgument($S)))",
                                 cf.name(), tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
-                                LIST, Object.class, cf.name());
+                                LIST, colType, cf.name());
                         } else {
-                            code.addStatement("if (env.getArgument($S) != null) condition = condition.and($T.$L.$L.eq(env.getArgument($S)))",
-                                cf.name(), tablesClass, tableRef.javaFieldName(), cf.column().javaName(), cf.name());
+                            code.addStatement("if (env.getArgument($S) != null) condition = condition.and($T.$L.$L.eq(env.<$T>getArgument($S)))",
+                                cf.name(), tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
+                                colType, cf.name());
                         }
                     }
                 }
@@ -333,7 +336,7 @@ public class FieldsCodeGenerator {
                 loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
         // Emit the key expression — varies by SourcesRef variant.
-        var tablesClass = ClassName.get(GeneratorConfig.outputPackage() + ".tables", "Tables");
+        var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
         switch (sourcesRef) {
             case SourcesRef.RowKeyed rk -> {
                 String tableField = prt.javaFieldName();
@@ -444,13 +447,16 @@ public class FieldsCodeGenerator {
             String.join(", ", serviceCallArgs));
 
         // Return via table selectMany / selectOne (threading dfe for context access)
-        var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".tables", rt.javaClassName());
+        var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.tables", rt.javaClassName());
+        boolean isRowKeyed = sourcesRef instanceof SourcesRef.RowKeyed;
+        String selectManyName = isRowKeyed ? "selectManyByRowKeys" : "selectManyByRecordKeys";
+        String selectOneName = isRowKeyed ? "selectOneByRowKeys" : "selectOneByRecordKeys";
         if (isList) {
             builder.addStatement(
-                "return $T.selectMany(keys, dfe, sel, ($T<?>) serviceResult)",
-                tableClass, List.class);
+                "return $T.$L(keys, dfe, sel, ($T<?>) serviceResult)",
+                tableClass, selectManyName, List.class);
         } else {
-            builder.addStatement("return $T.selectOne(keys, dfe, sel, serviceResult)", tableClass);
+            builder.addStatement("return $T.$L(keys, dfe, sel, serviceResult)", tableClass, selectOneName);
         }
 
         return builder.build();

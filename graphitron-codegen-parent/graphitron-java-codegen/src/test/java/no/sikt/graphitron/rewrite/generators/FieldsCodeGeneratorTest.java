@@ -192,7 +192,7 @@ class FieldsCodeGeneratorTest {
             java.util.List.of(filter), new OrderBySpec.None());
         var spec = GEN.generate("Query", null, java.util.List.of(field));
         var m = method(spec, "film");
-        assertThat(m.code().toString()).contains("FILM.FILM_ID.eq(env.getArgument(\"id\"))");
+        assertThat(m.code().toString()).contains("FILM.FILM_ID.eq(env.<java.lang.Integer>getArgument(\"id\"))");
     }
 
     @Test
@@ -204,7 +204,7 @@ class FieldsCodeGeneratorTest {
         var spec = GEN.generate("Query", null, java.util.List.of(field));
         var m = method(spec, "films");
         assertThat(m.code().toString()).contains("if (env.getArgument(\"title\") != null)");
-        assertThat(m.code().toString()).contains("FILM.TITLE.eq(env.getArgument(\"title\"))");
+        assertThat(m.code().toString()).contains("FILM.TITLE.eq(env.<java.lang.String>getArgument(\"title\"))");
     }
 
     @Test
@@ -261,13 +261,13 @@ class FieldsCodeGeneratorTest {
         assertThat(m.code().toString()).contains("getArgument(\"filter\")");
         assertThat(m.code().toString()).contains("getContextArgument");
         assertThat(m.code().toString()).contains("getFilms");
-        assertThat(m.code().toString()).contains("selectMany");
+        assertThat(m.code().toString()).contains("selectManyByRowKeys");
     }
 
     @Test
     void serviceField_single_rowsMethodUsesSelectOne() {
         var spec = specWithServiceField("Language", "film", false);
-        assertThat(method(spec, "loadFilm").code().toString()).contains("selectOne");
+        assertThat(method(spec, "loadFilm").code().toString()).contains("selectOneByRowKeys");
     }
 
     @Test

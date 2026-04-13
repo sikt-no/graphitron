@@ -74,8 +74,8 @@ class TableCodeGeneratorTest {
             .containsExactlyInAnyOrder(
                 "fields",
                 "selectMany", "selectOne",
-                "selectMany", "selectOne",
-                "selectMany", "selectOne",
+                "selectManyByRowKeys", "selectOneByRowKeys",
+                "selectManyByRecordKeys", "selectOneByRecordKeys",
                 "subselectMany", "subselectOne");
     }
 
@@ -121,7 +121,7 @@ class TableCodeGeneratorTest {
     @Test
     void selectMany_body() {
         var code = method("selectMany").code().toString();
-        assertThat(code).contains("getDslContext()");
+        assertThat(code).contains("getDslContext(env)");
         assertThat(code).contains(".select(fields(env.getSelectionSet()))");
         assertThat(code).contains(".from(table)");
         assertThat(code).contains(".where(condition)");
@@ -167,8 +167,8 @@ class TableCodeGeneratorTest {
     // ===== Service overloads (stubs — verify signatures only) =====
 
     @Test
-    void selectManyFromRowService_signature() {
-        var m = methodByFirstParam("selectMany", "? extends org.jooq.Row");
+    void selectManyByRowKeys_signature() {
+        var m = method("selectManyByRowKeys");
         assertThat(m.returnType().toString())
             .isEqualTo("java.util.List<java.util.List<org.jooq.Record>>");
         assertThat(m.parameters()).extracting(p -> p.name())
@@ -176,16 +176,16 @@ class TableCodeGeneratorTest {
     }
 
     @Test
-    void selectOneFromRowService_signature() {
-        var m = methodByFirstParam("selectOne", "? extends org.jooq.Row");
+    void selectOneByRowKeys_signature() {
+        var m = method("selectOneByRowKeys");
         assertThat(m.returnType().toString()).isEqualTo("java.util.List<org.jooq.Record>");
         assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("keys", "env", "sel", "serviceRecord");
     }
 
     @Test
-    void selectManyFromRecordService_signature() {
-        var m = methodByFirstParam("selectMany", "? extends org.jooq.Record");
+    void selectManyByRecordKeys_signature() {
+        var m = method("selectManyByRecordKeys");
         assertThat(m.returnType().toString())
             .isEqualTo("java.util.List<java.util.List<org.jooq.Record>>");
         assertThat(m.parameters()).extracting(p -> p.name())
@@ -193,8 +193,8 @@ class TableCodeGeneratorTest {
     }
 
     @Test
-    void selectOneFromRecordService_signature() {
-        var m = methodByFirstParam("selectOne", "? extends org.jooq.Record");
+    void selectOneByRecordKeys_signature() {
+        var m = method("selectOneByRecordKeys");
         assertThat(m.returnType().toString()).isEqualTo("java.util.List<org.jooq.Record>");
         assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("keys", "env", "sel", "serviceRecord");
