@@ -22,7 +22,7 @@ class QueryTableMethodTableFieldValidationTest {
         VALID("single cardinality — valid",
             new QueryTableMethodTableField("Query", "filmsByMethod", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Single(true)),
-                "com.example.TableMethods", "filmsByMethod", List.of(), List.of()),
+                "com.example.TableMethods", "filmsByMethod", List.of()),
             List.of());
 
         private final String description;

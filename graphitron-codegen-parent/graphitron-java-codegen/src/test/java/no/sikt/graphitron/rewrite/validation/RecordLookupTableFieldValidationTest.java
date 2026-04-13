@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -24,15 +25,15 @@ class RecordLookupTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID_SINGLE("single return — valid",
-            new RecordLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), null, List.of()),
+            new RecordLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null),
             List.of()),
 
         VALID_LIST("list return — valid",
-            new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true, null, List.of())), List.of(), null, List.of()),
+            new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), new OrderBySpec.None(), null),
             List.of()),
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field",
-            new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true, null, List.of())), List.of(), null, List.of()),
+            new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true)), List.of(), List.of(), new OrderBySpec.None(), null),
             List.of("Field 'films': lookup fields must not return a connection"));
 
         private final String description;

@@ -3,28 +3,24 @@ package no.sikt.graphitron.rewrite.model;
 /**
  * The wrapper applied to a field's element return type in the GraphQL schema.
  *
- * <p>In GraphQL, any type can be list-wrapped ({@code [T]}) and non-null-wrapped ({@code T!}).
- * The Relay Connection convention adds a third wrapper kind ({@code TConnection}) with the same
- * semantic purpose as a list but with cursor-based pagination. All three are modelled here as
- * wrappers around a single element type, which is always what {@link ReturnTypeRef} carries:
+ * <p>Describes the cardinality and nullability of the return — not the ordering.
+ * Ordering is held separately on each field as an {@link OrderBySpec}. That design makes
+ * ordering authoritative and independent of whether the result is a list or a connection.
+ *
+ * <p>Three variants:
  * <ul>
- *   <li>{@link Single} — the field returns one instance of the element type (or null).</li>
- *   <li>{@link List} — the field returns a SQL-style list of element instances.</li>
- *   <li>{@link Connection} — the field returns a Relay cursor-paginated collection. The element
- *       type is resolved via {@code edges.node} in the schema rather than by stripping a name
- *       suffix, since the schema structure is the authoritative definition.</li>
+ *   <li>{@link Single} — the field returns at most one element; {@code nullable} reflects
+ *       whether the whole value may be absent.</li>
+ *   <li>{@link List} — the field returns a GraphQL list; {@code listNullable} reflects
+ *       whether the list itself may be null, {@code itemNullable} reflects whether individual
+ *       items may be null.</li>
+ *   <li>{@link Connection} — the field returns a Relay connection (detected structurally via
+ *       the {@code edges.node} pattern); nullability flags follow the same convention as
+ *       {@link List}.</li>
  * </ul>
- *
- * <p>Nullability is tracked at both the wrapper level and the item level. Both correspond to
- * positions in the GraphQL type expression: for {@link List} the expression is
- * {@code [Item]Wrapper} where each position may carry {@code !}; for {@link Connection} the
- * same positions apply to the connection wrapper and the {@code edges.node} type respectively.
- *
- * <p>Ordering configuration ({@link ColumnOrder}, {@link NamedOrder}) is carried
- * on {@link List} and {@link Connection} only, as {@link Single} implies no ordering concern.
  */
 public sealed interface FieldWrapper
-    permits FieldWrapper.Single, FieldWrapper.List, FieldWrapper.Connection {
+        permits FieldWrapper.Single, FieldWrapper.List, FieldWrapper.Connection {
 
     /**
      * The field returns a single instance of the element type.
@@ -40,74 +36,23 @@ public sealed interface FieldWrapper
      * <p>{@code listNullable} is {@code true} when the list itself may be null (no {@code !} on
      * the outer wrapper). {@code itemNullable} is {@code true} when individual items may be null
      * (no {@code !} on the inner type).
-     *
-     * <p>{@code defaultOrder} is {@code null} when {@code @defaultOrder} is absent.
-     * {@code orderByValues} carries the {@code @orderBy} enum value specs; always empty for
-     * child fields (populated only at the query-field level).
      */
     record List(
         boolean listNullable,
-        boolean itemNullable,
-        ColumnOrder defaultOrder,
-        java.util.List<NamedOrder> orderByValues
+        boolean itemNullable
     ) implements FieldWrapper {}
 
     /**
      * The field returns a Relay cursor-paginated connection.
      *
-     * <p>The element type is the type of the {@code edges.node} field in the schema — not derived
-     * from the connection type name. That type is what {@link ReturnTypeRef} carries.
+     * <p>The element type is the type of the {@code edges.node} field in the schema.
      *
      * <p>{@code connectionNullable} is {@code true} when the connection wrapper itself may be
      * null. {@code itemNullable} is {@code true} when individual {@code edges.node} items may be
      * null.
-     *
-     * <p>Ordering fields follow the same semantics as {@link List}.
      */
     record Connection(
         boolean connectionNullable,
-        boolean itemNullable,
-        ColumnOrder defaultOrder,
-        java.util.List<NamedOrder> orderByValues
+        boolean itemNullable
     ) implements FieldWrapper {}
-
-    /**
-     * A named sort specification: one client-selectable ordering option backed by a fully-resolved
-     * {@link ColumnOrder}.
-     *
-     * <p>{@code name} is the GraphQL enum value name (e.g. {@code "TITLE"}). {@code order} is the
-     * resolved column ordering that this option maps to.
-     */
-    record NamedOrder(String name, ColumnOrder order) {}
-
-    /**
-     * A fully-resolved sort specification: an ordered list of columns (each with an optional
-     * collation) and a sort direction.
-     *
-     * <p>Normalises the three {@code @defaultOrder}/{@code @order} source variants at build time:
-     * <ul>
-     *   <li>{@code index:} — columns are the fields of the named database index, resolved via the
-     *       jOOQ catalog; collation is always {@code null}</li>
-     *   <li>{@code primaryKey:} — columns are the primary-key fields of the return type's table,
-     *       resolved via the jOOQ catalog; collation is always {@code null}</li>
-     *   <li>{@code fields:} — columns are resolved against the return type's table by SQL name;
-     *       each entry carries the optional {@code collate:} value</li>
-     * </ul>
-     * When any catalog lookup fails the containing field is classified as
-     * {@link GraphitronField.UnclassifiedField} at build time rather than emitting an unresolved spec.
-     *
-     * <p>{@code direction} is {@code "ASC"} or {@code "DESC"} (directive default is {@code "ASC"}).
-     */
-    record ColumnOrder(java.util.List<ColumnOrderEntry> columns, String direction) {
-
-        /**
-         * One column in a {@link ColumnOrder}: a resolved {@link ColumnRef} paired with an optional
-         * collation string.
-         *
-         * <p>{@code collation} is the {@code collate:} value from an {@code @order} or
-         * {@code @defaultOrder} {@code fields:} entry (e.g. {@code "C"}), or {@code null} when not
-         * specified. Index-based and primary-key-based orders never carry a collation.
-         */
-        public record ColumnOrderEntry(ColumnRef column, String collation) {}
-    }
 }

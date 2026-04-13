@@ -2,11 +2,13 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.ArgumentRef;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.model.WhereFilter;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -18,67 +20,58 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class QueryLookupTableFieldValidationTest {
 
-    private static QueryLookupTableField singleReturn(List<ArgumentRef> arguments) {
+    private static final ColumnRef FILM_ID_COL = new ColumnRef("film_id", "FILM_ID", "java.lang.Integer");
+
+    private static QueryLookupTableField singleReturn(List<WhereFilter> filters, OrderBySpec orderBy) {
         return new QueryLookupTableField("Query", "filmById", null,
-            new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Single(true)), null, arguments);
+            new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Single(true)),
+            filters, orderBy, null);
     }
 
     enum Case implements ValidatorCase {
 
-        VALID("single return type, no forbidden arg directives — valid",
-            singleReturn(List.of()),
+        VALID("single return type, no filters — valid",
+            singleReturn(List.of(), new OrderBySpec.None()),
             List.of()),
 
-        VALID_WITH_COLUMN_ARG("ColumnFilterArg scalar (no list) — valid with single return",
-            singleReturn(List.of(new ArgumentRef.TableArg.ColumnFilterArg("id", "ID", false, false, "FILM_ID", null))),
+        VALID_WITH_COLUMN_ARG("ColumnFilter scalar (no list) — valid with single return",
+            singleReturn(List.of(new WhereFilter.ColumnFilter("id", "ID", false, false, FILM_ID_COL)), new OrderBySpec.None()),
             List.of()),
 
-        VALID_WITH_LIST_COLUMN_ARG("ColumnFilterArg list — valid with list return",
+        VALID_WITH_LIST_COLUMN_ARG("ColumnFilter list — valid with list return",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.List(true, true, null, List.of())),
-                null, List.of(new ArgumentRef.TableArg.ColumnFilterArg("id", "ID", false, true, "FILM_ID", null))),
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.List(true, true)),
+                List.of(new WhereFilter.ColumnFilter("id", "ID", false, true, FILM_ID_COL)), new OrderBySpec.None(), null),
             List.of()),
 
-        VALID_WITH_TABLE_INPUT_TYPE_ARG("InputFilterArg — valid with single return",
-            singleReturn(List.of(new ArgumentRef.TableArg.InputFilterArg("key", "FilmKey", false, false))),
+        VALID_WITH_TABLE_INPUT_TYPE_ARG("InputFilter — valid with single return",
+            singleReturn(List.of(new WhereFilter.InputFilter("key", "FilmKey", false, false)), new OrderBySpec.None()),
             List.of()),
 
-        VALID_WITH_OBJECT_PARAM_ARG("ObjectParamArg — valid (developer-owned type, no SQL generated)",
-            singleReturn(List.of(new ArgumentRef.MethodParamArg.ObjectParamArg("key", "FilmKey", false, false))),
-            List.of()),
-
-        LIST_RETURN_NO_LIST_ARG("list return with no list arg — cardinality mismatch",
+        LIST_RETURN_NO_LIST_ARG("list return with no list filter — cardinality mismatch",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.List(true, true, null, List.of())),
-                null, List.of()),
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.List(true, true)),
+                List.of(), new OrderBySpec.None(), null),
             List.of("Field 'filmById': result type does not match input cardinality")),
 
-        SINGLE_RETURN_LIST_ARG("single return with list arg — cardinality mismatch",
-            singleReturn(List.of(new ArgumentRef.TableArg.ColumnFilterArg("id", "ID", false, true, "FILM_ID", null))),
+        SINGLE_RETURN_LIST_ARG("single return with list filter — cardinality mismatch",
+            singleReturn(List.of(new WhereFilter.ColumnFilter("id", "ID", false, true, FILM_ID_COL)), new OrderBySpec.None()),
             List.of("Field 'filmById': result type does not match input cardinality")),
 
         CONNECTION_RETURN("connection return — never valid on lookup",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Connection(true, true, null, List.of())),
-                null, List.of()),
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Connection(true, true)),
+                List.of(), new OrderBySpec.None(), null),
             List.of("Field 'filmById': lookup fields must not return a connection")),
 
-        ORDERBY_ARG("@orderBy on a lookup field argument — not valid on lookup",
-            singleReturn(List.of(new ArgumentRef.TableArg.OrderByArg("order", "FilmOrder", false, false, "sortField", "direction"))),
+        ORDERBY_ARG("@orderBy on a lookup field — not valid on lookup",
+            singleReturn(List.of(), new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "direction", List.of(), null)),
             List.of("Field 'filmById': @orderBy is not valid on a lookup field")),
 
-        MULTIPLE_ORDERBY_ARGS("two @orderBy arguments — one error per argument from the loop",
-            singleReturn(List.of(
-                new ArgumentRef.TableArg.OrderByArg("order1", "FilmOrder", false, false, "sortField", "direction"),
-                new ArgumentRef.TableArg.OrderByArg("order2", "FilmOrder", false, false, "sortField", "direction"))),
-            List.of(
-                "Field 'filmById': @orderBy is not valid on a lookup field",
-                "Field 'filmById': @orderBy is not valid on a lookup field")),
-
-        CONNECTION_AND_ORDERBY("connection return AND @orderBy arg — two independent errors from different branches",
+        CONNECTION_AND_ORDERBY("connection return AND @orderBy — two independent errors",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Connection(true, true, null, List.of())),
-                null, List.of(new ArgumentRef.TableArg.OrderByArg("order", "FilmOrder", false, false, "sortField", "direction"))),
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Connection(true, true)),
+                List.of(), new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "direction", List.of(), null), null),
             List.of(
                 "Field 'filmById': lookup fields must not return a connection",
                 "Field 'filmById': @orderBy is not valid on a lookup field"));

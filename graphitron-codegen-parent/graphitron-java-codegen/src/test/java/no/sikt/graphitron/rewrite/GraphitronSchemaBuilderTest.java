@@ -23,12 +23,12 @@ import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
-import no.sikt.graphitron.rewrite.model.FieldWrapper.ColumnOrder;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
-import no.sikt.graphitron.rewrite.model.ArgumentRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
+import no.sikt.graphitron.rewrite.model.OrderBySpec;
+import no.sikt.graphitron.rewrite.model.WhereFilter;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
@@ -414,7 +414,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var tf = (TableField) schema.field("Film", "language");
                 assertThat(tf.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
-                assertThat(tf.condition()).isNull();
+                assertThat(tf.filters()).isEmpty();
                 assertThat(tf.joinPath()).isEmpty();
             }),
 
@@ -480,7 +480,7 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Film", "city")).isInstanceOf(UnclassifiedField.class)),
 
         CONDITION_IS_ALWAYS_NULL(
-            "@condition support is deferred to P3; condition is always null even with @reference",
+            "@condition support is deferred to P3; filters list is always empty even with @reference",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -488,8 +488,8 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(((TableField) schema.field("Film", "language")).condition())
-                .isNull()),
+            schema -> assertThat(((TableField) schema.field("Film", "language")).filters())
+                .isEmpty()),
 
         DEFAULT_ORDER_INDEX(
             "@defaultOrder(index:) resolves index columns — columns from idx_actor_last_name",
@@ -501,8 +501,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
-                ColumnOrder order = cardinality.defaultOrder();
+                var order = (OrderBySpec.Fixed) ((TableField) schema.field("Film", "actors")).orderBy();
                 assertThat(order).isNotNull();
                 assertThat(order.direction()).isEqualTo("ASC");
                 assertThat(order.columns()).hasSize(1);
@@ -519,8 +518,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
-                ColumnOrder order = cardinality.defaultOrder();
+                var order = (OrderBySpec.Fixed) ((TableField) schema.field("Film", "actors")).orderBy();
                 assertThat(order).isNotNull();
                 assertThat(order.columns()).hasSize(1);
                 assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("actor_id");
@@ -536,8 +534,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
-                ColumnOrder order = cardinality.defaultOrder();
+                var order = (OrderBySpec.Fixed) ((TableField) schema.field("Film", "actors")).orderBy();
                 assertThat(order.columns()).hasSize(2);
                 assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
                 assertThat(order.columns().get(0).collation()).isEqualTo("C");
@@ -546,7 +543,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DEFAULT_ORDER_DIRECTION_DESC(
-            "@defaultOrder(direction: DESC) stores the direction in ColumnOrder",
+            "@defaultOrder(direction: DESC) stores the direction in the Fixed order",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
@@ -555,12 +552,12 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
-                assertThat(cardinality.defaultOrder().direction()).isEqualTo("DESC");
+                var order = (OrderBySpec.Fixed) ((TableField) schema.field("Film", "actors")).orderBy();
+                assertThat(order.direction()).isEqualTo("DESC");
             }),
 
         CONNECTION_WITH_DEFAULT_ORDER_INDEX(
-            "@defaultOrder(index:) on a connection field resolves to ColumnOrder",
+            "@defaultOrder(index:) on a connection field resolves to Fixed order",
             """
             type Actor @table(name: "actor") { name: String }
             type ActorEdge { node: Actor cursor: String }
@@ -571,8 +568,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldWrapper.Connection) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
-                ColumnOrder order = cardinality.defaultOrder();
+                var order = (OrderBySpec.Fixed) ((TableField) schema.field("Film", "actors")).orderBy();
                 assertThat(order).isNotNull();
                 assertThat(order.columns()).hasSize(1);
                 assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
@@ -588,8 +584,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var cardinality = (FieldWrapper.List) ((TableField) schema.field("Film", "actors")).returnType().wrapper();
-                ColumnOrder order = cardinality.defaultOrder();
+                var order = (OrderBySpec.Fixed) ((TableField) schema.field("Film", "actors")).orderBy();
                 assertThat(order).isNotNull();
                 assertThat(order.direction()).isEqualTo("ASC");
                 assertThat(order.columns()).hasSize(1);
@@ -597,13 +592,16 @@ class GraphitronSchemaBuilderTest {
             }),
 
         NO_DEFAULT_ORDER_PKLESS_TABLE(
-            "list field with no @defaultOrder on PK-less table — classified as UnclassifiedField",
+            "list field with no @defaultOrder on PK-less table — classified as QueryTableField with None ordering",
             """
             type FilmList @table(name: "film_list") { title: String }
             type Query { films: [FilmList!]! }
             """,
-            schema -> assertThat(schema.field("Query", "films"))
-                .isInstanceOf(UnclassifiedField.class));
+            schema -> {
+                assertThat(schema.field("Query", "films")).isInstanceOf(QueryField.QueryTableField.class);
+                var f = (QueryField.QueryTableField) schema.field("Query", "films");
+                assertThat(f.orderBy()).isInstanceOf(OrderBySpec.None.class);
+            });
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -980,7 +978,7 @@ class GraphitronSchemaBuilderTest {
 
     enum ArgumentParsingCase {
         TABLE_FIELD_NO_ARGS(
-            "TableField with no arguments — empty arguments list",
+            "TableField with no arguments — empty filters list",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") { actors: [Actor!]! }
@@ -988,11 +986,11 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("Film", "actors");
-                assertThat(f.arguments()).isEmpty();
+                assertThat(f.filters()).isEmpty();
             }),
 
         TABLE_FIELD_WITH_ARGS(
-            "TableField with arguments — arguments parsed with correct typeName, nonNull, list",
+            "TableField with arguments — filters parsed with correct typeName, nonNull, list",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
@@ -1002,13 +1000,13 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("Film", "actors");
-                assertThat(f.arguments()).hasSize(2);
-                var actorId = f.arguments().get(0);
+                assertThat(f.filters()).hasSize(2);
+                var actorId = (WhereFilter.ColumnFilter) f.filters().get(0);
                 assertThat(actorId.name()).isEqualTo("actor_id");
                 assertThat(actorId.typeName()).isEqualTo("ID");
                 assertThat(actorId.nonNull()).isTrue();
                 assertThat(actorId.list()).isFalse();
-                var firstName = f.arguments().get(1);
+                var firstName = (WhereFilter.ColumnFilter) f.filters().get(1);
                 assertThat(firstName.typeName()).isEqualTo("String");
                 assertThat(firstName.list()).isTrue();
             }),
@@ -1024,13 +1022,12 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.LookupTableField) schema.field("Film", "actor");
-                assertThat(f.arguments()).hasSize(1);
-                assertThat(f.arguments().get(0).name()).isEqualTo("actor_id");
-                assertThat(f.arguments().get(0)).isNotInstanceOf(no.sikt.graphitron.rewrite.model.ArgumentRef.TableArg.OrderByArg.class);
+                assertThat(f.filters()).hasSize(1);
+                assertThat(((WhereFilter.ColumnFilter) f.filters().get(0)).name()).isEqualTo("actor_id");
             }),
 
         TABLE_FIELD_ORDER_BY_ARG(
-            "@orderBy arg with valid input type → classified as OrderByArg on TableField",
+            "@orderBy arg with valid input type → OrderBySpec.Argument on orderBy(); filters empty",
             """
             enum ActorOrderField { FIRST_NAME @order(index: "IDX_ACTOR_LAST_NAME") }
             enum Direction { ASC DESC }
@@ -1043,14 +1040,13 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("Film", "actors");
-                assertThat(f.arguments()).hasSize(1);
-                var orderArg = f.arguments().get(0);
-                assertThat(orderArg).isInstanceOf(no.sikt.graphitron.rewrite.model.ArgumentRef.TableArg.OrderByArg.class);
-                assertThat(orderArg.typeName()).isEqualTo("ActorOrder");
+                assertThat(f.filters()).isEmpty();
+                assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Argument.class);
+                assertThat(((OrderBySpec.Argument) f.orderBy()).typeName()).isEqualTo("ActorOrder");
             }),
 
         SERVICE_FIELD_CONTEXT_ARGS(
-            "@service with contextArguments — contextArguments populated",
+            "@service field is classified as ServiceRecordField — method reference resolved",
             """
             type Film @table(name: "film") {
                 rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}, contextArguments: ["tenantId", "userId"])
@@ -1059,7 +1055,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField) schema.field("Film", "rating");
-                assertThat(f.contextArguments()).containsExactly("tenantId", "userId");
+                assertThat(f.method().className()).isEqualTo("no.sikt.graphitron.rewrite.TestServiceStub");
+                assertThat(f.method().methodName()).isEqualTo("get");
             }),
 
         TABLE_METHOD_FIELD_CONTEXT_ARGS(
@@ -1425,8 +1422,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.field("Query", "filmById")).isInstanceOf(QueryField.QueryLookupTableField.class);
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
-                assertThat(f.arguments()).hasSize(1);
-                assertThat(f.arguments().get(0).name()).isEqualTo("film_id");
+                assertThat(f.filters()).hasSize(1);
+                assertThat(((WhereFilter.ColumnFilter) f.filters().get(0)).name()).isEqualTo("film_id");
                 assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class);
             }),
 
@@ -1440,19 +1437,19 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Query", "filmByKey")).isInstanceOf(QueryField.QueryLookupTableField.class)),
 
         LOOKUP_FIELD_COLUMN_ARG(
-            "lookup field list arg whose column exists → ColumnFilterArg with resolved jOOQ field",
+            "lookup field list arg whose column exists → ColumnFilter with resolved jOOQ field",
             """
             type Film @table(name: "film") { title: String }
             type Query { filmById(film_id: [ID] @lookupKey): [Film!]! }
             """,
             schema -> {
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
-                assertThat(f.arguments()).hasSize(1);
-                assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.TableArg.ColumnFilterArg.class);
-                var a = (ArgumentRef.TableArg.ColumnFilterArg) f.arguments().get(0);
+                assertThat(f.filters()).hasSize(1);
+                assertThat(f.filters().get(0)).isInstanceOf(WhereFilter.ColumnFilter.class);
+                var a = (WhereFilter.ColumnFilter) f.filters().get(0);
                 assertThat(a.name()).isEqualTo("film_id");
-                assertThat(a.javaColumnName()).isEqualTo("FILM_ID");
-                assertThat(a.columnClass()).isNotEmpty();
+                assertThat(a.column().javaName()).isEqualTo("FILM_ID");
+                assertThat(a.column().columnClass()).isNotEmpty();
             }),
 
         LOOKUP_FIELD_PLAIN_SCALAR_ARG(
@@ -1469,7 +1466,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LOOKUP_FIELD_TABLE_INPUT_TYPE_ARG(
-            "lookup field with explicit @table input type arg → InputFilterArg",
+            "lookup field with explicit @table input type arg → InputFilter",
             """
             input FilmKey @table(name: "film") { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
@@ -1477,14 +1474,14 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmByKey");
-                assertThat(f.arguments()).hasSize(1);
-                assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.TableArg.InputFilterArg.class);
-                assertThat(f.arguments().get(0).name()).isEqualTo("key");
-                assertThat(f.arguments().get(0).typeName()).isEqualTo("FilmKey");
+                assertThat(f.filters()).hasSize(1);
+                assertThat(f.filters().get(0)).isInstanceOf(WhereFilter.InputFilter.class);
+                assertThat(((WhereFilter.InputFilter) f.filters().get(0)).name()).isEqualTo("key");
+                assertThat(((WhereFilter.InputFilter) f.filters().get(0)).typeName()).isEqualTo("FilmKey");
             }),
 
         LOOKUP_FIELD_IMPLICIT_TABLE_INPUT_TYPE_ARG(
-            "lookup field with plain input type arg (no @table) → InputFilterArg via inline promotion",
+            "lookup field with plain input type arg (no @table) → InputFilter via inline promotion",
             """
             input FilmKey { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
@@ -1492,15 +1489,15 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmByKey");
-                assertThat(f.arguments()).hasSize(1);
-                assertThat(f.arguments().get(0)).isInstanceOf(ArgumentRef.TableArg.InputFilterArg.class);
+                assertThat(f.filters()).hasSize(1);
+                assertThat(f.filters().get(0)).isInstanceOf(WhereFilter.InputFilter.class);
                 // The type was promoted to TableInputType in types map
                 assertThat(schema.type("FilmKey"))
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType.class);
             }),
 
         LOOKUP_FIELD_ORDERBY_ARG(
-            "@orderBy arg with valid input type structure → TableArg.OrderByArg with resolved field names",
+            "@orderBy arg with valid input type structure → OrderBySpec.Argument with resolved field names",
             """
             enum FilmOrderField { TITLE @order(index: "IDX_TITLE") }
             enum Direction { ASC DESC }
@@ -1510,13 +1507,12 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
-                var orderArg = f.arguments().stream()
-                    .filter(a -> a.name().equals("order"))
-                    .findFirst().orElseThrow();
-                assertThat(orderArg).isInstanceOf(ArgumentRef.TableArg.OrderByArg.class);
-                var resolved = (ArgumentRef.TableArg.OrderByArg) orderArg;
-                assertThat(resolved.sortFieldName()).isEqualTo("sortField");
-                assertThat(resolved.directionFieldName()).isEqualTo("direction");
+                assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Argument.class);
+                var orderBy = (OrderBySpec.Argument) f.orderBy();
+                assertThat(orderBy.sortFieldName()).isEqualTo("sortField");
+                assertThat(orderBy.directionFieldName()).isEqualTo("direction");
+                assertThat(f.filters()).hasSize(1);
+                assertThat(((WhereFilter.ColumnFilter) f.filters().get(0)).name()).isEqualTo("film_id");
             }),
 
         LOOKUP_FIELD_ORDERBY_ARG_BAD_STRUCTURE(
@@ -1542,7 +1538,7 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Query", "films")).isInstanceOf(QueryField.QueryTableField.class)),
 
         TABLE_QUERY_FIELD_WITH_ARGS(
-            "table query field captures arguments — @orderBy with valid input type produces TableArg.OrderByArg",
+            "table query field with @orderBy argument → OrderBySpec.Argument on orderBy(); filters empty",
             """
             enum FilmOrderField { TITLE @order(index: "IDX_TITLE") }
             enum Direction { ASC DESC }
@@ -1552,8 +1548,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (QueryField.QueryTableField) schema.field("Query", "films");
-                assertThat(f.arguments()).hasSize(1);
-                assertThat(f.arguments().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.model.ArgumentRef.TableArg.OrderByArg.class);
+                assertThat(f.filters()).isEmpty();
+                assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Argument.class);
             }),
 
         TABLE_METHOD_QUERY_FIELD(
@@ -1619,7 +1615,7 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Query", "search")).isInstanceOf(QueryField.QueryUnionField.class)),
 
         SERVICE_QUERY_FIELD(
-            "@service on root query field → QueryServiceTableField",
+            "@service on root query field → QueryServiceTableField with method reference resolved",
             """
             type Film @table(name: "film") { title: String }
             type Query {
@@ -1629,7 +1625,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.field("Query", "externalFilm")).isInstanceOf(QueryField.QueryServiceTableField.class);
                 var f = (QueryField.QueryServiceTableField) schema.field("Query", "externalFilm");
-                assertThat(f.contextArguments()).isEmpty();
+                assertThat(f.method().className()).isEqualTo("no.sikt.graphitron.rewrite.TestServiceStub");
+                assertThat(f.method().methodName()).isEqualTo("get");
             }),
 
         INSERT_MUTATION_FIELD(

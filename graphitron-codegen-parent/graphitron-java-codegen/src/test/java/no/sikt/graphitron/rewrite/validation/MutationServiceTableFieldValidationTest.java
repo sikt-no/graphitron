@@ -27,7 +27,7 @@ class MutationServiceTableFieldValidationTest {
 
         VALID("service mutation field with resolved method — no errors",
             new MutationServiceTableField("Mutation", "externalMutation", null,
-                FILM_RETURN, List.of(), List.of(),
+                FILM_RETURN,
                 new MethodRef("com.example.Service", "method", "void", List.of())),
             List.of());
 

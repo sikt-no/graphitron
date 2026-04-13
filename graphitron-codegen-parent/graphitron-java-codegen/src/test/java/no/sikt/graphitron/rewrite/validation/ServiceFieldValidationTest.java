@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.SourcesRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -32,14 +33,14 @@ class ServiceFieldValidationTest {
     enum RecordCase implements ValidatorCase {
 
         NO_PATH("no @reference — no lift condition; valid for non-table return",
-            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true)), List.of(), List.of(), List.of(), RESOLVED_METHOD),
+            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true)), List.of(), RESOLVED_METHOD),
             List.of()),
 
         WITH_LIFT_CONDITION("lift condition with a resolved method",
             new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "liftCondition", "org.jooq.Condition",
                     List.of(new MethodRef.Param("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))))),
-                List.of(), List.of(), RESOLVED_METHOD),
+                RESOLVED_METHOD),
             List.of());
 
         private final String description;
@@ -74,7 +75,7 @@ class ServiceFieldValidationTest {
                 new ReturnTypeRef.TableBoundReturnType("Film",
                     new TableRef("film", "FILM", "Film", Optional.of(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))),
                     new FieldWrapper.Single(true)),
-                List.of(), null, List.of(), List.of(),
+                List.of(), List.of(), new OrderBySpec.None(), null,
                 new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
                     List.of(new MethodRef.Param("filmKeys", "java.util.List", new ParamSource.Sources(new SourcesRef.RowKeyed(List.of("java.lang.Integer"))))))),
             List.of());
@@ -139,7 +140,7 @@ class ServiceFieldValidationTest {
 
     private static ServiceTableField serviceField(SourcesRef sourcesRef) {
         return new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
-            List.of(), null, List.of(), List.of(),
+            List.of(), List.of(), new OrderBySpec.None(), null,
             new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
                 List.of(new MethodRef.Param("filmKeys", "java.util.List", new ParamSource.Sources(sourcesRef)))));
     }
@@ -203,7 +204,7 @@ class ServiceFieldValidationTest {
             "RowKeyed — composite PK parent AND wrong types — only the type-mismatch error fires",
             filmTableType(FILM_TABLE_COMPOSITE_PK),
             new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
-                List.of(), null, List.of(), List.of(),
+                List.of(), List.of(), new OrderBySpec.None(), null,
                 new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
                     // Single type arg; parent has 2-col PK — type list differs in both value and size
                     List.of(new MethodRef.Param("filmKeys", "java.util.List", new ParamSource.Sources(new SourcesRef.RowKeyed(List.of("java.lang.Long"))))))),
@@ -216,7 +217,7 @@ class ServiceFieldValidationTest {
             "two SOURCES params, one correct RowKeyed and one wrong RowKeyed — only the wrong param errors",
             filmTableType(FILM_TABLE_SINGLE_PK),
             new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
-                List.of(), null, List.of(), List.of(),
+                List.of(), List.of(), new OrderBySpec.None(), null,
                 new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
                     List.of(
                         new MethodRef.Param("filmKeys1", "java.util.List", new ParamSource.Sources(new SourcesRef.RowKeyed(List.of("java.lang.Integer")))),

@@ -21,7 +21,6 @@ class MutationServiceRecordFieldValidationTest {
         VALID("service mutation field with non-table return — always valid",
             new MutationServiceRecordField("Mutation", "externalMutation", null,
                 new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true)),
-                List.of(), List.of(),
                 new MethodRef("com.example.Service", "method", "void", List.of())),
             List.of());
 

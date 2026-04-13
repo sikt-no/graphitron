@@ -27,7 +27,7 @@ class QueryServiceTableFieldValidationTest {
 
         VALID("service query field with resolved method — no errors",
             new QueryServiceTableField("Query", "externalFilm", null,
-                FILM_RETURN, List.of(), List.of(),
+                FILM_RETURN,
                 new MethodRef("com.example.Service", "method", "void", List.of())),
             List.of());
 

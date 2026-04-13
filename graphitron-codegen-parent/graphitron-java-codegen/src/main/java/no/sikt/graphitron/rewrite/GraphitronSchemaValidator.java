@@ -3,13 +3,14 @@ package no.sikt.graphitron.rewrite;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.ArgumentRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.model.WhereFilter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -133,41 +134,34 @@ public class GraphitronSchemaValidator {
     // --- Field validators (stubs — filled in as test classes are added) ---
 
     private void validateQueryLookupTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        boolean anyArgIsList = field.arguments().stream().anyMatch(ArgumentRef::list);
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             errors.add(new ValidationError(
                 "Field '" + field.name() + "': lookup fields must not return a connection",
                 field.location()
             ));
         } else {
+            boolean anyFilterIsList = field.filters().stream().anyMatch(f -> switch (f) {
+                case WhereFilter.ColumnFilter cf -> cf.list();
+                case WhereFilter.InputFilter inf -> inf.list();
+                case no.sikt.graphitron.rewrite.model.ConditionFilter ignored -> false;
+            });
             boolean returnIsList = field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List;
-            if (anyArgIsList != returnIsList) {
+            if (anyFilterIsList != returnIsList) {
                 errors.add(new ValidationError(
                     "Field '" + field.name() + "': result type does not match input cardinality",
                     field.location()
                 ));
             }
         }
-        for (var arg : field.arguments()) {
-            switch (arg) {
-                case ArgumentRef.TableArg.OrderByArg a -> errors.add(new ValidationError(
-                    "Field '" + field.name() + "': @orderBy is not valid on a lookup field",
-                    field.location()
-                ));
-                case ArgumentRef.TableArg.InputFilterArg ignored    -> {} // valid lookup input filter
-                case ArgumentRef.TableArg.ColumnFilterArg ignored   -> {} // valid scalar key argument
-                case ArgumentRef.TableArg.FirstArg ignored          -> {} // valid pagination arg
-                case ArgumentRef.TableArg.LastArg ignored           -> {} // valid pagination arg
-                case ArgumentRef.TableArg.AfterArg ignored          -> {} // valid pagination arg
-                case ArgumentRef.TableArg.BeforeArg ignored         -> {} // valid pagination arg
-                case ArgumentRef.MethodParamArg.ObjectParamArg ignored -> {} // valid developer arg
-                case ArgumentRef.MethodParamArg.ScalarParamArg ignored -> {} // valid direct parameter
-            }
+        if (field.orderBy() instanceof OrderBySpec.Argument) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': @orderBy is not valid on a lookup field",
+                field.location()
+            ));
         }
     }
     private void validateQueryTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
-        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateQueryTableMethodTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryTableMethodTableField field, List<ValidationError> errors) {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
@@ -184,11 +178,9 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateQueryServiceTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
         // Unresolved service method is caught by the builder (UnclassifiedField).
     }
     private void validateQueryServiceRecordField(no.sikt.graphitron.rewrite.model.QueryField.QueryServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateMutationInsertTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationInsertTableField field, List<ValidationError> errors) {}
     private void validateMutationUpdateTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField field, List<ValidationError> errors) {}
@@ -283,12 +275,10 @@ public class GraphitronSchemaValidator {
     private void validateTableField(no.sikt.graphitron.rewrite.model.ChildField.TableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
-        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateSplitTableField(no.sikt.graphitron.rewrite.model.ChildField.SplitTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
-        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.LookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
@@ -299,7 +289,6 @@ public class GraphitronSchemaValidator {
             ));
         }
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
-        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateSplitLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
@@ -310,7 +299,6 @@ public class GraphitronSchemaValidator {
             ));
         }
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
-        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateTableMethodField(no.sikt.graphitron.rewrite.model.ChildField.TableMethodField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
@@ -330,7 +318,6 @@ public class GraphitronSchemaValidator {
     private void validateConstructorField(no.sikt.graphitron.rewrite.model.ChildField.ConstructorField field, List<ValidationError> errors) {}
     private void validateServiceTableField(no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
-        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
 
         // Validate each SOURCES parameter's SourcesRef variant.
         var smr = field.method();
@@ -397,12 +384,10 @@ public class GraphitronSchemaValidator {
     }
     private void validateServiceRecordField(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
-        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateRecordTableField(no.sikt.graphitron.rewrite.model.ChildField.RecordTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
-        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateRecordLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
@@ -413,7 +398,6 @@ public class GraphitronSchemaValidator {
             ));
         }
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
-        validateArguments(field.name(), field.location(), field.arguments(), types, errors);
     }
     private void validateRecordField(no.sikt.graphitron.rewrite.model.ChildField.RecordField field, List<ValidationError> errors) {}
 
@@ -457,11 +441,6 @@ public class GraphitronSchemaValidator {
             "Field '" + field.name() + "': could not be classified — " + field.reason(),
             field.location()
         ));
-    }
-
-    private void validateArguments(String fieldName, SourceLocation location, List<ArgumentRef> arguments, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        // Type-existence of argument types is already guaranteed by graphql-java schema validation.
-        // Graphitron-specific constraints will be added here as needed.
     }
 
     private void validateCardinality(String fieldName, SourceLocation location, no.sikt.graphitron.rewrite.model.FieldWrapper cardinality, List<ValidationError> errors) {

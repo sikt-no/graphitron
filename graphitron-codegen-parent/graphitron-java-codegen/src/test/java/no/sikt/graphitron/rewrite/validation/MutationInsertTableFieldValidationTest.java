@@ -18,7 +18,7 @@ class MutationInsertTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("insert mutation field — always valid",
-            new MutationInsertTableField("Mutation", "createFilm", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of()),
+            new MutationInsertTableField("Mutation", "createFilm", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true))),
             List.of());
 
         private final String description;

@@ -18,7 +18,7 @@ class MutationUpdateTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("update mutation field — always valid",
-            new MutationUpdateTableField("Mutation", "updateFilm", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of()),
+            new MutationUpdateTableField("Mutation", "updateFilm", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true))),
             List.of());
 
         private final String description;

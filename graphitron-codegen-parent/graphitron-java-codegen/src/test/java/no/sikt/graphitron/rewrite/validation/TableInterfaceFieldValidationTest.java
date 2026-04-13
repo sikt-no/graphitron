@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
+import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -20,7 +21,7 @@ class TableInterfaceFieldValidationTest {
     enum Case implements ValidatorCase {
 
         VALID("single cardinality — valid",
-            new TableInterfaceField("Film", "status", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Single(true)), List.of(), null),
+            new TableInterfaceField("Film", "status", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", Optional.of(List.of())), new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null),
             List.of());
 
         private final String description;

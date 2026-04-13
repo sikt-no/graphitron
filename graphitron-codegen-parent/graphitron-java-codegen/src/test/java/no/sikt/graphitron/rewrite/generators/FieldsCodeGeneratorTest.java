@@ -3,12 +3,12 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.model.ArgumentRef;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SourcesRef;
@@ -50,13 +50,13 @@ class FieldsCodeGeneratorTest {
         return new ChildField.SplitTableField(parentType, name, null,
             new ReturnTypeRef.TableBoundReturnType("Film",
                 new TableRef("film", "FILM", "Film", Optional.of(List.of())),
-                new FieldWrapper.List(false, false, null, List.of())),
-            List.of(), null, List.of());
+                new FieldWrapper.List(false, false)),
+            List.of(), List.of(), new OrderBySpec.None(), null);
     }
 
     private static GraphitronField serviceField(String parentType, String name, boolean isList) {
         var returnWrapper = isList
-            ? (FieldWrapper) new FieldWrapper.List(true, true, null, List.of())
+            ? (FieldWrapper) new FieldWrapper.List(true, true)
             : new FieldWrapper.Single(true);
         var returnType = new ReturnTypeRef.TableBoundReturnType("Film",
             new TableRef("film", "FILM", "Film", Optional.of(List.of())),
@@ -71,9 +71,7 @@ class FieldsCodeGeneratorTest {
         );
         return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
-            List.of(), null,
-            List.of(new ArgumentRef.MethodParamArg.ScalarParamArg("filter", "String", false, false)),
-            List.of("tenantId"), method);
+            List.of(), List.of(), new OrderBySpec.None(), null, method);
     }
 
     private static TypeSpec spec(String typeName, List<String> fieldNames) {

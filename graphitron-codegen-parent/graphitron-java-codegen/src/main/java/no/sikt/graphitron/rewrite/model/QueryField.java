@@ -1,96 +1,60 @@
 package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
-
 import java.util.List;
 
-import no.sikt.graphitron.rewrite.model.ArgumentRef;
-import no.sikt.graphitron.rewrite.model.ChildField.FieldCondition;
-
 /**
- * A field on the {@code Query} type. Read-only. All create a new scope or enter private service scope.
+ * A field on the {@code Query} type. Read-only. All create a new scope or enter service scope.
+ *
+ * <p>The three primary SQL-generating query field types ({@link QueryTableField},
+ * {@link QueryLookupTableField}, {@link QueryTableInterfaceField}) carry the same three
+ * SQL-generation components as their child-field counterparts:
+ * <ul>
+ *   <li>{@code filters} — WHERE-clause contributions; may be empty.</li>
+ *   <li>{@code orderBy} — authoritative ordering; always non-null.</li>
+ *   <li>{@code pagination} — Relay pagination args; {@code null} when absent.</li>
+ * </ul>
+ *
+ * <p>Service and table-method fields ({@link QueryServiceTableField},
+ * {@link QueryServiceRecordField}, {@link QueryTableMethodTableField}) do not carry these
+ * components — the developer-controlled method replaces SQL generation entirely.
  */
 public sealed interface QueryField extends RootField
-    permits QueryField.QueryLookupTableField, QueryField.QueryTableField, QueryField.QueryTableMethodTableField,
+    permits QueryField.QueryLookupTableField, QueryField.QueryTableField,
+            QueryField.QueryTableMethodTableField,
             QueryField.QueryNodeField, QueryField.QueryEntityField,
-            QueryField.QueryTableInterfaceField, QueryField.QueryInterfaceField, QueryField.QueryUnionField,
+            QueryField.QueryTableInterfaceField, QueryField.QueryInterfaceField,
+            QueryField.QueryUnionField,
             QueryField.QueryServiceTableField, QueryField.QueryServiceRecordField {
 
-    /**
-     * Triggered by {@code @lookupKey} on one or more arguments (including nested inside input types).
-     *
-     * <p>All arguments participate equally in lookup semantics: list arguments are positionally
-     * correlated (must all be the same length), and scalar arguments are broadcast (replicated to
-     * fill the batch). The {@code @lookupKey} directive is a field-level classifier only — there is
-     * no per-argument semantic distinction between arguments that carry it and those that do not.
-     *
-     * <p>{@code returnType} must carry a {@link FieldWrapper.Single} wrapper — lookup fields return
-     * one result per key. The validator reports an error for list or connection wrappers.
-     *
-     * <p>{@code condition} is the resolved {@code @condition} directive on this field, or
-     * {@code null} if absent. When present, the condition method is called with the target table
-     * alias and all argument values as positional parameters. With {@code override: true}, all
-     * argument column-equality predicates are suppressed and only the condition call is emitted.
-     *
-     * <p>{@code arguments} is the full list of arguments on the field.
-     * {@link ArgumentRef.TableArg.InputFilterArg} and {@link ArgumentRef.TableArg.ColumnFilterArg}
-     * are the expected lookup keys. {@link ArgumentRef.TableArg.OrderByArg} is rejected by the
-     * validator as incompatible with lookup semantics. {@link ArgumentRef.MethodParamArg} variants
-     * are passed through to the developer's method.
-     */
     record QueryLookupTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        FieldCondition condition,
-        List<ArgumentRef> arguments
+        List<WhereFilter> filters,
+        OrderBySpec orderBy,
+        PaginationSpec pagination
     ) implements QueryField {}
 
-    /**
-     * A root query field whose return type is annotated with {@code @table}.
-     *
-     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema, with the {@link FieldWrapper} embedded — {@link FieldWrapper.Single} for a single-item
-     * lookup, {@link FieldWrapper.List} for a list result, or {@link FieldWrapper.Connection} for a
-     * Relay paginated list. {@link ReturnTypeRef.TableBoundReturnType} carries the
-     * {@link no.sikt.graphitron.rewrite.model.TableRef} when the return type's table is resolved —
-     * used to detect non-deterministic ordering (list or connection with no {@code @defaultOrder}
-     * and a PK-less table). The validator reports errors for unresolved ordering specs on list and
-     * connection variants.
-     *
-     * <p>{@code condition} is the resolved {@code @condition} directive on this field, or
-     * {@code null} if absent. When present, the condition method is called with the target table
-     * alias and all argument values as positional parameters. With {@code override: true}, all
-     * argument column-equality predicates are suppressed and only the condition call is emitted.
-     *
-     * <p>{@code arguments} is the full list of arguments on the field (e.g. {@code @orderBy},
-     * {@code @condition}, pagination arguments). The validator checks that any referenced input
-     * types exist in the classified schema.
-     */
     record QueryTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        FieldCondition condition,
-        List<ArgumentRef> arguments
+        List<WhereFilter> filters,
+        OrderBySpec orderBy,
+        PaginationSpec pagination
     ) implements QueryField {}
 
     /**
-     * A root query field using {@code @tableMethod} — the developer provides a pre-filtered {@code Table<?>}.
+     * A root query field using {@code @tableMethod}. The developer provides a pre-filtered
+     * {@code Table<?>}; Graphitron generates a fetcher around it.
      *
-     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema, with the {@link FieldWrapper} embedded.
-     *
-     * <p>{@code tableMethodClassName} and {@code tableMethodMethodName} are from the
-     * {@code tableMethodReference: ExternalCodeReference!} argument of the {@code @tableMethod}
-     * directive — the Java class and method that return the pre-filtered table.
-     *
-     * <p>{@code arguments} is the full list of GraphQL arguments on the field.
-     *
-     * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
-     * of the {@code @tableMethod} directive.
+     * <p>{@code contextArguments} lists the GraphQL argument names that are resolved from the
+     * framework context rather than the incoming request. Retained because {@code @tableMethod}
+     * does not perform method reflection — there is no {@link MethodRef} to encode parameter
+     * binding via {@link ParamSource}.
      */
     record QueryTableMethodTableField(
         String parentTypeName,
@@ -99,16 +63,9 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.TableBoundReturnType returnType,
         String tableMethodClassName,
         String tableMethodMethodName,
-        List<ArgumentRef> arguments,
         List<String> contextArguments
     ) implements QueryField {}
 
-    /**
-     * The {@code Query.node(id:)} field for Relay Global Object Identification.
-     *
-     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema.
-     */
     record QueryNodeField(
         String parentTypeName,
         String name,
@@ -116,12 +73,6 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.PolymorphicReturnType returnType
     ) implements QueryField {}
 
-    /**
-     * The {@code Query._entities(representations:)} field for Apollo Federation.
-     *
-     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema.
-     */
     record QueryEntityField(
         String parentTypeName,
         String name,
@@ -129,30 +80,16 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.PolymorphicReturnType returnType
     ) implements QueryField {}
 
-    /**
-     * A root query field whose return type is a single-table interface ({@code @table} + {@code @discriminate}).
-     *
-     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema, with the {@link FieldWrapper} embedded.
-     *
-     * <p>{@code condition} is the resolved {@code @condition} directive on this field, or
-     * {@code null} if absent. When present, the condition method is called with the target table
-     * alias and all argument values as positional parameters.
-     */
     record QueryTableInterfaceField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        FieldCondition condition
+        List<WhereFilter> filters,
+        OrderBySpec orderBy,
+        PaginationSpec pagination
     ) implements QueryField {}
 
-    /**
-     * A root query field whose return type is a multi-table interface.
-     *
-     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema, with the {@link FieldWrapper} embedded.
-     */
     record QueryInterfaceField(
         String parentTypeName,
         String name,
@@ -160,12 +97,6 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.PolymorphicReturnType returnType
     ) implements QueryField {}
 
-    /**
-     * A root query field whose return type is a union.
-     *
-     * <p>{@code returnType} is the resolved outcome of looking up the return type in the classified
-     * schema, with the {@link FieldWrapper} embedded.
-     */
     record QueryUnionField(
         String parentTypeName,
         String name,
@@ -174,45 +105,30 @@ public sealed interface QueryField extends RootField
     ) implements QueryField {}
 
     /**
-     * A root query field delegating to a developer-provided service class via {@code @service},
-     * where the return type is annotated with {@code @table} (service → table-mapped target).
+     * A root query field backed by a developer-provided service method, returning a table-mapped type.
      *
-     * <p>{@code returnType} is narrowed to {@link ReturnTypeRef.TableBoundReturnType}.
-     *
-     * <p>{@code serviceMethodRef} carries the class name, method name, and reflected parameter
-     * list of the service method, captured at parse time. If reflection failed the containing
-     * field is classified as {@link no.sikt.graphitron.rewrite.model.UnclassifiedField} by the
-     * builder and does not appear here.
-     *
-     * <p>{@code arguments} is the full list of GraphQL arguments on the field.
-     *
-     * <p>{@code contextArguments} is the list of strings from the {@code contextArguments} parameter
-     * of the {@code @service} directive.
+     * <p>Parameter binding (including context arguments) is fully encoded in
+     * {@link MethodRef#params()} via {@link ParamSource}.
      */
     record QueryServiceTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        List<ArgumentRef> arguments,
-        List<String> contextArguments,
         MethodRef method
     ) implements QueryField {}
 
     /**
-     * A root query field delegating to a developer-provided service class via {@code @service},
-     * where the return type is NOT table-mapped (service → record/scalar target).
+     * A root query field backed by a developer-provided service method, returning a non-table type.
      *
-     * <p>{@code arguments}, {@code contextArguments}, and {@code serviceMethodRef} have the same
-     * semantics as {@link QueryServiceTableField}.
+     * <p>Parameter binding (including context arguments) is fully encoded in
+     * {@link MethodRef#params()} via {@link ParamSource}.
      */
     record QueryServiceRecordField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        List<ArgumentRef> arguments,
-        List<String> contextArguments,
         MethodRef method
     ) implements QueryField {}
 }

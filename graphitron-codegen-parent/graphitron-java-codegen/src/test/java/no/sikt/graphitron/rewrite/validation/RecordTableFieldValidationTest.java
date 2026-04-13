@@ -2,11 +2,12 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.JoinStep;
-import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordTableField;
+import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -27,29 +28,29 @@ class RecordTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
-            new RecordTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), null, List.of()),
+            new RecordTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null),
             List.of()),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new RecordTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.FkJoin("language_film_id_fkey", "film", null)),
-                null, List.of()),
+                List.of(), new OrderBySpec.None(), null),
             List.of()),
 
         WITH_CONDITION_ONLY("condition-only join step — no FK",
             new RecordTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()))),
-                null, List.of()),
+                List.of(), new OrderBySpec.None(), null),
             List.of()),
 
         FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause; no errors",
-            new RecordTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true, null, List.of())), List.of(),
-                new ChildField.FieldCondition(new MethodRef("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()), false, List.of()),
-                List.of()),
+            new RecordTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(),
+                List.of(new ConditionFilter(new MethodRef("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()), List.of())),
+                new OrderBySpec.None(), null),
             List.of()),
 
         VALID_LIST("list return — valid",
-            new RecordTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true, null, List.of())), List.of(), null, List.of()),
+            new RecordTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), new OrderBySpec.None(), null),
             List.of());
 
         private final String description;
