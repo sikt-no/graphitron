@@ -12,9 +12,10 @@ import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.model.SourcesRef;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
+import javax.lang.model.element.Modifier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,8 +57,11 @@ class TypeFieldsGeneratorTest {
 
     private static GraphitronField splitQueryField(String parentType, String name) {
         return new ChildField.SplitTableField(parentType, name, null,
-            new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, new FieldWrapper.List(false, false)),
-            List.of(), List.of(), new OrderBySpec.None(), null);
+            new ReturnTypeRef.TableBoundReturnType("Film",
+                new TableRef("film", "FILM", "Film", List.of()),
+                new FieldWrapper.List(false, false)),
+            List.of(), List.of(), new OrderBySpec.None(), null,
+            new BatchKey.RowKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer"))));
     }
 
     private static GraphitronField serviceField(String parentType, String name, boolean isList) {
@@ -68,7 +72,7 @@ class TypeFieldsGeneratorTest {
         var method = new MethodRef(
             "no.example.FilmService", "getFilms", "java.util.List",
             List.of(
-                new MethodRef.Param.Sourced("keys", new SourcesRef.RowKeyed(List.of("java.lang.Integer"))),
+                new MethodRef.Param.Sourced("keys", new BatchKey.RowKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer")))),
                 new MethodRef.Param.Typed("filter", "java.lang.String", new ParamSource.Arg()),
                 new MethodRef.Param.Typed("tenantId", "java.lang.String", new ParamSource.Context())
             )
@@ -92,6 +96,10 @@ class TypeFieldsGeneratorTest {
             .filter(m -> m.name().equals(name))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Method not found: " + name));
+    }
+
+    private static TypeSpec specWithSplitQuery(String parentType, String fieldName) {
+        return GEN.generate(parentType, null, List.of(splitQueryField(parentType, fieldName)));
     }
 
     private static TypeSpec specWithServiceField(String parentType, String fieldName, boolean isList) {
@@ -198,6 +206,47 @@ class TypeFieldsGeneratorTest {
             .contains("films", "rowsFilms", "wiring");
         assertThat(method(spec, "films").returnType().toString())
             .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void splitQuery_asyncDataFetcherIsPublicStatic() {
+        var m = method(specWithSplitQuery("Language", "films"), "films");
+        assertThat(m.modifiers()).containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
+    }
+
+    @Test
+    void splitQuery_asyncDataFetcherTakesEnv() {
+        var m = method(specWithSplitQuery("Language", "films"), "films");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void splitQuery_rowsMethodNameCapitalizesFieldName() {
+        assertThat(specWithSplitQuery("Language", "actors").methodSpecs())
+            .extracting(MethodSpec::name)
+            .contains("rowsActors");
+    }
+
+    @Test
+    void splitQuery_rowsMethodIsPublicStatic() {
+        var m = method(specWithSplitQuery("Language", "films"), "rowsFilms");
+        assertThat(m.modifiers()).containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
+    }
+
+    @Test
+    void splitQuery_rowsMethodTakesTypedKeyList() {
+        var m = method(specWithSplitQuery("Language", "films"), "rowsFilms");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("java.util.List<org.jooq.Row1<java.lang.Integer>>");
+        assertThat(m.parameters()).extracting(p -> p.name())
+            .containsExactly("sources");
+    }
+
+    @Test
+    void splitQuery_wiringRegistersDataFetcherByName() {
+        var w = method(specWithSplitQuery("Language", "films"), "wiring");
+        assertThat(w.code().toString()).contains("dataFetcher(\"films\"");
     }
 
     // ===== @service field with TableBoundReturnType =====

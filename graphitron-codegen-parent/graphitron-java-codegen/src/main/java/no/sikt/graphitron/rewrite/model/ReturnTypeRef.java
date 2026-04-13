@@ -46,10 +46,13 @@ public sealed interface ReturnTypeRef
     /**
      * The return type is a {@code @record}-annotated type — a result-mapped Java class provided
      * by the developer. No SQL is generated; the generator accesses properties on the parent
-     * result object. The specific backing Java representation is known from the corresponding
-     * {@link no.sikt.graphitron.rewrite.model.GraphitronType.ResultType} sub-type.
+     * result object.
+     *
+     * <p>{@code fqClassName} is the binary class name of the backing Java class, taken directly
+     * from the corresponding {@link no.sikt.graphitron.rewrite.model.GraphitronType.ResultType}
+     * at build time. May be {@code null} when the backing class was not specified in the directive.
      */
-    record ResultReturnType(String returnTypeName, FieldWrapper wrapper) implements ReturnTypeRef {}
+    record ResultReturnType(String returnTypeName, FieldWrapper wrapper, String fqClassName) implements ReturnTypeRef {}
 
     /**
      * The return type is a scalar, enum, or a type name that does not resolve to any classified

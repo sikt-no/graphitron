@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.QueryField.QueryTableMethodTableField;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -10,7 +11,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,7 +22,7 @@ class QueryTableMethodTableFieldValidationTest {
         VALID("single cardinality — valid",
             new QueryTableMethodTableField("Query", "filmsByMethod", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)),
-                "com.example.TableMethods", "filmsByMethod", List.of()),
+                new MethodRef("com.example.TableMethods", "filmsByMethod", "org.jooq.Table", List.of())),
             List.of());
 
         private final String description;

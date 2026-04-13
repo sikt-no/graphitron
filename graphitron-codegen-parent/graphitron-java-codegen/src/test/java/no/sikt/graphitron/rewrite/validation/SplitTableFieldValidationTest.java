@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -26,28 +27,30 @@ class SplitTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Actor", new TableRef("actor", "ACTOR", "Actor", List.of()), wrapper);
     }
 
+    private static final BatchKey PARENT_BATCH_KEY = new BatchKey.RowKeyed(List.of());
+
     enum Case implements ValidatorCase {
 
         NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
-            new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null),
+            new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
             List.of()),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "film_actor", null)),
-                List.of(), new OrderBySpec.None(), null),
+                List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
             List.of()),
 
         WITH_CONDITION_ONLY("condition-only join step — no FK",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()))),
-                List.of(), new OrderBySpec.None(), null),
+                List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
             List.of()),
 
         FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause; no errors",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(),
-                List.of(new ConditionFilter(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), List.of())),
-                new OrderBySpec.None(), null),
+                List.of(new ConditionFilter(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()))),
+                new OrderBySpec.None(), null, PARENT_BATCH_KEY),
             List.of()),
 
         DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields — valid",
@@ -55,7 +58,7 @@ class SplitTableFieldValidationTest {
                 actorReturn(new FieldWrapper.List(true, true)),
                 List.of(), List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
-                null),
+                null, PARENT_BATCH_KEY),
             List.of());
 
         private final String description;

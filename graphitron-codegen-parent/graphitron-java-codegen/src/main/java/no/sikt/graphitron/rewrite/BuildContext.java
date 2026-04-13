@@ -247,8 +247,8 @@ class BuildContext {
             return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tbt.table(), wrapper);
         if (target instanceof InterfaceType || target instanceof UnionType)
             return new ReturnTypeRef.PolymorphicReturnType(targetTypeName, wrapper);
-        if (target instanceof ResultType)
-            return new ReturnTypeRef.ResultReturnType(targetTypeName, wrapper);
+        if (target instanceof ResultType rt)
+            return new ReturnTypeRef.ResultReturnType(targetTypeName, wrapper, rt.fqClassName());
         return new ReturnTypeRef.ScalarReturnType(targetTypeName, wrapper);
     }
 

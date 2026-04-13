@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import no.sikt.graphitron.rewrite.model.MethodRef;
-import no.sikt.graphitron.rewrite.model.SourcesRef;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 
 /**
  * Validates a {@link GraphitronSchema}, collecting all errors rather than failing on the first.
@@ -319,52 +319,14 @@ public class GraphitronSchemaValidator {
     private void validateServiceTableField(no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
 
-        // Validate each SOURCES parameter's SourcesRef variant.
         var smr = field.method();
-        var parentTypeForSources = types.get(field.parentTypeName());
-        List<String> parentPkJavaTypes = (parentTypeForSources instanceof TableBackedType tbtSrc)
-            ? tbtSrc.table().primaryKeyColumns().stream()
-                .map(no.sikt.graphitron.rewrite.model.ColumnRef::columnClass)
-                .toList()
-            : List.of();
-
-        smr.params().stream()
-            .filter(p -> p instanceof MethodRef.Param.Sourced)
-            .forEach(p -> { switch (((MethodRef.Param.Sourced) p).sourcesRef()) {
-                case SourcesRef.RowKeyed rk -> {
-                    if (!parentPkJavaTypes.isEmpty() && !rk.pkJavaTypes().equals(parentPkJavaTypes)) {
-                        String expected = buildExpectedKeysType("Row", parentPkJavaTypes);
-                        String found    = buildExpectedKeysType("Row", rk.pkJavaTypes());
-                        errors.add(new ValidationError(
-                            "Field '" + field.name() + "': SOURCES parameter '" + p.name()
-                                + "' must be of type " + expected + ", found: " + found,
-                            field.location()));
-                    }
-                }
-                case SourcesRef.RecordKeyed rk -> {
-                    if (!parentPkJavaTypes.isEmpty() && !rk.pkJavaTypes().equals(parentPkJavaTypes)) {
-                        String expected = buildExpectedKeysType("Record", parentPkJavaTypes);
-                        String found    = buildExpectedKeysType("Record", rk.pkJavaTypes());
-                        errors.add(new ValidationError(
-                            "Field '" + field.name() + "': SOURCES parameter '" + p.name()
-                                + "' must be of type " + expected + ", found: " + found,
-                            field.location()));
-                    }
-                }
-                case SourcesRef.TableRecordKeyed trk -> {
-                    // The whole parent record is the key — no PK-column type check needed.
-                }
-                case SourcesRef.ResultKeyed rk -> {
-                    // The whole parent result object is the key — no PK-column type check needed.
-                }
-            } });
 
         // For Row-keyed and Record-keyed, the parent must have a PK so the key
-        // expression can be built. TableRecordKeyed and ResultKeyed use the whole parent as the key.
+        // expression can be built. ObjectBased uses the whole parent as the key.
         boolean hasRowOrRecordKeyed = smr.params().stream()
             .filter(p -> p instanceof MethodRef.Param.Sourced)
-            .map(p -> ((MethodRef.Param.Sourced) p).sourcesRef())
-            .anyMatch(s -> s instanceof SourcesRef.RowKeyed || s instanceof SourcesRef.RecordKeyed);
+            .map(p -> ((MethodRef.Param.Sourced) p).batchKey())
+            .anyMatch(s -> s instanceof BatchKey.RowKeyed || s instanceof BatchKey.RecordKeyed);
 
         if (!hasRowOrRecordKeyed) {
             return; // TableRecordKeyed — no PK constraint on the parent table
@@ -400,20 +362,6 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateRecordField(no.sikt.graphitron.rewrite.model.ChildField.RecordField field, List<ValidationError> errors) {}
-
-    /**
-     * Builds the fully-qualified generic type string for a Row-keyed or Record-keyed SOURCES
-     * parameter given the jOOQ type prefix ({@code "Row"} or {@code "Record"}) and the ordered
-     * list of primary-key column Java type names.
-     *
-     * <p>Example: {@code "Row", ["java.lang.Long"]} →
-     * {@code "java.util.List<org.jooq.Row1<java.lang.Long>>"}
-     */
-    private static String buildExpectedKeysType(String jooqPrefix, List<String> pkJavaTypes) {
-        String jooqClass = "org.jooq." + jooqPrefix + pkJavaTypes.size();
-        String typeParams = String.join(", ", pkJavaTypes);
-        return "java.util.List<" + jooqClass + "<" + typeParams + ">>";
-    }
 
     private void validateComputedField(no.sikt.graphitron.rewrite.model.ChildField.ComputedField field, List<ValidationError> errors) {
         validateReferencePath(field.name(), field.location(), field.joinPath(), errors);

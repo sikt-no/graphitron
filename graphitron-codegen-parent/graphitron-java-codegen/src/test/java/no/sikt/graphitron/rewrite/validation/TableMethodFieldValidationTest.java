@@ -1,9 +1,9 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -21,19 +21,19 @@ class TableMethodFieldValidationTest {
 
         NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)),
-                List.of(), "com.example.TableMethods", "filteredActors", List.of()),
+                List.of(), new MethodRef("com.example.TableMethods", "filteredActors", "org.jooq.Table", List.of())),
             List.of()),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new JoinStep.FkJoin("film_actor_film_id_fkey", "film_actor", null)),
-                "com.example.TableMethods", "filteredActors", List.of()),
+                new MethodRef("com.example.TableMethods", "filteredActors", "org.jooq.Table", List.of())),
             List.of()),
 
         WITH_CONDITION_ONLY("condition method only — no FK",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()))),
-                "com.example.TableMethods", "filteredActors", List.of()),
+                new MethodRef("com.example.TableMethods", "filteredActors", "org.jooq.Table", List.of())),
             List.of());
 
         private final String description;

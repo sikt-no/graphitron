@@ -626,7 +626,7 @@ class GraphitronSchemaBuilderTest {
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
-                language: Language @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
+                language: Language @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get"})
             }
             type Query { film: Film }
             """,
@@ -638,7 +638,7 @@ class GraphitronSchemaBuilderTest {
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
-                actors: [Actor!]! @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
+                actors: [Actor!]! @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get"})
             }
             type Query { film: Film }
             """,
@@ -652,7 +652,7 @@ class GraphitronSchemaBuilderTest {
             type ActorEdge { node: Actor cursor: String }
             type ActorConnection { edges: [ActorEdge] }
             type Film @table(name: "film") {
-                actors: ActorConnection @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
+                actors: ActorConnection @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get"})
             }
             type Query { film: Film }
             """,
@@ -668,7 +668,7 @@ class GraphitronSchemaBuilderTest {
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
                 language: Language
-                    @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
+                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get"})
                     @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query { film: Film }
@@ -1059,18 +1059,22 @@ class GraphitronSchemaBuilderTest {
             }),
 
         TABLE_METHOD_FIELD_CONTEXT_ARGS(
-            "@tableMethod with contextArguments — contextArguments populated",
+            "@tableMethod with contextArguments — context param reflected into ParamSource.Context",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
                 language: Language
-                    @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"}, contextArguments: ["tenantId"])
+                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getWithContext"}, contextArguments: ["tenantId"])
             }
             type Query { film: Film }
             """,
             schema -> {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.TableMethodField) schema.field("Film", "language");
-                assertThat(f.contextArguments()).containsExactly("tenantId");
+                assertThat(f.method().params())
+                    .filteredOn(p -> p instanceof no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed t
+                        && t.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Context)
+                    .extracting(p -> ((no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed) p).name())
+                    .containsExactly("tenantId");
             });
 
         final String sdl;
@@ -1549,18 +1553,22 @@ class GraphitronSchemaBuilderTest {
             }),
 
         TABLE_METHOD_QUERY_FIELD(
-            "@tableMethod on root field → QueryTableMethodTableField",
+            "@tableMethod on root field → QueryTableMethodTableField with context param reflected",
             """
             type Film @table(name: "film") { title: String }
             type Query {
                 filteredFilms: [Film!]!
-                    @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"}, contextArguments: ["tenantId"])
+                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getWithContext"}, contextArguments: ["tenantId"])
             }
             """,
             schema -> {
                 assertThat(schema.field("Query", "filteredFilms")).isInstanceOf(QueryField.QueryTableMethodTableField.class);
                 var f = (QueryField.QueryTableMethodTableField) schema.field("Query", "filteredFilms");
-                assertThat(f.contextArguments()).containsExactly("tenantId");
+                assertThat(f.method().params())
+                    .filteredOn(p -> p instanceof no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed t
+                        && t.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Context)
+                    .extracting(p -> ((no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed) p).name())
+                    .containsExactly("tenantId");
             }),
 
         NODE_QUERY_FIELD(

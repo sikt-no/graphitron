@@ -4,10 +4,12 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
-import no.sikt.graphitron.rewrite.model.SourcesRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -24,7 +26,11 @@ import java.util.Set;
  */
 class ServiceCatalog {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(ServiceCatalog.class);
+
     private final BuildContext ctx;
+    /** Ensures the -parameters warning is emitted at most once per build. */
+    private boolean parametersWarningEmitted = false;
 
     ServiceCatalog(BuildContext ctx) {
         this.ctx = ctx;
@@ -104,9 +110,15 @@ class ServiceCatalog {
      * <p>Parameters whose name matches a GraphQL argument get {@link ParamSource.Arg};
      * parameters whose name matches a context key get {@link ParamSource.Context};
      * all others are classified by {@link #classifySourcesType}.
+     *
+     * <p>{@code parentPkColumns} is the primary-key column list of the parent type's table.
+     * Pass {@link List#of()} when the parent is a root operation type or has no backing table.
+     *
+     * <p>If the compiler was not invoked with {@code -parameters}, any parameter may lack a name.
+     * A warning is logged proactively as soon as any nameless parameter is detected.
      */
     ServiceReflectionResult reflectServiceMethod(String className, String methodName,
-            Set<String> argNames, Set<String> ctxKeys) {
+            Set<String> argNames, Set<String> ctxKeys, List<ColumnRef> parentPkColumns) {
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, "service reference is incomplete");
         }
@@ -125,6 +137,9 @@ class ServiceCatalog {
                     + BuildContext.candidateHint(methodName, declaredMethodNames));
             }
             var javaMethod = methods.get(0);
+            if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
+                emitParametersWarning();
+            }
             var params = new ArrayList<MethodRef.Param>();
             for (var p : javaMethod.getParameters()) {
                 String pName = p.isNamePresent() ? p.getName() : null;
@@ -135,13 +150,18 @@ class ServiceCatalog {
                 } else if (pName != null && ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(displayName, typeName, new ParamSource.Context()));
                 } else {
-                    Optional<SourcesRef> sourcesRef = classifySourcesType(p.getParameterizedType());
-                    if (sourcesRef.isEmpty()) {
+                    Optional<BatchKey> batchKey = classifySourcesType(p.getParameterizedType(), parentPkColumns);
+                    if (batchKey.isEmpty()) {
+                        if (pName == null) {
+                            return new ServiceReflectionResult(null,
+                                "parameter names not available for method '" + methodName + "' in class '" + className
+                                + "' — compile with -parameters flag (see warning above for instructions)");
+                        }
                         return new ServiceReflectionResult(null,
                             "parameter '" + displayName + "' in method '" + methodName
                             + "' has an unrecognized sources type: '" + typeName + "'");
                     }
-                    params.add(new MethodRef.Param.Sourced(displayName, sourcesRef.get()));
+                    params.add(new MethodRef.Param.Sourced(displayName, batchKey.get()));
                 }
             }
             return new ServiceReflectionResult(
@@ -153,10 +173,107 @@ class ServiceCatalog {
     }
 
     /**
-     * Classifies the element type of a {@code List<?>} SOURCES parameter into a {@link SourcesRef}
-     * variant, or returns {@link Optional#empty()} when the type is not recognised.
+     * Loads the table-method class and method via reflection and classifies each parameter.
+     *
+     * <p>Parameters whose type is assignable to {@link org.jooq.Table} get {@link ParamSource.Table};
+     * parameters whose name matches a GraphQL argument get {@link ParamSource.Arg};
+     * parameters whose name matches a context key get {@link ParamSource.Context}.
+     * Any other parameter is an error.
+     *
+     * <p>If the compiler was not invoked with {@code -parameters}, any parameter may lack a name.
+     * A warning is logged proactively as soon as any nameless parameter is detected — even if
+     * type-based classification would otherwise succeed — so that the user is notified regardless
+     * of whether all parameters happen to have distinct types.
      */
-    static Optional<SourcesRef> classifySourcesType(java.lang.reflect.Type paramType) {
+    ServiceReflectionResult reflectTableMethod(String className, String methodName,
+            Set<String> argNames, Set<String> ctxKeys) {
+        if (className == null || methodName == null) {
+            return new ServiceReflectionResult(null, "table method reference is incomplete");
+        }
+        try {
+            Class<?> cls = Class.forName(className);
+            var methods = Arrays.stream(cls.getDeclaredMethods())
+                .filter(m -> m.getName().equals(methodName))
+                .toList();
+            if (methods.isEmpty()) {
+                var declaredMethodNames = Arrays.stream(cls.getDeclaredMethods())
+                    .map(java.lang.reflect.Method::getName)
+                    .distinct()
+                    .toList();
+                return new ServiceReflectionResult(null,
+                    "method '" + methodName + "' not found in class '" + className + "'"
+                    + BuildContext.candidateHint(methodName, declaredMethodNames));
+            }
+            var javaMethod = methods.get(0);
+            if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
+                emitParametersWarning();
+            }
+            var params = new ArrayList<MethodRef.Param>();
+            boolean foundTable = false;
+            for (var p : javaMethod.getParameters()) {
+                if (org.jooq.Table.class.isAssignableFrom(p.getType())) {
+                    String paramName = p.isNamePresent() ? p.getName() : "table";
+                    params.add(new MethodRef.Param.Typed(paramName,
+                        p.getParameterizedType().getTypeName(), new ParamSource.Table()));
+                    foundTable = true;
+                    continue;
+                }
+                String pName = p.isNamePresent() ? p.getName() : null;
+                if (pName == null) {
+                    return new ServiceReflectionResult(null,
+                        "parameter names not available for method '" + methodName + "' in class '" + className
+                        + "' — compile with -parameters flag (see warning above for instructions)");
+                }
+                String typeName = p.getParameterizedType().getTypeName();
+                if (argNames.contains(pName)) {
+                    params.add(new MethodRef.Param.Typed(pName, typeName, new ParamSource.Arg()));
+                } else if (ctxKeys.contains(pName)) {
+                    params.add(new MethodRef.Param.Typed(pName, typeName, new ParamSource.Context()));
+                } else {
+                    return new ServiceReflectionResult(null,
+                        "parameter '" + pName + "' in method '" + methodName
+                        + "' is not a Table<?> parameter, not a GraphQL argument, and not a context key");
+                }
+            }
+            if (!foundTable) {
+                return new ServiceReflectionResult(null,
+                    "method '" + methodName + "' in class '" + className
+                    + "' has no Table<?> parameter — @tableMethod requires exactly one Table<?> parameter");
+            }
+            return new ServiceReflectionResult(
+                new MethodRef(className, methodName, javaMethod.getReturnType().getName(), List.copyOf(params)),
+                null);
+        } catch (ClassNotFoundException e) {
+            return new ServiceReflectionResult(null, "class '" + className + "' could not be loaded");
+        }
+    }
+
+    private void emitParametersWarning() {
+        if (!parametersWarningEmitted) {
+            parametersWarningEmitted = true;
+            LOGGER.warn("Parameter names are not available — the class was compiled without the -parameters flag.\n"
+                + "  To fix: add <compilerArg>-parameters</compilerArg> to maven-compiler-plugin in your pom.xml:\n"
+                + "    <plugin>\n"
+                + "      <groupId>org.apache.maven.plugins</groupId>\n"
+                + "      <artifactId>maven-compiler-plugin</artifactId>\n"
+                + "      <configuration>\n"
+                + "        <compilerArgs><arg>-parameters</arg></compilerArgs>\n"
+                + "      </configuration>\n"
+                + "    </plugin>");
+        }
+    }
+
+    /**
+     * Classifies the element type of a {@code List<?>} SOURCES parameter into a {@link BatchKey}
+     * variant, or returns {@link Optional#empty()} when the type is not recognised.
+     *
+     * <p>For column-based variants ({@code RowN<?>}, {@code RecordN<?>}), {@code parentPkColumns}
+     * is used as the authoritative key column list. The column types from the parent PK are used
+     * in the generated method signature; the user's declared type args are used only to determine
+     * the arity and variant. Pass {@link List#of()} when no parent table context is available.
+     */
+    static Optional<BatchKey> classifySourcesType(java.lang.reflect.Type paramType,
+            List<ColumnRef> parentPkColumns) {
         if (!(paramType instanceof java.lang.reflect.ParameterizedType pt)
                 || pt.getRawType() != java.util.List.class) {
             return Optional.empty();
@@ -173,24 +290,21 @@ class ServiceCatalog {
             if (rawName.startsWith("org.jooq.Row")) {
                 String suffix = rawName.substring("org.jooq.Row".length());
                 if (suffix.matches("\\d+")) {
-                    List<String> pkTypes = Arrays.stream(ept.getActualTypeArguments())
-                        .map(java.lang.reflect.Type::getTypeName)
-                        .toList();
-                    return Optional.of(new SourcesRef.RowKeyed(pkTypes));
+                    return Optional.of(new BatchKey.RowKeyed(parentPkColumns));
                 }
             }
             if (rawName.startsWith("org.jooq.Record")) {
                 String suffix = rawName.substring("org.jooq.Record".length());
                 if (suffix.matches("\\d+")) {
-                    List<String> pkTypes = Arrays.stream(ept.getActualTypeArguments())
-                        .map(java.lang.reflect.Type::getTypeName)
-                        .toList();
-                    return Optional.of(new SourcesRef.RecordKeyed(pkTypes));
+                    return Optional.of(new BatchKey.RecordKeyed(parentPkColumns));
                 }
             }
         } else if (elementType instanceof Class<?> elementClass
                 && org.jooq.TableRecord.class.isAssignableFrom(elementClass)) {
-            return Optional.of(new SourcesRef.TableRecordKeyed(elementClass.getName()));
+            return Optional.of(new BatchKey.ObjectBased(elementClass.getName()));
+        } else if (elementType instanceof Class<?> elementClass) {
+            // Non-TableRecord class — result DTO parent
+            return Optional.of(new BatchKey.ObjectBased(elementClass.getName()));
         }
 
         return Optional.empty();

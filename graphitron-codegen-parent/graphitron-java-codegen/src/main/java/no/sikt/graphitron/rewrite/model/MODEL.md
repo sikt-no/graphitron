@@ -174,7 +174,7 @@ graph LR
     CR["ColumnRef"]:::val
     MR["MethodRef"]:::val
     PS["ParamSource\n«sealed»"]:::val
-    SR["SourcesRef\n«sealed»"]:::val
+    SR["BatchKey\n«sealed»"]:::val
     PR["ParticipantRef"]:::val
 ```
 

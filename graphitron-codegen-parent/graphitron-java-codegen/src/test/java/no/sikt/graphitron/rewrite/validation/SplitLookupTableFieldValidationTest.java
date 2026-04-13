@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -22,18 +23,20 @@ class SplitLookupTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), wrapper);
     }
 
+    private static final BatchKey PARENT_BATCH_KEY = new BatchKey.RowKeyed(List.of());
+
     enum Case implements ValidatorCase {
 
         VALID_SINGLE("single return — valid",
-            new SplitLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null),
+            new SplitLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
             List.of()),
 
         VALID_LIST("list return — valid",
-            new SplitLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), new OrderBySpec.None(), null),
+            new SplitLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
             List.of()),
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field",
-            new SplitLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true)), List.of(), List.of(), new OrderBySpec.None(), null),
+            new SplitLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true)), List.of(), List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
             List.of("Field 'films': lookup fields must not return a connection"));
 
         private final String description;

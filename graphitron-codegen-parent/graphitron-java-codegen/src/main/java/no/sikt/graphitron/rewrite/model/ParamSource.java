@@ -12,7 +12,7 @@ package no.sikt.graphitron.rewrite.model;
  *   <li>{@link Context} — the parameter is a context argument; bound via
  *       {@code GraphitronContext.getContextArgument(dfe, name)}.</li>
  *   <li>{@link Sources} — the DataLoader batch-key list; element type and construction strategy
- *       are classified by the contained {@link SourcesRef}.</li>
+ *       are classified by the contained {@link BatchKey}.</li>
  *   <li>{@link DslContext} — the jOOQ {@code DSLContext}; injected by the framework.</li>
  *   <li>{@link Table} — the jOOQ {@code Table<?>} instance for the field's target table.</li>
  *   <li>{@link SourceTable} — the jOOQ {@code Table<?>} instance for the parent/source table;
@@ -41,9 +41,9 @@ public sealed interface ParamSource
 
     /**
      * The DataLoader batch-key list ({@code List<KeyType>}).
-     * The element type and key-construction strategy are classified by {@link SourcesRef}.
+     * The element type and key-construction strategy are determined by {@link BatchKey}.
      */
-    record Sources(SourcesRef sourcesRef) implements ParamSource {}
+    record Sources(BatchKey batchKey) implements ParamSource {}
 
     /** The jOOQ {@code DSLContext}; injected by the framework. */
     record DslContext() implements ParamSource {}

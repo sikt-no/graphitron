@@ -18,8 +18,8 @@ import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
-import no.sikt.graphitron.rewrite.model.SourcesRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -312,11 +312,11 @@ public class TypeFieldsGenerator {
      * Single: returns {@code CompletableFuture<Record>}.
      *
      * <p>The DataLoader key type and key construction expression are determined by the
-     * {@link SourcesRef} variant of the SOURCES parameter:
+     * {@link BatchKey} variant of the SOURCES parameter:
      * <ul>
-     *   <li>{@link SourcesRef.RowKeyed} — key is {@code RowN<T1,...>} built via {@code DSL.row(...)}</li>
-     *   <li>{@link SourcesRef.RecordKeyed} — key is {@code RecordN<T1,...>} built via {@code record.into(field1, field2, ...)}</li>
-     *   <li>{@link SourcesRef.TableRecordKeyed} — key is the whole parent record cast to the declared table-record type</li>
+     *   <li>{@link BatchKey.RowKeyed} — key is {@code RowN<T1,...>} built via {@code DSL.row(...)}</li>
+     *   <li>{@link BatchKey.RecordKeyed} — key is {@code RecordN<T1,...>} built via {@code record.into(field1, field2, ...)}</li>
+     *   <li>{@link BatchKey.ObjectBased} — key is the whole parent object cast to the declared type</li>
      * </ul>
      */
     private static MethodSpec buildServiceDataFetcher(
@@ -335,13 +335,12 @@ public class TypeFieldsGenerator {
             .map(p -> (MethodRef.Param.Sourced) p)
             .findFirst()
             .orElseThrow();
-        var sourcesRef = sourcesParam.sourcesRef();
+        var batchKey = sourcesParam.batchKey();
 
-        TypeName keyType = switch (sourcesRef) {
-            case SourcesRef.RowKeyed rk          -> buildRowKeyType(rk.pkJavaTypes());
-            case SourcesRef.RecordKeyed rk       -> buildRecordNKeyType(rk.pkJavaTypes());
-            case SourcesRef.TableRecordKeyed trk -> ClassName.bestGuess(trk.fqClassName());
-            case SourcesRef.ResultKeyed rk       -> ClassName.bestGuess(rk.fqClassName());
+        TypeName keyType = switch (batchKey) {
+            case BatchKey.RowKeyed rk    -> buildRowKeyType(rk.keyColumns());
+            case BatchKey.RecordKeyed rk -> buildRecordNKeyType(rk.keyColumns());
+            case BatchKey.ObjectBased ob -> ClassName.bestGuess(ob.fqClassName());
         };
 
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
@@ -367,12 +366,12 @@ public class TypeFieldsGenerator {
                 "    .computeIfAbsent(name, k -> $T.newDataLoaderWithContext($L));\n",
                 loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
-        // Emit the key expression — varies by SourcesRef variant.
+        // Emit the key expression — varies by BatchKey variant.
         var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
-        switch (sourcesRef) {
-            case SourcesRef.RowKeyed rk -> {
+        switch (batchKey) {
+            case BatchKey.RowKeyed rk -> {
                 String tableField = prt.javaFieldName();
-                List<ColumnRef> pkCols = prt.primaryKeyColumns();
+                List<ColumnRef> pkCols = rk.keyColumns();
                 var rowArgs = CodeBlock.builder();
                 for (int i = 0; i < pkCols.size(); i++) {
                     if (i > 0) rowArgs.add(", ");
@@ -381,9 +380,9 @@ public class TypeFieldsGenerator {
                 }
                 methodBuilder.addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build());
             }
-            case SourcesRef.RecordKeyed rk -> {
+            case BatchKey.RecordKeyed rk -> {
                 String tableField = prt.javaFieldName();
-                List<ColumnRef> pkCols = prt.primaryKeyColumns();
+                List<ColumnRef> pkCols = rk.keyColumns();
                 var intoArgs = CodeBlock.builder();
                 for (int i = 0; i < pkCols.size(); i++) {
                     if (i > 0) intoArgs.add(", ");
@@ -392,9 +391,7 @@ public class TypeFieldsGenerator {
                 methodBuilder.addStatement("$T key = (($T) env.getSource()).into($L)",
                     keyType, RECORD, intoArgs.build());
             }
-            case SourcesRef.TableRecordKeyed trk ->
-                methodBuilder.addStatement("$T key = ($T) env.getSource()", keyType, keyType);
-            case SourcesRef.ResultKeyed rk ->
+            case BatchKey.ObjectBased ob ->
                 methodBuilder.addStatement("$T key = ($T) env.getSource()", keyType, keyType);
         }
 
@@ -413,11 +410,11 @@ public class TypeFieldsGenerator {
      * </ol>
      *
      * <p>The {@code keys} parameter type mirrors the service method's SOURCES parameter type,
-     * derived from the {@link SourcesRef} variant:
+     * derived from the {@link BatchKey} variant:
      * <ul>
-     *   <li>{@link SourcesRef.RowKeyed} — {@code List<RowN<T1,...>>}</li>
-     *   <li>{@link SourcesRef.RecordKeyed} — {@code List<RecordN<T1,...>>}</li>
-     *   <li>{@link SourcesRef.TableRecordKeyed} — {@code List<SomeTableRecord>}</li>
+     *   <li>{@link BatchKey.RowKeyed} — {@code List<RowN<T1,...>>}</li>
+     *   <li>{@link BatchKey.RecordKeyed} — {@code List<RecordN<T1,...>>}</li>
+     *   <li>{@link BatchKey.ObjectBased} — {@code List<SomeClass>}</li>
      * </ul>
      */
     private static MethodSpec buildServiceRowsMethod(
@@ -436,13 +433,12 @@ public class TypeFieldsGenerator {
             .map(p -> (MethodRef.Param.Sourced) p)
             .findFirst()
             .orElseThrow();
-        var sourcesRef = sourcesParam.sourcesRef();
+        var batchKey = sourcesParam.batchKey();
 
-        TypeName keysElementType = switch (sourcesRef) {
-            case SourcesRef.RowKeyed rk          -> buildRowKeyType(rk.pkJavaTypes());
-            case SourcesRef.RecordKeyed rk       -> buildRecordNKeyType(rk.pkJavaTypes());
-            case SourcesRef.TableRecordKeyed trk -> ClassName.bestGuess(trk.fqClassName());
-            case SourcesRef.ResultKeyed rk       -> ClassName.bestGuess(rk.fqClassName());
+        TypeName keysElementType = switch (batchKey) {
+            case BatchKey.RowKeyed rk    -> buildRowKeyType(rk.keyColumns());
+            case BatchKey.RecordKeyed rk -> buildRecordNKeyType(rk.keyColumns());
+            case BatchKey.ObjectBased ob -> ClassName.bestGuess(ob.fqClassName());
         };
 
         var builder = MethodSpec.methodBuilder("load" + capitalize(sf.name()))
@@ -480,7 +476,7 @@ public class TypeFieldsGenerator {
 
         // Return via table selectMany / selectOne (threading dfe for context access)
         var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.types", tb.returnTypeName());
-        boolean isRowKeyed = sourcesRef instanceof SourcesRef.RowKeyed;
+        boolean isRowKeyed = batchKey instanceof BatchKey.RowKeyed;
         String selectManyName = isRowKeyed ? "selectManyByRowKeys" : "selectManyByRecordKeys";
         String selectOneName = isRowKeyed ? "selectOneByRowKeys" : "selectOneByRecordKeys";
         if (isList) {
@@ -509,34 +505,34 @@ public class TypeFieldsGenerator {
 
     /**
      * Builds the typed {@code Row1<T>} / {@code Row2<T1,T2>} / … key type for a DataLoader from
-     * the ordered list of primary-key column Java type names (e.g. {@code ["java.lang.Long"]}).
+     * the ordered list of primary-key {@link ColumnRef} entries.
      *
      * <p>Falls back to the raw {@link #ROW} interface when the list is empty.
      */
-    private static TypeName buildRowKeyType(List<String> pkJavaTypes) {
-        if (pkJavaTypes.isEmpty()) {
+    private static TypeName buildRowKeyType(List<ColumnRef> keyColumns) {
+        if (keyColumns.isEmpty()) {
             return ROW;
         }
-        ClassName rowNClass = ClassName.get("org.jooq", "Row" + pkJavaTypes.size());
-        TypeName[] typeArgs = pkJavaTypes.stream()
-            .map(ClassName::bestGuess)
+        ClassName rowNClass = ClassName.get("org.jooq", "Row" + keyColumns.size());
+        TypeName[] typeArgs = keyColumns.stream()
+            .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
             .toArray(TypeName[]::new);
         return ParameterizedTypeName.get(rowNClass, typeArgs);
     }
 
     /**
      * Builds the typed {@code Record1<T>} / {@code Record2<T1,T2>} / … key type for a DataLoader
-     * from the ordered list of primary-key column Java type names (e.g. {@code ["java.lang.Long"]}).
+     * from the ordered list of primary-key {@link ColumnRef} entries.
      *
      * <p>Falls back to the raw {@link #RECORD} interface when the list is empty.
      */
-    private static TypeName buildRecordNKeyType(List<String> pkJavaTypes) {
-        if (pkJavaTypes.isEmpty()) {
+    private static TypeName buildRecordNKeyType(List<ColumnRef> keyColumns) {
+        if (keyColumns.isEmpty()) {
             return RECORD;
         }
-        ClassName recordNClass = ClassName.get("org.jooq", "Record" + pkJavaTypes.size());
-        TypeName[] typeArgs = pkJavaTypes.stream()
-            .map(ClassName::bestGuess)
+        ClassName recordNClass = ClassName.get("org.jooq", "Record" + keyColumns.size());
+        TypeName[] typeArgs = keyColumns.stream()
+            .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
             .toArray(TypeName[]::new);
         return ParameterizedTypeName.get(recordNClass, typeArgs);
     }
@@ -552,7 +548,12 @@ public class TypeFieldsGenerator {
     }
 
     private static MethodSpec buildSplitRowsMethod(ChildField.SplitTableField field) {
-        var sourcesType = ParameterizedTypeName.get(LIST, RECORD);
+        TypeName keysElementType = switch (field.batchKey()) {
+            case BatchKey.RowKeyed rk    -> buildRowKeyType(rk.keyColumns());
+            case BatchKey.RecordKeyed rk -> buildRecordNKeyType(rk.keyColumns());
+            case BatchKey.ObjectBased ob -> ClassName.bestGuess(ob.fqClassName());
+        };
+        var sourcesType = ParameterizedTypeName.get(LIST, keysElementType);
         return MethodSpec.methodBuilder("rows" + capitalize(field.name()))
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object.class)

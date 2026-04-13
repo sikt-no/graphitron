@@ -35,7 +35,7 @@ public record MethodRef(
      *       {@code DslContext}, {@code Table}, {@code SourceTable}). The Java type is captured
      *       from reflection and stored explicitly.</li>
      *   <li>{@link Sourced} — a DataLoader batch-key parameter ({@code Sources}). The Java type
-     *       is derived from the {@link SourcesRef} variant so no separate {@code typeName} is
+     *       is derived from the {@link BatchKey} variant so no separate {@code typeName} is
      *       stored; {@link #typeName()} and {@link #source()} are computed on demand.</li>
      * </ul>
      *
@@ -60,17 +60,17 @@ public record MethodRef(
 
         /**
          * A DataLoader batch-key parameter whose Java type is fully determined by the
-         * {@link SourcesRef} variant — no separate {@code typeName} field is needed.
+         * {@link BatchKey} variant — no separate {@code typeName} field is needed.
          *
          * <p>{@link #typeName()} returns the derived generic list type
          * (e.g. {@code "java.util.List<org.jooq.Row1<java.lang.Integer>>"} for
-         * {@link SourcesRef.RowKeyed} with one {@code Integer} PK column).
+         * {@link BatchKey.RowKeyed} with one {@code Integer} PK column).
          *
-         * <p>{@link #source()} returns {@code new ParamSource.Sources(sourcesRef)}.
+         * <p>{@link #source()} returns {@code new ParamSource.Sources(batchKey)}.
          */
-        record Sourced(String name, SourcesRef sourcesRef) implements Param {
-            @Override public String typeName() { return SourcesRef.javaTypeName(sourcesRef); }
-            @Override public ParamSource source() { return new ParamSource.Sources(sourcesRef); }
+        record Sourced(String name, BatchKey batchKey) implements Param {
+            @Override public String typeName() { return batchKey.javaTypeName(); }
+            @Override public ParamSource source() { return new ParamSource.Sources(batchKey); }
         }
     }
 }

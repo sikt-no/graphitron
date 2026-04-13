@@ -45,7 +45,7 @@ class RecordTableFieldValidationTest {
 
         FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause; no errors",
             new RecordTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(),
-                List.of(new ConditionFilter(new MethodRef("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()), List.of())),
+                List.of(new ConditionFilter(new MethodRef("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()))),
                 new OrderBySpec.None(), null),
             List.of()),
 

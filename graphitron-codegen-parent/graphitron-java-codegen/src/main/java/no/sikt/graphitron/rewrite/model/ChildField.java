@@ -112,7 +112,8 @@ public sealed interface ChildField extends GraphitronField
         List<JoinStep> joinPath,
         List<WhereFilter> filters,
         OrderBySpec orderBy,
-        PaginationSpec pagination
+        PaginationSpec pagination,
+        BatchKey batchKey
     ) implements TableTargetField {}
 
     record LookupTableField(
@@ -134,17 +135,20 @@ public sealed interface ChildField extends GraphitronField
         List<JoinStep> joinPath,
         List<WhereFilter> filters,
         OrderBySpec orderBy,
-        PaginationSpec pagination
+        PaginationSpec pagination,
+        BatchKey batchKey
     ) implements TableTargetField {}
 
     /**
      * A child field using {@code @tableMethod} — the developer provides a pre-filtered
      * {@code Table<?>}. The method handles all SQL generation.
      *
-     * <p>{@code contextArguments} lists the GraphQL argument names that are resolved from the
-     * framework context rather than the incoming request. This is retained because {@code @tableMethod}
-     * does not perform method reflection — there is no {@link MethodRef} to encode parameter binding
-     * via {@link ParamSource}.
+     * <p>The method signature is:
+     * <pre>
+     *     Table&lt;?&gt; method(Table&lt;?&gt; targetTable, arg1, arg2, ...)
+     * </pre>
+     * where the table parameter has {@link ParamSource.Table} as its source, and subsequent
+     * parameters have {@link ParamSource.Arg} or {@link ParamSource.Context}.
      */
     record TableMethodField(
         String parentTypeName,
@@ -152,9 +156,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef returnType,
         List<JoinStep> joinPath,
-        String tableMethodClassName,
-        String tableMethodMethodName,
-        List<String> contextArguments
+        MethodRef method
     ) implements ChildField {}
 
     record TableInterfaceField(

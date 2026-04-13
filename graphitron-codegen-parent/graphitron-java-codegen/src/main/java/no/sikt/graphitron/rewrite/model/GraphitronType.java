@@ -79,6 +79,16 @@ public sealed interface GraphitronType
                 GraphitronType.JooqRecordType, GraphitronType.JooqTableRecordType {
 
         List<FieldCoordinates> fieldCoordinates();
+
+        /** The binary class name of the backing Java class, or {@code null} when not specified. */
+        default String fqClassName() {
+            return switch (this) {
+                case JavaRecordType j      -> j.fqClassName();
+                case PojoResultType p      -> p.fqClassName();
+                case JooqRecordType j      -> j.fqClassName();
+                case JooqTableRecordType j -> j.fqClassName();
+            };
+        }
     }
 
     /**

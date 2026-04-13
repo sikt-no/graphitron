@@ -51,19 +51,19 @@ public sealed interface QueryField extends RootField
      * A root query field using {@code @tableMethod}. The developer provides a pre-filtered
      * {@code Table<?>}; Graphitron generates a fetcher around it.
      *
-     * <p>{@code contextArguments} lists the GraphQL argument names that are resolved from the
-     * framework context rather than the incoming request. Retained because {@code @tableMethod}
-     * does not perform method reflection — there is no {@link MethodRef} to encode parameter
-     * binding via {@link ParamSource}.
+     * <p>The method signature is:
+     * <pre>
+     *     Table&lt;?&gt; method(Table&lt;?&gt; targetTable, arg1, arg2, ...)
+     * </pre>
+     * where the table parameter has {@link ParamSource.Table} as its source, and subsequent
+     * parameters have {@link ParamSource.Arg} or {@link ParamSource.Context}.
      */
     record QueryTableMethodTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        String tableMethodClassName,
-        String tableMethodMethodName,
-        List<String> contextArguments
+        MethodRef method
     ) implements QueryField {}
 
     record QueryNodeField(

@@ -9,7 +9,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
-import no.sikt.graphitron.rewrite.model.SourcesRef;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -32,11 +32,11 @@ class ServiceFieldValidationTest {
     enum RecordCase implements ValidatorCase {
 
         NO_PATH("no @reference — no lift condition; valid for non-table return",
-            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true)), List.of(), RESOLVED_METHOD),
+            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(), RESOLVED_METHOD),
             List.of()),
 
         WITH_LIFT_CONDITION("lift condition with a resolved method",
-            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true)), List.of(
+            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(
                 new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "liftCondition", "org.jooq.Condition",
                     List.of(new MethodRef.Param.Typed("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))))),
                 RESOLVED_METHOD),
@@ -76,7 +76,7 @@ class ServiceFieldValidationTest {
                     new FieldWrapper.Single(true)),
                 List.of(), List.of(), new OrderBySpec.None(), null,
                 new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
-                    List.of(new MethodRef.Param.Sourced("filmKeys", new SourcesRef.RowKeyed(List.of("java.lang.Integer")))))),
+                    List.of(new MethodRef.Param.Sourced("filmKeys", new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))))))),
             List.of());
 
         private final String description;
@@ -106,10 +106,13 @@ class ServiceFieldValidationTest {
 
     /**
      * Cases that require a real {@link GraphitronType.TableType} parent so the validator can
-     * inspect the parent table's primary key and compare it against the SOURCES parameter type.
-     * These use {@code schema(parentType, fieldName, field)} rather than the {@code validate(field)}
-     * shortcut, which would wrap the field in a {@link GraphitronType.RootType} and skip all PK
-     * checks.
+     * inspect the parent table's primary key. These use {@code schema(parentType, fieldName, field)}
+     * rather than the {@code validate(field)} shortcut, which would wrap the field in a
+     * {@link GraphitronType.RootType} and skip all PK checks.
+     *
+     * <p>With {@link BatchKey}, key columns are guaranteed to match the parent PK by construction
+     * (they are passed in from {@code parentPkColumns} during reflection). The validator only
+     * needs to check that Row-keyed and Record-keyed parameters have a parent with a primary key.
      */
     interface TablePkCase {
         GraphitronType parentType();
@@ -137,94 +140,62 @@ class ServiceFieldValidationTest {
     private static final ReturnTypeRef.TableBoundReturnType FILM_RETURN =
         new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE_SINGLE_PK, new FieldWrapper.Single(true));
 
-    private static ServiceTableField serviceField(SourcesRef sourcesRef) {
+    private static ServiceTableField serviceField(BatchKey batchKey) {
         return new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
             List.of(), List.of(), new OrderBySpec.None(), null,
             new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
-                List.of(new MethodRef.Param.Sourced("filmKeys", sourcesRef))));
+                List.of(new MethodRef.Param.Sourced("filmKeys", batchKey))));
     }
 
     enum TablePkValidationCase implements TablePkCase {
 
-        ROW_KEYED_MATCHING_TYPES(
-            "RowKeyed — types match parent PK — no errors",
+        ROW_KEYED_SINGLE_PK(
+            "RowKeyed — single-column parent PK — no errors",
             filmTableType(FILM_TABLE_SINGLE_PK),
-            serviceField(new SourcesRef.RowKeyed(List.of("java.lang.Integer"))),
+            serviceField(new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
             List.of()),
-
-        ROW_KEYED_TYPE_MISMATCH(
-            "RowKeyed — types differ from parent PK — type mismatch error",
-            filmTableType(FILM_TABLE_SINGLE_PK),
-            serviceField(new SourcesRef.RowKeyed(List.of("java.lang.Long"))),
-            List.of("Field 'externalChild': SOURCES parameter 'filmKeys' must be of type " +
-                "java.util.List<org.jooq.Row1<java.lang.Integer>>, found: " +
-                "java.util.List<org.jooq.Row1<java.lang.Long>>")),
 
         ROW_KEYED_PARENT_NO_PK(
             "RowKeyed — parent table has no PK — missing PK error",
             filmTableType(FILM_TABLE_NO_PK),
-            serviceField(new SourcesRef.RowKeyed(List.of("java.lang.Integer"))),
+            serviceField(new BatchKey.RowKeyed(List.of())),
             List.of("Field 'externalChild': @service on a table-bound return type requires the " +
                 "parent table 'film' to have a primary key")),
 
         ROW_KEYED_COMPOSITE_PK(
-            "RowKeyed — parent table has composite PK, types match — no errors",
+            "RowKeyed — parent table has composite PK — no errors",
             filmTableType(FILM_TABLE_COMPOSITE_PK),
-            serviceField(new SourcesRef.RowKeyed(List.of("java.lang.Integer", "java.lang.Integer"))),
+            serviceField(new BatchKey.RowKeyed(FILM_TABLE_COMPOSITE_PK.primaryKeyColumns())),
             List.of()),
 
-        RECORD_KEYED_MATCHING_TYPES(
-            "RecordKeyed — types match parent PK — no errors",
+        RECORD_KEYED_SINGLE_PK(
+            "RecordKeyed — single-column parent PK — no errors",
             filmTableType(FILM_TABLE_SINGLE_PK),
-            serviceField(new SourcesRef.RecordKeyed(List.of("java.lang.Integer"))),
+            serviceField(new BatchKey.RecordKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
             List.of()),
 
         RECORD_KEYED_COMPOSITE_PK(
-            "RecordKeyed — parent table has composite PK, types match — no errors",
+            "RecordKeyed — parent table has composite PK — no errors",
             filmTableType(FILM_TABLE_COMPOSITE_PK),
-            serviceField(new SourcesRef.RecordKeyed(List.of("java.lang.Integer", "java.lang.Integer"))),
+            serviceField(new BatchKey.RecordKeyed(FILM_TABLE_COMPOSITE_PK.primaryKeyColumns())),
             List.of()),
 
-        RECORD_KEYED_TYPE_MISMATCH(
-            "RecordKeyed — types differ from parent PK — type mismatch error",
-            filmTableType(FILM_TABLE_SINGLE_PK),
-            serviceField(new SourcesRef.RecordKeyed(List.of("java.lang.Long"))),
-            List.of("Field 'externalChild': SOURCES parameter 'filmKeys' must be of type " +
-                "java.util.List<org.jooq.Record1<java.lang.Integer>>, found: " +
-                "java.util.List<org.jooq.Record1<java.lang.Long>>")),
-
-        TABLE_RECORD_KEYED(
-            "TableRecordKeyed — no PK constraint on parent table — no errors",
+        OBJECT_BASED(
+            "ObjectBased — no PK constraint on parent table — no errors",
             filmTableType(FILM_TABLE_NO_PK),
-            serviceField(new SourcesRef.TableRecordKeyed("no.sikt.graphitron.jooq.generated.tables.records.FilmRecord")),
+            serviceField(new BatchKey.ObjectBased("no.sikt.graphitron.jooq.generated.tables.records.FilmRecord")),
             List.of()),
 
-        ROW_KEYED_COMPOSITE_PK_TYPE_MISMATCH(
-            "RowKeyed — composite PK parent AND wrong types — only the type-mismatch error fires",
-            filmTableType(FILM_TABLE_COMPOSITE_PK),
-            new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
-                List.of(), List.of(), new OrderBySpec.None(), null,
-                new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
-                    // Single type arg; parent has 2-col PK — type list differs in both value and size
-                    List.of(new MethodRef.Param.Sourced("filmKeys", new SourcesRef.RowKeyed(List.of("java.lang.Long")))))),
-            List.of(
-                "Field 'externalChild': SOURCES parameter 'filmKeys' must be of type " +
-                    "java.util.List<org.jooq.Row2<java.lang.Integer, java.lang.Integer>>, found: " +
-                    "java.util.List<org.jooq.Row1<java.lang.Long>>")),
-
-        MULTIPLE_SOURCES_ONE_WRONG(
-            "two SOURCES params, one correct RowKeyed and one wrong RowKeyed — only the wrong param errors",
+        MULTIPLE_SOURCES_ROW_KEYED(
+            "two RowKeyed SOURCES params — no errors when parent has PK",
             filmTableType(FILM_TABLE_SINGLE_PK),
             new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
                 List.of(), List.of(), new OrderBySpec.None(), null,
                 new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
                     List.of(
-                        new MethodRef.Param.Sourced("filmKeys1", new SourcesRef.RowKeyed(List.of("java.lang.Integer"))),
-                        new MethodRef.Param.Sourced("filmKeys2", new SourcesRef.RowKeyed(List.of("java.lang.Long")))))),
-            List.of(
-                "Field 'externalChild': SOURCES parameter 'filmKeys2' must be of type " +
-                    "java.util.List<org.jooq.Row1<java.lang.Integer>>, found: " +
-                    "java.util.List<org.jooq.Row1<java.lang.Long>>"));
+                        new MethodRef.Param.Sourced("filmKeys1", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
+                        new MethodRef.Param.Sourced("filmKeys2", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns()))))),
+            List.of());
 
         private final String description;
         private final GraphitronType parentType;

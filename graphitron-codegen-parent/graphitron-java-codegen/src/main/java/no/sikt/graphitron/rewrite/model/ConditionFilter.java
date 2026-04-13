@@ -1,7 +1,5 @@
 package no.sikt.graphitron.rewrite.model;
 
-import java.util.List;
-
 /**
  * A developer-supplied {@code @condition} method on a {@code FIELD_DEFINITION}.
  *
@@ -20,10 +18,9 @@ import java.util.List;
  * have {@link ParamSource.Arg} (bound via {@code DataFetchingEnvironment.getArgument}) or
  * {@link ParamSource.Context} (bound via {@code GraphitronContext.getContextArgument}).
  *
- * <p>{@code contextArgs} is the list of parameter names that resolve via
- * {@link ParamSource.Context}. This list is used both to identify which parameters bypass the
- * normal argument binding and to validate at build time that each name is a declared
- * {@code contextArguments} entry on the directive.
+ * <p>Context argument names are those parameters where
+ * {@code param.source() instanceof ParamSource.Context} — derivable on demand from
+ * {@link MethodRef#params()} without a separate field.
  *
  * <p>The {@code override} flag from the {@code @condition} directive is consumed by the builder:
  * when {@code override: true} is set, the builder omits any {@link GeneratedConditionFilter} that
