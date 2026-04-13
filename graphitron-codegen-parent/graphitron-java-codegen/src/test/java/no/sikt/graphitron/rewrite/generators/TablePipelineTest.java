@@ -95,7 +95,44 @@ class TablePipelineTest {
         assertThat(classes).doesNotContain("Query");
     }
 
+    // ===== fields() method =====
+
+    @Test
+    void fieldsMethod_containsScalarColumnsFromSchema() {
+        var filmSpec = findSpec("Film", """
+            type Film @table(name: "film") { title: String, filmId: Int @field(name: "film_id") }
+            type Query { dummy: String }
+            """);
+        var fields = filmSpec.methodSpecs().stream()
+            .filter(m -> m.name().equals("fields")).findFirst().orElseThrow();
+        var code = fields.code().toString();
+        assertThat(code).contains("case \"title\"");
+        assertThat(code).contains("table.TITLE");
+        assertThat(code).contains("case \"filmId\"");
+        assertThat(code).contains("table.FILM_ID");
+    }
+
+    @Test
+    void fieldsMethod_excludesNotGeneratedFields() {
+        var filmSpec = findSpec("Film", """
+            type Film @table(name: "film") { title: String, hidden: String @notGenerated }
+            type Query { dummy: String }
+            """);
+        var fields = filmSpec.methodSpecs().stream()
+            .filter(m -> m.name().equals("fields")).findFirst().orElseThrow();
+        var code = fields.code().toString();
+        assertThat(code).contains("case \"title\"");
+        assertThat(code).doesNotContain("hidden");
+    }
+
     // ===== Helpers =====
+
+    private no.sikt.graphitron.javapoet.TypeSpec findSpec(String className, String sdl) {
+        return TableClassGenerator.generate(buildSchema(sdl)).stream()
+            .filter(t -> t.name().equals(className))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Class not found: " + className));
+    }
 
     private List<String> generate(String sdl) {
         return TableClassGenerator.generate(buildSchema(sdl)).stream()

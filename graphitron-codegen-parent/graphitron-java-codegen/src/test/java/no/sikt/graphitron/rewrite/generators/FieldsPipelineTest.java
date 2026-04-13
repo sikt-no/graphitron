@@ -87,6 +87,30 @@ class FieldsPipelineTest {
     }
 
     @Test
+    void columnField_readsFromSourceRecord() {
+        var filmFields = findSpec("FilmFields", """
+            type Film @table(name: "film") { title: String }
+            type Query { dummy: String }
+            """);
+        var title = filmFields.methodSpecs().stream()
+            .filter(m -> m.name().equals("title")).findFirst().orElseThrow();
+        assertThat(title.code().toString()).contains("env.getSource()");
+        assertThat(title.code().toString()).contains(".TITLE");
+        assertThat(title.code().toString()).doesNotContain("UnsupportedOperationException");
+    }
+
+    @Test
+    void columnField_withFieldDirective_usesRemappedColumn() {
+        var filmFields = findSpec("FilmFields", """
+            type Film @table(name: "film") { filmId: Int @field(name: "film_id") }
+            type Query { dummy: String }
+            """);
+        var filmId = filmFields.methodSpecs().stream()
+            .filter(m -> m.name().equals("filmId")).findFirst().orElseThrow();
+        assertThat(filmId.code().toString()).contains(".FILM_ID");
+    }
+
+    @Test
     void notGeneratedField_isExcluded() {
         var filmFields = findSpec("FilmFields", """
             type Film @table(name: "film") { title: String, hidden: String @notGenerated }

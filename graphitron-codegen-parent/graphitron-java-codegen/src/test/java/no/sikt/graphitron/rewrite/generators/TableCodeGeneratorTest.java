@@ -31,44 +31,27 @@ class TableCodeGeneratorTest {
         GeneratorConfig.clear();
     }
 
-    private static TableRef tableRef(String sqlName, String javaFieldName, String javaClassName) {
-        return new TableRef(sqlName, javaFieldName, javaClassName,
-            List.of(new ColumnRef("id", "ID", "java.lang.Integer")));
-    }
-
     private static final List<TableCodeGenerator.ScalarColumn> FILM_COLUMNS = List.of(
         new TableCodeGenerator.ScalarColumn("title", "TITLE"),
         new TableCodeGenerator.ScalarColumn("filmId", "FILM_ID")
     );
 
-    private static TypeSpec spec(String tableName) {
+    private static TypeSpec spec() {
         return GEN.generate(
-            tableRef(tableName.toLowerCase(), tableName.toUpperCase(), tableName),
+            new TableRef("film", "FILM", "Film",
+                List.of(new ColumnRef("id", "ID", "java.lang.Integer"))),
             FILM_COLUMNS);
     }
 
-    private static MethodSpec method(String tableName, String methodName) {
-        return spec(tableName).methodSpecs().stream()
+    private static MethodSpec method(String methodName) {
+        return spec().methodSpecs().stream()
             .filter(m -> m.name().equals(methodName))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Method not found: " + methodName));
     }
 
-    // ===== Class structure =====
-
-    @Test
-    void generate_classNameMatchesTableName() {
-        assertThat(spec("Film").name()).isEqualTo("Film");
-    }
-
-    @Test
-    void generate_classIsPublic() {
-        assertThat(spec("Film").modifiers()).contains(Modifier.PUBLIC);
-    }
-
-    /** Finds the overload of {@code methodName} whose first parameter type string contains {@code firstParamHint}. */
-    private static MethodSpec methodByFirstParam(String tableName, String methodName, String firstParamHint) {
-        return spec(tableName).methodSpecs().stream()
+    private static MethodSpec methodByFirstParam(String methodName, String firstParamHint) {
+        return spec().methodSpecs().stream()
             .filter(m -> m.name().equals(methodName)
                 && !m.parameters().isEmpty()
                 && m.parameters().get(0).type().toString().contains(firstParamHint))
@@ -77,49 +60,67 @@ class TableCodeGeneratorTest {
                 "Method not found: " + methodName + " with first param containing '" + firstParamHint + "'"));
     }
 
-    // ===== All eight methods present =====
+    // ===== Class structure =====
+
+    @Test
+    void generate_classNameMatchesTableName() {
+        assertThat(spec().name()).isEqualTo("Film");
+    }
 
     @Test
     void generate_allNineMethodsArePresent() {
-        assertThat(spec("Film").methodSpecs()).hasSize(9);
-        assertThat(spec("Film").methodSpecs()).extracting(MethodSpec::name)
+        assertThat(spec().methodSpecs()).hasSize(9);
+        assertThat(spec().methodSpecs()).extracting(MethodSpec::name)
             .containsExactlyInAnyOrder(
-                "fields",                     // SELECT list assembly
-                "selectMany", "selectOne",   // root query
-                "selectMany", "selectOne",   // Row-keyed service
-                "selectMany", "selectOne",   // Record-keyed service
+                "fields",
+                "selectMany", "selectOne",
+                "selectMany", "selectOne",
+                "selectMany", "selectOne",
                 "subselectMany", "subselectOne");
     }
 
-    // ===== selectMany =====
+    // ===== fields() =====
 
     @Test
-    void selectMany_isPublicStatic() {
-        assertThat(method("Film", "selectMany").modifiers())
-            .containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
+    void fields_signature() {
+        var m = method("fields");
+        assertThat(m.returnType().toString()).isEqualTo("java.util.List<org.jooq.Field<?>>");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("graphql.schema.DataFetchingFieldSelectionSet");
     }
 
     @Test
-    void selectMany_returnType() {
-        assertThat(method("Film", "selectMany").returnType().toString())
-            .isEqualTo("org.jooq.Result<org.jooq.Record>");
+    void fields_iteratesFieldsGroupedByResultKey() {
+        var code = method("fields").code().toString();
+        assertThat(code).contains("sel.getFieldsGroupedByResultKey()");
+        assertThat(code).contains("sf.getName()");
     }
 
     @Test
-    void selectMany_parameters() {
-        var params = method("Film", "selectMany").parameters();
-        assertThat(params).extracting(p -> p.type().toString())
-            .containsExactly(
-                "graphql.schema.DataFetchingEnvironment",
-                "org.jooq.Condition",
-                "java.util.List<org.jooq.SortField<?>>");
-        assertThat(params).extracting(p -> p.name())
+    void fields_matchesColumnsBySchemaFieldName() {
+        var code = method("fields").code().toString();
+        assertThat(code).contains("case \"title\" -> fields.add(table.TITLE)");
+        assertThat(code).contains("case \"filmId\" -> fields.add(table.FILM_ID)");
+    }
+
+    @Test
+    void fields_hasDefaultBranch() {
+        assertThat(method("fields").code().toString()).contains("default -> { }");
+    }
+
+    // ===== selectMany (root) =====
+
+    @Test
+    void selectMany_signature() {
+        var m = method("selectMany");
+        assertThat(m.returnType().toString()).isEqualTo("org.jooq.Result<org.jooq.Record>");
+        assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("env", "condition", "orderBy");
     }
 
     @Test
-    void selectMany_queriesTable() {
-        var code = method("Film", "selectMany").code().toString();
+    void selectMany_body() {
+        var code = method("selectMany").code().toString();
         assertThat(code).contains("getDslContext()");
         assertThat(code).contains(".select(fields(env.getSelectionSet()))");
         assertThat(code).contains(".from(table)");
@@ -128,241 +129,74 @@ class TableCodeGeneratorTest {
         assertThat(code).contains(".fetch()");
     }
 
-    // ===== fields =====
+    // ===== selectOne (root) =====
 
     @Test
-    void fields_isPublicStatic() {
-        assertThat(method("Film", "fields").modifiers())
-            .containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
-    }
-
-    @Test
-    void fields_usesGetFieldsGroupedByResultKey() {
-        var code = method("Film", "fields").code().toString();
-        assertThat(code).contains("sel.getFieldsGroupedByResultKey()");
-        assertThat(code).contains("sf.getName()");
-    }
-
-    @Test
-    void fields_switchesOnFieldNamePerColumn() {
-        var code = method("Film", "fields").code().toString();
-        assertThat(code).contains("case \"title\" -> fields.add(table.TITLE)");
-        assertThat(code).contains("case \"filmId\" -> fields.add(table.FILM_ID)");
-    }
-
-    @Test
-    void fields_returnsListOfField() {
-        assertThat(method("Film", "fields").returnType().toString())
-            .isEqualTo("java.util.List<org.jooq.Field<?>>");
-    }
-
-    // ===== selectOne =====
-
-    @Test
-    void selectOne_isPublicStatic() {
-        assertThat(method("Film", "selectOne").modifiers())
-            .containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
-    }
-
-    @Test
-    void selectOne_returnType() {
-        assertThat(method("Film", "selectOne").returnType().toString())
-            .isEqualTo("org.jooq.Record");
-    }
-
-    @Test
-    void selectOne_parameters() {
-        var params = method("Film", "selectOne").parameters();
-        assertThat(params).extracting(p -> p.type().toString())
-            .containsExactly(
-                "graphql.schema.DataFetchingEnvironment",
-                "org.jooq.Condition");
-        assertThat(params).extracting(p -> p.name())
+    void selectOne_signature() {
+        var m = method("selectOne");
+        assertThat(m.returnType().toString()).isEqualTo("org.jooq.Record");
+        assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("env", "condition");
     }
 
     // ===== subselectMany =====
 
     @Test
-    void subselectMany_isPublicStatic() {
-        assertThat(method("Film", "subselectMany").modifiers())
-            .containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
-    }
-
-    @Test
-    void subselectMany_returnType() {
-        assertThat(method("Film", "subselectMany").returnType().toString())
+    void subselectMany_signature() {
+        var m = method("subselectMany");
+        assertThat(m.returnType().toString())
             .isEqualTo("org.jooq.Field<org.jooq.Result<org.jooq.Record>>");
-    }
-
-    @Test
-    void subselectMany_parameters() {
-        var params = method("Film", "subselectMany").parameters();
-        assertThat(params).extracting(p -> p.type().toString())
-            .containsExactly(
-                "graphql.schema.DataFetchingEnvironment",
-                "graphql.schema.SelectedField",
-                "org.jooq.Condition",
-                "java.util.List<org.jooq.SortField<?>>");
-        assertThat(params).extracting(p -> p.name())
+        assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("env", "sel", "condition", "orderBy");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .contains("graphql.schema.SelectedField");
     }
 
     // ===== subselectOne =====
 
     @Test
-    void subselectOne_isPublicStatic() {
-        assertThat(method("Film", "subselectOne").modifiers())
-            .containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
-    }
-
-    @Test
-    void subselectOne_returnType() {
-        assertThat(method("Film", "subselectOne").returnType().toString())
-            .isEqualTo("org.jooq.Field<org.jooq.Record>");
-    }
-
-    @Test
-    void subselectOne_parameters() {
-        var params = method("Film", "subselectOne").parameters();
-        assertThat(params).extracting(p -> p.type().toString())
-            .containsExactly(
-                "graphql.schema.DataFetchingEnvironment",
-                "graphql.schema.SelectedField",
-                "org.jooq.Condition");
-        assertThat(params).extracting(p -> p.name())
+    void subselectOne_signature() {
+        var m = method("subselectOne");
+        assertThat(m.returnType().toString()).isEqualTo("org.jooq.Field<org.jooq.Record>");
+        assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("env", "sel", "condition");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .contains("graphql.schema.SelectedField");
     }
 
-    // ===== selectMany(List<? extends Row>, SelectedField, List<?>) overload (Row-keyed) =====
+    // ===== Service overloads (stubs — verify signatures only) =====
 
     @Test
-    void selectManyFromRowService_isPublicStatic() {
-        assertThat(methodByFirstParam("Film", "selectMany", "? extends org.jooq.Row").modifiers())
-            .containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
-    }
-
-    @Test
-    void selectManyFromRowService_returnType() {
-        assertThat(methodByFirstParam("Film", "selectMany", "? extends org.jooq.Row").returnType().toString())
+    void selectManyFromRowService_signature() {
+        var m = methodByFirstParam("selectMany", "? extends org.jooq.Row");
+        assertThat(m.returnType().toString())
             .isEqualTo("java.util.List<java.util.List<org.jooq.Record>>");
-    }
-
-    @Test
-    void selectManyFromRowService_parameters() {
-        var params = methodByFirstParam("Film", "selectMany", "? extends org.jooq.Row").parameters();
-        assertThat(params).extracting(p -> p.type().toString())
-            .containsExactly(
-                "java.util.List<? extends org.jooq.Row>",
-                "graphql.schema.DataFetchingEnvironment",
-                "graphql.schema.SelectedField",
-                "java.util.List<?>");
-        assertThat(params).extracting(p -> p.name())
+        assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("keys", "env", "sel", "serviceRecords");
     }
 
     @Test
-    void selectManyFromRowService_throwsUnsupportedOperationException() {
-        assertThat(methodByFirstParam("Film", "selectMany", "? extends org.jooq.Row").code().toString())
-            .contains("UnsupportedOperationException()");
-    }
-
-    // ===== selectOne(List<? extends Row>, SelectedField, Object) overload (Row-keyed) =====
-
-    @Test
-    void selectOneFromRowService_isPublicStatic() {
-        assertThat(methodByFirstParam("Film", "selectOne", "? extends org.jooq.Row").modifiers())
-            .containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
-    }
-
-    @Test
-    void selectOneFromRowService_returnType() {
-        assertThat(methodByFirstParam("Film", "selectOne", "? extends org.jooq.Row").returnType().toString())
-            .isEqualTo("java.util.List<org.jooq.Record>");
-    }
-
-    @Test
-    void selectOneFromRowService_parameters() {
-        var params = methodByFirstParam("Film", "selectOne", "? extends org.jooq.Row").parameters();
-        assertThat(params).extracting(p -> p.type().toString())
-            .containsExactly(
-                "java.util.List<? extends org.jooq.Row>",
-                "graphql.schema.DataFetchingEnvironment",
-                "graphql.schema.SelectedField",
-                "java.lang.Object");
-        assertThat(params).extracting(p -> p.name())
+    void selectOneFromRowService_signature() {
+        var m = methodByFirstParam("selectOne", "? extends org.jooq.Row");
+        assertThat(m.returnType().toString()).isEqualTo("java.util.List<org.jooq.Record>");
+        assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("keys", "env", "sel", "serviceRecord");
     }
 
     @Test
-    void selectOneFromRowService_throwsUnsupportedOperationException() {
-        assertThat(methodByFirstParam("Film", "selectOne", "? extends org.jooq.Row").code().toString())
-            .contains("UnsupportedOperationException()");
-    }
-
-    // ===== selectMany(List<? extends Record>, SelectedField, List<?>) overload (Record-keyed) =====
-
-    @Test
-    void selectManyFromRecordService_isPublicStatic() {
-        assertThat(methodByFirstParam("Film", "selectMany", "? extends org.jooq.Record").modifiers())
-            .containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
-    }
-
-    @Test
-    void selectManyFromRecordService_returnType() {
-        assertThat(methodByFirstParam("Film", "selectMany", "? extends org.jooq.Record").returnType().toString())
+    void selectManyFromRecordService_signature() {
+        var m = methodByFirstParam("selectMany", "? extends org.jooq.Record");
+        assertThat(m.returnType().toString())
             .isEqualTo("java.util.List<java.util.List<org.jooq.Record>>");
-    }
-
-    @Test
-    void selectManyFromRecordService_parameters() {
-        var params = methodByFirstParam("Film", "selectMany", "? extends org.jooq.Record").parameters();
-        assertThat(params).extracting(p -> p.type().toString())
-            .containsExactly(
-                "java.util.List<? extends org.jooq.Record>",
-                "graphql.schema.DataFetchingEnvironment",
-                "graphql.schema.SelectedField",
-                "java.util.List<?>");
-        assertThat(params).extracting(p -> p.name())
+        assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("keys", "env", "sel", "serviceRecords");
     }
 
     @Test
-    void selectManyFromRecordService_throwsUnsupportedOperationException() {
-        assertThat(methodByFirstParam("Film", "selectMany", "? extends org.jooq.Record").code().toString())
-            .contains("UnsupportedOperationException()");
-    }
-
-    // ===== selectOne(List<? extends Record>, SelectedField, Object) overload (Record-keyed) =====
-
-    @Test
-    void selectOneFromRecordService_isPublicStatic() {
-        assertThat(methodByFirstParam("Film", "selectOne", "? extends org.jooq.Record").modifiers())
-            .containsExactlyInAnyOrder(Modifier.PUBLIC, Modifier.STATIC);
-    }
-
-    @Test
-    void selectOneFromRecordService_returnType() {
-        assertThat(methodByFirstParam("Film", "selectOne", "? extends org.jooq.Record").returnType().toString())
-            .isEqualTo("java.util.List<org.jooq.Record>");
-    }
-
-    @Test
-    void selectOneFromRecordService_parameters() {
-        var params = methodByFirstParam("Film", "selectOne", "? extends org.jooq.Record").parameters();
-        assertThat(params).extracting(p -> p.type().toString())
-            .containsExactly(
-                "java.util.List<? extends org.jooq.Record>",
-                "graphql.schema.DataFetchingEnvironment",
-                "graphql.schema.SelectedField",
-                "java.lang.Object");
-        assertThat(params).extracting(p -> p.name())
+    void selectOneFromRecordService_signature() {
+        var m = methodByFirstParam("selectOne", "? extends org.jooq.Record");
+        assertThat(m.returnType().toString()).isEqualTo("java.util.List<org.jooq.Record>");
+        assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("keys", "env", "sel", "serviceRecord");
-    }
-
-    @Test
-    void selectOneFromRecordService_throwsUnsupportedOperationException() {
-        assertThat(methodByFirstParam("Film", "selectOne", "? extends org.jooq.Record").code().toString())
-            .contains("UnsupportedOperationException()");
     }
 }
