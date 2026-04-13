@@ -327,14 +327,14 @@ public class FieldsCodeGenerator {
             smr.methodName(),
             String.join(", ", serviceCallArgs));
 
-        // Return via table selectMany / selectOne
+        // Return via table selectMany / selectOne (threading dfe for context access)
         var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".tables", rt.javaClassName());
         if (isList) {
             builder.addStatement(
-                "return $T.selectMany(keys, sel, ($T<?>) serviceResult)",
+                "return $T.selectMany(keys, dfe, sel, ($T<?>) serviceResult)",
                 tableClass, List.class);
         } else {
-            builder.addStatement("return $T.selectOne(keys, sel, serviceResult)", tableClass);
+            builder.addStatement("return $T.selectOne(keys, dfe, sel, serviceResult)", tableClass);
         }
 
         return builder.build();

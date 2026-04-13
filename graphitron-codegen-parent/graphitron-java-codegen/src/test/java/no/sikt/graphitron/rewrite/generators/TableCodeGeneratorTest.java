@@ -195,11 +195,12 @@ class TableCodeGeneratorTest {
         var params = method("Film", "subselectMany").parameters();
         assertThat(params).extracting(p -> p.type().toString())
             .containsExactly(
-                "graphql.schema.DataFetchingFieldSelectionSet",
+                "graphql.schema.DataFetchingEnvironment",
+                "graphql.schema.SelectedField",
                 "org.jooq.Condition",
                 "java.util.List<org.jooq.SortField<?>>");
         assertThat(params).extracting(p -> p.name())
-            .containsExactly("sel", "condition", "orderBy");
+            .containsExactly("env", "sel", "condition", "orderBy");
     }
 
     // ===== subselectOne =====
@@ -221,10 +222,11 @@ class TableCodeGeneratorTest {
         var params = method("Film", "subselectOne").parameters();
         assertThat(params).extracting(p -> p.type().toString())
             .containsExactly(
-                "graphql.schema.DataFetchingFieldSelectionSet",
+                "graphql.schema.DataFetchingEnvironment",
+                "graphql.schema.SelectedField",
                 "org.jooq.Condition");
         assertThat(params).extracting(p -> p.name())
-            .containsExactly("sel", "condition");
+            .containsExactly("env", "sel", "condition");
     }
 
     // ===== selectMany(List<? extends Row>, SelectedField, List<?>) overload (Row-keyed) =====
@@ -247,10 +249,11 @@ class TableCodeGeneratorTest {
         assertThat(params).extracting(p -> p.type().toString())
             .containsExactly(
                 "java.util.List<? extends org.jooq.Row>",
+                "graphql.schema.DataFetchingEnvironment",
                 "graphql.schema.SelectedField",
                 "java.util.List<?>");
         assertThat(params).extracting(p -> p.name())
-            .containsExactly("keys", "sel", "serviceRecords");
+            .containsExactly("keys", "env", "sel", "serviceRecords");
     }
 
     @Test
@@ -279,10 +282,11 @@ class TableCodeGeneratorTest {
         assertThat(params).extracting(p -> p.type().toString())
             .containsExactly(
                 "java.util.List<? extends org.jooq.Row>",
+                "graphql.schema.DataFetchingEnvironment",
                 "graphql.schema.SelectedField",
                 "java.lang.Object");
         assertThat(params).extracting(p -> p.name())
-            .containsExactly("keys", "sel", "serviceRecord");
+            .containsExactly("keys", "env", "sel", "serviceRecord");
     }
 
     @Test
@@ -311,10 +315,11 @@ class TableCodeGeneratorTest {
         assertThat(params).extracting(p -> p.type().toString())
             .containsExactly(
                 "java.util.List<? extends org.jooq.Record>",
+                "graphql.schema.DataFetchingEnvironment",
                 "graphql.schema.SelectedField",
                 "java.util.List<?>");
         assertThat(params).extracting(p -> p.name())
-            .containsExactly("keys", "sel", "serviceRecords");
+            .containsExactly("keys", "env", "sel", "serviceRecords");
     }
 
     @Test
@@ -343,10 +348,11 @@ class TableCodeGeneratorTest {
         assertThat(params).extracting(p -> p.type().toString())
             .containsExactly(
                 "java.util.List<? extends org.jooq.Record>",
+                "graphql.schema.DataFetchingEnvironment",
                 "graphql.schema.SelectedField",
                 "java.lang.Object");
         assertThat(params).extracting(p -> p.name())
-            .containsExactly("keys", "sel", "serviceRecord");
+            .containsExactly("keys", "env", "sel", "serviceRecord");
     }
 
     @Test

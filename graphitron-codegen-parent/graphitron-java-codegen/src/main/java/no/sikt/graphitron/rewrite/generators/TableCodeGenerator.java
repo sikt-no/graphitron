@@ -92,9 +92,14 @@ public class TableCodeGenerator {
     }
 
     /**
-     * Generates a {@code fields()} method that assembles the SELECT list based on the
+     * Generates a {@code fields()} method that assembles the SELECT list based on a
      * {@link graphql.schema.DataFetchingFieldSelectionSet}. Only columns whose GraphQL field
      * name appears in the selection set are included.
+     *
+     * <p>Takes {@code DataFetchingFieldSelectionSet} (not {@code SelectedField}) because it is
+     * concerned only with column selection, not with argument extraction. Callers pass either
+     * {@code env.getSelectionSet()} (root queries) or {@code sel.getSelectionSet()} (nested
+     * fields via {@code SelectedField}).
      *
      * <p>Generated code pattern:
      * <pre>{@code
@@ -184,25 +189,27 @@ public class TableCodeGenerator {
         return ClassName.get(GeneratorConfig.outputPackage() + ".tables", "Tables");
     }
 
-    /** Row-keyed service overload: {@code selectMany(List<? extends Row>, SelectedField, List<?>)}. */
+    /** Row-keyed service overload: {@code selectMany(List<? extends Row>, env, sel, List<?>)}. */
     private MethodSpec buildSelectManyFromRowServiceMethod() {
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         return MethodSpec.methodBuilder("selectMany")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(LIST, listOfRecord))
             .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(ROW)), "keys")
+            .addParameter(ENV, "env")
             .addParameter(SELECTED_FIELD, "sel")
             .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(Object.class)), "serviceRecords")
             .addStatement("throw new $T()", UnsupportedOperationException.class)
             .build();
     }
 
-    /** Row-keyed service overload: {@code selectOne(List<? extends Row>, SelectedField, Object)}. */
+    /** Row-keyed service overload: {@code selectOne(List<? extends Row>, env, sel, Object)}. */
     private MethodSpec buildSelectOneFromRowServiceMethod() {
         return MethodSpec.methodBuilder("selectOne")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(LIST, RECORD))
             .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(ROW)), "keys")
+            .addParameter(ENV, "env")
             .addParameter(SELECTED_FIELD, "sel")
             .addParameter(Object.class, "serviceRecord")
             .addStatement("throw new $T()", UnsupportedOperationException.class)
@@ -210,7 +217,7 @@ public class TableCodeGenerator {
     }
 
     /**
-     * Record-keyed service overload: {@code selectMany(List<? extends Record>, SelectedField, List<?>)}.
+     * Record-keyed service overload: {@code selectMany(List<? extends Record>, env, sel, List<?>)}.
      * Handles both {@code RecordN<T>}-keyed and {@code TableRecord}-keyed callers (both implement
      * {@code org.jooq.Record}).
      */
@@ -220,6 +227,7 @@ public class TableCodeGenerator {
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(LIST, listOfRecord))
             .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(RECORD)), "keys")
+            .addParameter(ENV, "env")
             .addParameter(SELECTED_FIELD, "sel")
             .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(Object.class)), "serviceRecords")
             .addStatement("throw new $T()", UnsupportedOperationException.class)
@@ -227,7 +235,7 @@ public class TableCodeGenerator {
     }
 
     /**
-     * Record-keyed service overload: {@code selectOne(List<? extends Record>, SelectedField, Object)}.
+     * Record-keyed service overload: {@code selectOne(List<? extends Record>, env, sel, Object)}.
      * Handles both {@code RecordN<T>}-keyed and {@code TableRecord}-keyed callers.
      */
     private MethodSpec buildSelectOneFromRecordServiceMethod() {
@@ -235,28 +243,44 @@ public class TableCodeGenerator {
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(LIST, RECORD))
             .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(RECORD)), "keys")
+            .addParameter(ENV, "env")
             .addParameter(SELECTED_FIELD, "sel")
             .addParameter(Object.class, "serviceRecord")
             .addStatement("throw new $T()", UnsupportedOperationException.class)
             .build();
     }
 
+    /**
+     * Subselect overload for inline list fields:
+     * {@code subselectMany(env, sel, condition, orderBy)}.
+     *
+     * <p>{@code env} provides the GraphQL context (DSLContext, context arguments, tenant ID).
+     * {@code sel} is the {@code SelectedField} for the child field being resolved — its
+     * {@code getSelectionSet()} drives column selection via {@code fields()}, and its
+     * {@code getArguments()} provides argument values for WHERE clauses.
+     */
     private MethodSpec buildSubselectManyMethod() {
         return MethodSpec.methodBuilder("subselectMany")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(FIELD, ParameterizedTypeName.get(RESULT, RECORD)))
-            .addParameter(SELECTION_SET, "sel")
+            .addParameter(ENV, "env")
+            .addParameter(SELECTED_FIELD, "sel")
             .addParameter(CONDITION, "condition")
             .addParameter(sortFieldList(), "orderBy")
             .addStatement("throw new $T()", UnsupportedOperationException.class)
             .build();
     }
 
+    /**
+     * Subselect overload for inline single fields:
+     * {@code subselectOne(env, sel, condition)}.
+     */
     private MethodSpec buildSubselectOneMethod() {
         return MethodSpec.methodBuilder("subselectOne")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(FIELD, RECORD))
-            .addParameter(SELECTION_SET, "sel")
+            .addParameter(ENV, "env")
+            .addParameter(SELECTED_FIELD, "sel")
             .addParameter(CONDITION, "condition")
             .addStatement("throw new $T()", UnsupportedOperationException.class)
             .build();
