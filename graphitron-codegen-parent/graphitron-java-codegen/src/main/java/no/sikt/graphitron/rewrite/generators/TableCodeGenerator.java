@@ -95,13 +95,17 @@ public class TableCodeGenerator {
      * Generates a {@code fields()} method that assembles the SELECT list for one level of the
      * query from a {@link graphql.schema.DataFetchingFieldSelectionSet}.
      *
-     * <p>The entry point is {@code env.getSelectionSet()} (root level). For nested fields,
-     * callers drill down via {@code selectedField.getSelectionSet()} at each level. Only columns
-     * whose GraphQL field name appears in the selection set are included.
+     * <p>Uses {@code sel.getFieldsGroupedByResultKey()} to iterate the selected fields. Each
+     * entry is matched by {@code SelectedField.getName()} (the schema field name, not the alias)
+     * against the known scalar columns. This correctly handles aliased fields — e.g.
+     * {@code myTitle: title} has result key {@code "myTitle"} but name {@code "title"}.
      *
-     * <p>Currently checks scalar columns via {@code sel.contains(name)}. When inline nested
-     * fields are added (G5), this will iterate {@code sel.getImmediateFields()} to walk the
-     * tree and access per-field arguments via {@code SelectedField.getArguments()}.
+     * <p>The entry point is {@code env.getSelectionSet()} (root level). For nested fields,
+     * callers drill down via {@code selectedField.getSelectionSet()} at each level.
+     *
+     * <p>When inline nested fields are added (G5), the {@code SelectedField} from each entry
+     * provides {@code getArguments()} for WHERE clauses and {@code getSelectionSet()} for
+     * recursive drill-down.
      */
     private MethodSpec buildFieldsMethod(TableRef tableRef, List<ScalarColumn> scalarColumns) {
         var tablesClass = tablesClassName();
@@ -115,10 +119,15 @@ public class TableCodeGenerator {
             .addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName())
             .addStatement("var fields = new $T<$T>()", ARRAY_LIST, fieldWildcard);
 
+        builder.addCode("for (var entry : sel.getFieldsGroupedByResultKey().entrySet()) {\n");
+        builder.addCode("    var sf = entry.getValue().get(0);\n");
+        builder.addCode("    switch (sf.getName()) {\n");
         for (var col : scalarColumns) {
-            builder.addStatement("if (sel.contains($S)) fields.add(table.$L)",
+            builder.addCode("        case $S -> fields.add(table.$L);\n",
                 col.graphqlFieldName(), col.jooqColumnJavaName());
         }
+        builder.addCode("    }\n");
+        builder.addCode("}\n");
 
         builder.addStatement("return fields");
         return builder.build();

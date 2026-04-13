@@ -137,12 +137,17 @@ class TableCodeGeneratorTest {
     }
 
     @Test
-    void fields_checksSelectionSetPerColumn() {
+    void fields_usesGetFieldsGroupedByResultKey() {
         var code = method("Film", "fields").code().toString();
-        assertThat(code).contains("sel.contains(\"title\")");
-        assertThat(code).contains("fields.add(table.TITLE)");
-        assertThat(code).contains("sel.contains(\"filmId\")");
-        assertThat(code).contains("fields.add(table.FILM_ID)");
+        assertThat(code).contains("sel.getFieldsGroupedByResultKey()");
+        assertThat(code).contains("sf.getName()");
+    }
+
+    @Test
+    void fields_switchesOnFieldNamePerColumn() {
+        var code = method("Film", "fields").code().toString();
+        assertThat(code).contains("case \"title\" -> fields.add(table.TITLE)");
+        assertThat(code).contains("case \"filmId\" -> fields.add(table.FILM_ID)");
     }
 
     @Test
