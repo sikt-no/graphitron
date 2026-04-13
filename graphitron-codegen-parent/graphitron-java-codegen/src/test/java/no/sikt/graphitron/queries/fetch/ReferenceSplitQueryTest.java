@@ -358,6 +358,22 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     }
 
     @Test
+    @DisplayName("splitQuery on table with self-referencing FK after service")
+    void tableWithSelfReferenceAfterJavaService() {
+        resultDoesNotContain(
+                "tableWithSelfReferenceAfterJavaService",
+                "_a_film.film()"
+        );
+
+        assertGeneratedContentContains(
+                "tableWithSelfReferenceAfterJavaService",
+                ".from(_a_film).where(DSL.row(_a_film.FILM_ID",
+                "_iv_orderFields = _a_film.fields",
+                "row(_a_film.getId()).mapping"
+        );
+    }
+
+    @Test
     @DisplayName("Listed splitQuery field after service returning java record")
     void afterJavaServiceListed() {
         assertGeneratedContentContains(

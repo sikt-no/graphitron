@@ -1,0 +1,12 @@
+type Query {
+  languagesFilteredByFilm(filmId: ID! @nodeId(typeName : "Film") @reference(path : [{key : "FILM__FILM_LANGUAGE_ID_FKEY"}])): [Language]
+}
+
+
+type Language implements Node @table @node {
+  id: ID! @nodeId
+}
+
+type Film implements Node @node @table {
+  id: ID! @nodeId
+}

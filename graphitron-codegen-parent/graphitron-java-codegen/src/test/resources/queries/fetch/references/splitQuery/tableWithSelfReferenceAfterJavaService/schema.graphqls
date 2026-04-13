@@ -1,0 +1,11 @@
+type Query {
+    query: FilmWrapper @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type FilmWrapper @record(record: {className: "no.sikt.graphitron.codereferences.records.FilmWrapperRecord"}) {
+    film: Film @splitQuery
+}
+
+type Film @table {
+    id: ID
+}

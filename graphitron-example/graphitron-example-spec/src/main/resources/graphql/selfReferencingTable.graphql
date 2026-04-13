@@ -1,0 +1,18 @@
+extend type Query {
+    filmWithSelfReference(filmIds: [String] @field(name: "FILM_ID")): [FilmForSelfReferenceTests] @asConnection
+}
+
+type FilmForSelfReferenceTests @table(name: "FILM") {
+    filmId: String @field(name: "FILM_ID")
+    wrapped: FilmForSelfReferenceTestsWrapper
+    wrappedWithTable: FilmForSelfReferenceTestsWrapperWithTable
+    selfReference: FilmForSelfReferenceTestsWrapperWithTable @reference(path: [{table: "FILM"}]) @splitQuery
+}
+
+type FilmForSelfReferenceTestsWrapper {
+    filmId: String @field(name: "FILM_ID")
+}
+
+type FilmForSelfReferenceTestsWrapperWithTable @table(name: "FILM") {
+    filmId: String @field(name: "FILM_ID")
+}

@@ -191,7 +191,7 @@ public class InputTest extends GeneratorTest {
                 ".select(filmWrappedWithInputTableAndTableFieldForQuery_filmContainer(_mi_inputRecord))",
                 // Helper declares necessary aliases
                 "var _a_film = FILM.as(\"film_2185543202\");",
-                "var _a_film_2185543202_film = _a_film.film().as(\"film_3535906766\");",
+                "var _a_film_2185543202_filmlanguageidfkey = _a_film.filmLanguageIdFkey().as(\"language_4253626089\");",
                 // Helper calls nested helper
                 "DSL.select(_1_filmWrappedWithInputTableAndTableFieldForQuery_filmContainer_language())"
         );

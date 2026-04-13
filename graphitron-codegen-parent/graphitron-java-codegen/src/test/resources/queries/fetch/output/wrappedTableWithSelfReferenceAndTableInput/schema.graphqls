@@ -1,0 +1,15 @@
+type Query {
+  query(input: FilmInput!): FilmWrapper
+}
+
+type FilmWrapper {
+  film: Film
+}
+
+type Film @table {
+  id: ID!
+}
+
+input FilmInput @table(name: "FILM") {
+  filmId: Int! @field(name: "FILM_ID")
+}

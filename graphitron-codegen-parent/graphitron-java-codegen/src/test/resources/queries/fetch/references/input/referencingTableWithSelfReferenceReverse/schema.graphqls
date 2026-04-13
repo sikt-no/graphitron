@@ -1,0 +1,8 @@
+type Query {
+  languagesFilteredByFilm(filmId: Int! @field(name: "FILM_ID") @reference(path : [{key : "FILM__FILM_LANGUAGE_ID_FKEY"}])): [Language]
+}
+
+
+type Language @table {
+  id: ID!
+}

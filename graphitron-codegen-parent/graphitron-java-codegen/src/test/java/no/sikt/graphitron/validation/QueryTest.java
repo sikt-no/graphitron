@@ -363,4 +363,52 @@ public class QueryTest extends ValidationTest {
                         "from \"CITY\" to \"ADDRESS\" in a non-final step. This is not currently supported on filter inputs because it causes row duplication. " +
                         "Use the @condition directive for complex cross-table filtering instead.");
     }
+
+    @Test
+    @DisplayName("Self-referencing table with @splitQuery produces no error or warning")
+    void selfReferenceWithSplitQuery() {
+        getProcessedSchema("selfReferenceWithSplitQuery");
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("Self-referencing table requires @splitQuery directive")
+    void selfReferenceWithoutSplitQuery() {
+        assertErrorsContain("selfReferenceWithoutSplitQuery",
+                "Field 'Film.sequel' is a field generating a table self-reference. This is only supported if the field has the @splitQuery directive."
+        );
+    }
+
+    @Test
+    @DisplayName("Listed (reverse) self reference should give warning")
+    void reverseSelfReference() {
+        getProcessedSchema("reverseSelfReference");
+        assertWarningsContain(
+                "Field 'Film.sequels' is a listed field generating a table self-reference through a key, implying you may want a reverse reference. " +
+                        "Reverse self reference is not currently supported. Possible workaround is defining a custom reference condition."
+        );
+    }
+
+    @Test
+    @DisplayName("Listed (reverse) self reference with key should give warning")
+    void reverseSelfReferenceWithKey() {
+        getProcessedSchema("reverseSelfReferenceWithKey");
+        assertWarningsContain("'Film.sequels' is a listed field generating a table self-reference");
+    }
+
+    @Test
+    @DisplayName("Listed (reverse) self-reference is allowed with condition join")
+    void reverseSelfReferenceWithCondition() {
+        getProcessedSchema("reverseSelfReferenceWithCondition");
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("Listed (reverse) self reference for types mapping to the same table should give warning")
+    void reverseSelfReferenceDifferentTypes() {
+        getProcessedSchema("reverseSelfReferenceDifferentTypes");
+        assertWarningsContain(
+                "Field 'Film.sequels' is a listed field generating a table self-reference"
+        );
+    }
 }

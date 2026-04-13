@@ -1,0 +1,11 @@
+type Query {
+  query: Film
+}
+
+type Film @table {
+  sequel: Sequel @reference(path: [{key: "FILM__SEQUEL_FKEY"}])
+}
+
+type Sequel @table(name: "FILM") {
+  id: ID
+}

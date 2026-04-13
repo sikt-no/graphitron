@@ -18,8 +18,9 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.mappings.TableReflection.*;
-import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessage;
-import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAndThrow;
+import static no.sikt.graphitron.validation.ValidationHandler.*;
+import static no.sikt.graphitron.validation.messages.SelfReferenceError.SELF_REFERENCE_WITHOUT_SPLITQUERY;
+import static no.sikt.graphitron.validation.messages.SelfReferenceWarning.SELF_REFERENCE_IMPLICITLY_REVERSE;
 import static no.sikt.graphql.directives.GenerationDirective.NODE_ID;
 import static no.sikt.graphql.directives.GenerationDirective.REFERENCE;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITY_UNION;
@@ -100,7 +101,23 @@ class TableValidator extends AbstractSchemaValidator {
         if (targetTable == null) return;
 
         var sourceTable = schema.getPreviousTableObjectForObject(schema.getRecordTypes().get(field.getContainerTypeName())).getTable().getName();
+
+        if (targetTable.equals(sourceTable)) {
+            validateSelfReference(field);
+        }
         validateReferencePath(field, sourceTable, targetTable);
+    }
+
+    private void validateSelfReference(GenerationField field) {
+        if (!field.createsDataFetcher() && field.hasFieldReferences()) {
+            addErrorMessage(SELF_REFERENCE_WITHOUT_SPLITQUERY.format(field.formatPath()));
+        }
+        // Only checks the first reference step. Multi-step self-reference paths are not yet validated.
+        var firstRef = field.getFieldReferences().stream().findFirst();
+        var joinsOnKeyPath = firstRef.isEmpty() || firstRef.get().hasTable() || firstRef.get().hasKey();
+        if (field.isIterableWrapped() && joinsOnKeyPath) {
+            addWarningMessage(SELF_REFERENCE_IMPLICITLY_REVERSE.format(field.formatPath()));
+        }
     }
 
     /**
@@ -258,6 +275,7 @@ class TableValidator extends AbstractSchemaValidator {
     private boolean leavesTableContext(GenerationField field, JOOQMapping currentTable) {
         return field.hasFieldReferences()
                 || (schema.isObject(field) && schema.getObject(field).hasTable() && !schema.getObject(field).getTable().equals(currentTable))
+                || field.createsDataFetcher()
                 || schema.isConnectionObject(field)
                 || schema.isMultiTableField(field)
                 || schema.isInterface(field)
