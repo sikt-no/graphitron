@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
+import no.sikt.graphitron.rewrite.generators.GraphitronWiringClassGenerator;
 import no.sikt.graphql.schema.SchemaReadingHelper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -248,6 +249,33 @@ class FieldsPipelineTest {
             }
             """);
         assertThat(languageFields.methodSpecs()).extracting(MethodSpec::name).contains("loadFilms");
+    }
+
+    // ===== GraphitronWiring (I1) =====
+
+    @Test
+    void wiringClass_referencesAllFieldsClasses() {
+        var schema = buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+            type Query { dummy: String }
+            """);
+        var fieldsClasses = FieldsClassGenerator.generate(schema);
+        var fieldsClassNames = fieldsClasses.stream().map(TypeSpec::name).toList();
+        var wiring = GraphitronWiringClassGenerator.generate(fieldsClassNames);
+
+        assertThat(wiring.name()).isEqualTo("GraphitronWiring");
+        var build = wiring.methodSpecs().stream()
+            .filter(m -> m.name().equals("build")).findFirst().orElseThrow();
+        assertThat(build.returnType().toString())
+            .isEqualTo("graphql.schema.idl.RuntimeWiring.Builder");
+    }
+
+    @Test
+    void wiringClass_noTypes_stillGenerates() {
+        var wiring = GraphitronWiringClassGenerator.generate(List.of());
+        assertThat(wiring.name()).isEqualTo("GraphitronWiring");
+        assertThat(wiring.methodSpecs()).extracting(MethodSpec::name).contains("build");
     }
 
     // ===== Helpers =====

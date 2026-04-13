@@ -4,6 +4,7 @@ import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.FieldsClassGenerator;
+import no.sikt.graphitron.rewrite.generators.GraphitronWiringClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TableClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator;
 import org.slf4j.Logger;
@@ -43,9 +44,13 @@ public class GraphQLRewriteGenerator {
             throw new RuntimeException("Rewrite schema validation failed with " + errors.size() + " error(s)");
         }
 
+        var fieldsClasses = FieldsClassGenerator.generate(schema);
+        var fieldsClassNames = fieldsClasses.stream().map(TypeSpec::name).toList();
+
         write(GraphitronValuesClassGenerator.generate(),          "rewrite");
         write(TableClassGenerator.generate(schema),               "rewrite.tables");
-        write(FieldsClassGenerator.generate(schema),              "rewrite.types");
+        write(fieldsClasses,                                      "rewrite.types");
+        write(List.of(GraphitronWiringClassGenerator.generate(fieldsClassNames)), "rewrite");
     }
 
     private static void write(List<TypeSpec> specs, String subPackage) {
