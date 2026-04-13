@@ -2,71 +2,41 @@
 
 Colour legend:
 
-| Colour | Meaning |
+| Symbol | Meaning |
 |---|---|
-| 🔴 Red | Core sealed interfaces — structural backbone |
-| 🟢 Teal | `TableTargetField` group — primary SQL-generation abstraction, current focus |
+| 🔴 Red / bold | Core sealed interfaces — structural backbone |
+| 🟢 Teal | `TableTargetField` group — primary SQL-generation abstraction |
 | 🔵 Blue | `QueryField` / `MutationField` — entry-point fields on root types |
-| 🟣 Purple | Support / composition types — shared across field and type hierarchy |
+| 🟩 Green | `GraphitronType` variants |
+| 🟣 Purple | Support / composition types |
 | ⚫ Dark grey | Value / leaf types — stable, rarely changed |
-| 🟠 Orange dashed | Model gap — not yet modelled |
+| 🟠 Orange dashed border | Model gap — not yet modelled |
 
 ---
 
+## 1. Field Hierarchy
+
 ```mermaid
-graph TD
-    classDef core     fill:#922B21,stroke:#7B241C,color:#fff,font-weight:bold
-    classDef ttf      fill:#0E6655,stroke:#0A5344,color:#fff,font-weight:bold
-    classDef rootf    fill:#1A5276,stroke:#154360,color:#fff
-    classDef typeh    fill:#145A32,stroke:#196F3D,color:#fff
-    classDef sup      fill:#6C3483,stroke:#5B2C6F,color:#fff
-    classDef val      fill:#4A5568,stroke:#2C3E50,color:#fff
-    classDef gap      fill:#BA4A00,stroke:#D35400,color:#fff,stroke-dasharray:5 3
+graph LR
+    classDef core  fill:#922B21,stroke:#7B241C,color:#fff,font-weight:bold
+    classDef ttf   fill:#0E6655,stroke:#0A5344,color:#fff,font-weight:bold
+    classDef rootf fill:#1A5276,stroke:#154360,color:#fff
+    classDef val   fill:#4A5568,stroke:#2C3E50,color:#fff
 
-    %% ================================================================
-    %% SEALED ROOTS
-    %% ================================================================
-    GF["GraphitronField\n«sealed interface»"]:::core
-    GT["GraphitronType\n«sealed interface»"]:::core
+    GF["GraphitronField\n«sealed»"]:::core
 
-    %% ================================================================
-    %% FIELD HIERARCHY
-    %% ================================================================
-    GF --> RF["RootField «sealed»"]:::rootf
-    GF --> CF["ChildField «sealed»"]:::core
-    GF --> INPF["InputField «sealed»"]:::rootf
+    GF --> RF["RootField\n«sealed»"]:::rootf
+    GF --> CF["ChildField\n«sealed»"]:::core
+    GF --> INPF["InputField\n«sealed»"]:::rootf
     GF --> UNF["UnclassifiedField"]:::val
     GF --> NGF["NotGeneratedField"]:::val
 
-    RF --> QF["QueryField «sealed»"]:::rootf
-    RF --> MF["MutationField «sealed»"]:::rootf
+    RF --> QF["QueryField\n«sealed»"]:::rootf
+    RF --> MF["MutationField\n«sealed»"]:::rootf
 
-    subgraph QFG ["Query Fields  (10 variants)"]
-        QTF["QueryTableField"]:::rootf
-        QLF["QueryLookupTableField"]:::rootf
-        QTI["QueryTableInterfaceField"]:::rootf
-        QTMF["QueryTableMethodField"]:::rootf
-        QNF["QueryNodeField"]:::rootf
-        QEF["QueryEntityField"]:::rootf
-        QIF["QueryInterfaceField"]:::rootf
-        QUF["QueryUnionField"]:::rootf
-        QSTF["QueryServiceTableField"]:::rootf
-        QSRF["QueryServiceRecordField"]:::rootf
-    end
-    QF --> QTF & QLF & QTI & QTMF & QNF & QEF & QIF & QUF & QSTF & QSRF
+    INPF --> InpCF["ColumnField"]:::rootf
 
-    subgraph MFG ["Mutation Fields  (6 variants)"]
-        MIF["MutationInsertTableField"]:::rootf
-        MUF["MutationUpdateTableField"]:::rootf
-        MDF["MutationDeleteTableField"]:::rootf
-        MUpF["MutationUpsertTableField"]:::rootf
-        MSTF["MutationServiceTableField"]:::rootf
-        MSRF["MutationServiceRecordField"]:::rootf
-    end
-    MF --> MIF & MUF & MDF & MUpF & MSTF & MSRF
-
-    %% ---- ChildField direct variants ----
-    CF --> TTF["TableTargetField «sealed»\nreturnType · joinPath · condition"]:::ttf
+    CF --> TTF["TableTargetField\n«sealed»"]:::ttf
     CF --> ColF["ColumnField"]:::core
     CF --> CRF["ColumnReferenceField"]:::core
     CF --> NIF["NodeIdField"]:::core
@@ -81,137 +51,155 @@ graph TD
     CF --> CmpF["ComputedField"]:::core
     CF --> PropF["PropertyField"]:::core
     CF --> MtRF["MultitableReferenceField"]:::core
-
-    subgraph TTG ["TableTargetField variants  (all carry returnType · joinPath · condition)"]
-        TF["TableField\n+ arguments"]:::ttf
-        STF["SplitTableField\n+ arguments"]:::ttf
-        LF["LookupTableField\n+ arguments"]:::ttf
-        SLF["SplitLookupTableField\n+ arguments"]:::ttf
-        TIF["TableInterfaceField"]:::ttf
-        SVCTF["ServiceTableField\n+ arguments · contextArguments · method"]:::ttf
-        RTF["RecordTableField\n+ arguments"]:::ttf
-        RLF["RecordLookupTableField\n+ arguments"]:::ttf
-    end
-    TTF --> TF & STF & LF & SLF & TIF & SVCTF & RTF & RLF
-
-    INPF --> InpCF["InputField.ColumnField"]:::rootf
-
-    %% ================================================================
-    %% TYPE HIERARCHY
-    %% ================================================================
-    subgraph TypeG ["GraphitronType variants"]
-        TBT["TableBackedType «sealed»"]:::typeh
-        ResT["ResultType «sealed»"]:::typeh
-        InpT["InputType «sealed»"]:::typeh
-
-        TT["TableType"]:::typeh
-        NT["NodeType"]:::typeh
-        TIT["TableInterfaceType"]:::typeh
-
-        JRT["JavaRecordType"]:::typeh
-        PRT["PojoResultType"]:::typeh
-        JRRT["JooqRecordType"]:::typeh
-        JTRT["JooqTableRecordType"]:::typeh
-
-        JRIT["JavaRecordInputType"]:::typeh
-        PIT["PojoInputType"]:::typeh
-        JooqRI["JooqRecordInputType"]:::typeh
-        JTRIT["JooqTableRecordInputType"]:::typeh
-
-        RootT["RootType"]:::typeh
-        IntT["InterfaceType"]:::typeh
-        UnT["UnionType"]:::typeh
-        ErrT["ErrorType"]:::typeh
-        TInpT["TableInputType"]:::typeh
-        UncT["UnclassifiedType"]:::typeh
-    end
-    GT --> TBT & ResT & InpT & RootT & IntT & UnT & ErrT & TInpT & UncT
-    TBT --> TT & NT & TIT
-    ResT --> JRT & PRT & JRRT & JTRT
-    InpT --> JRIT & PIT & JooqRI & JTRIT
-
-    %% ================================================================
-    %% SUPPORT TYPES
-    %% ================================================================
-    subgraph SupG ["Support / Composition Types"]
-        RTR["ReturnTypeRef «sealed»"]:::sup
-        TBRT["TableBoundReturnType"]:::sup
-        PolRT["PolymorphicReturnType"]:::sup
-        ResRTR["ResultReturnType"]:::sup
-        ScRTR["ScalarReturnType"]:::sup
-
-        AR["ArgumentRef «sealed»"]:::sup
-        MPA["MethodParamArg «sealed»"]:::sup
-        TA["TableArg «sealed»"]:::sup
-        SPA["ScalarParamArg"]:::sup
-        OPA["ObjectParamArg"]:::sup
-        CFA["ColumnFilterArg"]:::sup
-        IFA["InputFilterArg"]:::sup
-        OBA["OrderByArg"]:::sup
-        PagA["First / Last / After / BeforeArg"]:::sup
-
-        FW["FieldWrapper «sealed»"]:::sup
-        SFW["Single"]:::sup
-        LFW["List"]:::sup
-        CFW["Connection"]:::sup
-
-        JS["JoinStep «sealed»"]:::sup
-        FKJ["FkJoin"]:::sup
-        CJ["ConditionJoin"]:::sup
-
-        FC["FieldCondition"]:::sup
-    end
-    RTR --> TBRT & PolRT & ResRTR & ScRTR
-    AR --> MPA & TA
-    MPA --> SPA & OPA
-    TA --> CFA & IFA & OBA & PagA
-    FW --> SFW & LFW & CFW
-    JS --> FKJ & CJ
-
-    %% ================================================================
-    %% VALUE / LEAF TYPES
-    %% ================================================================
-    subgraph ValG ["Value / Leaf Types"]
-        TR["TableRef"]:::val
-        CR["ColumnRef"]:::val
-        MR["MethodRef"]:::val
-        PS["ParamSource «sealed»"]:::val
-        SR["SourcesRef «sealed»"]:::val
-        PR["ParticipantRef"]:::val
-    end
-
-    %% ================================================================
-    %% KEY COMPOSITIONS  (dashed arrows = HAS-A)
-    %% ================================================================
-    TTF -. "returnType" .-> TBRT
-    TTF -. "joinPath" .-> JS
-    TTF -. "condition" .-> FC
-    TTF -. "arguments" .-> AR
-
-    TBRT  -. "table" .-> TR
-    TBT   -. "table" .-> TR
-    TR    -. "primaryKey?" .-> CR
-
-    FC    -. "method" .-> MR
-    FKJ   -. "whereFilter?" .-> MR
-    CJ    -. "condition" .-> MR
-
-    QSTF  -. "method" .-> MR
-    MSTF  -. "method" .-> MR
-    SVCTF -. "method" .-> MR
-
-    %% ================================================================
-    %% MODEL GAPS  (orange dashed = not yet modelled)
-    %% ================================================================
-    CFA -. "⚠ condition\nnot yet modelled" .-> FC
-    IFA -. "⚠ condition\nnot yet modelled" .-> FC
-    QTF -. "condition" .-> FC
-    QLF -. "condition" .-> FC
-    QTI -. "condition" .-> FC
-
-    style CFA stroke:#D35400,stroke-dasharray:5 3
-    style IFA stroke:#D35400,stroke-dasharray:5 3
 ```
+
+---
+
+## 2. Root Field Variants
+
+```mermaid
+graph LR
+    classDef rootf fill:#1A5276,stroke:#154360,color:#fff
+    classDef ttf   fill:#0E6655,stroke:#0A5344,color:#fff,font-weight:bold
+
+    QF["QueryField\n«sealed»"]:::rootf
+    QF --> QTF["QueryTableField\n+ condition"]:::rootf
+    QF --> QLF["QueryLookupTableField\n+ condition"]:::rootf
+    QF --> QTI["QueryTableInterfaceField\n+ condition"]:::rootf
+    QF --> QTMF["QueryTableMethodField"]:::rootf
+    QF --> QNF["QueryNodeField"]:::rootf
+    QF --> QEF["QueryEntityField"]:::rootf
+    QF --> QIF["QueryInterfaceField"]:::rootf
+    QF --> QUF["QueryUnionField"]:::rootf
+    QF --> QSTF["QueryServiceTableField"]:::rootf
+    QF --> QSRF["QueryServiceRecordField"]:::rootf
+
+    MF["MutationField\n«sealed»"]:::rootf
+    MF --> MIF["MutationInsertTableField"]:::rootf
+    MF --> MUF["MutationUpdateTableField"]:::rootf
+    MF --> MDF["MutationDeleteTableField"]:::rootf
+    MF --> MUpF["MutationUpsertTableField"]:::rootf
+    MF --> MSTF["MutationServiceTableField"]:::rootf
+    MF --> MSRF["MutationServiceRecordField"]:::rootf
+
+    TTF["TableTargetField\n«sealed»"]:::ttf
+    TTF --> TF["TableField\n+ arguments"]:::ttf
+    TTF --> STF["SplitTableField\n+ arguments"]:::ttf
+    TTF --> LF["LookupTableField\n+ arguments"]:::ttf
+    TTF --> SLF["SplitLookupTableField\n+ arguments"]:::ttf
+    TTF --> TIF["TableInterfaceField"]:::ttf
+    TTF --> SVCTF["ServiceTableField\n+ arguments · method"]:::ttf
+    TTF --> RTF["RecordTableField\n+ arguments"]:::ttf
+    TTF --> RLF["RecordLookupTableField\n+ arguments"]:::ttf
+```
+
+All `TableTargetField` variants carry `returnType · joinPath · condition`.
+`QueryTableField`, `QueryLookupTableField`, and `QueryTableInterfaceField` carry `returnType · condition · arguments` (no `joinPath` — no parent table to navigate from).
+
+---
+
+## 3. Type Hierarchy
+
+```mermaid
+graph LR
+    classDef core  fill:#922B21,stroke:#7B241C,color:#fff,font-weight:bold
+    classDef typeh fill:#145A32,stroke:#196F3D,color:#fff
+    classDef val   fill:#4A5568,stroke:#2C3E50,color:#fff
+
+    GT["GraphitronType\n«sealed»"]:::core
+
+    GT --> TBT["TableBackedType\n«sealed»"]:::typeh
+    TBT --> TT["TableType"]:::typeh
+    TBT --> NT["NodeType"]:::typeh
+    TBT --> TIT["TableInterfaceType"]:::typeh
+
+    GT --> ResT["ResultType\n«sealed»"]:::typeh
+    ResT --> JRT["JavaRecordType"]:::typeh
+    ResT --> PRT["PojoResultType"]:::typeh
+    ResT --> JRRT["JooqRecordType"]:::typeh
+    ResT --> JTRT["JooqTableRecordType"]:::typeh
+
+    GT --> InpT["InputType\n«sealed»"]:::typeh
+    InpT --> JRIT["JavaRecordInputType"]:::typeh
+    InpT --> PIT["PojoInputType"]:::typeh
+    InpT --> JooqRI["JooqRecordInputType"]:::typeh
+    InpT --> JTRIT["JooqTableRecordInputType"]:::typeh
+
+    GT --> RootT["RootType"]:::typeh
+    GT --> IntT["InterfaceType"]:::typeh
+    GT --> UnT["UnionType"]:::typeh
+    GT --> ErrT["ErrorType"]:::typeh
+    GT --> TInpT["TableInputType"]:::typeh
+    GT --> UncT["UnclassifiedType"]:::typeh
+```
+
+---
+
+## 4. Support / Composition Types
+
+```mermaid
+graph LR
+    classDef sup fill:#6C3483,stroke:#5B2C6F,color:#fff
+    classDef val fill:#4A5568,stroke:#2C3E50,color:#fff
+    classDef gap stroke:#D35400,stroke-dasharray:5 3
+
+    RTR["ReturnTypeRef\n«sealed»"]:::sup
+    RTR --> TBRT["TableBoundReturnType"]:::sup
+    RTR --> PolRT["PolymorphicReturnType"]:::sup
+    RTR --> ResRTR["ResultReturnType"]:::sup
+    RTR --> ScRTR["ScalarReturnType"]:::sup
+
+    AR["ArgumentRef\n«sealed»"]:::sup
+    AR --> MPA["MethodParamArg\n«sealed»"]:::sup
+    MPA --> SPA["ScalarParamArg"]:::sup
+    MPA --> OPA["ObjectParamArg"]:::sup
+    AR --> TA["TableArg\n«sealed»"]:::sup
+    TA --> CFA["ColumnFilterArg"]:::gap
+    TA --> IFA["InputFilterArg"]:::gap
+    TA --> OBA["OrderByArg"]:::sup
+    TA --> PagA["First / Last\nAfter / Before"]:::sup
+
+    FW["FieldWrapper\n«sealed»"]:::sup
+    FW --> SFW["Single"]:::sup
+    FW --> LFW["List"]:::sup
+    FW --> CFW["Connection"]:::sup
+
+    JS["JoinStep\n«sealed»"]:::sup
+    JS --> FKJ["FkJoin"]:::sup
+    JS --> CJ["ConditionJoin"]:::sup
+
+    FC["FieldCondition\nmethod · override · contextArgs"]:::sup
+
+    TR["TableRef"]:::val
+    CR["ColumnRef"]:::val
+    MR["MethodRef"]:::val
+    PS["ParamSource\n«sealed»"]:::val
+    SR["SourcesRef\n«sealed»"]:::val
+    PR["ParticipantRef"]:::val
+```
+
+`ColumnFilterArg` and `InputFilterArg` are shown with orange dashed borders — they are missing a `FieldCondition condition` component for `@condition` on `ARGUMENT_DEFINITION`.
+
+---
+
+## 5. Key Compositions (HAS-A)
+
+| Holder | Field | Type |
+|---|---|---|
+| `TableTargetField` | `returnType` | `TableBoundReturnType` |
+| `TableTargetField` | `joinPath` | `List<JoinStep>` |
+| `TableTargetField` | `condition` | `FieldCondition?` |
+| `TableTargetField` | `arguments` | `List<ArgumentRef>` |
+| `QueryTableField` / `QueryLookupTableField` / `QueryTableInterfaceField` | `condition` | `FieldCondition?` |
+| `TableBoundReturnType` | `table` | `TableRef` |
+| `TableBackedType` | `table` | `TableRef` |
+| `TableRef` | `primaryKey?` | `List<ColumnRef>?` |
+| `FieldCondition` | `method` | `MethodRef` |
+| `FkJoin` | `whereFilter?` | `MethodRef?` |
+| `ConditionJoin` | `condition` | `MethodRef` |
+| `QueryServiceTableField` | `method` | `MethodRef` |
+| `MutationServiceTableField` | `method` | `MethodRef` |
+| `ServiceTableField` (child) | `method` | `MethodRef` |
 
 ---
 
@@ -236,7 +224,7 @@ These could potentially be collapsed into fewer types with boolean flags, or fur
 sealed interfaces (e.g., `StandardTableField permits TableField, SplitTableField`,
 `RecordBoundField permits RecordTableField, RecordLookupTableField`).
 
-### `QueryField` mirrors `ChildField` — and is missing `condition`
+### `QueryField` mirrors `ChildField`
 
 Several `QueryField` variants structurally mirror their `ChildField` counterparts:
 
@@ -249,14 +237,13 @@ Several `QueryField` variants structurally mirror their `ChildField` counterpart
 | `QueryServiceRecordField` | `ServiceRecordField` |
 
 The only structural difference is that root fields have no `joinPath` — there is no parent table
-to FK-navigate from. **`condition` is not a difference**: `@condition` on a root query field is
-critical functionality (it is the primary way to filter the top-level result set, e.g.
-`activeCustomers: [Customer] @condition(..., override: true)`). `QueryTableField`,
-`QueryLookupTableField`, and `QueryTableInterfaceField` now carry `FieldCondition condition`
-alongside their `ChildField` counterparts. Whether a shared interface between root and child
-table-bound fields could capture the common parts (`returnType · condition · arguments`) is
-worth exploring. `QueryTableMethodTableField` and `QueryServiceTableField` intentionally do not
-carry condition — the developer-controlled method/service replaces SQL generation entirely.
+to FK-navigate from. `QueryTableField`, `QueryLookupTableField`, and `QueryTableInterfaceField`
+now carry `FieldCondition condition` alongside their `ChildField` counterparts.
+`QueryTableMethodTableField` and `QueryServiceTableField` intentionally do not carry condition —
+the developer-controlled method/service replaces SQL generation entirely.
+
+Whether a shared interface between root and child table-bound fields could capture the common
+parts (`returnType · condition · arguments`) is worth exploring.
 
 ### `TableTargetField` interface vs. `NestingField`
 
