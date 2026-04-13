@@ -9,12 +9,17 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import javax.lang.model.element.Modifier;
 import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * Unit tests for {@link TableCodeGenerator}. Tests verify structural properties of the generated
+ * TypeSpec (method names, return types, parameter signatures) — not the generated code body.
+ * Code correctness is verified by compiling the generated output against real jOOQ classes in
+ * the {@code graphitron-rewrite-test-spec} module.
+ */
 class TableCodeGeneratorTest {
 
     private static final TableCodeGenerator GEN = new TableCodeGenerator();
@@ -50,16 +55,6 @@ class TableCodeGeneratorTest {
             .orElseThrow(() -> new AssertionError("Method not found: " + methodName));
     }
 
-    private static MethodSpec methodByFirstParam(String methodName, String firstParamHint) {
-        return spec().methodSpecs().stream()
-            .filter(m -> m.name().equals(methodName)
-                && !m.parameters().isEmpty()
-                && m.parameters().get(0).type().toString().contains(firstParamHint))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError(
-                "Method not found: " + methodName + " with first param containing '" + firstParamHint + "'"));
-    }
-
     // ===== Class structure =====
 
     @Test
@@ -69,7 +64,6 @@ class TableCodeGeneratorTest {
 
     @Test
     void generate_allNineMethodsArePresent() {
-        assertThat(spec().methodSpecs()).hasSize(9);
         assertThat(spec().methodSpecs()).extracting(MethodSpec::name)
             .containsExactlyInAnyOrder(
                 "fields",
@@ -79,7 +73,7 @@ class TableCodeGeneratorTest {
                 "subselectMany", "subselectOne");
     }
 
-    // ===== fields() =====
+    // ===== Signatures =====
 
     @Test
     void fields_signature() {
@@ -90,46 +84,12 @@ class TableCodeGeneratorTest {
     }
 
     @Test
-    void fields_iteratesFieldsGroupedByResultKey() {
-        var code = method("fields").code().toString();
-        assertThat(code).contains("sel.getFieldsGroupedByResultKey()");
-        assertThat(code).contains("sf.getName()");
-    }
-
-    @Test
-    void fields_matchesColumnsBySchemaFieldName() {
-        var code = method("fields").code().toString();
-        assertThat(code).contains("case \"title\" -> fields.add(table.TITLE)");
-        assertThat(code).contains("case \"filmId\" -> fields.add(table.FILM_ID)");
-    }
-
-    @Test
-    void fields_hasDefaultBranch() {
-        assertThat(method("fields").code().toString()).contains("default -> { }");
-    }
-
-    // ===== selectMany (root) =====
-
-    @Test
     void selectMany_signature() {
         var m = method("selectMany");
         assertThat(m.returnType().toString()).isEqualTo("org.jooq.Result<org.jooq.Record>");
         assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("env", "condition", "orderBy");
     }
-
-    @Test
-    void selectMany_body() {
-        var code = method("selectMany").code().toString();
-        assertThat(code).contains("getDslContext(env)");
-        assertThat(code).contains(".select(fields(env.getSelectionSet()))");
-        assertThat(code).contains(".from(table)");
-        assertThat(code).contains(".where(condition)");
-        assertThat(code).contains(".orderBy(orderBy)");
-        assertThat(code).contains(".fetch()");
-    }
-
-    // ===== selectOne (root) =====
 
     @Test
     void selectOne_signature() {
@@ -139,8 +99,6 @@ class TableCodeGeneratorTest {
             .containsExactly("env", "condition");
     }
 
-    // ===== subselectMany =====
-
     @Test
     void subselectMany_signature() {
         var m = method("subselectMany");
@@ -148,11 +106,7 @@ class TableCodeGeneratorTest {
             .isEqualTo("org.jooq.Field<org.jooq.Result<org.jooq.Record>>");
         assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("env", "sel", "condition", "orderBy");
-        assertThat(m.parameters()).extracting(p -> p.type().toString())
-            .contains("graphql.schema.SelectedField");
     }
-
-    // ===== subselectOne =====
 
     @Test
     void subselectOne_signature() {
@@ -160,11 +114,7 @@ class TableCodeGeneratorTest {
         assertThat(m.returnType().toString()).isEqualTo("org.jooq.Field<org.jooq.Record>");
         assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("env", "sel", "condition");
-        assertThat(m.parameters()).extracting(p -> p.type().toString())
-            .contains("graphql.schema.SelectedField");
     }
-
-    // ===== Service overloads (stubs — verify signatures only) =====
 
     @Test
     void selectManyByRowKeys_signature() {

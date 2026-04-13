@@ -138,6 +138,11 @@ mise r rebuild <module> # Rebuild specific module while server is running
 ## Testing & Important Files
 - **Testing**: JUnit 5 with AssertJ, approval tests, Quarkus test framework, TestContainers
 - **Test locations**: `src/test/java` and `src/test/resources`
+- **Rewrite generator tests**: Do NOT write code-string assertions that check generated method bodies (e.g. `assertThat(code).contains("TABLE.COL.eq(...)")`). These test the implementation, not the behavior, and break on every refactor. Instead:
+  - **Unit tests** (`*CodeGeneratorTest`): verify structural properties only — method names, return types, parameter signatures, which methods are present/absent
+  - **Pipeline tests** (`*PipelineTest`): verify SDL schema → generated TypeSpec structure through the full classification pipeline
+  - **Compilation tests** (`graphitron-rewrite-test-spec` `mvn compile`): verify generated code compiles against real jOOQ classes — catches type errors, wrong packages, ambiguous overloads
+  - **Execution tests** (`graphitron-rewrite-test-spec`): verify generated code produces correct results against a real database
 - **Configuration**: `pom.xml` files in each module
 - **GraphQL schemas**: `*.graphqls` files
 - **Directives**: `graphitron-common/src/main/resources/directives.graphqls`

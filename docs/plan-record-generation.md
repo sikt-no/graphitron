@@ -181,6 +181,12 @@ Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nest
 
 > **Plan review in progress.** Deliverables from G3 onwards have not yet been revised in light of current design decisions.
 
+### Testing convention
+
+Do not write code-string assertions that verify generated method bodies (e.g. `assertThat(code).contains("TABLE.COL.eq(...)")`). These test the implementation rather than behavior and break on every refactor.
+
+Generator tests should verify **structure** (method names, return types, parameter signatures) via unit tests, and **correctness** via compilation and execution in the `graphitron-rewrite-test-spec` module against a real jOOQ schema and PostgreSQL database.
+
 ---
 
 ### G3 — Scalar child fields (`ColumnField`, `ColumnReferenceField`)
