@@ -92,25 +92,16 @@ public class TableCodeGenerator {
     }
 
     /**
-     * Generates a {@code fields()} method that assembles the SELECT list based on a
-     * {@link graphql.schema.DataFetchingFieldSelectionSet}. Only columns whose GraphQL field
-     * name appears in the selection set are included.
+     * Generates a {@code fields()} method that assembles the SELECT list for one level of the
+     * query from a {@link graphql.schema.DataFetchingFieldSelectionSet}.
      *
-     * <p>Takes {@code DataFetchingFieldSelectionSet} (not {@code SelectedField}) because it is
-     * concerned only with column selection, not with argument extraction. Callers pass either
-     * {@code env.getSelectionSet()} (root queries) or {@code sel.getSelectionSet()} (nested
-     * fields via {@code SelectedField}).
+     * <p>The entry point is {@code env.getSelectionSet()} (root level). For nested fields,
+     * callers drill down via {@code selectedField.getSelectionSet()} at each level. Only columns
+     * whose GraphQL field name appears in the selection set are included.
      *
-     * <p>Generated code pattern:
-     * <pre>{@code
-     * public static List<Field<?>> fields(DataFetchingFieldSelectionSet sel) {
-     *     var table = Tables.FILM;
-     *     var fields = new ArrayList<Field<?>>();
-     *     if (sel.contains("title"))  fields.add(table.TITLE);
-     *     if (sel.contains("filmId")) fields.add(table.FILM_ID);
-     *     return fields;
-     * }
-     * }</pre>
+     * <p>Currently checks scalar columns via {@code sel.contains(name)}. When inline nested
+     * fields are added (G5), this will iterate {@code sel.getImmediateFields()} to walk the
+     * tree and access per-field arguments via {@code SelectedField.getArguments()}.
      */
     private MethodSpec buildFieldsMethod(TableRef tableRef, List<ScalarColumn> scalarColumns) {
         var tablesClass = tablesClassName();
