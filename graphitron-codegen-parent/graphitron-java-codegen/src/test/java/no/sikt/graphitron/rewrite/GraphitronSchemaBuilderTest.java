@@ -216,7 +216,61 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> assertThat(((ColumnReferenceField) schema.field("Film", "languageName")).columnName())
-                .isEqualTo("name"));
+                .isEqualTo("name")),
+
+        TABLE_PATH(
+            "@reference with {table:} resolves the unique FK between the two tables",
+            """
+            type Customer @table(name: "customer") {
+              district: String @reference(path: [{table: "address"}])
+            }
+            type Query { customer: Customer }
+            """,
+            schema -> {
+                var ref = (ColumnReferenceField) schema.field("Customer", "district");
+                assertThat(ref.joinPath()).hasSize(1);
+                assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                var fk = (JoinStep.FkJoin) ref.joinPath().get(0);
+                assertThat(fk.targetTableSqlName()).isEqualToIgnoringCase("address");
+            }),
+
+        TABLE_PATH_AMBIGUOUS(
+            "@reference with {table:} when multiple FKs exist between the two tables → UnclassifiedField",
+            """
+            type Film @table(name: "film") {
+              languageName: String @field(name: "name") @reference(path: [{table: "language"}])
+            }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "languageName")).isInstanceOf(UnclassifiedField.class)),
+
+        TABLE_PATH_NO_FK(
+            "@reference with {table:} pointing to a table with no FK to the source → UnclassifiedField",
+            """
+            type Film @table(name: "film") {
+              actorId: Int @reference(path: [{table: "actor"}])
+            }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "actorId")).isInstanceOf(UnclassifiedField.class)),
+
+        TABLE_PATH_ON_IMPLICIT_INPUT(
+            "@reference with {table:} on a field of an input type implicitly bound to a return table",
+            """
+            input Input { district: String! @reference(path: [{table: "address"}]) }
+            type Customer @table(name: "customer") { customerId: Int! @field(name: "customer_id") }
+            type Query { query(in: Input!): Customer }
+            """,
+            schema -> {
+                var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("Input");
+                assertThat(it.table().tableName()).isEqualToIgnoringCase("customer");
+                var ref = (no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField) it.inputFields().get(0);
+                assertThat(ref.joinPath()).hasSize(1);
+                assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                var fk = (JoinStep.FkJoin) ref.joinPath().get(0);
+                assertThat(fk.targetTableSqlName()).isEqualToIgnoringCase("address");
+                assertThat(ref.column().javaName()).isEqualTo("DISTRICT");
+            });
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -1242,6 +1296,40 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> assertThat(schema.type("SharedInput"))
+                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class)),
+
+        COLUMN_REFERENCE_FIELD(
+            "@reference on an input field → ColumnReferenceField with resolved join path and column",
+            """
+            input FilmInput @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("FilmInput");
+                assertThat(it.inputFields()).hasSize(2);
+                var refField = it.inputFields().stream()
+                    .filter(f -> f instanceof no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField)
+                    .findFirst().orElseThrow();
+                var crf = (no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField) refField;
+                assertThat(crf.name()).isEqualTo("languageName");
+                assertThat(crf.joinPath()).hasSize(1);
+                assertThat(crf.joinPath().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.model.JoinStep.FkJoin.class);
+                assertThat(crf.column().javaName()).isEqualTo("NAME");
+            }),
+
+        COLUMN_REFERENCE_FIELD_UNKNOWN_FK(
+            "@reference on an input field with unknown FK → UnclassifiedType",
+            """
+            input FilmInput @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              languageName: String @field(name: "name") @reference(path: [{key: "no_such_fkey"}])
+            }
+            type Query { x: String }
+            """,
+            schema -> assertThat(schema.type("FilmInput"))
                 .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class));
 
         final String sdl;

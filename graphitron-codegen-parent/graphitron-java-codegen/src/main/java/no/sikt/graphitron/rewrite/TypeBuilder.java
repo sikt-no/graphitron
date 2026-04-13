@@ -60,6 +60,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NOT_GENERATED;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_RECORD;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE_METHOD;
@@ -344,9 +345,9 @@ class TypeBuilder {
     GraphitronType buildTableInputType(String name, SourceLocation location,
             List<GraphQLInputObjectField> fields, TableRef tableRef) {
         var errors = new ArrayList<String>();
-        var resolvedFields = new ArrayList<InputField.ColumnField>();
+        var resolvedFields = new ArrayList<InputField>();
         for (var f : fields) {
-            var field = buildInputColumnField(f, name, tableRef);
+            var field = buildInputField(f, name, tableRef);
             if (field.isEmpty()) {
                 String colName = f.hasAppliedDirective(DIR_FIELD)
                     ? argString(f, DIR_FIELD, ARG_NAME).orElse(f.getName()) : f.getName();
@@ -426,7 +427,7 @@ class TypeBuilder {
         return tables;
     }
 
-    private Optional<InputField.ColumnField> buildInputColumnField(GraphQLInputObjectField field,
+    private Optional<InputField> buildInputField(GraphQLInputObjectField field,
             String parentTypeName, TableRef resolvedTable) {
         String name = field.getName();
         GraphQLType type = field.getType();
@@ -437,6 +438,13 @@ class TypeBuilder {
         String columnName = hasFieldDir
             ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
+        if (field.hasAppliedDirective(DIR_REFERENCE)) {
+            var path = ctx.parsePath(field, resolvedTable.tableName());
+            if (path.hasError()) return Optional.empty();
+            return svc.resolveColumnForReference(columnName, path.elements(), resolvedTable.tableName())
+                .map(col -> new InputField.ColumnReferenceField(
+                    parentTypeName, name, locationOf(field), typeName, nonNull, list, col, path.elements()));
+        }
         return ctx.catalog.findColumn(resolvedTable.tableName(), columnName)
             .map(e -> new InputField.ColumnField(parentTypeName, name, locationOf(field), typeName, nonNull, list,
                 new ColumnRef(e.sqlName(), e.javaName(), e.columnClass())));

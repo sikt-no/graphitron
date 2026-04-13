@@ -22,8 +22,14 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
+import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.JoinStep.ConditionJoin;
+import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
+import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import org.jooq.ForeignKey;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -79,6 +85,7 @@ class BuildContext {
     static final String ARG_PATH               = "path";
     static final String ARG_KEY                = "key";
     static final String ARG_CONDITION          = "condition";
+    static final String ARG_TABLE_REF          = "table";
     static final String ARG_INDEX              = "index";
     static final String ARG_FIELDS             = "fields";
     static final String ARG_PRIMARY_KEY        = "primaryKey";
@@ -281,5 +288,167 @@ class BuildContext {
             int[] tmp = prev; prev = curr; curr = tmp;
         }
         return prev[n];
+    }
+
+    // ===== Reference path parsing =====
+
+    /**
+     * Carries the result of {@link #parsePath}: either a fully resolved list of path elements or
+     * an error message. When {@code errorMessage()} is non-null the {@code elements()} list is
+     * empty and the containing field must be classified as an unclassified variant.
+     */
+    record ParsedPath(List<JoinStep> elements, String errorMessage) {
+        boolean hasError() { return errorMessage != null; }
+    }
+
+    /**
+     * Parses the {@code @reference(path:)} directive on {@code container} into a {@link ParsedPath}.
+     * Delegates to {@link #parsePath(GraphQLDirectiveContainer, String)} with no known source table.
+     *
+     * <p>Returns {@code ParsedPath(List.of(), null)} when no {@code @reference} directive is present.
+     * Returns a {@code ParsedPath} with a non-null {@code errorMessage} when any path element
+     * cannot be resolved.
+     */
+    ParsedPath parsePath(GraphQLDirectiveContainer container) {
+        return parsePath(container, null);
+    }
+
+    /**
+     * Parses the {@code @reference(path:)} directive on {@code container} into a {@link ParsedPath}.
+     *
+     * <p>Returns {@code ParsedPath(List.of(), null)} when no {@code @reference} directive is present.
+     * Returns a {@code ParsedPath} with a non-null {@code errorMessage} when any path element
+     * cannot be resolved.
+     *
+     * <p>When {@code startSqlTableName} is {@code null} (no table-backed source context), direction
+     * is inferred as forward (FK-side → key-side) and connectivity is not validated.
+     */
+    ParsedPath parsePath(GraphQLDirectiveContainer container, String startSqlTableName) {
+        var directive = container.getAppliedDirective(DIR_REFERENCE);
+        if (directive == null) return new ParsedPath(List.of(), null);
+
+        var pathArg = directive.getArgument(ARG_PATH);
+        if (pathArg == null) return new ParsedPath(List.of(), null);
+
+        Object pathValue = pathArg.getValue();
+        List<?> elements = pathValue instanceof List<?> l ? l : List.of(pathValue);
+
+        var resolvedElements = new ArrayList<JoinStep>();
+        var errors = new ArrayList<String>();
+        String currentSource = startSqlTableName;
+
+        for (var v : elements) {
+            if (v instanceof Map<?, ?>) {
+                parsePathElement(asMap(v), currentSource, resolvedElements, errors);
+                if (!resolvedElements.isEmpty()) {
+                    var last = resolvedElements.getLast();
+                    currentSource = last instanceof FkJoin fk ? fk.targetTableSqlName() : null;
+                }
+            }
+        }
+
+        if (!errors.isEmpty()) {
+            return new ParsedPath(List.of(), String.join("; ", errors));
+        }
+        return new ParsedPath(List.copyOf(resolvedElements), null);
+    }
+
+    /**
+     * Resolves one {@code @reference} path element into a {@link JoinStep} and appends it to
+     * {@code out}. Errors are accumulated in {@code errors}.
+     *
+     * <p>{@code currentSourceSqlName} is the SQL table name at the current position in the chain,
+     * or {@code null} when the source is not a table-backed type. When non-null, FK connectivity is
+     * validated (the FK must touch the current source table) and traversal direction is determined
+     * precisely. When null, forward traversal (FK-side → key-side) is assumed without validation.
+     */
+    private void parsePathElement(Map<String, Object> element, String currentSourceSqlName,
+            List<JoinStep> out, List<String> errors) {
+        Object keyRaw = element.get(ARG_KEY);
+        Object tableRaw = element.get(ARG_TABLE_REF);
+        Object conditionRaw = element.get(ARG_CONDITION);
+
+        Optional<String> keyName = Optional.ofNullable(keyRaw)
+            .map(Object::toString)
+            .filter(s -> !s.isBlank());
+        Optional<String> tableName = Optional.ofNullable(tableRaw)
+            .map(Object::toString)
+            .filter(s -> !s.isBlank());
+        boolean hasCondition = conditionRaw instanceof Map;
+
+        if (keyName.isPresent()) {
+            Optional<ForeignKey<?, ?>> fk = catalog.findForeignKey(keyName.get());
+            if (fk.isEmpty()) {
+                errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog"
+                    + candidateHint(keyName.get(), catalog.allForeignKeySqlNames()));
+                return;
+            }
+            var f = fk.get();
+            String fkSideTable  = f.getTable().getName();
+            String keySideTable = f.getKey().getTable().getName();
+            String targetSqlName;
+            if (currentSourceSqlName == null) {
+                targetSqlName = keySideTable;
+            } else if (currentSourceSqlName.equalsIgnoreCase(fkSideTable)) {
+                targetSqlName = keySideTable;
+            } else if (currentSourceSqlName.equalsIgnoreCase(keySideTable)) {
+                targetSqlName = fkSideTable;
+            } else {
+                errors.add("key '" + f.getName() + "' does not connect to table '" + currentSourceSqlName + "'"
+                    + candidateHint(currentSourceSqlName, List.of(fkSideTable, keySideTable)));
+                return;
+            }
+            MethodRef whereFilter = hasCondition ? resolveConditionRef(asMap(conditionRaw)) : null;
+            out.add(new FkJoin(f.getName(), targetSqlName, whereFilter));
+            return;
+        }
+        if (tableName.isPresent()) {
+            if (currentSourceSqlName == null) {
+                errors.add("path element with 'table' requires a known source table — use 'key' instead to name the FK explicitly");
+                return;
+            }
+            var fks = catalog.findForeignKeysBetweenTables(currentSourceSqlName, tableName.get());
+            if (fks.isEmpty()) {
+                errors.add("no foreign key found between tables '" + currentSourceSqlName + "' and '" + tableName.get() + "'");
+                return;
+            }
+            if (fks.size() > 1) {
+                var fkNames = fks.stream().map(ForeignKey::getName).collect(Collectors.joining(", "));
+                errors.add("multiple foreign keys found between tables '" + currentSourceSqlName + "' and '" + tableName.get()
+                    + "' — use 'key' to specify which: " + fkNames);
+                return;
+            }
+            var f = fks.get(0);
+            String fkSideTable  = f.getTable().getName();
+            String keySideTable = f.getKey().getTable().getName();
+            String targetSqlName = currentSourceSqlName.equalsIgnoreCase(fkSideTable) ? keySideTable : fkSideTable;
+            MethodRef whereFilter = hasCondition ? resolveConditionRef(asMap(conditionRaw)) : null;
+            out.add(new FkJoin(f.getName(), targetSqlName, whereFilter));
+            return;
+        }
+        if (hasCondition) {
+            Map<String, Object> condMap = asMap(conditionRaw);
+            MethodRef resolved = resolveConditionRef(condMap);
+            if (resolved != null) {
+                out.add(new ConditionJoin(resolved));
+            } else {
+                errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
+            }
+            return;
+        }
+        errors.add("path element has neither 'key', 'table', nor 'condition'");
+    }
+
+    /**
+     * Condition resolution via reflection is implemented in a later deliverable (P3).
+     * Returns {@code null} to signal that the condition is unresolved.
+     */
+    private MethodRef resolveConditionRef(Map<String, Object> conditionMap) {
+        return null;
+    }
+
+    private String extractConditionQualifiedName(Map<String, Object> conditionMap) {
+        Object name = conditionMap.get(ARG_NAME);
+        return name != null ? name.toString() : "unknown";
     }
 }

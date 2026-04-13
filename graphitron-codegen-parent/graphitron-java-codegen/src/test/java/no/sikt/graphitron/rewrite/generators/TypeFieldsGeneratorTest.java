@@ -272,6 +272,7 @@ class TypeFieldsGeneratorTest {
         assertThat(m.parameters()).extracting(p -> p.name()).containsExactly("keys", "dfe", "sel");
     }
 
+
     @Test
     void serviceField_wiringRegistersDataFetcherOnly() {
         var w = method(specWithServiceField("Language", "films", true), "wiring");

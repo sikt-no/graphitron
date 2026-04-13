@@ -468,9 +468,9 @@ public class TypeFieldsGenerator {
             .toList();
 
         builder.addStatement(
-            "$T serviceResult = $L.$L($L)",
+            "$T serviceResult = $T.$L($L)",
             Object.class,
-            smr.className(),
+            ClassName.bestGuess(smr.className()),
             smr.methodName(),
             String.join(", ", serviceCallArgs));
 

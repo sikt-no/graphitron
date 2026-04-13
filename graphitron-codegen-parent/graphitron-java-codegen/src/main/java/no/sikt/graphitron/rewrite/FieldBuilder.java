@@ -48,8 +48,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
-import no.sikt.graphitron.rewrite.model.JoinStep.ConditionJoin;
-import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
@@ -64,7 +62,6 @@ import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
-import org.jooq.ForeignKey;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -205,7 +202,7 @@ class FieldBuilder {
         if (elementType instanceof TableBackedType tbt && !(elementType instanceof TableInterfaceType)) {
             var wrapper = buildWrapper(fieldDef);
             var returnType = (ReturnTypeRef.TableBoundReturnType) ctx.resolveReturnType(elementTypeName, wrapper);
-            var referencePath = parsePath(fieldDef, parentTableType.table().tableName());
+            var referencePath = ctx.parsePath(fieldDef, parentTableType.table().tableName());
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, referencePath.errorMessage());
             }
@@ -232,7 +229,7 @@ class FieldBuilder {
 
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);
-            var referencePath = parsePath(fieldDef, parentTableType.table().tableName());
+            var referencePath = ctx.parsePath(fieldDef, parentTableType.table().tableName());
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, referencePath.errorMessage());
             }
@@ -954,7 +951,7 @@ class FieldBuilder {
             if (svcResult.error() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
             }
-            var servicePath = parsePath(fieldDef);
+            var servicePath = ctx.parsePath(fieldDef);
             if (servicePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePath.errorMessage());
             }
@@ -984,7 +981,7 @@ class FieldBuilder {
         String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
             ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
-        var objectPath = parsePath(fieldDef);
+        var objectPath = ctx.parsePath(fieldDef);
         if (objectPath.hasError()) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, objectPath.errorMessage());
         }
@@ -1016,7 +1013,7 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
             }
             // Service reconnect path: starts from the service return type's table (not the parent).
-            var servicePath = parsePath(fieldDef);
+            var servicePath = ctx.parsePath(fieldDef);
             if (servicePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePath.errorMessage());
             }
@@ -1034,7 +1031,7 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) {
-            var externalPath = parsePath(fieldDef, tableType.table().tableName());
+            var externalPath = ctx.parsePath(fieldDef, tableType.table().tableName());
             if (externalPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, externalPath.errorMessage());
             }
@@ -1048,7 +1045,7 @@ class FieldBuilder {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
             var returnType = ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef));
-            var tableMethodPath = parsePath(fieldDef, tableType.table().tableName());
+            var tableMethodPath = ctx.parsePath(fieldDef, tableType.table().tableName());
             if (tableMethodPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, tableMethodPath.errorMessage());
             }
@@ -1085,7 +1082,7 @@ class FieldBuilder {
                         "@nodeId(typeName:) type '" + typeName.get() + "' does not have @node");
                 }
                 TableRef parentTable = tableType.table();
-                var nodeRefPath = parsePath(fieldDef, tableType.table().tableName());
+                var nodeRefPath = ctx.parsePath(fieldDef, tableType.table().tableName());
                 if (nodeRefPath.hasError()) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, nodeRefPath.errorMessage());
                 }
@@ -1108,7 +1105,7 @@ class FieldBuilder {
             && argString(fieldDef, DIR_FIELD, ARG_JAVA_NAME).isPresent();
 
         if (fieldDef.hasAppliedDirective(DIR_REFERENCE)) {
-            var refPath = parsePath(fieldDef, tableType.table().tableName());
+            var refPath = ctx.parsePath(fieldDef, tableType.table().tableName());
             if (refPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, refPath.errorMessage());
             }
@@ -1162,151 +1159,7 @@ class FieldBuilder {
         return argStringList(fieldDef, directiveName, ARG_CONTEXT_ARGUMENTS);
     }
 
-    // ===== Reference path parsing =====
-
-    /**
-     * Parses the {@code @reference(path:)} directive on {@code fieldDef} into a {@link ParsedPath}.
-     *
-     * <p>Returns {@code ParsedPath(List.of(), null)} when no {@code @reference} directive is present.
-     * Returns a {@code ParsedPath} with a non-null {@code errorMessage()} when any path element
-     * cannot be resolved (FK not found in jOOQ catalog, condition unresolved, etc.).
-     */
-    /**
-     * Parses the {@code @reference(path:)} directive on {@code fieldDef} into a {@link ParsedPath}.
-     * Delegates to {@link #parsePath(GraphQLFieldDefinition, String)} with no known source table.
-     *
-     * <p>Returns {@code ParsedPath(List.of(), null)} when no {@code @reference} directive is present.
-     * Returns a {@code ParsedPath} with a non-null {@code errorMessage()} when any path element
-     * cannot be resolved.
-     */
-    private ParsedPath parsePath(GraphQLFieldDefinition fieldDef) {
-        return parsePath(fieldDef, null);
-    }
-
-    /**
-     * Parses the {@code @reference(path:)} directive on {@code fieldDef} into a {@link ParsedPath},
-     * threading {@code startSqlTableName} through the chain to validate connectivity and determine
-     * the correct traversal direction for each FK step.
-     *
-     * <p>When {@code startSqlTableName} is {@code null} (no table-backed source context), direction
-     * is inferred as forward (FK-side → key-side) and connectivity is not validated.
-     */
-    private ParsedPath parsePath(GraphQLFieldDefinition fieldDef, String startSqlTableName) {
-        var directive = fieldDef.getAppliedDirective(DIR_REFERENCE);
-        if (directive == null) return new ParsedPath(List.of(), null);
-
-        var pathArg = directive.getArgument(ARG_PATH);
-        if (pathArg == null) return new ParsedPath(List.of(), null);
-
-        Object pathValue = pathArg.getValue();
-        List<?> elements = pathValue instanceof List<?> l ? l : List.of(pathValue);
-
-        var resolvedElements = new ArrayList<JoinStep>();
-        var errors = new ArrayList<String>();
-        String currentSource = startSqlTableName;
-
-        for (var v : elements) {
-            if (v instanceof Map<?, ?>) {
-                parsePathElement(asMap(v), currentSource, resolvedElements, errors);
-                // Propagate the target of the last resolved step as the source for the next step.
-                // Condition joins don't carry table information, so source tracking is suspended.
-                if (!resolvedElements.isEmpty()) {
-                    var last = resolvedElements.getLast();
-                    currentSource = last instanceof FkJoin fk ? fk.targetTableSqlName() : null;
-                }
-            }
-        }
-
-        if (!errors.isEmpty()) {
-            return new ParsedPath(List.of(), String.join("; ", errors));
-        }
-        return new ParsedPath(List.copyOf(resolvedElements), null);
-    }
-
-    /**
-     * Resolves one {@code @reference} path element into a {@link JoinStep} and appends it to
-     * {@code out}. Errors are accumulated in {@code errors}.
-     *
-     * <p>{@code currentSourceSqlName} is the SQL table name at the current position in the chain,
-     * or {@code null} when the source is not a table-backed type. When non-null, FK connectivity is
-     * validated (the FK must touch the current source table) and traversal direction is determined
-     * precisely. When null, forward traversal (FK-side → key-side) is assumed without validation.
-     */
-    private void parsePathElement(Map<String, Object> element, String currentSourceSqlName, List<JoinStep> out, List<String> errors) {
-        Object keyRaw = element.get(ARG_KEY);
-        Object conditionRaw = element.get(ARG_CONDITION);
-
-        Optional<String> keyName = Optional.ofNullable(keyRaw)
-            .map(Object::toString)
-            .filter(s -> !s.isBlank());
-        boolean hasCondition = conditionRaw instanceof Map;
-
-        if (keyName.isPresent()) {
-            Optional<ForeignKey<?, ?>> fk = ctx.catalog.findForeignKey(keyName.get());
-            if (fk.isEmpty()) {
-                errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog"
-                    + candidateHint(keyName.get(), ctx.catalog.allForeignKeySqlNames()));
-                return;
-            }
-            var f = fk.get();
-            String fkSideTable  = f.getTable().getName();         // table carrying the FK column
-            String keySideTable = f.getKey().getTable().getName(); // table with the PK
-            String targetSqlName;
-            if (currentSourceSqlName == null) {
-                // No table context: assume forward direction (FK-side → key-side), no validation.
-                targetSqlName = keySideTable;
-            } else if (currentSourceSqlName.equalsIgnoreCase(fkSideTable)) {
-                targetSqlName = keySideTable;  // forward: FK-side → key-side
-            } else if (currentSourceSqlName.equalsIgnoreCase(keySideTable)) {
-                targetSqlName = fkSideTable;   // reverse: key-side → FK-side
-            } else {
-                errors.add("key '" + f.getName() + "' does not connect to table '" + currentSourceSqlName + "'"
-                    + candidateHint(currentSourceSqlName, List.of(fkSideTable, keySideTable)));
-                return;
-            }
-            // key + condition on the same element: FK join + WHERE filter.
-            MethodRef whereFilter = hasCondition ? resolveConditionRef(asMap(conditionRaw)) : null;
-            out.add(new FkJoin(f.getName(), targetSqlName, whereFilter));
-            return;
-        }
-        if (hasCondition) {
-            Map<String, Object> condMap = asMap(conditionRaw);
-            MethodRef resolved = resolveConditionRef(condMap);
-            if (resolved != null) {
-                out.add(new ConditionJoin(resolved));
-            } else {
-                errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
-            }
-            return;
-        }
-        // A path element with neither 'key' nor 'condition' is structurally invalid.
-        errors.add("path element has neither 'key' nor 'condition'");
-    }
-
-    /**
-     * Condition resolution via reflection is implemented in a later deliverable (P3).
-     * Returns {@code null} to signal that the condition is unresolved.
-     */
-    private MethodRef resolveConditionRef(Map<String, Object> conditionMap) {
-        return null;
-    }
-
-    private String extractConditionQualifiedName(Map<String, Object> conditionMap) {
-        Object name = conditionMap.get(ARG_NAME);
-        return name != null ? name.toString() : "unknown";
-    }
-
     // ===== Inner records =====
 
     record ExternalRef(String className, String methodName) {}
-
-    /**
-     * Carries the result of {@link #parsePath}: either a fully resolved list of path elements or
-     * an error message. When {@code errorMessage()} is non-null the {@code elements()} list is
-     * empty and the containing field must be classified as
-     * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}.
-     */
-    private record ParsedPath(List<JoinStep> elements, String errorMessage) {
-        boolean hasError() { return errorMessage != null; }
-    }
 }

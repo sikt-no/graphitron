@@ -7,6 +7,7 @@ import org.jooq.Table;
 
 import java.lang.reflect.Field;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -100,6 +101,26 @@ public class JooqCatalog {
             .filter(f -> f.getName().equalsIgnoreCase(name))
             .map(f -> fieldValue(f))
             .findFirst();
+    }
+
+    /**
+     * Returns all foreign keys that connect {@code tableA} and {@code tableB}, in either direction.
+     * A FK is included when one endpoint is {@code tableA} and the other is {@code tableB}
+     * (case-insensitive). Used to resolve {@code @reference(path: [{table: "..."}])} elements
+     * when no explicit FK name is given.
+     */
+    @SuppressWarnings("unchecked")
+    public List<ForeignKey<?, ?>> findForeignKeysBetweenTables(String tableA, String tableB) {
+        return (List<ForeignKey<?, ?>>) (List<?>) catalog.schemaStream()
+            .flatMap(schema -> schema.getTables().stream())
+            .flatMap(table -> table.getReferences().stream())
+            .filter(fk -> {
+                String fkSide  = fk.getTable().getName();
+                String keySide = fk.getKey().getTable().getName();
+                return (fkSide.equalsIgnoreCase(tableA) && keySide.equalsIgnoreCase(tableB))
+                    || (fkSide.equalsIgnoreCase(tableB) && keySide.equalsIgnoreCase(tableA));
+            })
+            .toList();
     }
 
     private Optional<Class<?>> keysClass(Schema schema) {

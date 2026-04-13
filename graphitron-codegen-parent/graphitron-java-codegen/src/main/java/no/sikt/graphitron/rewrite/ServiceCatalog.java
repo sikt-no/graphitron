@@ -69,9 +69,27 @@ class ServiceCatalog {
     }
 
     Optional<ColumnRef> resolveColumnForReference(String columnName, List<JoinStep> path, TableBackedType sourceType) {
-        String terminal = terminalTableSqlNameForReference(path, sourceType);
+        return resolveColumnForReference(columnName, path, sourceType.table().tableName());
+    }
+
+    Optional<ColumnRef> resolveColumnForReference(String columnName, List<JoinStep> path, String startSqlTableName) {
+        String terminal = terminalTableSqlName(path, startSqlTableName);
         if (terminal == null) return Optional.empty();
         return resolveColumnInTable(columnName, terminal);
+    }
+
+    /**
+     * Walks the FK join path from {@code startSqlTableName} and returns the terminal table SQL
+     * name. Returns {@code null} when any path step is not a {@link FkJoin} (i.e. the path
+     * contains a condition-only step whose target table is unknown at build time).
+     */
+    String terminalTableSqlName(List<JoinStep> path, String startSqlTableName) {
+        String current = startSqlTableName;
+        for (var step : path) {
+            if (!(step instanceof FkJoin fk)) return null;
+            current = fk.targetTableSqlName();
+        }
+        return current;
     }
 
     /**
@@ -79,12 +97,7 @@ class ServiceCatalog {
      * path step is not a {@link FkJoin} (i.e. the path contains a condition-only step).
      */
     String terminalTableSqlNameForReference(List<JoinStep> path, TableBackedType sourceType) {
-        String current = sourceType.table().tableName();
-        for (var step : path) {
-            if (!(step instanceof FkJoin fk)) return null;
-            current = fk.targetTableSqlName();
-        }
-        return current;
+        return terminalTableSqlName(path, sourceType.table().tableName());
     }
 
     Optional<ColumnRef> resolveColumnInTable(String columnName, String tableSqlName) {

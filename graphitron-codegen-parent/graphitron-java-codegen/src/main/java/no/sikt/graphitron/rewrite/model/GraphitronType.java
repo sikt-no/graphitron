@@ -289,15 +289,17 @@ public sealed interface GraphitronType
      * This is the input-side counterpart of {@link ReturnTypeRef.TableBoundReturnType}.
      *
      * <p>{@code table} is the resolved jOOQ table (always present — failure to resolve produces
-     * {@link UnclassifiedType}). All {@code inputFields} are fully resolved
-     * {@link InputField.ColumnField} instances; any field whose column cannot be matched causes
-     * the whole type to be classified as {@link UnclassifiedType}.
+     * {@link UnclassifiedType}). All {@code inputFields} are fully resolved {@link InputField}
+     * instances ({@link InputField.ColumnField} for fields on the type's own table,
+     * {@link InputField.ColumnReferenceField} for fields that navigate via {@code @reference});
+     * any field whose column cannot be matched causes the whole type to be classified as
+     * {@link UnclassifiedType}.
      */
     record TableInputType(
         String name,
         SourceLocation location,
         TableRef table,
-        List<InputField.ColumnField> inputFields
+        List<InputField> inputFields
     ) implements GraphitronType {}
 
     /**
