@@ -126,6 +126,7 @@ public class TableCodeGenerator {
             builder.addCode("        case $S -> fields.add(table.$L);\n",
                 col.graphqlFieldName(), col.jooqColumnJavaName());
         }
+        builder.addCode("        default -> { } // nested/unhandled fields\n");
         builder.addCode("    }\n");
         builder.addCode("}\n");
 
