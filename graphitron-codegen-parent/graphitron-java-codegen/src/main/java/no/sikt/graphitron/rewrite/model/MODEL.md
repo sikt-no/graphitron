@@ -194,9 +194,9 @@ graph LR
 | `TableBoundReturnType` | `table` | `TableRef` |
 | `TableBackedType` | `table` | `TableRef` |
 | `TableRef` | `primaryKey?` | `List<ColumnRef>?` |
-| `FieldCondition` | `method` | `MethodRef` |
-| `FkJoin` | `whereFilter?` | `MethodRef?` |
-| `ConditionJoin` | `condition` | `MethodRef` |
+| `FieldCondition` | `method` | `MethodRef` — signature: `(Table tgt, Arg...)` |
+| `FkJoin` | `whereFilter?` | `MethodRef?` — signature: `(SourceTable src, Table tgt)` |
+| `ConditionJoin` | `condition` | `MethodRef` — signature: `(SourceTable src, Table tgt)` |
 | `QueryServiceTableField` | `method` | `MethodRef` |
 | `MutationServiceTableField` | `method` | `MethodRef` |
 | `ServiceTableField` (child) | `method` | `MethodRef` |
@@ -251,9 +251,22 @@ parts (`returnType · condition · arguments`) is worth exploring.
 `TableTargetField` because it does not navigate to a new table scope. This exclusion is
 architecturally correct but worth documenting clearly at the use sites.
 
-### `ConditionJoin` vs. field-level `FieldCondition`
+### `ConditionJoin` vs. `FkJoin.whereFilter` vs. `FieldCondition`
 
-Both `ConditionJoin.condition` and `FieldCondition.method` hold a `MethodRef`, but they serve
-completely different purposes: join-step conditions are ON-clause structural joins between two
-table aliases; `FieldCondition` is a WHERE predicate on the target table. They share the same
-value type by coincidence, not by design.
+All three hold a `MethodRef`, which is intentional: `MethodRef` is the general model-level
+representation of any user-provided Java method (the javadoc says so explicitly). What varies is
+the calling convention, and that is already encoded per-parameter in `MethodRef.Param.source`
+via `ParamSource`:
+
+| Use site | `ParamSource` sequence | Generated call |
+|---|---|---|
+| `ConditionJoin.condition` | `SourceTable`, `Table` | `method(srcAlias, tgtAlias)` → ON clause |
+| `FkJoin.whereFilter` | `SourceTable`, `Table` | `method(srcAlias, tgtAlias)` → WHERE clause |
+| `FieldCondition.method` | `Table`, then `Arg`/`Context`... | `method(tgtTable, arg1, ...)` → WHERE predicate |
+
+The interesting structural observation is that `ConditionJoin.condition` and `FkJoin.whereFilter`
+share an identical calling convention (`SourceTable, Table → Condition`), while
+`FieldCondition.method` is structurally different (`Table, Arg... → Condition`). The model does
+not express this grouping. A potential improvement: introduce a `JoinConditionRef` wrapper used
+in both join-step types to make the shared `(source, target)` contract explicit in the type system
+and separate it cleanly from the field-condition contract.
