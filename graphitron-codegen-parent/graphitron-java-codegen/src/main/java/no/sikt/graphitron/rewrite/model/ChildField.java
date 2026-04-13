@@ -26,14 +26,50 @@ public sealed interface ChildField extends GraphitronField
             ChildField.MultitableReferenceField {
 
     /**
-     * The resolved {@code @condition} directive on a table-backed field.
+     * The resolved {@code @condition} directive.
      *
-     * <p>{@code method} is the resolved condition method. {@code override} is the value of the
-     * {@code override} argument — when {@code true}, this condition replaces any inherited
-     * condition rather than combining with it. {@code contextArgs} lists the names of context
-     * arguments threaded through to the condition method at call time.
+     * <p>The {@code @condition} directive appears at three distinct GraphQL locations, each
+     * producing different generated code. This record is shared across all three, but the
+     * enclosing context determines which location it represents:
      *
-     * <p>A {@code null} {@code condition} field on the enclosing field record means no
+     * <ol>
+     *   <li><b>{@code FIELD_DEFINITION}</b> — {@code @condition} on the field itself (e.g.
+     *       {@code films: [Film] @condition(...)}). Represented by {@code condition} on
+     *       {@link TableTargetField} sub-types. The condition method receives the target table
+     *       alias followed by all GraphQL field arguments as positional parameters:
+     *       {@code method(targetTable, arg1, arg2, ...)}.
+     *       Without {@code override: true}, the generated WHERE clause ANDs the condition call
+     *       after all argument column-equality predicates.
+     *       With {@code override: true}, all column-equality predicates from arguments are
+     *       suppressed; only argument-level condition method calls (if any) survive alongside
+     *       the field-level call.</li>
+     *
+     *   <li><b>{@code ARGUMENT_DEFINITION}</b> — {@code @condition} on a scalar or input-type
+     *       argument directly (e.g. {@code query(email: String! @condition(...)): CustomerTable}).
+     *       Not yet modelled — to be added as a {@code condition} component on
+     *       {@link ArgumentRef.TableArg.ColumnFilterArg} and
+     *       {@link ArgumentRef.TableArg.InputFilterArg}.
+     *       The condition method receives the target table alias followed by the resolved value(s)
+     *       of that argument: {@code method(targetTable, argValue)} for scalars, or
+     *       {@code method(targetTable, leaf1, leaf2, ...)} for input types (flattened leaf scalars).
+     *       Without {@code override: true}, the normal column-equality predicate is generated
+     *       alongside the condition call. With {@code override: true}, only the condition call is
+     *       generated for that argument — its column-equality predicate is suppressed.
+     *       Other arguments are unaffected by this flag.</li>
+     *
+     *   <li><b>{@code INPUT_FIELD_DEFINITION}</b> — {@code @condition} on a leaf field inside an
+     *       {@code input} type (e.g. {@code input NameInput \{ firstname: String @condition(...) \}}).
+     *       Handled during input-type classification; same override semantics as
+     *       {@code ARGUMENT_DEFINITION} but scoped to the individual input field.</li>
+     * </ol>
+     *
+     * <p>{@code method} is the resolved condition method. {@code override} controls suppression
+     * of the default column-equality predicate for the owning argument or, at field level,
+     * suppression of all argument column-equality predicates. {@code contextArgs} lists the names
+     * of GraphQL context keys whose runtime values are appended to the condition method's parameter
+     * list after the argument value(s).
+     *
+     * <p>A {@code null} {@code condition} component on the enclosing record means no
      * {@code @condition} directive is present.
      */
     record FieldCondition(

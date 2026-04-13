@@ -99,6 +99,15 @@ public sealed interface ArgumentRef
          * <p>{@code javaColumnName} is the Java field name in the generated jOOQ table class
          * (e.g. {@code "FILM_ID"}). {@code columnClass} is the fully qualified Java class
          * name of the column type (e.g. {@code "java.lang.Long"}).
+         *
+         * <p><b>Not yet modelled:</b> {@code @condition} on a scalar argument
+         * ({@code ARGUMENT_DEFINITION}) should be represented as a
+         * {@link no.sikt.graphitron.rewrite.model.ChildField.FieldCondition} component here.
+         * When present, the condition method is called with {@code (targetTable, argValue)}.
+         * Without {@code override: true}, both the {@code col = ?} predicate and the condition
+         * call are generated (ANDed). With {@code override: true}, the {@code col = ?} predicate
+         * is suppressed and only the condition call is emitted. See
+         * {@link no.sikt.graphitron.rewrite.model.ChildField.FieldCondition} for full semantics.
          */
         record ColumnFilterArg(
             String name,
@@ -115,6 +124,19 @@ public sealed interface ArgumentRef
          *
          * <p>The actual {@link GraphitronType.TableInputType} instance is available via
          * {@link no.sikt.graphitron.rewrite.GraphitronSchema#types()}.
+         *
+         * <p><b>Not yet modelled:</b> {@code @condition} on an input-type argument
+         * ({@code ARGUMENT_DEFINITION}) should be represented as a
+         * {@link no.sikt.graphitron.rewrite.model.ChildField.FieldCondition} component here.
+         * When present, the condition method is called with the target table alias followed by
+         * the flattened leaf scalar values of the input type:
+         * {@code method(targetTable, leaf1, leaf2, ...)}. Without {@code override: true}, the
+         * normal column-equality predicates for the input fields are generated alongside the
+         * condition call. With {@code override: true}, those predicates are suppressed for the
+         * input type's fields; predicates from other arguments are unaffected. Individual input
+         * fields may also carry {@code @condition} at {@code INPUT_FIELD_DEFINITION} level —
+         * see {@link no.sikt.graphitron.rewrite.model.ChildField.FieldCondition} for full
+         * semantics.
          */
         record InputFilterArg(
             String name,
