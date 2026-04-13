@@ -28,11 +28,27 @@ graphitron/
 ```
 
 ## Documentation
+
+### Conceptual Documentation (Start Here)
+The `/docs` folder contains conceptual guides explaining Graphitron's design, philosophy, and how it works:
+- **Documentation Guide**: [/docs/README.md](/docs/README.md) - **START HERE** - Navigation and reading order for all documentation
+- **Vision and Goal**: [/docs/VISION-AND-GOAL.md](/docs/VISION-AND-GOAL.md) - What problem Graphitron solves and how it approaches the solution
+- **Graphitron Principles**: [/docs/GRAPHITRON-PRINCIPLES.md](/docs/GRAPHITRON-PRINCIPLES.md) - Design philosophy and long-term thinking that shapes architectural decisions
+- **Dependencies**: [/docs/DEPENDENCIES.md](/docs/DEPENDENCIES.md) - Why we chose jOOQ and GraphQL-Java as foundational dependencies
+- **Code Generation Triggers**: [/docs/CODE-GENERATION-TRIGGERS.md](/docs/CODE-GENERATION-TRIGGERS.md) - Schema patterns → sealed type variants → what gets generated (rewrite pipeline)
+- **Security**: [/docs/SECURITY.md](/docs/SECURITY.md) - Security model and database-level enforcement approach
+
+### Technical Reference Documentation
 - **Main README**: [/README.md](/README.md) - Project overview and getting started
-- **Example README**: [/graphitron-example/README.md](/graphitron-example/README.md) - Sakila example implementation
-- **Schema Transform README**: [/graphitron-schema-transform/README.md](/graphitron-schema-transform/README.md) - Schema transformation features
-- **Java Codegen README**: [/graphitron-codegen-parent/graphitron-java-codegen/README.md](/graphitron-codegen-parent/graphitron-java-codegen/README.md)
-- **JavaPoet README**: [/graphitron-codegen-parent/graphitron-javapoet/README.md](/graphitron-codegen-parent/graphitron-javapoet/README.md)
+- **Java Codegen README**: [/graphitron-codegen-parent/graphitron-java-codegen/README.md](/graphitron-codegen-parent/graphitron-java-codegen/README.md) - Complete directive reference with detailed examples (1500+ lines)
+- **Schema Transform README**: [/graphitron-schema-transform/README.md](/graphitron-schema-transform/README.md) - Schema transformation features (feature flags, Federation, Relay)
+- **Common Module README**: [/graphitron-common/README.md](/graphitron-common/README.md) - Exception handling framework and shared utilities
+- **Example README**: [/graphitron-example/README.md](/graphitron-example/README.md) - Sakila example implementation with quickstart guide
+- **JavaPoet README**: [/graphitron-codegen-parent/graphitron-javapoet/README.md](/graphitron-codegen-parent/graphitron-javapoet/README.md) - About the JavaPoet fork
+
+### Active Rewrite
+- **Rewrite Roadmap**: [/docs/REWRITE-ROADMAP.md](/docs/REWRITE-ROADMAP.md) - Phase 2/3 plan for retiring ProcessedSchema and improving error messages
+
 
 ## Key Architecture
 
@@ -133,6 +149,8 @@ mise r sakila          # Start example database (Sakila)
 mise r jooq            # Regenerate jOOQ classes from database
 mise r rebuild <module> # Rebuild specific module while server is running
 
+# For quick builds without tests/javadocs, use Maven profiles:
+mvn clean install -Pquick
 ```
 
 ## Testing & Important Files
@@ -152,7 +170,6 @@ mise r rebuild <module> # Rebuild specific module while server is running
 2. **Check pom.xml** before adding any dependencies - use what's already available
 3. **Write tests** using JUnit 5 and AssertJ for all new functionality
 4. **Follow the framework patterns** already established in the codebase
-5. **Never use `-Pquick`, `-DskipTests`, or `-Dmaven.test.skip`** when building with tests.
 
 ## Common Tasks
 - **Schema changes**: Update .graphqls files → run `mvn graphitron:generate-code`

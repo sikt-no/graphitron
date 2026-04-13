@@ -6,11 +6,16 @@ Graphitron is used as a Maven plugin, offering two main functionalities:
 -   **Java Code Generation**: Creates Java source code from GraphQL schemas.
 -   **Schema Transformation**: Modifies GraphQL schemas based on various configurations.
 
-For more information, see:
--   [Vision and Goals](./VISION.md)
+## Documentation
+
+**New to Graphitron?** Start with the [documentation guide](./docs/README.md) for conceptual understanding:
+-   [Vision and Goal](./docs/VISION-AND-GOAL.md) - What problem Graphitron solves and why
+-   [Graphitron Principles](./docs/GRAPHITRON-PRINCIPLES.md) - Design philosophy for building systems that last decades
+-   [Code Generation Triggers](./docs/CODE-GENERATION-TRIGGERS.md) - Schema patterns → what gets generated
+
+**Ready to use Graphitron?** See the technical reference documentation:
 -   [Online documentation](https://graphitron.sikt.no/)
--   [Maven Plugin README](./graphitron-maven-plugin/README.md) for plugin goals and configuration reference.
--   [Code-generator README](./graphitron-codegen-parent/graphitron-java-codegen/README.md) for detailed information on how to configure and use the Graphitron Java Code Generator.
--   [Schema Transform README](./graphitron-schema-transform/README.md) for information on how to transform GraphQL schemas.
--   [Common Module README](./graphitron-common/README.md) for exception handling framework and shared utilities.
--   [Example project README](./graphitron-example/README.md) for an example of how to use Graphitron.
+-   [Example project README](./graphitron-example/README.md) - Quickstart guide with working example
+-   [Java Code Generator README](./graphitron-codegen-parent/graphitron-java-codegen/README.md) - Complete directive reference
+-   [Schema Transform README](./graphitron-schema-transform/README.md) - Schema transformation features
+-   [Common Module README](./graphitron-common/README.md) - Exception handling framework and shared utilities

@@ -1,8 +1,8 @@
 # Rewrite Pipeline: Schema Classification
 
-> **Status: in progress.** The parsing and validation layer described here is complete. The generating stream (code emission) is not yet built. The rewrite pipeline is behind the `enableRewrite` flag (default `false`) and is not ready for production use.
+> **Status: conceptual reference.** The parsing and validation layer is complete. Generators are stubs. See [REWRITE-ROADMAP.md](REWRITE-ROADMAP.md) for the Phase 2/3 roadmap.
 
-This document covers the field taxonomy, the schema classification model, and the validation layer of the rewrite pipeline. The companion document [`plan-record-generation.md`](plan-record-generation.md) covers the generating stream, remaining deliverables, and outstanding testing gaps for this layer.
+This document covers the field taxonomy, the schema classification model, and the validation layer of the rewrite pipeline.
 
 ---
 
@@ -102,16 +102,16 @@ TypeDefinitionRegistry
   All type files go to <outputPackage>.rewrite.types
 ```
 
-`GraphitronSchemaBuilder` operates on a `GraphQLSchema` assembled from the `TypeDefinitionRegistry` (same pattern as `SchemaTransformer.assembleSchema()`). It runs classification in two steps:
+`GraphitronSchemaBuilder` (the orchestrator) runs classification in two steps coordinated via `TypeBuilder` and `FieldBuilder`:
 
-1. **Type classification** — iterates `schema.getAllTypesAsList()`. Each `OutputType` variant (`TableType`, `ResultType`, `RootType`) captures its `fieldCoordinates` directly from `GraphQLObjectType.getFieldDefinitions()` at this stage. Interface and union participant lists are populated in a second pass within `buildTypes()` once the full type map is available.
-2. **Field classification** — iterates each `GraphQLObjectType`'s field definitions and builds the flat `Map<FieldCoordinates, GraphitronField>` passed to `GraphitronSchema`.
+1. **Type classification** (`TypeBuilder`) — iterates `schema.getAllTypesAsList()`. Each `OutputType` variant (`TableType`, `ResultType`, `RootType`) captures its `fieldCoordinates`. Interface and union participant lists are populated in a second pass once the full type map is available.
+2. **Field classification** (`FieldBuilder`) — iterates each type's field definitions and builds the flat `Map<FieldCoordinates, GraphitronField>` passed to `GraphitronSchema`. `FieldBuilder` calls `ServiceCatalog` for all reflection-based lookups.
 
-`GraphQLRewriteGenerator` (in `no.sikt.graphitron.rewrite`) is the entry point: it runs the builder, runs the validator, and dispatches generators in parallel.
+`GraphQLRewriteGenerator` (in `no.sikt.graphitron.rewrite`) is the entry point: it runs the builder, runs the validator, and dispatches generators.
 
 ### `GraphitronSchema`
 
-Top-level container for the parsed schema. A record with two maps:
+Top-level container. A record with two maps:
 
 - `Map<String, GraphitronType> types` — all classified types keyed by name
 - `Map<FieldCoordinates, GraphitronField> fields` — all classified fields keyed by `(typeName, fieldName)`
@@ -120,17 +120,25 @@ Convenience accessors: `type(typeName)`, `field(typeName, fieldName)`, `fieldsOf
 
 ### `JooqCatalog`
 
-Lazy wrapper around the jOOQ `Catalog`. Resolves table and column references via reflection so that projects with custom `GeneratorStrategy` implementations work correctly — Java field names are read from the generated `Tables` class, not uppercased from SQL names.
+Lazy wrapper around the jOOQ `Catalog`. Resolves table and column references via reflection.
 
 Key methods:
 - `findTable(sqlName)` → `Optional<TableEntry>` (`javaFieldName`, `Table<?>`)
-- `findColumn(table, sqlColumnName)` → `Optional<ColumnEntry>` (`javaName`, `columnClass`)
-- `findColumn(tableSqlName, columnSqlName)` → same, resolving the table by name first
-- `findForeignKey(name)` → searches by SQL or Java FK name, case-insensitive
+- `findColumn(table, sqlColumnName)` → `Optional<ColumnEntry>` (`javaName`, `columnClass`, `nullable`)
+- `findForeignKey(name)` → searches by SQL constraint name or jOOQ Java constant name, case-insensitive
+- `findForeignKeysBetweenTables(tableA, tableB)` → all FKs where one endpoint is `tableA` and the other is `tableB` (either direction); used to resolve `{table: "NAME"}` path elements in `@reference`
+- `findIndexColumns(tableSqlName, indexName)` → ordered list of `ColumnEntry` for a named index
+- `findPkColumns(tableSqlName)` → PK columns in key-field order; empty when no PK
+- `allColumnsOf(tableSqlName)` → all columns in declaration order
+- `columnSqlNamesOf(tableSqlName)` → SQL column names only, for candidate hints in error messages
+- `allTableSqlNames()` → all table SQL names, for candidate hints
+- `allForeignKeySqlNames()` → all FK constraint names, for candidate hints
 
-`JooqCatalog` and `GraphitronSchemaBuilder` are the **only** classes permitted to hold or access raw jOOQ types (`Table<?>`, `Field<?>`, `ForeignKey<?,?>`) or raw graphql-java schema types (`TypeDefinitionRegistry`, `GraphQLSchema`, `GraphQLFieldDefinition`, etc.). They form the reflection and schema-parsing boundary. All information extracted from either source is stored as primitives or strings in the taxonomy records; downstream code (validators, spec builders, generators) works from those values alone.
+### `ServiceCatalog`
 
-This constraint keeps the taxonomy complete: if a generator needs information that is not yet in a record, the fix is to add a component and extract the value in the builder — not to reach past the taxonomy to a stored jOOQ or graphql-java handle.
+Handles Java reflection: loads service/tableMethod/condition classes at build time and classifies their parameters into `MethodRef` values. Also resolves table and column references from `JooqCatalog`.
+
+`JooqCatalog`, `TypeBuilder`, `FieldBuilder`, and `ServiceCatalog` are the boundary classes permitted to hold raw jOOQ types (`Table<?>`, `ForeignKey<?,?>`) or raw graphql-java schema types. All downstream code works from primitives and the model records below.
 
 ---
 
@@ -140,37 +148,27 @@ This constraint keeps the taxonomy complete: if a generator needs information th
 
 When different variants of a concept carry different data, use a sealed interface — not an enum with a shared field set. An enum forces every variant to have the same shape; a sealed record hierarchy gives each variant exactly the fields it needs.
 
-The `ServiceParam` hierarchy illustrates the pattern. The original `ServiceParamInfo(name, typeName, kind: ParamKind)` stored the kind as an enum but carried `typeName` for every variant even though `SourcesParam` doesn't need a flat type string — it needs a *classified* `SourcesRef`. Replacing the enum with sealed records made `SourcesRef` a natural embedded type and allowed the compiler to enforce exhaustiveness.
+`BatchKey` illustrates the pattern: `RowKeyed` and `RecordKeyed` carry `keyColumns: List<ColumnRef>`, while `ObjectBased` carries `fqClassName: String`. None carry fields they don't use. The compiler enforces exhaustive switches — when a new variant is added, every switch that doesn't handle it becomes a compile error.
 
-`SourcesRef` itself follows the same pattern: `RowKeyed` and `RecordKeyed` carry `pkJavaTypes`, `TableRecordKeyed` carries `fqClassName`, and `Unrecognized` carries the raw type string for error messages. None of them are forced to carry fields they don't use.
-
-The rule of thumb: if the answer to "what data does this variant carry?" differs by variant, reach for a sealed interface.
-
-### Exhaustive `switch` as a safety net
-
-Sealed hierarchies compose naturally with switch expressions. Every switch over a sealed type is compiler-checked to be exhaustive — adding a new variant to the hierarchy immediately breaks every switch that doesn't handle it, making omissions impossible to ship silently.
-
-Both `GraphitronSchemaValidator` and `FieldsCodeGenerator` switch on `SourcesRef` rather than checking `instanceof` chains. This is not just style: when `SourcesRef` gains a new variant (e.g. `MultiColumnRowKeyed`), the compiler will identify every place that needs updating.
-
-The same principle applies to `ServiceParam`: the generator's per-parameter loop switches on `param` (exhaustive over `SourcesParam`, `ArgParam`, `ContextParam`) instead of testing `param.kind() == SOURCES`.
+Both `GraphitronSchemaValidator` and `FieldsCodeGenerator` switch on `BatchKey` rather than checking `instanceof` chains. The same exhaustiveness discipline applies to `ParamSource`, `ReturnTypeRef`, `OrderBySpec`, `JoinStep`, and `WhereFilter`.
 
 ### Classification belongs at the parse boundary
 
-`GraphitronSchemaBuilder.classifySourcesType()` is the only place that reads the reflection `java.lang.reflect.Type` tree to classify a SOURCES parameter. It converts raw reflection output into a `SourcesRef` value and stores it in `SourcesParam`. Everything downstream — validator, generator — switches on the pre-classified value and never touches reflection types.
+`ServiceCatalog.reflectServiceMethod()` and `ServiceCatalog.reflectTableMethod()` are the only places that read the reflection `java.lang.reflect.Type` tree to classify parameters. They convert raw reflection output into `MethodRef.Param` values (each carrying a `ParamSource`). Everything downstream — validator, generator — switches on the pre-classified values and never touches reflection types.
 
-This is consistent with the general rule that `JooqCatalog` and `GraphitronSchemaBuilder` are the only classes permitted to hold raw jOOQ or reflection types. If a generator needs information that is not yet in a taxonomy record, the fix is to add a component and extract the value in the builder — not to reach past the taxonomy boundary.
+This is consistent with the general rule that `JooqCatalog`, `TypeBuilder`, `FieldBuilder`, and `ServiceCatalog` are the only classes permitted to hold raw jOOQ or reflection types. If a generator needs information that is not yet in a taxonomy record, the fix is to add a component and extract the value in the builder — not to reach past the taxonomy boundary.
 
 ### Narrow component types over broad interfaces
 
-Field record components are declared with the narrowest type the classifier can guarantee rather than the broad sealed-interface root. A field whose return type is always table-bound (e.g. `TableField`, `ServiceTableField`, `QueryTableField`) declares `ReturnTypeRef.TableBoundReturnType` directly; a field whose return type is always polymorphic (e.g. `InterfaceField`, `QueryNodeField`) declares `ReturnTypeRef.PolymorphicReturnType` directly; a field whose return type is always non-table (e.g. `ServiceRecordField`, `RecordField`) declares `ReturnTypeRef.OtherReturnType`.
+Field record components are declared with the narrowest type the classifier can guarantee rather than the broad sealed-interface root. A field whose return type is always table-bound (e.g. `TableField`, `ServiceTableField`, `QueryTableField`) declares `ReturnTypeRef.TableBoundReturnType` directly; a field whose return type is always polymorphic (e.g. `InterfaceField`, `QueryNodeField`) declares `ReturnTypeRef.PolymorphicReturnType` directly.
 
-This pushes the classification certainty into the type system: code that receives a `ServiceTableField` knows its `returnType` is `TableBoundReturnType` without a runtime check; code that receives a `ServiceRecordField` knows `returnType` is `OtherReturnType`. Where the return type genuinely varies (mutation table fields, `TableMethodField`, `ConstructorField`, `ComputedField`), the broad `ReturnTypeRef` is retained.
+This pushes the classification certainty into the type system: code that receives a `ServiceTableField` knows its `returnType` is `TableBoundReturnType` without a runtime check. Where the return type genuinely varies (mutation table fields, `TableMethodField`, `ServiceRecordField`, `ConstructorField`, `ComputedField`), the broad `ReturnTypeRef` is retained.
 
 The same discipline applies to splitting semantically distinct variants into separate records rather than using a discriminating boolean or enum. `ServiceTableField` and `ServiceRecordField` exist as separate records (not a single `ServiceField` with a `kind` flag) precisely so that the return type can be narrowed in each.
 
 ### Sub-taxonomies for resolution outcomes
 
-Complex resolution outcomes get their own sealed type rather than being stored as raw strings. `SourcesRef` is a sub-taxonomy of `ServiceParam`, just as `TableRef` is a sub-taxonomy of `TableType` and `ColumnRef` is a sub-taxonomy of `ColumnField`. This pattern keeps each concept's complexity local and makes the taxonomy self-documenting: the type of a field tells you exactly what states it can be in.
+Complex resolution outcomes get their own sealed type rather than being stored as raw strings. `BatchKey` is a sub-taxonomy of `ParamSource.Sources`, just as `TableRef` is a sub-taxonomy of `GraphitronType.TableBackedType` and `ColumnRef` is a sub-taxonomy of `InputField.ColumnField`. This pattern keeps each concept's complexity local and makes the taxonomy self-documenting: the type of a field tells you exactly what states it can be in.
 
 ---
 
@@ -200,22 +198,17 @@ GraphitronType
 
 ### Reference types
 
-**`TableRef`** — outcome of matching `@table(name:)` against the jOOQ catalog:
-- `ResolvedTable` — `tableName`, `javaFieldName`, `javaClassName`, `hasPrimaryKey: boolean`, `primaryKeyColumnSqlNames: List<String>` (empty when no PK). Convenience accessor `primaryKeyColumnSqlName()` returns the single PK column name; only safe to call after the validator confirms a single-column PK.
-- `UnresolvedTable` — `tableName` only; validator reports an error
-- `tableName()` is present on both variants
+**`TableRef`** — resolved jOOQ table: `tableName()` (SQL name), `javaFieldName()` (e.g. `FILM`), `javaClassName()` (e.g. `Film`), `primaryKeyColumns: List<ColumnRef>`, `hasPrimaryKey()`. There are no unresolved variants — a type that names an unknown jOOQ table is classified as `UnclassifiedType` at build time.
 
-**`NodeRef`** — whether a `TableType` carries `@node`:
-- `NoNode` — no directive
-- `NodeDirective` — `typeId: String` (nullable), `keyColumns: List<ColumnRef>` (empty when argument omitted — PK used at codegen time)
+`NodeType` carries node-specific data directly: `typeId: String` (nullable — when omitted the type name is used as the type identifier) and `nodeKeyColumns: List<ColumnRef>`. There is no separate `NodeRef` hierarchy.
 
-**`ParticipantRef`** — each implementing or member type of an interface or union:
-- `BoundParticipant` — type has `@table`; `typeName`, `table: TableRef`, `discriminatorValue` (from `@discriminator(value:)`, null when absent)
-- `UnboundParticipant` — type lacks `@table`; validator reports an error
+**`ParticipantRef`** — one entry in an interface's or union's `participants` list: flat record with `typeName: String`, `table: TableRef`, `discriminatorValue: String` (nullable — from `@discriminator(value:)`, absent for interfaces without discriminators). Participant types without a resolvable `@table` cause the enclosing interface or union to become `UnclassifiedType`.
 
-**`InputFieldRef`** — resolution outcome for a single field in a `TableInputType`:
-- `TableInputField` — `name`, `typeName`, `nonNull`, `list`, `table: ResolvedTable`, `javaColumnName`, `columnClass: String`
-- `UnresolvedInputField` — `name`, `typeName`, `nonNull`, `list`, `columnName`
+**`InputField.ColumnField`** — a direct-mapped field in a `TableInputType`: carries `parentTypeName`, `name`, `location`, `typeName`, `nonNull`, `list`, `column: ColumnRef`. The column is resolved from the type's bound table.
+
+**`InputField.ColumnReferenceField`** — a `@reference`-annotated field in a `TableInputType` (without `@nodeId`): carries the same scalar components as `ColumnField` plus `column: ColumnRef` (the terminal column on the *target* table) and `joinPath: List<JoinStep>` (the FK path from the bound table to the target). Path elements can be `{key: "FK_NAME"}` (explicit FK) or `{table: "TABLE_NAME"}` (implicit — the unique FK between the current table and the named table is found automatically; if multiple FKs exist, the builder requires `key` instead and reports an `UnclassifiedField`).
+
+Both `ColumnField` and `ColumnReferenceField` produce `UnclassifiedField` when a column or FK cannot be resolved. Unresolvable input fields cause the enclosing `TableInputType` to become `UnclassifiedType`.
 
 ---
 
@@ -269,7 +262,7 @@ GraphitronField
 └── UnclassifiedField  (reason: String)
 ```
 
-**Naming convention:** field types follow the pattern `{ParentType}{Target}{Mechanism}Field` for root fields (e.g. `QueryServiceTableField` = Query root + service mechanism + table-mapped return) and `{Target}{Mechanism}Field` or `{Source}{Target}Field` for child fields (e.g. `RecordTableField` = result-mapped source → table-mapped target). The `Table`/`Record` suffix on service and mutation variants identifies the return type: `TableField` variants return `TableBoundReturnType`; `RecordField` variants return `OtherReturnType`.
+**Naming convention:** field types follow the pattern `{ParentType}{Target}{Mechanism}Field` for root fields (e.g. `QueryServiceTableField` = Query root + service mechanism + table-mapped return) and `{Target}{Mechanism}Field` or `{Source}{Target}Field` for child fields (e.g. `RecordTableField` = result-mapped source → table-mapped target). The `Table`/`Record` suffix on service and mutation variants identifies the return type: `TableField` variants return `TableBoundReturnType`; `RecordField` variants have non-table returns.
 
 **Field-level directive exclusivity:**
 
@@ -295,8 +288,8 @@ All create a new Graphitron scope or enter private service scope. Classification
 | `QueryTableInterfaceField` | Return type is `TableInterfaceType` | Single / List / Connection | Single-table discriminated interface. `returnType` is `TableBoundReturnType`. |
 | `QueryInterfaceField` | Return type is `InterfaceType` | Single / List / Connection | Multi-table interface; each implementor has its own `@table`. `returnType` is `PolymorphicReturnType`. |
 | `QueryUnionField` | Return type is `UnionType` | Single / List / Connection | All member types have `@table`. `returnType` is `PolymorphicReturnType`. |
-| `QueryServiceTableField` | `@service` with table-mapped return — checked first | Single / List | Private scope; `returnType` is `TableBoundReturnType`. Carries `serviceMethodRef: ServiceMethodRef`. |
-| `QueryServiceRecordField` | `@service` with non-table return — checked first | Single / List | Private scope; `returnType` is `OtherReturnType`. |
+| `QueryServiceTableField` | `@service` with table-mapped return — checked first | Single / List | Private scope; `returnType` is `TableBoundReturnType`. Carries `method: MethodRef`. |
+| `QueryServiceRecordField` | `@service` with non-table return — checked first | Single / List | Private scope; `returnType` is broad `ReturnTypeRef`. |
 
 `hasLookupKeyAnywhere()` checks direct arguments for `@lookupKey`, then recursively checks input type fields (depth-capped at 10 levels to prevent infinite recursion on circular input type references).
 
@@ -310,8 +303,8 @@ The only fields permitted to write to the database. All support access back into
 | `MutationUpdateTableField` | `@mutation(typeName: UPDATE)` | `ReturnTypeRef` (broad) | Derived source table applies. |
 | `MutationDeleteTableField` | `@mutation(typeName: DELETE)` | `ReturnTypeRef` (broad) | No derived source table — deleted rows cannot be queried back. |
 | `MutationUpsertTableField` | `@mutation(typeName: UPSERT)` | `ReturnTypeRef` (broad) | Derived source table applies. |
-| `MutationServiceTableField` | `@service` with table-mapped return — checked first | `TableBoundReturnType` | Carries `serviceMethodRef: ServiceMethodRef`. Same private-scope rule as service fields. |
-| `MutationServiceRecordField` | `@service` with non-table return — checked first | `OtherReturnType` | No DataLoader. |
+| `MutationServiceTableField` | `@service` with table-mapped return — checked first | `TableBoundReturnType` | Carries `method: MethodRef`. Same private-scope rule as service fields. |
+| `MutationServiceRecordField` | `@service` with non-table return — checked first | broad `ReturnTypeRef` | No DataLoader. |
 
 ### Child fields
 
@@ -339,14 +332,14 @@ These variants are classified when the **parent** type is `ResultType` (`@record
 |---|---|
 | `RecordTableField` | Table-mapped target — result-mapped → table-mapped. Generates a DataLoader data fetcher with a derived source table built from the parent record. No `@lookupKey`. `returnType`: `TableBoundReturnType`. |
 | `RecordLookupTableField` | Table-mapped target with `@lookupKey` — result-mapped → table-mapped with lookup semantics. `returnType`: `TableBoundReturnType`. |
-| `RecordField` | Non-table return — result-mapped → result-mapped. Reads the named property from the parent record; no SQL. `columnName` identifies the property to access. `returnType`: `OtherReturnType`. |
+| `RecordField` | Non-table return — result-mapped → result-mapped. Reads the named property from the parent record; no SQL. `columnName` identifies the property to access. |
 
 #### Service scope (private)
 
 | Field type | Valid source contexts | Description |
 |---|---|---|
-| `ServiceTableField` | Table-mapped, result-mapped | `@service` with table-mapped return — private scope, developer-provided SQL. Carries `serviceMethodRef: ServiceMethodRef` — resolved at schema-build time. When `serviceMethodRef` is `Resolved`, the generator emits a real DataLoader data fetcher and a `load<FieldName>` batch method; key type and expression are driven by the SOURCES parameter's `SourcesRef` variant. `returnType`: `TableBoundReturnType`. |
-| `ServiceRecordField` | Table-mapped, result-mapped | `@service` with non-table return — private scope, no DataLoader. Carries `serviceMethodRef: ServiceMethodRef`. `returnType`: `OtherReturnType`. |
+| `ServiceTableField` | Table-mapped, result-mapped | `@service` with table-mapped return — private scope, developer-provided SQL. Carries `method: MethodRef` — resolved at schema-build time via reflection. The generator emits a DataLoader data fetcher and a `load<FieldName>` batch method; key type and expression are driven by the SOURCES parameter's `BatchKey` variant. `returnType`: `TableBoundReturnType`. |
+| `ServiceRecordField` | Table-mapped, result-mapped | `@service` with non-table return — private scope, no DataLoader. Carries `method: MethodRef`. `returnType`: broad `ReturnTypeRef`. |
 
 #### Terminal fields (no further projection)
 
@@ -394,119 +387,113 @@ Quick reference: which field type applies given directive, target type, and sour
 
 ## Return Types and Wrappers
 
-**`ReturnTypeRef`** — sealed interface with three permits, outcome of resolving a field's return type against classified types. All variants carry `returnTypeName` and `wrapper: FieldWrapper`.
+**`ReturnTypeRef`** — sealed interface with four permits, outcome of resolving a field's return type against classified types. All variants carry `returnTypeName` and `wrapper: FieldWrapper`.
 
 ```
 ReturnTypeRef
 ├── TableBoundReturnType(returnTypeName, table: TableRef, wrapper)
 │     Graphitron generates the SQL query. The named type is a TableType or TableInterfaceType,
 │     or the field inherits its parent's table context (NestingField). table carries the
-│     jOOQ catalog resolution outcome.
-├── OtherReturnType  (sealed interface)
-│   ├── JavaRecordReturnType(returnTypeName, wrapper)         — backing class is a Java record
-│   ├── PojoReturnType(returnTypeName, wrapper)               — backing class is a plain Java class (default/stub)
-│   ├── JooqRecordReturnType(returnTypeName, wrapper)         — backing class is a jOOQ Record<?>
-│   └── JooqTableRecordReturnType(returnTypeName, table, wrapper) — backing class is a jOOQ TableRecord<?>
-│         Determined by reflecting on the backing class at parse time.
+│     resolved jOOQ table reference.
+├── ResultReturnType(returnTypeName, fqClassName, wrapper)
+│     An @record type. fqClassName is the fully-qualified backing Java class name. No SQL
+│     generated — Graphitron wires data fetchers but does not build queries.
+├── ScalarReturnType(returnTypeName, wrapper)
+│     A scalar, enum, or other non-table non-@record return type. No SQL generated.
 └── PolymorphicReturnType(returnTypeName, wrapper)
       Stub for multi-table polymorphic returns: GraphQL interfaces whose member types are each
       backed by separate tables, unions, and Relay/Federation built-in fields (node, _entities).
       Code generation for this case is not yet implemented.
 ```
 
-**Which variant each field carries** is enforced by the component type of the field record. Table-returning fields (`TableField`, `SplitTableField`, `LookupTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`, `TableInterfaceField`, `NestingField`, `ServiceTableField`, `QueryServiceTableField`, `MutationServiceTableField`, `QueryTableField`, `QueryLookupTableField`, `QueryTableInterfaceField`) declare `ReturnTypeRef.TableBoundReturnType` directly. Service/record fields that return non-table types (`ServiceRecordField`, `RecordField`, `QueryServiceRecordField`, `MutationServiceRecordField`) declare `ReturnTypeRef.OtherReturnType`. Polymorphic fields (`InterfaceField`, `UnionField`, `QueryInterfaceField`, `QueryUnionField`, `QueryNodeField`, `QueryEntityField`) declare `ReturnTypeRef.PolymorphicReturnType`. Fields that may return any type (mutation table fields, `TableMethodField`, `ComputedField`, `ConstructorField`) declare the broad `ReturnTypeRef`.
+**Which variant each field carries** is enforced by the component type of the field record. Table-returning fields (`TableField`, `SplitTableField`, `LookupTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`, `TableInterfaceField`, `NestingField`, `ServiceTableField`, `QueryServiceTableField`, `MutationServiceTableField`, `QueryTableField`, `QueryLookupTableField`, `QueryTableInterfaceField`) declare `ReturnTypeRef.TableBoundReturnType` directly. Polymorphic fields (`InterfaceField`, `UnionField`, `QueryInterfaceField`, `QueryUnionField`, `QueryNodeField`, `QueryEntityField`) declare `ReturnTypeRef.PolymorphicReturnType`. Fields whose return type may be any variant (mutation table fields, `TableMethodField`, `ServiceRecordField`, `QueryServiceRecordField`, `MutationServiceRecordField`, `ComputedField`, `ConstructorField`) declare the broad `ReturnTypeRef`.
 
 **`FieldWrapper`** — cardinality of the field's element type:
 - `Single(nullable)` — one instance or null
-- `List(listNullable, itemNullable, defaultOrder, orderByValues)` — SQL-style list
-- `Connection(connectionNullable, itemNullable, defaultOrder, orderByValues)` — Relay cursor-paginated list
+- `List(listNullable, itemNullable)` — SQL-style list
+- `Connection(connectionNullable, itemNullable)` — Relay cursor-paginated list
 
 `Connection` is detected by structural inspection (edges → node chain), not a directive.
 
-**`OrderSpec`** — sealed hierarchy normalising sort specification sources:
+**`OrderBySpec`** — sealed hierarchy representing sort specification for a field:
 
 | Variant | State |
 |---|---|
-| `IndexOrder` | unresolved; resolves to `FieldsOrder` via index lookup |
-| `FieldsOrder` | explicit column list; always resolved |
-| `PrimaryKeyOrder` | resolves to `FieldsOrder` via PK lookup |
-| `UnresolvedIndexOrder` | index lookup failed; validation error |
-| `UnresolvedPrimaryKeyOrder` | no primary key; validation error |
+| `Fixed(columns: List<ColumnOrderEntry>, direction: String)` | Explicit static column list; always resolved. Support type `ColumnOrderEntry(column: ColumnRef, collation: String)`. |
+| `Argument(name, typeName, nonNull, list, sortFieldName, directionFieldName, namedOrders: List<NamedOrder>, base: Fixed)` | `@orderBy` argument; developer chooses sort at runtime. Support type `NamedOrder(name: String, order: Fixed)`. |
+| `None` | No ordering specified. |
 
 ---
 
-## Argument Resolution (`ArgumentRef`)
+## Filters and Argument Resolution (`WhereFilter`)
+
+Field-level filtering is represented by `List<WhereFilter>` on `TableTargetField` variants. `WhereFilter` is a sealed interface with three permits:
 
 ```
-ArgumentRef
-├── InputTypeArg (sealed)
-│   ├── TableInputTypeArg    — resolved to TableInputType
-│   ├── OrderByArg           — carries @orderBy; sortFieldName, directionFieldName
-│   └── PlainInputTypeArg    — unresolved input type arg
-└── ScalarArg (sealed)
-    ├── ColumnArg            — resolved to column; javaColumnName, columnClass: String
-    └── ParamArg             — passed as direct Java parameter
+WhereFilter
+├── ColumnFilter(name, typeName, nonNull, list, column: ColumnRef)
+│     A scalar GraphQL argument resolved to a specific column. Generated SQL: col = ?.
+├── InputFilter(name, typeName, nonNull, list, inputFields: List<InputField.ColumnField>)
+│     A @table input object argument; generates composite equality (one predicate per column).
+└── ConditionFilter(method: MethodRef)        — separate top-level class
+      A @condition method reference; the generated ON/WHERE clause calls the method.
 ```
 
-All variants carry `name`, `typeName`, `nonNull`, `list`.
+**No error-sentinel variants.** Any argument that cannot be resolved (column not found in the table, malformed `@orderBy` structure) causes the **enclosing field** to become `UnclassifiedField(reason)` immediately. The error message names the failing argument and, for column lookup failures, lists the table's available columns sorted by edit distance from the attempted name. This ensures every `WhereFilter` in a valid field is fully resolved.
 
-`ArgumentRef` values are stored directly in field records as `List<ArgumentRef>`. There is no intermediate `ArgumentSpec` type — classification produces `ArgumentRef` values immediately and the field record holds them directly.
-
-**No error-sentinel variants.** Any argument that cannot be classified (column not found in the table, `@condition` applied to an argument, malformed `@orderBy` structure) causes the **enclosing field** to become `UnclassifiedField(reason)` immediately. The error message names the failing argument and, for column lookup failures, lists the table's available columns sorted by Hamming distance from the attempted name. This ensures every `ArgumentRef` in a valid field is fully resolved.
+`@orderBy` arguments are captured as `OrderBySpec.Argument` on the field's `orderBy` component, not as filters.
 
 ---
 
-## Reference Path Resolution
+## Reference Path and Method Resolution
 
-`@reference` paths are resolved to `List<ReferencePathElementRef>`. Each step is one of:
+### `JoinStep` — one hop in a `@reference` path
+
+`@reference` paths are resolved to `List<JoinStep>`. Each step is one of:
 
 | Variant | State |
 |---|---|
-| `FkRef` | FK resolved; `fkName`, `keyTableSqlName`, `fkTableSqlName` (all `String`); pre-resolved `keyColumnEntries` and `fkColumnEntries` |
-| `FkWithConditionRef` | FK + condition method both resolved; same FK string fields as `FkRef` |
-| `ConditionOnlyRef` | condition method only; no FK step |
-| `UnresolvedKeyRef` | FK lookup failed |
-| `UnresolvedConditionRef` | condition method not found |
-| `UnresolvedKeyAndConditionRef` | both failed |
+| `FkJoin(fkName, targetTableSqlName, whereFilter: MethodRef)` | FK resolved. `whereFilter` is an optional user condition method applied as a WHERE predicate on the target table (not the JOIN ON clause). `null` when absent. |
+| `ConditionJoin(condition: MethodRef)` | Condition-only step; no FK. The `condition` method becomes the JOIN ON clause. |
 
-**`ServiceMethodRef`** — outcome of reflecting the method declared on a `@service` field, performed by `GraphitronSchemaBuilder` at schema-build time via `Class.forName`:
-- `Resolved` — `params: List<ServiceParam>`, `returnTypeName: String`
-- `Unresolved` — `reason: String`
+Unresolvable FK or condition references cause the enclosing field to become `UnclassifiedField(reason)`.
 
-`ServiceParam` is a sealed interface whose three variants carry only the data each kind needs:
+### `MethodRef` — a resolved Java method
 
-| Variant | What it represents | Key field |
+Used for `@service` methods, `@condition` methods, `@tableMethod` references, and `whereFilter` clauses. Carries:
+- `className: String` — binary class name, e.g. `"com.example.FilmService"`
+- `methodName: String`
+- `returnTypeName: String` — erased return type from `Class.getName()`
+- `params: List<Param>` — parameters in declaration order
+
+`Param` is a sealed interface with two variants:
+- `Typed(name, typeName, source: ParamSource)` — for `Arg`, `Context`, `DslContext`, `Table`, `SourceTable` parameters; `typeName` is the fully-qualified generic type from reflection
+- `Sourced(name, batchKey: BatchKey)` — for DataLoader SOURCES parameters; `typeName()` and `source()` are computed from the `BatchKey`
+
+### `ParamSource` — runtime source of a `Typed` parameter
+
+| Variant | What it represents |
+|---|---|
+| `Arg` | GraphQL field argument; bound via `DataFetchingEnvironment.getArgument(name)` |
+| `Context` | Context argument; bound via `GraphitronContext.getContextArgument(dfe, name)` |
+| `Sources(batchKey)` | DataLoader batch-key list; used by `Param.Sourced` — element type and construction strategy determined by `BatchKey` |
+| `DslContext` | jOOQ `DSLContext`; injected by the framework |
+| `Table` | jOOQ `Table<?>` for the field's target table; used in condition and table-method calls |
+| `SourceTable` | jOOQ `Table<?>` for the parent/source table; used in join-condition methods needing both ends |
+
+### `BatchKey` — DataLoader key strategy for a SOURCES parameter
+
+| Variant | Element type `T` in `List<T>` | Key construction |
 |---|---|---|
-| `SourcesParam(name, sourcesRef)` | The batched parent-record keys | `sourcesRef: SourcesRef` |
-| `ArgParam(name, typeName)` | A GraphQL field argument, extracted via `DFE.getArgument` | `typeName: String` |
-| `ContextParam(name, typeName)` | A context value, extracted via `GraphitronContext.getContextArgument` | `typeName: String` |
+| `RowKeyed(keyColumns: List<ColumnRef>)` | `RowN<T1,...>` — e.g. `Row1<Long>` | `DSL.row(record.get(Tables.T.COL))` |
+| `RecordKeyed(keyColumns: List<ColumnRef>)` | `RecordN<T1,...>` — e.g. `Record1<Long>` | `record.into(Tables.T.COL)` |
+| `ObjectBased(fqClassName)` | A `TableRecord` subclass or result DTO — e.g. `LanguageRecord` | Pass the whole parent record/DTO as the key |
 
-**`SourcesRef`** — classifies the element type of a SOURCES `List<?>`, i.e. what `T` is in `List<T>`:
+`keyColumns` comes from the parent type's `primaryKeyColumns()`; it is empty for root operation fields with no backing table.
 
-| Variant | Element type | DataLoader key construction |
-|---|---|---|
-| `RowKeyed(pkJavaTypes)` | `RowN<T1,...>` — e.g. `Row1<Long>` | `DSL.row(((Record) env.getSource()).get(Tables.T.COL))` |
-| `RecordKeyed(pkJavaTypes)` | `RecordN<T1,...>` — e.g. `Record1<Long>` | `((Record) env.getSource()).into(Tables.T.COL)` |
-| `TableRecordKeyed(fqClassName)` | A `TableRecord` subclass — e.g. `LanguageRecord` | `(LanguageRecord) env.getSource()` |
-| `Unrecognized(typeName)` | Anything else | Validator reports an error |
+Classification is performed by `ServiceCatalog.classifySourcesType()`, which is the only place that reads the reflection `Type` hierarchy for this purpose.
 
-`pkJavaTypes` lists the binary Java class names of the PK type arguments in declaration order (e.g. `["java.lang.Long"]` for `Row1<Long>`). The builder extracts these from `Parameter.getParameterizedType()` by inspecting the `java.lang.reflect.ParameterizedType` tree — it does not parse strings.
-
-Classification is performed by `GraphitronSchemaBuilder.classifySourcesType()`, which is the only place that reads the reflection `Type` hierarchy for this purpose. Every parameter whose name is absent from `argNames` or `ctxKeys` is classified as `SourcesParam`; the `SourcesRef` sub-classification then identifies which key pattern the developer chose.
-
-Name matching requires the `-parameters` compiler flag on the service class source. Without it, `p.isNamePresent()` is `false` and all parameters fall back to `SourcesParam`. The validator then catches any missing `ARG`/`CONTEXT` parameters.
-
-**`FieldConditionRef`** — field-level `@condition` resolution:
-- `NoFieldCondition` — no `@condition` on field
-- `ResolvedFieldCondition` — `method: MethodRef`, `override`, `contextArgs`
-- `UnresolvedFieldCondition` — `qualifiedName`, `override`, `contextArgs`
-
-`MethodRef` carries `qualifiedName`, `returnTypeName`, `params: List<ParamInfo>`. `ParamInfo` records type and parameter name (requires `-parameters` compiler flag on user code).
-
-**`NodeTypeRef`** — resolves `@nodeId(typeName:)` targets:
-- `ResolvedNodeType` — type exists as `TableType` with `@node`
-- `NoNodeDirectiveType` — type exists but has no `@node`
-- `NotFoundNodeType` — type name not in schema
+**`-parameters` requirement**: Parameter name matching (`argNames`, `ctxKeys`) requires the `-parameters` compiler flag. `ServiceCatalog` emits a build warning proactively when any parameter lacks a name, even if type-based classification would otherwise succeed (e.g. a `Table<?>` parameter classified by type, not by name).
 
 ---
 
@@ -518,18 +505,16 @@ After the full scan, `GraphQLRewriteGenerator` logs all errors with source locat
 
 Additional rules:
 - **`QueryLookupTableField` cardinality** — list/scalar argument cardinality must match return type cardinality
-- **Reference path integrity** — each unresolved step in a path is reported
+- **Reference path integrity** — each unresolved step in a `@reference` path is reported as an error
 - **Deterministic ordering** — tables without a primary key that appear in paginated queries must have `@defaultOrder` or `@orderBy` configured
 - **`ServiceTableField` (and `QueryServiceTableField` / `MutationServiceTableField`)** — the following additional checks apply when a service field returns a table-mapped type:
-  - `serviceMethodRef` must be `Resolved` (reflection succeeded at schema-build time)
-  - For each `SourcesParam`, the validator switches on its `SourcesRef`:
-    - `RowKeyed(pkJavaTypes)` — when the parent table is resolved and has PK info, `pkJavaTypes` must equal `prt.primaryKeyColumnJavaTypes()` (e.g. `["java.lang.Long"]` for BIGINT)
-    - `RecordKeyed(pkJavaTypes)` — same check using `Record` prefix types
-    - `TableRecordKeyed` — no PK-type check; the whole parent record is the key
-    - `Unrecognized` — always an error; reports the unrecognised type name
-  - For `RowKeyed`/`RecordKeyed` sources: the parent table must have a primary key (`hasPrimaryKey`) and it must be single-column (composite PKs not yet supported)
-  - For `TableRecordKeyed` sources: no PK constraint on the parent table (the whole record is the key, so column extraction is not needed)
-- **`ServiceRecordField`** — `serviceMethodRef` must be `Resolved`; unresolved reference is a build error
+  - `method` must be a fully resolved `MethodRef` (reflection succeeded at schema-build time; any failure classifies the field as `UnclassifiedField` before the validator runs)
+  - For each `Param.Sourced` parameter, the validator switches on its `BatchKey`:
+    - `RowKeyed(keyColumns)` — the parent table must have a primary key; `keyColumns` must match the parent PK columns
+    - `RecordKeyed(keyColumns)` — same check
+    - `ObjectBased` — no PK-type check; the whole parent record/DTO is the key
+  - For `RowKeyed`/`RecordKeyed`: composite PKs are not yet supported; parent table must have exactly one PK column
+- **`ServiceRecordField`** — `method` must be a resolved `MethodRef`; unresolved reference is a build error
 
 ---
 
@@ -581,27 +566,27 @@ Outstanding testing gaps for this layer are tracked in [`plan-record-generation.
 | File | Role |
 |---|---|
 | `rewrite/GraphitronSchema.java` | Container: `Map<String, GraphitronType>` + `Map<FieldCoordinates, GraphitronField>`; `fieldsOf(typeName)` for per-type field lists |
-| `rewrite/GraphitronSchemaBuilder.java` | Parser: `TypeDefinitionRegistry` → `GraphitronSchema` |
+| `rewrite/GraphitronSchemaBuilder.java` | Parser: `TypeDefinitionRegistry` → `GraphitronSchema`; delegates to `TypeBuilder`, `FieldBuilder`, `ServiceCatalog` |
 | `rewrite/GraphitronSchemaValidator.java` | Validator: accumulates `ValidationError` per sealed variant |
 | `rewrite/JooqCatalog.java` | jOOQ reflection wrapper: SQL name → `Table<?>` / `Field<?>` |
+| `rewrite/ServiceCatalog.java` | Reflection + jOOQ lookups: resolves tables/columns; reflects `@service`/`@tableMethod`/`@condition` methods into `MethodRef` |
 | `rewrite/GraphQLRewriteGenerator.java` | Entry point: build → validate → dispatch generators |
 | `rewrite/ValidationError.java` | `message`, `location: SourceLocation` |
 | `rewrite/model/GraphitronField.java` | Root of the field type hierarchy |
 | `rewrite/model/ChildField.java` | Sealed branch: 22 child field variants |
 | `rewrite/model/QueryField.java` | Sealed branch: 10 query field variants |
 | `rewrite/model/MutationField.java` | Sealed branch: 6 mutation field variants |
-| `rewrite/model/ReturnTypeRef.java`, `FieldWrapper.java` | Return type (3-permit sealed hierarchy) + cardinality |
-| `rewrite/model/ArgumentRef.java` | Argument resolution: `InputTypeArg`, `ScalarArg` — carried directly in field records (no intermediate `ArgumentSpec`) |
-| `rewrite/model/ReferencePathElementRef.java` | 6-variant FK + condition path step |
-| `rewrite/model/FieldConditionRef.java` | Field-level `@condition` resolution |
+| `rewrite/model/ReturnTypeRef.java`, `FieldWrapper.java` | Return type (4-permit sealed hierarchy) + cardinality |
+| `rewrite/model/WhereFilter.java` | Filter predicates: `ColumnFilter`, `InputFilter`; `ConditionFilter` (separate file) |
+| `rewrite/model/JoinStep.java` | `@reference` path step: `FkJoin(fkName, targetTableSqlName, whereFilter)`, `ConditionJoin(condition)` |
+| `rewrite/model/MethodRef.java` | Resolved Java method: `className`, `methodName`, `returnTypeName`, `params: List<Param>` |
+| `rewrite/model/ParamSource.java` | Sealed: `Arg`, `Context`, `Sources(batchKey)`, `DslContext`, `Table`, `SourceTable` |
+| `rewrite/model/BatchKey.java` | DataLoader key strategy: `RowKeyed(keyColumns)`, `RecordKeyed(keyColumns)`, `ObjectBased(fqClassName)` |
 | `rewrite/model/ColumnRef.java` | Resolved column (SQL name, Java name, Java type) |
-| `rewrite/model/ColumnOrder.java` | Fully-resolved sort spec (index / PK / explicit fields, always resolved at build time) |
+| `rewrite/model/OrderBySpec.java` | Sort spec: `Fixed(columns, direction)`, `Argument(…)`, `None` |
 | `rewrite/model/GraphitronType.java` | Root of the type hierarchy |
-| `rewrite/model/TableRef.java` | `@table` → resolved table metadata (SQL name, Java field name, PK flag, PK columns as `List<ColumnRef>`) |
-| `rewrite/model/ServiceMethodRef.java` | `@service` method reflection — `Resolved`/`Unresolved`; sealed `ServiceParam` hierarchy (`SourcesParam`, `ArgParam`, `ContextParam`) |
-| `rewrite/model/SourcesRef.java` | Sealed taxonomy for the SOURCES parameter element type: `RowKeyed`, `RecordKeyed`, `TableRecordKeyed`, `Unrecognized` |
-| `rewrite/model/ParticipantRef.java` | Interface/union member resolution |
-| `rewrite/model/NodeRef.java` | `@node` directive decoration: `typeId`, `keyColumns: List<ColumnRef>` |
-| `rewrite/model/InputFieldRef.java` | `TableInputType` field resolution |
+| `rewrite/model/TableRef.java` | Resolved table: SQL name, Java field name, Java class name, `primaryKeyColumns: List<ColumnRef>` |
+| `rewrite/model/ParticipantRef.java` | Interface/union member: `typeName`, `table: TableRef`, `discriminatorValue` |
+| `rewrite/model/InputField.java` | `InputField.ColumnField` — one field in a `TableInputType`, resolved to `ColumnRef` |
 | `graphitron-common/.../GraphitronContext.java` | SPI: `getDslContext`, `getContextArgument`, `getDataLoaderName` |
 | `graphitron-common/.../GraphitronFetcherFactory.java` | `field(Field<T>)`, `nestedRecord(alias)`, `nestedResult(alias)` |
