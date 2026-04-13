@@ -120,6 +120,45 @@ class FieldsPipelineTest {
         assertThat(filmFields.methodSpecs()).extracting(MethodSpec::name).doesNotContain("hidden");
     }
 
+    // ===== Root query fields (G4) =====
+
+    @Test
+    void queryTableField_list_delegatesToSelectMany() {
+        var queryFields = findSpec("QueryFields", """
+            type Film @table(name: "film") { title: String }
+            type Query { films: [Film!]! }
+            """);
+        var films = queryFields.methodSpecs().stream()
+            .filter(m -> m.name().equals("films")).findFirst().orElseThrow();
+        assertThat(films.returnType().toString()).isEqualTo("org.jooq.Result<org.jooq.Record>");
+        assertThat(films.code().toString()).contains("selectMany");
+        assertThat(films.code().toString()).doesNotContain("UnsupportedOperationException");
+    }
+
+    @Test
+    void queryTableField_single_delegatesToSelectOne() {
+        var queryFields = findSpec("QueryFields", """
+            type Film @table(name: "film") { title: String }
+            type Query { film: Film }
+            """);
+        var film = queryFields.methodSpecs().stream()
+            .filter(m -> m.name().equals("film")).findFirst().orElseThrow();
+        assertThat(film.returnType().toString()).isEqualTo("org.jooq.Record");
+        assertThat(film.code().toString()).contains("selectOne");
+    }
+
+    @Test
+    void queryTableField_withArgument_buildsCondition() {
+        var queryFields = findSpec("QueryFields", """
+            type Film @table(name: "film") { title: String, film_id: Int }
+            type Query { film(film_id: Int!): Film }
+            """);
+        var film = queryFields.methodSpecs().stream()
+            .filter(m -> m.name().equals("film")).findFirst().orElseThrow();
+        assertThat(film.code().toString()).contains("FILM_ID");
+        assertThat(film.code().toString()).contains("getArgument");
+    }
+
     @Test
     void multipleTableTypes_eachProducesFieldsClass() {
         var names = generateNames("""

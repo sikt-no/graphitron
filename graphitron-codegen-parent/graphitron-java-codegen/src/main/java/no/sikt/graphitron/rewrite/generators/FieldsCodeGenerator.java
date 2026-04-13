@@ -15,8 +15,10 @@ import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.SourcesRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -53,7 +55,9 @@ public class FieldsCodeGenerator {
     private static final ClassName COMPLETABLE_FUTURE = ClassName.get("java.util.concurrent", "CompletableFuture");
     private static final ClassName LIST              = ClassName.get("java.util", "List");
     private static final ClassName RECORD            = ClassName.get("org.jooq", "Record");
+    private static final ClassName RESULT            = ClassName.get("org.jooq", "Result");
     private static final ClassName ROW               = ClassName.get("org.jooq", "Row");
+    private static final ClassName SORT_FIELD        = ClassName.get("org.jooq", "SortField");
     private static final ClassName DSL               = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName DATA_LOADER       = ClassName.get("org.dataloader", "DataLoader");
     private static final ClassName DATA_LOADER_FACTORY = ClassName.get("org.dataloader", "DataLoaderFactory");
@@ -87,6 +91,8 @@ public class FieldsCodeGenerator {
                 builder.addMethod(buildSplitRowsMethod(stf));
             } else if (field instanceof ChildField.ColumnField cf && parentTable != null) {
                 builder.addMethod(buildColumnFieldFetcher(cf, parentTable));
+            } else if (field instanceof QueryField.QueryTableField qtf) {
+                builder.addMethod(buildQueryTableFieldFetcher(qtf));
             } else {
                 builder.addMethod(buildFieldStub(field.name()));
             }
@@ -121,6 +127,116 @@ public class FieldsCodeGenerator {
             .addStatement("return (($T) env.getSource()).get($T.$L.$L)",
                 RECORD, tablesClass, parentTable.javaFieldName(), cf.column().javaName())
             .build();
+    }
+
+    /**
+     * Generates a data fetcher for a {@link QueryField.QueryTableField} that builds the WHERE
+     * condition from argument filters, builds the ORDER BY from the order spec, and delegates
+     * to the table's {@code selectMany} or {@code selectOne}.
+     *
+     * <p>List/connection fields call {@code selectMany} and return {@code Result<Record>}.
+     * Single fields call {@code selectOne} and return {@code Record}.
+     */
+    private MethodSpec buildQueryTableFieldFetcher(QueryField.QueryTableField qtf) {
+        var tableRef = qtf.returnType().table();
+        var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.tables", tableRef.javaClassName());
+        var tablesClass = ClassName.get(GeneratorConfig.outputPackage() + ".tables", "Tables");
+        boolean isList = !(qtf.returnType().wrapper() instanceof FieldWrapper.Single);
+
+        var returnType = isList
+            ? ParameterizedTypeName.get(RESULT, RECORD)
+            : RECORD;
+
+        var builder = MethodSpec.methodBuilder(qtf.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(returnType)
+            .addParameter(ENV, "env");
+
+        // Build condition from filters
+        builder.addCode(buildConditionCode(qtf.filters(), tablesClass, tableRef));
+
+        if (isList) {
+            // Build orderBy from spec
+            builder.addCode(buildOrderByCode(qtf.orderBy(), tablesClass, tableRef));
+            builder.addStatement("return $T.selectMany(env, condition, orderBy)", tableClass);
+        } else {
+            builder.addStatement("return $T.selectOne(env, condition)", tableClass);
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Generates the {@code Condition condition = ...} local variable from a list of
+     * {@link WhereFilter}s. When the list is empty, emits {@code DSL.noCondition()}.
+     */
+    private CodeBlock buildConditionCode(java.util.List<WhereFilter> filters, ClassName tablesClass, TableRef tableRef) {
+        var code = CodeBlock.builder();
+        if (filters.isEmpty()) {
+            code.addStatement("var condition = $T.noCondition()", DSL);
+        } else {
+            code.addStatement("var condition = $T.noCondition()", DSL);
+            for (var filter : filters) {
+                if (filter instanceof WhereFilter.ColumnFilter cf) {
+                    if (cf.nonNull()) {
+                        if (cf.list()) {
+                            code.addStatement("condition = condition.and($T.$L.$L.in(env.<$T<$T>>getArgument($S)))",
+                                tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
+                                LIST, Object.class, cf.name());
+                        } else {
+                            code.addStatement("condition = condition.and($T.$L.$L.eq(env.getArgument($S)))",
+                                tablesClass, tableRef.javaFieldName(), cf.column().javaName(), cf.name());
+                        }
+                    } else {
+                        if (cf.list()) {
+                            code.addStatement("if (env.getArgument($S) != null) condition = condition.and($T.$L.$L.in(env.<$T<$T>>getArgument($S)))",
+                                cf.name(), tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
+                                LIST, Object.class, cf.name());
+                        } else {
+                            code.addStatement("if (env.getArgument($S) != null) condition = condition.and($T.$L.$L.eq(env.getArgument($S)))",
+                                cf.name(), tablesClass, tableRef.javaFieldName(), cf.column().javaName(), cf.name());
+                        }
+                    }
+                }
+                // InputFilter: deferred to a later deliverable
+            }
+        }
+        return code.build();
+    }
+
+    /**
+     * Generates the {@code List<SortField<?>> orderBy = ...} local variable from an
+     * {@link OrderBySpec}.
+     */
+    private CodeBlock buildOrderByCode(OrderBySpec orderBy, ClassName tablesClass, TableRef tableRef) {
+        var code = CodeBlock.builder();
+        switch (orderBy) {
+            case OrderBySpec.Fixed fixed -> {
+                if (fixed.columns().isEmpty()) {
+                    code.addStatement("$T<$T<?>> orderBy = $T.of()", LIST, SORT_FIELD, LIST);
+                } else {
+                    var parts = CodeBlock.builder();
+                    for (int i = 0; i < fixed.columns().size(); i++) {
+                        var col = fixed.columns().get(i);
+                        if (i > 0) parts.add(", ");
+                        String dir = "ASC".equalsIgnoreCase(fixed.direction()) ? "asc" : "desc";
+                        parts.add("$T.$L.$L.$L()", tablesClass, tableRef.javaFieldName(), col.column().javaName(), dir);
+                    }
+                    code.addStatement("$T<$T<?>> orderBy = $T.of($L)", LIST, SORT_FIELD, LIST, parts.build());
+                }
+            }
+            case OrderBySpec.Argument arg -> {
+                // Dynamic @orderBy: stub for now, fall back to base
+                if (arg.base() != null) {
+                    code.add(buildOrderByCode(arg.base(), tablesClass, tableRef));
+                } else {
+                    code.addStatement("$T<$T<?>> orderBy = $T.of()", LIST, SORT_FIELD, LIST);
+                }
+            }
+            case OrderBySpec.None none ->
+                code.addStatement("$T<$T<?>> orderBy = $T.of()", LIST, SORT_FIELD, LIST);
+        }
+        return code.build();
     }
 
     private MethodSpec buildFieldStub(String fieldName) {

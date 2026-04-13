@@ -8,8 +8,10 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.WhereFilter;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SourcesRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -150,6 +152,71 @@ class FieldsCodeGeneratorTest {
         var spec = GEN.generate("Film", null, List.of());
         var w = method(spec, "wiring");
         assertThat(w.code().toString()).doesNotContain("dataFetcher(");
+    }
+
+    // ===== QueryTableField (root query → table) =====
+
+    private static GraphitronField queryTableField(String name, boolean isList,
+            java.util.List<WhereFilter> filters, OrderBySpec orderBy) {
+        var wrapper = isList
+            ? (FieldWrapper) new FieldWrapper.List(false, false)
+            : new FieldWrapper.Single(true);
+        var returnType = new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
+        return new QueryField.QueryTableField("Query", name, null, returnType, filters, orderBy, null);
+    }
+
+    @Test
+    void queryTableField_list_callsSelectMany() {
+        var field = queryTableField("films", true, java.util.List.of(), new OrderBySpec.None());
+        var spec = GEN.generate("Query", null, java.util.List.of(field));
+        var m = method(spec, "films");
+        assertThat(m.returnType().toString()).isEqualTo("org.jooq.Result<org.jooq.Record>");
+        assertThat(m.code().toString()).contains("selectMany");
+        assertThat(m.code().toString()).contains("noCondition()");
+    }
+
+    @Test
+    void queryTableField_single_callsSelectOne() {
+        var field = queryTableField("film", false, java.util.List.of(), new OrderBySpec.None());
+        var spec = GEN.generate("Query", null, java.util.List.of(field));
+        var m = method(spec, "film");
+        assertThat(m.returnType().toString()).isEqualTo("org.jooq.Record");
+        assertThat(m.code().toString()).contains("selectOne");
+    }
+
+    @Test
+    void queryTableField_withColumnFilter_buildsCondition() {
+        var filter = new WhereFilter.ColumnFilter("id", "Int", true, false,
+            new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
+        var field = queryTableField("film", false,
+            java.util.List.of(filter), new OrderBySpec.None());
+        var spec = GEN.generate("Query", null, java.util.List.of(field));
+        var m = method(spec, "film");
+        assertThat(m.code().toString()).contains("FILM.FILM_ID.eq(env.getArgument(\"id\"))");
+    }
+
+    @Test
+    void queryTableField_withOptionalFilter_guardsNull() {
+        var filter = new WhereFilter.ColumnFilter("title", "String", false, false,
+            new ColumnRef("title", "TITLE", "java.lang.String"));
+        var field = queryTableField("films", true,
+            java.util.List.of(filter), new OrderBySpec.None());
+        var spec = GEN.generate("Query", null, java.util.List.of(field));
+        var m = method(spec, "films");
+        assertThat(m.code().toString()).contains("if (env.getArgument(\"title\") != null)");
+        assertThat(m.code().toString()).contains("FILM.TITLE.eq(env.getArgument(\"title\"))");
+    }
+
+    @Test
+    void queryTableField_withFixedOrder_buildsSortFields() {
+        var order = new OrderBySpec.Fixed(
+            java.util.List.of(new OrderBySpec.ColumnOrderEntry(
+                new ColumnRef("title", "TITLE", "java.lang.String"), null)),
+            "ASC");
+        var field = queryTableField("films", true, java.util.List.of(), order);
+        var spec = GEN.generate("Query", null, java.util.List.of(field));
+        var m = method(spec, "films");
+        assertThat(m.code().toString()).contains("FILM.TITLE.asc()");
     }
 
     // ===== @splitQuery TableField =====
