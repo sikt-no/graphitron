@@ -11,6 +11,7 @@ import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
@@ -84,6 +85,8 @@ public class TypeFetcherClassGenerator {
         for (var field : fields) {
             if (field instanceof ChildField.ColumnField && parentTable != null) {
                 // Column fields with a parent table are handled directly in wiring via ColumnFetcher
+            } else if (field instanceof QueryField.QueryLookupTableField qlf) {
+                builder.addMethod(buildQueryLookupFetcher(qlf));
             } else if (field instanceof QueryField.QueryTableField qtf) {
                 builder.addMethod(buildQueryTableFetcher(qtf));
             } else {
@@ -204,6 +207,72 @@ public class TypeFetcherClassGenerator {
                 code.addStatement("$T<$T<?>> orderBy = $T.of()", LIST, SORT_FIELD, LIST);
         }
         return code.build();
+    }
+
+    /**
+     * Generates a fetcher for a lookup query field. Lookup fields receive a list of primary-key
+     * values from the GraphQL client (DataLoader pattern) and return all matching rows in a single
+     * SQL query using a WHERE IN (or WHERE IN + WHERE EQ) condition.
+     *
+     * <p>List-keyed arguments (annotated {@code @lookupKey} on a {@code [T]} argument) become an
+     * IN condition; scalar-keyed arguments become an EQ condition. Type conversion via
+     * {@code Type.valueOf(String.valueOf(...))} handles both {@code ID} (delivered as String) and
+     * numeric GraphQL scalars transparently.
+     *
+     * <p>Generated code (single list key):
+     * <pre>{@code
+     * public static Result<Record> filmById(DataFetchingEnvironment env) {
+     *     var table = Tables.FILM;
+     *     var condition = DSL.noCondition();
+     *     List<?> __keys_film_id = env.getArgument("film_id");
+     *     condition = condition.and(table.FILM_ID.in(__keys_film_id.stream().map(__k -> Integer.valueOf(String.valueOf(__k))).toList()));
+     *     List<SortField<?>> orderBy = List.of();
+     *     return Film.selectMany(env, condition, orderBy);
+     * }
+     * }</pre>
+     */
+    private static MethodSpec buildQueryLookupFetcher(QueryField.QueryLookupTableField field) {
+        var tableRef = field.returnType().table();
+        var tableClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite.types", field.returnType().returnTypeName());
+        var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
+
+        var builder = MethodSpec.methodBuilder(field.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(RESULT, RECORD))
+            .addParameter(ENV, "env");
+
+        builder.addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName());
+        builder.addStatement("var condition = $T.noCondition()", DSL);
+
+        for (var filter : field.filters()) {
+            if (!(filter instanceof GeneratedConditionFilter gcf)) continue;
+            for (var bp : gcf.bodyParams()) {
+                var colName = bp.column().javaName();
+                var typeClass = ClassName.bestGuess(bp.javaType());
+                if (bp.list()) {
+                    var listVarName = "__keys_" + bp.name();
+                    builder.addStatement("$T<?> $L = env.getArgument($S)", LIST, listVarName, bp.name());
+                    CodeBlock convExpr = "java.lang.String".equals(bp.javaType())
+                        ? CodeBlock.of("$T.valueOf(__k)", String.class)
+                        : CodeBlock.of("$T.valueOf($T.valueOf(__k))", typeClass, String.class);
+                    var inExpr = CodeBlock.of("$L.stream().map(__k -> $L).toList()", listVarName, convExpr);
+                    builder.addStatement("condition = condition.and(table.$L.in($L))", colName, inExpr);
+                } else {
+                    var keyVarName = "__key_" + bp.name();
+                    // Use explicit <Object> type witness on getArgument to avoid String.valueOf(char[])
+                    // overload resolution issue when the caller passes an ID scalar (String at runtime).
+                    CodeBlock scalarExpr = "java.lang.String".equals(bp.javaType())
+                        ? CodeBlock.of("$T.valueOf(env.<$T>getArgument($S))", String.class, Object.class, bp.name())
+                        : CodeBlock.of("$T.valueOf($T.valueOf(env.<$T>getArgument($S)))", typeClass, String.class, Object.class, bp.name());
+                    builder.addStatement("$T $L = $L", typeClass, keyVarName, scalarExpr);
+                    builder.addStatement("condition = condition.and(table.$L.eq($L))", colName, keyVarName);
+                }
+            }
+        }
+
+        builder.addCode(buildOrderByCode(field.orderBy(), tablesClass, tableRef));
+        builder.addStatement("return $T.selectMany(env, condition, orderBy)", tableClass);
+        return builder.build();
     }
 
     /**

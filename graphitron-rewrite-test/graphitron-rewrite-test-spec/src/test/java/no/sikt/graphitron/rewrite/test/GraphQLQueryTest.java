@@ -200,4 +200,65 @@ class GraphQLQueryTest {
         assertThat(films).isNotEmpty();
         assertThat(films.get(0)).containsKey("title");
     }
+
+    // ===== filmById lookup query =====
+
+    @Test
+    void filmById_returnsRequestedFilms() {
+        Map<String, Object> data = execute("{ filmById(film_id: [\"1\", \"3\"]) { filmId title } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        assertThat(films).hasSize(2);
+        assertThat(films).extracting(f -> f.get("title"))
+            .containsExactlyInAnyOrder("ACADEMY DINOSAUR", "ADAPTATION HOLES");
+    }
+
+    @Test
+    void filmById_singleId_returnsOneFilm() {
+        Map<String, Object> data = execute("{ filmById(film_id: [\"2\"]) { title } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        assertThat(films).hasSize(1);
+        assertThat(films.get(0).get("title")).isEqualTo("ACE GOLDFINGER");
+    }
+
+    // ===== languageByKey lookup query =====
+
+    @Test
+    void languageByKey_returnsRequestedLanguages() {
+        Map<String, Object> data = execute("{ languageByKey(language_id: [1, 2]) { languageId } }");
+        List<Map<String, Object>> langs = (List<Map<String, Object>>) data.get("languageByKey");
+        assertThat(langs).hasSize(2);
+        assertThat(langs).extracting(l -> l.get("languageId"))
+            .containsExactlyInAnyOrder(1, 2);
+    }
+
+    @Test
+    void languageByKey_singleId_returnsOneLanguage() {
+        Map<String, Object> data = execute("{ languageByKey(language_id: [3]) { languageId } }");
+        List<Map<String, Object>> langs = (List<Map<String, Object>>) data.get("languageByKey");
+        assertThat(langs).hasSize(1);
+        assertThat(langs.get(0).get("languageId")).isEqualTo(3);
+    }
+
+    // ===== customerById lookup query =====
+
+    @Test
+    void customerById_listKeyAndScalarKey_filtersCorrectly() {
+        // Customers 1,2,4 are in store 1; 3,5 are in store 2
+        Map<String, Object> data = execute(
+            "{ customerById(customer_id: [\"1\", \"2\", \"4\", \"3\"], store_id: \"1\") { customerId } }");
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customerById");
+        // Only IDs 1, 2, 4 are in store 1
+        assertThat(customers).hasSize(3);
+        assertThat(customers).extracting(c -> c.get("customerId"))
+            .containsExactlyInAnyOrder(1, 2, 4);
+    }
+
+    @Test
+    void customerById_noMatchForStore_returnsEmpty() {
+        // Customer 3 is in store 2, requesting store 1 → no match
+        Map<String, Object> data = execute(
+            "{ customerById(customer_id: [\"3\"], store_id: \"1\") { customerId } }");
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customerById");
+        assertThat(customers).isEmpty();
+    }
 }

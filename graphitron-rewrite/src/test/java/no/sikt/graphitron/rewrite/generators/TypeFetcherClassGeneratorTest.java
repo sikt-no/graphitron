@@ -3,9 +3,13 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.RewriteConfig;
+import no.sikt.graphitron.rewrite.model.BodyParam;
+import no.sikt.graphitron.rewrite.model.CallParam;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.QueryField;
@@ -196,5 +200,69 @@ class TypeFetcherClassGeneratorTest {
         var wiringCode = method(spec, "wiring").code().toString();
         assertThat(wiringCode).contains("dataFetcher(\"title\"");
         assertThat(wiringCode).contains("dataFetcher(\"releaseYear\"");
+    }
+
+    // ===== QueryLookupTableField =====
+
+    private static GraphitronField lookupQueryField(String name, List<BodyParam> bodyParams) {
+        var wrapper = new FieldWrapper.List(false, false);
+        var returnType = new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
+        var callParams = bodyParams.stream()
+            .map(bp -> new CallParam(bp.name(), bp.extraction()))
+            .toList();
+        var filter = new GeneratedConditionFilter(
+            "fake.code.generated.rewrite.types.FilmConditions",
+            name + "Condition",
+            FILM_TABLE,
+            callParams,
+            bodyParams);
+        return new QueryField.QueryLookupTableField("Query", name, null, returnType,
+            List.of(filter), new OrderBySpec.None(), null);
+    }
+
+    private static BodyParam listKeyParam(String name, String javaName, String javaType) {
+        return new BodyParam(name, new ColumnRef(name, javaName, javaType), javaType, false, true,
+            new CallSiteExtraction.Direct());
+    }
+
+    private static BodyParam scalarKeyParam(String name, String javaName, String javaType) {
+        return new BodyParam(name, new ColumnRef(name, javaName, javaType), javaType, false, false,
+            new CallSiteExtraction.Direct());
+    }
+
+    @Test
+    void queryLookupField_returnsResultRecord() {
+        var field = lookupQueryField("filmById", List.of(listKeyParam("film_id", "FILM_ID", "java.lang.Integer")));
+        var spec = TypeFetcherClassGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(method(spec, "filmById").returnType().toString())
+            .isEqualTo("org.jooq.Result<org.jooq.Record>");
+    }
+
+    @Test
+    void queryLookupField_hasEnvParameter() {
+        var field = lookupQueryField("filmById", List.of(listKeyParam("film_id", "FILM_ID", "java.lang.Integer")));
+        var spec = TypeFetcherClassGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(method(spec, "filmById").parameters())
+            .extracting(p -> p.type().toString())
+            .containsExactly("graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void queryLookupField_isNotStub() {
+        var field = lookupQueryField("filmById", List.of(listKeyParam("film_id", "FILM_ID", "java.lang.Integer")));
+        var spec = TypeFetcherClassGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(method(spec, "filmById").code().toString())
+            .doesNotContain("UnsupportedOperationException");
+    }
+
+    @Test
+    void queryLookupField_scalarKey_isNotStub() {
+        var fields = List.of(
+            listKeyParam("customer_id", "CUSTOMER_ID", "java.lang.Integer"),
+            scalarKeyParam("store_id", "STORE_ID", "java.lang.Integer"));
+        var field = lookupQueryField("customerById", fields);
+        var spec = TypeFetcherClassGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(method(spec, "customerById").code().toString())
+            .doesNotContain("UnsupportedOperationException");
     }
 }

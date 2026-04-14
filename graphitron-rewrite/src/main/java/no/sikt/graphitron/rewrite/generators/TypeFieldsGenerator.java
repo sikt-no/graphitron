@@ -38,9 +38,6 @@ import java.util.List;
  * <ul>
  *   <li>For most fields: one {@code public static Object fieldName(DataFetchingEnvironment env)}
  *       stub throwing {@link UnsupportedOperationException}.</li>
- *   <li>For {@link QueryField.QueryLookupTableField}: an async data fetcher stub returning
- *       {@code CompletableFuture<List<Record>>} and a bespoke synchronous
- *       {@code lookupFieldName(DataFetchingEnvironment env, SelectedField sel)} stub.</li>
  *   <li>For {@link ChildField.ServiceTableField} with a resolved service method reference:
  *       an async DataLoader-based data fetcher and a rows method
  *       {@code loadFieldName(List<Row1<T>>, DataFetchingEnvironment, SelectedField)} (where T is
@@ -102,10 +99,7 @@ public class TypeFieldsGenerator {
         boolean needsGraphitronContextHelper = false;
 
         for (var field : fields) {
-            if (field instanceof QueryField.QueryLookupTableField lookup) {
-                builder.addMethod(buildLookupDataFetcher(lookup));
-                builder.addMethod(buildLookupMethod(lookup));
-            } else if (field instanceof ChildField.ServiceTableField sf
+            if (field instanceof ChildField.ServiceTableField sf
                     && parentTable != null) {
                 builder.addMethod(buildServiceDataFetcher(sf, sf.method(), sf.returnType(), parentTable, className));
                 builder.addMethod(buildServiceRowsMethod(sf, sf.method(), sf.returnType(), sf.returnType().table(), parentTable));
@@ -275,27 +269,6 @@ public class TypeFieldsGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object.class)
             .addParameter(ENV, "env")
-            .addStatement("throw new $T()", UnsupportedOperationException.class)
-            .build();
-    }
-
-    private static MethodSpec buildLookupDataFetcher(QueryField.QueryLookupTableField field) {
-        var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, ParameterizedTypeName.get(LIST, RECORD));
-        return MethodSpec.methodBuilder(field.name())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(returnType)
-            .addParameter(ENV, "env")
-            .addStatement("throw new $T()", UnsupportedOperationException.class)
-            .build();
-    }
-
-    private static MethodSpec buildLookupMethod(QueryField.QueryLookupTableField field) {
-        var methodName = field.lookupMethodName();
-        return MethodSpec.methodBuilder(methodName)
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(ParameterizedTypeName.get(LIST, RECORD))
-            .addParameter(ENV, "env")
-            .addParameter(SELECTED_FIELD, "sel")
             .addStatement("throw new $T()", UnsupportedOperationException.class)
             .build();
     }
