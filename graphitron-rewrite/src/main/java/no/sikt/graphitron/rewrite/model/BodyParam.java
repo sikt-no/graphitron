@@ -18,9 +18,10 @@ package no.sikt.graphitron.rewrite.model;
  *       {@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator} can generate the
  *       static enum-map field for {@link CallSiteExtraction.TextMapLookup} params.</li>
  *   <li>{@link #graphqlTypeName()} — the GraphQL scalar type name (e.g. {@code "ID"},
- *       {@code "Int"}, {@code "String"}). Used by fetcher generators to determine the
- *       runtime delivery type of {@code env.getArgument()} — {@code ID} delivers
- *       {@code String}, while {@code Int} delivers {@code Integer} directly.</li>
+ *       {@code "Int"}, {@code "String"}). Used by fetcher generators that build inline
+ *       conditions: {@code ID} arguments are delivered as {@code String} by GraphQL-Java
+ *       and require jOOQ's {@code DataType.convert()} to coerce to the column type; all
+ *       other scalars are delivered as their natural Java type and need no conversion.</li>
  * </ul>
  *
  * <p>The parallel call-site view of this parameter is {@link CallParam}. A {@link BodyParam}

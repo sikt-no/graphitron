@@ -249,33 +249,30 @@ public class TypeFetcherClassGenerator {
             for (var bp : gcf.bodyParams()) {
                 var colName = bp.column().javaName();
                 var typeClass = ClassName.bestGuess(bp.javaType());
-                // GraphQL ID scalars are delivered as String by GraphQL-Java; all other scalars
-                // (Int, Boolean, String, …) are delivered as their natural Java counterpart,
-                // which already matches the jOOQ column type stored in bp.javaType().
-                boolean idScalar = "ID".equals(bp.graphqlTypeName());
+                boolean idArg = "ID".equals(bp.graphqlTypeName());
                 if (bp.list()) {
                     var listVarName = toCamelCase(bp.name()) + "Keys";
-                    if (idScalar && !"java.lang.String".equals(bp.javaType())) {
-                        // ID → non-String column: parse each String element
+                    if (idArg) {
+                        // ID is stringly typed — use jOOQ's DataType converter to coerce String → column type.
+                        // Passing List<String> keeps the method reference unambiguous (String is not Collection).
                         builder.addStatement("$T<$T> $L = env.getArgument($S)", LIST, String.class, listVarName, bp.name());
-                        builder.addStatement("condition = condition.and(table.$L.in($L.stream().map($T::valueOf).toList()))",
-                            colName, listVarName, typeClass);
+                        builder.addStatement("condition = condition.and(table.$L.in($L.stream().map(table.$L.getDataType()::convert).toList()))",
+                            colName, listVarName, colName);
                     } else {
-                        // Native match (or String column): GraphQL-Java delivers the right type directly
+                        // GraphQL-Java delivers the correct Java type (e.g. Int → Integer) — use it directly.
                         builder.addStatement("$T<$T> $L = env.getArgument($S)", LIST, typeClass, listVarName, bp.name());
                         builder.addStatement("condition = condition.and(table.$L.in($L))", colName, listVarName);
                     }
                 } else {
-                    var keyVarName = toCamelCase(bp.name());
-                    if (idScalar && !"java.lang.String".equals(bp.javaType())) {
-                        // ID → non-String column: parse the String
-                        builder.addStatement("$T $L = $T.valueOf(env.<$T>getArgument($S))",
-                            typeClass, keyVarName, typeClass, String.class, bp.name());
+                    if (idArg) {
+                        // ID is stringly typed — convert the String via the column's DataType.
+                        builder.addStatement("condition = condition.and(table.$L.eq(table.$L.getDataType().convert((String) env.getArgument($S))))",
+                            colName, colName, bp.name());
                     } else {
-                        // Native match: direct assignment
-                        builder.addStatement("$T $L = env.getArgument($S)", typeClass, keyVarName, bp.name());
+                        // GraphQL-Java delivers the correct Java type — assign directly.
+                        builder.addStatement("$T $L = env.getArgument($S)", typeClass, toCamelCase(bp.name()), bp.name());
+                        builder.addStatement("condition = condition.and(table.$L.eq($L))", colName, toCamelCase(bp.name()));
                     }
-                    builder.addStatement("condition = condition.and(table.$L.eq($L))", colName, keyVarName);
                 }
             }
         }
