@@ -142,12 +142,8 @@ public class FieldsCodeGenerator {
     }
 
     /**
-     * Generates a data fetcher for a {@link QueryField.QueryTableField} that builds the WHERE
-     * condition from argument filters, builds the ORDER BY from the order spec, and delegates
-     * to the table's {@code selectMany} or {@code selectOne}.
-     *
-     * <p>List/connection fields call {@code selectMany} and return {@code Result<Record>}.
-     * Single fields call {@code selectOne} and return {@code Record}.
+     * Generates a data fetcher for a {@link QueryField.QueryTableField} that extracts arguments,
+     * calls the table's condition method, and delegates to {@code selectMany} or {@code selectOne}.
      */
     private MethodSpec buildQueryTableFieldFetcher(QueryField.QueryTableField qtf) {
         var tableRef = qtf.returnType().table();
@@ -164,11 +160,10 @@ public class FieldsCodeGenerator {
             .returns(returnType)
             .addParameter(ENV, "env");
 
-        // Build condition from filters
-        builder.addCode(buildConditionCode(qtf.filters(), tablesClass, tableRef));
+        // Build condition call: Table.filmsCondition(Tables.FILM, arg1, arg2, ...)
+        builder.addCode(buildConditionCall(qtf, tableClass, tablesClass, tableRef));
 
         if (isList) {
-            // Build orderBy from spec
             builder.addCode(buildOrderByCode(qtf.orderBy(), tablesClass, tableRef));
             builder.addStatement("return $T.selectMany(env, condition, orderBy)", tableClass);
         } else {
@@ -179,68 +174,40 @@ public class FieldsCodeGenerator {
     }
 
     /**
-     * Generates the {@code Condition condition = ...} local variable from a list of
-     * {@link WhereFilter}s. When the list is empty, emits {@code DSL.noCondition()}.
+     * Generates the condition call: {@code var condition = Table.fieldCondition(Tables.TABLE, extractedArg1, ...)}.
+     * Argument extraction (valueOf, map lookup) happens inline at the call site.
      */
-    private CodeBlock buildConditionCode(java.util.List<WhereFilter> filters, ClassName tablesClass, TableRef tableRef) {
+    private CodeBlock buildConditionCall(QueryField.QueryTableField qtf, ClassName tableClass,
+            ClassName tablesClass, TableRef tableRef) {
         var code = CodeBlock.builder();
-        code.addStatement("var condition = $T.noCondition()", DSL);
-        for (var filter : filters) {
+        if (qtf.filters().isEmpty()) {
+            code.addStatement("var condition = $T.noCondition()", DSL);
+            return code.build();
+        }
+
+        // Build the argument expressions for the condition method call
+        var args = CodeBlock.builder();
+        args.add("$T.$L", tablesClass, tableRef.javaFieldName()); // table alias
+        for (var filter : qtf.filters()) {
+            args.add(",\n    ");
             switch (filter) {
-                case WhereFilter.ColumnFilter cf -> addScalarCondition(code, cf, tablesClass, tableRef);
-                case WhereFilter.EnumColumnFilter ef -> addEnumCondition(code, ef, tablesClass, tableRef);
-                case WhereFilter.TextEnumColumnFilter tf -> addTextEnumCondition(code, tf, tablesClass, tableRef);
-                default -> {} // InputFilter, ConditionFilter: deferred
+                case WhereFilter.ColumnFilter cf ->
+                    args.add("env.getArgument($S)", cf.name());
+                case WhereFilter.EnumColumnFilter ef -> {
+                    var enumClass = ClassName.bestGuess(ef.enumClassName());
+                    args.add("env.getArgument($S) != null ? $T.valueOf(env.<$T>getArgument($S)) : null",
+                        ef.name(), enumClass, String.class, ef.name());
+                }
+                case WhereFilter.TextEnumColumnFilter tf ->
+                    args.add("env.getArgument($S) != null ? $L.get(env.<$T>getArgument($S)) : null",
+                        tf.name(), tf.mapFieldName(), String.class, tf.name());
+                default -> args.add("null");
             }
         }
+
+        code.addStatement("var condition = $T.$LCondition($L)",
+            tableClass, qtf.name(), args.build());
         return code.build();
-    }
-
-    /** Scalar: {@code TABLE.COL.eq(DSL.val(env.getArgument("x"), TABLE.COL))} */
-    private void addScalarCondition(CodeBlock.Builder code, WhereFilter.ColumnFilter cf,
-            ClassName tablesClass, TableRef tableRef) {
-        // col = Tables.FILM.TITLE, val = DSL.val(arg, col)
-        String eq = "$T.$L.$L.eq($T.val(env.getArgument($S), $T.$L.$L))";
-        Object[] args = {tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
-            DSL, cf.name(), tablesClass, tableRef.javaFieldName(), cf.column().javaName()};
-        if (cf.nonNull()) {
-            code.addStatement("condition = condition.and(" + eq + ")", args);
-        } else {
-            code.addStatement("if (env.getArgument($S) != null) condition = condition.and(" + eq + ")",
-                concat(new Object[]{cf.name()}, args));
-        }
-    }
-
-    /** Enum: {@code TABLE.COL.eq(DSL.val(EnumClass.valueOf(arg), TABLE.COL))} */
-    private void addEnumCondition(CodeBlock.Builder code, WhereFilter.EnumColumnFilter ef,
-            ClassName tablesClass, TableRef tableRef) {
-        var enumClass = ClassName.bestGuess(ef.enumClassName());
-        String eq = "$T.$L.$L.eq($T.val($T.valueOf(env.<$T>getArgument($S)), $T.$L.$L))";
-        Object[] args = {tablesClass, tableRef.javaFieldName(), ef.column().javaName(),
-            DSL, enumClass, String.class, ef.name(),
-            tablesClass, tableRef.javaFieldName(), ef.column().javaName()};
-        if (ef.nonNull()) {
-            code.addStatement("condition = condition.and(" + eq + ")", args);
-        } else {
-            code.addStatement("if (env.getArgument($S) != null) condition = condition.and(" + eq + ")",
-                concat(new Object[]{ef.name()}, args));
-        }
-    }
-
-    /** Text enum: {@code TABLE.COL.eq(DSL.val(FIELD_MAP.get(arg), TABLE.COL))} */
-    private void addTextEnumCondition(CodeBlock.Builder code, WhereFilter.TextEnumColumnFilter tf,
-            ClassName tablesClass, TableRef tableRef) {
-        String mapFieldName = tf.mapFieldName();
-        String eq = "$T.$L.$L.eq($T.val($L.get(env.<$T>getArgument($S)), $T.$L.$L))";
-        Object[] args = {tablesClass, tableRef.javaFieldName(), tf.column().javaName(),
-            DSL, mapFieldName, String.class, tf.name(),
-            tablesClass, tableRef.javaFieldName(), tf.column().javaName()};
-        if (tf.nonNull()) {
-            code.addStatement("condition = condition.and(" + eq + ")", args);
-        } else {
-            code.addStatement("if (env.getArgument($S) != null) condition = condition.and(" + eq + ")",
-                concat(new Object[]{tf.name()}, args));
-        }
     }
 
     private FieldSpec buildTextEnumMapField(WhereFilter.TextEnumColumnFilter tf) {
@@ -261,12 +228,6 @@ public class FieldsCodeGenerator {
 
 
 
-    private static Object[] concat(Object[] a, Object[] b) {
-        var result = new Object[a.length + b.length];
-        System.arraycopy(a, 0, result, 0, a.length);
-        System.arraycopy(b, 0, result, a.length, b.length);
-        return result;
-    }
 
     /**
      * Generates the {@code List<SortField<?>> orderBy = ...} local variable from an

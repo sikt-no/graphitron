@@ -149,15 +149,15 @@ class FieldsPipelineTest {
     }
 
     @Test
-    void queryTableField_withArgument_buildsCondition() {
-        var queryFields = findSpec("QueryFields", """
+    void queryTableField_withArgument_generatesConditionMethodOnTableClass() {
+        var schema = buildSchema("""
             type Film @table(name: "film") { title: String, film_id: Int }
             type Query { film(film_id: Int!): Film }
             """);
-        var film = queryFields.methodSpecs().stream()
-            .filter(m -> m.name().equals("film")).findFirst().orElseThrow();
-        assertThat(film.code().toString()).contains("FILM_ID");
-        assertThat(film.code().toString()).contains("getArgument");
+        var filmTable = TableClassGenerator.generate(schema).stream()
+            .filter(t -> t.name().equals("Film")).findFirst().orElseThrow();
+        assertThat(filmTable.methodSpecs()).extracting(MethodSpec::name)
+            .contains("filmCondition");
     }
 
     @Test

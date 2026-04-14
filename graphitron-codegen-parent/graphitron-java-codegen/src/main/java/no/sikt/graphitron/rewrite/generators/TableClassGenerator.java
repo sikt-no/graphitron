@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.ArrayList;
@@ -16,26 +17,22 @@ import java.util.stream.Collectors;
 /**
  * Produces one table class per {@link GraphitronType.TableType} in the schema.
  *
- * <p>Class names come from {@link TableRef#javaClassName()}, the simple name of the
- * jOOQ-generated table class obtained at catalog resolution time via reflection. This respects any
- * custom jOOQ naming strategy. The GraphQL type name may differ from the table class name.
- *
- * <p>Collects all {@link ChildField.ColumnField} instances across all GraphQL types that map to
- * the same SQL table, deduplicates by jOOQ column name, and passes them to
- * {@link TableCodeGenerator} for the {@code fields()} SELECT-list method.
- *
- * <p>Generated files are placed in the {@code rewrite.tables} sub-package of the configured
- * output package.
+ * <p>Collects per table:
+ * <ul>
+ *   <li>{@link ChildField.ColumnField}s for the {@code fields()} SELECT-list method</li>
+ *   <li>{@link QueryField.QueryTableField}s for per-field condition methods</li>
+ * </ul>
  */
 public class TableClassGenerator {
 
     public static List<TypeSpec> generate(GraphitronSchema schema) {
         var codeGenerator = new TableCodeGenerator();
 
-        // Group table types by jOOQ class name, keeping the first TableRef per class
         var tablesByClassName = new LinkedHashMap<String, TableRef>();
         var columnsByClassName = new LinkedHashMap<String, List<ChildField.ColumnField>>();
+        var queryFieldsByClassName = new LinkedHashMap<String, List<QueryField.QueryTableField>>();
 
+        // Collect column fields per table
         for (var type : schema.types().values()) {
             if (!(type instanceof GraphitronType.TableBackedType tbt)) continue;
             if (type instanceof GraphitronType.TableInterfaceType) continue;
@@ -56,9 +53,23 @@ public class TableClassGenerator {
             }
         }
 
+        // Collect query table fields per target table
+        for (var type : schema.types().values()) {
+            if (!(type instanceof GraphitronType.RootType)) continue;
+            for (var field : schema.fieldsOf(type.name())) {
+                if (field instanceof QueryField.QueryTableField qtf) {
+                    var className = qtf.returnType().table().javaClassName();
+                    queryFieldsByClassName.computeIfAbsent(className, k -> new ArrayList<>()).add(qtf);
+                }
+            }
+        }
+
         return tablesByClassName.entrySet().stream()
             .sorted(Comparator.comparing(e -> e.getKey()))
-            .map(e -> codeGenerator.generate(e.getValue(), columnsByClassName.getOrDefault(e.getKey(), List.of())))
+            .map(e -> codeGenerator.generate(
+                e.getValue(),
+                columnsByClassName.getOrDefault(e.getKey(), List.of()),
+                queryFieldsByClassName.getOrDefault(e.getKey(), List.of())))
             .toList();
     }
 }
