@@ -99,7 +99,7 @@ class TypeFieldsGeneratorTest {
     }
 
     private static TypeSpec specWithSplitQuery(String parentType, String fieldName) {
-        return GEN.generate(parentType, null, List.of(splitQueryField(parentType, fieldName)));
+        return TypeFieldsGenerator.generateTypeSpec(parentType, null, List.of(splitQueryField(parentType, fieldName)));
     }
 
     private static TypeSpec specWithServiceField(String parentType, String fieldName, boolean isList) {
