@@ -88,13 +88,13 @@ class FetcherPipelineTest {
     // ===== wiring() method via pipeline =====
 
     @Test
-    void wiring_columnField_castsToLightDataFetcher() {
+    void wiring_columnField_usesColumnFetcher() {
         var wiringCode = findWiring("FilmFetchers", """
             type Film @table(name: "film") { title: String }
             type Query { dummy: String }
             """);
-        assertThat(wiringCode).contains("LightDataFetcher");
-        assertThat(wiringCode).contains("FilmFetchers::title");
+        assertThat(wiringCode).contains("ColumnFetcher");
+        assertThat(wiringCode).doesNotContain("FilmFetchers::title");
     }
 
     // ===== Helpers =====

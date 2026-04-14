@@ -102,63 +102,22 @@ class TypeFetcherClassGeneratorTest {
         assertThat(method(spec, "title").code().toString()).contains("UnsupportedOperationException");
     }
 
-    // ===== ColumnField with parentTable → LightDataFetcher =====
+    // ===== ColumnField with parentTable → wired via ColumnFetcher, no per-field method =====
 
     @Test
-    void columnFetcher_hasThreeParameters() {
+    void columnFetcher_withParentTable_noPerFieldMethod() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
             List.of(columnField("title", "title", "TITLE", "java.lang.String")));
-        assertThat(method(spec, "title").parameters())
-            .extracting(p -> p.type().toString())
-            .containsExactly("graphql.schema.DataFetchingEnvironment", "java.lang.Object", "java.lang.Object");
+        assertThat(spec.methodSpecs()).extracting(MethodSpec::name)
+            .doesNotContain("title");
     }
 
     @Test
-    void columnFetcher_parameterNamesAreEnvLocalContextSource() {
+    void columnFetcher_withParentTable_onlyWiringMethod() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
             List.of(columnField("title", "title", "TITLE", "java.lang.String")));
-        assertThat(method(spec, "title").parameters())
-            .extracting(p -> p.name())
-            .containsExactly("env", "localContext", "source");
-    }
-
-    @Test
-    void columnFetcher_returnsColumnType() {
-        var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
-            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
-        assertThat(method(spec, "title").returnType().toString()).isEqualTo("java.lang.String");
-    }
-
-    @Test
-    void columnFetcher_integerColumnReturnsInteger() {
-        var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
-            List.of(columnField("filmId", "film_id", "FILM_ID", "java.lang.Integer")));
-        assertThat(method(spec, "filmId").returnType().toString()).isEqualTo("java.lang.Integer");
-    }
-
-    @Test
-    void columnFetcher_isNotStub() {
-        var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
-            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
-        assertThat(method(spec, "title").code().toString()).doesNotContain("UnsupportedOperationException");
-    }
-
-    @Test
-    void columnFetcher_usesSourceNotEnvGetSource() {
-        var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
-            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
-        var code = method(spec, "title").code().toString();
-        assertThat(code).contains("source");
-        assertThat(code).doesNotContain("env.getSource()");
-    }
-
-    @Test
-    void columnFetcher_isPublicStatic() {
-        var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
-            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
-        assertThat(method(spec, "title").modifiers())
-            .containsExactlyInAnyOrder(javax.lang.model.element.Modifier.PUBLIC,
-                javax.lang.model.element.Modifier.STATIC);
+        assertThat(spec.methodSpecs()).extracting(MethodSpec::name)
+            .containsExactly("wiring");
     }
 
     // ===== QueryTableField =====
@@ -211,11 +170,12 @@ class TypeFetcherClassGeneratorTest {
     }
 
     @Test
-    void wiring_columnField_castsToLightDataFetcherWithPreciseType() {
+    void wiring_columnField_usesColumnFetcher() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
             List.of(columnField("title", "title", "TITLE", "java.lang.String")));
-        assertThat(method(spec, "wiring").code().toString())
-            .contains("(graphql.schema.LightDataFetcher<java.lang.String>) FilmFetchers::title");
+        var wiringCode = method(spec, "wiring").code().toString();
+        assertThat(wiringCode).contains("ColumnFetcher");
+        assertThat(wiringCode).contains("Tables.FILM.TITLE");
     }
 
     @Test
