@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
@@ -98,6 +99,17 @@ public class FieldsCodeGenerator {
             }
         }
 
+        // Collect text enum mappings and generate static final Map fields
+        for (var field : fields) {
+            if (field instanceof QueryField.QueryTableField qtf) {
+                for (var filter : qtf.filters()) {
+                    if (filter instanceof WhereFilter.TextEnumColumnFilter tf) {
+                        builder.addField(buildTextEnumMapField(qtf.name(), tf));
+                    }
+                }
+            }
+        }
+
         if (needsGraphitronContextHelper) {
             builder.addMethod(buildGraphitronContextHelper());
         }
@@ -153,7 +165,7 @@ public class FieldsCodeGenerator {
             .addParameter(ENV, "env");
 
         // Build condition from filters
-        builder.addCode(buildConditionCode(qtf.filters(), tablesClass, tableRef));
+        builder.addCode(buildConditionCode(qtf.name(), qtf.filters(), tablesClass, tableRef));
 
         if (isList) {
             // Build orderBy from spec
@@ -170,14 +182,14 @@ public class FieldsCodeGenerator {
      * Generates the {@code Condition condition = ...} local variable from a list of
      * {@link WhereFilter}s. When the list is empty, emits {@code DSL.noCondition()}.
      */
-    private CodeBlock buildConditionCode(java.util.List<WhereFilter> filters, ClassName tablesClass, TableRef tableRef) {
+    private CodeBlock buildConditionCode(String fieldName, java.util.List<WhereFilter> filters, ClassName tablesClass, TableRef tableRef) {
         var code = CodeBlock.builder();
         code.addStatement("var condition = $T.noCondition()", DSL);
         for (var filter : filters) {
             switch (filter) {
                 case WhereFilter.ColumnFilter cf -> addScalarCondition(code, cf, tablesClass, tableRef);
                 case WhereFilter.EnumColumnFilter ef -> addEnumCondition(code, ef, tablesClass, tableRef);
-                case WhereFilter.TextEnumColumnFilter tf -> addTextEnumCondition(code, tf, tablesClass, tableRef);
+                case WhereFilter.TextEnumColumnFilter tf -> addTextEnumCondition(code, tf, fieldName, tablesClass, tableRef);
                 default -> {} // InputFilter, ConditionFilter: deferred
             }
         }
@@ -215,21 +227,13 @@ public class FieldsCodeGenerator {
         }
     }
 
-    /** Text enum: {@code TABLE.COL.eq(DSL.val(MAP.get(arg), TABLE.COL))} */
+    /** Text enum: {@code TABLE.COL.eq(DSL.val(FIELD_MAP.get(arg), TABLE.COL))} */
     private void addTextEnumCondition(CodeBlock.Builder code, WhereFilter.TextEnumColumnFilter tf,
-            ClassName tablesClass, TableRef tableRef) {
-        // Build the Map.of(...) literal from the value mapping
-        var mapEntries = CodeBlock.builder();
-        boolean first = true;
-        for (var entry : tf.valueMapping().entrySet()) {
-            if (!first) mapEntries.add(", ");
-            mapEntries.add("$S, $S", entry.getKey(), entry.getValue());
-            first = false;
-        }
-        String eq = "$T.$L.$L.eq($T.val($T.of($L).get(env.<$T>getArgument($S)), $T.$L.$L))";
-        var MAP = ClassName.get(java.util.Map.class);
+            String fieldName, ClassName tablesClass, TableRef tableRef) {
+        String mapFieldName = textEnumMapFieldName(fieldName, tf.name());
+        String eq = "$T.$L.$L.eq($T.val($L.get(env.<$T>getArgument($S)), $T.$L.$L))";
         Object[] args = {tablesClass, tableRef.javaFieldName(), tf.column().javaName(),
-            DSL, MAP, mapEntries.build(), String.class, tf.name(),
+            DSL, mapFieldName, String.class, tf.name(),
             tablesClass, tableRef.javaFieldName(), tf.column().javaName()};
         if (tf.nonNull()) {
             code.addStatement("condition = condition.and(" + eq + ")", args);
@@ -237,6 +241,26 @@ public class FieldsCodeGenerator {
             code.addStatement("if (env.getArgument($S) != null) condition = condition.and(" + eq + ")",
                 concat(new Object[]{tf.name()}, args));
         }
+    }
+
+    private FieldSpec buildTextEnumMapField(String fieldName, WhereFilter.TextEnumColumnFilter tf) {
+        var MAP = ClassName.get(java.util.Map.class);
+        var mapType = ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(String.class));
+        var mapEntries = CodeBlock.builder();
+        boolean first = true;
+        for (var entry : tf.valueMapping().entrySet()) {
+            if (!first) mapEntries.add(", ");
+            mapEntries.add("$S, $S", entry.getKey(), entry.getValue());
+            first = false;
+        }
+        return FieldSpec.builder(mapType, textEnumMapFieldName(fieldName, tf.name()))
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .initializer("$T.of($L)", MAP, mapEntries.build())
+            .build();
+    }
+
+    private static String textEnumMapFieldName(String fieldName, String argName) {
+        return fieldName.toUpperCase() + "_" + argName.toUpperCase() + "_MAP";
     }
 
     private static Object[] concat(Object[] a, Object[] b) {
