@@ -43,13 +43,23 @@ public sealed interface WhereFilter
      * both the {@code col = ?} predicate and the condition call are generated. With
      * {@code override: true} the {@code col = ?} predicate is suppressed (this filter is omitted)
      * and only the condition is emitted.
+     * <p>{@code enumClassName} is non-null when the column's Java type is a jOOQ enum
+     * ({@link org.jooq.EnumType}). The value is the fully qualified class name
+     * (e.g. {@code "no.example.jooq.enums.MpaaRating"}). The generator uses this to emit
+     * {@code EnumClass.valueOf((String) env.getArgument(...))} for type-safe binding.
+     * When {@code null}, the column is a plain scalar.
+     *
+     * <p>Enum values are validated at build time: every GraphQL enum value must have a matching
+     * Java enum constant (by name, or by {@code @field(name:)} mapping). If validation passes,
+     * the graphql-java runtime String is guaranteed to be a valid {@code valueOf} argument.
      */
     record ColumnFilter(
         String name,
         String typeName,
         boolean nonNull,
         boolean list,
-        ColumnRef column
+        ColumnRef column,
+        String enumClassName
     ) implements WhereFilter {}
 
     /**

@@ -42,7 +42,7 @@ class ArgumentValidationTest {
             List.of()),
 
         WITH_COLUMN_FILTER("ColumnFilter scalar — no errors",
-            tableField(List.of(new WhereFilter.ColumnFilter("id", "ID", false, false, new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))),
+            tableField(List.of(new WhereFilter.ColumnFilter("id", "ID", false, false, new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), null))),
             List.of()),
 
         WITH_INPUT_FILTER("InputFilter — no errors",

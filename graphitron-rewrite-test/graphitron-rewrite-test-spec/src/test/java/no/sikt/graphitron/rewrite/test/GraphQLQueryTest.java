@@ -156,8 +156,6 @@ class GraphQLQueryTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("Enum conversion not yet implemented — graphql-java delivers " +
-        "String ('G') but jOOQ needs MpaaRating.G. See enum mapping gap in plan.")
     void films_filteredByRating() {
         // Test data: ACADEMY DINOSAUR=PG, ACE GOLDFINGER=G, ADAPTATION HOLES=NC_17,
         //            AFFAIR PREJUDICE=G, AGENT TRUMAN=PG

@@ -501,10 +501,59 @@ class FieldBuilder {
                 hadError = true;
                 continue;
             }
-            result.add(new WhereFilter.ColumnFilter(name, typeName, nonNull, list,
-                new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass())));
+            var columnRef = new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass());
+            String enumClassName = validateEnumFilter(typeName, columnRef, errors);
+            if (enumClassName != null && enumClassName.isEmpty()) {
+                // Empty string signals validation failure — errors already added
+                hadError = true;
+                continue;
+            }
+            result.add(new WhereFilter.ColumnFilter(name, typeName, nonNull, list, columnRef, enumClassName));
         }
         return hadError ? null : List.copyOf(result);
+    }
+
+    /**
+     * Validates that a GraphQL enum type's values match the Java enum constants of the column type.
+     *
+     * <p>Returns the fully qualified Java enum class name when the column is an enum and all values
+     * validate. Returns {@code null} when the column is not an enum. Returns an empty string when
+     * the column is an enum but validation fails (errors are appended to {@code errors}).
+     */
+    private String validateEnumFilter(String graphqlTypeName, ColumnRef column, java.util.List<String> errors) {
+        Class<?> colClass;
+        try {
+            colClass = Class.forName(column.columnClass());
+        } catch (ClassNotFoundException e) {
+            return null; // Can't load — not an enum we can validate
+        }
+        if (!colClass.isEnum()) {
+            return null;
+        }
+        // Column is a Java enum — validate GraphQL enum values
+        var schemaType = ctx.schema.getType(graphqlTypeName);
+        if (!(schemaType instanceof graphql.schema.GraphQLEnumType graphqlEnum)) {
+            errors.add("column '" + column.sqlName() + "' is a jOOQ enum (" + colClass.getSimpleName()
+                + ") but GraphQL type '" + graphqlTypeName + "' is not an enum");
+            return "";
+        }
+        var javaConstants = java.util.Arrays.stream(colClass.getEnumConstants())
+            .map(c -> ((Enum<?>) c).name())
+            .collect(java.util.stream.Collectors.toSet());
+        var mismatches = new java.util.ArrayList<String>();
+        for (var value : graphqlEnum.getValues()) {
+            String target = argString(value, DIR_FIELD, ARG_NAME).orElse(value.getName());
+            if (!javaConstants.contains(target)) {
+                mismatches.add("'" + value.getName() + "'" + (target.equals(value.getName()) ? "" : " (mapped to '" + target + "')")
+                    + candidateHint(target, new java.util.ArrayList<>(javaConstants)));
+            }
+        }
+        if (!mismatches.isEmpty()) {
+            errors.add("GraphQL enum '" + graphqlTypeName + "' has values that don't match jOOQ enum "
+                + colClass.getSimpleName() + ": " + String.join("; ", mismatches));
+            return "";
+        }
+        return colClass.getName();
     }
 
     /**
