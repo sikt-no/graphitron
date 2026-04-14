@@ -66,10 +66,15 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     void containingNonRecordWrapper() {
         assertGeneratedContentContains(
                 "containingNonRecordWrapper",
-                "if (_mi_address_inner != null) {",
-                        "var _iv_nextArgs0 = _iv_args.child(\"inner\");",
-                        "if (_iv_nextArgs0.hasField(\"postalCode\")) {",
-                        "_mo_addressRecord.setPostalCode(_mi_address_inner.getPostalCode());"
+                """
+                        if (_mi_address_inner != null) {
+                            var _iv_nextArgs0 = _iv_args.child("inner");
+                            if (_iv_nextArgs0.hasField("postalCode")) {
+                                _mo_addressRecord.setPostalCode(_mi_address_inner.getPostalCode());
+                            }
+                        }
+                        _mlo_addressRecord.add(_mo_addressRecord);
+                        """
         );
     }
 
@@ -78,14 +83,15 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     void containingDoubleNonRecordWrapper() {
         assertGeneratedContentContains(
                 "containingDoubleNonRecordWrapper",
-                "_mi_address_inner0 = _nit_address.getInner0();",
-                        "if (_mi_address_inner0 != null) {",
-                        "var _iv_nextArgs0 = _iv_args.child(\"inner0\");",
-                        "var _mi_wrapper_inner1 = _mi_address_inner0.getInner1();",
-                        "if (_mi_wrapper_inner1 != null) {",
-                        "var _iv_nextArgs1 = _iv_nextArgs0.child(\"inner1\");",
-                        "if (_iv_nextArgs1.hasField(\"postalCode\")) {",
-                        "_mo_addressRecord.setPostalCode(_mi_wrapper_inner1.getPostalCode());"
+                """
+                        var _mi_address_inner0 = _nit_address.getInner0();
+                        if (_mi_address_inner0 != null) {
+                            var _iv_nextArgs0 = _iv_args.child("inner0");
+                            var _mi_wrapper_inner1 = _mi_address_inner0.getInner1();
+                            if (_mi_wrapper_inner1 != null) {
+                                var _iv_nextArgs1 = _iv_nextArgs0.child("inner1");
+                        """
+
         );
     }
 
@@ -94,14 +100,12 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     void nestingWithDuplicateFieldName() {
         assertGeneratedContentContains(
                 "nestingWithDuplicateFieldName",
-                "_mi_address_inner = _nit_address.getInner();",
-                        "if (_mi_address_inner != null) {",
-                        "var _iv_nextArgs0 = _iv_args.child(\"inner\");",
-                        "var _mi_wrapper_inner = _mi_address_inner.getInner();",
-                        "if (_mi_wrapper_inner != null) {",
-                        "var _iv_nextArgs1 = _iv_nextArgs0.child(\"inner\");",
-                        "if (_iv_nextArgs1.hasField(\"postalCode\")) {",
-                        "_mo_addressRecord.setPostalCode(_mi_wrapper_inner.getPostalCode())"
+                """
+                        var _mi_address_inner = _nit_address.getInner();
+                        if (_mi_address_inner != null) {
+                            var _iv_nextArgs0 = _iv_args.child("inner");
+                            var _mi_wrapper_inner = _mi_address_inner.getInner();
+                        """
         );
     }
 
