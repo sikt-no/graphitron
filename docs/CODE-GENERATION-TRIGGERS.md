@@ -64,7 +64,7 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 | Return: union | `QueryUnionField` | Field method stub |
 | `@service`, return `@table` type | `QueryServiceTableField` | Async DataLoader fetcher + `rows*()` method |
 | `@service`, return non-table type | `QueryServiceRecordField` | Field method stub |
-| Return: `@table` type (default) | `QueryTableField` | Field method stub (`Tables.selectMany/selectOne` provides SQL) |
+| Return: `@table` type (default) | `QueryTableField` | Full fetcher — condition call + orderBy build + delegates to `Tables.selectMany/selectOne` |
 | Anything else | `UnclassifiedField` | Validation error — build fails |
 
 ### Mutation Fields
@@ -153,6 +153,31 @@ public static CompletableFuture<List<Record>> actors(DataFetchingEnvironment env
 // Rows method — executes batched SQL when DataLoader fires
 public static List<List<Record>> loadActors(List<Record> sourceRows, SelectedField sel, ...) { ... }
 ```
+
+### `*Conditions` class (`rewrite.types.<TypeName>Conditions`)
+
+One class per type that has fields with Graphitron-generated argument predicates.
+
+Each method is a pure function — takes the jOOQ table alias and typed argument values,
+returns an `org.jooq.Condition`. No dependency on GraphQL runtime types.
+
+```java
+public class FilmConditions {
+    // Generated for a text-enum argument (e.g. `rating: String @lookupArg`)
+    static final Map<String, String> RATING_MAP = Map.of("G", "G", "PG", "PG", ...);
+
+    public static Condition films(FilmTable table, String title, String rating) {
+        var condition = DSL.noCondition();
+        if (title != null) condition = condition.and(table.TITLE.eq(DSL.val(title, table.TITLE)));
+        condition = condition.and(table.RATING.eq(DSL.val(RATING_MAP.get(rating), table.RATING)));
+        return condition;
+    }
+}
+```
+
+The fetcher calls this method to build the WHERE clause, then delegates to the `*` class.
+
+---
 
 ### `*` class (`rewrite.types.<TypeName>`)
 
@@ -469,7 +494,7 @@ These generate code without any directive.
 
 | Schema Pattern | `GraphitronField` Variant | `*Fields` Generates |
 |---|---|---|
-| Root Query field (default) | `QueryTableField` | Method stub; SQL from `Tables.selectMany/selectOne` |
+| Root Query field (default) | `QueryTableField` | Full fetcher — condition + orderBy + `Tables.selectMany/selectOne` |
 | Root Query field + `@lookupKey` | `QueryLookupTableField` | Async DataLoader fetcher |
 | Root Query field + `@service` | `QueryServiceTableField` | Async DataLoader fetcher |
 | Root Mutation field + `@mutation` | `MutationInsertTableField` / `Update` / `Delete` / `Upsert` | Method stub |
