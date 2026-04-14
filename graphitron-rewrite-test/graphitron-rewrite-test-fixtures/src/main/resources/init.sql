@@ -79,22 +79,43 @@ CREATE TABLE customer (
 );
 
 -- -------------------------
+-- Actor
+-- -------------------------
+
+CREATE TABLE actor (
+    actor_id    serial      PRIMARY KEY,
+    first_name  varchar(45) NOT NULL,
+    last_name   varchar(45) NOT NULL,
+    last_update timestamp   NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_actor_last_name ON actor(last_name);
+
+-- -------------------------
 -- Film / category
 -- -------------------------
 
 CREATE TABLE film (
-    film_id           serial          PRIMARY KEY,
-    title             varchar(255)    NOT NULL,
-    description       text,
-    release_year      int,
-    language_id       int             NOT NULL REFERENCES language(language_id),
-    rental_duration   smallint        NOT NULL DEFAULT 3,
-    rental_rate       numeric(4,2)    NOT NULL DEFAULT 4.99,
-    length            smallint,
-    replacement_cost  numeric(5,2)    NOT NULL DEFAULT 19.99,
-    rating            mpaa_rating     DEFAULT 'G',
-    text_rating       varchar(10),
-    last_update       timestamp       NOT NULL DEFAULT now()
+    film_id                serial          PRIMARY KEY,
+    title                  varchar(255)    NOT NULL,
+    description            text,
+    release_year           int,
+    language_id            int             NOT NULL REFERENCES language(language_id),
+    original_language_id   int             REFERENCES language(language_id),
+    rental_duration        smallint        NOT NULL DEFAULT 3,
+    rental_rate            numeric(4,2)    NOT NULL DEFAULT 4.99,
+    length                 smallint,
+    replacement_cost       numeric(5,2)    NOT NULL DEFAULT 19.99,
+    rating                 mpaa_rating     DEFAULT 'G',
+    text_rating            varchar(10),
+    last_update            timestamp       NOT NULL DEFAULT now()
+);
+
+CREATE TABLE film_actor (
+    actor_id    int  NOT NULL REFERENCES actor(actor_id),
+    film_id     int  NOT NULL REFERENCES film(film_id),
+    last_update timestamp NOT NULL DEFAULT now(),
+    PRIMARY KEY (actor_id, film_id)
 );
 
 CREATE TABLE category (
@@ -140,9 +161,24 @@ CREATE TABLE payment (
     payment_date  timestamp     NOT NULL
 );
 
+-- -------------------------
+-- film_list: PK-less summary view (as a plain table for test purposes)
+-- -------------------------
+
+CREATE TABLE film_list (
+    title       varchar(255),
+    description text,
+    category    varchar(25)
+);
+
 -- ===========================
 -- Seed data
 -- ===========================
+
+INSERT INTO actor (first_name, last_name) VALUES
+    ('PENELOPE', 'GUINESS'),
+    ('NICK',     'WAHLBERG'),
+    ('ED',       'CHASE');
 
 INSERT INTO language (name) VALUES ('English'), ('Italian'), ('Japanese');
 

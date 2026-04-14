@@ -3,12 +3,12 @@ package no.sikt.graphitron.rewrite.validation;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.GraphitronSchemaValidator;
+import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
-
-import java.util.List;
 
 import java.util.List;
 import java.util.Map;
@@ -23,9 +23,11 @@ import java.util.Map;
  */
 public final class FieldValidationTestHelper {
 
-    private static final GraphitronSchemaValidator VALIDATOR = new GraphitronSchemaValidator();
-
     private FieldValidationTestHelper() {}
+
+    private static GraphitronSchemaValidator validator() {
+        return new GraphitronSchemaValidator(new JooqCatalog(RewriteConfig.getGeneratedJooqPackage()));
+    }
 
     // --- Schema assembly helpers ---
 
@@ -42,11 +44,11 @@ public final class FieldValidationTestHelper {
     // --- Validation runners ---
 
     public static List<ValidationError> validate(GraphitronSchema schema) {
-        return VALIDATOR.validate(schema);
+        return validator().validate(schema);
     }
 
     public static List<ValidationError> validate(GraphitronType type) {
-        return VALIDATOR.validate(new GraphitronSchema(Map.of(type.name(), type), Map.of()));
+        return validator().validate(new GraphitronSchema(Map.of(type.name(), type), Map.of()));
     }
 
     /**
