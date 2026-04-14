@@ -384,7 +384,3 @@ No DTOs, no TypeMappers. DataFetchers return `Result<Record>`; GraphQL-Java trav
 ### Query plan caching trade-off
 
 Selection-driven queries produce different SQL per request (different column lists). The database cannot reuse cached query plans across requests. This is an acceptable cost for wide tables with large optional columns, but for narrow tables (≤10 columns) where most fields are always requested, selecting `TABLE.*` is simpler and the overhead of dynamic column selection exceeds the benefit.
-
-### `@selectiveQuery` directive
-
-Not yet in `directives.graphqls`. The intended design is an opt-in per-type directive (or global Maven config flag) to enable selection-aware column building. Add the directive when implementing the table method bodies.
