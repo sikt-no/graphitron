@@ -1,0 +1,189 @@
+-- Rewrite-test database schema: Sakila-inspired subset owned by this project.
+-- Extend freely as new test cases require.
+
+CREATE TYPE mpaa_rating AS ENUM ('G', 'PG', 'PG-13', 'R', 'NC-17');
+
+-- -------------------------
+-- Lookup / reference tables
+-- -------------------------
+
+CREATE TABLE language (
+    language_id  serial      PRIMARY KEY,
+    name         char(20)    NOT NULL,
+    last_update  timestamp   NOT NULL DEFAULT now()
+);
+
+CREATE TABLE country (
+    country_id   serial      PRIMARY KEY,
+    country      varchar(50) NOT NULL,
+    last_update  timestamp   NOT NULL DEFAULT now()
+);
+
+CREATE TABLE city (
+    city_id      serial      PRIMARY KEY,
+    city         varchar(50) NOT NULL,
+    country_id   int         NOT NULL REFERENCES country(country_id),
+    last_update  timestamp   NOT NULL DEFAULT now()
+);
+
+CREATE TABLE address (
+    address_id   serial      PRIMARY KEY,
+    address      varchar(50) NOT NULL,
+    address2     varchar(50),
+    district     varchar(20) NOT NULL,
+    city_id      int         NOT NULL REFERENCES city(city_id),
+    postal_code  varchar(10),
+    phone        varchar(20) NOT NULL DEFAULT '',
+    last_update  timestamp   NOT NULL DEFAULT now()
+);
+
+-- -------------------------
+-- Store / staff  (circular FK resolved with ALTER TABLE)
+-- -------------------------
+
+CREATE TABLE store (
+    store_id          serial  PRIMARY KEY,
+    address_id        int     NOT NULL REFERENCES address(address_id),
+    last_update       timestamp NOT NULL DEFAULT now()
+);
+
+CREATE TABLE staff (
+    staff_id     serial      PRIMARY KEY,
+    first_name   varchar(45) NOT NULL,
+    last_name    varchar(45) NOT NULL,
+    address_id   int         NOT NULL REFERENCES address(address_id),
+    email        varchar(50),
+    store_id     int         NOT NULL REFERENCES store(store_id),
+    active       boolean     NOT NULL DEFAULT true,
+    username     varchar(16) NOT NULL,
+    last_update  timestamp   NOT NULL DEFAULT now()
+);
+
+ALTER TABLE store ADD COLUMN manager_staff_id int REFERENCES staff(staff_id);
+
+-- -------------------------
+-- Customer
+-- -------------------------
+
+CREATE TABLE customer (
+    customer_id  serial      PRIMARY KEY,
+    store_id     int         NOT NULL REFERENCES store(store_id),
+    first_name   varchar(45) NOT NULL,
+    last_name    varchar(45) NOT NULL,
+    email        varchar(50),
+    address_id   int         NOT NULL REFERENCES address(address_id),
+    activebool   boolean     NOT NULL DEFAULT true,
+    create_date  date        NOT NULL DEFAULT current_date,
+    last_update  timestamp   DEFAULT now(),
+    active       integer
+);
+
+-- -------------------------
+-- Film / category
+-- -------------------------
+
+CREATE TABLE film (
+    film_id           serial          PRIMARY KEY,
+    title             varchar(255)    NOT NULL,
+    description       text,
+    release_year      int,
+    language_id       int             NOT NULL REFERENCES language(language_id),
+    rental_duration   smallint        NOT NULL DEFAULT 3,
+    rental_rate       numeric(4,2)    NOT NULL DEFAULT 4.99,
+    length            smallint,
+    replacement_cost  numeric(5,2)    NOT NULL DEFAULT 19.99,
+    rating            mpaa_rating     DEFAULT 'G',
+    text_rating       varchar(10),
+    last_update       timestamp       NOT NULL DEFAULT now()
+);
+
+CREATE TABLE category (
+    category_id  serial      PRIMARY KEY,
+    name         varchar(25) NOT NULL,
+    last_update  timestamp   NOT NULL DEFAULT now()
+);
+
+CREATE TABLE film_category (
+    film_id      int  NOT NULL REFERENCES film(film_id),
+    category_id  int  NOT NULL REFERENCES category(category_id),
+    last_update  timestamp NOT NULL DEFAULT now(),
+    PRIMARY KEY (film_id, category_id)
+);
+
+-- -------------------------
+-- Inventory / rental / payment
+-- -------------------------
+
+CREATE TABLE inventory (
+    inventory_id  serial  PRIMARY KEY,
+    film_id       int     NOT NULL REFERENCES film(film_id),
+    store_id      int     NOT NULL REFERENCES store(store_id),
+    last_update   timestamp NOT NULL DEFAULT now()
+);
+
+CREATE TABLE rental (
+    rental_id     serial    PRIMARY KEY,
+    rental_date   timestamp NOT NULL,
+    inventory_id  int       NOT NULL REFERENCES inventory(inventory_id),
+    customer_id   int       NOT NULL REFERENCES customer(customer_id),
+    return_date   timestamp,
+    staff_id      int       NOT NULL REFERENCES staff(staff_id),
+    last_update   timestamp NOT NULL DEFAULT now()
+);
+
+CREATE TABLE payment (
+    payment_id    serial        PRIMARY KEY,
+    customer_id   int           NOT NULL REFERENCES customer(customer_id),
+    staff_id      int           NOT NULL REFERENCES staff(staff_id),
+    rental_id     int           NOT NULL REFERENCES rental(rental_id),
+    amount        numeric(5,2)  NOT NULL,
+    payment_date  timestamp     NOT NULL
+);
+
+-- ===========================
+-- Seed data
+-- ===========================
+
+INSERT INTO language (name) VALUES ('English'), ('Italian'), ('Japanese');
+
+INSERT INTO country (country) VALUES ('United States'), ('Italy'), ('Japan');
+
+INSERT INTO city (city, country_id) VALUES
+    ('Lethbridge', 1),
+    ('Rome',       2),
+    ('Tokyo',      3);
+
+INSERT INTO address (address, district, city_id) VALUES
+    ('47 MySakila Drive',   'Alberta', 1),
+    ('28 MySQL Boulevard',  'Lazio',   2),
+    ('23 Workhaven Lane',   'Alberta', 1);
+
+INSERT INTO store (address_id) VALUES (1), (2);
+
+INSERT INTO staff (first_name, last_name, address_id, email, store_id, active, username) VALUES
+    ('Mike', 'Hillyer',  3, 'mike.hillyer@example.com',  1, true, 'mike'),
+    ('Jon',  'Stephens', 2, 'jon.stephens@example.com',  2, true, 'jon');
+
+UPDATE store SET manager_staff_id = 1 WHERE store_id = 1;
+UPDATE store SET manager_staff_id = 2 WHERE store_id = 2;
+
+-- 3 active, 2 inactive customers
+INSERT INTO customer (store_id, first_name, last_name, email, address_id, activebool, active) VALUES
+    (1, 'Mary',      'Smith',    'mary.smith@example.com',      1, true,  1),
+    (1, 'Patricia',  'Johnson',  'patricia.johnson@example.com', 2, true,  1),
+    (2, 'Linda',     'Williams', 'linda.williams@example.com',   3, true,  1),
+    (1, 'Barbara',   'Jones',    'barbara.jones@example.com',    1, false, 0),
+    (2, 'Elizabeth', 'Brown',    'elizabeth.brown@example.com',  2, false, 0);
+
+-- Films spanning all ratings and a range of rental rates
+INSERT INTO film (title, description, release_year, language_id, rental_rate, rating, length) VALUES
+    ('ACADEMY DINOSAUR', 'A Epic Drama',         2006, 1, 0.99, 'PG',    86),
+    ('ACE GOLDFINGER',   'A Thrilling Saga',     2006, 1, 4.99, 'G',     48),
+    ('ADAPTATION HOLES', 'A Quirky Comedy',      2006, 1, 2.99, 'NC-17', 50),
+    ('AFFAIR PREJUDICE', 'A Classic Romance',    2006, 1, 2.99, 'G',    117),
+    ('AGENT TRUMAN',     'An Action Adventure',  2006, 1, 2.99, 'PG',   169);
+
+INSERT INTO category (name) VALUES ('Action'), ('Animation'), ('Comedy'), ('Drama');
+
+INSERT INTO film_category (film_id, category_id) VALUES
+    (1, 4), (2, 1), (3, 3), (4, 4), (5, 1);

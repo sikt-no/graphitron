@@ -1,0 +1,54 @@
+input LanguageKey @table(name: "language") { languageId: Int @field(name: "language_id") }
+
+type Query {
+    customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]!
+    films(
+        rating: MpaaRating @field(name: "RATING"),
+        textRating: TextRating @field(name: "TEXT_RATING"),
+        maxRentalRate: Float @field(name: "RENTAL_RATE")
+    ): [Film!]!
+    filmById(film_id: [ID] @lookupKey): [Film!]!
+    languageByKey(key: [LanguageKey] @lookupKey): [Language!]!
+    customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
+}
+
+type Customer @table(name: "customer") {
+    customerId: Int!     @field(name: "CUSTOMER_ID")
+    firstName:  String!  @field(name: "FIRST_NAME")
+    lastName:   String!  @field(name: "LAST_NAME")
+    email:      String   @field(name: "EMAIL")
+    activebool: Boolean! @field(name: "ACTIVEBOOL")
+}
+
+type Film @table(name: "film") {
+    filmId:      Int!         @field(name: "FILM_ID")
+    title:       String!      @field(name: "TITLE")
+    description: String       @field(name: "DESCRIPTION")
+    rentalRate:  Float!       @field(name: "RENTAL_RATE")
+    rating:      MpaaRating   @field(name: "RATING")
+    textRating:  String       @field(name: "TEXT_RATING")
+    length:      Int          @field(name: "LENGTH")
+}
+
+type Language @table(name: "language") {
+    languageId: Int!    @field(name: "LANGUAGE_ID")
+    name:       String! @field(name: "NAME")
+    films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+enum MpaaRating {
+    G
+    PG
+    PG_13
+    R
+    NC_17
+}
+
+"""Text-column enum — values map to database strings via @field(name:)."""
+enum TextRating {
+    G
+    PG
+    PG_13 @field(name: "PG-13")
+    R
+    NC_17 @field(name: "NC-17")
+}
