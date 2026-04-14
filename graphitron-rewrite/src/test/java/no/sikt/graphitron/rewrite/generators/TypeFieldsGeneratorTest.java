@@ -149,34 +149,6 @@ class TypeFieldsGeneratorTest {
         assertThat(method(spec, "title").code().toString()).doesNotContain("UnsupportedOperationException");
     }
 
-    // ===== wiring() method =====
-
-    @Test
-    void wiring_signature() {
-        var spec = TypeFieldsGenerator.generateTypeSpec("Film", null, List.of());
-        var w = method(spec, "wiring");
-        assertThat(w.returnType().toString())
-            .isEqualTo("graphql.schema.idl.TypeRuntimeWiring.Builder");
-    }
-
-    @Test
-    void wiring_noFields_noDataFetchers() {
-        var spec = TypeFieldsGenerator.generateTypeSpec("Film", null, List.of());
-        var w = method(spec, "wiring");
-        assertThat(w.code().toString()).doesNotContain("dataFetcher(");
-    }
-
-    @Test
-    void wiring_registersAllFields() {
-        var fields = List.<GraphitronField>of(
-            columnField("title", "title", "TITLE"),
-            columnField("releaseYear", "release_year", "RELEASE_YEAR"));
-        var spec = TypeFieldsGenerator.generateTypeSpec("Film", FILM_TABLE, fields);
-        var w = method(spec, "wiring");
-        assertThat(w.code().toString()).contains("dataFetcher(\"title\"");
-        assertThat(w.code().toString()).contains("dataFetcher(\"releaseYear\"");
-    }
-
     // ===== QueryTableField (root query → table) =====
 
     @Test
@@ -201,7 +173,7 @@ class TypeFieldsGeneratorTest {
     void splitQuery_generatesAsyncFetcherAndRowsMethod() {
         var spec = TypeFieldsGenerator.generateTypeSpec("Language", null, List.of(splitQueryField("Language", "films")));
         assertThat(spec.methodSpecs()).extracting(MethodSpec::name)
-            .contains("films", "rowsFilms", "wiring");
+            .contains("films", "rowsFilms");
         assertThat(method(spec, "films").returnType().toString())
             .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
     }
@@ -241,12 +213,6 @@ class TypeFieldsGeneratorTest {
             .containsExactly("sources");
     }
 
-    @Test
-    void splitQuery_wiringRegistersDataFetcherByName() {
-        var w = method(specWithSplitQuery("Language", "films"), "wiring");
-        assertThat(w.code().toString()).contains("dataFetcher(\"films\"");
-    }
-
     // ===== @service field with TableBoundReturnType =====
 
     @Test
@@ -271,10 +237,4 @@ class TypeFieldsGeneratorTest {
     }
 
 
-    @Test
-    void serviceField_wiringRegistersDataFetcherOnly() {
-        var w = method(specWithServiceField("Language", "films", true), "wiring");
-        assertThat(w.code().toString()).contains("dataFetcher(\"films\"");
-        assertThat(w.code().toString()).doesNotContain("dataFetcher(\"loadFilms\"");
-    }
 }

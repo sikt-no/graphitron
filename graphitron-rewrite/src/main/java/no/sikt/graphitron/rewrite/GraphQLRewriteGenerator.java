@@ -46,15 +46,15 @@ public class GraphQLRewriteGenerator {
             throw new RuntimeException("Rewrite schema validation failed with " + errors.size() + " error(s)");
         }
 
-        var fieldsClasses = TypeFieldsGenerator.generate(schema);
-        var fieldsClassNames = fieldsClasses.stream().map(TypeSpec::name).toList();
+        var fetcherClasses = TypeFetcherClassGenerator.generate(schema);
+        var fetcherClassNames = fetcherClasses.stream().map(TypeSpec::name).toList();
 
         write(GraphitronValuesClassGenerator.generate(),          "rewrite");
         write(TypeClassGenerator.generate(schema),                "rewrite.types");
         write(TypeConditionsGenerator.generate(schema),           "rewrite.types");
-        write(fieldsClasses,                                      "rewrite.types");
-        write(TypeFetcherClassGenerator.generate(schema),         "rewrite.types");
-        write(List.of(GraphitronWiringClassGenerator.generate(fieldsClassNames)), "rewrite");
+        write(TypeFieldsGenerator.generate(schema),               "rewrite.types");
+        write(fetcherClasses,                                      "rewrite.types");
+        write(List.of(GraphitronWiringClassGenerator.generate(fetcherClassNames)), "rewrite");
     }
 
     private static void write(List<TypeSpec> specs, String subPackage) {

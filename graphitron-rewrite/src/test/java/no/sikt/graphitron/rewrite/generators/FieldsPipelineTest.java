@@ -8,6 +8,7 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.generators.GraphitronWiringClassGenerator;
+import no.sikt.graphitron.rewrite.generators.TypeFetcherClassGenerator;
 import no.sikt.graphql.schema.SchemaReadingHelper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -251,18 +252,18 @@ class FieldsPipelineTest {
         assertThat(languageFields.methodSpecs()).extracting(MethodSpec::name).contains("loadFilms");
     }
 
-    // ===== GraphitronWiring (I1) =====
+    // ===== GraphitronWiring =====
 
     @Test
-    void wiringClass_referencesAllFieldsClasses() {
+    void wiringClass_referencesAllFetcherClasses() {
         var schema = buildSchema("""
             type Film @table(name: "film") { title: String }
             type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
             type Query { dummy: String }
             """);
-        var fieldsClasses = TypeFieldsGenerator.generate(schema);
-        var fieldsClassNames = fieldsClasses.stream().map(TypeSpec::name).toList();
-        var wiring = GraphitronWiringClassGenerator.generate(fieldsClassNames);
+        var fetcherClassNames = TypeFetcherClassGenerator.generate(schema).stream()
+            .map(TypeSpec::name).toList();
+        var wiring = GraphitronWiringClassGenerator.generate(fetcherClassNames);
 
         assertThat(wiring.name()).isEqualTo("GraphitronWiring");
         var build = wiring.methodSpecs().stream()

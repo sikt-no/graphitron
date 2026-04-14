@@ -76,8 +76,6 @@ public class TypeFieldsGenerator {
 
     private static final ClassName ENV               = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName SELECTED_FIELD    = ClassName.get("graphql.schema", "SelectedField");
-    private static final ClassName TYPE_WIRING       = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring");
-    private static final ClassName WIRING_BUILDER    = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring", "Builder");
     private static final ClassName COMPLETABLE_FUTURE = ClassName.get("java.util.concurrent", "CompletableFuture");
     private static final ClassName LIST              = ClassName.get("java.util", "List");
     private static final ClassName RECORD            = ClassName.get("org.jooq", "Record");
@@ -127,8 +125,6 @@ public class TypeFieldsGenerator {
         if (needsGraphitronContextHelper) {
             builder.addMethod(buildGraphitronContextHelper());
         }
-
-        builder.addMethod(buildWiringMethod(typeName, className, fields));
 
         return builder.build();
     }
@@ -558,28 +554,6 @@ public class TypeFieldsGenerator {
             .returns(Object.class)
             .addParameter(sourcesType, "sources")
             .addStatement("throw new $T()", UnsupportedOperationException.class)
-            .build();
-    }
-
-    private static MethodSpec buildWiringMethod(String typeName, String className, List<GraphitronField> fields) {
-        var body = CodeBlock.builder()
-            .add("return $T.newTypeWiring($S)", TYPE_WIRING, typeName);
-
-        if (fields.isEmpty()) {
-            body.add(";\n");
-        } else {
-            body.indent();
-            for (var field : fields) {
-                body.add("\n.dataFetcher($S, $L::$L)", field.name(), className, field.name());
-            }
-            body.add(";\n");
-            body.unindent();
-        }
-
-        return MethodSpec.methodBuilder("wiring")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(WIRING_BUILDER)
-            .addCode(body.build())
             .build();
     }
 

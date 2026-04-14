@@ -14,7 +14,7 @@ import java.util.List;
  * Generates {@code GraphitronWiring.java} in {@code <outputPackage>.rewrite}.
  *
  * <p>The generated class contains a single {@code build()} method that returns a
- * {@code RuntimeWiring.Builder} with all generated {@code *Fields.wiring()} calls registered.
+ * {@code RuntimeWiring.Builder} with all generated {@code *Fetchers.wiring()} calls registered.
  * The caller can add further type resolvers (e.g. for custom scalars, unions) before calling
  * {@code .build()} on the returned builder.
  *
@@ -28,24 +28,24 @@ public class GraphitronWiringClassGenerator {
     /**
      * Generates the {@code GraphitronWiring} class.
      *
-     * @param fieldsClassNames the simple class names of all generated {@code *Fields} classes
-     *                         (e.g. {@code ["CustomerFields", "FilmFields", "QueryFields"]}),
-     *                         in the order they should appear in the wiring
+     * @param fetcherClassNames the simple class names of all generated {@code *Fetchers} classes
+     *                          (e.g. {@code ["CustomerFetchers", "FilmFetchers", "QueryFetchers"]}),
+     *                          in the order they should appear in the wiring
      */
-    public static TypeSpec generate(List<String> fieldsClassNames) {
+    public static TypeSpec generate(List<String> fetcherClassNames) {
         var typesPackage = RewriteConfig.outputPackage() + ".rewrite.types";
         var builderType = ClassName.get("graphql.schema.idl", "RuntimeWiring", "Builder");
 
         var body = CodeBlock.builder()
             .add("return $T.newRuntimeWiring()", RUNTIME_WIRING);
 
-        if (fieldsClassNames.isEmpty()) {
+        if (fetcherClassNames.isEmpty()) {
             body.add(";\n");
         } else {
             body.indent();
-            for (var className : fieldsClassNames) {
-                var fieldsClass = ClassName.get(typesPackage, className);
-                body.add("\n.type($T.wiring())", fieldsClass);
+            for (var className : fetcherClassNames) {
+                var fetcherClass = ClassName.get(typesPackage, className);
+                body.add("\n.type($T.wiring())", fetcherClass);
             }
             body.add(";\n");
             body.unindent();
