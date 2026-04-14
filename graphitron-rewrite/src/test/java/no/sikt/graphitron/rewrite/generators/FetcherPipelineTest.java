@@ -88,7 +88,7 @@ class FetcherPipelineTest {
     // ===== wiring() method via pipeline =====
 
     @Test
-    void wiring_usesFactoryCallPattern() {
+    void wiring_usesMethodReference() {
         var fetchersSpec = findSpec("FilmFetchers", """
             type Film @table(name: "film") { title: String }
             type Query { dummy: String }
@@ -96,9 +96,7 @@ class FetcherPipelineTest {
         var wiringCode = fetchersSpec.methodSpecs().stream()
             .filter(m -> m.name().equals("wiring"))
             .findFirst().orElseThrow().code().toString();
-        // factory call: FilmFetchers.title() — not a method reference FilmFetchers::title
-        assertThat(wiringCode).contains("FilmFetchers.title()");
-        assertThat(wiringCode).doesNotContain("FilmFetchers::title");
+        assertThat(wiringCode).contains("FilmFetchers::title");
     }
 
     // ===== Helpers =====

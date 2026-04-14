@@ -79,18 +79,20 @@ class TypeFetcherClassGeneratorTest {
     // ===== Stub methods (column field without parentTable falls to stub) =====
 
     @Test
-    void stub_noParameters() {
+    void stub_hasEnvParameter() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", null,
             List.of(columnField("title", "title", "TITLE")));
-        assertThat(method(spec, "title").parameters()).isEmpty();
+        assertThat(method(spec, "title").parameters())
+            .extracting(p -> p.type().toString())
+            .containsExactly("graphql.schema.DataFetchingEnvironment");
     }
 
     @Test
-    void stub_returnsDataFetcherObject() {
+    void stub_returnsObject() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", null,
             List.of(columnField("title", "title", "TITLE")));
         assertThat(method(spec, "title").returnType().toString())
-            .isEqualTo("graphql.schema.DataFetcher<java.lang.Object>");
+            .isEqualTo("java.lang.Object");
     }
 
     @Test
@@ -100,21 +102,23 @@ class TypeFetcherClassGeneratorTest {
         assertThat(method(spec, "title").code().toString()).contains("UnsupportedOperationException");
     }
 
-    // ===== ColumnField with parentTable → real DataFetcher factory =====
+    // ===== ColumnField with parentTable → real fetcher =====
 
     @Test
-    void columnFetcher_noParameters() {
+    void columnFetcher_hasEnvParameter() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
             List.of(columnField("title", "title", "TITLE")));
-        assertThat(method(spec, "title").parameters()).isEmpty();
+        assertThat(method(spec, "title").parameters())
+            .extracting(p -> p.type().toString())
+            .containsExactly("graphql.schema.DataFetchingEnvironment");
     }
 
     @Test
-    void columnFetcher_returnsDataFetcherObject() {
+    void columnFetcher_returnsObject() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
             List.of(columnField("title", "title", "TITLE")));
         assertThat(method(spec, "title").returnType().toString())
-            .isEqualTo("graphql.schema.DataFetcher<java.lang.Object>");
+            .isEqualTo("java.lang.Object");
     }
 
     @Test
@@ -136,26 +140,28 @@ class TypeFetcherClassGeneratorTest {
     // ===== QueryTableField =====
 
     @Test
-    void queryTableField_list_returnsDataFetcherResultRecord() {
+    void queryTableField_list_returnsResultRecord() {
         var field = queryTableField("films", true);
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "films").returnType().toString())
-            .isEqualTo("graphql.schema.DataFetcher<org.jooq.Result<org.jooq.Record>>");
+            .isEqualTo("org.jooq.Result<org.jooq.Record>");
     }
 
     @Test
-    void queryTableField_single_returnsDataFetcherRecord() {
+    void queryTableField_single_returnsRecord() {
         var field = queryTableField("film", false);
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "film").returnType().toString())
-            .isEqualTo("graphql.schema.DataFetcher<org.jooq.Record>");
+            .isEqualTo("org.jooq.Record");
     }
 
     @Test
-    void queryTableField_noParameters() {
+    void queryTableField_hasEnvParameter() {
         var field = queryTableField("films", true);
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Query", null, List.of(field));
-        assertThat(method(spec, "films").parameters()).isEmpty();
+        assertThat(method(spec, "films").parameters())
+            .extracting(p -> p.type().toString())
+            .containsExactly("graphql.schema.DataFetchingEnvironment");
     }
 
     @Test
@@ -181,13 +187,11 @@ class TypeFetcherClassGeneratorTest {
     }
 
     @Test
-    void wiring_usesMethodCallNotMethodReference() {
+    void wiring_usesMethodReference() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
             List.of(columnField("title", "title", "TITLE")));
         var wiringCode = method(spec, "wiring").code().toString();
-        // factory call: FilmFetchers.title() — not a method reference FilmFetchers::title
-        assertThat(wiringCode).contains("FilmFetchers.title()");
-        assertThat(wiringCode).doesNotContain("FilmFetchers::title");
+        assertThat(wiringCode).contains("FilmFetchers::title");
     }
 
     @Test

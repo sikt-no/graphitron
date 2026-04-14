@@ -4,7 +4,6 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.RewriteConfig;
@@ -26,20 +25,10 @@ import java.util.Map;
 /**
  * Generates a {@link TypeSpec} for one {@code <TypeName>Fetchers} class in {@code rewrite.types}.
  *
- * <p>Unlike {@link TypeFieldsGenerator}, where methods <em>are</em> the data fetcher
- * (they take a {@code DataFetchingEnvironment} parameter and implement the interface directly),
- * this generator uses the <em>factory pattern</em>: each method <em>returns</em> a
- * {@code DataFetcher<T>} instance. The wiring step therefore calls {@code ClassName.fieldName()}
- * rather than passing a method reference {@code ClassName::fieldName}.
- *
- * <p>Generated wiring pattern:
- * <pre>{@code
- * .dataFetcher("title", FilmFetchers.title())
- * }</pre>
- * vs the fields pattern:
- * <pre>{@code
- * .dataFetcher("title", FilmFields::title)
- * }</pre>
+ * <p>Each method is a {@code public static} data fetcher that takes a
+ * {@code DataFetchingEnvironment} parameter and returns the result directly, matching the
+ * {@link graphql.schema.DataFetcher} functional interface. Wiring registers them by method
+ * reference: {@code .dataFetcher("fieldName", FilmFetchers::fieldName)}.
  */
 public class TypeFetcherClassGenerator {
 
@@ -65,7 +54,7 @@ public class TypeFetcherClassGenerator {
         return generateTypeSpec(typeName, parentTable, fields);
     }
 
-    private static final ClassName DATA_FETCHER   = ClassName.get("graphql.schema", "DataFetcher");
+    private static final ClassName ENV            = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName TYPE_WIRING    = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring");
     private static final ClassName WIRING_BUILDER = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring", "Builder");
     private static final ClassName RECORD         = ClassName.get("org.jooq", "Record");
@@ -101,12 +90,13 @@ public class TypeFetcherClassGenerator {
     }
 
     /**
-     * Generates a {@code DataFetcher<Object>} factory method for a column field.
+     * Generates a column field fetcher that reads the value directly from the jOOQ {@code Record}
+     * in the source position.
      *
      * <p>Generated code:
      * <pre>{@code
-     * public static DataFetcher<Object> title() {
-     *     return env -> ((Record) env.getSource()).get(Tables.FILM.TITLE);
+     * public static Object title(DataFetchingEnvironment env) {
+     *     return ((Record) env.getSource()).get(Tables.FILM.TITLE);
      * }
      * }</pre>
      */
@@ -114,24 +104,23 @@ public class TypeFetcherClassGenerator {
         var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
         return MethodSpec.methodBuilder(cf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(ParameterizedTypeName.get(DATA_FETCHER, TypeName.OBJECT))
-            .addStatement("return env -> (($T) env.getSource()).get($T.$L.$L)",
+            .returns(Object.class)
+            .addParameter(ENV, "env")
+            .addStatement("return (($T) env.getSource()).get($T.$L.$L)",
                 RECORD, tablesClass, parentTable.javaFieldName(), cf.column().javaName())
             .build();
     }
 
     /**
-     * Generates a {@code DataFetcher<Result<Record>>} or {@code DataFetcher<Record>} factory method
-     * for a root-query table field.
+     * Generates a fetcher for a root-query table field that builds the condition, optional
+     * orderBy, and delegates to the table's {@code selectMany} or {@code selectOne}.
      *
      * <p>Generated code (list variant):
      * <pre>{@code
-     * public static DataFetcher<Result<Record>> films() {
-     *     return env -> {
-     *         var condition = DSL.noCondition();
-     *         List<SortField<?>> orderBy = List.of();
-     *         return Film.selectMany(env, condition, orderBy);
-     *     };
+     * public static Result<Record> films(DataFetchingEnvironment env) {
+     *     var condition = DSL.noCondition();
+     *     List<SortField<?>> orderBy = List.of();
+     *     return Film.selectMany(env, condition, orderBy);
      * }
      * }</pre>
      */
@@ -141,28 +130,25 @@ public class TypeFetcherClassGenerator {
         var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
         boolean isList = qtf.returnType().wrapper().isList();
 
-        TypeName fetcherValueType = isList
+        var returnType = isList
             ? ParameterizedTypeName.get(RESULT, RECORD)
             : RECORD;
 
-        var lambdaBody = CodeBlock.builder();
-        lambdaBody.add("env -> {\n");
-        lambdaBody.indent();
-        lambdaBody.add(buildConditionCall(qtf, tablesClass, tableRef));
-        if (isList) {
-            lambdaBody.add(buildOrderByCode(qtf.orderBy(), tablesClass, tableRef));
-            lambdaBody.addStatement("return $T.selectMany(env, condition, orderBy)", tableClass);
-        } else {
-            lambdaBody.addStatement("return $T.selectOne(env, condition)", tableClass);
-        }
-        lambdaBody.unindent();
-        lambdaBody.add("}");
-
-        return MethodSpec.methodBuilder(qtf.name())
+        var builder = MethodSpec.methodBuilder(qtf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(ParameterizedTypeName.get(DATA_FETCHER, fetcherValueType))
-            .addCode(CodeBlock.of("return $L;\n", lambdaBody.build()))
-            .build();
+            .returns(returnType)
+            .addParameter(ENV, "env");
+
+        builder.addCode(buildConditionCall(qtf, tablesClass, tableRef));
+
+        if (isList) {
+            builder.addCode(buildOrderByCode(qtf.orderBy(), tablesClass, tableRef));
+            builder.addStatement("return $T.selectMany(env, condition, orderBy)", tableClass);
+        } else {
+            builder.addStatement("return $T.selectOne(env, condition)", tableClass);
+        }
+
+        return builder.build();
     }
 
     private static CodeBlock buildConditionCall(QueryField.QueryTableField qtf,
@@ -237,31 +223,24 @@ public class TypeFetcherClassGenerator {
     }
 
     /**
-     * Generates a stub {@code DataFetcher<Object>} factory method for unhandled field types.
+     * Generates a stub that throws {@link UnsupportedOperationException} for unhandled field types.
      *
      * <p>Generated code:
      * <pre>{@code
-     * public static DataFetcher<Object> fieldName() {
-     *     return env -> { throw new UnsupportedOperationException(); };
+     * public static Object fieldName(DataFetchingEnvironment env) {
+     *     throw new UnsupportedOperationException();
      * }
      * }</pre>
      */
     private static MethodSpec buildStub(String fieldName) {
         return MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(ParameterizedTypeName.get(DATA_FETCHER, TypeName.OBJECT))
-            .addStatement("return env -> { throw new $T(); }", UnsupportedOperationException.class)
+            .returns(Object.class)
+            .addParameter(ENV, "env")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
             .build();
     }
 
-    /**
-     * Generates the {@code wiring()} method using factory method calls (not method references).
-     *
-     * <p>Generated code:
-     * <pre>{@code
-     * .dataFetcher("title", FilmFetchers.title())
-     * }</pre>
-     */
     private static MethodSpec buildWiringMethod(String typeName, String className, List<GraphitronField> fields) {
         var body = CodeBlock.builder()
             .add("return $T.newTypeWiring($S)", TYPE_WIRING, typeName);
@@ -271,7 +250,7 @@ public class TypeFetcherClassGenerator {
         } else {
             body.indent();
             for (var field : fields) {
-                body.add("\n.dataFetcher($S, $L.$L())", field.name(), className, field.name());
+                body.add("\n.dataFetcher($S, $L::$L)", field.name(), className, field.name());
             }
             body.add(";\n");
             body.unindent();
