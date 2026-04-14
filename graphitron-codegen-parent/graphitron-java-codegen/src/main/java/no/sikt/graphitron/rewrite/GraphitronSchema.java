@@ -47,44 +47,4 @@ public record GraphitronSchema(
             .toList();
     }
 
-    /**
-     * Returns all fields across all types whose return type is bound to the given table.
-     * This includes root query fields, child table fields, split fields, etc.
-     *
-     * <p>Used by table-class generators to find all fields that need condition methods,
-     * subselect methods, or other per-field SQL artefacts on a table class.
-     */
-    public List<GraphitronField> fieldsTargeting(String tableClassName) {
-        return fields.values().stream()
-            .filter(f -> {
-                var table = tableBoundReturnTable(f);
-                return table != null && table.javaClassName().equals(tableClassName);
-            })
-            .toList();
-    }
-
-    /**
-     * Extracts the {@link no.sikt.graphitron.rewrite.model.TableRef} from a field's return type
-     * when it is table-bound, or {@code null} otherwise.
-     */
-    public static no.sikt.graphitron.rewrite.model.TableRef tableBoundReturnTable(GraphitronField field) {
-        var returnType = switch (field) {
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryTableField f -> f.returnType();
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField f -> f.returnType();
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryTableInterfaceField f -> f.returnType();
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryTableMethodTableField f -> f.returnType();
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField f -> f.returnType();
-            case no.sikt.graphitron.rewrite.model.ChildField.TableField f -> f.returnType();
-            case no.sikt.graphitron.rewrite.model.ChildField.SplitTableField f -> f.returnType();
-            case no.sikt.graphitron.rewrite.model.ChildField.LookupTableField f -> f.returnType();
-            case no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField f -> f.returnType();
-            case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField f -> f.returnType();
-            case no.sikt.graphitron.rewrite.model.ChildField.RecordTableField f -> f.returnType();
-            case no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField f -> f.returnType();
-            case no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField f -> f.returnType();
-            default -> null;
-        };
-        return returnType instanceof no.sikt.graphitron.rewrite.model.ReturnTypeRef.TableBoundReturnType tb
-            ? tb.table() : null;
-    }
 }

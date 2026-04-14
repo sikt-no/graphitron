@@ -48,8 +48,7 @@ class TableCodeGeneratorTest {
         return GEN.generate(
             new TableRef("film", "FILM", "Film",
                 List.of(new ColumnRef("id", "ID", "java.lang.Integer"))),
-            FILM_COLUMNS,
-            List.of());
+            FILM_COLUMNS);
     }
 
     private static MethodSpec method(String methodName) {

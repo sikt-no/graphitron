@@ -94,6 +94,9 @@ public class FieldsCodeGenerator {
                 builder.addMethod(buildColumnFieldFetcher(cf, parentTable));
             } else if (field instanceof QueryField.QueryTableField qtf) {
                 builder.addMethod(buildQueryTableFieldFetcher(qtf));
+                if (!qtf.filters().isEmpty()) {
+                    builder.addMethod(buildConditionMethod(qtf));
+                }
             } else {
                 builder.addMethod(buildFieldStub(field.name()));
             }
@@ -161,7 +164,7 @@ public class FieldsCodeGenerator {
             .addParameter(ENV, "env");
 
         // Build condition call: Table.filmsCondition(Tables.FILM, arg1, arg2, ...)
-        builder.addCode(buildConditionCall(qtf, tableClass, tablesClass, tableRef));
+        builder.addCode(buildConditionCall(qtf, tablesClass, tableRef));
 
         if (isList) {
             builder.addCode(buildOrderByCode(qtf.orderBy(), tablesClass, tableRef));
@@ -177,7 +180,7 @@ public class FieldsCodeGenerator {
      * Generates the condition call: {@code var condition = Table.fieldCondition(Tables.TABLE, extractedArg1, ...)}.
      * Argument extraction (valueOf, map lookup) happens inline at the call site.
      */
-    private CodeBlock buildConditionCall(QueryField.QueryTableField qtf, ClassName tableClass,
+    private CodeBlock buildConditionCall(QueryField.QueryTableField qtf,
             ClassName tablesClass, TableRef tableRef) {
         var code = CodeBlock.builder();
         if (qtf.filters().isEmpty()) {
@@ -205,8 +208,8 @@ public class FieldsCodeGenerator {
             }
         }
 
-        code.addStatement("var condition = $T.$LCondition($L)",
-            tableClass, qtf.name(), args.build());
+        code.addStatement("var condition = $LCondition($L)",
+            qtf.name(), args.build());
         return code.build();
     }
 
@@ -228,6 +231,64 @@ public class FieldsCodeGenerator {
 
 
 
+
+    /**
+     * Generates a private static condition method with named, typed parameters.
+     * The method takes the jOOQ table alias as first parameter and one parameter per filter.
+     */
+    private MethodSpec buildConditionMethod(QueryField.QueryTableField qtf) {
+        var tableRef = qtf.returnType().table();
+        var jooqTableClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage() + ".tables",
+            tableRef.javaClassName());
+        var builder = MethodSpec.methodBuilder(qtf.name() + "Condition")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(ClassName.get("org.jooq", "Condition"))
+            .addParameter(jooqTableClass, "table");
+
+        for (var filter : qtf.filters()) {
+            switch (filter) {
+                case WhereFilter.ColumnFilter cf ->
+                    builder.addParameter(ClassName.bestGuess(cf.column().columnClass()), cf.name());
+                case WhereFilter.EnumColumnFilter ef ->
+                    builder.addParameter(ClassName.bestGuess(ef.enumClassName()), ef.name());
+                case WhereFilter.TextEnumColumnFilter tf ->
+                    builder.addParameter(String.class, tf.name());
+                default -> {}
+            }
+        }
+
+        builder.addStatement("var condition = $T.noCondition()", DSL);
+        for (var filter : qtf.filters()) {
+            String col = switch (filter) {
+                case WhereFilter.ColumnFilter cf -> cf.column().javaName();
+                case WhereFilter.EnumColumnFilter ef -> ef.column().javaName();
+                case WhereFilter.TextEnumColumnFilter tf -> tf.column().javaName();
+                default -> null;
+            };
+            String name = switch (filter) {
+                case WhereFilter.ColumnFilter cf -> cf.name();
+                case WhereFilter.EnumColumnFilter ef -> ef.name();
+                case WhereFilter.TextEnumColumnFilter tf -> tf.name();
+                default -> null;
+            };
+            boolean nonNull = switch (filter) {
+                case WhereFilter.ColumnFilter cf -> cf.nonNull();
+                case WhereFilter.EnumColumnFilter ef -> ef.nonNull();
+                case WhereFilter.TextEnumColumnFilter tf -> tf.nonNull();
+                default -> false;
+            };
+            if (col == null) continue;
+            if (nonNull) {
+                builder.addStatement("condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
+                    col, DSL, name, col);
+            } else {
+                builder.addStatement("if ($L != null) condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
+                    name, col, DSL, name, col);
+            }
+        }
+        builder.addStatement("return condition");
+        return builder.build();
+    }
 
     /**
      * Generates the {@code List<SortField<?>> orderBy = ...} local variable from an

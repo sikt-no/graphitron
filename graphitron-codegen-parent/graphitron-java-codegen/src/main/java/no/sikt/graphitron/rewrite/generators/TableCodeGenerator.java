@@ -8,9 +8,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.TableRef;
-import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -64,11 +62,9 @@ public class TableCodeGenerator {
     /**
      * @param tableRef      the resolved table reference with jOOQ field/class names
      * @param columnFields  the scalar column fields to include in {@code fields()}, in declaration order
-     * @param queryFields   the root query fields targeting this table, for condition method generation
      */
-    public TypeSpec generate(TableRef tableRef, List<ChildField.ColumnField> columnFields,
-            List<QueryField.QueryTableField> queryFields) {
-        var builder = TypeSpec.classBuilder(tableRef.javaClassName())
+    public TypeSpec generate(TableRef tableRef, List<ChildField.ColumnField> columnFields) {
+        return TypeSpec.classBuilder(tableRef.javaClassName())
             .addModifiers(Modifier.PUBLIC)
             .addMethod(buildFieldsMethod(tableRef, columnFields))
             .addMethod(buildSelectManyMethod(tableRef))
@@ -78,13 +74,8 @@ public class TableCodeGenerator {
             .addMethod(buildSelectManyFromRecordServiceMethod())
             .addMethod(buildSelectOneFromRecordServiceMethod())
             .addMethod(buildSubselectManyMethod())
-            .addMethod(buildSubselectOneMethod());
-
-        for (var qtf : queryFields) {
-            builder.addMethod(buildConditionMethod(tableRef, qtf));
-        }
-
-        return builder.build();
+            .addMethod(buildSubselectOneMethod())
+            .build();
     }
 
     /**
@@ -184,77 +175,6 @@ public class TableCodeGenerator {
 
     private static ClassName tablesClassName() {
         return ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
-    }
-
-    /**
-     * Generates a condition method for a specific query field, e.g.:
-     * <pre>{@code
-     * public static Condition filmsCondition(Film table, MpaaRating rating, String textRating, BigDecimal maxRentalRate) {
-     *     var condition = DSL.noCondition();
-     *     if (rating != null) condition = condition.and(table.RATING.eq(DSL.val(rating, table.RATING)));
-     *     ...
-     *     return condition;
-     * }
-     * }</pre>
-     */
-    private MethodSpec buildConditionMethod(TableRef tableRef, QueryField.QueryTableField qtf) {
-        var jooqTableClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage() + ".tables",
-            tableRef.javaClassName());
-        var builder = MethodSpec.methodBuilder(qtf.name() + "Condition")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(CONDITION)
-            .addParameter(jooqTableClass, "table");
-
-        // Add one parameter per filter
-        for (var filter : qtf.filters()) {
-            switch (filter) {
-                case WhereFilter.ColumnFilter cf ->
-                    builder.addParameter(ClassName.bestGuess(cf.column().columnClass()), cf.name());
-                case WhereFilter.EnumColumnFilter ef ->
-                    builder.addParameter(ClassName.bestGuess(ef.enumClassName()), ef.name());
-                case WhereFilter.TextEnumColumnFilter tf ->
-                    builder.addParameter(String.class, tf.name());
-                default -> {} // InputFilter, ConditionFilter: deferred
-            }
-        }
-
-        builder.addStatement("var condition = $T.noCondition()", ClassName.get("org.jooq.impl", "DSL"));
-
-        for (var filter : qtf.filters()) {
-            switch (filter) {
-                case WhereFilter.ColumnFilter cf -> {
-                    if (cf.nonNull()) {
-                        builder.addStatement("condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                            cf.column().javaName(), ClassName.get("org.jooq.impl", "DSL"), cf.name(), cf.column().javaName());
-                    } else {
-                        builder.addStatement("if ($L != null) condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                            cf.name(), cf.column().javaName(), ClassName.get("org.jooq.impl", "DSL"), cf.name(), cf.column().javaName());
-                    }
-                }
-                case WhereFilter.EnumColumnFilter ef -> {
-                    if (ef.nonNull()) {
-                        builder.addStatement("condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                            ef.column().javaName(), ClassName.get("org.jooq.impl", "DSL"), ef.name(), ef.column().javaName());
-                    } else {
-                        builder.addStatement("if ($L != null) condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                            ef.name(), ef.column().javaName(), ClassName.get("org.jooq.impl", "DSL"), ef.name(), ef.column().javaName());
-                    }
-                }
-                case WhereFilter.TextEnumColumnFilter tf -> {
-                    if (tf.nonNull()) {
-                        builder.addStatement("condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                            tf.column().javaName(), ClassName.get("org.jooq.impl", "DSL"), tf.name(), tf.column().javaName());
-                    } else {
-                        builder.addStatement("if ($L != null) condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                            tf.name(), tf.column().javaName(), ClassName.get("org.jooq.impl", "DSL"), tf.name(), tf.column().javaName());
-                    }
-                }
-                default -> {}
-            }
-        }
-
-        builder.addStatement("return condition");
-        return builder.build();
     }
 
     /** Row-keyed service overload: {@code selectManyByRowKeys(List<? extends Row>, env, sel, List<?>)}. */
