@@ -27,12 +27,16 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
         return getMapperSpecBuilder(target).build();
     }
 
+
+
+    protected CodeBlock iterateRecords(MapperContext context) {
+        return iterateRecords(context, VAR_ARGS);
+    }
     /**
      * @return Code for setting the record data of previously defined records.
      */
     @NotNull
-    @Override
-    protected CodeBlock iterateRecords(MapperContext context) {
+    protected CodeBlock iterateRecords(MapperContext context, String argumentSetName) {
         if (context.isIterable() && !context.hasTable() && context.hasSourceName()) {
             return CodeBlock.empty();
         }
@@ -71,13 +75,11 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
                 innerCode.add(innerContext.getRecordSetMappingBlock());
             } else if (!innerField.createsDataFetcher() && !innerContext.hasTable()) {
                 if(toRecord) {
-                    var savedArgsVar = nextSavedArgsVar();
+                    var nextArgsVar = nextArgPresenceVar();
                     innerCode.add(
                             CodeBlock.builder()
-                                    .declare(savedArgsVar, "$N", VAR_ARGS)
-                                    .addStatement("$1N = $1N.child($2S)", VAR_ARGS, innerField.getName())
-                                    .add(iterateRecords(innerContext))
-                                    .addStatement("$N = $N", VAR_ARGS, savedArgsVar)
+                                    .declare(nextArgsVar, "$N.child($S)", argumentSetName, innerField.getName())
+                                    .add(iterateRecords(innerContext, nextArgsVar))
                                     .build()
                     );
                 } else {
@@ -101,7 +103,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
                     fieldCode.add(
                             CodeBlock
                                     .builder()
-                                    .beginControlFlow("if ($L)", toRecord ?  CodeBlock.of("$L.hasField($S)", VAR_ARGS, innerField.getName()) : selectionSetLookup(innerContext.getPath(), false, false))
+                                    .beginControlFlow("if ($L)", toRecord ?  CodeBlock.of("$L.hasField($S)", argumentSetName, innerField.getName()) : selectionSetLookup(innerContext.getPath(), false, false))
                                     .addIf(isType && previousHadSource, declareBlock)
                                     .add(innerCode.build())
                                     .addIf(isType && previousHadSource && !innerField.createsDataFetcher(), () -> innerContext.getSetMappingBlock(outputPrefix(varName)))

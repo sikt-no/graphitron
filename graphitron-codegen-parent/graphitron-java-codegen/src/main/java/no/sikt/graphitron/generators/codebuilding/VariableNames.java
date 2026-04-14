@@ -19,7 +19,7 @@ public class VariableNames {
             VAR_INDEX_PATH = internalPrefix("indexPath"),
             VAR_PATH_HERE = internalPrefix("pathHere"),
             VAR_ARGS = internalPrefix("args"),
-            VAR_SAVED_ARGS = internalPrefix("savedArgs"),
+            VAR_NEXT_ARGS = internalPrefix("nextArgs"),
             VAR_ENV = internalPrefix("env"),
             VAR_SELECT = internalPrefix("select"),
             VAR_VALIDATION_ERRORS = internalPrefix("validationErrors"),

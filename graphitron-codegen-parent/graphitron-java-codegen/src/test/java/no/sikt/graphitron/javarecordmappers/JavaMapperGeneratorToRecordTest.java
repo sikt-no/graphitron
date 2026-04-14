@@ -65,11 +65,9 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
                 "containingNonRecordWrapper",
                 "inner = _nit_address.getInner();",
                         "if (_mi_inner != null) {",
-                        "var _iv_savedArgs0 = _iv_args;",
-                        "_iv_args = _iv_args.child(\"inner\");",
-                        "if (_iv_args.hasField(\"postalCode\")) {",
-                        "_mo_mapperAddressJavaRecord.setPostalCode(_mi_inner.getPostalCode());",
-                        "_iv_args = _iv_savedArgs0;"
+                        "var _iv_nextArgs0 = _iv_args.child(\"inner\");",
+                        "if (_iv_nextArgs0.hasField(\"postalCode\")) {",
+                        "_mo_mapperAddressJavaRecord.setPostalCode(_mi_inner.getPostalCode());"
         );
     }
 
@@ -79,16 +77,12 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "containingDoubleNonRecordWrapper",
                         "if (_mi_inner0 != null) {",
-                        "var _iv_savedArgs0 = _iv_args;",
-                        "_iv_args = _iv_args.child(\"inner0\");",
+                        "var _iv_nextArgs0 = _iv_args.child(\"inner0\");",
                         "var _mi_inner1 = _mi_inner0.getInner1();",
                         "if (_mi_inner1 != null) {",
-                        "var _iv_savedArgs1 = _iv_args;",
-                        "_iv_args = _iv_args.child(\"inner1\");",
-                        "if (_iv_args.hasField(\"postalCode\")) {",
-                        "_mo_mapperAddressJavaRecord.setPostalCode(_mi_inner1.getPostalCode());",
-                        "_iv_args = _iv_savedArgs1;",
-                        "_iv_args = _iv_savedArgs0;"
+                        "var _iv_nextArgs1 = _iv_nextArgs0.child(\"inner1\");",
+                        "if (_iv_nextArgs1.hasField(\"postalCode\")) {",
+                        "_mo_mapperAddressJavaRecord.setPostalCode(_mi_inner1.getPostalCode());"
         );
     }
 
@@ -100,16 +94,12 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
                 "nestingWithDuplicateFieldName",
                 "inner = itAddress.getInner();",
                         "if (inner != null) {",
-                        "var _iv_savedArgs0 = _iv_args;",
-                        "_iv_args = _iv_args.child(\"inner\");",
+                        "var _iv_nextArgs0 = _iv_args.child(\"inner\");",
                         "var inner = inner.getInner();",
                         "if (inner != null) {",
-                        "var _iv_savedArgs1 = _iv_args;",
-                        "_iv_args = _iv_args.child(\"inner\");",
-                        "if (_iv_args.hasField(\"postalCode\")) {",
-                        "mapperAddressJavaRecord.setPostalCode(inner.getPostalCode())",
-                        "_iv_args = _iv_savedArgs1;",
-                        "_iv_args = _iv_savedArgs0;"
+                        "var _iv_nextArgs1 = _iv_nextArgs0.child(\"inner\");",
+                        "if (_iv_nextArgs1.hasField(\"postalCode\")) {",
+                        "mapperAddressJavaRecord.setPostalCode(inner.getPostalCode())"
         );
     }
 
