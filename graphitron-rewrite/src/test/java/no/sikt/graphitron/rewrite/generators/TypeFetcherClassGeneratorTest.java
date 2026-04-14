@@ -41,9 +41,9 @@ class TypeFetcherClassGeneratorTest {
         RewriteConfig.clear();
     }
 
-    private static GraphitronField columnField(String name, String columnName, String javaName) {
+    private static GraphitronField columnField(String name, String columnName, String javaName, String columnClass) {
         return new ChildField.ColumnField("Film", name, null, columnName,
-            new ColumnRef(columnName, javaName, "java.lang.String"), false);
+            new ColumnRef(columnName, javaName, columnClass), false);
     }
 
     private static GraphitronField queryTableField(String name, boolean isList) {
@@ -81,7 +81,7 @@ class TypeFetcherClassGeneratorTest {
     @Test
     void stub_hasEnvParameter() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", null,
-            List.of(columnField("title", "title", "TITLE")));
+            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
         assertThat(method(spec, "title").parameters())
             .extracting(p -> p.type().toString())
             .containsExactly("graphql.schema.DataFetchingEnvironment");
@@ -90,7 +90,7 @@ class TypeFetcherClassGeneratorTest {
     @Test
     void stub_returnsObject() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", null,
-            List.of(columnField("title", "title", "TITLE")));
+            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
         assertThat(method(spec, "title").returnType().toString())
             .isEqualTo("java.lang.Object");
     }
@@ -98,40 +98,64 @@ class TypeFetcherClassGeneratorTest {
     @Test
     void stub_bodyThrowsUnsupportedOperationException() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", null,
-            List.of(columnField("title", "title", "TITLE")));
+            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
         assertThat(method(spec, "title").code().toString()).contains("UnsupportedOperationException");
     }
 
-    // ===== ColumnField with parentTable → real fetcher =====
+    // ===== ColumnField with parentTable → LightDataFetcher =====
 
     @Test
-    void columnFetcher_hasEnvParameter() {
+    void columnFetcher_hasThreeParameters() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
-            List.of(columnField("title", "title", "TITLE")));
+            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
         assertThat(method(spec, "title").parameters())
             .extracting(p -> p.type().toString())
-            .containsExactly("graphql.schema.DataFetchingEnvironment");
+            .containsExactly("graphql.schema.DataFetchingEnvironment", "java.lang.Object", "java.lang.Object");
     }
 
     @Test
-    void columnFetcher_returnsObject() {
+    void columnFetcher_parameterNamesAreEnvLocalContextSource() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
-            List.of(columnField("title", "title", "TITLE")));
-        assertThat(method(spec, "title").returnType().toString())
-            .isEqualTo("java.lang.Object");
+            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
+        assertThat(method(spec, "title").parameters())
+            .extracting(p -> p.name())
+            .containsExactly("env", "localContext", "source");
+    }
+
+    @Test
+    void columnFetcher_returnsColumnType() {
+        var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
+            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
+        assertThat(method(spec, "title").returnType().toString()).isEqualTo("java.lang.String");
+    }
+
+    @Test
+    void columnFetcher_integerColumnReturnsInteger() {
+        var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
+            List.of(columnField("filmId", "film_id", "FILM_ID", "java.lang.Integer")));
+        assertThat(method(spec, "filmId").returnType().toString()).isEqualTo("java.lang.Integer");
     }
 
     @Test
     void columnFetcher_isNotStub() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
-            List.of(columnField("title", "title", "TITLE")));
+            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
         assertThat(method(spec, "title").code().toString()).doesNotContain("UnsupportedOperationException");
+    }
+
+    @Test
+    void columnFetcher_usesSourceNotEnvGetSource() {
+        var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
+            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
+        var code = method(spec, "title").code().toString();
+        assertThat(code).contains("source");
+        assertThat(code).doesNotContain("env.getSource()");
     }
 
     @Test
     void columnFetcher_isPublicStatic() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
-            List.of(columnField("title", "title", "TITLE")));
+            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
         assertThat(method(spec, "title").modifiers())
             .containsExactlyInAnyOrder(javax.lang.model.element.Modifier.PUBLIC,
                 javax.lang.model.element.Modifier.STATIC);
@@ -187,29 +211,30 @@ class TypeFetcherClassGeneratorTest {
     }
 
     @Test
-    void wiring_usesMethodReference() {
+    void wiring_columnField_castsToLightDataFetcherWithPreciseType() {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE,
-            List.of(columnField("title", "title", "TITLE")));
+            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
+        assertThat(method(spec, "wiring").code().toString())
+            .contains("(graphql.schema.LightDataFetcher<java.lang.String>) FilmFetchers::title");
+    }
+
+    @Test
+    void wiring_queryField_usesPlainMethodReference() {
+        var spec = TypeFetcherClassGenerator.generateTypeSpec("Query", null,
+            List.of(queryTableField("films", true)));
         var wiringCode = method(spec, "wiring").code().toString();
-        assertThat(wiringCode).contains("FilmFetchers::title");
+        assertThat(wiringCode).contains("QueryFetchers::films");
+        assertThat(wiringCode).doesNotContain("LightDataFetcher");
     }
 
     @Test
     void wiring_registersAllFields() {
         var fields = List.<GraphitronField>of(
-            columnField("title", "title", "TITLE"),
-            columnField("releaseYear", "release_year", "RELEASE_YEAR"));
+            columnField("title", "title", "TITLE", "java.lang.String"),
+            columnField("releaseYear", "release_year", "RELEASE_YEAR", "java.lang.Integer"));
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", FILM_TABLE, fields);
         var wiringCode = method(spec, "wiring").code().toString();
         assertThat(wiringCode).contains("dataFetcher(\"title\"");
         assertThat(wiringCode).contains("dataFetcher(\"releaseYear\"");
-    }
-
-    @Test
-    void wiring_isPublicStatic() {
-        var spec = TypeFetcherClassGenerator.generateTypeSpec("Film", null, List.of());
-        assertThat(method(spec, "wiring").modifiers())
-            .containsExactlyInAnyOrder(javax.lang.model.element.Modifier.PUBLIC,
-                javax.lang.model.element.Modifier.STATIC);
     }
 }

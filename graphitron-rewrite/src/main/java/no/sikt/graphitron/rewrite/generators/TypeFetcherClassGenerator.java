@@ -25,10 +25,18 @@ import java.util.Map;
 /**
  * Generates a {@link TypeSpec} for one {@code <TypeName>Fetchers} class in {@code rewrite.types}.
  *
- * <p>Each method is a {@code public static} data fetcher that takes a
- * {@code DataFetchingEnvironment} parameter and returns the result directly, matching the
- * {@link graphql.schema.DataFetcher} functional interface. Wiring registers them by method
- * reference: {@code .dataFetcher("fieldName", FilmFetchers::fieldName)}.
+ * <p>Each method is a {@code public static} data fetcher wired by method reference:
+ * {@code .dataFetcher("fieldName", FilmFetchers::fieldName)}.
+ *
+ * <ul>
+ *   <li>{@link ChildField.ColumnField} — implements {@link graphql.schema.LightDataFetcher}:
+ *       three-parameter method {@code (env, localContext, source)} returning the precise column
+ *       Java type. Wired with a {@code LightDataFetcher<T>} cast so the runtime skips constructing
+ *       the full {@code DataFetchingEnvironment}.</li>
+ *   <li>{@link QueryField.QueryTableField} — regular {@code DataFetchingEnvironment} fetcher
+ *       returning {@code Result<Record>} or {@code Record}.</li>
+ *   <li>All other field types — stub throwing {@link UnsupportedOperationException}.</li>
+ * </ul>
  */
 public class TypeFetcherClassGenerator {
 
@@ -54,14 +62,15 @@ public class TypeFetcherClassGenerator {
         return generateTypeSpec(typeName, parentTable, fields);
     }
 
-    private static final ClassName ENV            = ClassName.get("graphql.schema", "DataFetchingEnvironment");
-    private static final ClassName TYPE_WIRING    = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring");
-    private static final ClassName WIRING_BUILDER = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring", "Builder");
-    private static final ClassName RECORD         = ClassName.get("org.jooq", "Record");
-    private static final ClassName RESULT         = ClassName.get("org.jooq", "Result");
-    private static final ClassName SORT_FIELD     = ClassName.get("org.jooq", "SortField");
-    private static final ClassName DSL            = ClassName.get("org.jooq.impl", "DSL");
-    private static final ClassName LIST           = ClassName.get("java.util", "List");
+    private static final ClassName ENV                = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+    private static final ClassName LIGHT_DATA_FETCHER = ClassName.get("graphql.schema", "LightDataFetcher");
+    private static final ClassName TYPE_WIRING        = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring");
+    private static final ClassName WIRING_BUILDER     = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring", "Builder");
+    private static final ClassName RECORD             = ClassName.get("org.jooq", "Record");
+    private static final ClassName RESULT             = ClassName.get("org.jooq", "Result");
+    private static final ClassName SORT_FIELD         = ClassName.get("org.jooq", "SortField");
+    private static final ClassName DSL                = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName LIST               = ClassName.get("java.util", "List");
 
     /**
      * Generates the {@code *Fetchers} class TypeSpec for the given GraphQL type.
@@ -85,28 +94,32 @@ public class TypeFetcherClassGenerator {
             }
         }
 
-        builder.addMethod(buildWiringMethod(typeName, className, fields));
+        builder.addMethod(buildWiringMethod(typeName, className, parentTable, fields));
         return builder.build();
     }
 
     /**
-     * Generates a column field fetcher that reads the value directly from the jOOQ {@code Record}
-     * in the source position.
+     * Generates a {@link graphql.schema.LightDataFetcher} column field fetcher. The three-parameter
+     * signature matches the {@code LightDataFetcher} functional interface, letting the runtime pass
+     * the source object directly without constructing the full {@code DataFetchingEnvironment}.
      *
      * <p>Generated code:
      * <pre>{@code
-     * public static Object title(DataFetchingEnvironment env) {
-     *     return ((Record) env.getSource()).get(Tables.FILM.TITLE);
+     * public static String title(DataFetchingEnvironment env, Object localContext, Object source) {
+     *     return ((Record) source).get(Tables.FILM.TITLE);
      * }
      * }</pre>
      */
     private static MethodSpec buildColumnFetcher(ChildField.ColumnField cf, TableRef parentTable) {
         var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
+        var returnType = ClassName.bestGuess(cf.column().columnClass());
         return MethodSpec.methodBuilder(cf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(Object.class)
+            .returns(returnType)
             .addParameter(ENV, "env")
-            .addStatement("return (($T) env.getSource()).get($T.$L.$L)",
+            .addParameter(Object.class, "localContext")
+            .addParameter(Object.class, "source")
+            .addStatement("return (($T) source).get($T.$L.$L)",
                 RECORD, tablesClass, parentTable.javaFieldName(), cf.column().javaName())
             .build();
     }
@@ -241,7 +254,24 @@ public class TypeFetcherClassGenerator {
             .build();
     }
 
-    private static MethodSpec buildWiringMethod(String typeName, String className, List<GraphitronField> fields) {
+    /**
+     * Builds the wiring entry for one field. Column fields are cast to
+     * {@code LightDataFetcher<T>} so the runtime uses the lighter call path.
+     * All other fields use a plain method reference.
+     */
+    private static CodeBlock buildWiringEntry(GraphitronField field, String className, boolean isColumnWithTable) {
+        if (isColumnWithTable) {
+            var cf = (ChildField.ColumnField) field;
+            var lightFetcherType = ParameterizedTypeName.get(
+                LIGHT_DATA_FETCHER, ClassName.bestGuess(cf.column().columnClass()));
+            return CodeBlock.of("\n.dataFetcher($S, ($T) $L::$L)",
+                field.name(), lightFetcherType, className, field.name());
+        }
+        return CodeBlock.of("\n.dataFetcher($S, $L::$L)", field.name(), className, field.name());
+    }
+
+    private static MethodSpec buildWiringMethod(String typeName, String className,
+            TableRef parentTable, List<GraphitronField> fields) {
         var body = CodeBlock.builder()
             .add("return $T.newTypeWiring($S)", TYPE_WIRING, typeName);
 
@@ -250,7 +280,8 @@ public class TypeFetcherClassGenerator {
         } else {
             body.indent();
             for (var field : fields) {
-                body.add("\n.dataFetcher($S, $L::$L)", field.name(), className, field.name());
+                boolean isColumnWithTable = field instanceof ChildField.ColumnField && parentTable != null;
+                body.add(buildWiringEntry(field, className, isColumnWithTable));
             }
             body.add(";\n");
             body.unindent();

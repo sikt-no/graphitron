@@ -88,14 +88,12 @@ class FetcherPipelineTest {
     // ===== wiring() method via pipeline =====
 
     @Test
-    void wiring_usesMethodReference() {
-        var fetchersSpec = findSpec("FilmFetchers", """
+    void wiring_columnField_castsToLightDataFetcher() {
+        var wiringCode = findWiring("FilmFetchers", """
             type Film @table(name: "film") { title: String }
             type Query { dummy: String }
             """);
-        var wiringCode = fetchersSpec.methodSpecs().stream()
-            .filter(m -> m.name().equals("wiring"))
-            .findFirst().orElseThrow().code().toString();
+        assertThat(wiringCode).contains("LightDataFetcher");
         assertThat(wiringCode).contains("FilmFetchers::title");
     }
 
@@ -112,6 +110,12 @@ class FetcherPipelineTest {
             .filter(t -> t.name().equals(className))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Class not found: " + className));
+    }
+
+    private String findWiring(String className, String sdl) {
+        return findSpec(className, sdl).methodSpecs().stream()
+            .filter(m -> m.name().equals("wiring"))
+            .findFirst().orElseThrow().code().toString();
     }
 
     private GraphitronSchema buildSchema(String schemaText) {
