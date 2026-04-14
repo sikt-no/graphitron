@@ -12,13 +12,14 @@ import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.WhereFilter;
+import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Generates one {@code <TypeName>Conditions.java} per type that has fields with a
@@ -53,13 +54,9 @@ public class TypeConditionsGenerator {
             .toList();
     }
 
-    private static java.util.Optional<GeneratedConditionFilter> extractGeneratedConditionFilter(GraphitronField field) {
-        List<WhereFilter> filters = switch (field) {
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryTableField qtf -> qtf.filters();
-            case no.sikt.graphitron.rewrite.model.ChildField.TableTargetField ttf -> ttf.filters();
-            default -> List.of();
-        };
-        return filters.stream()
+    private static Optional<GeneratedConditionFilter> extractGeneratedConditionFilter(GraphitronField field) {
+        if (!(field instanceof SqlGeneratingField sgf)) return Optional.empty();
+        return sgf.filters().stream()
             .filter(f -> f instanceof GeneratedConditionFilter)
             .map(f -> (GeneratedConditionFilter) f)
             .findFirst();

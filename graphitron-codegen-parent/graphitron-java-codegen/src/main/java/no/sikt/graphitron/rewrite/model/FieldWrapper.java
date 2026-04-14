@@ -22,6 +22,9 @@ package no.sikt.graphitron.rewrite.model;
 public sealed interface FieldWrapper
         permits FieldWrapper.Single, FieldWrapper.List, FieldWrapper.Connection {
 
+    /** Returns {@code true} for {@link List} and {@link Connection}, {@code false} for {@link Single}. */
+    default boolean isList() { return !(this instanceof Single); }
+
     /**
      * The field returns a single instance of the element type.
      *

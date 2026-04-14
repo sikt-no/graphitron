@@ -35,7 +35,12 @@ public sealed interface QueryField extends RootField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination
-    ) implements QueryField {}
+    ) implements QueryField, SqlGeneratingField {
+        /** The name of the generated synchronous lookup helper method. */
+        public String lookupMethodName() {
+            return "lookup" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
+        }
+    }
 
     record QueryTableField(
         String parentTypeName,
@@ -45,7 +50,7 @@ public sealed interface QueryField extends RootField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination
-    ) implements QueryField {}
+    ) implements QueryField, SqlGeneratingField {}
 
     /**
      * A root query field using {@code @tableMethod}. The developer provides a pre-filtered
@@ -88,7 +93,7 @@ public sealed interface QueryField extends RootField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination
-    ) implements QueryField {}
+    ) implements QueryField, SqlGeneratingField {}
 
     record QueryInterfaceField(
         String parentTypeName,

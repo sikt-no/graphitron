@@ -43,6 +43,24 @@ public sealed interface BatchKey permits BatchKey.RowKeyed, BatchKey.RecordKeyed
     String javaTypeName();
 
     /**
+     * Returns the name of the method to call on the generated table class when batch-loading
+     * multiple result lists keyed by this {@link BatchKey} type.
+     *
+     * <p>E.g. {@code "selectManyByRowKeys"} for {@link RowKeyed},
+     * {@code "selectManyByRecordKeys"} for {@link RecordKeyed}.
+     */
+    String selectManyMethodName();
+
+    /**
+     * Returns the name of the method to call on the generated table class when batch-loading
+     * a single result keyed by this {@link BatchKey} type.
+     *
+     * <p>E.g. {@code "selectOneByRowKeys"} for {@link RowKeyed},
+     * {@code "selectOneByRecordKeys"} for {@link RecordKeyed}.
+     */
+    String selectOneMethodName();
+
+    /**
      * Column-based batch key using {@code DSL.row()} key construction.
      *
      * <p>{@code keyColumns} is the ordered list of PK columns from the parent
@@ -58,6 +76,8 @@ public sealed interface BatchKey permits BatchKey.RowKeyed, BatchKey.RecordKeyed
                 .collect(Collectors.joining(", "));
             return "java.util.List<org.jooq.Row" + keyColumns.size() + "<" + typeArgs + ">>";
         }
+        @Override public String selectManyMethodName() { return "selectManyByRowKeys"; }
+        @Override public String selectOneMethodName()  { return "selectOneByRowKeys"; }
     }
 
     /**
@@ -76,6 +96,8 @@ public sealed interface BatchKey permits BatchKey.RowKeyed, BatchKey.RecordKeyed
                 .collect(Collectors.joining(", "));
             return "java.util.List<org.jooq.Record" + keyColumns.size() + "<" + typeArgs + ">>";
         }
+        @Override public String selectManyMethodName() { return "selectManyByRecordKeys"; }
+        @Override public String selectOneMethodName()  { return "selectOneByRecordKeys"; }
     }
 
     /**
@@ -90,5 +112,7 @@ public sealed interface BatchKey permits BatchKey.RowKeyed, BatchKey.RecordKeyed
         public String javaTypeName() {
             return "java.util.List<" + fqClassName + ">";
         }
+        @Override public String selectManyMethodName() { throw new UnsupportedOperationException("ObjectBased batch loading is not yet implemented"); }
+        @Override public String selectOneMethodName()  { throw new UnsupportedOperationException("ObjectBased batch loading is not yet implemented"); }
     }
 }

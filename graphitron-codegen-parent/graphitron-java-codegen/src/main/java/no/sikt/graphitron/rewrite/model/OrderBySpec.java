@@ -53,11 +53,19 @@ public sealed interface OrderBySpec
      *
      * <p>Used directly as the ordering for fields without a dynamic {@code @orderBy} argument,
      * and as the tiebreaker / fallback inside {@link Argument}.
+     *
+     * <p>{@code direction} is the raw directive value ({@code "ASC"} or {@code "DESC"}).
+     * Use {@link #jooqMethodName()} when emitting the jOOQ sort call.
      */
     record Fixed(
         List<ColumnOrderEntry> columns,
         String direction
-    ) implements OrderBySpec {}
+    ) implements OrderBySpec {
+        /** Returns the jOOQ sort-direction method name: {@code "asc"} or {@code "desc"}. */
+        public String jooqMethodName() {
+            return "ASC".equalsIgnoreCase(direction) ? "asc" : "desc";
+        }
+    }
 
     /**
      * A dynamic ordering driven by a GraphQL {@code @orderBy} argument.

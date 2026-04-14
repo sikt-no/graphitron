@@ -79,7 +79,7 @@ public sealed interface ChildField extends GraphitronField
      * {@link ReturnTypeRef.TableBoundReturnType} but does not navigate — it inherits the parent's
      * table context unchanged.
      */
-    sealed interface TableTargetField extends ChildField
+    sealed interface TableTargetField extends ChildField, SqlGeneratingField
         permits ChildField.TableField, ChildField.SplitTableField,
                 ChildField.LookupTableField, ChildField.SplitLookupTableField,
                 ChildField.TableInterfaceField,
@@ -219,7 +219,12 @@ public sealed interface ChildField extends GraphitronField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         MethodRef method
-    ) implements TableTargetField {}
+    ) implements TableTargetField {
+        /** The name of the generated batch-rows helper method (e.g. {@code "loadFilms"}). */
+        public String rowsMethodName() {
+            return "load" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
+        }
+    }
 
     /**
      * A child field backed by a developer-provided service method ({@code @service}), where the

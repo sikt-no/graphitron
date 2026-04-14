@@ -162,7 +162,7 @@ public class TypeFieldsGenerator {
         var tableRef = qtf.returnType().table();
         var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.types", qtf.returnType().returnTypeName());
         var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
-        boolean isList = !(qtf.returnType().wrapper() instanceof FieldWrapper.Single);
+        boolean isList = qtf.returnType().wrapper().isList();
 
         var returnType = isList
             ? ParameterizedTypeName.get(RESULT, RECORD)
@@ -254,8 +254,7 @@ public class TypeFieldsGenerator {
                     for (int i = 0; i < fixed.columns().size(); i++) {
                         var col = fixed.columns().get(i);
                         if (i > 0) parts.add(", ");
-                        String dir = "ASC".equalsIgnoreCase(fixed.direction()) ? "asc" : "desc";
-                        parts.add("$T.$L.$L.$L()", tablesClass, tableRef.javaFieldName(), col.column().javaName(), dir);
+                        parts.add("$T.$L.$L.$L()", tablesClass, tableRef.javaFieldName(), col.column().javaName(), fixed.jooqMethodName());
                     }
                     code.addStatement("$T<$T<?>> orderBy = $T.of($L)", LIST, SORT_FIELD, LIST, parts.build());
                 }
@@ -294,7 +293,7 @@ public class TypeFieldsGenerator {
     }
 
     private static MethodSpec buildLookupMethod(QueryField.QueryLookupTableField field) {
-        var methodName = "lookup" + capitalize(field.name());
+        var methodName = field.lookupMethodName();
         return MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(LIST, RECORD))
@@ -326,7 +325,7 @@ public class TypeFieldsGenerator {
             TableRef prt,
             String className) {
 
-        boolean isList = !(tb.wrapper() instanceof FieldWrapper.Single);
+        boolean isList = tb.wrapper().isList();
         var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
 
@@ -337,14 +336,10 @@ public class TypeFieldsGenerator {
             .orElseThrow();
         var batchKey = sourcesParam.batchKey();
 
-        TypeName keyType = switch (batchKey) {
-            case BatchKey.RowKeyed rk    -> buildRowKeyType(rk.keyColumns());
-            case BatchKey.RecordKeyed rk -> buildRecordNKeyType(rk.keyColumns());
-            case BatchKey.ObjectBased ob -> ClassName.bestGuess(ob.fqClassName());
-        };
+        TypeName keyType = keyElementType(batchKey);
 
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
-        String rowsMethodName = "load" + capitalize(sf.name());
+        String rowsMethodName = sf.rowsMethodName();
 
         var lambdaBlock = CodeBlock.builder()
             .add("(keys, batchEnv) -> {\n")
@@ -424,7 +419,7 @@ public class TypeFieldsGenerator {
             TableRef rt,
             TableRef prt) {
 
-        boolean isList = !(tb.wrapper() instanceof FieldWrapper.Single);
+        boolean isList = tb.wrapper().isList();
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         var returnType = isList ? ParameterizedTypeName.get(LIST, listOfRecord) : listOfRecord;
 
@@ -435,13 +430,9 @@ public class TypeFieldsGenerator {
             .orElseThrow();
         var batchKey = sourcesParam.batchKey();
 
-        TypeName keysElementType = switch (batchKey) {
-            case BatchKey.RowKeyed rk    -> buildRowKeyType(rk.keyColumns());
-            case BatchKey.RecordKeyed rk -> buildRecordNKeyType(rk.keyColumns());
-            case BatchKey.ObjectBased ob -> ClassName.bestGuess(ob.fqClassName());
-        };
+        TypeName keysElementType = keyElementType(batchKey);
 
-        var builder = MethodSpec.methodBuilder("load" + capitalize(sf.name()))
+        var builder = MethodSpec.methodBuilder(sf.rowsMethodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
             .addParameter(ParameterizedTypeName.get(LIST, keysElementType), "keys")
@@ -476,9 +467,8 @@ public class TypeFieldsGenerator {
 
         // Return via table selectMany / selectOne (threading dfe for context access)
         var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.types", tb.returnTypeName());
-        boolean isRowKeyed = batchKey instanceof BatchKey.RowKeyed;
-        String selectManyName = isRowKeyed ? "selectManyByRowKeys" : "selectManyByRecordKeys";
-        String selectOneName = isRowKeyed ? "selectOneByRowKeys" : "selectOneByRecordKeys";
+        String selectManyName = batchKey.selectManyMethodName();
+        String selectOneName = batchKey.selectOneMethodName();
         if (isList) {
             builder.addStatement(
                 "return $T.$L(keys, dfe, sel, ($T<?>) serviceResult)",
@@ -537,6 +527,18 @@ public class TypeFieldsGenerator {
         return ParameterizedTypeName.get(recordNClass, typeArgs);
     }
 
+    /**
+     * Returns the javapoet {@link TypeName} for the element type of the DataLoader key list,
+     * dispatching on the {@link BatchKey} variant.
+     */
+    private static TypeName keyElementType(BatchKey batchKey) {
+        return switch (batchKey) {
+            case BatchKey.RowKeyed rk    -> buildRowKeyType(rk.keyColumns());
+            case BatchKey.RecordKeyed rk -> buildRecordNKeyType(rk.keyColumns());
+            case BatchKey.ObjectBased ob -> ClassName.bestGuess(ob.fqClassName());
+        };
+    }
+
     private static MethodSpec buildSplitQueryDataFetcher(ChildField.SplitTableField field) {
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, ParameterizedTypeName.get(LIST, RECORD));
         return MethodSpec.methodBuilder(field.name())
@@ -548,11 +550,7 @@ public class TypeFieldsGenerator {
     }
 
     private static MethodSpec buildSplitRowsMethod(ChildField.SplitTableField field) {
-        TypeName keysElementType = switch (field.batchKey()) {
-            case BatchKey.RowKeyed rk    -> buildRowKeyType(rk.keyColumns());
-            case BatchKey.RecordKeyed rk -> buildRecordNKeyType(rk.keyColumns());
-            case BatchKey.ObjectBased ob -> ClassName.bestGuess(ob.fqClassName());
-        };
+        TypeName keysElementType = keyElementType(field.batchKey());
         var sourcesType = ParameterizedTypeName.get(LIST, keysElementType);
         return MethodSpec.methodBuilder("rows" + capitalize(field.name()))
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
