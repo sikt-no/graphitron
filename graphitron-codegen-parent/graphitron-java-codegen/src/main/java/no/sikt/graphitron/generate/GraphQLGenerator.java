@@ -70,8 +70,11 @@ public class GraphQLGenerator {
                 new TypeResolverClassGenerator(processedSchema)
         );
         return Stream.concat(
-                Stream.concat(generators.stream(), dataFetcherGenerators.stream()),
-                Stream.of(new WiringClassGenerator(dataFetcherGenerators, processedSchema))  // These must be the last.
+                generators.stream(),
+                Stream.concat(
+                        dataFetcherGenerators.stream(),
+                        Stream.of(new WiringClassGenerator(dataFetcherGenerators, processedSchema))  // These must be the last.
+                )
         ).toList();
     }
 

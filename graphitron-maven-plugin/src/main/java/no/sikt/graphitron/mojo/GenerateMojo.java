@@ -9,6 +9,7 @@ import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
 import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.generate.Generator;
 import no.sikt.graphitron.generate.GraphQLGenerator;
+import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.validation.ValidationHandler;
 import org.apache.maven.model.Resource;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -108,6 +109,19 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @SuppressWarnings("unused")
     protected boolean validateOverlappingInputFields;
 
+    @Parameter(property = "graphitron.enableRewrite", defaultValue = "false")
+    @SuppressWarnings("unused")
+    protected boolean enableRewrite;
+
+    /**
+     * When {@code true}, the legacy generator is skipped and only the rewrite pipeline runs.
+     * Use this during rewrite pipeline development when the legacy generators do not yet compile
+     * for the target schema.
+     */
+    @Parameter(property = "graphitron.disableLegacy", defaultValue = "false")
+    @SuppressWarnings("unused")
+    protected boolean disableLegacy;
+
     @Override
     public Set<String> getUserSchemaFiles() {
         if (userSchemaFiles == null || userSchemaFiles.isEmpty()) {
@@ -148,7 +162,7 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
         this.schemaFiles = Set.of(result.generatorSchemaPath());
         GeneratorConfig.loadProperties(this);
         initializeScalars();
-        GraphQLGenerator.generate();
+        runGenerators();
 
         // 4. Add generated sources
         project.addCompileSourceRoot(getOutputPath());
@@ -157,8 +171,17 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     private void executeWithoutTransform() {
         GeneratorConfig.loadProperties(this);
         initializeScalars();
-        GraphQLGenerator.generate();
+        runGenerators();
         project.addCompileSourceRoot(getOutputPath());
+    }
+
+    private void runGenerators() {
+        if (!disableLegacy) {
+            GraphQLGenerator.generate();
+        }
+        if (enableRewrite) {
+            GraphQLRewriteGenerator.generate();
+        }
     }
 
     private void validateTransformPluginConfiguration() throws MojoExecutionException {
@@ -245,5 +268,15 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @Override
     public boolean failOnMerge() {
         return failOnMerge;
+    }
+
+    @Override
+    public boolean enableRewrite() {
+        return enableRewrite;
+    }
+
+    @Override
+    public boolean disableLegacy() {
+        return disableLegacy;
     }
 }

@@ -28,11 +28,27 @@ graphitron/
 ```
 
 ## Documentation
+
+### Conceptual Documentation (Start Here)
+The `/docs` folder contains conceptual guides explaining Graphitron's design, philosophy, and how it works:
+- **Documentation Guide**: [/docs/README.md](/docs/README.md) - **START HERE** - Navigation and reading order for all documentation
+- **Vision and Goal**: [/docs/VISION-AND-GOAL.md](/docs/VISION-AND-GOAL.md) - What problem Graphitron solves and how it approaches the solution
+- **Graphitron Principles**: [/docs/GRAPHITRON-PRINCIPLES.md](/docs/GRAPHITRON-PRINCIPLES.md) - Design philosophy and long-term thinking that shapes architectural decisions
+- **Dependencies**: [/docs/DEPENDENCIES.md](/docs/DEPENDENCIES.md) - Why we chose jOOQ and GraphQL-Java as foundational dependencies
+- **Code Generation Triggers**: [/docs/CODE-GENERATION-TRIGGERS.md](/docs/CODE-GENERATION-TRIGGERS.md) - Schema patterns → sealed type variants → what gets generated (rewrite pipeline)
+- **Security**: [/docs/SECURITY.md](/docs/SECURITY.md) - Security model and database-level enforcement approach
+
+### Technical Reference Documentation
 - **Main README**: [/README.md](/README.md) - Project overview and getting started
-- **Example README**: [/graphitron-example/README.md](/graphitron-example/README.md) - Sakila example implementation
-- **Schema Transform README**: [/graphitron-schema-transform/README.md](/graphitron-schema-transform/README.md) - Schema transformation features
-- **Java Codegen README**: [/graphitron-codegen-parent/graphitron-java-codegen/README.md](/graphitron-codegen-parent/graphitron-java-codegen/README.md)
-- **JavaPoet README**: [/graphitron-codegen-parent/graphitron-javapoet/README.md](/graphitron-codegen-parent/graphitron-javapoet/README.md)
+- **Java Codegen README**: [/graphitron-codegen-parent/graphitron-java-codegen/README.md](/graphitron-codegen-parent/graphitron-java-codegen/README.md) - Complete directive reference with detailed examples (1500+ lines)
+- **Schema Transform README**: [/graphitron-schema-transform/README.md](/graphitron-schema-transform/README.md) - Schema transformation features (feature flags, Federation, Relay)
+- **Common Module README**: [/graphitron-common/README.md](/graphitron-common/README.md) - Exception handling framework and shared utilities
+- **Example README**: [/graphitron-example/README.md](/graphitron-example/README.md) - Sakila example implementation with quickstart guide
+- **JavaPoet README**: [/graphitron-codegen-parent/graphitron-javapoet/README.md](/graphitron-codegen-parent/graphitron-javapoet/README.md) - About the JavaPoet fork
+
+### Active Rewrite
+- **Rewrite Roadmap**: [/docs/REWRITE-ROADMAP.md](/docs/REWRITE-ROADMAP.md) - Phase 2/3 plan for retiring ProcessedSchema and improving error messages
+
 
 ## Key Architecture
 
@@ -47,6 +63,82 @@ The graphitron-maven-plugin provides:
 - **generate-code**: Generate Java code from GraphQL schemas
 - **transform**: Transform schemas (Apollo Federation, Relay connections, feature flags)
 
+## Environment Setup (Agent Sessions)
+
+### Maven
+
+Maven 3.9.11 is at `/opt/maven`. Java 21 is the default JVM. Both are pre-configured — no installation needed.
+
+`JAVA_TOOL_OPTIONS` is pre-set with proxy settings (`http.proxyHost`, `http.proxyPort`, `http.proxyUser`, `http.proxyPassword`, etc.), so `java` commands pick up the proxy automatically.
+
+**Proxy setup (required before first build):**
+
+`~/.m2/settings.xml` must exist with the proxy configuration. If it's missing, create it by extracting credentials from the `http_proxy` environment variable:
+
+```bash
+PROXY_USER=$(echo "$http_proxy" | sed 's|http://||' | sed 's|@.*||' | sed 's|:.*||')
+PROXY_PASS=$(echo "$http_proxy" | sed 's|http://||' | sed 's|@.*||' | sed 's|^[^:]*:||')
+
+cat > ~/.m2/settings.xml << XMLEOF
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <proxies>
+    <proxy>
+      <id>https-proxy</id>
+      <active>true</active>
+      <protocol>https</protocol>
+      <host>21.0.0.129</host>
+      <port>15004</port>
+      <username>${PROXY_USER}</username>
+      <password>${PROXY_PASS}</password>
+      <nonProxyHosts>localhost|127.0.0.1</nonProxyHosts>
+    </proxy>
+    <proxy>
+      <id>http-proxy</id>
+      <active>true</active>
+      <protocol>http</protocol>
+      <host>21.0.0.129</host>
+      <port>15004</port>
+      <username>${PROXY_USER}</username>
+      <password>${PROXY_PASS}</password>
+      <nonProxyHosts>localhost|127.0.0.1</nonProxyHosts>
+    </proxy>
+  </proxies>
+</settings>
+XMLEOF
+```
+
+**Resolver transport:** Maven's default `native` transport gets intermittent 407 errors behind this proxy. Use the `wagon` transport instead:
+
+```bash
+mkdir -p .mvn
+echo "-Dmaven.resolver.transport=wagon" > .mvn/maven.config
+```
+
+Or pass it on each invocation: `mvn -Dmaven.resolver.transport=wagon ...`
+
+Run tests normally:
+
+```bash
+mvn test -pl :graphitron-java-codegen
+mvn install                          # full build, all modules
+```
+
+### Docker (TestContainers)
+
+`service docker start` fails in this environment due to ulimit restrictions. Start the daemon directly instead:
+
+```bash
+dockerd --host=unix:///var/run/docker.sock > /tmp/dockerd.log 2>&1 &
+sleep 3   # wait for daemon to finish initialising
+docker ps  # verify it's running
+```
+
+Docker must be running before building `graphitron-java-codegen` (jOOQ code generation uses TestContainers to start a Postgres database) and before any integration test that uses TestContainers (e.g. the Sakila database integration tests).
+
+---
+
 ## Common Development Commands
 
 ```bash
@@ -57,11 +149,18 @@ mise r sakila          # Start example database (Sakila)
 mise r jooq            # Regenerate jOOQ classes from database
 mise r rebuild <module> # Rebuild specific module while server is running
 
+# For quick builds without tests/javadocs, use Maven profiles:
+mvn clean install -Pquick
 ```
 
 ## Testing & Important Files
 - **Testing**: JUnit 5 with AssertJ, approval tests, Quarkus test framework, TestContainers
 - **Test locations**: `src/test/java` and `src/test/resources`
+- **Rewrite generator tests**: Do NOT write code-string assertions that check generated method bodies (e.g. `assertThat(code).contains("TABLE.COL.eq(...)")`). These test the implementation, not the behavior, and break on every refactor. Instead:
+  - **Unit tests** (`TypeClassGeneratorTest`, `TypeFieldsGeneratorTest`): verify structural properties only — method names, return types, parameter signatures, which methods are present/absent
+  - **Pipeline tests** (`*PipelineTest`): verify SDL schema → generated TypeSpec structure through the full classification pipeline
+  - **Compilation tests** (`graphitron-rewrite-test-spec` `mvn compile`): verify generated code compiles against real jOOQ classes — catches type errors, wrong packages, ambiguous overloads
+  - **Execution tests** (`graphitron-rewrite-test-spec`): verify generated code produces correct results against a real database
 - **Configuration**: `pom.xml` files in each module
 - **GraphQL schemas**: `*.graphqls` files
 - **Directives**: `graphitron-common/src/main/resources/directives.graphqls`
@@ -71,7 +170,6 @@ mise r rebuild <module> # Rebuild specific module while server is running
 2. **Check pom.xml** before adding any dependencies - use what's already available
 3. **Write tests** using JUnit 5 and AssertJ for all new functionality
 4. **Follow the framework patterns** already established in the codebase
-5. **Never use `-Pquick`, `-DskipTests`, or `-Dmaven.test.skip`** when building with tests.
 
 ## Common Tasks
 - **Schema changes**: Update .graphqls files → run `mvn graphitron:generate-code`

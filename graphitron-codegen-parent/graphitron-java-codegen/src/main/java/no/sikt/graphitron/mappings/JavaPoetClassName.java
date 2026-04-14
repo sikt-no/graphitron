@@ -9,7 +9,6 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.TypeRuntimeWiring;
 import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
 import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.validation.RecordValidator;
 import no.sikt.graphql.NodeIdHandler;
 import no.sikt.graphql.NodeIdStrategy;
 import no.sikt.graphql.exception.*;
@@ -87,7 +86,7 @@ public enum JavaPoetClassName {
     RECORD1(org.jooq.Record1.class),
     RECORD2(org.jooq.Record2.class),
     RECORD3(org.jooq.Record3.class),
-    RECORD_VALIDATOR(RecordValidator.class),
+    RECORD_VALIDATOR(ClassName.get("no.sikt.graphitron.validation", "RecordValidator")),
     RESOLVER_HELPERS(ResolverHelpers.class),
     SELECTION_SET(SelectionSet.class),
     SET(java.util.Set.class),
