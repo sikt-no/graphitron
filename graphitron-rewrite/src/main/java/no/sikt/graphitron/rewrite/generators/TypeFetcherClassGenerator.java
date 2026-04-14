@@ -252,18 +252,15 @@ public class TypeFetcherClassGenerator {
                 if (bp.list()) {
                     var listVarName = toCamelCase(bp.name()) + "Keys";
                     builder.addStatement("$T<?> $L = env.getArgument($S)", LIST, listVarName, bp.name());
-                    CodeBlock convExpr = "java.lang.String".equals(bp.javaType())
-                        ? CodeBlock.of("$T.valueOf(k)", String.class)
-                        : CodeBlock.of("$T.valueOf($T.valueOf(k))", typeClass, String.class);
-                    var inExpr = CodeBlock.of("$L.stream().map(k -> $L).toList()", listVarName, convExpr);
+                    CodeBlock inExpr = "java.lang.String".equals(bp.javaType())
+                        ? CodeBlock.of("$L.stream().map($T::toString).toList()", listVarName, Object.class)
+                        : CodeBlock.of("$L.stream().map($T::toString).map($T::valueOf).toList()", listVarName, Object.class, typeClass);
                     builder.addStatement("condition = condition.and(table.$L.in($L))", colName, inExpr);
                 } else {
                     var keyVarName = toCamelCase(bp.name());
-                    // Use explicit <Object> type witness on getArgument to avoid String.valueOf(char[])
-                    // overload resolution issue when the caller passes an ID scalar (String at runtime).
                     CodeBlock scalarExpr = "java.lang.String".equals(bp.javaType())
-                        ? CodeBlock.of("$T.valueOf(env.<$T>getArgument($S))", String.class, Object.class, bp.name())
-                        : CodeBlock.of("$T.valueOf($T.valueOf(env.<$T>getArgument($S)))", typeClass, String.class, Object.class, bp.name());
+                        ? CodeBlock.of("env.getArgument($S)", bp.name())
+                        : CodeBlock.of("$T.valueOf(env.getArgument($S).toString())", typeClass, bp.name());
                     builder.addStatement("$T $L = $L", typeClass, keyVarName, scalarExpr);
                     builder.addStatement("condition = condition.and(table.$L.eq($L))", colName, keyVarName);
                 }
