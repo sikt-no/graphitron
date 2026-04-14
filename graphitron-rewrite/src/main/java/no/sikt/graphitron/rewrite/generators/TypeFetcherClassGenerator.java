@@ -224,8 +224,8 @@ public class TypeFetcherClassGenerator {
      * public static Result<Record> filmById(DataFetchingEnvironment env) {
      *     var table = Tables.FILM;
      *     var condition = DSL.noCondition();
-     *     List<?> __keys_film_id = env.getArgument("film_id");
-     *     condition = condition.and(table.FILM_ID.in(__keys_film_id.stream().map(__k -> Integer.valueOf(String.valueOf(__k))).toList()));
+     *     List<?> filmIdKeys = env.getArgument("film_id");
+     *     condition = condition.and(table.FILM_ID.in(filmIdKeys.stream().map(k -> Integer.valueOf(String.valueOf(k))).toList()));
      *     List<SortField<?>> orderBy = List.of();
      *     return Film.selectMany(env, condition, orderBy);
      * }
@@ -250,15 +250,15 @@ public class TypeFetcherClassGenerator {
                 var colName = bp.column().javaName();
                 var typeClass = ClassName.bestGuess(bp.javaType());
                 if (bp.list()) {
-                    var listVarName = "__keys_" + bp.name();
+                    var listVarName = toCamelCase(bp.name()) + "Keys";
                     builder.addStatement("$T<?> $L = env.getArgument($S)", LIST, listVarName, bp.name());
                     CodeBlock convExpr = "java.lang.String".equals(bp.javaType())
-                        ? CodeBlock.of("$T.valueOf(__k)", String.class)
-                        : CodeBlock.of("$T.valueOf($T.valueOf(__k))", typeClass, String.class);
-                    var inExpr = CodeBlock.of("$L.stream().map(__k -> $L).toList()", listVarName, convExpr);
+                        ? CodeBlock.of("$T.valueOf(k)", String.class)
+                        : CodeBlock.of("$T.valueOf($T.valueOf(k))", typeClass, String.class);
+                    var inExpr = CodeBlock.of("$L.stream().map(k -> $L).toList()", listVarName, convExpr);
                     builder.addStatement("condition = condition.and(table.$L.in($L))", colName, inExpr);
                 } else {
-                    var keyVarName = "__key_" + bp.name();
+                    var keyVarName = toCamelCase(bp.name());
                     // Use explicit <Object> type witness on getArgument to avoid String.valueOf(char[])
                     // overload resolution issue when the caller passes an ID scalar (String at runtime).
                     CodeBlock scalarExpr = "java.lang.String".equals(bp.javaType())
@@ -332,5 +332,16 @@ public class TypeFetcherClassGenerator {
             .returns(WIRING_BUILDER)
             .addCode(body.build())
             .build();
+    }
+
+    /** Converts a snake_case GraphQL argument name to lowerCamelCase for use as a Java local variable. */
+    private static String toCamelCase(String snakeName) {
+        var parts = snakeName.split("_");
+        var sb = new StringBuilder(parts[0]);
+        for (int i = 1; i < parts.length; i++) {
+            sb.append(Character.toUpperCase(parts[i].charAt(0)));
+            sb.append(parts[i], 1, parts[i].length());
+        }
+        return sb.toString();
     }
 }
