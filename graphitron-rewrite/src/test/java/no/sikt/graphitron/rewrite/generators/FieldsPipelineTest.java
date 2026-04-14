@@ -297,7 +297,7 @@ class FieldsPipelineTest {
 
     private GraphitronSchema buildSchema(String schemaText) {
         String directives = SchemaReadingHelper.fileAsString(
-            Paths.get("../../graphitron-common/src/main/resources/directives.graphqls"));
+            Paths.get("../graphitron-common/src/main/resources/directives.graphqls"));
         TypeDefinitionRegistry registry = new SchemaParser().parse(directives + "\n" + schemaText);
         return GraphitronSchemaBuilder.build(registry);
     }

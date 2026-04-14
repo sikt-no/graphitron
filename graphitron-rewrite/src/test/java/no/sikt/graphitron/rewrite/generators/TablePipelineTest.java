@@ -193,7 +193,7 @@ class TablePipelineTest {
 
     private GraphitronSchema buildSchema(String schemaText) {
         String directives = SchemaReadingHelper.fileAsString(
-            java.nio.file.Paths.get("../../graphitron-common/src/main/resources/directives.graphqls"));
+            java.nio.file.Paths.get("../graphitron-common/src/main/resources/directives.graphqls"));
         TypeDefinitionRegistry registry = new SchemaParser().parse(directives + "\n" + schemaText);
         return GraphitronSchemaBuilder.build(registry);
     }

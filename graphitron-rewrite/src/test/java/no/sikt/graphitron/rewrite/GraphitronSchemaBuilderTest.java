@@ -2082,7 +2082,7 @@ class GraphitronSchemaBuilderTest {
      */
     private GraphitronSchema build(String schemaText) {
         String directivesContent = SchemaReadingHelper.fileAsString(
-            java.nio.file.Paths.get("../../graphitron-common/src/main/resources/directives.graphqls"));
+            java.nio.file.Paths.get("../graphitron-common/src/main/resources/directives.graphqls"));
         TypeDefinitionRegistry registry = new SchemaParser().parse(directivesContent + "\n" + schemaText);
         return GraphitronSchemaBuilder.build(registry);
     }
