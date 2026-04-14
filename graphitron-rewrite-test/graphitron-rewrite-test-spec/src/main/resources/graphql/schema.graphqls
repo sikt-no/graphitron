@@ -1,5 +1,3 @@
-input LanguageKey @table(name: "language") { languageId: Int @field(name: "language_id") }
-
 type Query {
     customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]!
     films(
@@ -8,7 +6,7 @@ type Query {
         maxRentalRate: Float @field(name: "RENTAL_RATE")
     ): [Film!]!
     filmById(film_id: [ID] @lookupKey): [Film!]!
-    languageByKey(key: [LanguageKey] @lookupKey): [Language!]!
+    languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language!]!
     customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
 }
 
