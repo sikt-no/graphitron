@@ -82,13 +82,24 @@ At large batch sizes, `VALUES` literals add parse overhead; switching to `unnest
 TypeDefinitionRegistry
   │
   ▼  GraphitronSchemaBuilder   (schema traversal + jOOQ resolution; zero JavaPoet)
+  │    ├── BuildContext         (shared state + constants + utilities)
+  │    ├── TypeBuilder          (two-pass type classification)
+  │    ├── FieldBuilder         (field classification)
+  │    └── ServiceCatalog       (reflection + jOOQ catalog lookups)
   │
   ▼  GraphitronSchema          (Map<String, GraphitronType> + Map<FieldCoordinates, GraphitronField>)
   │
   ▼  GraphitronSchemaValidator (accumulates errors; never throws; fails build after full scan)
   │
-  ▼  Generators                (static methods per generator; consume GraphitronSchema; emit TypeSpec → .java files)
-                               (GraphQLRewriteGenerator owns sub-package routing and file I/O)
+  ▼  Generators                (one per output file; consume GraphitronSchema; emit TypeSpec → .java)
+       ├── TypeClassGenerator         → <TypeName>.java            (SQL scope: fields, selectMany/One)
+       ├── TypeFieldsGenerator        → <TypeName>Fields.java      (fetchers, wiring)
+       ├── TypeConditionsGenerator    → <TypeName>Conditions.java  (condition methods, enum maps)
+       ├── GraphitronWiringClassGenerator → GraphitronWiring.java  (aggregates wiring)
+       └── GraphitronValuesClassGenerator → GraphitronValues.java  (constants)
+
+  GraphQLRewriteGenerator orchestrates: build schema → validate → generate → write files
+  All type files go to <outputPackage>.rewrite.types
 ```
 
 `GraphitronSchemaBuilder` operates on a `GraphQLSchema` assembled from the `TypeDefinitionRegistry` (same pattern as `SchemaTransformer.assembleSchema()`). It runs classification in two steps:

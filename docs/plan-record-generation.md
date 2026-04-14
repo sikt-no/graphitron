@@ -16,10 +16,8 @@ If a generator needs a piece of information that is not present in the taxonomy,
 
 | Subpackage | Contents |
 |---|---|
-| `<outputPackage>.rewrite` | `GraphitronValues`, `GraphitronFetchers` |
-| `<outputPackage>.rewrite.tables` | `<TableName>` — SQL scope methods per table (`Film`, `FilmActor`, …); named after the SQL table, not the GraphQL type |
-| `<outputPackage>.rewrite.types` | `<TypeName>Fields` — GraphQL field wiring per output type; named after the GraphQL type |
-| `<outputPackage>.rewrite.resolvers` | `GraphitronWiring` |
+| `<outputPackage>.rewrite` | `GraphitronValues`, `GraphitronWiring` |
+| `<outputPackage>.rewrite.types` | `<TypeName>` (SQL scope), `<TypeName>Fields` (fetchers/wiring), `<TypeName>Conditions` (condition methods) — all named after the GraphQL type |
 
 ---
 
@@ -59,39 +57,11 @@ Each generator is a utility class with a single `public static List<TypeSpec> ge
 
 | Generator | Output | Notes |
 |---|---|---|
-| `GraphitronValuesClassGenerator` | `GraphitronValues.java` in `rewrite` | No schema parameter — generates a fixed constant class. Defines `GRAPHITRON_INPUT_IDX`. |
-| `LookupClassGenerator` | *(transitional)* | Generates `<TypeName>Lookup::toInputRows`; superseded by DataLoader pattern — to be removed when DataLoader generation is implemented |
-| `SplitSourceClassGenerator` | *(transitional)* | Generates `<ParentType><FieldName>DerivedSource::rows`; superseded by DataLoader pattern — to be removed when DataLoader generation is implemented |
-| `TableClassGenerator` | `<TableName>.java` in `rewrite.tables` | Projection stubs only (`selectMany`, `selectOne`, `subselectMany`, `subselectOne`); named after the jOOQ table class. DataLoader batch methods are bespoke per-field and live in `rewrite.types` alongside their data fetchers. |
-| `FieldsClassGenerator` | `<TypeName>Fields.java` in `rewrite.types` | One static stub per GraphQL field + `wiring()` by method reference; named after the GraphQL type |
-
----
-
-### `GraphitronFetchersClassGenerator`
-
-Generates `GraphitronFetchers.java` into `<outputPackage>.rewrite`. The class contains the standard `LightDataFetcher` factory methods used by all generated `wiring()` methods. Generated rather than shipped as a runtime library dependency so that consuming projects have no runtime dependency on Graphitron itself — the same rationale as `GraphitronValues`.
-
-```java
-public class GraphitronFetchers {
-
-    /** Resolves a scalar column directly from the jOOQ Record in source position. */
-    public static <T> LightDataFetcher<T> field(Field<T> jooqField) {
-        return env -> ((Record) env.getSource()).get(jooqField);
-    }
-
-    /** Resolves an inline nested single object (many-to-one) from the source Record. */
-    public static LightDataFetcher<Record> nestedRecord(String alias) {
-        return env -> ((Record) env.getSource()).get(alias, Record.class);
-    }
-
-    /** Resolves an inline nested list (one-to-many) from the source Record. */
-    public static LightDataFetcher<Result<Record>> nestedResult(String alias) {
-        return env -> ((Record) env.getSource()).get(alias, Result.class);
-    }
-}
-```
-
-Simple generator analogous to `GraphitronValuesClassGenerator`: emits a fixed class with no schema input.
+| `GraphitronValuesClassGenerator` | `GraphitronValues.java` in `rewrite` | No schema parameter — generates a fixed constant class. |
+| `TypeClassGenerator` | `<TypeName>.java` in `rewrite.types` | SQL scope: `fields()` (selection-set-aware SELECT list), `selectMany`, `selectOne`, service/subselect stubs. Named after the GraphQL type — one class per type, not per SQL table. |
+| `TypeFieldsGenerator` | `<TypeName>Fields.java` in `rewrite.types` | GraphQL scope: one data fetcher per field + `wiring()` by method reference. Root query fetchers extract arguments and delegate to `<TypeName>.selectMany/One` via the condition method. |
+| `TypeConditionsGenerator` | `<TypeName>Conditions.java` in `rewrite.types` | One condition method per field with filters. Pure functions: take jOOQ table alias + typed argument values, return `Condition`. Also generates static `Map<String, String>` fields for text enum value mappings. |
+| `GraphitronWiringClassGenerator` | `GraphitronWiring.java` in `rewrite` | Aggregates all `*Fields.wiring()` calls into a `RuntimeWiring.Builder`. |
 
 ---
 
@@ -109,64 +79,40 @@ If multi-tenancy requires exposing `tenantId` to service calls, `getTenantId()` 
 
 ---
 
-### Per-type select pattern *(next)*
+### Per-type generated code *(implemented)*
 
-Every `@table` type generates two classes in different packages:
+Every `@table` type generates three classes in `rewrite.types`:
 
-- **`rewrite.tables.<TableName>`** — SQL namespace, named after the jOOQ table class. Owns `fields()` (SELECT list assembly), `selectMany/One` (execute new statement), `subselectMany/One` (build subquery expression), and batch loader methods.
-- **`rewrite.types.<TypeName>Fields`** — GraphQL namespace, named after the GraphQL type. Owns one static method per GraphQL field — each is a `DataFetcher<T>` by signature — and a `wiring()` method that registers them by method reference.
+- **`<TypeName>.java`** (TypeClassGenerator) — SQL scope. `fields()` (selection-set-aware SELECT list using `getFieldsGroupedByResultKey()`), `selectMany/One` (execute new statement with `DSLContext` from `GraphitronContext`), and service/subselect stubs.
+- **`<TypeName>Fields.java`** (TypeFieldsGenerator) — GraphQL scope. One static data fetcher per field + `wiring()` method registering them by method reference.
+- **`<TypeName>Conditions.java`** (TypeConditionsGenerator) — condition methods with named typed parameters + static text enum lookup maps. Only generated for types that have fields with filters.
 
-The type name and table name can differ (e.g. GraphQL type `MovieItem` backed by SQL table `film` yields `Film` + `MovieItemFields`).
-
-**`wiring()` uses method references, not lambdas.** Because each field is a named `static T fieldName(DataFetchingEnvironment env)` method, it satisfies `DataFetcher<T>` and can be referenced directly:
+All three are named after the **GraphQL type name** (not the SQL table). If two GraphQL types map to the same SQL table, each gets its own set of classes.
 
 ```java
-// rewrite.types.FilmFields
-public static TypeRuntimeWiring.Builder wiring() {
-    return TypeRuntimeWiring.newTypeWiring("Film")
-        .dataFetcher("title",  FilmFields::title)
-        .dataFetcher("actors", FilmFields::actors);
+// rewrite.types.Film — SQL scope
+public static List<Field<?>> fields(DataFetchingFieldSelectionSet sel) { ... }
+public static Result<Record> selectMany(DataFetchingEnvironment env, Condition condition, List<SortField<?>> orderBy) { ... }
+public static Record selectOne(DataFetchingEnvironment env, Condition condition) { ... }
+
+// rewrite.types.FilmConditions — condition methods (pure functions, no graphql-java dependency)
+public static Condition filmsCondition(Film table, MpaaRating rating, String textRating, BigDecimal maxRentalRate) { ... }
+
+// rewrite.types.FilmFields — fetchers + wiring
+public static Object title(DataFetchingEnvironment env) { return ((Record) env.getSource()).get(Tables.FILM.TITLE); }
+public static Result<Record> films(DataFetchingEnvironment env) {
+    var condition = FilmConditions.filmsCondition(Tables.FILM, ...extracted args...);
+    return Film.selectMany(env, condition, orderBy);
 }
+public static TypeRuntimeWiring.Builder wiring() { ... }
 ```
 
-The wiring method is a pure manifest — no logic, no lambdas. Each field method carries the logic and is independently testable.
+**Enum argument handling:**
 
-**`rewrite.tables.Film`** contains the SQL projection side only:
+- **jOOQ enum column** (`EnumColumnFilter`): graphql-java delivers String → `EnumClass.valueOf(arg)` at the fetcher call site. Validated at build time — every GraphQL enum value must match a Java enum constant.
+- **Text/varchar column** (`TextEnumColumnFilter`): graphql-java delivers String → `STATIC_MAP.get(arg)` lookup. Map generated as `static final` on `*Conditions` class. Values from `@field(name:)` on enum values, defaulting to the enum value name.
 
-```java
-// Assembles the SELECT list for this type's query.
-List<Field<?>> fields(Film alias, DataFetchingFieldSelectionSet sel)
-
-// Scope-establishing methods (current stubs):
-Result<Record>          selectMany(DataFetchingEnvironment env, Condition condition, List<SortField<?>> orderBy)
-Record                  selectOne(DataFetchingEnvironment env, Condition condition)
-Field<Result<Record>>   subselectMany(DataFetchingFieldSelectionSet sel, Condition condition, List<SortField<?>> orderBy)
-Field<Record>           subselectOne(DataFetchingFieldSelectionSet sel, Condition condition)
-
-// Service-field batch variants — map N parent PK rows to N result sets:
-List<List<Record>>      selectMany(List<Row> keys, SelectedField sel, List<?> serviceRecords)
-List<Record>            selectOne(List<Row> keys, SelectedField sel, Object serviceRecord)
-```
-
-These projection methods may eventually move to `rewrite.types.<TypeName>` but are in `rewrite.tables` for now.
-
-DataLoader batch methods are **not** in the table class. They are generated bespoke per-field and live in `rewrite.types.<TypeName>Fields` alongside the corresponding data fetcher (see G6).
-
-`selectMany` and `selectOne` obtain a `DSLContext` internally. The jOOQ `XYZ*Step` types are never referenced in generated method signatures because they are mutable, less composable, and binary-incompatible across jOOQ minor releases.
-
-Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nested via `record.get(nestedField)`.
-
-**Field type to method mapping:**
-
-| Field type | `*Fields` fetcher method | Delegates to |
-|---|---|---|
-| `ColumnField` / `ColumnReferenceField` | `static T fieldName(env)` | `record.get(TABLE.COL)` from source |
-| `TableQueryField` — list | `static Result<Record> fieldName(env)` | `TableName.selectMany` |
-| `TableQueryField` — single | `static Record fieldName(env)` | `TableName.selectOne` |
-| `LookupQueryField` *(lookup field)* | `static CompletableFuture<List<Record>> fieldName(env)` | `completedFuture(lookupFieldName(env, selectedField))` — synchronous DB call, no DataLoader |
-| `LookupTableField` — table-mapped parent | `static CompletableFuture<Result<Record>> fieldName(env)` | `completedFuture(…)` wrapping source `Record` extraction; subquery built by `subselect<FieldName>` during parent query |
-| `TableField` — list, no `@splitQuery` | `static Result<Record> fieldName(env)` | extract nested column from source `Record` |
-| `TableField` — single, no `@splitQuery` | `static Record fieldName(env)` | extract nested column from source `Record` |
+`fields()` uses `sel.getFieldsGroupedByResultKey()` to iterate selected fields, matching by `SelectedField.getName()` (handles aliases correctly). Each `SelectedField` provides `getArguments()` and `getSelectionSet()` for recursive drill-down (G5).
 | `TableField` — `@splitQuery`, no `@lookupKey` *(result mapped TableField)*, returns `[T]` | `static CompletableFuture<List<Record>> fieldName(env)` | `loadFieldName(sourceRows, env, selectedField)` via DataLoader |
 | `TableField` — `@splitQuery`, no `@lookupKey` *(result mapped TableField)*, returns `T` | `static CompletableFuture<Record> fieldName(env)` | `loadFieldName(sourceRows, env, selectedField)` via DataLoader, take first |
 | `TableField` — `@splitQuery`, no `@lookupKey` *(result mapped TableField)*, paginated | `static CompletableFuture<List<Record>> fieldName(env)` | `loadFieldNamePage(sourceRows, env, selectedField)` via DataLoader |
@@ -179,7 +125,19 @@ Results are jOOQ `Record` instances. Scalars via `record.get(TABLE.FIELD)`; nest
 
 ---
 
-> **Plan review in progress.** Deliverables from G3 onwards have not yet been revised in light of current design decisions.
+### Deliverable status
+
+| Deliverable | Status | Notes |
+|---|---|---|
+| M1 — Maven plugin wiring | Done | `enableRewrite` / `disableLegacy` flags |
+| M2 — Test module setup | Done | `graphitron-rewrite-test` with TestContainers |
+| M3 — `getDataLoaderName()` | Done | In `GraphitronContext` |
+| G3 — Scalar child fields | Done | `ColumnField` → `record.get(TABLE.COL)` fetchers + `fields()` SELECT list |
+| G4 — Root query fields | Done | `QueryTableField` → `selectMany/One` with conditions and ordering |
+| I1 — `GraphitronWiring` | Done | Aggregates all `wiring()` calls into `RuntimeWiring.Builder` |
+| Enum support | Done | `EnumColumnFilter` (jOOQ enum + valueOf), `TextEnumColumnFilter` (varchar + lookup map), build-time validation |
+| G5 — Inline `TableField` | Not started | Nested table fields without `@splitQuery` |
+| G6 — Split/Lookup fields | Not started | DataLoader patterns |
 
 ### Testing convention
 
@@ -189,19 +147,15 @@ Generator tests should verify **structure** (method names, return types, paramet
 
 ---
 
-### G3 — Scalar child fields (`ColumnField`, `ColumnReferenceField`)
+### G3 — Scalar child fields *(done)*
 
-Generates `fields()` in `rewrite.tables` and one fetcher method + wiring entry in `rewrite.types` per scalar field.
+`ColumnField` → `((Record) env.getSource()).get(Tables.TABLE.COL)` data fetcher. `fields()` on type class uses `getFieldsGroupedByResultKey()` for alias-safe column selection.
 
-**`rewrite.tables.Customer`** — SELECT list assembly:
-```java
-public static List<Field<?>> fields(Customer alias, DataFetchingFieldSelectionSet sel) {
-    var fields = new ArrayList<Field<?>>();
-    if (sel.contains("id"))    fields.add(alias.CUSTOMER_ID);
-    if (sel.contains("email")) fields.add(alias.EMAIL_ADDRESS);
-    return fields;
-}
-```
+### G4 — Root query fields *(done)*
+
+`QueryTableField` → fetcher extracts arguments, calls `*Conditions.fieldCondition(table, ...)`, delegates to `TypeName.selectMany/One`. Three filter types: `ColumnFilter` (scalar), `EnumColumnFilter` (jOOQ enum), `TextEnumColumnFilter` (varchar enum with lookup map).
+
+### G3/G4 legacy examples (for reference)
 
 **`rewrite.types.CustomerFields`** — one method per field, wiring by method reference:
 ```java
