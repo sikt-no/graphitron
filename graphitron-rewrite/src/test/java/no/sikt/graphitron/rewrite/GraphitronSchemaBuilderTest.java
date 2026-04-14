@@ -228,7 +228,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(ref.joinPath()).hasSize(1);
                 assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
                 var fk = (JoinStep.FkJoin) ref.joinPath().get(0);
-                assertThat(fk.targetTableSqlName()).isEqualToIgnoringCase("address");
+                assertThat(fk.targetTable().tableName()).isEqualToIgnoringCase("address");
             }),
 
         TABLE_PATH_AMBIGUOUS(
@@ -265,7 +265,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(ref.joinPath()).hasSize(1);
                 assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
                 var fk = (JoinStep.FkJoin) ref.joinPath().get(0);
-                assertThat(fk.targetTableSqlName()).isEqualToIgnoringCase("address");
+                assertThat(fk.targetTable().tableName()).isEqualToIgnoringCase("address");
                 assertThat(ref.column().javaName()).isEqualTo("DISTRICT");
             });
 

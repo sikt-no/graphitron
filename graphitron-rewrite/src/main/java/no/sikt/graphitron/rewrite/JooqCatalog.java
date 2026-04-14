@@ -118,6 +118,26 @@ public class JooqCatalog {
     }
 
     /**
+     * Returns the Java constant name (e.g. {@code "FK_FILM__FILM_LANGUAGE_ID_FKEY"}) of a foreign
+     * key in the generated {@code Keys} class, given the SQL constraint name
+     * (e.g. {@code "film_language_id_fkey"}). Used at build time to emit
+     * {@code Keys.FK_...} references in generated code.
+     *
+     * <p>Returns empty when the catalog or Keys class is not available (e.g. unit tests that do
+     * not depend on jOOQ codegen output) or when no matching key is found.
+     */
+    public Optional<String> fkJavaConstantName(String sqlConstraintName) {
+        if (catalog == null) return Optional.empty();
+        return catalog.schemaStream()
+            .flatMap(schema -> keysClass(schema).stream())
+            .flatMap(cls -> Arrays.stream(cls.getFields()))
+            .filter(f -> ForeignKey.class.isAssignableFrom(f.getType()))
+            .filter(f -> ((ForeignKey<?, ?>) fieldValue(f)).getName().equalsIgnoreCase(sqlConstraintName))
+            .map(Field::getName)
+            .findFirst();
+    }
+
+    /**
      * Returns all foreign keys that connect {@code tableA} and {@code tableB}, in either direction.
      * A FK is included when one endpoint is {@code tableA} and the other is {@code tableB}
      * (case-insensitive). Used to resolve {@code @reference(path: [{table: "..."}])} elements

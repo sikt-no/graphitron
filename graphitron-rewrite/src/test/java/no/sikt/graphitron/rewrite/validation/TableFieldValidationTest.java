@@ -34,13 +34,13 @@ class TableFieldValidationTest {
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "film_actor", null)),
+                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", new TableRef("film_actor", "", "", List.of()), null, "")),
                 List.of(), new OrderBySpec.None(), null),
             List.of()),
 
         WITH_CONDITION_ONLY("condition-only join step — no FK",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()))),
+                List.of(new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), "")),
                 List.of(), new OrderBySpec.None(), null),
             List.of()),
 

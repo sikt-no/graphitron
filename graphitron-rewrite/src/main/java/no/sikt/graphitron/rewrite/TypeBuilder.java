@@ -439,7 +439,7 @@ class TypeBuilder {
             ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
         if (field.hasAppliedDirective(DIR_REFERENCE)) {
-            var path = ctx.parsePath(field, resolvedTable.tableName());
+            var path = ctx.parsePath(field, name, resolvedTable.tableName());
             if (path.hasError()) return Optional.empty();
             return svc.resolveColumnForReference(columnName, path.elements(), resolvedTable.tableName())
                 .map(col -> new InputField.ColumnReferenceField(

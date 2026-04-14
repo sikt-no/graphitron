@@ -203,7 +203,7 @@ class FieldBuilder {
         if (elementType instanceof TableBackedType tbt && !(elementType instanceof TableInterfaceType)) {
             var wrapper = buildWrapper(fieldDef);
             var returnType = (ReturnTypeRef.TableBoundReturnType) ctx.resolveReturnType(elementTypeName, wrapper);
-            var referencePath = ctx.parsePath(fieldDef, parentTableType.table().tableName());
+            var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName());
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, referencePath.errorMessage());
             }
@@ -230,7 +230,7 @@ class FieldBuilder {
 
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);
-            var referencePath = ctx.parsePath(fieldDef, parentTableType.table().tableName());
+            var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName());
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, referencePath.errorMessage());
             }
@@ -952,7 +952,7 @@ class FieldBuilder {
             if (svcResult.error() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
             }
-            var servicePath = ctx.parsePath(fieldDef);
+            var servicePath = ctx.parsePath(fieldDef, name, null);
             if (servicePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePath.errorMessage());
             }
@@ -982,7 +982,7 @@ class FieldBuilder {
         String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
             ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
-        var objectPath = ctx.parsePath(fieldDef);
+        var objectPath = ctx.parsePath(fieldDef, name, null);
         if (objectPath.hasError()) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, objectPath.errorMessage());
         }
@@ -1014,7 +1014,7 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
             }
             // Service reconnect path: starts from the service return type's table (not the parent).
-            var servicePath = ctx.parsePath(fieldDef);
+            var servicePath = ctx.parsePath(fieldDef, name, null);
             if (servicePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePath.errorMessage());
             }
@@ -1032,7 +1032,7 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) {
-            var externalPath = ctx.parsePath(fieldDef, tableType.table().tableName());
+            var externalPath = ctx.parsePath(fieldDef, name, tableType.table().tableName());
             if (externalPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, externalPath.errorMessage());
             }
@@ -1046,7 +1046,7 @@ class FieldBuilder {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
             var returnType = ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef));
-            var tableMethodPath = ctx.parsePath(fieldDef, tableType.table().tableName());
+            var tableMethodPath = ctx.parsePath(fieldDef, name, tableType.table().tableName());
             if (tableMethodPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, tableMethodPath.errorMessage());
             }
@@ -1083,7 +1083,7 @@ class FieldBuilder {
                         "@nodeId(typeName:) type '" + typeName.get() + "' does not have @node");
                 }
                 TableRef parentTable = tableType.table();
-                var nodeRefPath = ctx.parsePath(fieldDef, tableType.table().tableName());
+                var nodeRefPath = ctx.parsePath(fieldDef, name, tableType.table().tableName());
                 if (nodeRefPath.hasError()) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, nodeRefPath.errorMessage());
                 }
@@ -1106,7 +1106,7 @@ class FieldBuilder {
             && argString(fieldDef, DIR_FIELD, ARG_JAVA_NAME).isPresent();
 
         if (fieldDef.hasAppliedDirective(DIR_REFERENCE)) {
-            var refPath = ctx.parsePath(fieldDef, tableType.table().tableName());
+            var refPath = ctx.parsePath(fieldDef, name, tableType.table().tableName());
             if (refPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, refPath.errorMessage());
             }

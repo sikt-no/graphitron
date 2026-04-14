@@ -37,13 +37,13 @@ class SplitTableFieldValidationTest {
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "film_actor", null)),
+                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", new TableRef("film_actor", "", "", List.of()), null, "")),
                 List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
             List.of()),
 
         WITH_CONDITION_ONLY("condition-only join step — no FK",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()))),
+                List.of(new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), "")),
                 List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
             List.of()),
 

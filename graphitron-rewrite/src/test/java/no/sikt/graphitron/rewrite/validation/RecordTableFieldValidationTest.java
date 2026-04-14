@@ -33,13 +33,13 @@ class RecordTableFieldValidationTest {
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new RecordTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.FkJoin("language_film_id_fkey", "film", null)),
+                List.of(new JoinStep.FkJoin("language_film_id_fkey", "", new TableRef("film", "", "", List.of()), null, "")),
                 List.of(), new OrderBySpec.None(), null),
             List.of()),
 
         WITH_CONDITION_ONLY("condition-only join step — no FK",
             new RecordTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()))),
+                List.of(new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()), "")),
                 List.of(), new OrderBySpec.None(), null),
             List.of()),
 

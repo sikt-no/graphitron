@@ -278,7 +278,7 @@ public class GraphitronSchemaValidator {
         var lastStep = path.getLast();
         switch (lastStep) {
             case JoinStep.FkJoin fk -> {
-                if (!fk.targetTableSqlName().equalsIgnoreCase(targetTable.tableName())) {
+                if (!fk.targetTable().tableName().equalsIgnoreCase(targetTable.tableName())) {
                     errors.add(new ValidationError(
                         "Field '" + fieldName + "': @reference path does not lead to the table of type '" + typeName + "'",
                         location

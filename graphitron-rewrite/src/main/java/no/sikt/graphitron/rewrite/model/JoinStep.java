@@ -56,18 +56,21 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
     /**
      * One hop navigated by a jOOQ foreign key.
      *
-     * <p>The generator emits {@code .join(targetTable).onKey(fk)} for this step. Whether it is an
-     * INNER or LEFT JOIN depends on the surrounding query structure (see the interface-level
-     * cardinality invariant). The target table and FK constant are derived at code-generation time
-     * from the stored SQL name and FK constraint name using jOOQ's naming conventions.
+     * <p>The generator emits {@code .join(targetAlias).onKey(Keys.FK_...)} for this step. Whether
+     * it is an INNER or LEFT JOIN depends on the surrounding query structure (see the interface-level
+     * cardinality invariant). All fields are pre-resolved at build time from the jOOQ catalog.
      *
-     * <p>{@code fkName} is the SQL constraint name (e.g. {@code "film_language_id_fkey"}), used to
-     * look up the jOOQ FK constant (e.g. {@code Keys.FK_FILM__FILM_LANGUAGE_ID_FKEY}).
-     * {@code targetTableSqlName} is the SQL name of the table this step navigates <em>to</em>
-     * (e.g. {@code "language"} when traversing film → language, or {@code "film"} when traversing
-     * in reverse). The source table is always known from the previous step or from the parent type;
-     * only the destination needs to be stored. The builder validates that each FK step actually
-     * connects to the current source table, catching broken chains at build time.
+     * <p>{@code fkName} is the SQL constraint name (e.g. {@code "film_language_id_fkey"}), retained
+     * for error messages and debugging. {@code fkJavaConstant} is the Java constant name in the
+     * generated {@code Keys} class (e.g. {@code "FK_FILM__FILM_LANGUAGE_ID_FKEY"}); it may be
+     * empty when the jOOQ catalog is not available (unit tests). {@code targetTable} is the fully
+     * resolved {@link TableRef} for the table this step navigates <em>to</em>. The source table is
+     * always known from the previous step or from the parent type; only the destination is stored.
+     *
+     * <p>{@code alias} is the unique table alias for this step within the enclosing query, computed
+     * at build time as {@code fieldName + "_" + stepIndex} (e.g. {@code "language_0"} for the
+     * first step of a {@code language} field). The alias is unique per field × depth, which handles
+     * self-referential join paths where the same table appears multiple times.
      *
      * <p>{@code whereFilter} is an optional user-supplied condition method resolved from a
      * {@code condition} argument on the same {@code @reference} path element as the {@code key}.
@@ -78,20 +81,27 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      */
     record FkJoin(
         String fkName,
-        String targetTableSqlName,
-        MethodRef whereFilter
+        String fkJavaConstant,
+        TableRef targetTable,
+        MethodRef whereFilter,
+        String alias
     ) implements JoinStep {}
 
     /**
      * One hop navigated by a user-supplied condition method (no FK constraint involved).
      *
      * <p>The condition method becomes the ON clause of an explicit join: the generator emits
-     * {@code .join(targetTable).on(condition(sourceAlias, targetAlias))}. Used when there is no
+     * {@code .join(targetAlias).on(condition(sourceAlias, targetAlias))}. Used when there is no
      * database foreign key for this join step. Typical use: reconnecting a service or
      * {@code @externalField} result back to the parent table when no FK exists.
+     *
+     * <p>{@code alias} is the unique table alias for this step, computed at build time as
+     * {@code fieldName + "_" + stepIndex}. The target table is not pre-resolved here — condition
+     * method resolution (P3) will provide it once reflection over the method signature is
+     * implemented.
      *
      * <p>Contrast with {@link FkJoin#whereFilter}: that field is a WHERE clause on the enclosing
      * SELECT; this condition is the JOIN's ON clause.
      */
-    record ConditionJoin(MethodRef condition) implements JoinStep {}
+    record ConditionJoin(MethodRef condition, String alias) implements JoinStep {}
 }

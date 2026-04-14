@@ -87,7 +87,7 @@ class ServiceCatalog {
         String current = startSqlTableName;
         for (var step : path) {
             if (!(step instanceof FkJoin fk)) return null;
-            current = fk.targetTableSqlName();
+            current = fk.targetTable().tableName();
         }
         return current;
     }
