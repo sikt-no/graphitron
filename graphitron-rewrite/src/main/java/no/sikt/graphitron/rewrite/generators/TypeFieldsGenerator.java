@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
+
+import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.FieldSpec;
@@ -144,7 +145,7 @@ public class TypeFieldsGenerator {
      * }</pre>
      */
     private static MethodSpec buildColumnFieldFetcher(ChildField.ColumnField cf, TableRef parentTable) {
-        var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
+        var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
         return MethodSpec.methodBuilder(cf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object.class)
@@ -160,8 +161,8 @@ public class TypeFieldsGenerator {
      */
     private static MethodSpec buildQueryTableFieldFetcher(QueryField.QueryTableField qtf) {
         var tableRef = qtf.returnType().table();
-        var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.types", qtf.returnType().returnTypeName());
-        var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
+        var tableClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite.types", qtf.returnType().returnTypeName());
+        var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
         boolean isList = qtf.returnType().wrapper().isList();
 
         var returnType = isList
@@ -362,7 +363,7 @@ public class TypeFieldsGenerator {
                 loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
         // Emit the key expression — varies by BatchKey variant.
-        var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
+        var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
         switch (batchKey) {
             case BatchKey.RowKeyed rk -> {
                 String tableField = prt.javaFieldName();
@@ -466,7 +467,7 @@ public class TypeFieldsGenerator {
             String.join(", ", serviceCallArgs));
 
         // Return via table selectMany / selectOne (threading dfe for context access)
-        var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.types", tb.returnTypeName());
+        var tableClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite.types", tb.returnTypeName());
         String selectManyName = batchKey.selectManyMethodName();
         String selectOneName = batchKey.selectOneMethodName();
         if (isList) {

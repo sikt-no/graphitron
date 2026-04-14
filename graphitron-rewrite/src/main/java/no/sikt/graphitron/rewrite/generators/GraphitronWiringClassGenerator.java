@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
+
+import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -32,7 +33,7 @@ public class GraphitronWiringClassGenerator {
      *                         in the order they should appear in the wiring
      */
     public static TypeSpec generate(List<String> fieldsClassNames) {
-        var typesPackage = GeneratorConfig.outputPackage() + ".rewrite.types";
+        var typesPackage = RewriteConfig.outputPackage() + ".rewrite.types";
         var builderType = ClassName.get("graphql.schema.idl", "RuntimeWiring", "Builder");
 
         var body = CodeBlock.builder()

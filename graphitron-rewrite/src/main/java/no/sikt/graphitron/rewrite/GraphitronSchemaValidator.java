@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
@@ -27,6 +26,22 @@ import no.sikt.graphitron.rewrite.model.BatchKey;
  * references.
  */
 public class GraphitronSchemaValidator {
+
+    private final JooqCatalog jooqCatalog;
+
+    /** Production constructor: FK validation is active. */
+    public GraphitronSchemaValidator(JooqCatalog jooqCatalog) {
+        this.jooqCatalog = jooqCatalog;
+    }
+
+    /**
+     * No-catalog constructor: FK validation is skipped (for unit tests that do not exercise the
+     * FK-count path).
+     */
+    public GraphitronSchemaValidator() {
+        this(null);
+    }
+
 
     public List<ValidationError> validate(GraphitronSchema schema) {
         var types = schema.types();
@@ -231,9 +246,9 @@ public class GraphitronSchemaValidator {
         if (field.joinPath().isEmpty()) {
             // Implicit join: exactly one FK must exist between parent and target tables
             var parentTable = field.parentTable();
-            if (parentTable != null) {
-                int fkCount = TableReflection.getNumberOfForeignKeysBetweenTables(
-                    parentTable.javaFieldName(), targetTable.javaFieldName());
+            if (parentTable != null && jooqCatalog != null) {
+                int fkCount = jooqCatalog.findForeignKeysBetweenTables(
+                    parentTable.tableName(), targetTable.tableName()).size();
                 if (fkCount == 0) {
                     errors.add(new ValidationError(
                         "Field '" + field.name() + "': no foreign key found between tables '"

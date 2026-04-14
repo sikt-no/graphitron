@@ -4,6 +4,8 @@ import org.jooq.Catalog;
 import org.jooq.ForeignKey;
 import org.jooq.Schema;
 import org.jooq.Table;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Field;
 import java.util.Arrays;
@@ -14,8 +16,15 @@ import java.util.Optional;
  * Thin wrapper around jOOQ's {@link Catalog}. Loads the catalog once via reflection
  * ({@code DefaultCatalog.DEFAULT_CATALOG}) and provides lazy lookups — no pre-built maps.
  * Each method queries the catalog on demand using the jOOQ API.
+ *
+ * <p>When the generated jOOQ package is not on the classpath (e.g. in unit tests that do not
+ * depend on jOOQ codegen output), all lookup methods return empty/empty-list rather than
+ * throwing. A warning is logged at construction time so misconfiguration is visible in
+ * production logs.
  */
 public class JooqCatalog {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(JooqCatalog.class);
 
     private final Catalog catalog;
 
@@ -28,6 +37,7 @@ public class JooqCatalog {
      * name in the generated {@code Tables} class (e.g. {@code "FILM"} for {@code Tables.FILM}).
      */
     public Optional<TableEntry> findTable(String sqlName) {
+        if (catalog == null) return Optional.empty();
         return catalog.schemaStream()
             .flatMap(schema -> tablesClass(schema).stream())
             .flatMap(cls -> Arrays.stream(cls.getFields()))
@@ -42,6 +52,7 @@ public class JooqCatalog {
      * generated {@code Tables} class. Used to build candidate hints in error messages.
      */
     public java.util.List<String> allTableSqlNames() {
+        if (catalog == null) return java.util.List.of();
         return catalog.schemaStream()
             .flatMap(schema -> tablesClass(schema).stream())
             .flatMap(cls -> Arrays.stream(cls.getFields()))
@@ -55,6 +66,7 @@ public class JooqCatalog {
      * Used to build candidate hints when a {@code @reference(key:)} name cannot be resolved.
      */
     public java.util.List<String> allForeignKeySqlNames() {
+        if (catalog == null) return java.util.List.of();
         return catalog.schemaStream()
             .flatMap(schema -> schema.getTables().stream())
             .flatMap(table -> table.getReferences().stream())
@@ -68,6 +80,7 @@ public class JooqCatalog {
      * is found (e.g. the record comes from a different catalog).
      */
     public Optional<TableEntry> findTableByRecordClass(Class<?> recordClass) {
+        if (catalog == null) return Optional.empty();
         return catalog.schemaStream()
             .flatMap(schema -> tablesClass(schema).stream())
             .flatMap(cls -> Arrays.stream(cls.getFields()))
@@ -86,6 +99,7 @@ public class JooqCatalog {
      */
     @SuppressWarnings("unchecked")
     public Optional<ForeignKey<?, ?>> findForeignKey(String name) {
+        if (catalog == null) return Optional.empty();
         var bySql = (Optional<ForeignKey<?, ?>>) (Optional<?>) catalog.schemaStream()
             .flatMap(schema -> schema.getTables().stream())
             .flatMap(table -> table.getReferences().stream())
@@ -111,6 +125,7 @@ public class JooqCatalog {
      */
     @SuppressWarnings("unchecked")
     public List<ForeignKey<?, ?>> findForeignKeysBetweenTables(String tableA, String tableB) {
+        if (catalog == null) return List.of();
         return (List<ForeignKey<?, ?>>) (List<?>) catalog.schemaStream()
             .flatMap(schema -> schema.getTables().stream())
             .flatMap(table -> table.getReferences().stream())
@@ -249,8 +264,10 @@ public class JooqCatalog {
             var field = cls.getField("DEFAULT_CATALOG");
             return (Catalog) field.get(null);
         } catch (ClassNotFoundException e) {
-            throw new RuntimeException(
-                generatedJooqPackage + " did not contain a DefaultCatalog class. This is probably a configuration error.", e);
+            LOGGER.warn("{} did not contain a DefaultCatalog class — catalog lookups will return empty."
+                + " This is expected in unit tests; in production it indicates a configuration error.",
+                generatedJooqPackage);
+            return null;
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new RuntimeException(
                 "Could not access " + generatedJooqPackage + ".DefaultCatalog.DEFAULT_CATALOG.", e);

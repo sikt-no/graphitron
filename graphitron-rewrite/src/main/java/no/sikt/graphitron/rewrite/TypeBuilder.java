@@ -12,7 +12,7 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
-import no.sikt.graphitron.configuration.ErrorHandlerType;
+import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;

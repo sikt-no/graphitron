@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.GraphitronWiringClassGenerator;
@@ -29,10 +28,11 @@ public class GraphQLRewriteGenerator {
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLRewriteGenerator.class);
 
     public static void generate() {
-        var registry = getTypeDefinitionRegistry(GeneratorConfig.generatorSchemaFiles());
+        var registry = getTypeDefinitionRegistry(RewriteConfig.generatorSchemaFiles());
         var schema = GraphitronSchemaBuilder.build(registry);
 
-        var errors = new GraphitronSchemaValidator().validate(schema);
+        var jooqCatalog = new JooqCatalog(RewriteConfig.getGeneratedJooqPackage());
+        var errors = new GraphitronSchemaValidator(jooqCatalog).validate(schema);
         if (!errors.isEmpty()) {
             errors.forEach(e -> {
                 var loc = e.location();
@@ -56,11 +56,11 @@ public class GraphQLRewriteGenerator {
     }
 
     private static void write(List<TypeSpec> specs, String subPackage) {
-        var packageName = GeneratorConfig.outputPackage() + "." + subPackage;
+        var packageName = RewriteConfig.outputPackage() + "." + subPackage;
         specs.forEach(spec -> {
             try {
                 JavaFile.builder(packageName, spec).indent("    ").build()
-                    .writeTo(new File(GeneratorConfig.outputDirectory()));
+                    .writeTo(new File(RewriteConfig.outputDirectory()));
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }

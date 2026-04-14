@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.RewriteConfig;
 import graphql.language.BooleanValue;
 import graphql.language.EnumValue;
 import graphql.language.SourceLocation;
@@ -55,7 +56,7 @@ import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
-import no.sikt.graphitron.configuration.GeneratorConfig;
+
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -541,7 +542,7 @@ class FieldBuilder {
         }
         if (hadError) return null;
         if (bodyParams.isEmpty()) return List.of();
-        String conditionsClassName = GeneratorConfig.outputPackage() + ".rewrite.types." + returnTypeName + "Conditions";
+        String conditionsClassName = RewriteConfig.outputPackage() + ".rewrite.types." + returnTypeName + "Conditions";
         String methodName = fieldDef.getName() + "Condition";
         var callParams = bodyParams.stream()
             .map(bp -> new CallParam(bp.name(), bp.extraction()))

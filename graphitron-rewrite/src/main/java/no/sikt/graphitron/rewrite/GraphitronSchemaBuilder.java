@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.RewriteConfig;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLObjectType;
@@ -7,7 +8,7 @@ import graphql.schema.idl.EchoingWiringFactory;
 import graphql.schema.idl.ScalarInfo;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.configuration.GeneratorConfig;
+
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 
 import java.util.Collections;
@@ -43,7 +44,7 @@ public class GraphitronSchemaBuilder {
             })
         );
         var assembled = new SchemaGenerator().makeExecutableSchema(registry, runtimeWiring);
-        var ctx = new BuildContext(assembled, new JooqCatalog(GeneratorConfig.getGeneratedJooqPackage()));
+        var ctx = new BuildContext(assembled, new JooqCatalog(RewriteConfig.getGeneratedJooqPackage()));
         var svc = new ServiceCatalog(ctx);
         var typeBuilder = new TypeBuilder(ctx, svc);
         var fieldBuilder = new FieldBuilder(ctx, svc);

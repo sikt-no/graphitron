@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.generators;
 
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
@@ -33,14 +33,12 @@ class FieldsPipelineTest {
 
     @BeforeEach
     void setup() {
-        GeneratorConfig.setProperties(
-            Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE,
-            List.of(), Set.of(), List.of());
+        RewriteConfig.setProperties(Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE);
     }
 
     @AfterEach
     void teardown() {
-        GeneratorConfig.clear();
+        RewriteConfig.clear();
     }
 
     @Test

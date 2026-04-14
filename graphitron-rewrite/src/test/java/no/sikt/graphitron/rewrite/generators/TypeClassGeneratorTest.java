@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -25,14 +25,12 @@ class TypeClassGeneratorTest {
 
     @BeforeEach
     void setup() {
-        GeneratorConfig.setProperties(
-            java.util.Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE,
-            java.util.List.of(), java.util.Set.of(), java.util.List.of());
+        RewriteConfig.setProperties(java.util.Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE);
     }
 
     @AfterEach
     void teardown() {
-        GeneratorConfig.clear();
+        RewriteConfig.clear();
     }
 
     private static final List<ChildField.ColumnField> FILM_COLUMNS = List.of(

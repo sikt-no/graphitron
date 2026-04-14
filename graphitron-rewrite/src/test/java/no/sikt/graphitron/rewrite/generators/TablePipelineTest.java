@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.generators;
 
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphql.schema.SchemaReadingHelper;
@@ -27,14 +27,12 @@ class TablePipelineTest {
 
     @BeforeEach
     void setup() {
-        GeneratorConfig.setProperties(
-            java.util.Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE,
-            java.util.List.of(), java.util.Set.of(), java.util.List.of());
+        RewriteConfig.setProperties(java.util.Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE);
     }
 
     @AfterEach
     void teardown() {
-        GeneratorConfig.clear();
+        RewriteConfig.clear();
     }
 
     @Test

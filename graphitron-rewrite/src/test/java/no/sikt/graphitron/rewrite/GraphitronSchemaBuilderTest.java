@@ -2,8 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.configuration.ErrorHandlerType;
-import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.QueryField;
@@ -67,14 +66,12 @@ class GraphitronSchemaBuilderTest {
 
     @BeforeEach
     void setup() {
-        GeneratorConfig.setProperties(
-            java.util.Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE,
-            java.util.List.of(), java.util.Set.of(), java.util.List.of());
+        RewriteConfig.setProperties(java.util.Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE);
     }
 
     @AfterEach
     void teardown() {
-        GeneratorConfig.clear();
+        RewriteConfig.clear();
     }
 
     // ===== ColumnField =====
@@ -992,12 +989,12 @@ class GraphitronSchemaBuilderTest {
         JOOQ_TABLE_RECORD_CLASS(
             "@record with jOOQ TableRecord class → JooqTableRecordType with fqClassName and resolved table",
             """
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.FilmRecord"}) { id: ID }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) { id: ID }
             type Query { foo: String }
             """,
             schema -> {
                 var t = (JooqTableRecordType) schema.type("FilmDetails");
-                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.FilmRecord");
+                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
                 assertThat(t.table()).isNotNull();
                 assertThat(t.table().tableName()).isEqualTo("film");
             }),
@@ -1194,12 +1191,12 @@ class GraphitronSchemaBuilderTest {
         JOOQ_TABLE_RECORD_CLASS(
             "@record with jOOQ TableRecord class → JooqTableRecordInputType with fqClassName and resolved table",
             """
-            input FilmInput @record(record: {className: "no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.FilmRecord"}) { id: ID }
+            input FilmInput @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) { id: ID }
             type Query { x: String }
             """,
             schema -> {
                 var t = (JooqTableRecordInputType) schema.type("FilmInput");
-                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.FilmRecord");
+                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
                 assertThat(t.table()).isNotNull();
                 assertThat(t.table().tableName()).isEqualTo("film");
             }),

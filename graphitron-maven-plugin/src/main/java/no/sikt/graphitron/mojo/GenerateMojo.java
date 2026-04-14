@@ -10,6 +10,7 @@ import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.generate.Generator;
 import no.sikt.graphitron.generate.GraphQLGenerator;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
+import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.validation.ValidationHandler;
 import org.apache.maven.model.Resource;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -180,6 +181,12 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
             GraphQLGenerator.generate();
         }
         if (enableRewrite) {
+            RewriteConfig.setProperties(
+                GeneratorConfig.generatorSchemaFiles(),
+                GeneratorConfig.outputDirectory(),
+                GeneratorConfig.outputPackage(),
+                GeneratorConfig.getGeneratedJooqPackage()
+            );
             GraphQLRewriteGenerator.generate();
         }
     }

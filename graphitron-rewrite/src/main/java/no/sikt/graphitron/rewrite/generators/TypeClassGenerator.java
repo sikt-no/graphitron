@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
+
+import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -204,7 +205,7 @@ public class TypeClassGenerator {
     }
 
     private static ClassName tablesClassName() {
-        return ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
+        return ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
     }
 
     /** Row-keyed service overload: {@code selectManyByRowKeys(List<? extends Row>, env, sel, List<?>)}. */

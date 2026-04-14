@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import graphql.language.SourceLocation;
 import graphql.schema.FieldCoordinates;
 
-import no.sikt.graphitron.configuration.ErrorHandlerType;
+import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
 import java.util.List;
 
 /**

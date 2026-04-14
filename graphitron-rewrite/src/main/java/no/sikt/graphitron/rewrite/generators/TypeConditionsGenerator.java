@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
+
+import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.FieldSpec;
@@ -83,7 +84,7 @@ public class TypeConditionsGenerator {
     static MethodSpec buildConditionMethod(GeneratedConditionFilter gcf) {
         var tableRef = gcf.tableRef();
         var jooqTableClass = ClassName.get(
-            GeneratorConfig.getGeneratedJooqPackage() + ".tables",
+            RewriteConfig.getGeneratedJooqPackage() + ".tables",
             tableRef.javaClassName());
 
         var builder = MethodSpec.methodBuilder(gcf.methodName())
