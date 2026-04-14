@@ -57,24 +57,24 @@ class TablePipelineTest {
     }
 
     @Test
-    void classNameFollowsTableNotTypeName() {
-        // GraphQL type "MovieItem" maps to SQL table "film" → class should be "Film"
+    void classNameFollowsGraphQLTypeName() {
+        // GraphQL type "MovieItem" maps to SQL table "film" → class is "MovieItem"
         var classes = generate("""
             type MovieItem @table(name: "film") { title: String }
             type Query { dummy: String }
             """);
-        assertThat(classes).containsExactly("Film");
-        assertThat(classes).doesNotContain("MovieItem");
+        assertThat(classes).containsExactly("MovieItem");
+        assertThat(classes).doesNotContain("Film");
     }
 
     @Test
-    void classNameFromJooqFieldName_respectsNamingStrategy() {
-        // film_actor resolves to jOOQ class FilmActor (field FILM_ACTOR) → class name "FilmActor"
+    void twoTypesOnSameTable_producesTwoClasses() {
         var classes = generate("""
-            type FilmActor @table(name: "film_actor") { actorId: Int }
+            type Film @table(name: "film") { title: String }
+            type MovieItem @table(name: "film") { title: String }
             type Query { dummy: String }
             """);
-        assertThat(classes).containsExactly("FilmActor");
+        assertThat(classes).containsExactlyInAnyOrder("Film", "MovieItem");
     }
 
     @Test

@@ -60,11 +60,12 @@ public class TableCodeGenerator {
     private static final ClassName ARRAY_LIST = ClassName.get(ArrayList.class);
 
     /**
+     * @param typeName      the GraphQL type name (used as the class name)
      * @param tableRef      the resolved table reference with jOOQ field/class names
      * @param columnFields  the scalar column fields to include in {@code fields()}, in declaration order
      */
-    public TypeSpec generate(TableRef tableRef, List<ChildField.ColumnField> columnFields) {
-        return TypeSpec.classBuilder(tableRef.javaClassName())
+    public TypeSpec generate(String typeName, TableRef tableRef, List<ChildField.ColumnField> columnFields) {
+        return TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
             .addMethod(buildFieldsMethod(tableRef, columnFields))
             .addMethod(buildSelectManyMethod(tableRef))

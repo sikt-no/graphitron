@@ -3,51 +3,43 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.TableRef;
 
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
- * Produces one table class per {@link GraphitronType.TableType} in the schema.
+ * Produces one table class per table-mapped GraphQL type in the schema.
  *
- * <p>Collects {@link ChildField.ColumnField}s per table for the {@code fields()} SELECT-list method.
+ * <p>Class names follow the GraphQL type name (e.g. {@code Film} for GraphQL type {@code Film}).
+ * If two GraphQL types map to the same SQL table, each gets its own table class with its own
+ * {@code fields()}, {@code selectMany}, etc.
+ *
+ * <p>Generated files are placed in the {@code rewrite.tables} sub-package of the configured
+ * output package.
  */
 public class TableClassGenerator {
 
     public static List<TypeSpec> generate(GraphitronSchema schema) {
         var codeGenerator = new TableCodeGenerator();
-
-        var tablesByClassName = new LinkedHashMap<String, TableRef>();
-        var columnsByClassName = new LinkedHashMap<String, List<ChildField.ColumnField>>();
-
-        for (var type : schema.types().values()) {
-            if (!(type instanceof GraphitronType.TableBackedType tbt)) continue;
-            if (type instanceof GraphitronType.TableInterfaceType) continue;
-            var tableRef = tbt.table();
-            var className = tableRef.javaClassName();
-
-            tablesByClassName.putIfAbsent(className, tableRef);
-            var columns = columnsByClassName.computeIfAbsent(className, k -> new ArrayList<>());
-
-            var seen = columns.stream()
-                .map(cf -> cf.column().javaName())
-                .collect(Collectors.toSet());
-            for (var field : schema.fieldsOf(tbt.name())) {
-                if (field instanceof ChildField.ColumnField cf && !seen.contains(cf.column().javaName())) {
-                    columns.add(cf);
-                    seen.add(cf.column().javaName());
-                }
-            }
-        }
-
-        return tablesByClassName.entrySet().stream()
-            .sorted(Comparator.comparing(e -> e.getKey()))
-            .map(e -> codeGenerator.generate(e.getValue(), columnsByClassName.getOrDefault(e.getKey(), List.of())))
+        return schema.types().entrySet().stream()
+            .filter(e -> e.getValue() instanceof GraphitronType.TableType
+                      || e.getValue() instanceof GraphitronType.NodeType)
+            .map(java.util.Map.Entry::getKey)
+            .sorted()
+            .map(typeName -> generateForType(schema, typeName, codeGenerator))
             .toList();
+    }
+
+    private static TypeSpec generateForType(GraphitronSchema schema, String typeName,
+            TableCodeGenerator codeGenerator) {
+        var type = (GraphitronType.TableBackedType) schema.type(typeName);
+        var columnFields = schema.fieldsOf(typeName).stream()
+            .filter(f -> f instanceof ChildField.ColumnField)
+            .map(f -> (ChildField.ColumnField) f)
+            .sorted(Comparator.comparing(GraphitronField::name))
+            .toList();
+        return codeGenerator.generate(typeName, type.table(), columnFields);
     }
 }

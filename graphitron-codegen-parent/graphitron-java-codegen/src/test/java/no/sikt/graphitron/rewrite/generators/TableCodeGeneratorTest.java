@@ -45,7 +45,7 @@ class TableCodeGeneratorTest {
     );
 
     private static TypeSpec spec() {
-        return GEN.generate(
+        return GEN.generate("Film",
             new TableRef("film", "FILM", "Film",
                 List.of(new ColumnRef("id", "ID", "java.lang.Integer"))),
             FILM_COLUMNS);

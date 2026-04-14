@@ -150,7 +150,7 @@ public class FieldsCodeGenerator {
      */
     private MethodSpec buildQueryTableFieldFetcher(QueryField.QueryTableField qtf) {
         var tableRef = qtf.returnType().table();
-        var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.tables", tableRef.javaClassName());
+        var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.tables", qtf.returnType().returnTypeName());
         var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
         boolean isList = !(qtf.returnType().wrapper() instanceof FieldWrapper.Single);
 
@@ -530,7 +530,7 @@ public class FieldsCodeGenerator {
             String.join(", ", serviceCallArgs));
 
         // Return via table selectMany / selectOne (threading dfe for context access)
-        var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.tables", rt.javaClassName());
+        var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.tables", tb.returnTypeName());
         boolean isRowKeyed = sourcesRef instanceof SourcesRef.RowKeyed;
         String selectManyName = isRowKeyed ? "selectManyByRowKeys" : "selectManyByRecordKeys";
         String selectOneName = isRowKeyed ? "selectOneByRowKeys" : "selectOneByRecordKeys";
