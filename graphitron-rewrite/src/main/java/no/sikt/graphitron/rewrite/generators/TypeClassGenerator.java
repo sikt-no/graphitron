@@ -127,18 +127,23 @@ public class TypeClassGenerator {
      */
     private static MethodSpec buildFieldsMethod(TableRef tableRef, List<ChildField.ColumnField> columnFields) {
         var tablesClass = tablesClassName();
+        var jooqTableClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName());
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
+        var entryType = ParameterizedTypeName.get(
+            ClassName.get("java.util", "Map", "Entry"),
+            ClassName.get(String.class),
+            ParameterizedTypeName.get(LIST, SELECTED_FIELD));
 
         var builder = MethodSpec.methodBuilder("fields")
             .addModifiers(PUBLIC, STATIC)
             .returns(listOfField)
             .addParameter(SELECTION_SET, "sel")
-            .addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName())
-            .addStatement("var fields = new $T<$T>()", ARRAY_LIST, fieldWildcard);
+            .addStatement("$T table = $T.$L", jooqTableClass, tablesClass, tableRef.javaFieldName())
+            .addStatement("$T<$T> fields = new $T<>()", ARRAY_LIST, fieldWildcard, ARRAY_LIST);
 
-        builder.addCode("for (var entry : sel.getFieldsGroupedByResultKey().entrySet()) {\n");
-        builder.addCode("    var sf = entry.getValue().get(0);\n");
+        builder.addCode("for ($T entry : sel.getFieldsGroupedByResultKey().entrySet()) {\n", entryType);
+        builder.addCode("    $T sf = entry.getValue().get(0);\n", SELECTED_FIELD);
         builder.addCode("    switch (sf.getName()) {\n");
         for (var cf : columnFields) {
             builder.addCode("        case $S -> fields.add(table.$L);\n",
@@ -157,6 +162,7 @@ public class TypeClassGenerator {
      */
     private static MethodSpec buildSelectManyMethod(TableRef tableRef) {
         var tablesClass = tablesClassName();
+        var jooqTableClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName());
         return MethodSpec.methodBuilder("selectMany")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(RESULT, RECORD))
@@ -165,7 +171,7 @@ public class TypeClassGenerator {
             .addParameter(sortFieldList(), "orderBy")
             .addStatement("$T dsl = (($T) env.getGraphQlContext().get($S)).getDslContext(env)",
                 DSL_CONTEXT, GRAPHITRON_CONTEXT, "graphitronContext")
-            .addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName())
+            .addStatement("$T table = $T.$L", jooqTableClass, tablesClass, tableRef.javaFieldName())
             .addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
@@ -184,6 +190,7 @@ public class TypeClassGenerator {
      */
     private static MethodSpec buildSelectOneMethod(TableRef tableRef) {
         var tablesClass = tablesClassName();
+        var jooqTableClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName());
         return MethodSpec.methodBuilder("selectOne")
             .addModifiers(PUBLIC, STATIC)
             .returns(RECORD)
@@ -191,7 +198,7 @@ public class TypeClassGenerator {
             .addParameter(CONDITION, "condition")
             .addStatement("$T dsl = (($T) env.getGraphQlContext().get($S)).getDslContext(env)",
                 DSL_CONTEXT, GRAPHITRON_CONTEXT, "graphitronContext")
-            .addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName())
+            .addStatement("$T table = $T.$L", jooqTableClass, tablesClass, tableRef.javaFieldName())
             .addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
@@ -283,6 +290,7 @@ public class TypeClassGenerator {
      */
     private static MethodSpec buildSubselectManyMethod(TableRef tableRef) {
         var tablesClass = tablesClassName();
+        var jooqTableClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName());
         return MethodSpec.methodBuilder("subselectMany")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(FIELD, ParameterizedTypeName.get(RESULT, RECORD)))
@@ -290,7 +298,7 @@ public class TypeClassGenerator {
             .addParameter(SELECTED_FIELD, "sel")
             .addParameter(CONDITION, "condition")
             .addParameter(sortFieldList(), "orderBy")
-            .addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName())
+            .addStatement("$T table = $T.$L", jooqTableClass, tablesClass, tableRef.javaFieldName())
             .addStatement(
                 "return $T.multiset($T.select(fields(sel.getSelectionSet())).from(table).where(condition).orderBy(orderBy)).as(sel.getResultKey())",
                 DSL, DSL)
@@ -308,13 +316,14 @@ public class TypeClassGenerator {
      */
     private static MethodSpec buildSubselectOneMethod(TableRef tableRef) {
         var tablesClass = tablesClassName();
+        var jooqTableClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName());
         return MethodSpec.methodBuilder("subselectOne")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(FIELD, RECORD))
             .addParameter(ENV, "env")
             .addParameter(SELECTED_FIELD, "sel")
             .addParameter(CONDITION, "condition")
-            .addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName())
+            .addStatement("$T table = $T.$L", jooqTableClass, tablesClass, tableRef.javaFieldName())
             .addStatement(
                 "return $T.multiset($T.select(fields(sel.getSelectionSet())).from(table).where(condition).limit(1)).as(sel.getResultKey()).convertFrom(r -> r.isEmpty() ? null : r.get(0))",
                 DSL, DSL)

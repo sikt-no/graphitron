@@ -123,6 +123,10 @@ Field record components are declared with the narrowest type the classifier can 
 
 This pushes classification certainty into the type system: code that receives a `ServiceTableField` knows its `returnType` is `TableBoundReturnType` without a runtime check. Where the return type genuinely varies, the broad `ReturnTypeRef` is retained. The same discipline applies to splitting semantically distinct variants into separate records rather than using a discriminating boolean or enum.
 
+### No `var` in generated code
+
+Generated Java code must never use `var`. Always emit explicit type declarations (e.g. `Film table = Tables.FILM`, `Condition condition = DSL.noCondition()`). Two reasons: generated code is a public artifact that developers read, and `var` inference is often unhelpful for wide jOOQ types where seeing the declared type is the point. Use `$T` format specifiers in JavaPoet `addStatement`/`addCode` calls to emit the concrete type. Local variables in the generator's *own* Java code (the code that builds `MethodSpec`s) may use `var` freely.
+
 ### Sub-taxonomies for resolution outcomes
 
 Complex resolution outcomes get their own sealed type rather than being stored as raw strings. `BatchKey` is a sub-taxonomy of `ParamSource.Sources`, just as `TableRef` is a sub-taxonomy of `GraphitronType.TableBackedType` and `ColumnRef` is a sub-taxonomy of `InputField.ColumnField`. This pattern keeps each concept's complexity local and makes the taxonomy self-documenting: the type of a field tells you exactly what states it can be in.

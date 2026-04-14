@@ -35,7 +35,8 @@ import java.util.Optional;
  */
 public class TypeConditionsGenerator {
 
-    private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName CONDITION = ClassName.get("org.jooq", "Condition");
+    private static final ClassName DSL       = ClassName.get("org.jooq.impl", "DSL");
 
     public static List<TypeSpec> generate(GraphitronSchema schema) {
         // Collect GeneratedConditionFilters grouped by their conditions class name
@@ -89,7 +90,7 @@ public class TypeConditionsGenerator {
 
         var builder = MethodSpec.methodBuilder(gcf.methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(ClassName.get("org.jooq", "Condition"))
+            .returns(CONDITION)
             .addParameter(jooqTableClass, "table");
 
         var LIST = ClassName.get("java.util", "List");
@@ -100,7 +101,7 @@ public class TypeConditionsGenerator {
             builder.addParameter(paramType, bp.name());
         }
 
-        builder.addStatement("var condition = $T.noCondition()", DSL);
+        builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
         for (var bp : gcf.bodyParams()) {
             String col = bp.column().javaName();
             if (bp.list()) {

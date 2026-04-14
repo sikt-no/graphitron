@@ -73,6 +73,7 @@ public class TypeFetcherClassGenerator {
     private static final ClassName WIRING_BUILDER       = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring", "Builder");
     private static final ClassName COMPLETABLE_FUTURE   = ClassName.get("java.util.concurrent", "CompletableFuture");
     private static final ClassName LIST                 = ClassName.get("java.util", "List");
+    private static final ClassName CONDITION             = ClassName.get("org.jooq", "Condition");
     private static final ClassName RECORD               = ClassName.get("org.jooq", "Record");
     private static final ClassName RESULT               = ClassName.get("org.jooq", "Result");
     private static final ClassName ROW                  = ClassName.get("org.jooq", "Row");
@@ -151,6 +152,7 @@ public class TypeFetcherClassGenerator {
         var tableRef = qtf.returnType().table();
         var tableClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite.types", qtf.returnType().returnTypeName());
         var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
+        var jooqTableClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName());
         boolean isList = qtf.returnType().wrapper().isList();
 
         var returnType = isList
@@ -162,7 +164,7 @@ public class TypeFetcherClassGenerator {
             .returns(returnType)
             .addParameter(ENV, "env");
 
-        builder.addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName());
+        builder.addStatement("$T table = $T.$L", jooqTableClass, tablesClass, tableRef.javaFieldName());
         builder.addCode(buildConditionCall(qtf));
 
         if (isList) {
@@ -177,7 +179,7 @@ public class TypeFetcherClassGenerator {
 
     private static CodeBlock buildConditionCall(QueryField.QueryTableField qtf) {
         var code = CodeBlock.builder();
-        code.addStatement("var condition = $T.noCondition()", DSL);
+        code.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
         for (var filter : qtf.filters()) {
             var callArgs = buildCallArgs(filter);
             code.addStatement("condition = condition.and($T.$L($L))",
@@ -271,14 +273,15 @@ public class TypeFetcherClassGenerator {
         var tableRef = field.returnType().table();
         var tableClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite.types", field.returnType().returnTypeName());
         var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
+        var jooqTableClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName());
 
         var builder = MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(RESULT, RECORD))
             .addParameter(ENV, "env");
 
-        builder.addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName());
-        builder.addStatement("var condition = $T.noCondition()", DSL);
+        builder.addStatement("$T table = $T.$L", jooqTableClass, tablesClass, tableRef.javaFieldName());
+        builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
 
         for (var filter : field.filters()) {
             if (!(filter instanceof GeneratedConditionFilter gcf)) continue;
