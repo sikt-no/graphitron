@@ -156,6 +156,16 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void films_filteredByRating() {
+        // Test data: ACADEMY DINOSAUR=PG, ACE GOLDFINGER=G, ADAPTATION HOLES=NC_17,
+        //            AFFAIR PREJUDICE=G, AGENT TRUMAN=PG
+        Map<String, Object> data = execute("{ films(rating: G) { title } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+        assertThat(films).extracting(f -> f.get("title"))
+            .containsExactlyInAnyOrder("ACE GOLDFINGER", "AFFAIR PREJUDICE");
+    }
+
+    @Test
     void films_orderedByFilmId() {
         Map<String, Object> data = execute("{ films { title } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");

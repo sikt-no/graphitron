@@ -176,29 +176,20 @@ public class FieldsCodeGenerator {
             code.addStatement("var condition = $T.noCondition()", DSL);
         } else {
             code.addStatement("var condition = $T.noCondition()", DSL);
+            // Use field.getDataType().convert() for type-safe binding — handles
+            // enum conversion (graphql-java delivers String, jOOQ needs MpaaRating)
+            // and any other type mismatches.
             for (var filter : filters) {
                 if (filter instanceof WhereFilter.ColumnFilter cf) {
-                    var colType = ClassName.bestGuess(cf.column().columnClass());
+                    // col is e.g. "Tables.FILM.RATING"
+                    String col = "$T.$L.$L";
+                    Object[] c = {tablesClass, tableRef.javaFieldName(), cf.column().javaName()};
                     if (cf.nonNull()) {
-                        if (cf.list()) {
-                            code.addStatement("condition = condition.and($T.$L.$L.in(env.<$T<$T>>getArgument($S)))",
-                                tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
-                                LIST, colType, cf.name());
-                        } else {
-                            code.addStatement("condition = condition.and($T.$L.$L.eq(env.<$T>getArgument($S)))",
-                                tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
-                                colType, cf.name());
-                        }
+                        code.addStatement("condition = condition.and(" + col + ".eq(" + col + ".getDataType().convert(env.getArgument($S))))",
+                            c[0], c[1], c[2], c[0], c[1], c[2], cf.name());
                     } else {
-                        if (cf.list()) {
-                            code.addStatement("if (env.getArgument($S) != null) condition = condition.and($T.$L.$L.in(env.<$T<$T>>getArgument($S)))",
-                                cf.name(), tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
-                                LIST, colType, cf.name());
-                        } else {
-                            code.addStatement("if (env.getArgument($S) != null) condition = condition.and($T.$L.$L.eq(env.<$T>getArgument($S)))",
-                                cf.name(), tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
-                                colType, cf.name());
-                        }
+                        code.addStatement("if (env.getArgument($S) != null) condition = condition.and(" + col + ".eq(" + col + ".getDataType().convert(env.getArgument($S))))",
+                            cf.name(), c[0], c[1], c[2], c[0], c[1], c[2], cf.name());
                     }
                 }
                 // InputFilter: deferred to a later deliverable
