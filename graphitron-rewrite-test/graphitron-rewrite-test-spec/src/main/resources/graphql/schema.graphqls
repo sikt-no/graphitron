@@ -4,6 +4,7 @@ type Query {
     customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]!
     films(
         rating: MpaaRating @field(name: "RATING"),
+        textRating: TextRating @field(name: "TEXT_RATING"),
         maxRentalRate: Float @field(name: "RENTAL_RATE")
     ): [Film!]!
     filmById(film_id: [ID] @lookupKey): [Film!]!
@@ -20,12 +21,13 @@ type Customer @table(name: "customer") {
 }
 
 type Film @table(name: "film") {
-    filmId:     Int!         @field(name: "FILM_ID")
-    title:      String!      @field(name: "TITLE")
-    description: String      @field(name: "DESCRIPTION")
-    rentalRate: Float!       @field(name: "RENTAL_RATE")
-    rating:     MpaaRating   @field(name: "RATING")
-    length:     Int          @field(name: "LENGTH")
+    filmId:      Int!         @field(name: "FILM_ID")
+    title:       String!      @field(name: "TITLE")
+    description: String       @field(name: "DESCRIPTION")
+    rentalRate:  Float!       @field(name: "RENTAL_RATE")
+    rating:      MpaaRating   @field(name: "RATING")
+    textRating:  String       @field(name: "TEXT_RATING")
+    length:      Int          @field(name: "LENGTH")
 }
 
 type Language @table(name: "language") {
@@ -40,4 +42,13 @@ enum MpaaRating {
     PG_13
     R
     NC_17
+}
+
+"""Text-column enum — values map to database strings via @field(name:)."""
+enum TextRating {
+    G
+    PG
+    PG_13 @field(name: "PG-13")
+    R
+    NC_17 @field(name: "NC-17")
 }

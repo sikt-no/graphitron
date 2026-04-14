@@ -93,6 +93,7 @@ CREATE TABLE film (
     length            smallint,
     replacement_cost  numeric(5,2)    NOT NULL DEFAULT 19.99,
     rating            mpaa_rating     DEFAULT 'G',
+    text_rating       varchar(10),
     last_update       timestamp       NOT NULL DEFAULT now()
 );
 

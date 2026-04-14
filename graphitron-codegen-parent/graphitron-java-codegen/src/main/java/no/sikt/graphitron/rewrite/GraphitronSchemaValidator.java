@@ -143,6 +143,7 @@ public class GraphitronSchemaValidator {
             boolean anyFilterIsList = field.filters().stream().anyMatch(f -> switch (f) {
                 case WhereFilter.ColumnFilter cf -> cf.list();
                 case WhereFilter.EnumColumnFilter ef -> ef.list();
+                case WhereFilter.TextEnumColumnFilter tf -> tf.list();
                 case WhereFilter.InputFilter inf -> inf.list();
                 case no.sikt.graphitron.rewrite.model.ConditionFilter ignored -> false;
             });

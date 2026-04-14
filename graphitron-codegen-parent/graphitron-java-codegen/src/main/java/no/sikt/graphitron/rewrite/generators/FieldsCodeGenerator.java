@@ -177,6 +177,7 @@ public class FieldsCodeGenerator {
             switch (filter) {
                 case WhereFilter.ColumnFilter cf -> addScalarCondition(code, cf, tablesClass, tableRef);
                 case WhereFilter.EnumColumnFilter ef -> addEnumCondition(code, ef, tablesClass, tableRef);
+                case WhereFilter.TextEnumColumnFilter tf -> addTextEnumCondition(code, tf, tablesClass, tableRef);
                 default -> {} // InputFilter, ConditionFilter: deferred
             }
         }
@@ -211,6 +212,30 @@ public class FieldsCodeGenerator {
         } else {
             code.addStatement("if (env.getArgument($S) != null) condition = condition.and(" + eq + ")",
                 concat(new Object[]{ef.name()}, args));
+        }
+    }
+
+    /** Text enum: {@code TABLE.COL.eq(DSL.val(MAP.get(arg), TABLE.COL))} */
+    private void addTextEnumCondition(CodeBlock.Builder code, WhereFilter.TextEnumColumnFilter tf,
+            ClassName tablesClass, TableRef tableRef) {
+        // Build the Map.of(...) literal from the value mapping
+        var mapEntries = CodeBlock.builder();
+        boolean first = true;
+        for (var entry : tf.valueMapping().entrySet()) {
+            if (!first) mapEntries.add(", ");
+            mapEntries.add("$S, $S", entry.getKey(), entry.getValue());
+            first = false;
+        }
+        String eq = "$T.$L.$L.eq($T.val($T.of($L).get(env.<$T>getArgument($S)), $T.$L.$L))";
+        var MAP = ClassName.get(java.util.Map.class);
+        Object[] args = {tablesClass, tableRef.javaFieldName(), tf.column().javaName(),
+            DSL, MAP, mapEntries.build(), String.class, tf.name(),
+            tablesClass, tableRef.javaFieldName(), tf.column().javaName()};
+        if (tf.nonNull()) {
+            code.addStatement("condition = condition.and(" + eq + ")", args);
+        } else {
+            code.addStatement("if (env.getArgument($S) != null) condition = condition.and(" + eq + ")",
+                concat(new Object[]{tf.name()}, args));
         }
     }
 

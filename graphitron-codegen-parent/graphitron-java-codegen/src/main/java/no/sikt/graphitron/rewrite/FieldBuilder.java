@@ -509,12 +509,37 @@ class FieldBuilder {
                 continue;
             }
             if (enumClassName != null) {
+                // jOOQ enum column — valueOf conversion
                 result.add(new WhereFilter.EnumColumnFilter(name, typeName, nonNull, list, columnRef, enumClassName));
             } else {
-                result.add(new WhereFilter.ColumnFilter(name, typeName, nonNull, list, columnRef));
+                // Check if GraphQL type is an enum mapped to a text column
+                var textEnumMapping = buildTextEnumMapping(typeName);
+                if (textEnumMapping != null) {
+                    result.add(new WhereFilter.TextEnumColumnFilter(name, typeName, nonNull, list, columnRef, textEnumMapping));
+                } else {
+                    result.add(new WhereFilter.ColumnFilter(name, typeName, nonNull, list, columnRef));
+                }
             }
         }
         return hadError ? null : List.copyOf(result);
+    }
+
+    /**
+     * If the GraphQL type is an enum, builds a mapping from GraphQL enum value names to database
+     * string values (from {@code @field(name:)} or the value name itself). Returns {@code null}
+     * when the GraphQL type is not an enum.
+     */
+    private java.util.Map<String, String> buildTextEnumMapping(String graphqlTypeName) {
+        var schemaType = ctx.schema.getType(graphqlTypeName);
+        if (!(schemaType instanceof graphql.schema.GraphQLEnumType graphqlEnum)) {
+            return null;
+        }
+        var mapping = new java.util.LinkedHashMap<String, String>();
+        for (var value : graphqlEnum.getValues()) {
+            String dbValue = argString(value, DIR_FIELD, ARG_NAME).orElse(value.getName());
+            mapping.put(value.getName(), dbValue);
+        }
+        return mapping;
     }
 
     /**

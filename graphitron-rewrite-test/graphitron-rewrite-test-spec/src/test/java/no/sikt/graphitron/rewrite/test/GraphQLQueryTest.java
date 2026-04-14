@@ -166,6 +166,24 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void films_filteredByTextRating() {
+        // TextRating enum maps to varchar column via @field(name:) — NC_17 → "NC-17"
+        Map<String, Object> data = execute("{ films(textRating: NC_17) { title } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+        assertThat(films).extracting(f -> f.get("title"))
+            .containsExactly("ADAPTATION HOLES");
+    }
+
+    @Test
+    void films_filteredByTextRating_simpleValue() {
+        // G maps to "G" (no @field mapping needed)
+        Map<String, Object> data = execute("{ films(textRating: G) { title } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+        assertThat(films).extracting(f -> f.get("title"))
+            .containsExactlyInAnyOrder("ACE GOLDFINGER", "AFFAIR PREJUDICE");
+    }
+
+    @Test
     void films_orderedByFilmId() {
         Map<String, Object> data = execute("{ films { title } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
