@@ -538,7 +538,7 @@ class FieldBuilder {
                     javaType = columnRef.columnClass();
                 }
             }
-            bodyParams.add(new BodyParam(name, columnRef, javaType, nonNull, list, extraction));
+            bodyParams.add(new BodyParam(name, columnRef, javaType, nonNull, list, extraction, typeName));
         }
         if (hadError) return null;
         if (bodyParams.isEmpty()) return List.of();

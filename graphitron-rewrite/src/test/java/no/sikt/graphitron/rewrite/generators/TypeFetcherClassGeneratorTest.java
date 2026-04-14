@@ -222,12 +222,12 @@ class TypeFetcherClassGeneratorTest {
 
     private static BodyParam listKeyParam(String name, String javaName, String javaType) {
         return new BodyParam(name, new ColumnRef(name, javaName, javaType), javaType, false, true,
-            new CallSiteExtraction.Direct());
+            new CallSiteExtraction.Direct(), "Int");
     }
 
     private static BodyParam scalarKeyParam(String name, String javaName, String javaType) {
         return new BodyParam(name, new ColumnRef(name, javaName, javaType), javaType, false, false,
-            new CallSiteExtraction.Direct());
+            new CallSiteExtraction.Direct(), "Int");
     }
 
     @Test

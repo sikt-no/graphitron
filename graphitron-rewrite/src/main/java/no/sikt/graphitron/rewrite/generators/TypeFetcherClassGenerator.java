@@ -249,19 +249,32 @@ public class TypeFetcherClassGenerator {
             for (var bp : gcf.bodyParams()) {
                 var colName = bp.column().javaName();
                 var typeClass = ClassName.bestGuess(bp.javaType());
+                // GraphQL ID scalars are delivered as String by GraphQL-Java; all other scalars
+                // (Int, Boolean, String, …) are delivered as their natural Java counterpart,
+                // which already matches the jOOQ column type stored in bp.javaType().
+                boolean idScalar = "ID".equals(bp.graphqlTypeName());
                 if (bp.list()) {
                     var listVarName = toCamelCase(bp.name()) + "Keys";
-                    builder.addStatement("$T<?> $L = env.getArgument($S)", LIST, listVarName, bp.name());
-                    CodeBlock inExpr = "java.lang.String".equals(bp.javaType())
-                        ? CodeBlock.of("$L.stream().map($T::toString).toList()", listVarName, Object.class)
-                        : CodeBlock.of("$L.stream().map($T::toString).map($T::valueOf).toList()", listVarName, Object.class, typeClass);
-                    builder.addStatement("condition = condition.and(table.$L.in($L))", colName, inExpr);
+                    if (idScalar && !"java.lang.String".equals(bp.javaType())) {
+                        // ID → non-String column: parse each String element
+                        builder.addStatement("$T<$T> $L = env.getArgument($S)", LIST, String.class, listVarName, bp.name());
+                        builder.addStatement("condition = condition.and(table.$L.in($L.stream().map($T::valueOf).toList()))",
+                            colName, listVarName, typeClass);
+                    } else {
+                        // Native match (or String column): GraphQL-Java delivers the right type directly
+                        builder.addStatement("$T<$T> $L = env.getArgument($S)", LIST, typeClass, listVarName, bp.name());
+                        builder.addStatement("condition = condition.and(table.$L.in($L))", colName, listVarName);
+                    }
                 } else {
                     var keyVarName = toCamelCase(bp.name());
-                    CodeBlock scalarExpr = "java.lang.String".equals(bp.javaType())
-                        ? CodeBlock.of("env.getArgument($S)", bp.name())
-                        : CodeBlock.of("$T.valueOf(env.getArgument($S).toString())", typeClass, bp.name());
-                    builder.addStatement("$T $L = $L", typeClass, keyVarName, scalarExpr);
+                    if (idScalar && !"java.lang.String".equals(bp.javaType())) {
+                        // ID → non-String column: parse the String
+                        builder.addStatement("$T $L = $T.valueOf(env.<$T>getArgument($S))",
+                            typeClass, keyVarName, typeClass, String.class, bp.name());
+                    } else {
+                        // Native match: direct assignment
+                        builder.addStatement("$T $L = env.getArgument($S)", typeClass, keyVarName, bp.name());
+                    }
                     builder.addStatement("condition = condition.and(table.$L.eq($L))", colName, keyVarName);
                 }
             }

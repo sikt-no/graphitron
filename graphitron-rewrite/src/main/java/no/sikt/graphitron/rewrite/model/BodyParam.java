@@ -17,6 +17,10 @@ package no.sikt.graphitron.rewrite.model;
  *   <li>{@link #extraction()} — carried here so that
  *       {@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator} can generate the
  *       static enum-map field for {@link CallSiteExtraction.TextMapLookup} params.</li>
+ *   <li>{@link #graphqlTypeName()} — the GraphQL scalar type name (e.g. {@code "ID"},
+ *       {@code "Int"}, {@code "String"}). Used by fetcher generators to determine the
+ *       runtime delivery type of {@code env.getArgument()} — {@code ID} delivers
+ *       {@code String}, while {@code Int} delivers {@code Integer} directly.</li>
  * </ul>
  *
  * <p>The parallel call-site view of this parameter is {@link CallParam}. A {@link BodyParam}
@@ -28,5 +32,6 @@ public record BodyParam(
     String javaType,
     boolean nonNull,
     boolean list,
-    CallSiteExtraction extraction
+    CallSiteExtraction extraction,
+    String graphqlTypeName
 ) {}

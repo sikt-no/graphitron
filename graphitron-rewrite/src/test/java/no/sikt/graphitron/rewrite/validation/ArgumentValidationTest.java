@@ -49,7 +49,7 @@ class ArgumentValidationTest {
                 new TableRef("film", "FILM", "Film", List.of()),
                 List.of(new CallParam("id", new CallSiteExtraction.Direct())),
                 List.of(new BodyParam("id", new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
-                    "java.lang.Integer", false, false, new CallSiteExtraction.Direct()))))),
+                    "java.lang.Integer", false, false, new CallSiteExtraction.Direct(), "Int"))))),
             List.of()),
 
         WITH_INPUT_FILTER("table-bound input type arg — skipped (empty filters), no errors",
