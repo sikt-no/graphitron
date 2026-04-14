@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import java.util.List;
+
 /**
  * A developer-supplied {@code @condition} method on a {@code FIELD_DEFINITION}.
  *
@@ -29,8 +31,7 @@ package no.sikt.graphitron.rewrite.model;
  * {@link GeneratedConditionFilter} entry in the field's {@code filters} list.
  */
 public record ConditionFilter(
-    MethodRef method,
-    List<String> contextArgs
+    MethodRef method
 ) implements WhereFilter {
 
     @Override
