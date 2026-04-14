@@ -116,22 +116,8 @@ public class TypeFieldsGenerator {
                 builder.addMethod(buildColumnFieldFetcher(cf, parentTable));
             } else if (field instanceof QueryField.QueryTableField qtf) {
                 builder.addMethod(buildQueryTableFieldFetcher(qtf));
-                if (!qtf.filters().isEmpty()) {
-                    builder.addMethod(buildConditionMethod(qtf));
-                }
             } else {
                 builder.addMethod(buildFieldStub(field.name()));
-            }
-        }
-
-        // Collect text enum mappings and generate static final Map fields
-        for (var field : fields) {
-            if (field instanceof QueryField.QueryTableField qtf) {
-                for (var filter : qtf.filters()) {
-                    if (filter instanceof WhereFilter.TextEnumColumnFilter tf) {
-                        builder.addField(buildTextEnumMapField(tf));
-                    }
-                }
             }
         }
 
@@ -210,7 +196,10 @@ public class TypeFieldsGenerator {
             return code.build();
         }
 
-        // Build the argument expressions for the condition method call
+        // Build the argument expressions for the condition method call on *Conditions class
+        var conditionsClass = ClassName.get(
+            GeneratorConfig.outputPackage() + ".rewrite.types",
+            qtf.returnType().returnTypeName() + "Conditions");
         var args = CodeBlock.builder();
         args.add("$T.$L", tablesClass, tableRef.javaFieldName()); // table alias
         for (var filter : qtf.filters()) {
@@ -224,92 +213,15 @@ public class TypeFieldsGenerator {
                         ef.name(), enumClass, String.class, ef.name());
                 }
                 case WhereFilter.TextEnumColumnFilter tf ->
-                    args.add("env.getArgument($S) != null ? $L.get(env.<$T>getArgument($S)) : null",
-                        tf.name(), tf.mapFieldName(), String.class, tf.name());
+                    args.add("env.getArgument($S) != null ? $T.$L.get(env.<$T>getArgument($S)) : null",
+                        tf.name(), conditionsClass, tf.mapFieldName(), String.class, tf.name());
                 default -> args.add("null");
             }
         }
 
-        code.addStatement("var condition = $LCondition($L)",
-            qtf.name(), args.build());
+        code.addStatement("var condition = $T.$LCondition($L)",
+            conditionsClass, qtf.name(), args.build());
         return code.build();
-    }
-
-    private static FieldSpec buildTextEnumMapField(WhereFilter.TextEnumColumnFilter tf) {
-        var MAP = ClassName.get(java.util.Map.class);
-        var mapType = ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(String.class));
-        var mapEntries = CodeBlock.builder();
-        boolean first = true;
-        for (var entry : tf.valueMapping().entrySet()) {
-            if (!first) mapEntries.add(", ");
-            mapEntries.add("$S, $S", entry.getKey(), entry.getValue());
-            first = false;
-        }
-        return FieldSpec.builder(mapType, tf.mapFieldName())
-            .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-            .initializer("$T.of($L)", MAP, mapEntries.build())
-            .build();
-    }
-
-
-
-
-    /**
-     * Generates a private static condition method with named, typed parameters.
-     * The method takes the jOOQ table alias as first parameter and one parameter per filter.
-     */
-    private static MethodSpec buildConditionMethod(QueryField.QueryTableField qtf) {
-        var tableRef = qtf.returnType().table();
-        var jooqTableClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage() + ".tables",
-            tableRef.javaClassName());
-        var builder = MethodSpec.methodBuilder(qtf.name() + "Condition")
-            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(ClassName.get("org.jooq", "Condition"))
-            .addParameter(jooqTableClass, "table");
-
-        for (var filter : qtf.filters()) {
-            switch (filter) {
-                case WhereFilter.ColumnFilter cf ->
-                    builder.addParameter(ClassName.bestGuess(cf.column().columnClass()), cf.name());
-                case WhereFilter.EnumColumnFilter ef ->
-                    builder.addParameter(ClassName.bestGuess(ef.enumClassName()), ef.name());
-                case WhereFilter.TextEnumColumnFilter tf ->
-                    builder.addParameter(String.class, tf.name());
-                default -> {}
-            }
-        }
-
-        builder.addStatement("var condition = $T.noCondition()", DSL);
-        for (var filter : qtf.filters()) {
-            String col = switch (filter) {
-                case WhereFilter.ColumnFilter cf -> cf.column().javaName();
-                case WhereFilter.EnumColumnFilter ef -> ef.column().javaName();
-                case WhereFilter.TextEnumColumnFilter tf -> tf.column().javaName();
-                default -> null;
-            };
-            String name = switch (filter) {
-                case WhereFilter.ColumnFilter cf -> cf.name();
-                case WhereFilter.EnumColumnFilter ef -> ef.name();
-                case WhereFilter.TextEnumColumnFilter tf -> tf.name();
-                default -> null;
-            };
-            boolean nonNull = switch (filter) {
-                case WhereFilter.ColumnFilter cf -> cf.nonNull();
-                case WhereFilter.EnumColumnFilter ef -> ef.nonNull();
-                case WhereFilter.TextEnumColumnFilter tf -> tf.nonNull();
-                default -> false;
-            };
-            if (col == null) continue;
-            if (nonNull) {
-                builder.addStatement("condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                    col, DSL, name, col);
-            } else {
-                builder.addStatement("if ($L != null) condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                    name, col, DSL, name, col);
-            }
-        }
-        builder.addStatement("return condition");
-        return builder.build();
     }
 
     /**

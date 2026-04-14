@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.GraphitronWiringClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
+import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFieldsGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator;
 import org.slf4j.Logger;
@@ -49,6 +50,7 @@ public class GraphQLRewriteGenerator {
 
         write(GraphitronValuesClassGenerator.generate(),          "rewrite");
         write(TypeClassGenerator.generate(schema),                "rewrite.types");
+        write(TypeConditionsGenerator.generate(schema),           "rewrite.types");
         write(fieldsClasses,                                      "rewrite.types");
         write(List.of(GraphitronWiringClassGenerator.generate(fieldsClassNames)), "rewrite");
     }
