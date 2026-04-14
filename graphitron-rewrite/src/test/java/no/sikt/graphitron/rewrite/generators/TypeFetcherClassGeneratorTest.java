@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.RewriteConfig;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -11,7 +12,9 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
+import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -264,5 +267,111 @@ class TypeFetcherClassGeneratorTest {
         var spec = TypeFetcherClassGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "customerById").code().toString())
             .doesNotContain("UnsupportedOperationException");
+    }
+
+    // ===== @splitQuery TableField =====
+
+    private static final TableRef LANGUAGE_TABLE = new TableRef("language", "LANGUAGE", "Language",
+        List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer")));
+
+    private static GraphitronField splitQueryField(String parentType, String name) {
+        return new ChildField.SplitTableField(parentType, name, null,
+            new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, new FieldWrapper.List(false, false)),
+            List.of(), List.of(), new OrderBySpec.None(), null,
+            new BatchKey.RowKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer"))));
+    }
+
+    private static TypeSpec specWithSplitQuery(String parentType, String fieldName) {
+        return TypeFetcherClassGenerator.generateTypeSpec(parentType, LANGUAGE_TABLE,
+            List.of(splitQueryField(parentType, fieldName)));
+    }
+
+    @Test
+    void splitQuery_generatesAsyncFetcherAndRowsMethod() {
+        var spec = TypeFetcherClassGenerator.generateTypeSpec("Language", LANGUAGE_TABLE,
+            List.of(splitQueryField("Language", "films")));
+        assertThat(spec.methodSpecs()).extracting(MethodSpec::name).contains("films", "rowsFilms");
+        assertThat(method(spec, "films").returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void splitQuery_asyncDataFetcherIsPublicStatic() {
+        var m = method(specWithSplitQuery("Language", "films"), "films");
+        assertThat(m.modifiers()).containsExactlyInAnyOrder(
+            javax.lang.model.element.Modifier.PUBLIC, javax.lang.model.element.Modifier.STATIC);
+    }
+
+    @Test
+    void splitQuery_asyncDataFetcherTakesEnv() {
+        var m = method(specWithSplitQuery("Language", "films"), "films");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void splitQuery_rowsMethodNameCapitalizesFieldName() {
+        assertThat(specWithSplitQuery("Language", "actors").methodSpecs())
+            .extracting(MethodSpec::name)
+            .contains("rowsActors");
+    }
+
+    @Test
+    void splitQuery_rowsMethodIsPublicStatic() {
+        var m = method(specWithSplitQuery("Language", "films"), "rowsFilms");
+        assertThat(m.modifiers()).containsExactlyInAnyOrder(
+            javax.lang.model.element.Modifier.PUBLIC, javax.lang.model.element.Modifier.STATIC);
+    }
+
+    @Test
+    void splitQuery_rowsMethodTakesTypedKeyList() {
+        var m = method(specWithSplitQuery("Language", "films"), "rowsFilms");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("java.util.List<org.jooq.Row1<java.lang.Integer>>");
+        assertThat(m.parameters()).extracting(p -> p.name()).containsExactly("sources");
+    }
+
+    // ===== @service field with TableBoundReturnType =====
+
+    private static GraphitronField serviceField(String parentType, String name, boolean isList) {
+        var returnWrapper = isList
+            ? (FieldWrapper) new FieldWrapper.List(true, true)
+            : new FieldWrapper.Single(true);
+        var returnType = new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, returnWrapper);
+        var method = new MethodRef(
+            "no.example.FilmService", "getFilms", "java.util.List",
+            List.of(
+                new MethodRef.Param.Sourced("keys",
+                    new BatchKey.RowKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer")))),
+                new MethodRef.Param.Typed("filter", "java.lang.String", new ParamSource.Arg()),
+                new MethodRef.Param.Typed("tenantId", "java.lang.String", new ParamSource.Context())
+            )
+        );
+        return new ChildField.ServiceTableField(
+            parentType, name, null, returnType,
+            List.of(), List.of(), new OrderBySpec.None(), null, method);
+    }
+
+    private static TypeSpec specWithServiceField(String parentType, String fieldName, boolean isList) {
+        return TypeFetcherClassGenerator.generateTypeSpec(parentType, LANGUAGE_TABLE,
+            List.of(serviceField(parentType, fieldName, isList)));
+    }
+
+    @Test
+    void serviceField_list_dataFetcherReturnsCompletableFutureListRecord() {
+        assertThat(method(specWithServiceField("Language", "films", true), "films").returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void serviceField_single_dataFetcherReturnsCompletableFutureRecord() {
+        assertThat(method(specWithServiceField("Language", "film", false), "film").returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<org.jooq.Record>");
+    }
+
+    @Test
+    void serviceField_list_rowsMethodSignature() {
+        var m = method(specWithServiceField("Language", "films", true), "loadFilms");
+        assertThat(m.parameters()).extracting(p -> p.name()).containsExactly("keys", "dfe", "sel");
     }
 }

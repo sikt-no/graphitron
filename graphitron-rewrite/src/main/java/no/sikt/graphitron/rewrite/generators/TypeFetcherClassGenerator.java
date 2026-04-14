@@ -4,18 +4,24 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.RewriteConfig;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
+import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -61,14 +67,20 @@ public class TypeFetcherClassGenerator {
         return generateTypeSpec(typeName, parentTable, fields);
     }
 
-    private static final ClassName ENV                = ClassName.get("graphql.schema", "DataFetchingEnvironment");
-    private static final ClassName TYPE_WIRING        = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring");
-    private static final ClassName WIRING_BUILDER     = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring", "Builder");
-    private static final ClassName RECORD             = ClassName.get("org.jooq", "Record");
-    private static final ClassName RESULT             = ClassName.get("org.jooq", "Result");
-    private static final ClassName SORT_FIELD         = ClassName.get("org.jooq", "SortField");
-    private static final ClassName DSL                = ClassName.get("org.jooq.impl", "DSL");
-    private static final ClassName LIST               = ClassName.get("java.util", "List");
+    private static final ClassName ENV                  = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+    private static final ClassName SELECTED_FIELD       = ClassName.get("graphql.schema", "SelectedField");
+    private static final ClassName TYPE_WIRING          = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring");
+    private static final ClassName WIRING_BUILDER       = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring", "Builder");
+    private static final ClassName COMPLETABLE_FUTURE   = ClassName.get("java.util.concurrent", "CompletableFuture");
+    private static final ClassName LIST                 = ClassName.get("java.util", "List");
+    private static final ClassName RECORD               = ClassName.get("org.jooq", "Record");
+    private static final ClassName RESULT               = ClassName.get("org.jooq", "Result");
+    private static final ClassName ROW                  = ClassName.get("org.jooq", "Row");
+    private static final ClassName SORT_FIELD           = ClassName.get("org.jooq", "SortField");
+    private static final ClassName DSL                  = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName DATA_LOADER          = ClassName.get("org.dataloader", "DataLoader");
+    private static final ClassName DATA_LOADER_FACTORY  = ClassName.get("org.dataloader", "DataLoaderFactory");
+    private static final ClassName GRAPHITRON_CONTEXT   = ClassName.get("no.sikt.graphql", "GraphitronContext");
 
     /**
      * Generates the {@code *Fetchers} class TypeSpec for the given GraphQL type.
@@ -82,6 +94,8 @@ public class TypeFetcherClassGenerator {
         var builder = TypeSpec.classBuilder(className)
             .addModifiers(Modifier.PUBLIC);
 
+        boolean needsGraphitronContextHelper = false;
+
         for (var field : fields) {
             if (field instanceof ChildField.ColumnField && parentTable != null) {
                 // Column fields with a parent table are handled directly in wiring via ColumnFetcher
@@ -89,13 +103,35 @@ public class TypeFetcherClassGenerator {
                 builder.addMethod(buildQueryLookupFetcher(qlf));
             } else if (field instanceof QueryField.QueryTableField qtf) {
                 builder.addMethod(buildQueryTableFetcher(qtf));
+                if (hasContextArg(qtf)) needsGraphitronContextHelper = true;
+            } else if (field instanceof ChildField.ServiceTableField sf && parentTable != null) {
+                builder.addMethod(buildServiceDataFetcher(sf, sf.method(), sf.returnType(), parentTable, className));
+                builder.addMethod(buildServiceRowsMethod(sf, sf.method(), sf.returnType(), sf.returnType().table(), parentTable));
+                needsGraphitronContextHelper = true;
+            } else if (field instanceof ChildField.SplitTableField stf) {
+                builder.addMethod(buildSplitQueryDataFetcher(stf));
+                builder.addMethod(buildSplitRowsMethod(stf));
+            } else if (field instanceof ChildField.SplitLookupTableField slft) {
+                builder.addMethod(buildSplitQueryDataFetcher(slft.name(), slft.batchKey()));
+                builder.addMethod(buildSplitRowsMethod(slft.name(), slft.batchKey()));
             } else {
                 builder.addMethod(buildStub(field.name()));
             }
         }
 
+        if (needsGraphitronContextHelper) {
+            builder.addMethod(buildGraphitronContextHelper());
+        }
+
         builder.addMethod(buildWiringMethod(typeName, className, parentTable, fields));
         return builder.build();
+    }
+
+    /** Returns true if any filter on this field uses a {@link CallSiteExtraction.ContextArg}. */
+    private static boolean hasContextArg(QueryField.QueryTableField qtf) {
+        return qtf.filters().stream()
+            .flatMap(f -> f.callParams().stream())
+            .anyMatch(p -> p.extraction() instanceof CallSiteExtraction.ContextArg);
     }
 
     /**
@@ -126,10 +162,11 @@ public class TypeFetcherClassGenerator {
             .returns(returnType)
             .addParameter(ENV, "env");
 
-        builder.addCode(buildConditionCall(qtf, tablesClass, tableRef));
+        builder.addStatement("var table = $T.$L", tablesClass, tableRef.javaFieldName());
+        builder.addCode(buildConditionCall(qtf));
 
         if (isList) {
-            builder.addCode(buildOrderByCode(qtf.orderBy(), tablesClass, tableRef));
+            builder.addCode(buildOrderByCode(qtf.orderBy()));
             builder.addStatement("return $T.selectMany(env, condition, orderBy)", tableClass);
         } else {
             builder.addStatement("return $T.selectOne(env, condition)", tableClass);
@@ -138,21 +175,21 @@ public class TypeFetcherClassGenerator {
         return builder.build();
     }
 
-    private static CodeBlock buildConditionCall(QueryField.QueryTableField qtf,
-            ClassName tablesClass, TableRef tableRef) {
+    private static CodeBlock buildConditionCall(QueryField.QueryTableField qtf) {
         var code = CodeBlock.builder();
         code.addStatement("var condition = $T.noCondition()", DSL);
         for (var filter : qtf.filters()) {
-            var callArgs = buildCallArgs(filter, tablesClass, tableRef);
+            var callArgs = buildCallArgs(filter);
             code.addStatement("condition = condition.and($T.$L($L))",
                 ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
         }
         return code.build();
     }
 
-    private static CodeBlock buildCallArgs(WhereFilter filter, ClassName tablesClass, TableRef tableRef) {
+    /** Builds the argument list for one condition method call: {@code table} first, then one arg per {@link CallParam}. */
+    private static CodeBlock buildCallArgs(WhereFilter filter) {
         var args = CodeBlock.builder();
-        args.add("$T.$L", tablesClass, tableRef.javaFieldName());
+        args.add("table");
         for (var param : filter.callParams()) {
             args.add(", $L", buildArgExtraction(param, filter.className()));
         }
@@ -179,7 +216,7 @@ public class TypeFetcherClassGenerator {
         };
     }
 
-    private static CodeBlock buildOrderByCode(OrderBySpec orderBy, ClassName tablesClass, TableRef tableRef) {
+    private static CodeBlock buildOrderByCode(OrderBySpec orderBy) {
         var code = CodeBlock.builder();
         switch (orderBy) {
             case OrderBySpec.Fixed fixed -> {
@@ -190,15 +227,14 @@ public class TypeFetcherClassGenerator {
                     for (int i = 0; i < fixed.columns().size(); i++) {
                         var col = fixed.columns().get(i);
                         if (i > 0) parts.add(", ");
-                        parts.add("$T.$L.$L.$L()", tablesClass, tableRef.javaFieldName(),
-                            col.column().javaName(), fixed.jooqMethodName());
+                        parts.add("table.$L.$L()", col.column().javaName(), fixed.jooqMethodName());
                     }
                     code.addStatement("$T<$T<?>> orderBy = $T.of($L)", LIST, SORT_FIELD, LIST, parts.build());
                 }
             }
             case OrderBySpec.Argument arg -> {
                 if (arg.base() != null) {
-                    code.add(buildOrderByCode(arg.base(), tablesClass, tableRef));
+                    code.add(buildOrderByCode(arg.base()));
                 } else {
                     code.addStatement("$T<$T<?>> orderBy = $T.of()", LIST, SORT_FIELD, LIST);
                 }
@@ -246,7 +282,7 @@ public class TypeFetcherClassGenerator {
 
         for (var filter : field.filters()) {
             if (!(filter instanceof GeneratedConditionFilter gcf)) continue;
-            // Declare local variables for ID list keys (List<String> — kept typed to avoid convert() overload ambiguity)
+            // Declare local variables for ID list keys (List<String> — typed to avoid convert() overload ambiguity)
             for (var bp : gcf.bodyParams()) {
                 if (bp.list() && "ID".equals(bp.graphqlTypeName())) {
                     builder.addStatement("$T<$T> $L = env.getArgument($S)",
@@ -258,7 +294,7 @@ public class TypeFetcherClassGenerator {
                 buildLookupCallArgs(gcf));
         }
 
-        builder.addCode(buildOrderByCode(field.orderBy(), tablesClass, tableRef));
+        builder.addCode(buildOrderByCode(field.orderBy()));
         builder.addStatement("return $T.selectMany(env, condition, orderBy)", tableClass);
         return builder.build();
     }
@@ -280,6 +316,233 @@ public class TypeFetcherClassGenerator {
             .addParameter(ENV, "env")
             .addStatement("throw new $T()", UnsupportedOperationException.class)
             .build();
+    }
+
+    // -----------------------------------------------------------------------
+    // ServiceTableField — DataLoader-based async fetcher + batch rows method
+    // -----------------------------------------------------------------------
+
+    /**
+     * Generates a DataLoader-based async data fetcher for a {@link ChildField.ServiceTableField}.
+     *
+     * <p>List/connection: returns {@code CompletableFuture<List<Record>>}.
+     * Single: returns {@code CompletableFuture<Record>}.
+     */
+    private static MethodSpec buildServiceDataFetcher(
+            ChildField.ServiceTableField sf,
+            MethodRef smr,
+            ReturnTypeRef.TableBoundReturnType tb,
+            TableRef prt,
+            String className) {
+
+        boolean isList = tb.wrapper().isList();
+        var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
+        var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
+
+        var sourcesParam = smr.params().stream()
+            .filter(p -> p instanceof MethodRef.Param.Sourced)
+            .map(p -> (MethodRef.Param.Sourced) p)
+            .findFirst()
+            .orElseThrow();
+        var batchKey = sourcesParam.batchKey();
+        TypeName keyType = keyElementType(batchKey);
+        var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
+        String rowsMethodName = sf.rowsMethodName();
+
+        var lambdaBlock = CodeBlock.builder()
+            .add("(keys, batchEnv) -> {\n")
+            .indent()
+            .addStatement("$T dfe = ($T) batchEnv.getKeyContextsList().get(0)", ENV, ENV)
+            .addStatement("$T sel = dfe.getSelectionSet().getField($S)", SELECTED_FIELD, sf.name())
+            .addStatement("return $T.completedFuture($L(keys, dfe, sel))", COMPLETABLE_FUTURE, rowsMethodName)
+            .unindent()
+            .add("}")
+            .build();
+
+        var methodBuilder = MethodSpec.methodBuilder(sf.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(returnType)
+            .addParameter(ENV, "env")
+            .addStatement("$T name = graphitronContext(env).getDataLoaderName(env)", String.class)
+            .addCode(
+                "$T loader = env.getDataLoaderRegistry()\n" +
+                "    .computeIfAbsent(name, k -> $T.newDataLoaderWithContext($L));\n",
+                loaderType, DATA_LOADER_FACTORY, lambdaBlock);
+
+        var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
+        switch (batchKey) {
+            case BatchKey.RowKeyed rk -> {
+                String tableField = prt.javaFieldName();
+                List<ColumnRef> pkCols = rk.keyColumns();
+                var rowArgs = CodeBlock.builder();
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) rowArgs.add(", ");
+                    rowArgs.add("(($T) env.getSource()).get($T.$L.$L)",
+                        RECORD, tablesClass, tableField, pkCols.get(i).javaName());
+                }
+                methodBuilder.addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build());
+            }
+            case BatchKey.RecordKeyed rk -> {
+                String tableField = prt.javaFieldName();
+                List<ColumnRef> pkCols = rk.keyColumns();
+                var intoArgs = CodeBlock.builder();
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) intoArgs.add(", ");
+                    intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
+                }
+                methodBuilder.addStatement("$T key = (($T) env.getSource()).into($L)",
+                    keyType, RECORD, intoArgs.build());
+            }
+            case BatchKey.ObjectBased ob ->
+                methodBuilder.addStatement("$T key = ($T) env.getSource()", keyType, keyType);
+        }
+
+        return methodBuilder.addStatement("return loader.load(key, env)").build();
+    }
+
+    /**
+     * Generates the batch rows method for a {@link ChildField.ServiceTableField}.
+     *
+     * <p>The method extracts arguments from the DFE, calls the service method with the
+     * batch {@code keys} as the sources parameter, and delegates to the table's
+     * {@code selectMany} or {@code selectOne}.
+     */
+    private static MethodSpec buildServiceRowsMethod(
+            ChildField.ServiceTableField sf,
+            MethodRef smr,
+            ReturnTypeRef.TableBoundReturnType tb,
+            TableRef rt,
+            TableRef prt) {
+
+        boolean isList = tb.wrapper().isList();
+        var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        var returnType = isList ? ParameterizedTypeName.get(LIST, listOfRecord) : listOfRecord;
+
+        var sourcesParam = smr.params().stream()
+            .filter(p -> p instanceof MethodRef.Param.Sourced)
+            .map(p -> (MethodRef.Param.Sourced) p)
+            .findFirst()
+            .orElseThrow();
+        TypeName keysElementType = keyElementType(sourcesParam.batchKey());
+
+        var builder = MethodSpec.methodBuilder(sf.rowsMethodName())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(returnType)
+            .addParameter(ParameterizedTypeName.get(LIST, keysElementType), "keys")
+            .addParameter(ENV, "dfe")
+            .addParameter(SELECTED_FIELD, "sel");
+
+        for (var param : smr.params()) {
+            if (param instanceof MethodRef.Param.Typed t) switch (t.source()) {
+                case ParamSource.Arg a ->
+                    builder.addStatement("$T $L = dfe.getArgument($S)", Object.class, t.name(), t.name());
+                case ParamSource.Context c ->
+                    builder.addStatement("$T $L = graphitronContext(dfe).getContextArgument(dfe, $S)", Object.class, t.name(), t.name());
+                default -> {} // DslContext, Table, SourceTable: not applicable here
+            }
+        }
+
+        var serviceCallArgs = smr.params().stream()
+            .map(p -> p instanceof MethodRef.Param.Sourced ? "keys" : p.name())
+            .toList();
+
+        builder.addStatement("$T serviceResult = $T.$L($L)",
+            Object.class,
+            ClassName.bestGuess(smr.className()),
+            smr.methodName(),
+            String.join(", ", serviceCallArgs));
+
+        var tableClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite.types", tb.returnTypeName());
+        String selectManyName = sourcesParam.batchKey().selectManyMethodName();
+        String selectOneName  = sourcesParam.batchKey().selectOneMethodName();
+        if (isList) {
+            builder.addStatement("return $T.$L(keys, dfe, sel, ($T<?>) serviceResult)",
+                tableClass, selectManyName, List.class);
+        } else {
+            builder.addStatement("return $T.$L(keys, dfe, sel, serviceResult)", tableClass, selectOneName);
+        }
+
+        return builder.build();
+    }
+
+    // -----------------------------------------------------------------------
+    // SplitTableField / SplitLookupTableField — CompletableFuture stubs
+    // -----------------------------------------------------------------------
+
+    private static MethodSpec buildSplitQueryDataFetcher(ChildField.SplitTableField field) {
+        return buildSplitQueryDataFetcher(field.name(), field.batchKey());
+    }
+
+    private static MethodSpec buildSplitQueryDataFetcher(String fieldName, BatchKey batchKey) {
+        var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, ParameterizedTypeName.get(LIST, RECORD));
+        return MethodSpec.methodBuilder(fieldName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(returnType)
+            .addParameter(ENV, "env")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    private static MethodSpec buildSplitRowsMethod(ChildField.SplitTableField field) {
+        return buildSplitRowsMethod(field.name(), field.batchKey());
+    }
+
+    private static MethodSpec buildSplitRowsMethod(String fieldName, BatchKey batchKey) {
+        TypeName keysElementType = keyElementType(batchKey);
+        var sourcesType = ParameterizedTypeName.get(LIST, keysElementType);
+        return MethodSpec.methodBuilder("rows" + capitalize(fieldName))
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(sourcesType, "sources")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
+    }
+
+    // -----------------------------------------------------------------------
+    // GraphitronContext helper
+    // -----------------------------------------------------------------------
+
+    private static MethodSpec buildGraphitronContextHelper() {
+        return MethodSpec.methodBuilder("graphitronContext")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(GRAPHITRON_CONTEXT)
+            .addParameter(ENV, "env")
+            .addStatement("return env.getGraphQlContext().get($S)", "graphitronContext")
+            .build();
+    }
+
+    // -----------------------------------------------------------------------
+    // BatchKey helpers — key type construction for DataLoader generics
+    // -----------------------------------------------------------------------
+
+    private static TypeName keyElementType(BatchKey batchKey) {
+        return switch (batchKey) {
+            case BatchKey.RowKeyed rk    -> buildRowKeyType(rk.keyColumns());
+            case BatchKey.RecordKeyed rk -> buildRecordNKeyType(rk.keyColumns());
+            case BatchKey.ObjectBased ob -> ClassName.bestGuess(ob.fqClassName());
+        };
+    }
+
+    private static TypeName buildRowKeyType(List<ColumnRef> keyColumns) {
+        if (keyColumns.isEmpty()) return ROW;
+        ClassName rowNClass = ClassName.get("org.jooq", "Row" + keyColumns.size());
+        TypeName[] typeArgs = keyColumns.stream()
+            .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
+            .toArray(TypeName[]::new);
+        return ParameterizedTypeName.get(rowNClass, typeArgs);
+    }
+
+    private static TypeName buildRecordNKeyType(List<ColumnRef> keyColumns) {
+        if (keyColumns.isEmpty()) return RECORD;
+        ClassName recordNClass = ClassName.get("org.jooq", "Record" + keyColumns.size());
+        TypeName[] typeArgs = keyColumns.stream()
+            .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
+            .toArray(TypeName[]::new);
+        return ParameterizedTypeName.get(recordNClass, typeArgs);
+    }
+
+    private static String capitalize(String name) {
+        return name.isEmpty() ? name : Character.toUpperCase(name.charAt(0)) + name.substring(1);
     }
 
     /**
