@@ -20,8 +20,8 @@ GraphitronSchema
   └── Map<String, GraphitronField>  (one per field)
       ↓
 Generators
-  ├── FieldsCodeGenerator  →  rewrite.types.*Fields
-  └── TableCodeGenerator   →  rewrite.tables.*
+  ├── TypeFieldsGenerator  →  rewrite.types.*Fields
+  └── TypeClassGenerator   →  rewrite.types.*
 ```
 
 Each sealed variant maps to specific generator output. The sections below show the full
@@ -154,26 +154,35 @@ public static CompletableFuture<List<Record>> actors(DataFetchingEnvironment env
 public static List<List<Record>> loadActors(List<Record> sourceRows, SelectedField sel, ...) { ... }
 ```
 
-### `*Tables` class (`rewrite.tables.<TableName>`)
+### `*` class (`rewrite.types.<TypeName>`)
 
-One class per distinct jOOQ table backing a `TableType` or `NodeType`.
+One class per GraphQL type (e.g. `Film` for `type Film @table`). Named after the GraphQL type,
+not the SQL table — two GraphQL types mapped to the same table each get their own class.
 
 ```java
+// SELECT list builder — iterates the selection set, adds table columns for requested fields
+List<Field<?>>       fields(DataFetchingFieldSelectionSet sel)
+
 // Top-level queries (root Query/Mutation fields)
 Result<Record>       selectMany(DataFetchingEnvironment env, Condition condition, List<SortField<?>> orderBy)
 Record               selectOne (DataFetchingEnvironment env, Condition condition)
 
 // Inline nested data (ChildField.TableField / LookupTableField) — returns a multiset expression
-Field<Result<Record>> subselectMany(DataFetchingFieldSelectionSet sel, Condition condition, List<SortField<?>> orderBy)
-Field<Record>         subselectOne (DataFetchingFieldSelectionSet sel, Condition condition)
+Field<Result<Record>> subselectMany(DataFetchingEnvironment env, SelectedField sel, Condition condition, List<SortField<?>> orderBy)
+Field<Record>         subselectOne (DataFetchingEnvironment env, SelectedField sel, Condition condition)
 
-// DataLoader batch queries (SplitTableField, service fields)
-List<List<Record>>  selectMany(List<? extends Row> keys, SelectedField sel, List<?> serviceRecords)
-List<Record>        selectOne (List<? extends Row> keys, SelectedField sel, Object serviceRecord)
+// DataLoader batch queries (SplitTableField, Row-keyed service fields)
+List<List<Record>>  selectManyByRowKeys(List<? extends Row> keys, DataFetchingEnvironment env, SelectedField sel, List<?> serviceRecords)
+List<Record>        selectOneByRowKeys (List<? extends Row> keys, DataFetchingEnvironment env, SelectedField sel, Object serviceRecord)
+
+// DataLoader batch queries (Record-keyed service fields — TableRecord or RecordN parents)
+List<List<Record>>  selectManyByRecordKeys(List<? extends Record> keys, DataFetchingEnvironment env, SelectedField sel, List<?> serviceRecords)
+List<Record>        selectOneByRecordKeys (List<? extends Record> keys, DataFetchingEnvironment env, SelectedField sel, Object serviceRecord)
 ```
 
-`DataFetchingFieldSelectionSet` and `SelectedField` are passed to all methods so that
-implementations can build selection-aware queries (only fetch requested columns).
+`env` is threaded through all methods for context arguments (e.g. tenant ID). `SelectedField` and
+`DataFetchingFieldSelectionSet` allow implementations to build selection-aware queries (only fetch
+requested columns). The batch overloads are currently stubs throwing `UnsupportedOperationException`.
 
 ---
 
@@ -246,8 +255,8 @@ type Film @table(name: "FILM") {
 ```
 
 Path elements can contain:
-- `key` — a jOOQ foreign key name
-- `table` — a jOOQ table name (for multi-hop paths)
+- `key` — explicit jOOQ foreign key name (e.g. `{key: "FILM__FILM_LANGUAGE_ID_FKEY"}`)
+- `table` — implicit FK resolution: finds the unique FK from the current table to the named target table automatically (e.g. `{table: "LANGUAGE"}`); build fails if multiple FKs exist between the two tables
 - `condition` — extra SQL condition on this step (`{className, method}`)
 
 Without `@splitQuery` or arguments → inline subquery via `Tables.subselectMany/subselectOne`.

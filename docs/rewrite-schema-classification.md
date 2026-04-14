@@ -150,7 +150,7 @@ When different variants of a concept carry different data, use a sealed interfac
 
 `BatchKey` illustrates the pattern: `RowKeyed` and `RecordKeyed` carry `keyColumns: List<ColumnRef>`, while `ObjectBased` carries `fqClassName: String`. None carry fields they don't use. The compiler enforces exhaustive switches — when a new variant is added, every switch that doesn't handle it becomes a compile error.
 
-Both `GraphitronSchemaValidator` and `FieldsCodeGenerator` switch on `BatchKey` rather than checking `instanceof` chains. The same exhaustiveness discipline applies to `ParamSource`, `ReturnTypeRef`, `OrderBySpec`, `JoinStep`, and `WhereFilter`.
+Both `GraphitronSchemaValidator` and `TypeFieldsGenerator` switch on `BatchKey` rather than checking `instanceof` chains. The same exhaustiveness discipline applies to `ParamSource`, `ReturnTypeRef`, `OrderBySpec`, `JoinStep`, and `WhereFilter`.
 
 ### Classification belongs at the parse boundary
 

@@ -26,12 +26,12 @@ GraphitronSchemaBuilder  →  GraphitronSchemaValidator  →  Generators (partia
 
 | Generator / method | State |
 |---|---|
-| `FieldsCodeGenerator` — `wiring()` | **Done** — registers all field DataFetchers via method references |
-| `FieldsCodeGenerator` — `ColumnField` data fetcher | **Done** — reads from `env.getSource()` via `TABLE.COLUMN` |
-| `FieldsCodeGenerator` — `@service` field DataLoader + `load*()` body | **Done** — `computeIfAbsent`, `newDataLoaderWithContext`, delegates to service |
-| `FieldsCodeGenerator` — `@splitQuery` field wiring | **Done** — async fetcher stub + typed `rows*()` stub |
-| `TableCodeGenerator` — `selectMany` / `selectOne` | **Done** — `getDslContext().select(fields(env.getSelectionSet())).from(table).where(condition)...` |
-| `TableCodeGenerator` — `subselectMany` / `subselectOne` | **Done** — `DSL.multiset(DSL.select(fields(sel.getSelectionSet())).from(table).where(condition)...)` |
+| `TypeFieldsGenerator` — `wiring()` | **Done** — registers all field DataFetchers via method references |
+| `TypeFieldsGenerator` — `ColumnField` data fetcher | **Done** — reads from `env.getSource()` via `TABLE.COLUMN` |
+| `TypeFieldsGenerator` — `@service` field DataLoader + `load*()` body | **Done** — `computeIfAbsent`, `newDataLoaderWithContext`, delegates to service |
+| `TypeFieldsGenerator` — `@splitQuery` field wiring | **Done** — async fetcher stub + typed `rows*()` stub |
+| `TypeClassGenerator` — `selectMany` / `selectOne` | **Done** — `getDslContext().select(fields(env.getSelectionSet())).from(table).where(condition)...` |
+| `TypeClassGenerator` — `subselectMany` / `subselectOne` | **Done** — `DSL.multiset(DSL.select(fields(sel.getSelectionSet())).from(table).where(condition)...)` |
 | All other field types | Stub — signature generated, body throws `UnsupportedOperationException` |
 
 The rewrite pipeline produces Java code for the cases above. Full SQL generation across all field types is Phase 2.
@@ -181,7 +181,7 @@ Special: `NotGeneratedField` (explicit `@notGenerated`), `UnclassifiedField` (ca
 The rewrite generators produce:
 
 - **`rewrite.types.*Fields`** — one class per GraphQL type with a static method per field and a `wiring()` method that registers them all as DataFetchers via method references (e.g. `FilmFields::title`). GraphQL-Java only calls the methods for fields present in the selection set.
-- **`rewrite.tables.*`** — one class per jOOQ table with `selectMany`/`selectOne` (top-level queries) and `subselectMany`/`subselectOne` (returns `Field<Result<Record>>` — a jOOQ multiset expression for inline nested data).
+- **`rewrite.types.*`** — one class per GraphQL type (e.g. `Film`) with `selectMany`/`selectOne` (top-level queries) and `subselectMany`/`subselectOne` (returns `Field<Result<Record>>` — a jOOQ multiset expression for inline nested data).
 
 No DTOs, no TypeMappers. DataFetchers return `Result<Record>`; GraphQL-Java traverses the records using the registered field DataFetchers.
 
