@@ -104,7 +104,7 @@ public class FieldsCodeGenerator {
             if (field instanceof QueryField.QueryTableField qtf) {
                 for (var filter : qtf.filters()) {
                     if (filter instanceof WhereFilter.TextEnumColumnFilter tf) {
-                        builder.addField(buildTextEnumMapField(qtf.name(), tf));
+                        builder.addField(buildTextEnumMapField(tf));
                     }
                 }
             }
@@ -165,7 +165,7 @@ public class FieldsCodeGenerator {
             .addParameter(ENV, "env");
 
         // Build condition from filters
-        builder.addCode(buildConditionCode(qtf.name(), qtf.filters(), tablesClass, tableRef));
+        builder.addCode(buildConditionCode(qtf.filters(), tablesClass, tableRef));
 
         if (isList) {
             // Build orderBy from spec
@@ -182,14 +182,14 @@ public class FieldsCodeGenerator {
      * Generates the {@code Condition condition = ...} local variable from a list of
      * {@link WhereFilter}s. When the list is empty, emits {@code DSL.noCondition()}.
      */
-    private CodeBlock buildConditionCode(String fieldName, java.util.List<WhereFilter> filters, ClassName tablesClass, TableRef tableRef) {
+    private CodeBlock buildConditionCode(java.util.List<WhereFilter> filters, ClassName tablesClass, TableRef tableRef) {
         var code = CodeBlock.builder();
         code.addStatement("var condition = $T.noCondition()", DSL);
         for (var filter : filters) {
             switch (filter) {
                 case WhereFilter.ColumnFilter cf -> addScalarCondition(code, cf, tablesClass, tableRef);
                 case WhereFilter.EnumColumnFilter ef -> addEnumCondition(code, ef, tablesClass, tableRef);
-                case WhereFilter.TextEnumColumnFilter tf -> addTextEnumCondition(code, tf, fieldName, tablesClass, tableRef);
+                case WhereFilter.TextEnumColumnFilter tf -> addTextEnumCondition(code, tf, tablesClass, tableRef);
                 default -> {} // InputFilter, ConditionFilter: deferred
             }
         }
@@ -229,8 +229,8 @@ public class FieldsCodeGenerator {
 
     /** Text enum: {@code TABLE.COL.eq(DSL.val(FIELD_MAP.get(arg), TABLE.COL))} */
     private void addTextEnumCondition(CodeBlock.Builder code, WhereFilter.TextEnumColumnFilter tf,
-            String fieldName, ClassName tablesClass, TableRef tableRef) {
-        String mapFieldName = textEnumMapFieldName(fieldName, tf.name());
+            ClassName tablesClass, TableRef tableRef) {
+        String mapFieldName = tf.mapFieldName();
         String eq = "$T.$L.$L.eq($T.val($L.get(env.<$T>getArgument($S)), $T.$L.$L))";
         Object[] args = {tablesClass, tableRef.javaFieldName(), tf.column().javaName(),
             DSL, mapFieldName, String.class, tf.name(),
@@ -243,7 +243,7 @@ public class FieldsCodeGenerator {
         }
     }
 
-    private FieldSpec buildTextEnumMapField(String fieldName, WhereFilter.TextEnumColumnFilter tf) {
+    private FieldSpec buildTextEnumMapField(WhereFilter.TextEnumColumnFilter tf) {
         var MAP = ClassName.get(java.util.Map.class);
         var mapType = ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(String.class));
         var mapEntries = CodeBlock.builder();
@@ -253,15 +253,13 @@ public class FieldsCodeGenerator {
             mapEntries.add("$S, $S", entry.getKey(), entry.getValue());
             first = false;
         }
-        return FieldSpec.builder(mapType, textEnumMapFieldName(fieldName, tf.name()))
+        return FieldSpec.builder(mapType, tf.mapFieldName())
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .initializer("$T.of($L)", MAP, mapEntries.build())
             .build();
     }
 
-    private static String textEnumMapFieldName(String fieldName, String argName) {
-        return fieldName.toUpperCase() + "_" + argName.toUpperCase() + "_MAP";
-    }
+
 
     private static Object[] concat(Object[] a, Object[] b) {
         var result = new Object[a.length + b.length];

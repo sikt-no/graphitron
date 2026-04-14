@@ -7,7 +7,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import javax.lang.model.element.Modifier;
@@ -60,26 +60,13 @@ public class TableCodeGenerator {
     private static final ClassName ARRAY_LIST = ClassName.get(ArrayList.class);
 
     /**
-     * Maps a GraphQL field name to its resolved jOOQ column java name, used to generate the
-     * {@code fields()} method that assembles the SELECT list based on the selection set.
+     * @param tableRef      the resolved table reference with jOOQ field/class names
+     * @param columnFields  the scalar column fields to include in {@code fields()}, in declaration order
      */
-    public record ScalarColumn(String graphqlFieldName, String jooqColumnJavaName) {}
-
-    /**
-     * Generates the table class with:
-     * <ul>
-     *   <li>{@code fields()} — selection-set-aware SELECT list assembly</li>
-     *   <li>{@code selectMany} / {@code selectOne} — root query methods using {@code fields()}</li>
-     *   <li>Remaining overloads as stubs</li>
-     * </ul>
-     *
-     * @param tableRef the resolved table reference with jOOQ field/class names
-     * @param scalarColumns the scalar columns to include in {@code fields()}, in declaration order
-     */
-    public TypeSpec generate(TableRef tableRef, List<ScalarColumn> scalarColumns) {
+    public TypeSpec generate(TableRef tableRef, List<ChildField.ColumnField> columnFields) {
         return TypeSpec.classBuilder(tableRef.javaClassName())
             .addModifiers(Modifier.PUBLIC)
-            .addMethod(buildFieldsMethod(tableRef, scalarColumns))
+            .addMethod(buildFieldsMethod(tableRef, columnFields))
             .addMethod(buildSelectManyMethod(tableRef))
             .addMethod(buildSelectOneMethod(tableRef))
             .addMethod(buildSelectManyFromRowServiceMethod())
@@ -107,7 +94,7 @@ public class TableCodeGenerator {
      * provides {@code getArguments()} for WHERE clauses and {@code getSelectionSet()} for
      * recursive drill-down.
      */
-    private MethodSpec buildFieldsMethod(TableRef tableRef, List<ScalarColumn> scalarColumns) {
+    private MethodSpec buildFieldsMethod(TableRef tableRef, List<ChildField.ColumnField> columnFields) {
         var tablesClass = tablesClassName();
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
@@ -122,9 +109,9 @@ public class TableCodeGenerator {
         builder.addCode("for (var entry : sel.getFieldsGroupedByResultKey().entrySet()) {\n");
         builder.addCode("    var sf = entry.getValue().get(0);\n");
         builder.addCode("    switch (sf.getName()) {\n");
-        for (var col : scalarColumns) {
+        for (var cf : columnFields) {
             builder.addCode("        case $S -> fields.add(table.$L);\n",
-                col.graphqlFieldName(), col.jooqColumnJavaName());
+                cf.name(), cf.column().javaName());
         }
         builder.addCode("        default -> { } // nested/unhandled fields\n");
         builder.addCode("    }\n");

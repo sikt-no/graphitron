@@ -61,8 +61,12 @@ public sealed interface WhereFilter
      * The mapping is built at build time from the GraphQL enum definition: each value's database
      * string comes from {@code @field(name:)} if present, otherwise the enum value name itself.
      *
+     * <p>{@code mapFieldName} is the generated static field name for the lookup map
+     * (e.g. {@code "FILMS_TEXTRATING_MAP"}), computed at build time from the owning field name
+     * and argument name to avoid collisions.
+     *
      * <p>Generated code: a static {@code Map<String, String>} field plus
-     * {@code TABLE.COL.eq(DSL.val(MAP.get(env.<String>getArgument("name")), TABLE.COL))}.
+     * {@code TABLE.COL.eq(DSL.val(FILMS_TEXTRATING_MAP.get(env.<String>getArgument("name")), TABLE.COL))}.
      */
     record TextEnumColumnFilter(
         String name,
@@ -70,7 +74,8 @@ public sealed interface WhereFilter
         boolean nonNull,
         boolean list,
         ColumnRef column,
-        Map<String, String> valueMapping
+        Map<String, String> valueMapping,
+        String mapFieldName
     ) implements WhereFilter {}
 
     /**

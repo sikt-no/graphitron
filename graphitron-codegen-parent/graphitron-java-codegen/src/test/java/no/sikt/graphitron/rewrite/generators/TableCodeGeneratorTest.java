@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.api.AfterEach;
@@ -36,9 +37,11 @@ class TableCodeGeneratorTest {
         GeneratorConfig.clear();
     }
 
-    private static final List<TableCodeGenerator.ScalarColumn> FILM_COLUMNS = List.of(
-        new TableCodeGenerator.ScalarColumn("title", "TITLE"),
-        new TableCodeGenerator.ScalarColumn("filmId", "FILM_ID")
+    private static final List<ChildField.ColumnField> FILM_COLUMNS = List.of(
+        new ChildField.ColumnField("Film", "title", null, "title",
+            new ColumnRef("title", "TITLE", "java.lang.String"), false),
+        new ChildField.ColumnField("Film", "filmId", null, "film_id",
+            new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), false)
     );
 
     private static TypeSpec spec() {

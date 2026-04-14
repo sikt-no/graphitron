@@ -515,7 +515,8 @@ class FieldBuilder {
                 // Check if GraphQL type is an enum mapped to a text column
                 var textEnumMapping = buildTextEnumMapping(typeName);
                 if (textEnumMapping != null) {
-                    result.add(new WhereFilter.TextEnumColumnFilter(name, typeName, nonNull, list, columnRef, textEnumMapping));
+                    String mapFieldName = fieldDef.getName().toUpperCase() + "_" + name.toUpperCase() + "_MAP";
+                    result.add(new WhereFilter.TextEnumColumnFilter(name, typeName, nonNull, list, columnRef, textEnumMapping, mapFieldName));
                 } else {
                     result.add(new WhereFilter.ColumnFilter(name, typeName, nonNull, list, columnRef));
                 }

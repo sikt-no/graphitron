@@ -34,7 +34,7 @@ public class TableClassGenerator {
 
         // Group table types by jOOQ class name, keeping the first TableRef per class
         var tablesByClassName = new LinkedHashMap<String, TableRef>();
-        var columnsByClassName = new LinkedHashMap<String, List<TableCodeGenerator.ScalarColumn>>();
+        var columnsByClassName = new LinkedHashMap<String, List<ChildField.ColumnField>>();
 
         for (var type : schema.types().values()) {
             if (!(type instanceof GraphitronType.TableBackedType tbt)) continue;
@@ -45,13 +45,12 @@ public class TableClassGenerator {
             tablesByClassName.putIfAbsent(className, tableRef);
             var columns = columnsByClassName.computeIfAbsent(className, k -> new ArrayList<>());
 
-            // Collect scalar column fields from this type
             var seen = columns.stream()
-                .map(TableCodeGenerator.ScalarColumn::jooqColumnJavaName)
+                .map(cf -> cf.column().javaName())
                 .collect(Collectors.toSet());
             for (var field : schema.fieldsOf(tbt.name())) {
                 if (field instanceof ChildField.ColumnField cf && !seen.contains(cf.column().javaName())) {
-                    columns.add(new TableCodeGenerator.ScalarColumn(cf.name(), cf.column().javaName()));
+                    columns.add(cf);
                     seen.add(cf.column().javaName());
                 }
             }
