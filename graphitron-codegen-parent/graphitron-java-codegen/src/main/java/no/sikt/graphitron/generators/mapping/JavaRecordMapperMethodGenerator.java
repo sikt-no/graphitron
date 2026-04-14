@@ -6,7 +6,6 @@ import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.AbstractMapperMethodGenerator;
-import no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks;
 import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -38,12 +37,17 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
         return getMapperSpecBuilder(target).build();
     }
 
+
+    @Override
+    protected CodeBlock iterateRecords(MapperContext context){
+        return iterateRecords(context, VAR_ARGS);
+    }
+
     /**
      * @return Code for setting the record data from input types.
      */
     @NotNull
-    @Override
-    protected CodeBlock iterateRecords(MapperContext context) {
+    protected CodeBlock iterateRecords(MapperContext context, String argumentSetName) {
         if (context.isIterable() && !context.hasRecordReference()) {
             return CodeBlock.empty(); // Can not allow this, because input type may contain multiple fields. These can not be mapped to a single field in any reasonable way.
         }
@@ -82,13 +86,11 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 } else if (innerContext.hasRecordReference()) {
                     innerCode.add(innerContext.getRecordSetMappingBlock());
                 } else if (toRecord) {
-                    var savedArgsVar = nextSavedArgsVar();
+                    var nextArgsVar = nextArgPresenceVar();
                     innerCode.add(
                             CodeBlock.builder()
-                                    .declare(savedArgsVar, "$N", VAR_ARGS)
-                                    .addStatement("$1N = $1N.child($2S)", VAR_ARGS, innerField.getName())
-                                    .add(iterateRecords(innerContext))
-                                    .addStatement("$N = $N", VAR_ARGS, savedArgsVar)
+                                    .declare(nextArgsVar, "$N.child($S)", argumentSetName, innerField.getName())
+                                    .add(iterateRecords(innerContext, nextArgsVar))
                                     .build()
                     );
                 } else {
@@ -107,7 +109,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 var presenceCheck = isNonRecordWrapper && toRecord
                         ? CodeBlock.empty()
                         : toRecord
-                            ? CodeBlock.of("$L.hasField($S)", VAR_ARGS, innerField.getName())
+                            ? CodeBlock.of("$L.hasField($S)", argumentSetName, innerField.getName())
                             : selectionSetLookup(innerContext.getPath(), false, false);
                 var condition = nullBlock.isEmpty()
                         ? presenceCheck

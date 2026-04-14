@@ -27,7 +27,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethodGenerator<GenerationField, RecordObjectSpecification<?>> {
     private final GenerationField localField;
     protected final boolean toRecord;
-    private int savedArgsCounter = 0;
+    private int argPresenceCounter = 0;
 
     public AbstractMapperMethodGenerator(GenerationField localField, ProcessedSchema processedSchema, boolean toRecord) {
         super(processedSchema.getRecordType(localField.getContainerTypeName()), processedSchema);
@@ -36,8 +36,8 @@ abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethod
         this.toRecord = toRecord;
     }
 
-    protected String nextSavedArgsVar() {
-        return VAR_SAVED_ARGS + savedArgsCounter++;
+    protected String nextArgPresenceVar() {
+        return VAR_NEXT_ARGS + argPresenceCounter++;
     }
 
     public GenerationField getLocalField() {
