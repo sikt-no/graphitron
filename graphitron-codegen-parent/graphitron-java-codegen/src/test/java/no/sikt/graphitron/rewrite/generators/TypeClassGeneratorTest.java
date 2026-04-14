@@ -16,14 +16,12 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit tests for {@link TableCodeGenerator}. Tests verify structural properties of the generated
+ * Unit tests for {@link TypeClassGenerator}. Tests verify structural properties of the generated
  * TypeSpec (method names, return types, parameter signatures) — not the generated code body.
  * Code correctness is verified by compiling the generated output against real jOOQ classes in
  * the {@code graphitron-rewrite-test-spec} module.
  */
-class TableCodeGeneratorTest {
-
-    private static final TableCodeGenerator GEN = new TableCodeGenerator();
+class TypeClassGeneratorTest {
 
     @BeforeEach
     void setup() {
@@ -45,7 +43,7 @@ class TableCodeGeneratorTest {
     );
 
     private static TypeSpec spec() {
-        return GEN.generate("Film",
+        return TypeClassGenerator.buildTypeSpec("Film",
             new TableRef("film", "FILM", "Film",
                 List.of(new ColumnRef("id", "ID", "java.lang.Integer"))),
             FILM_COLUMNS);

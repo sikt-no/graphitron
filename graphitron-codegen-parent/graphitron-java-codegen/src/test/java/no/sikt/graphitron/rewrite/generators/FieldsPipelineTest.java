@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Integration tests for the full fields class pipeline: SDL schema → {@link GraphitronSchema} →
  * generated class list.
  *
- * <p>Verifies that {@link FieldsClassGenerator} produces exactly one {@code *Fields} class per
+ * <p>Verifies that {@link TypeFieldsGenerator} produces exactly one {@code *Fields} class per
  * {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableType} and
  * {@link no.sikt.graphitron.rewrite.model.GraphitronType.RootType}, named after the GraphQL type
  * (not the SQL table), and skips all other type categories.
@@ -258,7 +258,7 @@ class FieldsPipelineTest {
             type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
             type Query { dummy: String }
             """);
-        var fieldsClasses = FieldsClassGenerator.generate(schema);
+        var fieldsClasses = TypeFieldsGenerator.generate(schema);
         var fieldsClassNames = fieldsClasses.stream().map(TypeSpec::name).toList();
         var wiring = GraphitronWiringClassGenerator.generate(fieldsClassNames);
 
@@ -279,13 +279,13 @@ class FieldsPipelineTest {
     // ===== Helpers =====
 
     private List<String> generateNames(String sdl) {
-        return FieldsClassGenerator.generate(buildSchema(sdl)).stream()
+        return TypeFieldsGenerator.generate(buildSchema(sdl)).stream()
             .map(TypeSpec::name)
             .toList();
     }
 
     private TypeSpec findSpec(String className, String sdl) {
-        return FieldsClassGenerator.generate(buildSchema(sdl)).stream()
+        return TypeFieldsGenerator.generate(buildSchema(sdl)).stream()
             .filter(t -> t.name().equals(className))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Class not found: " + className));

@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Integration tests for the full table class pipeline: SDL schema → {@link GraphitronSchema} →
  * generated class list.
  *
- * <p>Verifies that {@link TableClassGenerator} produces exactly one class per distinct SQL table
+ * <p>Verifies that {@link TypeClassGenerator} produces exactly one class per distinct SQL table
  * referenced by a {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableType}, named after
  * the table (not the GraphQL type name), and skips all other types.
  */
@@ -128,14 +128,14 @@ class TablePipelineTest {
     // ===== Helpers =====
 
     private no.sikt.graphitron.javapoet.TypeSpec findSpec(String className, String sdl) {
-        return TableClassGenerator.generate(buildSchema(sdl)).stream()
+        return TypeClassGenerator.generate(buildSchema(sdl)).stream()
             .filter(t -> t.name().equals(className))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Class not found: " + className));
     }
 
     private List<String> generate(String sdl) {
-        return TableClassGenerator.generate(buildSchema(sdl)).stream()
+        return TypeClassGenerator.generate(buildSchema(sdl)).stream()
             .map(t -> t.name())
             .toList();
     }

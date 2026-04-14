@@ -26,14 +26,13 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit tests for {@link FieldsCodeGenerator}. Tests verify structural properties of the generated
+ * Unit tests for {@link TypeFieldsGenerator}. Tests verify structural properties of the generated
  * TypeSpec (method names, return types, parameter signatures) — not the generated code body.
  * Code correctness is verified by compiling and executing the generated output in the
  * {@code graphitron-rewrite-test-spec} module.
  */
-class FieldsCodeGeneratorTest {
+class TypeFieldsGeneratorTest {
 
-    private static final FieldsCodeGenerator GEN = new FieldsCodeGenerator();
     private static final TableRef FILM_TABLE = new TableRef("film", "FILM", "Film", List.of());
     private static final TableRef LANGUAGE_TABLE = new TableRef("language", "LANGUAGE", "Language",
         List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer")));
@@ -96,14 +95,14 @@ class FieldsCodeGeneratorTest {
     }
 
     private static TypeSpec specWithServiceField(String parentType, String fieldName, boolean isList) {
-        return GEN.generate(parentType, LANGUAGE_TABLE, List.of(serviceField(parentType, fieldName, isList)));
+        return TypeFieldsGenerator.generateTypeSpec(parentType, LANGUAGE_TABLE, List.of(serviceField(parentType, fieldName, isList)));
     }
 
     // ===== Class structure =====
 
     @Test
     void generate_classNameIsTypeNamePlusFields() {
-        var spec = GEN.generate("Film", null, List.of());
+        var spec = TypeFieldsGenerator.generateTypeSpec("Film", null, List.of());
         assertThat(spec.name()).isEqualTo("FilmFields");
     }
 
@@ -111,7 +110,7 @@ class FieldsCodeGeneratorTest {
 
     @Test
     void stubField_signature() {
-        var spec = GEN.generate("Film", null, List.of(columnField("title", "title", "TITLE")));
+        var spec = TypeFieldsGenerator.generateTypeSpec("Film", null, List.of(columnField("title", "title", "TITLE")));
         var m = method(spec, "title");
         assertThat(m.returnType().toString()).isEqualTo("java.lang.Object");
         assertThat(m.parameters()).extracting(p -> p.name()).containsExactly("env");
@@ -122,7 +121,7 @@ class FieldsCodeGeneratorTest {
         var fields = List.<GraphitronField>of(
             columnField("title", "title", "TITLE"),
             columnField("releaseYear", "release_year", "RELEASE_YEAR"));
-        var spec = GEN.generate("Film", null, fields);
+        var spec = TypeFieldsGenerator.generateTypeSpec("Film", null, fields);
         assertThat(spec.methodSpecs()).extracting(MethodSpec::name).contains("title", "releaseYear");
     }
 
@@ -131,7 +130,7 @@ class FieldsCodeGeneratorTest {
     @Test
     void columnField_signature() {
         var fields = List.<GraphitronField>of(columnField("title", "title", "TITLE"));
-        var spec = GEN.generate("Film", FILM_TABLE, fields);
+        var spec = TypeFieldsGenerator.generateTypeSpec("Film", FILM_TABLE, fields);
         var m = method(spec, "title");
         assertThat(m.returnType().toString()).isEqualTo("java.lang.Object");
         assertThat(m.parameters()).extracting(p -> p.name()).containsExactly("env");
@@ -140,7 +139,7 @@ class FieldsCodeGeneratorTest {
     @Test
     void columnField_isNotStub() {
         var fields = List.<GraphitronField>of(columnField("title", "title", "TITLE"));
-        var spec = GEN.generate("Film", FILM_TABLE, fields);
+        var spec = TypeFieldsGenerator.generateTypeSpec("Film", FILM_TABLE, fields);
         assertThat(method(spec, "title").code().toString()).doesNotContain("UnsupportedOperationException");
     }
 
@@ -148,7 +147,7 @@ class FieldsCodeGeneratorTest {
 
     @Test
     void wiring_signature() {
-        var spec = GEN.generate("Film", null, List.of());
+        var spec = TypeFieldsGenerator.generateTypeSpec("Film", null, List.of());
         var w = method(spec, "wiring");
         assertThat(w.returnType().toString())
             .isEqualTo("graphql.schema.idl.TypeRuntimeWiring.Builder");
@@ -156,7 +155,7 @@ class FieldsCodeGeneratorTest {
 
     @Test
     void wiring_noFields_noDataFetchers() {
-        var spec = GEN.generate("Film", null, List.of());
+        var spec = TypeFieldsGenerator.generateTypeSpec("Film", null, List.of());
         var w = method(spec, "wiring");
         assertThat(w.code().toString()).doesNotContain("dataFetcher(");
     }
@@ -166,7 +165,7 @@ class FieldsCodeGeneratorTest {
         var fields = List.<GraphitronField>of(
             columnField("title", "title", "TITLE"),
             columnField("releaseYear", "release_year", "RELEASE_YEAR"));
-        var spec = GEN.generate("Film", FILM_TABLE, fields);
+        var spec = TypeFieldsGenerator.generateTypeSpec("Film", FILM_TABLE, fields);
         var w = method(spec, "wiring");
         assertThat(w.code().toString()).contains("dataFetcher(\"title\"");
         assertThat(w.code().toString()).contains("dataFetcher(\"releaseYear\"");
@@ -177,7 +176,7 @@ class FieldsCodeGeneratorTest {
     @Test
     void queryTableField_list_returnsResultRecord() {
         var field = queryTableField("films", true, List.of(), new OrderBySpec.None());
-        var spec = GEN.generate("Query", null, List.of(field));
+        var spec = TypeFieldsGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "films").returnType().toString())
             .isEqualTo("org.jooq.Result<org.jooq.Record>");
     }
@@ -185,7 +184,7 @@ class FieldsCodeGeneratorTest {
     @Test
     void queryTableField_single_returnsRecord() {
         var field = queryTableField("film", false, List.of(), new OrderBySpec.None());
-        var spec = GEN.generate("Query", null, List.of(field));
+        var spec = TypeFieldsGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "film").returnType().toString())
             .isEqualTo("org.jooq.Record");
     }
@@ -194,7 +193,7 @@ class FieldsCodeGeneratorTest {
 
     @Test
     void splitQuery_generatesAsyncFetcherAndRowsMethod() {
-        var spec = GEN.generate("Language", null, List.of(splitQueryField("Language", "films")));
+        var spec = TypeFieldsGenerator.generateTypeSpec("Language", null, List.of(splitQueryField("Language", "films")));
         assertThat(spec.methodSpecs()).extracting(MethodSpec::name)
             .contains("films", "rowsFilms", "wiring");
         assertThat(method(spec, "films").returnType().toString())

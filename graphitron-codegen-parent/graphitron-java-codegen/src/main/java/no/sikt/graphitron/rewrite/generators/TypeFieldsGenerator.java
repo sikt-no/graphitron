@@ -28,7 +28,7 @@ import java.util.List;
  * Generates a {@link TypeSpec} for one {@code <TypeName>Fields} class in {@code rewrite.types}.
  *
  * <p>The class is named after the GraphQL type (e.g. {@code FilmFields} for GraphQL type
- * {@code Film}). This is distinct from the SQL-scope class in {@code rewrite.tables}, which is
+ * {@code Film}). This is distinct from the SQL-scope class in {@code rewrite.types}, which is
  * named after the jOOQ table class.
  *
  * <p>Each class contains:
@@ -47,7 +47,29 @@ import java.util.List;
  *   <li>A {@code wiring()} method that registers each data fetcher by method reference.</li>
  * </ul>
  */
-public class FieldsCodeGenerator {
+public class TypeFieldsGenerator {
+
+    public static List<TypeSpec> generate(no.sikt.graphitron.rewrite.GraphitronSchema schema) {
+        return schema.types().entrySet().stream()
+            .filter(e -> e.getValue() instanceof no.sikt.graphitron.rewrite.model.GraphitronType.TableType
+                      || e.getValue() instanceof no.sikt.graphitron.rewrite.model.GraphitronType.NodeType
+                      || e.getValue() instanceof no.sikt.graphitron.rewrite.model.GraphitronType.RootType)
+            .map(java.util.Map.Entry::getKey)
+            .sorted()
+            .map(typeName -> generateForType(schema, typeName))
+            .toList();
+    }
+
+    private static TypeSpec generateForType(no.sikt.graphitron.rewrite.GraphitronSchema schema, String typeName) {
+        var type = schema.type(typeName);
+        var fields = schema.fieldsOf(typeName).stream()
+            .filter(f -> !(f instanceof GraphitronField.NotGeneratedField))
+            .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
+            .sorted(java.util.Comparator.comparing(GraphitronField::name))
+            .toList();
+        TableRef parentTable = type instanceof no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType tbt ? tbt.table() : null;
+        return generateTypeSpec(typeName, parentTable, fields);
+    }
 
     private static final ClassName ENV               = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName SELECTED_FIELD    = ClassName.get("graphql.schema", "SelectedField");
@@ -71,7 +93,7 @@ public class FieldsCodeGenerator {
      * @param parentTable the resolved {@link TableRef} for the type, or {@code null} for root types
      * @param fields      the classified fields belonging to this type
      */
-    public TypeSpec generate(String typeName, TableRef parentTable, List<GraphitronField> fields) {
+    static TypeSpec generateTypeSpec(String typeName, TableRef parentTable, List<GraphitronField> fields) {
         var className = typeName + "Fields";
         var builder = TypeSpec.classBuilder(className)
             .addModifiers(Modifier.PUBLIC);
@@ -133,7 +155,7 @@ public class FieldsCodeGenerator {
      * }
      * }</pre>
      */
-    private MethodSpec buildColumnFieldFetcher(ChildField.ColumnField cf, TableRef parentTable) {
+    private static MethodSpec buildColumnFieldFetcher(ChildField.ColumnField cf, TableRef parentTable) {
         var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
         return MethodSpec.methodBuilder(cf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -148,9 +170,9 @@ public class FieldsCodeGenerator {
      * Generates a data fetcher for a {@link QueryField.QueryTableField} that extracts arguments,
      * calls the table's condition method, and delegates to {@code selectMany} or {@code selectOne}.
      */
-    private MethodSpec buildQueryTableFieldFetcher(QueryField.QueryTableField qtf) {
+    private static MethodSpec buildQueryTableFieldFetcher(QueryField.QueryTableField qtf) {
         var tableRef = qtf.returnType().table();
-        var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.tables", qtf.returnType().returnTypeName());
+        var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.types", qtf.returnType().returnTypeName());
         var tablesClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "Tables");
         boolean isList = !(qtf.returnType().wrapper() instanceof FieldWrapper.Single);
 
@@ -180,7 +202,7 @@ public class FieldsCodeGenerator {
      * Generates the condition call: {@code var condition = Table.fieldCondition(Tables.TABLE, extractedArg1, ...)}.
      * Argument extraction (valueOf, map lookup) happens inline at the call site.
      */
-    private CodeBlock buildConditionCall(QueryField.QueryTableField qtf,
+    private static CodeBlock buildConditionCall(QueryField.QueryTableField qtf,
             ClassName tablesClass, TableRef tableRef) {
         var code = CodeBlock.builder();
         if (qtf.filters().isEmpty()) {
@@ -213,7 +235,7 @@ public class FieldsCodeGenerator {
         return code.build();
     }
 
-    private FieldSpec buildTextEnumMapField(WhereFilter.TextEnumColumnFilter tf) {
+    private static FieldSpec buildTextEnumMapField(WhereFilter.TextEnumColumnFilter tf) {
         var MAP = ClassName.get(java.util.Map.class);
         var mapType = ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(String.class));
         var mapEntries = CodeBlock.builder();
@@ -236,7 +258,7 @@ public class FieldsCodeGenerator {
      * Generates a private static condition method with named, typed parameters.
      * The method takes the jOOQ table alias as first parameter and one parameter per filter.
      */
-    private MethodSpec buildConditionMethod(QueryField.QueryTableField qtf) {
+    private static MethodSpec buildConditionMethod(QueryField.QueryTableField qtf) {
         var tableRef = qtf.returnType().table();
         var jooqTableClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage() + ".tables",
             tableRef.javaClassName());
@@ -294,7 +316,7 @@ public class FieldsCodeGenerator {
      * Generates the {@code List<SortField<?>> orderBy = ...} local variable from an
      * {@link OrderBySpec}.
      */
-    private CodeBlock buildOrderByCode(OrderBySpec orderBy, ClassName tablesClass, TableRef tableRef) {
+    private static CodeBlock buildOrderByCode(OrderBySpec orderBy, ClassName tablesClass, TableRef tableRef) {
         var code = CodeBlock.builder();
         switch (orderBy) {
             case OrderBySpec.Fixed fixed -> {
@@ -325,7 +347,7 @@ public class FieldsCodeGenerator {
         return code.build();
     }
 
-    private MethodSpec buildFieldStub(String fieldName) {
+    private static MethodSpec buildFieldStub(String fieldName) {
         return MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object.class)
@@ -334,7 +356,7 @@ public class FieldsCodeGenerator {
             .build();
     }
 
-    private MethodSpec buildLookupDataFetcher(QueryField.QueryLookupTableField field) {
+    private static MethodSpec buildLookupDataFetcher(QueryField.QueryLookupTableField field) {
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, ParameterizedTypeName.get(LIST, RECORD));
         return MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -344,7 +366,7 @@ public class FieldsCodeGenerator {
             .build();
     }
 
-    private MethodSpec buildLookupMethod(QueryField.QueryLookupTableField field) {
+    private static MethodSpec buildLookupMethod(QueryField.QueryLookupTableField field) {
         var methodName = "lookup" + capitalize(field.name());
         return MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -370,7 +392,7 @@ public class FieldsCodeGenerator {
      *   <li>{@link SourcesRef.TableRecordKeyed} — key is the whole parent record cast to the declared table-record type</li>
      * </ul>
      */
-    private MethodSpec buildServiceDataFetcher(
+    private static MethodSpec buildServiceDataFetcher(
             ChildField.ServiceTableField sf,
             MethodRef smr,
             ReturnTypeRef.TableBoundReturnType tb,
@@ -471,7 +493,7 @@ public class FieldsCodeGenerator {
      *   <li>{@link SourcesRef.TableRecordKeyed} — {@code List<SomeTableRecord>}</li>
      * </ul>
      */
-    private MethodSpec buildServiceRowsMethod(
+    private static MethodSpec buildServiceRowsMethod(
             ChildField.ServiceTableField sf,
             MethodRef smr,
             ReturnTypeRef.TableBoundReturnType tb,
@@ -530,7 +552,7 @@ public class FieldsCodeGenerator {
             String.join(", ", serviceCallArgs));
 
         // Return via table selectMany / selectOne (threading dfe for context access)
-        var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.tables", tb.returnTypeName());
+        var tableClass = ClassName.get(GeneratorConfig.outputPackage() + ".rewrite.types", tb.returnTypeName());
         boolean isRowKeyed = sourcesRef instanceof SourcesRef.RowKeyed;
         String selectManyName = isRowKeyed ? "selectManyByRowKeys" : "selectManyByRecordKeys";
         String selectOneName = isRowKeyed ? "selectOneByRowKeys" : "selectOneByRecordKeys";
@@ -549,7 +571,7 @@ public class FieldsCodeGenerator {
      * Private static helper added once per {@code *Fields} class that uses service-field DataLoader
      * generation. Retrieves the {@link no.sikt.graphql.GraphitronContext} from the GraphQL context.
      */
-    private MethodSpec buildGraphitronContextHelper() {
+    private static MethodSpec buildGraphitronContextHelper() {
         return MethodSpec.methodBuilder("graphitronContext")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(GRAPHITRON_CONTEXT)
@@ -592,7 +614,7 @@ public class FieldsCodeGenerator {
         return ParameterizedTypeName.get(recordNClass, typeArgs);
     }
 
-    private MethodSpec buildSplitQueryDataFetcher(ChildField.SplitTableField field) {
+    private static MethodSpec buildSplitQueryDataFetcher(ChildField.SplitTableField field) {
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, ParameterizedTypeName.get(LIST, RECORD));
         return MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -602,7 +624,7 @@ public class FieldsCodeGenerator {
             .build();
     }
 
-    private MethodSpec buildSplitRowsMethod(ChildField.SplitTableField field) {
+    private static MethodSpec buildSplitRowsMethod(ChildField.SplitTableField field) {
         var sourcesType = ParameterizedTypeName.get(LIST, RECORD);
         return MethodSpec.methodBuilder("rows" + capitalize(field.name()))
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -612,7 +634,7 @@ public class FieldsCodeGenerator {
             .build();
     }
 
-    private MethodSpec buildWiringMethod(String typeName, String className, List<GraphitronField> fields) {
+    private static MethodSpec buildWiringMethod(String typeName, String className, List<GraphitronField> fields) {
         var body = CodeBlock.builder()
             .add("return $T.newTypeWiring($S)", TYPE_WIRING, typeName);
 

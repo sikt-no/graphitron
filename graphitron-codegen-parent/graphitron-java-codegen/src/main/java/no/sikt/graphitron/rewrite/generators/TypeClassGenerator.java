@@ -7,24 +7,29 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 import static javax.lang.model.element.Modifier.PUBLIC;
 import static javax.lang.model.element.Modifier.STATIC;
 
 /**
- * Generates a {@link TypeSpec} for one table class in {@code rewrite.tables}.
+ * Produces one type class per table-mapped GraphQL type in the schema.
  *
- * <p>The class is named after the SQL table (PascalCase, e.g. {@code Film} for table
- * {@code film}, {@code FilmActor} for table {@code film_actor}). This is distinct from the
- * GraphQL type name, which may differ.
+ * <p>Class names follow the GraphQL type name (e.g. {@code Film} for GraphQL type {@code Film}).
+ * If two GraphQL types map to the same SQL table, each gets its own type class with its own
+ * {@code fields()}, {@code selectMany}, etc.
  *
- * <p>Each class contains four scope-establishing stub methods covering SQL projection:
+ * <p>Each class contains a {@code fields()} method that assembles the SELECT list, plus
+ * scope-establishing stub methods covering SQL projection:
  * <ul>
  *   <li>{@code selectMany} — executes a new SQL statement and returns all rows
  *       (list root queries)</li>
@@ -42,8 +47,11 @@ import static javax.lang.model.element.Modifier.STATIC;
  *
  * <p>All stubs throw {@link UnsupportedOperationException} until their bodies are filled in by
  * subsequent deliverables.
+ *
+ * <p>Generated files are placed in the {@code rewrite.types} sub-package of the configured
+ * output package.
  */
-public class TableCodeGenerator {
+public class TypeClassGenerator {
 
     private static final ClassName RESULT         = ClassName.get("org.jooq", "Result");
     private static final ClassName RECORD         = ClassName.get("org.jooq", "Record");
@@ -59,12 +67,32 @@ public class TableCodeGenerator {
     private static final ClassName GRAPHITRON_CONTEXT = ClassName.get("no.sikt.graphql", "GraphitronContext");
     private static final ClassName ARRAY_LIST = ClassName.get(ArrayList.class);
 
+    public static List<TypeSpec> generate(GraphitronSchema schema) {
+        return schema.types().entrySet().stream()
+            .filter(e -> e.getValue() instanceof GraphitronType.TableType
+                      || e.getValue() instanceof GraphitronType.NodeType)
+            .map(java.util.Map.Entry::getKey)
+            .sorted()
+            .map(typeName -> generateForType(schema, typeName))
+            .toList();
+    }
+
+    private static TypeSpec generateForType(GraphitronSchema schema, String typeName) {
+        var type = (GraphitronType.TableBackedType) schema.type(typeName);
+        var columnFields = schema.fieldsOf(typeName).stream()
+            .filter(f -> f instanceof ChildField.ColumnField)
+            .map(f -> (ChildField.ColumnField) f)
+            .sorted(Comparator.comparing(GraphitronField::name))
+            .toList();
+        return buildTypeSpec(typeName, type.table(), columnFields);
+    }
+
     /**
      * @param typeName      the GraphQL type name (used as the class name)
      * @param tableRef      the resolved table reference with jOOQ field/class names
      * @param columnFields  the scalar column fields to include in {@code fields()}, in declaration order
      */
-    public TypeSpec generate(String typeName, TableRef tableRef, List<ChildField.ColumnField> columnFields) {
+    static TypeSpec buildTypeSpec(String typeName, TableRef tableRef, List<ChildField.ColumnField> columnFields) {
         return TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
             .addMethod(buildFieldsMethod(tableRef, columnFields))
@@ -95,7 +123,7 @@ public class TableCodeGenerator {
      * provides {@code getArguments()} for WHERE clauses and {@code getSelectionSet()} for
      * recursive drill-down.
      */
-    private MethodSpec buildFieldsMethod(TableRef tableRef, List<ChildField.ColumnField> columnFields) {
+    private static MethodSpec buildFieldsMethod(TableRef tableRef, List<ChildField.ColumnField> columnFields) {
         var tablesClass = tablesClassName();
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
@@ -125,7 +153,7 @@ public class TableCodeGenerator {
     /**
      * Generates a {@code selectMany} method that uses {@code fields(sel)} for the SELECT list.
      */
-    private MethodSpec buildSelectManyMethod(TableRef tableRef) {
+    private static MethodSpec buildSelectManyMethod(TableRef tableRef) {
         var tablesClass = tablesClassName();
         return MethodSpec.methodBuilder("selectMany")
             .addModifiers(PUBLIC, STATIC)
@@ -152,7 +180,7 @@ public class TableCodeGenerator {
     /**
      * Generates a {@code selectOne} method that uses {@code fields(sel)} for the SELECT list.
      */
-    private MethodSpec buildSelectOneMethod(TableRef tableRef) {
+    private static MethodSpec buildSelectOneMethod(TableRef tableRef) {
         var tablesClass = tablesClassName();
         return MethodSpec.methodBuilder("selectOne")
             .addModifiers(PUBLIC, STATIC)
@@ -179,7 +207,7 @@ public class TableCodeGenerator {
     }
 
     /** Row-keyed service overload: {@code selectManyByRowKeys(List<? extends Row>, env, sel, List<?>)}. */
-    private MethodSpec buildSelectManyFromRowServiceMethod() {
+    private static MethodSpec buildSelectManyFromRowServiceMethod() {
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         return MethodSpec.methodBuilder("selectManyByRowKeys")
             .addModifiers(PUBLIC, STATIC)
@@ -193,7 +221,7 @@ public class TableCodeGenerator {
     }
 
     /** Row-keyed service overload: {@code selectOneByRowKeys(List<? extends Row>, env, sel, Object)}. */
-    private MethodSpec buildSelectOneFromRowServiceMethod() {
+    private static MethodSpec buildSelectOneFromRowServiceMethod() {
         return MethodSpec.methodBuilder("selectOneByRowKeys")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(LIST, RECORD))
@@ -210,7 +238,7 @@ public class TableCodeGenerator {
      * Handles both {@code RecordN<T>}-keyed and {@code TableRecord}-keyed callers (both implement
      * {@code org.jooq.Record}).
      */
-    private MethodSpec buildSelectManyFromRecordServiceMethod() {
+    private static MethodSpec buildSelectManyFromRecordServiceMethod() {
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         return MethodSpec.methodBuilder("selectManyByRecordKeys")
             .addModifiers(PUBLIC, STATIC)
@@ -227,7 +255,7 @@ public class TableCodeGenerator {
      * Record-keyed service overload: {@code selectOneByRecordKeys(List<? extends Record>, env, sel, Object)}.
      * Handles both {@code RecordN<T>}-keyed and {@code TableRecord}-keyed callers.
      */
-    private MethodSpec buildSelectOneFromRecordServiceMethod() {
+    private static MethodSpec buildSelectOneFromRecordServiceMethod() {
         return MethodSpec.methodBuilder("selectOneByRecordKeys")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(LIST, RECORD))
@@ -248,7 +276,7 @@ public class TableCodeGenerator {
      * {@code getSelectionSet()} drives column selection via {@code fields()}, and its
      * {@code getArguments()} provides argument values for WHERE clauses.
      */
-    private MethodSpec buildSubselectManyMethod() {
+    private static MethodSpec buildSubselectManyMethod() {
         return MethodSpec.methodBuilder("subselectMany")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(FIELD, ParameterizedTypeName.get(RESULT, RECORD)))
@@ -264,7 +292,7 @@ public class TableCodeGenerator {
      * Subselect overload for inline single fields:
      * {@code subselectOne(env, sel, condition)}.
      */
-    private MethodSpec buildSubselectOneMethod() {
+    private static MethodSpec buildSubselectOneMethod() {
         return MethodSpec.methodBuilder("subselectOne")
             .addModifiers(PUBLIC, STATIC)
             .returns(ParameterizedTypeName.get(FIELD, RECORD))
