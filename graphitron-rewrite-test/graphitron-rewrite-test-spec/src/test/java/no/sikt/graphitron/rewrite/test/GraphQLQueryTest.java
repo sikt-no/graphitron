@@ -93,6 +93,41 @@ class GraphQLQueryTest {
         return result.getData();
     }
 
+    // ===== Multi-field root query =====
+
+    @Test
+    void multipleRootFields_eachGetsCorrectSelectionSet() {
+        Map<String, Object> data = execute("""
+            {
+                customers { firstName }
+                films { title }
+            }
+            """);
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+
+        assertThat(customers).hasSize(5);
+        assertThat(customers.get(0)).containsKey("firstName");
+
+        assertThat(films).hasSize(5);
+        assertThat(films.get(0)).containsKey("title");
+    }
+
+    @Test
+    void multipleRootFields_filmsColumnsNotLeakedIntoCustomers() {
+        // If selection set scoping is wrong, customers might try to SELECT film columns
+        Map<String, Object> data = execute("""
+            {
+                customers { firstName lastName }
+                films { title rating }
+            }
+            """);
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
+        assertThat(customers).hasSize(5);
+        // Customers should have firstName and lastName, not title or rating
+        assertThat(customers.get(0).keySet()).containsExactlyInAnyOrder("firstName", "lastName");
+    }
+
     // ===== customers query =====
 
     @Test
