@@ -3,57 +3,44 @@ package no.sikt.graphitron.rewrite.model;
 /**
  * A single WHERE-clause contribution for a SQL-generating field.
  *
- * <p>The three permitted variants reflect the three sources from which WHERE predicates arise:
- *
  * <ul>
- *   <li>{@link ColumnFilter} — a scalar GraphQL argument bound to a database column; generates
- *       {@code col = ?}.</li>
+ *   <li>{@link ColumnFilter} — a scalar GraphQL argument bound to a database column.
+ *       Generates {@code TABLE.COL.eq(DSL.val(arg, TABLE.COL))}.</li>
+ *   <li>{@link EnumColumnFilter} — a GraphQL enum argument bound to a jOOQ enum column.
+ *       Generates {@code TABLE.COL.eq(DSL.val(EnumClass.valueOf(arg), TABLE.COL))}.</li>
  *   <li>{@link InputFilter} — a table-bound input object argument ({@link GraphitronType.TableInputType});
- *       generates a composite {@code col1 = ? AND col2 = ?} filter derived from the input type's
- *       fields.</li>
- *   <li>{@link ConditionFilter} — a developer-supplied {@code @condition} method on
- *       {@code FIELD_DEFINITION}; calls {@code method(targetTable, arg1, arg2, ...)} and ANDs the
- *       result into the WHERE clause.</li>
+ *       generates a composite {@code col1 = ? AND col2 = ?} filter.</li>
+ *   <li>{@link ConditionFilter} — a developer-supplied {@code @condition} method.</li>
  * </ul>
- *
- * <p>For {@link ColumnFilter} and {@link InputFilter}, the {@code name} and {@code typeName}
- * fields describe the GraphQL argument. The {@code nonNull} and {@code list} flags reflect the
- * argument's GraphQL type wrapper.
- *
- * <p><b>Model gap — {@code @condition} on argument definitions:</b>
- * {@code @condition} can also appear on {@code ARGUMENT_DEFINITION} and
- * {@code INPUT_FIELD_DEFINITION}. Those cases are not yet modelled. When implemented,
- * {@link ColumnFilter} and {@link InputFilter} would gain a nullable
- * {@code ConditionFilter condition} component representing argument-level conditions.
- * See the javadoc on those records for details.
  */
 public sealed interface WhereFilter
-        permits WhereFilter.ColumnFilter, WhereFilter.InputFilter, ConditionFilter {
+        permits WhereFilter.ColumnFilter, WhereFilter.EnumColumnFilter,
+                WhereFilter.InputFilter, ConditionFilter {
 
     /**
      * A scalar GraphQL argument resolved to a column on the field's return table.
-     * Generates a {@code col = ?} WHERE predicate.
      *
-     * <p>{@code column} is the resolved jOOQ {@link ColumnRef} for the target column.
-     *
-     * <p><b>Model gap:</b> {@code @condition} on {@code ARGUMENT_DEFINITION} for a scalar argument
-     * should be represented as a nullable {@code ConditionFilter condition} component here. When
-     * present, the condition method is called as {@code method(targetTable, argValue)}.
-     * Without {@code override: true} (which the builder handles by omitting this {@link ColumnFilter}),
-     * both the {@code col = ?} predicate and the condition call are generated. With
-     * {@code override: true} the {@code col = ?} predicate is suppressed (this filter is omitted)
-     * and only the condition is emitted.
-     * <p>{@code enumClassName} is non-null when the column's Java type is a jOOQ enum
-     * ({@link org.jooq.EnumType}). The value is the fully qualified class name
-     * (e.g. {@code "no.example.jooq.enums.MpaaRating"}). The generator uses this to emit
-     * {@code EnumClass.valueOf((String) env.getArgument(...))} for type-safe binding.
-     * When {@code null}, the column is a plain scalar.
-     *
-     * <p>Enum values are validated at build time: every GraphQL enum value must have a matching
-     * Java enum constant (by name, or by {@code @field(name:)} mapping). If validation passes,
-     * the graphql-java runtime String is guaranteed to be a valid {@code valueOf} argument.
+     * <p>Generated code: {@code TABLE.COL.eq(DSL.val(env.getArgument("name"), TABLE.COL))}.
      */
     record ColumnFilter(
+        String name,
+        String typeName,
+        boolean nonNull,
+        boolean list,
+        ColumnRef column
+    ) implements WhereFilter {}
+
+    /**
+     * A GraphQL enum argument resolved to a jOOQ enum column.
+     *
+     * <p>{@code enumClassName} is the fully qualified Java enum class name
+     * (e.g. {@code "no.example.jooq.enums.MpaaRating"}). Validated at build time: every GraphQL
+     * enum value has a matching Java enum constant (by name, or by {@code @field(name:)} mapping).
+     *
+     * <p>Generated code:
+     * {@code TABLE.COL.eq(DSL.val(MpaaRating.valueOf(env.<String>getArgument("name")), TABLE.COL))}.
+     */
+    record EnumColumnFilter(
         String name,
         String typeName,
         boolean nonNull,
@@ -64,18 +51,7 @@ public sealed interface WhereFilter
 
     /**
      * A table-bound input object argument ({@link GraphitronType.TableInputType}).
-     * Graphitron generates a composite WHERE filter from the resolved input fields.
-     *
-     * <p>The actual {@link GraphitronType.TableInputType} instance is available via
-     * {@link no.sikt.graphitron.rewrite.GraphitronSchema#types()}.
-     *
-     * <p><b>Model gap:</b> {@code @condition} on {@code ARGUMENT_DEFINITION} for an input-type
-     * argument should be a nullable {@code ConditionFilter condition} component here. When present,
-     * the condition method is called with {@code (targetTable, leaf1, leaf2, ...)} — the target
-     * table alias followed by the flattened leaf scalar values of the input type. Without
-     * {@code override: true}, the normal column-equality predicates for the input fields are
-     * generated alongside the condition call. With {@code override: true}, those predicates are
-     * suppressed for this input type's fields; predicates from other filters are unaffected.
+     * Generates a composite WHERE filter from the resolved input fields.
      */
     record InputFilter(
         String name,

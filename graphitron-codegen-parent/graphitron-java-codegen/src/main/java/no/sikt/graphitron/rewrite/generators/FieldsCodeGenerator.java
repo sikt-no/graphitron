@@ -172,42 +172,53 @@ public class FieldsCodeGenerator {
      */
     private CodeBlock buildConditionCode(java.util.List<WhereFilter> filters, ClassName tablesClass, TableRef tableRef) {
         var code = CodeBlock.builder();
-        if (filters.isEmpty()) {
-            code.addStatement("var condition = $T.noCondition()", DSL);
-        } else {
-            code.addStatement("var condition = $T.noCondition()", DSL);
-            for (var filter : filters) {
-                if (filter instanceof WhereFilter.ColumnFilter cf) {
-                    var colType = ClassName.bestGuess(cf.column().columnClass());
-                    if (cf.enumClassName() != null) {
-                        // jOOQ enum column — convert String from graphql-java via valueOf
-                        var enumClass = ClassName.bestGuess(cf.enumClassName());
-                        if (cf.nonNull()) {
-                            code.addStatement("condition = condition.and($T.$L.$L.eq($T.valueOf(env.<$T>getArgument($S))))",
-                                tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
-                                enumClass, String.class, cf.name());
-                        } else {
-                            code.addStatement("if (env.getArgument($S) != null) condition = condition.and($T.$L.$L.eq($T.valueOf(env.<$T>getArgument($S))))",
-                                cf.name(), tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
-                                enumClass, String.class, cf.name());
-                        }
-                    } else {
-                        // Scalar column — use typed getArgument
-                        if (cf.nonNull()) {
-                            code.addStatement("condition = condition.and($T.$L.$L.eq(env.<$T>getArgument($S)))",
-                                tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
-                                colType, cf.name());
-                        } else {
-                            code.addStatement("if (env.getArgument($S) != null) condition = condition.and($T.$L.$L.eq(env.<$T>getArgument($S)))",
-                                cf.name(), tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
-                                colType, cf.name());
-                        }
-                    }
-                }
-                // InputFilter: deferred to a later deliverable
+        code.addStatement("var condition = $T.noCondition()", DSL);
+        for (var filter : filters) {
+            switch (filter) {
+                case WhereFilter.ColumnFilter cf -> addScalarCondition(code, cf, tablesClass, tableRef);
+                case WhereFilter.EnumColumnFilter ef -> addEnumCondition(code, ef, tablesClass, tableRef);
+                default -> {} // InputFilter, ConditionFilter: deferred
             }
         }
         return code.build();
+    }
+
+    /** Scalar: {@code TABLE.COL.eq(DSL.val(env.getArgument("x"), TABLE.COL))} */
+    private void addScalarCondition(CodeBlock.Builder code, WhereFilter.ColumnFilter cf,
+            ClassName tablesClass, TableRef tableRef) {
+        // col = Tables.FILM.TITLE, val = DSL.val(arg, col)
+        String eq = "$T.$L.$L.eq($T.val(env.getArgument($S), $T.$L.$L))";
+        Object[] args = {tablesClass, tableRef.javaFieldName(), cf.column().javaName(),
+            DSL, cf.name(), tablesClass, tableRef.javaFieldName(), cf.column().javaName()};
+        if (cf.nonNull()) {
+            code.addStatement("condition = condition.and(" + eq + ")", args);
+        } else {
+            code.addStatement("if (env.getArgument($S) != null) condition = condition.and(" + eq + ")",
+                concat(new Object[]{cf.name()}, args));
+        }
+    }
+
+    /** Enum: {@code TABLE.COL.eq(DSL.val(EnumClass.valueOf(arg), TABLE.COL))} */
+    private void addEnumCondition(CodeBlock.Builder code, WhereFilter.EnumColumnFilter ef,
+            ClassName tablesClass, TableRef tableRef) {
+        var enumClass = ClassName.bestGuess(ef.enumClassName());
+        String eq = "$T.$L.$L.eq($T.val($T.valueOf(env.<$T>getArgument($S)), $T.$L.$L))";
+        Object[] args = {tablesClass, tableRef.javaFieldName(), ef.column().javaName(),
+            DSL, enumClass, String.class, ef.name(),
+            tablesClass, tableRef.javaFieldName(), ef.column().javaName()};
+        if (ef.nonNull()) {
+            code.addStatement("condition = condition.and(" + eq + ")", args);
+        } else {
+            code.addStatement("if (env.getArgument($S) != null) condition = condition.and(" + eq + ")",
+                concat(new Object[]{ef.name()}, args));
+        }
+    }
+
+    private static Object[] concat(Object[] a, Object[] b) {
+        var result = new Object[a.length + b.length];
+        System.arraycopy(a, 0, result, 0, a.length);
+        System.arraycopy(b, 0, result, a.length, b.length);
+        return result;
     }
 
     /**

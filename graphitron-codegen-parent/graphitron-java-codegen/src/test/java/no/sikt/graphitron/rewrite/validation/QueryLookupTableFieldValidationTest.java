@@ -35,13 +35,13 @@ class QueryLookupTableFieldValidationTest {
             List.of()),
 
         VALID_WITH_COLUMN_ARG("ColumnFilter scalar (no list) — valid with single return",
-            singleReturn(List.of(new WhereFilter.ColumnFilter("id", "ID", false, false, FILM_ID_COL, null)), new OrderBySpec.None()),
+            singleReturn(List.of(new WhereFilter.ColumnFilter("id", "ID", false, false, FILM_ID_COL)), new OrderBySpec.None()),
             List.of()),
 
         VALID_WITH_LIST_COLUMN_ARG("ColumnFilter list — valid with list return",
             new QueryLookupTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.List(true, true)),
-                List.of(new WhereFilter.ColumnFilter("id", "ID", false, true, FILM_ID_COL, null)), new OrderBySpec.None(), null),
+                List.of(new WhereFilter.ColumnFilter("id", "ID", false, true, FILM_ID_COL)), new OrderBySpec.None(), null),
             List.of()),
 
         VALID_WITH_TABLE_INPUT_TYPE_ARG("InputFilter — valid with single return",
@@ -55,7 +55,7 @@ class QueryLookupTableFieldValidationTest {
             List.of("Field 'filmById': result type does not match input cardinality")),
 
         SINGLE_RETURN_LIST_ARG("single return with list filter — cardinality mismatch",
-            singleReturn(List.of(new WhereFilter.ColumnFilter("id", "ID", false, true, FILM_ID_COL, null)), new OrderBySpec.None()),
+            singleReturn(List.of(new WhereFilter.ColumnFilter("id", "ID", false, true, FILM_ID_COL)), new OrderBySpec.None()),
             List.of("Field 'filmById': result type does not match input cardinality")),
 
         CONNECTION_RETURN("connection return — never valid on lookup",

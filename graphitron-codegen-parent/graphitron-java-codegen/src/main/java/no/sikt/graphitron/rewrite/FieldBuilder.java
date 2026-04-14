@@ -508,7 +508,11 @@ class FieldBuilder {
                 hadError = true;
                 continue;
             }
-            result.add(new WhereFilter.ColumnFilter(name, typeName, nonNull, list, columnRef, enumClassName));
+            if (enumClassName != null) {
+                result.add(new WhereFilter.EnumColumnFilter(name, typeName, nonNull, list, columnRef, enumClassName));
+            } else {
+                result.add(new WhereFilter.ColumnFilter(name, typeName, nonNull, list, columnRef));
+            }
         }
         return hadError ? null : List.copyOf(result);
     }
