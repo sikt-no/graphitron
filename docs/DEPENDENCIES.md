@@ -15,5 +15,3 @@ Licensing: jOOQ uses dual licensing. The open source edition covers PostgreSQL, 
 GraphQL-Java is the reference implementation of GraphQL for Java. It parses schemas, executes queries, and provides the DataFetcher and TypeResolver interfaces that Graphitron's generated code plugs into.
 
 **GraphQL-Java is under the hood.** You won't typically write GraphQL-Java code directly — Graphitron handles that. But understanding how it executes queries helps when reading generated code or debugging.
-
-We chose it because it implements an open specification governed by the GraphQL Foundation, not a single company. We're betting on the standard as much as the library.

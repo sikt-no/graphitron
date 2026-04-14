@@ -1,5 +1,7 @@
 # Runtime Extension Points
 
+:::warning The following content is riddled with halucinations.
+
 Generated code is intentionally simple — no tenant filtering, no auth checks, no transaction management. These concerns belong at runtime, injected through three extension points without touching generated code.
 
 ---

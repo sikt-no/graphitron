@@ -10,7 +10,7 @@ Graphitron is designed to work *with* the database, not around it. The generated
 
 ## Data modeling is collaborative
 
-The people who understand the business — registrars, finance managers, administrators — understand their data. They know what entities matter, how they relate, and what rules govern them. Developers know how to express that in a schema. Neither group has the complete picture.
+The people who understand the business — student administrators, case workers, admissions officers — understand their data. They know what entities matter, how they relate, and what rules govern them. Developers know how to express that in a schema. Neither group has the complete picture.
 
 We've found that involving domain experts directly in schema design works well. Reading an ER diagram or a GraphQL schema takes some practice, but it's not black magic. Business people understand their data; they work with it daily. Getting them into the conversation early avoids schemas that don't quite fit — and those mismatches compound over time.
 
@@ -31,9 +31,3 @@ Generated code should be readable without special tools. Fewer runtime dependenc
 We believe GraphQL is a good choice today. We don't believe it's permanent — history suggests it isn't. The database schema is more durable than the API schema. Business logic should be independent of API technology. Generated code can be regenerated.
 
 This isn't about predicting what comes next. It's about structuring the system so that whatever comes next can be accommodated without rewriting everything.
-
-## Be deliberate about dependencies
-
-Every dependency is a commitment to trust someone else's code for potentially decades. Boring is good — a library maintained for fifteen years is more likely to be maintained for another fifteen. Standards outlive frameworks: SQL outlives ORMs, HTTP outlives web frameworks. Dependencies that follow standards can be replaced; dependencies that invent paradigms lock you in.
-
-For foundational dependencies, half-measures are worse than full commitment. Wrapping jOOQ in an abstraction layer produces enormous cost for little benefit. We chose it; we use it directly and let its patterns become ours.
