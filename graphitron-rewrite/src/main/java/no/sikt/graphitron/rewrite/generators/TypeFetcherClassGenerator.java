@@ -246,35 +246,16 @@ public class TypeFetcherClassGenerator {
 
         for (var filter : field.filters()) {
             if (!(filter instanceof GeneratedConditionFilter gcf)) continue;
+            // Declare local variables for ID list keys (List<String> — kept typed to avoid convert() overload ambiguity)
             for (var bp : gcf.bodyParams()) {
-                var colName = bp.column().javaName();
-                var typeClass = ClassName.bestGuess(bp.javaType());
-                boolean idArg = "ID".equals(bp.graphqlTypeName());
-                if (bp.list()) {
-                    var listVarName = toCamelCase(bp.name()) + "Keys";
-                    if (idArg) {
-                        // ID is stringly typed — use jOOQ's DataType converter to coerce String → column type.
-                        // Passing List<String> keeps the method reference unambiguous (String is not Collection).
-                        builder.addStatement("$T<$T> $L = env.getArgument($S)", LIST, String.class, listVarName, bp.name());
-                        builder.addStatement("condition = condition.and(table.$L.in($L.stream().map(table.$L.getDataType()::convert).toList()))",
-                            colName, listVarName, colName);
-                    } else {
-                        // GraphQL-Java delivers the correct Java type (e.g. Int → Integer) — use it directly.
-                        builder.addStatement("$T<$T> $L = env.getArgument($S)", LIST, typeClass, listVarName, bp.name());
-                        builder.addStatement("condition = condition.and(table.$L.in($L))", colName, listVarName);
-                    }
-                } else {
-                    if (idArg) {
-                        // ID is stringly typed — convert the String via the column's DataType.
-                        builder.addStatement("condition = condition.and(table.$L.eq(table.$L.getDataType().convert((String) env.getArgument($S))))",
-                            colName, colName, bp.name());
-                    } else {
-                        // GraphQL-Java delivers the correct Java type — assign directly.
-                        builder.addStatement("$T $L = env.getArgument($S)", typeClass, toCamelCase(bp.name()), bp.name());
-                        builder.addStatement("condition = condition.and(table.$L.eq($L))", colName, toCamelCase(bp.name()));
-                    }
+                if (bp.list() && "ID".equals(bp.graphqlTypeName())) {
+                    builder.addStatement("$T<$T> $L = env.getArgument($S)",
+                        LIST, String.class, toCamelCase(bp.name()) + "Keys", bp.name());
                 }
             }
+            builder.addStatement("condition = condition.and($T.$L($L))",
+                ClassName.bestGuess(gcf.className()), gcf.methodName(),
+                buildLookupCallArgs(gcf));
         }
 
         builder.addCode(buildOrderByCode(field.orderBy(), tablesClass, tableRef));
@@ -339,6 +320,43 @@ public class TypeFetcherClassGenerator {
             .returns(WIRING_BUILDER)
             .addCode(body.build())
             .build();
+    }
+
+    /**
+     * Builds the argument list for a lookup conditions method call.
+     *
+     * <p>The first argument is always {@code table} (the local variable declared in the fetcher).
+     * Subsequent arguments are extracted from {@code env} per param:
+     * <ul>
+     *   <li>List {@code ID} key — {@code <localVar>.stream().map(table.COL.getDataType()::convert).toList()},
+     *       where {@code <localVar>} is the {@code List<String>} local variable declared before this call.</li>
+     *   <li>List non-{@code ID} key — {@code env.getArgument("name")} (GraphQL-Java delivers the correct type).</li>
+     *   <li>Scalar {@code ID} key — {@code table.COL.getDataType().convert((String) env.getArgument("name"))}.</li>
+     *   <li>Scalar non-{@code ID} key — {@code env.getArgument("name")} directly.</li>
+     * </ul>
+     */
+    private static CodeBlock buildLookupCallArgs(GeneratedConditionFilter gcf) {
+        var args = CodeBlock.builder();
+        args.add("table");
+        for (var bp : gcf.bodyParams()) {
+            var colName = bp.column().javaName();
+            boolean idArg = "ID".equals(bp.graphqlTypeName());
+            if (bp.list()) {
+                if (idArg) {
+                    args.add(", $L.stream().map(table.$L.getDataType()::convert).toList()",
+                        toCamelCase(bp.name()) + "Keys", colName);
+                } else {
+                    args.add(", env.getArgument($S)", bp.name());
+                }
+            } else {
+                if (idArg) {
+                    args.add(", table.$L.getDataType().convert((String) env.getArgument($S))", colName, bp.name());
+                } else {
+                    args.add(", env.getArgument($S)", bp.name());
+                }
+            }
+        }
+        return args.build();
     }
 
     /** Converts a snake_case GraphQL argument name to lowerCamelCase for use as a Java local variable. */

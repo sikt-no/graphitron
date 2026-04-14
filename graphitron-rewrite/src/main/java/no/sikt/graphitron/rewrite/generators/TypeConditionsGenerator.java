@@ -92,19 +92,32 @@ public class TypeConditionsGenerator {
             .returns(ClassName.get("org.jooq", "Condition"))
             .addParameter(jooqTableClass, "table");
 
+        var LIST = ClassName.get("java.util", "List");
         for (var bp : gcf.bodyParams()) {
-            builder.addParameter(ClassName.bestGuess(bp.javaType()), bp.name());
+            var paramType = bp.list()
+                ? ParameterizedTypeName.get(LIST, ClassName.bestGuess(bp.javaType()))
+                : ClassName.bestGuess(bp.javaType());
+            builder.addParameter(paramType, bp.name());
         }
 
         builder.addStatement("var condition = $T.noCondition()", DSL);
         for (var bp : gcf.bodyParams()) {
             String col = bp.column().javaName();
-            if (bp.nonNull()) {
-                builder.addStatement("condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                    col, DSL, bp.name(), col);
+            if (bp.list()) {
+                if (bp.nonNull()) {
+                    builder.addStatement("condition = condition.and(table.$L.in($L))", col, bp.name());
+                } else {
+                    builder.addStatement("if ($L != null) condition = condition.and(table.$L.in($L))",
+                        bp.name(), col, bp.name());
+                }
             } else {
-                builder.addStatement("if ($L != null) condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                    bp.name(), col, DSL, bp.name(), col);
+                if (bp.nonNull()) {
+                    builder.addStatement("condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
+                        col, DSL, bp.name(), col);
+                } else {
+                    builder.addStatement("if ($L != null) condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
+                        bp.name(), col, DSL, bp.name(), col);
+                }
             }
         }
         builder.addStatement("return condition");
