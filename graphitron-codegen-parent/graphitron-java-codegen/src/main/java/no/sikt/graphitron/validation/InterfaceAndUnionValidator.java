@@ -3,7 +3,6 @@ package no.sikt.graphitron.validation;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.Collection;
@@ -13,23 +12,20 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static java.util.stream.Collectors.groupingBy;
-import static no.sikt.graphitron.mappings.TableReflection.getField;
-import static no.sikt.graphitron.mappings.TableReflection.getFieldType;
-import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
+import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessage;
 import static no.sikt.graphitron.validation.ValidationHandler.isTrue;
 import static no.sikt.graphitron.validation.messages.MultitableError.MISSING_TABLE_ON_MULTITABLE;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
-import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * Validates interface and union type definitions, including single-table interfaces,
  * multitable field constraints, and interface return type requirements.
  */
-class InterfaceValidator extends AbstractSchemaValidator {
+class InterfaceAndUnionValidator extends AbstractSchemaValidator {
 
-    InterfaceValidator(ProcessedSchema schema, List<ObjectField> allFields) {
+    InterfaceAndUnionValidator(ProcessedSchema schema, List<ObjectField> allFields) {
         super(schema, allFields);
     }
 
@@ -39,7 +35,6 @@ class InterfaceValidator extends AbstractSchemaValidator {
         validateSingleTableInterfaceDefinitions();
         validateInterfacesReturnedInFields();
         validateMultitableFieldsOutsideRoot();
-        validateTypesUsingNodeInterfaceWithoutNodeDirective();
         validateUnionAndInterfaceSubTypes();
     }
 
@@ -292,30 +287,5 @@ class InterfaceValidator extends AbstractSchemaValidator {
                             }
                         }
                 );
-    }
-
-    private void validateTypesUsingNodeInterfaceWithoutNodeDirective() {
-        if (!schema.nodeExists() ||
-                schema.getQueryType() == null ||
-                schema.getQueryType().getFieldByName(uncapitalize(NODE_TYPE.getName())) == null ||
-                schema.getQueryType().getFieldByName(uncapitalize(NODE_TYPE.getName())).isExplicitlyNotGenerated()) {
-            return;
-        }
-
-        var records = schema
-                .getObjects()
-                .values()
-                .stream()
-                .filter(it -> it.implementsInterface(NODE_TYPE.getName()) && it.hasTable() && !it.hasNodeDirective())
-                .collect(groupingBy(
-                        it -> it.getTable().getName(), Collectors.mapping(ObjectDefinition::getName, Collectors.toSet())));
-
-        records.forEach((tableName, schemaTypes) -> {
-            if (schemaTypes.size() > 1) {
-                addErrorMessage(
-                        "Multiple types (%s) implement the %s interface and refer to the same table %s. This is not supported.",
-                        String.join(", ", schemaTypes), NODE_TYPE.getName(), tableName);
-            }
-        });
     }
 }

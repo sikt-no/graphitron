@@ -28,9 +28,10 @@ public class ProcessedDefinitionsValidator {
                 .toList();
 
         validators = List.of(
-                new InterfaceValidator(schema, allFields),
+                new InterfaceAndUnionValidator(schema, allFields),
                 new TableValidator(schema, allFields),
                 new RecordMappingValidator(schema, allFields),
+                new ExternalReferenceValidator(schema, allFields),
                 new ServiceValidator(schema, allFields),
                 new MutationValidator(schema, allFields),
                 new FieldDirectiveValidator(schema, allFields),

@@ -1,29 +1,29 @@
 package no.sikt.graphitron.validation;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.definitions.fields.GenerationSourceField;
-import no.sikt.graphitron.definitions.fields.InputField;
-import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.fields.VirtualSourceField;
+import no.sikt.graphitron.definitions.fields.*;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.TableRelationType;
+import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
 import no.sikt.graphql.schema.ProcessedSchema;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessage;
+import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAndThrow;
 import static no.sikt.graphql.directives.GenerationDirective.NODE_ID;
 import static no.sikt.graphql.directives.GenerationDirective.REFERENCE;
+import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITY_UNION;
+import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_SERVICE_TYPE;
 
 /**
  * Validates table and key existence, reference paths, and required table fields.
@@ -39,6 +39,9 @@ class TableValidator extends AbstractSchemaValidator {
         validateTablesAndKeys();
         validateRequiredTableFields();
         validateOneToManyInputReferences();
+        validateInputFields();
+        validateWrapperTypesWithPreviousTable();
+        validateOnlyOneInputRecordInputWhenNoTypeTableIsPresent();
     }
 
     private void validateTablesAndKeys() {
@@ -344,4 +347,94 @@ class TableValidator extends AbstractSchemaValidator {
         }
     }
 
+    // TODO: It seems we are now handling/validating lists that are directly below parent lists. But what about
+    //  validation of nested lists where a list is not directly below parent list, but are deeper down the hierarchy?
+    private void validateInputFields() {
+        var oneLayerFlattenedFields = allFields
+                .stream()
+                .filter(schema::hasTableObject)
+                .flatMap(it -> it.getNonReservedArguments().stream())
+                .filter(it -> !schema.hasRecord(it) && !it.hasOverridingCondition())
+                .filter(AbstractField::isIterableWrapped)
+                .filter(schema::isInputType)
+                .toList();
+
+        for (var field : oneLayerFlattenedFields) {
+            var messageStart = String.format("Argument '%s' is a collection of InputFields ('%s') type.", field.getName(), field.getTypeName());
+            var inputDefinitionFields = schema.getInputType(field).getFields();
+
+            inputDefinitionFields.stream().filter(AbstractField::isIterableWrapped).findFirst().ifPresent(it -> addErrorMessageAndThrow(
+                    "%s Fields returning collections: '%s' are not supported on such types (used for generating condition tuples)",
+                    messageStart,
+                    it.getName()
+            ));
+
+            var optionalFields = inputDefinitionFields
+                    .stream()
+                    .filter(AbstractField::isNullable)
+                    .map(AbstractField::getName)
+                    .collect(Collectors.toList());
+            if (!optionalFields.isEmpty()) {
+                addErrorMessage(
+                        String.format(
+                                "%s Optional fields on such types are not supported. The following fields will be " +
+                                        "treated as mandatory in the resulting, generated condition tuple: '%s'",
+                                messageStart,
+                                String.join("', '", optionalFields)
+                        )
+                );
+            }
+        }
+    }
+
+    private void validateWrapperTypesWithPreviousTable() {
+        schema.getObjects()
+                .values()
+                .stream()
+                .filter(it -> schema.isObjectWithPreviousTableObject(it.getName()))
+                .map(AbstractObjectDefinition::getFields)
+                .flatMap(Collection::stream)
+                .filter(AbstractField::isIterableWrapped)
+                .filter(schema::isObject)
+                .filter(it -> !it.hasFieldReferences())
+                .filter(it -> !it.createsDataFetcher())
+                .filter(it -> Optional.ofNullable(schema.getObject(it).getTable())
+                        .map(t -> schema.getPreviousTableObjectForField(it).getTable().equals(t))
+                        .orElse(true)
+                )
+                .forEach(f ->
+                        addErrorMessage(
+                                "Field %s returns a list of wrapper type '%s' (a type wrapping a subset of the table fields)," +
+                                        " which is not supported. Change the field to return a single '%s' to fix.",
+                                f.formatPath(), f.getTypeName(), f.getTypeName(), f.getTypeName())
+                );
+    }
+
+    private void validateOnlyOneInputRecordInputWhenNoTypeTableIsPresent() {
+        var mutation = schema.getMutationType();
+        var mutations = mutation != null ? mutation.getFields().stream() : Stream.<ObjectField>of();
+        var query = schema.getQueryType();
+        var queries = query != null ? query.getFields().stream() : Stream.<ObjectField>of();
+
+        Stream
+                .concat(queries, mutations)
+                .filter(ObjectField::isGeneratedWithResolver)
+                .filter(it -> !it.hasServiceReference())
+                .filter(it -> !it.getTypeName().equals(FEDERATION_SERVICE_TYPE.getName()))
+                .filter(it -> !it.getTypeName().equals(FEDERATION_ENTITY_UNION.getName()))
+                .filter(it -> !schema.isInterface(it))
+                .filter(it -> !schema.isUnion(it))
+                .filter(it -> schema.isScalar(it) || schema.isRecordType(it))
+                .filter(it -> !schema.nextTypeTableExists(it, new HashSet<>()))
+                .collect(Collectors.toMap(it -> it.getContainerTypeName() + "." + it.getName(), it -> schema.findInputTables(it).size()))
+                .entrySet()
+                .stream()
+                .filter(it -> it.getValue() != 1)
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))
+                .forEach((key, value) -> addErrorMessage(
+                        "%s is a field of a type without a table, and has %s potential input records to use as a source for the table in queries. In such cases, there must be exactly one input table so that it can be resolved unambiguously.",
+                        key,
+                        value
+                ));
+    }
 }

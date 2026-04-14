@@ -2,10 +2,9 @@ package no.sikt.graphitron.validation;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
+import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.helpers.CodeReferenceWrapper;
-import no.sikt.graphitron.definitions.objects.EnumDefinition;
-import no.sikt.graphitron.definitions.sql.SQLCondition;
 import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -13,7 +12,9 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.util.List;
+import java.util.stream.Stream;
 
+import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.validation.ServiceMethodFormatter.formatExpectedListableType;
 import static no.sikt.graphitron.validation.ServiceMethodFormatter.formatOverloads;
 import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessage;
@@ -30,52 +31,23 @@ class ServiceValidator extends AbstractSchemaValidator {
 
     @Override
     void validate() {
-        validateExternalMappingReferences();
-        validateServiceMethods();
-        validateServiceInputTypes();
-        validateServiceMethodParameterTypes();
+        var serviceFields = allFields.stream().filter(ObjectField::hasServiceReference).toList();
+        validateServiceMethods(serviceFields);
+        validateServiceInputTypes(serviceFields);
+        validateServiceMethodParameterTypes(serviceFields);
+        validateRecursiveRecordInputs();
     }
 
-    private void validateExternalMappingReferences() {
-        var referenceSet = GeneratorConfig.getExternalReferences();
-        schema
-                .getEnums()
-                .values()
-                .stream()
-                .filter(EnumDefinition::hasJavaEnumMapping)
-                .map(EnumDefinition::getEnumReference)
-                .filter(e -> !referenceSet.contains(e))
-                .forEach(e -> addErrorMessage("No enum with name '%s' found.", e.getSchemaClassReference()));
-
-        allFields.stream()
-                .filter(ObjectField::hasServiceReference)
-                .map(ObjectField::getExternalMethod)
-                .map(CodeReferenceWrapper::getReference)
-                .filter(e -> !referenceSet.contains(e))
-                .forEach(e -> addErrorMessage("No service with name '%s' found.", e.getSchemaClassReference()));
-
-        allFields
-                .stream()
-                .filter(ObjectField::isGenerated)
-                .filter(ObjectField::hasCondition)
-                .map(ObjectField::getCondition)
-                .map(SQLCondition::getReference)
-                .filter(e -> !referenceSet.contains(e))
-                .forEach(e -> addErrorMessage("No condition with name '%s' found.", e.getSchemaClassReference()));
-    }
-
-    private void validateServiceMethods() {
-        allFields.stream()
-                .filter(ObjectField::hasServiceReference)
+    private void validateServiceMethods(List<ObjectField> serviceFields) {
+        serviceFields.stream()
                 .map(GenerationSourceField::getExternalMethod)
                 .filter(it -> GeneratorConfig.getExternalReferences().contains(it.getReference()))
                 .filter(it -> getAllOverloads(it).isEmpty())
                 .forEach(it -> addErrorMessage("Service reference with name '%s' does not contain a method named '%s'.", GeneratorConfig.getExternalReferences().getClassFrom(it.getReference()), it.getReference().getMethodName()));
     }
 
-    private void validateServiceInputTypes() {
-        allFields.stream()
-                .filter(ObjectField::hasServiceReference)
+    private void validateServiceInputTypes(List<ObjectField> serviceFields) {
+        serviceFields
                 .forEach(field -> field.getNonReservedArguments()
                         .stream()
                         .filter(schema::isInputType)
@@ -93,9 +65,8 @@ class ServiceValidator extends AbstractSchemaValidator {
                 );
     }
 
-    private void validateServiceMethodParameterTypes() {
-        allFields.stream()
-                .filter(ObjectField::hasServiceReference)
+    private void validateServiceMethodParameterTypes(List<ObjectField> serviceFields) {
+        serviceFields.stream()
                 .filter(field -> field.getNonReservedArguments()
                         .stream()
                         .filter(schema::isInputType)
@@ -200,5 +171,42 @@ class ServiceValidator extends AbstractSchemaValidator {
             return elementType;
         }
         return null;
+    }
+
+    private void validateRecursiveRecordInputs() {
+        var mutation = schema.getMutationType();
+        var mutations = mutation != null ? mutation.getFields().stream() : Stream.<ObjectField>of();
+        var query = schema.getQueryType();
+        var queries = query != null ? query.getFields().stream() : Stream.<ObjectField>of();
+
+        Stream
+                .concat(queries, mutations)
+                .filter(ObjectField::hasServiceReference)
+                .flatMap(it -> it.getArguments().stream())
+                .filter(schema::isInputType)
+                .forEach(it -> validateRecursiveRecordInputs(it, false, 0));
+    }
+
+    private void validateRecursiveRecordInputs(InputField field, boolean wasRecord, int recursion) {
+        recursionCheck(recursion);
+
+        var input = schema.getInputType(field);
+        if (input == null) {
+            return;
+        }
+
+        var hasTableOrRecordReference = input.hasTable() || input.hasJavaRecordReference();
+
+        if (field.isIterableWrapped() && wasRecord && !hasTableOrRecordReference) {
+            addErrorMessage(
+                    String.format(
+                            "Field %s with Input type %s is iterable, but has no record mapping set. Iterable Input types within records without record mapping can not be mapped to a single field in the surrounding record.",
+                            field.getName(),
+                            input.getName()
+                    )
+            );
+        }
+
+        input.getFields().forEach(it -> validateRecursiveRecordInputs(it, wasRecord || hasTableOrRecordReference, recursion + 1));
     }
 }
