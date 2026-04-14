@@ -67,8 +67,8 @@ public sealed interface ChildField extends GraphitronField
      * <ul>
      *   <li>{@link #filters()} — ordered list of WHERE-clause contributions ({@link WhereFilter});
      *       may be empty. {@link ConditionFilter} entries represent field-level {@code @condition}
-     *       methods. {@link WhereFilter.ColumnFilter} and {@link WhereFilter.InputFilter} entries
-     *       represent argument-driven predicates.</li>
+     *       methods. {@link GeneratedConditionFilter} entries represent Graphitron-generated
+     *       argument-driven predicates.</li>
      *   <li>{@link #orderBy()} — authoritative ordering ({@link OrderBySpec}); always non-null.
      *       {@link OrderBySpec.None} when ordering is not applicable or not resolvable.</li>
      *   <li>{@link #pagination()} — Relay pagination arguments ({@link PaginationSpec});

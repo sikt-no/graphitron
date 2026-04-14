@@ -5,18 +5,20 @@ import java.util.List;
 /**
  * A developer-supplied {@code @condition} method on a {@code FIELD_DEFINITION}.
  *
- * <p>Represents a {@link WhereFilter} entry that calls a developer-provided Java method and ANDs
- * the result into the SQL WHERE clause. The method signature is:
+ * <p>Implements {@link WhereFilter} so that developer-supplied and Graphitron-generated
+ * conditions can be mixed uniformly in a {@code List<WhereFilter>} and called by the fetcher
+ * generator without distinguishing between them.
+ *
+ * <p>The condition method signature is:
  * <pre>
  *     Condition method(Table&lt;?&gt; targetTable, arg1, arg2, ...)
  * </pre>
  * where the parameters are derived from {@link MethodRef#params()} in declaration order.
  *
  * <p>The first parameter always has {@link ParamSource.Table} as its source (the target table
- * alias). Subsequent parameters have {@link ParamSource.Arg} (a field argument bound via
- * {@code DataFetchingEnvironment.getArgument}) or {@link ParamSource.Context} (a context argument
- * bound via {@code GraphitronContext.getContextArgument}). Context argument names that are not
- * present as GraphQL arguments are listed in {@link #contextArgs()}.
+ * alias) and is implicit — it is not represented in {@link #callParams()}. Subsequent parameters
+ * have {@link ParamSource.Arg} (bound via {@code DataFetchingEnvironment.getArgument}) or
+ * {@link ParamSource.Context} (bound via {@code GraphitronContext.getContextArgument}).
  *
  * <p>{@code contextArgs} is the list of parameter names that resolve via
  * {@link ParamSource.Context}. This list is used both to identify which parameters bypass the
@@ -24,16 +26,47 @@ import java.util.List;
  * {@code contextArguments} entry on the directive.
  *
  * <p>The {@code override} flag from the {@code @condition} directive is consumed by the builder:
- * when {@code override: true} is set, the builder omits any {@link WhereFilter.ColumnFilter} or
- * {@link WhereFilter.InputFilter} entries that would otherwise be generated for the field's
- * arguments. {@link ConditionFilter} itself never carries an override flag — the suppression is
- * expressed entirely by the absence of the corresponding filter entries in the field's
- * {@code filters} list.
- *
- * <p>Implements {@link WhereFilter} so that field-level and argument-level conditions can be
- * mixed uniformly in a {@code List<WhereFilter>}.
+ * when {@code override: true} is set, the builder omits any {@link GeneratedConditionFilter} that
+ * would otherwise be generated for the field's arguments. {@link ConditionFilter} itself never
+ * carries an override flag — the suppression is expressed entirely by the absence of the
+ * {@link GeneratedConditionFilter} entry in the field's {@code filters} list.
  */
 public record ConditionFilter(
     MethodRef method,
     List<String> contextArgs
-) implements WhereFilter {}
+) implements WhereFilter {
+
+    @Override
+    public String className() {
+        return method.className();
+    }
+
+    @Override
+    public String methodName() {
+        return method.methodName();
+    }
+
+    /**
+     * Derives the fetcher call-site parameters from {@link #method()} by skipping the implicit
+     * {@link ParamSource.Table} first parameter and mapping each remaining parameter's source to
+     * the corresponding {@link CallSiteExtraction}.
+     *
+     * <p>When the builder gains support for constructing {@code ConditionFilter} instances
+     * (currently a deferred deliverable), this derivation will move to the builder and
+     * {@code callParams} will become a record component carrying the pre-resolved list.
+     */
+    @Override
+    public List<CallParam> callParams() {
+        return method.params().stream()
+            .filter(p -> !(p.source() instanceof ParamSource.Table))
+            .map(p -> new CallParam(p.name(), toExtraction(p.source())))
+            .toList();
+    }
+
+    private static CallSiteExtraction toExtraction(ParamSource source) {
+        return switch (source) {
+            case ParamSource.Context ignored -> new CallSiteExtraction.ContextArg();
+            default -> new CallSiteExtraction.Direct();
+        };
+    }
+}

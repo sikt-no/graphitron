@@ -141,10 +141,8 @@ public class GraphitronSchemaValidator {
             ));
         } else {
             boolean anyFilterIsList = field.filters().stream().anyMatch(f -> switch (f) {
-                case WhereFilter.ColumnFilter cf -> cf.list();
-                case WhereFilter.EnumColumnFilter ef -> ef.list();
-                case WhereFilter.TextEnumColumnFilter tf -> tf.list();
-                case WhereFilter.InputFilter inf -> inf.list();
+                case no.sikt.graphitron.rewrite.model.GeneratedConditionFilter gcf ->
+                    gcf.bodyParams().stream().anyMatch(bp -> bp.list());
                 case no.sikt.graphitron.rewrite.model.ConditionFilter ignored -> false;
             });
             boolean returnIsList = field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List;

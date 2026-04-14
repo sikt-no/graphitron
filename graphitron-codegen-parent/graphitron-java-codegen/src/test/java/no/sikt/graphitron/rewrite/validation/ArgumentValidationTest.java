@@ -1,10 +1,14 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.BodyParam;
+import no.sikt.graphitron.rewrite.model.CallParam;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
@@ -15,7 +19,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,12 +44,16 @@ class ArgumentValidationTest {
             tableField(List.of()),
             List.of()),
 
-        WITH_COLUMN_FILTER("ColumnFilter scalar — no errors",
-            tableField(List.of(new WhereFilter.ColumnFilter("id", "ID", false, false, new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))),
+        WITH_COLUMN_FILTER("GeneratedConditionFilter scalar — no errors",
+            tableField(List.of(new GeneratedConditionFilter("TestConditions", "actorsCondition",
+                new TableRef("film", "FILM", "Film", List.of()),
+                List.of(new CallParam("id", new CallSiteExtraction.Direct())),
+                List.of(new BodyParam("id", new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
+                    "java.lang.Integer", false, false, new CallSiteExtraction.Direct()))))),
             List.of()),
 
-        WITH_INPUT_FILTER("InputFilter — no errors",
-            tableField(List.of(new WhereFilter.InputFilter("filter", "FilmFilter", false, false))),
+        WITH_INPUT_FILTER("table-bound input type arg — skipped (empty filters), no errors",
+            tableField(List.of()),
             List.of()),
 
         WITH_CONDITION_FILTER("ConditionFilter — no errors",

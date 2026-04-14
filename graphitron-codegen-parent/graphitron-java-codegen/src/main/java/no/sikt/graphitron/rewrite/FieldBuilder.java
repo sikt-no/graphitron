@@ -56,6 +56,12 @@ import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.rewrite.model.BodyParam;
+import no.sikt.graphitron.rewrite.model.CallParam;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.ConditionFilter;
+import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 import org.jooq.ForeignKey;
 
@@ -151,10 +157,13 @@ class FieldBuilder {
     /**
      * Resolves the filter, order-by, and pagination components for a table-bound list field.
      * Returns a non-null {@code error} when any component fails to resolve.
+     *
+     * @param returnTypeName the GraphQL return type name (e.g. {@code "Film"}), used to derive
+     *                       the {@code *Conditions} class name for any generated filter method
      */
-    private TableFieldComponents resolveTableFieldComponents(GraphQLFieldDefinition fieldDef, TableRef table) {
+    private TableFieldComponents resolveTableFieldComponents(GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName) {
         var filterErrors = new ArrayList<String>();
-        var filters = buildFilters(fieldDef, table, filterErrors);
+        var filters = buildFilters(fieldDef, table, returnTypeName, filterErrors);
         if (filters == null) return new TableFieldComponents(null, null, null, String.join("; ", filterErrors));
         var orderErrors = new ArrayList<String>();
         var orderBy = buildOrderBySpec(fieldDef, table.tableName(), orderErrors);
@@ -195,7 +204,7 @@ class FieldBuilder {
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, referencePath.errorMessage());
             }
-            var tfc = resolveTableFieldComponents(fieldDef, returnType.table());
+            var tfc = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName);
             if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
             boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
@@ -221,7 +230,7 @@ class FieldBuilder {
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, referencePath.errorMessage());
             }
-            var tfc = resolveTableFieldComponents(fieldDef, tableInterfaceType.table());
+            var tfc = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName);
             if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
             return new TableInterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper),
@@ -463,9 +472,14 @@ class FieldBuilder {
      * Relay pagination args ({@code first}, {@code last}, {@code after}, {@code before}, handled by
      * {@link #buildPaginationSpec}). Returns {@code null} when any filter classification fails
      * (errors appended to {@code errors}).
+     *
+     * <p>All filterable scalar/enum arguments are grouped into a single
+     * {@link GeneratedConditionFilter} entry. The condition class is named
+     * {@code <returnTypeName>Conditions} and the method {@code <fieldName>Condition}.
+     * Table-bound input arguments are currently not yet handled (future deliverable).
      */
-    private List<WhereFilter> buildFilters(GraphQLFieldDefinition fieldDef, TableRef rt, List<String> errors) {
-        var result = new ArrayList<WhereFilter>();
+    private List<WhereFilter> buildFilters(GraphQLFieldDefinition fieldDef, TableRef rt, String returnTypeName, List<String> errors) {
+        var bodyParams = new ArrayList<BodyParam>();
         boolean hadError = false;
         for (var arg : fieldDef.getArguments()) {
             String name = arg.getName();
@@ -481,10 +495,7 @@ class FieldBuilder {
             boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
             String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
             if (ctx.types.containsKey(typeName)) {
-                if (ctx.types.get(typeName) instanceof GraphitronType.TableInputType) {
-                    result.add(new WhereFilter.InputFilter(name, typeName, nonNull, list));
-                }
-                // Non-table input/object types are not WHERE filters
+                // TODO: table-bound input types (InputFilter) — deferred deliverable
                 continue;
             }
             // Scalar arg: bind to column
@@ -504,25 +515,35 @@ class FieldBuilder {
             var columnRef = new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass());
             String enumClassName = validateEnumFilter(typeName, columnRef, errors);
             if (enumClassName != null && enumClassName.isEmpty()) {
-                // Empty string signals validation failure — errors already added
                 hadError = true;
                 continue;
             }
+            CallSiteExtraction extraction;
+            String javaType;
             if (enumClassName != null) {
-                // jOOQ enum column — valueOf conversion
-                result.add(new WhereFilter.EnumColumnFilter(name, typeName, nonNull, list, columnRef, enumClassName));
+                extraction = new CallSiteExtraction.EnumValueOf(enumClassName);
+                javaType = enumClassName;
             } else {
-                // Check if GraphQL type is an enum mapped to a text column
                 var textEnumMapping = buildTextEnumMapping(typeName);
                 if (textEnumMapping != null) {
                     String mapFieldName = fieldDef.getName().toUpperCase() + "_" + name.toUpperCase() + "_MAP";
-                    result.add(new WhereFilter.TextEnumColumnFilter(name, typeName, nonNull, list, columnRef, textEnumMapping, mapFieldName));
+                    extraction = new CallSiteExtraction.TextMapLookup(mapFieldName, textEnumMapping);
+                    javaType = String.class.getName();
                 } else {
-                    result.add(new WhereFilter.ColumnFilter(name, typeName, nonNull, list, columnRef));
+                    extraction = new CallSiteExtraction.Direct();
+                    javaType = columnRef.columnClass();
                 }
             }
+            bodyParams.add(new BodyParam(name, columnRef, javaType, nonNull, list, extraction));
         }
-        return hadError ? null : List.copyOf(result);
+        if (hadError) return null;
+        if (bodyParams.isEmpty()) return List.of();
+        String conditionsClassName = GeneratorConfig.outputPackage() + ".rewrite.types." + returnTypeName + "Conditions";
+        String methodName = fieldDef.getName() + "Condition";
+        var callParams = bodyParams.stream()
+            .map(bp -> new CallParam(bp.name(), bp.extraction()))
+            .toList();
+        return List.of(new GeneratedConditionFilter(conditionsClassName, methodName, rt, callParams, List.copyOf(bodyParams)));
     }
 
     /**
@@ -709,7 +730,7 @@ class FieldBuilder {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "@lookupKey requires a @table-annotated return type");
             }
-            var tfc = resolveTableFieldComponents(fieldDef, tb.table());
+            var tfc = resolveTableFieldComponents(fieldDef, tb.table(), lookupTypeName);
             if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
             return new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
@@ -737,13 +758,13 @@ class FieldBuilder {
         if (elementType instanceof TableBackedType tbt && !(elementType instanceof TableInterfaceType)) {
             var wrapper = buildWrapper(fieldDef);
             var returnType = (ReturnTypeRef.TableBoundReturnType) ctx.resolveReturnType(elementTypeName, wrapper);
-            var tfc = resolveTableFieldComponents(fieldDef, returnType.table());
+            var tfc = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName);
             if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
             return new QueryField.QueryTableField(parentTypeName, name, location, returnType, tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);
-            var tfc = resolveTableFieldComponents(fieldDef, tableInterfaceType.table());
+            var tfc = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName);
             if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
             return new QueryField.QueryTableInterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper), tfc.filters(), tfc.orderBy(), tfc.pagination());
@@ -957,7 +978,7 @@ class FieldBuilder {
         }
         return switch (ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef))) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
-                var tfc = resolveTableFieldComponents(fieldDef, tb.table());
+                var tfc = resolveTableFieldComponents(fieldDef, tb.table(), elementTypeName);
                 if (tfc.error() != null) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
                 if (hasLookupKeyAnywhere(fieldDef)) {
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());

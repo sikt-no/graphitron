@@ -8,9 +8,10 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.BodyParam;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import javax.lang.model.element.Modifier;
@@ -20,46 +21,61 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
- * Generates one {@code <TypeName>Conditions.java} per type that has fields with filters.
+ * Generates one {@code <TypeName>Conditions.java} per type that has fields with a
+ * {@link GeneratedConditionFilter}.
  *
  * <p>Each condition method is a pure function: it takes the jOOQ table alias and typed argument
  * values, and returns a {@code Condition}. No dependency on graphql-java runtime types.
  *
- * <p>Text enum lookup maps are generated as static final fields on the same class.
+ * <p>Static {@code Map<String,String>} lookup fields for text-enum arguments are generated on the
+ * same class, driven by {@link CallSiteExtraction.TextMapLookup} entries in each
+ * {@link BodyParam}.
  */
 public class TypeConditionsGenerator {
 
     private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
 
     public static List<TypeSpec> generate(GraphitronSchema schema) {
-        // Collect QueryTableFields with filters, grouped by return type name
-        var fieldsByReturnType = new LinkedHashMap<String, List<QueryField.QueryTableField>>();
+        // Collect GeneratedConditionFilters grouped by their conditions class name
+        var filtersByClass = new LinkedHashMap<String, List<GeneratedConditionFilter>>();
         for (var type : schema.types().values()) {
-            if (!(type instanceof GraphitronType.RootType)) continue;
             for (var field : schema.fieldsOf(type.name())) {
-                if (field instanceof QueryField.QueryTableField qtf && !qtf.filters().isEmpty()) {
-                    fieldsByReturnType
-                        .computeIfAbsent(qtf.returnType().returnTypeName(), k -> new ArrayList<>())
-                        .add(qtf);
-                }
+                extractGeneratedConditionFilter(field).ifPresent(gcf ->
+                    filtersByClass
+                        .computeIfAbsent(gcf.className(), k -> new ArrayList<>())
+                        .add(gcf));
             }
         }
 
-        return fieldsByReturnType.entrySet().stream()
+        return filtersByClass.entrySet().stream()
             .sorted(Comparator.comparing(e -> e.getKey()))
             .map(e -> generateConditionsClass(e.getKey(), e.getValue()))
             .toList();
     }
 
-    private static TypeSpec generateConditionsClass(String typeName, List<QueryField.QueryTableField> fields) {
-        var builder = TypeSpec.classBuilder(typeName + "Conditions")
+    private static java.util.Optional<GeneratedConditionFilter> extractGeneratedConditionFilter(GraphitronField field) {
+        List<WhereFilter> filters = switch (field) {
+            case no.sikt.graphitron.rewrite.model.QueryField.QueryTableField qtf -> qtf.filters();
+            case no.sikt.graphitron.rewrite.model.ChildField.TableTargetField ttf -> ttf.filters();
+            default -> List.of();
+        };
+        return filters.stream()
+            .filter(f -> f instanceof GeneratedConditionFilter)
+            .map(f -> (GeneratedConditionFilter) f)
+            .findFirst();
+    }
+
+    private static TypeSpec generateConditionsClass(String fqClassName, List<GeneratedConditionFilter> filters) {
+        // Class simple name is the last segment of the fully qualified name
+        String simpleName = fqClassName.substring(fqClassName.lastIndexOf('.') + 1);
+        var builder = TypeSpec.classBuilder(simpleName)
             .addModifiers(Modifier.PUBLIC);
 
-        for (var qtf : fields) {
-            builder.addMethod(buildConditionMethod(qtf));
-            for (var filter : qtf.filters()) {
-                if (filter instanceof WhereFilter.TextEnumColumnFilter tf) {
-                    builder.addField(buildTextEnumMapField(tf));
+        for (var gcf : filters) {
+            builder.addMethod(buildConditionMethod(gcf));
+            for (var bp : gcf.bodyParams()) {
+                if (bp.extraction() instanceof CallSiteExtraction.TextMapLookup tl) {
+                    builder.addField(buildTextEnumMapField(tl));
                 }
             }
         }
@@ -67,71 +83,47 @@ public class TypeConditionsGenerator {
         return builder.build();
     }
 
-    static MethodSpec buildConditionMethod(QueryField.QueryTableField qtf) {
-        var tableRef = qtf.returnType().table();
-        var jooqTableClass = ClassName.get(GeneratorConfig.getGeneratedJooqPackage() + ".tables",
+    static MethodSpec buildConditionMethod(GeneratedConditionFilter gcf) {
+        var tableRef = gcf.tableRef();
+        var jooqTableClass = ClassName.get(
+            GeneratorConfig.getGeneratedJooqPackage() + ".tables",
             tableRef.javaClassName());
-        var builder = MethodSpec.methodBuilder(qtf.name() + "Condition")
+
+        var builder = MethodSpec.methodBuilder(gcf.methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ClassName.get("org.jooq", "Condition"))
             .addParameter(jooqTableClass, "table");
 
-        for (var filter : qtf.filters()) {
-            switch (filter) {
-                case WhereFilter.ColumnFilter cf ->
-                    builder.addParameter(ClassName.bestGuess(cf.column().columnClass()), cf.name());
-                case WhereFilter.EnumColumnFilter ef ->
-                    builder.addParameter(ClassName.bestGuess(ef.enumClassName()), ef.name());
-                case WhereFilter.TextEnumColumnFilter tf ->
-                    builder.addParameter(String.class, tf.name());
-                default -> {}
-            }
+        for (var bp : gcf.bodyParams()) {
+            builder.addParameter(ClassName.bestGuess(bp.javaType()), bp.name());
         }
 
         builder.addStatement("var condition = $T.noCondition()", DSL);
-        for (var filter : qtf.filters()) {
-            String col = switch (filter) {
-                case WhereFilter.ColumnFilter cf -> cf.column().javaName();
-                case WhereFilter.EnumColumnFilter ef -> ef.column().javaName();
-                case WhereFilter.TextEnumColumnFilter tf -> tf.column().javaName();
-                default -> null;
-            };
-            String name = switch (filter) {
-                case WhereFilter.ColumnFilter cf -> cf.name();
-                case WhereFilter.EnumColumnFilter ef -> ef.name();
-                case WhereFilter.TextEnumColumnFilter tf -> tf.name();
-                default -> null;
-            };
-            boolean nonNull = switch (filter) {
-                case WhereFilter.ColumnFilter cf -> cf.nonNull();
-                case WhereFilter.EnumColumnFilter ef -> ef.nonNull();
-                case WhereFilter.TextEnumColumnFilter tf -> tf.nonNull();
-                default -> false;
-            };
-            if (col == null) continue;
-            if (nonNull) {
+        for (var bp : gcf.bodyParams()) {
+            String col = bp.column().javaName();
+            if (bp.nonNull()) {
                 builder.addStatement("condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                    col, DSL, name, col);
+                    col, DSL, bp.name(), col);
             } else {
                 builder.addStatement("if ($L != null) condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                    name, col, DSL, name, col);
+                    bp.name(), col, DSL, bp.name(), col);
             }
         }
         builder.addStatement("return condition");
         return builder.build();
     }
 
-    private static FieldSpec buildTextEnumMapField(WhereFilter.TextEnumColumnFilter tf) {
+    private static FieldSpec buildTextEnumMapField(CallSiteExtraction.TextMapLookup tl) {
         var MAP = ClassName.get(java.util.Map.class);
         var mapType = ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(String.class));
         var mapEntries = CodeBlock.builder();
         boolean first = true;
-        for (var entry : tf.valueMapping().entrySet()) {
+        for (var entry : tl.valueMapping().entrySet()) {
             if (!first) mapEntries.add(", ");
             mapEntries.add("$S, $S", entry.getKey(), entry.getValue());
             first = false;
         }
-        return FieldSpec.builder(mapType, tf.mapFieldName())
+        return FieldSpec.builder(mapType, tl.mapFieldName())
             .addModifiers(Modifier.STATIC, Modifier.FINAL)
             .initializer("$T.of($L)", MAP, mapEntries.build())
             .build();

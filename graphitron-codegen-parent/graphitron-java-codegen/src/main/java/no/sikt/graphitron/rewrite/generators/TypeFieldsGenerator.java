@@ -8,6 +8,8 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.model.CallParam;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -185,43 +187,56 @@ public class TypeFieldsGenerator {
     }
 
     /**
-     * Generates the condition call: {@code var condition = Table.fieldCondition(Tables.TABLE, extractedArg1, ...)}.
-     * Argument extraction (valueOf, map lookup) happens inline at the call site.
+     * Generates the WHERE condition setup: one {@code condition = condition.and(...)} statement
+     * per {@link WhereFilter} in the field's filter list, using the {@link WhereFilter} interface.
+     * No switching on filter subtypes — each filter provides its own class, method, and call params.
      */
     private static CodeBlock buildConditionCall(QueryField.QueryTableField qtf,
             ClassName tablesClass, TableRef tableRef) {
         var code = CodeBlock.builder();
-        if (qtf.filters().isEmpty()) {
-            code.addStatement("var condition = $T.noCondition()", DSL);
-            return code.build();
-        }
-
-        // Build the argument expressions for the condition method call on *Conditions class
-        var conditionsClass = ClassName.get(
-            GeneratorConfig.outputPackage() + ".rewrite.types",
-            qtf.returnType().returnTypeName() + "Conditions");
-        var args = CodeBlock.builder();
-        args.add("$T.$L", tablesClass, tableRef.javaFieldName()); // table alias
+        code.addStatement("var condition = $T.noCondition()", DSL);
         for (var filter : qtf.filters()) {
-            args.add(",\n    ");
-            switch (filter) {
-                case WhereFilter.ColumnFilter cf ->
-                    args.add("env.getArgument($S)", cf.name());
-                case WhereFilter.EnumColumnFilter ef -> {
-                    var enumClass = ClassName.bestGuess(ef.enumClassName());
-                    args.add("env.getArgument($S) != null ? $T.valueOf(env.<$T>getArgument($S)) : null",
-                        ef.name(), enumClass, String.class, ef.name());
-                }
-                case WhereFilter.TextEnumColumnFilter tf ->
-                    args.add("env.getArgument($S) != null ? $T.$L.get(env.<$T>getArgument($S)) : null",
-                        tf.name(), conditionsClass, tf.mapFieldName(), String.class, tf.name());
-                default -> args.add("null");
-            }
+            var callArgs = buildCallArgs(filter, tablesClass, tableRef);
+            code.addStatement("condition = condition.and($T.$L($L))",
+                ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
         }
-
-        code.addStatement("var condition = $T.$LCondition($L)",
-            conditionsClass, qtf.name(), args.build());
         return code.build();
+    }
+
+    /**
+     * Builds the argument list for one condition method call: table alias first, then one
+     * expression per {@link CallParam} using its {@link CallSiteExtraction}.
+     */
+    private static CodeBlock buildCallArgs(WhereFilter filter, ClassName tablesClass, TableRef tableRef) {
+        var args = CodeBlock.builder();
+        args.add("$T.$L", tablesClass, tableRef.javaFieldName());
+        for (var param : filter.callParams()) {
+            args.add(", $L", buildArgExtraction(param, filter.className()));
+        }
+        return args.build();
+    }
+
+    /**
+     * Emits the expression to extract one argument value from the GraphQL execution context.
+     */
+    private static CodeBlock buildArgExtraction(CallParam param, String conditionsClassName) {
+        return switch (param.extraction()) {
+            case CallSiteExtraction.Direct ignored ->
+                CodeBlock.of("env.getArgument($S)", param.name());
+            case CallSiteExtraction.EnumValueOf ev -> {
+                var enumClass = ClassName.bestGuess(ev.enumClassName());
+                yield CodeBlock.of(
+                    "env.getArgument($S) != null ? $T.valueOf(env.<$T>getArgument($S)) : null",
+                    param.name(), enumClass, String.class, param.name());
+            }
+            case CallSiteExtraction.TextMapLookup tl ->
+                CodeBlock.of(
+                    "env.getArgument($S) != null ? $T.$L.get(env.<$T>getArgument($S)) : null",
+                    param.name(), ClassName.bestGuess(conditionsClassName), tl.mapFieldName(),
+                    String.class, param.name());
+            case CallSiteExtraction.ContextArg ignored ->
+                CodeBlock.of("graphitronContext(env).getContextArgument(env, $S)", param.name());
+        };
     }
 
     /**

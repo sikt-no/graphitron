@@ -1,11 +1,15 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.BodyParam;
+import no.sikt.graphitron.rewrite.model.CallParam;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField;
-import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
@@ -13,7 +17,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,6 +24,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 class QueryLookupTableFieldValidationTest {
 
     private static final ColumnRef FILM_ID_COL = new ColumnRef("film_id", "FILM_ID", "java.lang.Integer");
+    private static final TableRef FILM_TABLE = new TableRef("film", "FILM", "Film", List.of());
+
+    private static GeneratedConditionFilter columnFilter(String name, boolean nonNull, boolean list) {
+        var bodyParam = new BodyParam(name, FILM_ID_COL, "java.lang.Integer", nonNull, list, new CallSiteExtraction.Direct());
+        var callParam = new CallParam(name, new CallSiteExtraction.Direct());
+        return new GeneratedConditionFilter("TestConditions", "testCondition", FILM_TABLE,
+            List.of(callParam), List.of(bodyParam));
+    }
 
     private static QueryLookupTableField singleReturn(List<WhereFilter> filters, OrderBySpec orderBy) {
         return new QueryLookupTableField("Query", "filmById", null,
@@ -34,18 +45,18 @@ class QueryLookupTableFieldValidationTest {
             singleReturn(List.of(), new OrderBySpec.None()),
             List.of()),
 
-        VALID_WITH_COLUMN_ARG("ColumnFilter scalar (no list) — valid with single return",
-            singleReturn(List.of(new WhereFilter.ColumnFilter("id", "ID", false, false, FILM_ID_COL)), new OrderBySpec.None()),
+        VALID_WITH_COLUMN_ARG("GeneratedConditionFilter scalar (no list) — valid with single return",
+            singleReturn(List.of(columnFilter("id", false, false)), new OrderBySpec.None()),
             List.of()),
 
-        VALID_WITH_LIST_COLUMN_ARG("ColumnFilter list — valid with list return",
+        VALID_WITH_LIST_COLUMN_ARG("GeneratedConditionFilter list — valid with list return",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.List(true, true)),
-                List.of(new WhereFilter.ColumnFilter("id", "ID", false, true, FILM_ID_COL)), new OrderBySpec.None(), null),
+                new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, new FieldWrapper.List(true, true)),
+                List.of(columnFilter("id", false, true)), new OrderBySpec.None(), null),
             List.of()),
 
-        VALID_WITH_TABLE_INPUT_TYPE_ARG("InputFilter — valid with single return",
-            singleReturn(List.of(new WhereFilter.InputFilter("key", "FilmKey", false, false)), new OrderBySpec.None()),
+        VALID_WITH_TABLE_INPUT_TYPE_ARG("table-bound input type arg — skipped, empty filters, valid with single return",
+            singleReturn(List.of(), new OrderBySpec.None()),
             List.of()),
 
         LIST_RETURN_NO_LIST_ARG("list return with no list filter — cardinality mismatch",
@@ -55,7 +66,7 @@ class QueryLookupTableFieldValidationTest {
             List.of("Field 'filmById': result type does not match input cardinality")),
 
         SINGLE_RETURN_LIST_ARG("single return with list filter — cardinality mismatch",
-            singleReturn(List.of(new WhereFilter.ColumnFilter("id", "ID", false, true, FILM_ID_COL)), new OrderBySpec.None()),
+            singleReturn(List.of(columnFilter("id", false, true)), new OrderBySpec.None()),
             List.of("Field 'filmById': result type does not match input cardinality")),
 
         CONNECTION_RETURN("connection return — never valid on lookup",

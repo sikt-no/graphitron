@@ -27,8 +27,8 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
+import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
-import no.sikt.graphitron.rewrite.model.WhereFilter;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
@@ -990,7 +990,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         TABLE_FIELD_WITH_ARGS(
-            "TableField with arguments — filters parsed with correct typeName, nonNull, list",
+            "TableField with two column arguments — one GeneratedConditionFilter with two BodyParams",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
@@ -1000,15 +1000,14 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("Film", "actors");
-                assertThat(f.filters()).hasSize(2);
-                var actorId = (WhereFilter.ColumnFilter) f.filters().get(0);
-                assertThat(actorId.name()).isEqualTo("actor_id");
-                assertThat(actorId.typeName()).isEqualTo("ID");
-                assertThat(actorId.nonNull()).isTrue();
-                assertThat(actorId.list()).isFalse();
-                var firstName = (WhereFilter.ColumnFilter) f.filters().get(1);
-                assertThat(firstName.typeName()).isEqualTo("String");
-                assertThat(firstName.list()).isTrue();
+                assertThat(f.filters()).hasSize(1);
+                var gcf = (GeneratedConditionFilter) f.filters().get(0);
+                assertThat(gcf.bodyParams()).hasSize(2);
+                assertThat(gcf.bodyParams().get(0).name()).isEqualTo("actor_id");
+                assertThat(gcf.bodyParams().get(0).nonNull()).isTrue();
+                assertThat(gcf.bodyParams().get(0).list()).isFalse();
+                assertThat(gcf.bodyParams().get(1).name()).isEqualTo("first_name");
+                assertThat(gcf.bodyParams().get(1).list()).isTrue();
             }),
 
         TABLE_FIELD_LOOKUP_KEY_ARG(
@@ -1023,7 +1022,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.LookupTableField) schema.field("Film", "actor");
                 assertThat(f.filters()).hasSize(1);
-                assertThat(((WhereFilter.ColumnFilter) f.filters().get(0)).name()).isEqualTo("actor_id");
+                assertThat(((GeneratedConditionFilter) f.filters().get(0)).bodyParams().get(0).name()).isEqualTo("actor_id");
             }),
 
         TABLE_FIELD_ORDER_BY_ARG(
@@ -1423,7 +1422,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(schema.field("Query", "filmById")).isInstanceOf(QueryField.QueryLookupTableField.class);
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
                 assertThat(f.filters()).hasSize(1);
-                assertThat(((WhereFilter.ColumnFilter) f.filters().get(0)).name()).isEqualTo("film_id");
+                assertThat(((GeneratedConditionFilter) f.filters().get(0)).bodyParams().get(0).name()).isEqualTo("film_id");
                 assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class);
             }),
 
@@ -1445,8 +1444,9 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
                 assertThat(f.filters()).hasSize(1);
-                assertThat(f.filters().get(0)).isInstanceOf(WhereFilter.ColumnFilter.class);
-                var a = (WhereFilter.ColumnFilter) f.filters().get(0);
+                assertThat(f.filters().get(0)).isInstanceOf(GeneratedConditionFilter.class);
+                var gcf = (GeneratedConditionFilter) f.filters().get(0);
+                var a = gcf.bodyParams().get(0);
                 assertThat(a.name()).isEqualTo("film_id");
                 assertThat(a.column().javaName()).isEqualTo("FILM_ID");
                 assertThat(a.column().columnClass()).isNotEmpty();
@@ -1466,7 +1466,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LOOKUP_FIELD_TABLE_INPUT_TYPE_ARG(
-            "lookup field with explicit @table input type arg → InputFilter",
+            "lookup field with explicit @table input type arg → filters empty (input types deferred)",
             """
             input FilmKey @table(name: "film") { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
@@ -1474,14 +1474,11 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmByKey");
-                assertThat(f.filters()).hasSize(1);
-                assertThat(f.filters().get(0)).isInstanceOf(WhereFilter.InputFilter.class);
-                assertThat(((WhereFilter.InputFilter) f.filters().get(0)).name()).isEqualTo("key");
-                assertThat(((WhereFilter.InputFilter) f.filters().get(0)).typeName()).isEqualTo("FilmKey");
+                assertThat(f.filters()).isEmpty();
             }),
 
         LOOKUP_FIELD_IMPLICIT_TABLE_INPUT_TYPE_ARG(
-            "lookup field with plain input type arg (no @table) → InputFilter via inline promotion",
+            "lookup field with plain input type arg (no @table) → filters empty, type promoted to TableInputType",
             """
             input FilmKey { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
@@ -1489,8 +1486,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmByKey");
-                assertThat(f.filters()).hasSize(1);
-                assertThat(f.filters().get(0)).isInstanceOf(WhereFilter.InputFilter.class);
+                assertThat(f.filters()).isEmpty();
                 // The type was promoted to TableInputType in types map
                 assertThat(schema.type("FilmKey"))
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType.class);
@@ -1512,7 +1508,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(orderBy.sortFieldName()).isEqualTo("sortField");
                 assertThat(orderBy.directionFieldName()).isEqualTo("direction");
                 assertThat(f.filters()).hasSize(1);
-                assertThat(((WhereFilter.ColumnFilter) f.filters().get(0)).name()).isEqualTo("film_id");
+                assertThat(((GeneratedConditionFilter) f.filters().get(0)).bodyParams().get(0).name()).isEqualTo("film_id");
             }),
 
         LOOKUP_FIELD_ORDERBY_ARG_BAD_STRUCTURE(
