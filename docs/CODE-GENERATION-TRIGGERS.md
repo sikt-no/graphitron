@@ -19,8 +19,9 @@ GraphitronSchema
   └── Map<String, GraphitronField>  (one per field)
       ↓
 Generators
-  ├── TypeFieldsGenerator  →  rewrite.types.*Fields
-  └── TypeClassGenerator   →  rewrite.types.*
+  ├── TypeFieldsGenerator      →  rewrite.types.*Fields
+  ├── TypeClassGenerator       →  rewrite.types.*
+  └── TypeConditionsGenerator  →  rewrite.types.*Conditions
 ```
 
 Each sealed variant maps to specific generator output. The sections below show the full
@@ -81,8 +82,8 @@ Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
 
 | Directive Pattern on Type | `GraphitronType` Variant | Generator Output |
 |---|---|---|
-| `@table` (no `@node`, no `@discriminate`) | `TableType` | `*Fields` class + `*Tables` class |
-| `@table` + `@node` | `NodeType` | `*Fields` class + `*Tables` class (with Relay ID handling) |
+| `@table` (no `@node`, no `@discriminate`) | `TableType` | `*Fields` class + `*` class |
+| `@table` + `@node` | `NodeType` | `*Fields` class + `*` class (with Relay ID handling) |
 | `@record` | `ResultType` | `*Fields` class only (no SQL scope of its own) |
 | `Query` or `Mutation` root type | `RootType` | `*Fields` class only |
 | Interface with `@table` + `@discriminate` | `TableInterfaceType` | `*Fields` class |
