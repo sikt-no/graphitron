@@ -1,28 +1,11 @@
 # Rewrite Roadmap
 
-This document tracks the migration from `ProcessedSchema` (the current God Object) to the new parse→validate→generate pipeline. It also documents the error quality pattern to follow as validation expands.
+This document tracks remaining generator work and design principles for the rewrite pipeline.
+For the model taxonomy (types, fields, directives, and what they generate), see [Code Generation Triggers](CODE-GENERATION-TRIGGERS.md).
 
 ---
 
-## Current State: Phase 1 Complete
-
-The rewrite pipeline is live and running in parallel with the legacy pipeline:
-
-```
-GraphitronSchemaBuilder  →  GraphitronSchemaValidator  →  Generators (partial — see table below)
-         ↓                            ↓
-   GraphitronSchema           List<ValidationError>
-   (sealed type/field             (warnings only,
-    hierarchies)                  non-fatal)
-```
-
-**What's working:**
-- `GraphitronSchemaBuilder` reads all schema directives once and classifies every type and field into a sealed hierarchy (`GraphitronType`, `GraphitronField`)
-- `GraphitronSchemaValidator` collects all errors before reporting — no early exits
-- `ValidationError` carries `SourceLocation` (file + line + column from the SDL)
-- `ValidateMojo` runs both pipelines: legacy errors are fatal, rewrite errors are warnings
-
-**Generator progress:**
+## Generator Progress
 
 | Generator / method | State |
 |---|---|
@@ -41,57 +24,6 @@ GraphitronSchemaBuilder  →  GraphitronSchemaValidator  →  Generators (partia
 > placeholder classes (no methods) for every `TableType`/`NodeType`/`RootType` — it added noise
 > without value. A future `TypeReferencesGenerator` will replace it in G5 when field-level
 > reference constants are needed.
-
-The rewrite pipeline produces Java code for the cases above. Full SQL generation across all field types is Phase 2.
-
----
-
-## Classification Vocabulary
-
-### Source context
-
-Every field has a source context — the type on which it is defined.
-
-| Source context | Directive | What Graphitron generates |
-|---|---|---|
-| **Unmapped** | *(none — Query, Mutation)* | Entry point. No SQL yet. |
-| **Table-mapped** | `@table` | Full SQL generation — queries, joins, projections. |
-| **Result-mapped** | `@record` | Runtime wiring only. Graphitron validates types and wires data fetchers, but generates no SQL until a new scope starts. |
-
-### Scope
-
-A Graphitron scope corresponds to one SQL statement. Fields within a scope contribute to the same query.
-
-| Boundary | Trigger |
-|---|---|
-| **Enter** | An unmapped root field reaches a table-mapped type — the first scope starts |
-| **Split** | `@splitQuery` on a `SplitTableField` — new scope via DataLoader |
-| **Lookup** | `@lookupKey` (no `@splitQuery`) on a `LookupTableField` — result-mapped parent: new scope via DataLoader; table-mapped parent: correlated subquery inlined in the current scope |
-| **Split lookup** | `@splitQuery` + `@lookupKey` on a `SplitLookupTableField` — always a new scope via DataLoader with both derived tables |
-| **Record handoff** | A `TableField` or `LookupTableField` on a result-mapped type, or a user-provided return (`@service`, `@tableMethod`) reaching a table-mapped type — new scope via DataLoader, keyed by the parent's PK |
-
-`@service` fields use a **private scope** — they create their own SQL statement independently and do not participate in any Graphitron-managed scope.
-
-### Derived tables
-
-Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
-
-- **Derived source table** — built from parent source records. Contains the FK-relevant columns from the parent: the parent's PK/unique-key columns when the FK is on the child side, or the FK columns themselves when the FK is on the parent side. Used for `@splitQuery` table fields, user-provided returns (`@service`, `@tableMethod`), and mutation read-backs.
-- **Derived target table** — built from `@lookupKey` argument values (from `SelectedField.getArguments()`). Each argument value (or list element) is one row. **Identical for every source in a batch** — because all N parents in a batch share the same request arguments, M (the number of lookup rows) is constant for the entire batch. Result count is always exactly N × M. This is why `@condition` is blocked on lookup fields: any filter would break the positional invariant.
-
-### Conditions
-
-| Kind | Purpose | Source |
-|---|---|---|
-| **Reference condition** | How two tables are joined within a scope | `@reference` directive, FK metadata |
-| **Filter condition** | Narrows the result set | `@condition` directive, arguments, cursor |
-
-### Structural properties
-
-| Property | Effect |
-|---|---|
-| **`@splitQuery`** | Forces a new scope via DataLoader. On a `TableField` (no `@lookupKey`) → `SplitTableField`; on a field with `@lookupKey` → `SplitLookupTableField`. Error on result-mapped fields (they always start a new scope implicitly). |
-| **`@lookupKey`** | Argument values become the derived target table. Blocks `@condition` and pagination (preserves N × M result invariant). Without `@splitQuery` → `LookupTableField`; with `@splitQuery` → `SplitLookupTableField`. |
 
 ---
 
@@ -129,33 +61,24 @@ Field record components are declared with the narrowest type the classifier can 
 
 This pushes classification certainty into the type system: code that receives a `ServiceTableField` knows its `returnType` is `TableBoundReturnType` without a runtime check. Where the return type genuinely varies, the broad `ReturnTypeRef` is retained. The same discipline applies to splitting semantically distinct variants into separate records rather than using a discriminating boolean or enum.
 
-### No `var` in generated code
-
-Generated Java code must never use `var`. Always emit explicit type declarations (e.g. `Film table = Tables.FILM`, `Condition condition = DSL.noCondition()`). Two reasons: generated code is a public artifact that developers read, and `var` inference is often unhelpful for wide jOOQ types where seeing the declared type is the point. Use `$T` format specifiers in JavaPoet `addStatement`/`addCode` calls to emit the concrete type. Local variables in the generator's *own* Java code (the code that builds `MethodSpec`s) may use `var` freely.
-
 ### Sub-taxonomies for resolution outcomes
 
 Complex resolution outcomes get their own sealed type rather than being stored as raw strings. `BatchKey` is a sub-taxonomy of `ParamSource.Sources`, just as `TableRef` is a sub-taxonomy of `GraphitronType.TableBackedType` and `ColumnRef` is a sub-taxonomy of `InputField.ColumnField`. This pattern keeps each concept's complexity local and makes the taxonomy self-documenting: the type of a field tells you exactly what states it can be in.
 
 ---
 
-## Phase 2: Two Parallel Tracks
+## Remaining Work
 
-Phase 2 has two independent workstreams that can be done in any order.
-
-### Track A — Finish stub implementations
-
-Complete the generator bodies that currently throw `UnsupportedOperationException`. These do not touch ProcessedSchema; they extend the rewrite pipeline directly.
+Complete the generator bodies that currently throw `UnsupportedOperationException`.
 
 **Prerequisite**: before implementing any stub body, check that the model is generation-ready (see Design Principle above). If the model for that field type still carries raw strings or requires resolution logic in the generator, fix the model first.
 
 Stubs to complete (approximate priority order):
-1. `TypeFieldsGenerator` — `QueryLookupTableField` fetcher body + `lookup*()` rows method body
-2. `TypeFieldsGenerator` — `TableField` / `LookupTableField` inline-subquery field methods (call `Tables.subselectMany/subselectOne` with condition + orderBy)
-3. `TypeFieldsGenerator` — `SplitTableField` / `SplitLookupTableField` rows method bodies (DataLoader batch SQL)
-4. `TypeFieldsGenerator` — `QueryTableInterfaceField`, `QueryInterfaceField`, `QueryUnionField` fetchers
-5. `TypeFieldsGenerator` — Mutation field bodies (all four DML variants: INSERT/UPDATE/DELETE/UPSERT)
-6. `TypeClassGenerator` — `selectManyByRowKeys` / `selectOneByRowKeys` and `selectManyByRecordKeys` / `selectOneByRecordKeys` bodies
+1. `TypeFetcherGenerator` — `TableField` / `LookupTableField` inline-subquery field methods (call `Tables.subselectMany/subselectOne` with condition + orderBy)
+2. `TypeFetcherGenerator` — `SplitTableField` / `SplitLookupTableField` rows method bodies (DataLoader batch SQL)
+3. `TypeFetcherGenerator` — `QueryTableInterfaceField`, `QueryInterfaceField`, `QueryUnionField` fetchers
+4. `TypeFetcherGenerator` — Mutation field bodies (all four DML variants: INSERT/UPDATE/DELETE/UPSERT)
+5. `TypeClassGenerator` — `selectManyByRowKeys` / `selectOneByRowKeys` and `selectManyByRecordKeys` / `selectOneByRecordKeys` bodies
 
 #### G5 — Inline `TableField`
 
@@ -185,46 +108,11 @@ Bespoke method signatures (all take `SelectedField sel` for argument unpacking; 
 
 SQL structure: each bespoke method builds an indexed `VALUES(…)` derived table (prepending a 1-based `idx`), JOINs it against the target, and partitions results back by `idx`. Result-mapped lookup fields use two `idx` columns (`src_idx`, `tgt_idx`). The table-mapped `LookupTableField` is built as a `DSL.multiset(…)` correlated subquery with the FK join condition baked into the generated method.
 
-### Track B — Migrate legacy generators from ProcessedSchema
-
-Replace `ProcessedSchema` queries with rewrite config, one generator at a time.
-
-**Scope of ProcessedSchema today**:
-- `ProcessedSchema.java`: 1,355 lines, 70+ query methods
-- Usage: 247 `processedSchema.` calls across 42 generator files
-
-**Migration pattern** (apply per generator):
-
-```java
-// Before
-if (processedSchema.hasTable(typeName)) {
-    var table = processedSchema.getTable(typeName);
-    // ...
-}
-
-// After
-var typeConfig = schema.types().get(typeName);
-if (typeConfig instanceof GraphitronType.TableType t) {
-    var table = t.table();
-    // ...
-}
-```
-
-**Approach**:
-1. Pass `GraphitronSchema` alongside `ProcessedSchema` to the generator under migration
-2. Replace each `processedSchema.` call with the equivalent rewrite lookup
-3. Run the full test suite after each generator — confirm identical output
-4. Remove the `ProcessedSchema` parameter once a generator is fully migrated
-
-**Risk**: MEDIUM — touching code generation. Keep the legacy path running until Phase 3.
-
-**Track B also includes:** rewrite `IntrospectMojo` to use `JooqCatalog` instead of `TableReflection`. Prerequisites are already in place: `JooqCatalog.ColumnEntry` carries `nullable()`, and `allColumnsOf(tableSqlName)` returns all columns. No module changes needed (`graphitron-maven-plugin` already depends on `graphitron-java-codegen`). No test changes needed (`IntrospectMojoTest` tests only JSON serialisation).
-
 ---
 
 ## Known Gaps
 
-These are concrete, bounded problems identified during implementation. They block specific functionality but do not block the rest of Phase 2.
+These are concrete, bounded problems identified during implementation. They block specific functionality but do not block the remaining generator work.
 
 ### `ConditionFilter` has no builder path
 
@@ -246,144 +134,17 @@ Decision needed before implementing any `ObjectBased`-keyed service field.
 
 ---
 
-## Phase 3: Delete ProcessedSchema
-
-Once all 247 call sites are migrated:
-
-```java
-// Clean entry point — no ProcessedSchema anywhere
-CodeGenerationConfig config = new GraphitronSchemaBuilder(jooqCatalog).build(schema);
-new GraphitronSchemaValidator().validate(config);
-new CodeGenerator(config).generate();
-```
-
-**Delete**:
-- `ProcessedSchema.java` (1,355 lines)
-- `ProcessedDefinitionsValidator.java` (superseded by `GraphitronSchemaValidator`)
-
-**Risk**: LOW — by this point every code path runs through rewrite config in production.
-
-This is also the point where the `disableLegacy` flag in `GenerateMojo` becomes meaningful for external users.
-
----
-
 ## Error Quality: Candidate Hints
 
 `GraphitronSchemaBuilder` already implements `candidateHint(attempt, candidates)` using Levenshtein distance to sort candidates by similarity. It is used in 12 places: table name lookups, column name lookups, FK name lookups, service method name lookups, and type name lookups. `ValidationError` carries `SourceLocation`.
 
-When Phase 2 adds new jOOQ existence checks in the validator or builder, follow the same pattern — pass the relevant candidate list from `JooqCatalog` (`allTableSqlNames()`, `columnSqlNamesOf(table)`, `allForeignKeySqlNames()`) to `candidateHint`.
+When adding new jOOQ existence checks in the validator or builder, follow the same pattern — pass the relevant candidate list from `JooqCatalog` (`allTableSqlNames()`, `columnSqlNamesOf(table)`, `allForeignKeySqlNames()`) to `candidateHint`.
 
 ---
 
-## Model Reference
+## Implementation Guidance
 
-`GraphitronSchemaBuilder` produces a `GraphitronSchema` — two flat maps a generator can query:
-
-```java
-schema.type("Film")          // → GraphitronType (or null)
-schema.field("Film", "title") // → GraphitronField (or null)
-schema.fieldsOf("Film")       // → List<GraphitronField> in declaration order
-```
-
-The values in those maps are sealed hierarchies. Pattern-match to get what you need.
-
-### JooqCatalog
-
-Lazy wrapper around the jOOQ `Catalog`. Used only by `GraphitronSchemaBuilder` and its permitted collaborators — generators never call it directly.
-
-Key methods:
-- `findTable(sqlName)` → `Optional<TableEntry>` (`javaFieldName`, `Table<?>`)
-- `findColumn(table, sqlColumnName)` → `Optional<ColumnEntry>` (`javaName`, `columnClass`, `nullable`)
-- `findForeignKey(name)` → searches by SQL constraint name or jOOQ Java constant name, case-insensitive
-- `findForeignKeysBetweenTables(tableA, tableB)` → all FKs where one endpoint is `tableA` and the other is `tableB` (either direction)
-- `findIndexColumns(tableSqlName, indexName)` → ordered list of `ColumnEntry` for a named index
-- `findPkColumns(tableSqlName)` → PK columns in key-field order; empty when no PK
-- `allColumnsOf(tableSqlName)` → all columns in declaration order
-- `columnSqlNamesOf(tableSqlName)` → SQL column names only, for candidate hints in error messages
-- `allTableSqlNames()` → all table SQL names, for candidate hints
-- `allForeignKeySqlNames()` → all FK constraint names, for candidate hints
-
-### GraphitronType variants
-
-**Table-backed** (carry `TableRef table()`):
-- `TableType` — `@table` without `@node`
-- `NodeType` — `@table` + `@node`; also carries `typeId`, `nodeKeyColumns`
-- `TableInterfaceType` — single-table discriminated interface; carries `discriminatorColumn`, `participants`
-
-**Result-mapped** (`@record` types, carry `fqClassName`):
-- `JavaRecordType`, `PojoResultType`, `JooqRecordType`, `JooqTableRecordType`
-
-**Other**:
-- `RootType` — Query or Mutation
-- `InterfaceType`, `UnionType` — multi-table polymorphic; carry `participants`
-- `ErrorType` — `@error` type; carries `handlers`
-- `InputType` variants — `JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType`
-- `TableInputType` — `@table` input; owns DML; carries `table` and resolved `inputFields`
-- `UnclassifiedType` — build-time classification failure; carries `reason`
-
-### GraphitronField variants
-
-Root fields (`RootField`):
-- `QueryField` variants: `QueryTableField`, `QueryLookupTableField` (exposes `lookupMethodName()`), `QueryTableMethodTableField`, `QueryNodeField`, `QueryEntityField`, `QueryTableInterfaceField`, `QueryInterfaceField`, `QueryUnionField`, `QueryServiceTableField`, `QueryServiceRecordField`
-  - `QueryTableField`, `QueryLookupTableField`, `QueryTableInterfaceField` implement `SqlGeneratingField`
-- `MutationField` variants: `MutationInsertTableField`, `MutationUpdateTableField`, `MutationDeleteTableField`, `MutationUpsertTableField`, `MutationServiceTableField`, `MutationServiceRecordField`
-
-Child fields (`ChildField`):
-- Column access: `ColumnField`, `ColumnReferenceField`
-- Node id: `NodeIdField`, `NodeIdReferenceField`
-- Table-navigating (`TableTargetField` — implements `SqlGeneratingField`; carry `returnType`, `joinPath`, `filters`, `orderBy`, `pagination`): `TableField`, `SplitTableField`, `LookupTableField`, `SplitLookupTableField`, `TableInterfaceField`, `ServiceTableField`, `RecordTableField`, `RecordLookupTableField`
-  - `SplitTableField`, `SplitLookupTableField` also carry `batchKey: BatchKey`
-  - `ServiceTableField` also carries `method: MethodRef` and `batchKey` (via `method.params()`); exposes `rowsMethodName()` — the generated `load*()` helper name
-- Other: `TableMethodField` (carries `method: MethodRef`), `InterfaceField`, `UnionField`, `NestingField`, `ConstructorField`, `ServiceRecordField`, `RecordField`, `ComputedField`, `PropertyField`, `MultitableReferenceField`
-
-Special: `NotGeneratedField` (explicit `@notGenerated`), `UnclassifiedField` (carries `reason`)
-
-### Support types
-
-**`TableRef`** — a resolved jOOQ table: `tableName()` (SQL), `javaFieldName()` (e.g. `FILM`), `javaClassName()` (e.g. `Film`), `primaryKeyColumns()`, `hasPrimaryKey()`.
-
-**`ColumnRef`** — a resolved column: `sqlName()`, `javaName()`, `columnClass()` (fully-qualified Java type).
-
-**`ReturnTypeRef`** — what a field returns, combined with its `FieldWrapper`:
-- `TableBoundReturnType` — Graphitron generates SQL; carries `table`
-- `ResultReturnType` — `@record` type; no SQL
-- `ScalarReturnType` — scalar or enum; no SQL
-- `PolymorphicReturnType` — multi-table interface/union; generation not yet implemented
-
-**`FieldWrapper`** — cardinality: `Single(nullable)`, `List(listNullable, itemNullable)`, `Connection(connectionNullable, itemNullable)`. Use `wrapper.isList()` instead of `!(wrapper instanceof Single)` — both `List` and `Connection` return `true`.
-
-**`JoinStep`** — one hop in a `@reference` path:
-- `FkJoin(fkName, fkJavaConstant, targetTable, whereFilter, alias)` — navigates via a jOOQ FK. `fkName` is the SQL constraint name (for error messages); `fkJavaConstant` is the Java constant name in the generated `Keys` class (e.g. `FK_FILM__FILM_LANGUAGE_ID_FKEY`); `targetTable` is the fully-resolved `TableRef`; `whereFilter` is an optional WHERE clause on the enclosing SELECT (not the JOIN ON); `alias` is the pre-computed unique table alias (`fieldName + "_" + stepIndex`).
-- `ConditionJoin(condition, alias)` — navigates via a user condition method, which becomes the ON clause. `alias` follows the same `fieldName + "_" + stepIndex` convention.
-
-Alias uniqueness: two fields on the same parent targeting the same table via different FKs get distinct aliases because their field names differ (e.g. `language_0` vs `originalLanguage_0`). A multi-hop path on the same field gets distinct aliases because the step index increments (`city_0`, `city_1`). For MULTISET correlated subqueries aliases never collide across calls (each subquery has its own SQL scope); for flat batch JOINs the alias is injected into a shared SELECT, where uniqueness is essential. `fields()` currently uses the global table singleton and is safe for MULTISET only — flat-JOIN generation will require `fields(TableAlias alias, sel)` parameterisation.
-
-**`WhereFilter`** — one WHERE predicate. Sealed interface; `className()`, `methodName()`, `callParams()` define the call-site contract used uniformly by fetcher generators:
-- `GeneratedConditionFilter` — Graphitron-generated predicate driven by field arguments. The builder produces one per SQL-generating field that has filterable arguments. Carries `className`, `methodName`, `tableRef`, `callParams` (call-site: argument extraction expressions), `bodyParams` (body-generation: column refs, nullability, enum mappings). A corresponding method is generated on the `*Conditions` class.
-- `ConditionFilter` — developer-supplied `@condition` method. Carries `MethodRef method`; `callParams()` is derived from `method.params()` by skipping the implicit `Table` parameter.
-
-**`SqlGeneratingField`** — orthogonal capability interface (does not extend `GraphitronField`). Implemented by `QueryTableField`, `QueryLookupTableField`, `QueryTableInterfaceField`, and all `TableTargetField` variants. Exposes `returnType()`, `filters()`, `orderBy()`, `pagination()`. Use `field instanceof SqlGeneratingField sgf` in generators that process all SQL-generating fields uniformly — no need to switch between `QueryField` and `ChildField` branches.
-
-**`MethodRef`** — a resolved Java method: `className`, `methodName`, `returnTypeName`, `params`. Each param is either `Typed(name, typeName, source)` or `Sourced(name, batchKey)`. `ParamSource` variants: `Arg`, `Context`, `DslContext`, `Table`, `SourceTable`, `Sources(batchKey)`.
-
-**`BatchKey`** — the DataLoader key strategy for a `Sourced` parameter: `RowKeyed(keyColumns)` (element type `RowN<T…>`), `RecordKeyed(keyColumns)` (element type `RecordN<T…>`), or `ObjectBased(fqClassName)` (whole parent record/DTO). `keyColumns` comes from the parent type's `primaryKeyColumns()`; it is empty for root operation fields with no backing table. All three carry `javaTypeName()` (the `List<?>` parameter type as a string). `RowKeyed` and `RecordKeyed` also carry `selectManyMethodName()` / `selectOneMethodName()` — the names of the generated table-class batch methods. `ObjectBased` batch loading is not yet implemented.
-
-**`OrderBySpec`** — the ordering strategy for a SQL-generating field. Three variants:
-- `Fixed(columns, direction)` — statically resolved ORDER BY. `direction` is `"ASC"` or `"DESC"` (from the directive); use `jooqMethodName()` when building jOOQ sort calls (returns `"asc"` or `"desc"`).
-- `Argument(name, typeName, nonNull, list, sortFieldName, directionFieldName, namedOrders, base)` — dynamic ordering from an `@orderBy` argument; `base` is a `Fixed` fallback (may be `null`).
-- `None` — no ordering applicable (single-value field, or no PK and no `@defaultOrder`).
-
----
-
-## Generated Code Architecture
-
-The rewrite generators produce:
-
-- **`rewrite.types.*Fields`** — one class per GraphQL type with a static method per field and a `wiring()` method that registers them all as DataFetchers via method references (e.g. `FilmFields::title`). GraphQL-Java only calls the methods for fields present in the selection set.
-- **`rewrite.types.*`** — one class per GraphQL type (e.g. `Film`) with `selectMany`/`selectOne` (top-level queries) and `subselectMany`/`subselectOne` (returns `Field<Result<Record>>` — a jOOQ multiset expression for inline nested data).
-- **`rewrite.types.*Conditions`** — one class per type that has fields with Graphitron-generated argument predicates. Contains one `public static Condition` method per field (taking the jOOQ table alias and typed argument values), plus static `Map<String,String>` lookup fields for enum-text arguments. The fetcher calls these methods to build the WHERE condition. No dependency on GraphQL runtime types — testable as plain Java.
-
-No DTOs, no TypeMappers. DataFetchers return `Result<Record>`; GraphQL-Java traverses the records using the registered field DataFetchers.
+No DTOs, no TypeMappers. DataFetchers return `Result<Record>`; GraphQL-Java traverses the records using the registered field DataFetchers. For what each generator produces, see the [Source Map](CODE-GENERATION-TRIGGERS.md#source-map).
 
 ### Selection-aware queries and multiset
 

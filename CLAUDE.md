@@ -47,7 +47,7 @@ The `/docs` folder contains conceptual guides explaining Graphitron's design, ph
 - **JavaPoet README**: [/graphitron-codegen-parent/graphitron-javapoet/README.md](/graphitron-codegen-parent/graphitron-javapoet/README.md) - About the JavaPoet fork
 
 ### Active Rewrite
-- **Rewrite Roadmap**: [/docs/REWRITE-ROADMAP.md](/docs/REWRITE-ROADMAP.md) - Phase 2/3 plan for retiring ProcessedSchema and improving error messages
+- **Rewrite Roadmap**: [/docs/REWRITE-ROADMAP.md](/docs/REWRITE-ROADMAP.md) - Remaining generator work, design principles, and known gaps
 
 
 ## Key Architecture

@@ -32,7 +32,7 @@ This folder contains documentation about Graphitron's design, philosophy, and ho
 
 ## Active Development
 
-- **[Rewrite Roadmap](REWRITE-ROADMAP.md)** - Architecture of the rewrite pipeline (`*Fields`/`*Tables` classes, no DTOs) and migration plan for retiring ProcessedSchema
+- **[Rewrite Roadmap](REWRITE-ROADMAP.md)** - Remaining generator work, design principles, and known gaps
 
 ## Other Documentation
 
