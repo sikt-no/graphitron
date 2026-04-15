@@ -2071,6 +2071,96 @@ class GraphitronSchemaBuilderTest {
         assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.QueryServiceTableField.class);
     }
 
+    // ===== JoinStep alias computation =====
+    // Each join step is assigned a unique table alias at build time: fieldName + "_" + stepIndex.
+    // This guarantees alias uniqueness across the entire query:
+    //   - Two fields on the same parent referencing the same target table via different FKs
+    //     get different aliases because their field names differ (e.g. "language_0" vs
+    //     "originalLanguage_0").
+    //   - A multi-hop path on the same field gets different aliases because the step index
+    //     increments (e.g. "city_0" for the first hop, "city_1" for the second).
+    //
+    // Practical consequence for code generation:
+    //   For MULTISET correlated subqueries, each call to Actor.subselectMany/subselectOne
+    //   operates in its own SQL scope, so alias collisions cannot occur even if the same
+    //   Actor method is called twice (e.g. leadMaleActor and leadFemaleActor on Film).
+    //   For flat batch JOINs the aliases would be injected directly into a shared SELECT,
+    //   making the fieldName prefix essential to prevent duplicate alias errors.
+
+    enum JoinStepAliasCase {
+
+        SINGLE_HOP_ALIAS(
+            "single-hop @reference gets alias fieldName_0",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var tf = (TableField) schema.field("Film", "language");
+                assertThat(tf.joinPath()).hasSize(1);
+                var fk = (JoinStep.FkJoin) tf.joinPath().get(0);
+                assertThat(fk.alias()).isEqualTo("language_0");
+            }),
+
+        TWO_HOP_PATH_ALIASES_HAVE_DISTINCT_INDICES(
+            "two-hop @reference gets aliases fieldName_0 and fieldName_1",
+            """
+            type City @table(name: "city") { name: String }
+            type Customer @table(name: "customer") {
+                city: City @reference(path: [
+                    {key: "customer_address_id_fkey"},
+                    {key: "address_city_id_fkey"}
+                ])
+            }
+            type Query { customer: Customer }
+            """,
+            schema -> {
+                var tf = (TableField) schema.field("Customer", "city");
+                assertThat(tf.joinPath()).hasSize(2);
+                var step0 = (JoinStep.FkJoin) tf.joinPath().get(0);
+                var step1 = (JoinStep.FkJoin) tf.joinPath().get(1);
+                assertThat(step0.alias()).isEqualTo("city_0");
+                assertThat(step1.alias()).isEqualTo("city_1");
+            }),
+
+        TWO_FIELDS_SAME_TARGET_TABLE_DIFFERENT_FKS_HAVE_DISTINCT_ALIASES(
+            "two fields on the same parent targeting the same table via different FKs get distinct aliases",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language @reference(path: [{key: "film_language_id_fkey"}])
+                originalLanguage: Language @reference(path: [{key: "film_original_language_id_fkey"}])
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var fk1 = (JoinStep.FkJoin) ((TableField) schema.field("Film", "language")).joinPath().get(0);
+                var fk2 = (JoinStep.FkJoin) ((TableField) schema.field("Film", "originalLanguage")).joinPath().get(0);
+                assertThat(fk1.alias()).isEqualTo("language_0");
+                assertThat(fk2.alias()).isEqualTo("originalLanguage_0");
+                // The two calls to Language.subselectMany/subselectOne in a Film query will
+                // carry different aliases, so no duplicate-alias error occurs in flat JOINs.
+                assertThat(fk1.alias()).isNotEqualTo(fk2.alias());
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        JoinStepAliasCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(JoinStepAliasCase.class)
+    void joinStepAliasComputation(JoinStepAliasCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
     // ===== Helper =====
 
     /**

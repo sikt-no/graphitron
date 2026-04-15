@@ -74,6 +74,20 @@ class TypeClassGeneratorTest {
 
     // ===== Signatures =====
 
+    /**
+     * {@code fields()} takes exactly one parameter — the selection set — not a table instance.
+     *
+     * <p>This is intentional for the MULTISET correlated subquery strategy: each call to
+     * {@code subselectMany} or {@code subselectOne} creates its own SQL scope, so calling the
+     * same type method twice (e.g. {@code Actor.subselectMany} for both {@code leadMaleActor}
+     * and {@code leadFemaleActor} on {@code Film}) does NOT produce alias collisions — each
+     * subquery is independent.
+     *
+     * <p>For flat batch JOINs (DataLoader), the table would need to be aliased per field
+     * to avoid duplicate aliases in the shared SELECT. In that case {@code fields()} would
+     * need to accept the aliased table instance. That extension is deferred to the flat-JOIN
+     * generation phase; the single-parameter signature here documents the current safe design.
+     */
     @Test
     void fields_signature() {
         var m = method("fields");
