@@ -21,7 +21,8 @@ import java.util.Map;
  */
 public sealed interface CallSiteExtraction
         permits CallSiteExtraction.Direct, CallSiteExtraction.EnumValueOf,
-                CallSiteExtraction.TextMapLookup, CallSiteExtraction.ContextArg {
+                CallSiteExtraction.TextMapLookup, CallSiteExtraction.ContextArg,
+                CallSiteExtraction.JooqConvert {
 
     /** Pass the argument directly: {@code env.getArgument("name")}. */
     record Direct() implements CallSiteExtraction {}
@@ -52,4 +53,20 @@ public sealed interface CallSiteExtraction
      * Retrieve a context argument: {@code graphitronContext(env).getContextArgument(env, "name")}.
      */
     record ContextArg() implements CallSiteExtraction {}
+
+    /**
+     * Coerce a GraphQL {@code ID} scalar (delivered as {@code String} by GraphQL-Java) to the
+     * column Java type via jOOQ's {@code DataType.convert()}.
+     *
+     * <p>{@code columnJavaName} is the jOOQ field constant name (e.g. {@code "FILM_ID"}) used to
+     * reach the target {@code DataType} from the table alias:
+     * <ul>
+     *   <li>Scalar: {@code table.FILM_ID.getDataType().convert((String) env.getArgument("film_id"))}</li>
+     *   <li>List (with {@link CallParam#list()} / {@link BodyParam#list()}): local variable
+     *       {@code List<String> filmIdKeys = env.getArgument("film_id")} is declared before the
+     *       condition call, then passed as
+     *       {@code filmIdKeys.stream().map(table.FILM_ID.getDataType()::convert).toList()}.</li>
+     * </ul>
+     */
+    record JooqConvert(String columnJavaName) implements CallSiteExtraction {}
 }

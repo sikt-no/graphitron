@@ -14,14 +14,12 @@ package no.sikt.graphitron.rewrite.model;
  *       {@link CallSiteExtraction.EnumValueOf}).</li>
  *   <li>{@link #nonNull()} — when {@code true}, the null guard is omitted and the condition
  *       is always applied; when {@code false}, the condition is wrapped in a null check.</li>
- *   <li>{@link #extraction()} — carried here so that
+ *   <li>{@link #extraction()} — how to extract the value at the fetcher call site; also
+ *       carried here so that
  *       {@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator} can generate the
- *       static enum-map field for {@link CallSiteExtraction.TextMapLookup} params.</li>
- *   <li>{@link #graphqlTypeName()} — the GraphQL scalar type name (e.g. {@code "ID"},
- *       {@code "Int"}, {@code "String"}). Used by fetcher generators that build inline
- *       conditions: {@code ID} arguments are delivered as {@code String} by GraphQL-Java
- *       and require jOOQ's {@code DataType.convert()} to coerce to the column type; all
- *       other scalars are delivered as their natural Java type and need no conversion.</li>
+ *       static enum-map field for {@link CallSiteExtraction.TextMapLookup} params. Use
+ *       {@link CallSiteExtraction.JooqConvert} for {@code ID} arguments that require jOOQ's
+ *       {@code DataType.convert()} coercion at the call site.</li>
  * </ul>
  *
  * <p>The parallel call-site view of this parameter is {@link CallParam}. A {@link BodyParam}
@@ -33,6 +31,5 @@ public record BodyParam(
     String javaType,
     boolean nonNull,
     boolean list,
-    CallSiteExtraction extraction,
-    String graphqlTypeName
+    CallSiteExtraction extraction
 ) {}

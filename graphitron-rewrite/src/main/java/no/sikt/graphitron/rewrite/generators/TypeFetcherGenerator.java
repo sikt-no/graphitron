@@ -186,6 +186,12 @@ public class TypeFetcherGenerator {
         var code = CodeBlock.builder();
         code.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
         for (var filter : qtf.filters()) {
+            for (var param : filter.callParams()) {
+                if (param.extraction() instanceof CallSiteExtraction.JooqConvert && param.list()) {
+                    code.addStatement("$T<$T> $L = env.getArgument($S)",
+                        LIST, String.class, toCamelCase(param.name()) + "Keys", param.name());
+                }
+            }
             var callArgs = buildCallArgs(filter);
             code.addStatement("condition = condition.and($T.$L($L))",
                 ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
@@ -220,6 +226,11 @@ public class TypeFetcherGenerator {
                     String.class, param.name());
             case CallSiteExtraction.ContextArg ignored ->
                 CodeBlock.of("graphitronContext(env).getContextArgument(env, $S)", param.name());
+            case CallSiteExtraction.JooqConvert jc -> param.list()
+                ? CodeBlock.of("$L.stream().map(table.$L.getDataType()::convert).toList()",
+                    toCamelCase(param.name()) + "Keys", jc.columnJavaName())
+                : CodeBlock.of("table.$L.getDataType().convert((String) env.getArgument($S))",
+                    jc.columnJavaName(), param.name());
         };
     }
 
@@ -312,9 +323,9 @@ public class TypeFetcherGenerator {
 
         for (var filter : field.filters()) {
             if (!(filter instanceof GeneratedConditionFilter gcf)) continue;
-            // Declare local variables for ID list keys (List<String> — typed to avoid convert() overload ambiguity)
+            // Declare local variables for list JooqConvert keys (List<String> — avoids convert() overload ambiguity)
             for (var bp : gcf.bodyParams()) {
-                if (bp.list() && "ID".equals(bp.graphqlTypeName())) {
+                if (bp.extraction() instanceof CallSiteExtraction.JooqConvert && bp.list()) {
                     builder.addStatement("$T<$T> $L = env.getArgument($S)",
                         LIST, String.class, toCamelCase(bp.name()) + "Keys", bp.name());
                 }
@@ -619,35 +630,16 @@ public class TypeFetcherGenerator {
      * Builds the argument list for a lookup conditions method call.
      *
      * <p>The first argument is always {@code table} (the local variable declared in the fetcher).
-     * Subsequent arguments are extracted from {@code env} per param:
-     * <ul>
-     *   <li>List {@code ID} key — {@code <localVar>.stream().map(table.COL.getDataType()::convert).toList()},
-     *       where {@code <localVar>} is the {@code List<String>} local variable declared before this call.</li>
-     *   <li>List non-{@code ID} key — {@code env.getArgument("name")} (GraphQL-Java delivers the correct type).</li>
-     *   <li>Scalar {@code ID} key — {@code table.COL.getDataType().convert((String) env.getArgument("name"))}.</li>
-     *   <li>Scalar non-{@code ID} key — {@code env.getArgument("name")} directly.</li>
-     * </ul>
+     * Subsequent arguments are extracted via {@link #buildArgExtraction} — the {@link CallSiteExtraction}
+     * variant on each param drives the generated expression. List {@link CallSiteExtraction.JooqConvert}
+     * params reference a pre-declared {@code List<String>} local variable (emitted by the caller).
      */
     private static CodeBlock buildLookupCallArgs(GeneratedConditionFilter gcf) {
         var args = CodeBlock.builder();
         args.add("table");
         for (var bp : gcf.bodyParams()) {
-            var colName = bp.column().javaName();
-            boolean idArg = "ID".equals(bp.graphqlTypeName());
-            if (bp.list()) {
-                if (idArg) {
-                    args.add(", $L.stream().map(table.$L.getDataType()::convert).toList()",
-                        toCamelCase(bp.name()) + "Keys", colName);
-                } else {
-                    args.add(", env.getArgument($S)", bp.name());
-                }
-            } else {
-                if (idArg) {
-                    args.add(", table.$L.getDataType().convert((String) env.getArgument($S))", colName, bp.name());
-                } else {
-                    args.add(", env.getArgument($S)", bp.name());
-                }
-            }
+            var callParam = new CallParam(bp.name(), bp.extraction(), bp.list());
+            args.add(", $L", buildArgExtraction(callParam, gcf.className()));
         }
         return args.build();
     }

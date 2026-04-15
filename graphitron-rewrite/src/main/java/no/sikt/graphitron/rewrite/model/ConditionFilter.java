@@ -57,7 +57,7 @@ public record ConditionFilter(
     public List<CallParam> callParams() {
         return method.params().stream()
             .filter(p -> !(p.source() instanceof ParamSource.Table))
-            .map(p -> new CallParam(p.name(), toExtraction(p.source())))
+            .map(p -> new CallParam(p.name(), toExtraction(p.source()), false))
             .toList();
     }
 

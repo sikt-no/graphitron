@@ -47,9 +47,9 @@ class ArgumentValidationTest {
         WITH_COLUMN_FILTER("GeneratedConditionFilter scalar — no errors",
             tableField(List.of(new GeneratedConditionFilter("TestConditions", "actorsCondition",
                 new TableRef("film", "FILM", "Film", List.of()),
-                List.of(new CallParam("id", new CallSiteExtraction.Direct())),
+                List.of(new CallParam("id", new CallSiteExtraction.Direct(), false)),
                 List.of(new BodyParam("id", new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
-                    "java.lang.Integer", false, false, new CallSiteExtraction.Direct(), "Int"))))),
+                    "java.lang.Integer", false, false, new CallSiteExtraction.Direct()))))),
             List.of()),
 
         WITH_INPUT_FILTER("table-bound input type arg — skipped (empty filters), no errors",

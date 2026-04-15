@@ -527,6 +527,9 @@ class FieldBuilder {
             if (enumClassName != null) {
                 extraction = new CallSiteExtraction.EnumValueOf(enumClassName);
                 javaType = enumClassName;
+            } else if ("ID".equals(typeName)) {
+                extraction = new CallSiteExtraction.JooqConvert(columnRef.javaName());
+                javaType = columnRef.columnClass();
             } else {
                 var textEnumMapping = buildTextEnumMapping(typeName);
                 if (textEnumMapping != null) {
@@ -538,14 +541,14 @@ class FieldBuilder {
                     javaType = columnRef.columnClass();
                 }
             }
-            bodyParams.add(new BodyParam(name, columnRef, javaType, nonNull, list, extraction, typeName));
+            bodyParams.add(new BodyParam(name, columnRef, javaType, nonNull, list, extraction));
         }
         if (hadError) return null;
         if (bodyParams.isEmpty()) return List.of();
         String conditionsClassName = RewriteConfig.outputPackage() + ".rewrite.types." + returnTypeName + "Conditions";
         String methodName = fieldDef.getName() + "Condition";
         var callParams = bodyParams.stream()
-            .map(bp -> new CallParam(bp.name(), bp.extraction()))
+            .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list()))
             .toList();
         return List.of(new GeneratedConditionFilter(conditionsClassName, methodName, rt, callParams, List.copyOf(bodyParams)));
     }

@@ -211,7 +211,7 @@ class TypeFetcherGeneratorTest {
         var wrapper = new FieldWrapper.List(false, false);
         var returnType = new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
         var callParams = bodyParams.stream()
-            .map(bp -> new CallParam(bp.name(), bp.extraction()))
+            .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list()))
             .toList();
         var filter = new GeneratedConditionFilter(
             "fake.code.generated.rewrite.types.FilmConditions",
@@ -225,12 +225,17 @@ class TypeFetcherGeneratorTest {
 
     private static BodyParam listKeyParam(String name, String javaName, String javaType) {
         return new BodyParam(name, new ColumnRef(name, javaName, javaType), javaType, false, true,
-            new CallSiteExtraction.Direct(), "Int");
+            new CallSiteExtraction.Direct());
     }
 
     private static BodyParam scalarKeyParam(String name, String javaName, String javaType) {
         return new BodyParam(name, new ColumnRef(name, javaName, javaType), javaType, false, false,
-            new CallSiteExtraction.Direct(), "Int");
+            new CallSiteExtraction.Direct());
+    }
+
+    private static BodyParam listIdKeyParam(String name, String javaName, String javaType) {
+        return new BodyParam(name, new ColumnRef(name, javaName, javaType), javaType, false, true,
+            new CallSiteExtraction.JooqConvert(javaName));
     }
 
     @Test
@@ -298,6 +303,13 @@ class TypeFetcherGeneratorTest {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "customerById").code().toString())
             .doesNotContain("UnsupportedOperationException");
+    }
+
+    @Test
+    void queryLookupField_idListKey_usesJooqConvertInRowsMethod() {
+        var field = lookupQueryField("filmById", List.of(listIdKeyParam("film_id", "FILM_ID", "java.lang.Integer")));
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(method(spec, "lookupFilmById").code().toString()).contains("getDataType()");
     }
 
     // ===== @splitQuery TableField =====
