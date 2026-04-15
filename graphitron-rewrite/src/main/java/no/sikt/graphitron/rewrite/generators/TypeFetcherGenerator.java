@@ -13,7 +13,6 @@ import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -79,7 +78,6 @@ public class TypeFetcherGenerator {
     private static final ClassName CONDITION             = ClassName.get("org.jooq", "Condition");
     private static final ClassName RECORD               = ClassName.get("org.jooq", "Record");
     private static final ClassName RESULT               = ClassName.get("org.jooq", "Result");
-    private static final ClassName ROW                  = ClassName.get("org.jooq", "Row");
     private static final ClassName SORT_FIELD           = ClassName.get("org.jooq", "SortField");
     private static final ClassName DSL                  = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName DATA_LOADER          = ClassName.get("org.dataloader", "DataLoader");
@@ -383,7 +381,7 @@ public class TypeFetcherGenerator {
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
 
         var batchKey = sf.batchKey();
-        TypeName keyType = keyElementType(batchKey);
+        TypeName keyType = GeneratorUtils.keyElementType(batchKey);
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         String rowsMethodName = sf.rowsMethodName();
 
@@ -407,34 +405,7 @@ public class TypeFetcherGenerator {
                 "    .computeIfAbsent(name, k -> $T.newDataLoaderWithContext($L));\n",
                 loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
-        var tablesClass = GeneratorUtils.ResolvedTableNames.ofTable(prt).tablesClass();
-        switch (batchKey) {
-            case BatchKey.RowKeyed rk -> {
-                String tableField = prt.javaFieldName();
-                List<ColumnRef> pkCols = rk.keyColumns();
-                var rowArgs = CodeBlock.builder();
-                for (int i = 0; i < pkCols.size(); i++) {
-                    if (i > 0) rowArgs.add(", ");
-                    rowArgs.add("(($T) env.getSource()).get($T.$L.$L)",
-                        RECORD, tablesClass, tableField, pkCols.get(i).javaName());
-                }
-                methodBuilder.addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build());
-            }
-            case BatchKey.RecordKeyed rk -> {
-                String tableField = prt.javaFieldName();
-                List<ColumnRef> pkCols = rk.keyColumns();
-                var intoArgs = CodeBlock.builder();
-                for (int i = 0; i < pkCols.size(); i++) {
-                    if (i > 0) intoArgs.add(", ");
-                    intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
-                }
-                methodBuilder.addStatement("$T key = (($T) env.getSource()).into($L)",
-                    keyType, RECORD, intoArgs.build());
-            }
-            case BatchKey.ObjectBased ob ->
-                methodBuilder.addStatement("$T key = ($T) env.getSource()", keyType, keyType);
-        }
-
+        methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, prt));
         return methodBuilder.addStatement("return loader.load(key, env)").build();
     }
 
@@ -456,7 +427,7 @@ public class TypeFetcherGenerator {
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         var returnType = isList ? ParameterizedTypeName.get(LIST, listOfRecord) : listOfRecord;
 
-        TypeName keysElementType = keyElementType(sf.batchKey());
+        TypeName keysElementType = GeneratorUtils.keyElementType(sf.batchKey());
 
         var builder = MethodSpec.methodBuilder(sf.rowsMethodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -515,7 +486,7 @@ public class TypeFetcherGenerator {
     }
 
     private static MethodSpec buildSplitRowsMethod(String fieldName, BatchKey batchKey) {
-        TypeName keysElementType = keyElementType(batchKey);
+        TypeName keysElementType = GeneratorUtils.keyElementType(batchKey);
         var sourcesType = ParameterizedTypeName.get(LIST, keysElementType);
         return MethodSpec.methodBuilder("rows" + capitalize(fieldName))
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -536,36 +507,6 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env")
             .addStatement("return env.getGraphQlContext().get($S)", "graphitronContext")
             .build();
-    }
-
-    // -----------------------------------------------------------------------
-    // BatchKey helpers — key type construction for DataLoader generics
-    // -----------------------------------------------------------------------
-
-    private static TypeName keyElementType(BatchKey batchKey) {
-        return switch (batchKey) {
-            case BatchKey.RowKeyed rk    -> buildRowKeyType(rk.keyColumns());
-            case BatchKey.RecordKeyed rk -> buildRecordNKeyType(rk.keyColumns());
-            case BatchKey.ObjectBased ob -> ClassName.bestGuess(ob.fqClassName());
-        };
-    }
-
-    private static TypeName buildRowKeyType(List<ColumnRef> keyColumns) {
-        if (keyColumns.isEmpty()) return ROW;
-        ClassName rowNClass = ClassName.get("org.jooq", "Row" + keyColumns.size());
-        TypeName[] typeArgs = keyColumns.stream()
-            .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
-            .toArray(TypeName[]::new);
-        return ParameterizedTypeName.get(rowNClass, typeArgs);
-    }
-
-    private static TypeName buildRecordNKeyType(List<ColumnRef> keyColumns) {
-        if (keyColumns.isEmpty()) return RECORD;
-        ClassName recordNClass = ClassName.get("org.jooq", "Record" + keyColumns.size());
-        TypeName[] typeArgs = keyColumns.stream()
-            .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
-            .toArray(TypeName[]::new);
-        return ParameterizedTypeName.get(recordNClass, typeArgs);
     }
 
     private static String capitalize(String name) {

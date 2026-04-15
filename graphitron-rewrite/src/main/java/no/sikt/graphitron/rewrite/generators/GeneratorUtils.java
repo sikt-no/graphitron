@@ -1,13 +1,24 @@
 package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.RewriteConfig;
+import no.sikt.graphitron.rewrite.model.BatchKey;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
+
+import java.util.List;
 
 /**
  * Shared utilities and resolved name records used across all generator classes.
  */
 class GeneratorUtils {
+
+    private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
+    private static final ClassName ROW    = ClassName.get("org.jooq", "Row");
+    private static final ClassName DSL    = ClassName.get("org.jooq.impl", "DSL");
 
     /**
      * The three JavaPoet {@link ClassName}s that every SQL-touching generator method resolves
@@ -38,5 +49,92 @@ class GeneratorUtils {
                 ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName()),
                 null);
         }
+    }
+
+    /**
+     * Returns the JavaPoet {@link TypeName} for the DataLoader key element type
+     * corresponding to the given {@link BatchKey}.
+     *
+     * <ul>
+     *   <li>{@link BatchKey.RowKeyed} → {@code RowN<A, B, ...>}</li>
+     *   <li>{@link BatchKey.RecordKeyed} → {@code RecordN<A, B, ...>}</li>
+     *   <li>{@link BatchKey.ObjectBased} → the fully-qualified class name</li>
+     * </ul>
+     */
+    static TypeName keyElementType(BatchKey batchKey) {
+        return switch (batchKey) {
+            case BatchKey.RowKeyed rk    -> buildRowKeyType(rk.keyColumns());
+            case BatchKey.RecordKeyed rk -> buildRecordNKeyType(rk.keyColumns());
+            case BatchKey.ObjectBased ob -> ClassName.bestGuess(ob.fqClassName());
+        };
+    }
+
+    private static TypeName buildRowKeyType(List<ColumnRef> keyColumns) {
+        if (keyColumns.isEmpty()) return ROW;
+        ClassName rowNClass = ClassName.get("org.jooq", "Row" + keyColumns.size());
+        TypeName[] typeArgs = keyColumns.stream()
+            .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
+            .toArray(TypeName[]::new);
+        return ParameterizedTypeName.get(rowNClass, typeArgs);
+    }
+
+    private static TypeName buildRecordNKeyType(List<ColumnRef> keyColumns) {
+        if (keyColumns.isEmpty()) return RECORD;
+        ClassName recordNClass = ClassName.get("org.jooq", "Record" + keyColumns.size());
+        TypeName[] typeArgs = keyColumns.stream()
+            .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
+            .toArray(TypeName[]::new);
+        return ParameterizedTypeName.get(recordNClass, typeArgs);
+    }
+
+    /**
+     * Generates a {@link CodeBlock} that declares a {@code key} local variable by extracting
+     * the batch key from {@code env.getSource()} — suitable for use inside a DataLoader-based
+     * data fetcher method.
+     *
+     * <p>The generated statement pattern depends on the {@link BatchKey} variant:
+     * <ul>
+     *   <li>{@link BatchKey.RowKeyed} →
+     *       {@code RowN<...> key = DSL.row(((Record) env.getSource()).get(Tables.T.COL), ...)}</li>
+     *   <li>{@link BatchKey.RecordKeyed} →
+     *       {@code RecordN<...> key = ((Record) env.getSource()).into(Tables.T.COL, ...)}</li>
+     *   <li>{@link BatchKey.ObjectBased} →
+     *       {@code KeyType key = (KeyType) env.getSource()}</li>
+     * </ul>
+     */
+    static CodeBlock buildKeyExtraction(BatchKey batchKey, TableRef parentTable) {
+        TypeName keyType = keyElementType(batchKey);
+        var tablesClass = ResolvedTableNames.ofTable(parentTable).tablesClass();
+        return switch (batchKey) {
+            case BatchKey.RowKeyed rk -> {
+                String tableField = parentTable.javaFieldName();
+                List<ColumnRef> pkCols = rk.keyColumns();
+                var rowArgs = CodeBlock.builder();
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) rowArgs.add(", ");
+                    rowArgs.add("(($T) env.getSource()).get($T.$L.$L)",
+                        RECORD, tablesClass, tableField, pkCols.get(i).javaName());
+                }
+                yield CodeBlock.builder()
+                    .addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build())
+                    .build();
+            }
+            case BatchKey.RecordKeyed rk -> {
+                String tableField = parentTable.javaFieldName();
+                List<ColumnRef> pkCols = rk.keyColumns();
+                var intoArgs = CodeBlock.builder();
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) intoArgs.add(", ");
+                    intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
+                }
+                yield CodeBlock.builder()
+                    .addStatement("$T key = (($T) env.getSource()).into($L)", keyType, RECORD, intoArgs.build())
+                    .build();
+            }
+            case BatchKey.ObjectBased ob ->
+                CodeBlock.builder()
+                    .addStatement("$T key = ($T) env.getSource()", keyType, keyType)
+                    .build();
+        };
     }
 }
