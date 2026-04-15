@@ -228,6 +228,8 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 | `TypeConditionsGenerator` | `rewrite.types.*Conditions` — pure-function WHERE predicates | `TypeConditionsGenerator.java` |
 | `GeneratorUtils` | Shared building blocks — `ResolvedTableNames`, key type construction, constants | `GeneratorUtils.java` |
 | `ColumnFetcherClassGenerator` | `rewrite.ColumnFetcher<T>` — `LightDataFetcher` for column fields | `util/ColumnFetcherClassGenerator.java` |
+| `ConnectionResultClassGenerator` | `rewrite.ConnectionResult` — pagination carrier (Result + pageSize + cursor + columns) | `util/ConnectionResultClassGenerator.java` |
+| `ConnectionHelperClassGenerator` | `rewrite.ConnectionHelper` — edges/nodes/pageInfo + cursor encode/decode | `util/ConnectionHelperClassGenerator.java` |
 | `GraphitronValuesClassGenerator` | `rewrite.GraphitronValues` — shared constants (`GRAPHITRON_INPUT_IDX`) | `util/GraphitronValuesClassGenerator.java` |
 
 ### Directives

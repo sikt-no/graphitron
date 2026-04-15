@@ -28,7 +28,15 @@ Reverse the ORDER BY direction, seek from the `before` cursor, limit to `last + 
 
 `@asConnection` currently synthesizes only `first`/`after`. Extend it to optionally add `last`/`before` — either always (bidirectional by default) or via a directive argument.
 
-### 3. Execution test
+### 3. Structural tests for connection fetcher
+
+`buildQueryConnectionFetcher` has zero structural test coverage. Add to `TypeFetcherGeneratorTest`:
+- `QueryTableField` with `FieldWrapper.Connection` → dispatches to connection fetcher (not the regular fetcher)
+- Return type is `ConnectionResult`, not `Result<Record>`
+- Method body calls paginated `selectMany`
+- Method body extracts `first` and `after` arguments
+
+### 4. Execution test
 
 No end-to-end test exercises pagination against a real database yet. Add to `graphitron-rewrite-test-spec`:
 - A connection field in the schema (e.g., `films: [Film] @asConnection @defaultOrder(primaryKey: true)`)
@@ -37,6 +45,6 @@ No end-to-end test exercises pagination against a real database yet. Add to `gra
 - Test: second page with `after` cursor returns next items
 - Test: empty result when cursor is past the end
 
-### 4. Document transform coexistence
+### 5. Document transform coexistence
 
 When the schema goes through both the transform AND the builder, `@asConnection` is stripped by the transform before the builder sees it. The builder falls back to structural detection, which works but loses `defaultPageSize` (defaults to 100). Document this: users who need custom `defaultFirstValue` and use the schema transform should set it on the directive before transformation, or configure the transform's default.

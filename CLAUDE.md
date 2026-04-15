@@ -48,7 +48,8 @@ The `/docs` folder contains conceptual guides explaining Graphitron's design, ph
 
 ### Active Rewrite
 - **Rewrite Roadmap**: [/docs/rewrite-roadmap.md](/docs/rewrite-roadmap.md) - Remaining generator work, design principles, and known gaps
-- **OrderBy Implementation**: [/docs/orderby-implementation.md](/docs/orderby-implementation.md) - Plan for OrderBySpec.Argument generation: namedOrders, base nullability, generator
+- **Paginated Fields**: [/docs/paginated-fields.md](/docs/paginated-fields.md) - Remaining: dynamic ordering cursors, backward pagination, execution test
+- **ConditionFilter Builder Path**: [/docs/condition-filter-builder.md](/docs/condition-filter-builder.md) - Reading @condition directives in the builder
 
 
 ## Key Architecture

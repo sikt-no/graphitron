@@ -60,8 +60,8 @@ Complex resolution outcomes get their own sealed type rather than being stored a
 
 ### Active
 
-- **OrderBy `Argument` variant** — populate `namedOrders` in `FieldBuilder`, generate `<fieldName>OrderBy` helper method. See [orderby-implementation.md](orderby-implementation.md).
-- **Paginated fields** — keyset pagination, `@asConnection` native in builder, `ConnectionHelper` wiring. See [paginated-fields.md](paginated-fields.md).
+- **Paginated fields** — dynamic ordering cursors, backward pagination, execution test. See [paginated-fields.md](paginated-fields.md).
+- **`@condition` builder path** — reading the directive, override flag, tests. See [condition-filter-builder.md](condition-filter-builder.md).
 
 ### Stubs to complete
 
