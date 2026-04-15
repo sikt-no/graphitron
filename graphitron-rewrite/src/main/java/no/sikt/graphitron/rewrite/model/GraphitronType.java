@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
-import graphql.schema.FieldCoordinates;
 
 import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
 import java.util.List;
@@ -40,8 +39,7 @@ public sealed interface GraphitronType
     record TableType(
         String name,
         SourceLocation location,
-        TableRef table,
-        List<FieldCoordinates> fieldCoordinates
+        TableRef table
     ) implements TableBackedType {}
 
     /**
@@ -63,8 +61,7 @@ public sealed interface GraphitronType
         SourceLocation location,
         TableRef table,
         String typeId,
-        List<ColumnRef> nodeKeyColumns,
-        List<FieldCoordinates> fieldCoordinates
+        List<ColumnRef> nodeKeyColumns
     ) implements TableBackedType {}
 
     /**
@@ -78,17 +75,8 @@ public sealed interface GraphitronType
         permits GraphitronType.JavaRecordType, GraphitronType.PojoResultType,
                 GraphitronType.JooqRecordType, GraphitronType.JooqTableRecordType {
 
-        List<FieldCoordinates> fieldCoordinates();
-
         /** The binary class name of the backing Java class, or {@code null} when not specified. */
-        default String fqClassName() {
-            return switch (this) {
-                case JavaRecordType j      -> j.fqClassName();
-                case PojoResultType p      -> p.fqClassName();
-                case JooqRecordType j      -> j.fqClassName();
-                case JooqTableRecordType j -> j.fqClassName();
-            };
-        }
+        String fqClassName();
     }
 
     /**
@@ -98,7 +86,6 @@ public sealed interface GraphitronType
     record JavaRecordType(
         String name,
         SourceLocation location,
-        List<FieldCoordinates> fieldCoordinates,
         String fqClassName
     ) implements ResultType {}
 
@@ -109,7 +96,6 @@ public sealed interface GraphitronType
     record PojoResultType(
         String name,
         SourceLocation location,
-        List<FieldCoordinates> fieldCoordinates,
         String fqClassName
     ) implements ResultType {}
 
@@ -120,7 +106,6 @@ public sealed interface GraphitronType
     record JooqRecordType(
         String name,
         SourceLocation location,
-        List<FieldCoordinates> fieldCoordinates,
         String fqClassName
     ) implements ResultType {}
 
@@ -136,7 +121,6 @@ public sealed interface GraphitronType
     record JooqTableRecordType(
         String name,
         SourceLocation location,
-        List<FieldCoordinates> fieldCoordinates,
         String fqClassName,
         TableRef table
     ) implements ResultType {}
@@ -147,8 +131,7 @@ public sealed interface GraphitronType
      */
     record RootType(
         String name,
-        SourceLocation location,
-        List<FieldCoordinates> fieldCoordinates
+        SourceLocation location
     ) implements GraphitronType {}
 
     /**

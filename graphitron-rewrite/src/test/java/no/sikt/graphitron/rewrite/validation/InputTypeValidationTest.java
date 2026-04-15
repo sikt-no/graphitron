@@ -20,7 +20,7 @@ class InputTypeValidationTest {
     /** Validates an {@link InputType} with an optional extra type in the schema. */
     private static List<ValidationError> validateInputType(InputType type, Map<String, GraphitronType> extraTypes) {
         var types = new java.util.LinkedHashMap<String, GraphitronType>();
-        types.put("Query", new RootType("Query", null, List.of()));
+        types.put("Query", new RootType("Query", null));
         types.put(type.name(), type);
         types.putAll(extraTypes);
         return validate(new GraphitronSchema(types, Map.of()));

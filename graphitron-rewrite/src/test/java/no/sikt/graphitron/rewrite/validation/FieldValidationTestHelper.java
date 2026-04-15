@@ -56,6 +56,6 @@ public final class FieldValidationTestHelper {
      * the schema is built minimally from the field's own {@code parentTypeName} and {@code name}.
      */
     public static List<ValidationError> validate(GraphitronField field) {
-        return validate(schema(new RootType(field.parentTypeName(), null, List.of()), field.name(), field));
+        return validate(schema(new RootType(field.parentTypeName(), null), field.name(), field));
     }
 }

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.language.SourceLocation;
-import graphql.schema.FieldCoordinates;
+
 import graphql.schema.GraphQLInputObjectField;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInterfaceType;
@@ -188,7 +188,7 @@ class TypeBuilder {
 
         if (namedType instanceof GraphQLObjectType objType) {
             if (ROOT_TYPE_NAMES.contains(name)) {
-                return new RootType(name, location, fieldCoordinatesOf(objType));
+                return new RootType(name, location);
             }
             String typeConflict = detectTypeDirectiveConflict(objType);
             if (typeConflict != null) {
@@ -228,7 +228,7 @@ class TypeBuilder {
         }
         TableRef tableRef = tableOpt.get();
         if (!objType.hasAppliedDirective(DIR_NODE)) {
-            return new TableType(name, location, tableRef, fieldCoordinatesOf(objType));
+            return new TableType(name, location, tableRef);
         }
         String typeId = argString(objType, DIR_NODE, ARG_TYPE_ID).orElse(null);
         List<String> keyColumnNames = argStringList(objType, DIR_NODE, ARG_KEY_COLUMNS);
@@ -246,7 +246,7 @@ class TypeBuilder {
         if (!keyColumnErrors.isEmpty()) {
             return new UnclassifiedType(name, location, String.join("; ", keyColumnErrors));
         }
-        return new NodeType(name, location, tableRef, typeId, List.copyOf(keyColumns), fieldCoordinatesOf(objType));
+        return new NodeType(name, location, tableRef, typeId, List.copyOf(keyColumns));
     }
 
     /**
@@ -254,31 +254,30 @@ class TypeBuilder {
      * constructs the appropriate {@link ResultType} sub-type.
      */
     private GraphitronType buildResultType(GraphQLObjectType objType, String name, SourceLocation location) {
-        var fcs = fieldCoordinatesOf(objType);
         var dir = objType.getAppliedDirective(DIR_RECORD);
-        if (dir == null) return new GraphitronType.PojoResultType(name, location, fcs, null);
+        if (dir == null) return new GraphitronType.PojoResultType(name, location, null);
         var recordArg = dir.getArgument(ARG_RECORD);
         if (recordArg == null || recordArg.getValue() == null) {
-            return new GraphitronType.PojoResultType(name, location, fcs, null);
+            return new GraphitronType.PojoResultType(name, location, null);
         }
         Map<String, Object> ref = asMap(recordArg.getValue());
         String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
         if (className == null) {
-            return new GraphitronType.PojoResultType(name, location, fcs, null);
+            return new GraphitronType.PojoResultType(name, location, null);
         }
         try {
             Class<?> cls = Class.forName(className);
             if (cls.isRecord()) {
-                return new GraphitronType.JavaRecordType(name, location, fcs, className);
+                return new GraphitronType.JavaRecordType(name, location, className);
             }
             if (org.jooq.TableRecord.class.isAssignableFrom(cls)) {
                 TableRef table = svc.resolveTableByRecordClass(cls).orElse(null);
-                return new GraphitronType.JooqTableRecordType(name, location, fcs, className, table);
+                return new GraphitronType.JooqTableRecordType(name, location, className, table);
             }
             if (org.jooq.Record.class.isAssignableFrom(cls)) {
-                return new GraphitronType.JooqRecordType(name, location, fcs, className);
+                return new GraphitronType.JooqRecordType(name, location, className);
             }
-            return new GraphitronType.PojoResultType(name, location, fcs, className);
+            return new GraphitronType.PojoResultType(name, location, className);
         } catch (ClassNotFoundException e) {
             return new UnclassifiedType(name, location,
                 "record backing class '" + className + "' could not be loaded");
@@ -482,12 +481,6 @@ class TypeBuilder {
     }
 
     // ===== Structural helpers =====
-
-    static List<FieldCoordinates> fieldCoordinatesOf(GraphQLObjectType objType) {
-        return objType.getFieldDefinitions().stream()
-            .map(f -> FieldCoordinates.coordinates(objType.getName(), f.getName()))
-            .toList();
-    }
 
     // ===== Result container =====
 
