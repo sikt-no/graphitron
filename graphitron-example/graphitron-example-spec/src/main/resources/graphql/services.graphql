@@ -136,7 +136,7 @@ extend type Mutation {
             method: "checkOptionalFields"
         }
     )
-    """Test explicit null vs absent handling for service operations with jOOQ record changed() status (GG-407)"""
+    """Test explicit null vs absent handling for service operations with jOOQ record changed() status"""
     checkJooqChangedStatus(input: CustomerInput!)
     : JooqChangedStatusPayload @service(
         service: {
@@ -192,7 +192,7 @@ type FilmFieldPresence @record(record: {className: "no.sikt.graphitron.example.s
     rentalDurationPresent: Boolean
 }
 
-"""Test explicit null vs absent handling for service operations with Optional Java record fields (GG-407)"""
+"""Test explicit null vs absent handling for service operations with Optional Java record fields"""
 input OptionalFieldServiceInput @record(record: {className: "no.sikt.graphitron.example.service.records.OptionalFieldInput"}) {
     title: String!
     rentalDuration: Int

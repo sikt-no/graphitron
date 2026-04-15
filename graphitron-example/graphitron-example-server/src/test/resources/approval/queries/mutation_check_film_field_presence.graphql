@@ -1,4 +1,3 @@
-# Verify that null vs absent field distinction propagates correctly through nested record inputs (GG-407)
 mutation CheckFilmFieldPresence($in: [FilmInsertWrapper!]!) {
     checkFilmFieldPresence(in: $in) {
         title
