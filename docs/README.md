@@ -2,43 +2,58 @@
 
 This folder contains documentation about Graphitron's design, philosophy, and how the code generator works.
 
-## Where to Start
+## Start Here (everyone)
 
-**New to Graphitron?** Start with these in order:
+Read these three in order. They're short (~4 pages total) and give you the vocabulary for everything else.
 
-1. **[Vision and Goal](vision-and-goal.md)** - What problem Graphitron solves and how it approaches the solution. Read this first to understand why Graphitron exists.
+1. **[Vision and Goal](vision-and-goal.md)** — What problem Graphitron solves and how it approaches the solution.
+2. **[Graphitron Principles](graphitron-principles.md)** — The design philosophy behind Graphitron. Explains the long-term thinking that shapes architectural decisions.
+3. **[Dependencies](dependencies.md)** — Why we chose jOOQ and GraphQL-Java as foundational dependencies, and what that means for you.
 
-2. **[Graphitron Principles](graphitron-principles.md)** - The design philosophy behind Graphitron. Explains the long-term thinking that shapes architectural decisions.
+After these three, your next step depends on what you're doing:
 
-3. **[Dependencies](dependencies.md)** - Why we chose jOOQ and GraphQL-Java as foundational dependencies, and what that means for you.
+---
 
-## Code Generation Reference
+## Using Graphitron (schema authors)
 
-4. **[Code Generation Triggers](code-generation-triggers.md)** - What schema patterns and directives trigger what classification and generation. Organised around the rewrite pipeline's sealed type hierarchy.
+You're writing a GraphQL schema and want Graphitron to generate the wiring code.
 
-## Security
+4. **[Java Codegen README](/graphitron-codegen-parent/graphitron-java-codegen/README.md)** — Complete directive reference with examples. This is where you learn `@table`, `@field`, `@service`, `@splitQuery`, and every other directive.
+5. **[Security](security.md)** — Graphitron's security model and why we chose database-level enforcement.
+6. **[Runtime Extension Points](runtime-extension-points.md)** — How to wire `GraphitronContext`, `ExecuteListener`, and PostgreSQL RLS into your application. *(Draft — some code examples need verification.)*
+7. **[Example README](/graphitron-example/README.md)** — Working example with the Sakila database.
 
-5. **[Security](security.md)** - Graphitron's security model and why we chose database-level security enforcement.
+## Working on Graphitron internals (contributors)
 
-## Document Summary
+You're implementing generators, adding field variants, or fixing bugs in the rewrite pipeline.
 
-| Document | Purpose | When to Read |
-|----------|---------|--------------|
-| [Vision and Goal](vision-and-goal.md) | Problem statement and design approach | First, to understand the "why" |
-| [Graphitron Principles](graphitron-principles.md) | Design philosophy and long-term thinking | To understand architectural decisions |
-| [Dependencies](dependencies.md) | Why jOOQ and GraphQL-Java | When evaluating Graphitron or learning to extend it |
-| [Code Generation Triggers](code-generation-triggers.md) | Schema → classification → generated code | When writing schemas, implementing generators, or troubleshooting |
-| [Security](security.md) | Security model explanation | When designing access control |
+4. **[Code Generation Triggers](code-generation-triggers.md)** — The full classification taxonomy: schema patterns → sealed variants → generated output. This is the reference for what the code does.
+5. **[Rewrite Roadmap](rewrite-roadmap.md)** — Design principles for the rewrite, remaining generator work, and known gaps.
 
-## Active Development
+Active implementation plans (read when you're working on the specific feature):
+- **[Paginated Fields](paginated-fields.md)** — Dynamic ordering cursors, backward pagination, known bugs.
+- **[ConditionFilter Builder Path](condition-filter-builder.md)** — Reading `@condition` directives in the builder, override flag, tests.
 
-- **[Rewrite Roadmap](rewrite-roadmap.md)** - Remaining generator work, design principles, and known gaps
-- **[Paginated Fields](paginated-fields.md)** - Remaining: dynamic ordering cursors, backward pagination, execution test
-- **[ConditionFilter Builder Path](condition-filter-builder.md)** - Reading `@condition` directives in the builder, override flag, tests
+---
+
+## Quick Reference
+
+| Document | Audience | Purpose |
+|----------|----------|---------|
+| [Vision and Goal](vision-and-goal.md) | Everyone | Problem statement and design approach |
+| [Graphitron Principles](graphitron-principles.md) | Everyone | Design philosophy and long-term thinking |
+| [Dependencies](dependencies.md) | Everyone | Why jOOQ and GraphQL-Java |
+| [Java Codegen README](/graphitron-codegen-parent/graphitron-java-codegen/README.md) | Schema authors | Directive reference with examples |
+| [Security](security.md) | Schema authors | Security model explanation |
+| [Runtime Extension Points](runtime-extension-points.md) | Schema authors | GraphitronContext, ExecuteListener, RLS *(draft)* |
+| [Example README](/graphitron-example/README.md) | Schema authors | Working Sakila example |
+| [Code Generation Triggers](code-generation-triggers.md) | Contributors | Schema → classification → generated code |
+| [Rewrite Roadmap](rewrite-roadmap.md) | Contributors | Design principles, remaining work, known gaps |
+| [Paginated Fields](paginated-fields.md) | Contributors | Pagination implementation plan |
+| [ConditionFilter Builder Path](condition-filter-builder.md) | Contributors | @condition builder plan |
 
 ## Other Documentation
 
-- **[Main README](/README.md)** - Project overview and getting started
-- **[Example README](/graphitron-example/README.md)** - Working example with Sakila database
-- **[Java Codegen README](/graphitron-codegen-parent/graphitron-java-codegen/README.md)** - Complete directive reference with legacy examples
-- **[Schema Transform README](/graphitron-schema-transform/README.md)** - Schema transformation features
+- **[Main README](/README.md)** — Project overview and getting started
+- **[Schema Transform README](/graphitron-schema-transform/README.md)** — Schema transformation features (feature flags, Federation, Relay)
+- **[Common Module README](/graphitron-common/README.md)** — Exception handling framework and shared utilities

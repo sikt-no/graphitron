@@ -1,6 +1,6 @@
 # Runtime Extension Points
 
-:::warning The following content is riddled with halucinations.
+> **Draft:** Some code examples in this document have not been verified against the current codebase and may be inaccurate. The extension point concepts and architecture are correct; specific API signatures and method names should be checked against the source before relying on them.
 
 Generated code is intentionally simple — no tenant filtering, no auth checks, no transaction management. These concerns belong at runtime, injected through three extension points without touching generated code.
 
