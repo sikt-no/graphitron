@@ -157,7 +157,7 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef returnType,
         List<JoinStep> joinPath,
         MethodRef method
-    ) implements ChildField {}
+    ) implements ChildField, MethodBackedField {}
 
     record TableInterfaceField(
         String parentTypeName,
@@ -219,7 +219,7 @@ public sealed interface ChildField extends GraphitronField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         MethodRef method
-    ) implements TableTargetField {
+    ) implements TableTargetField, MethodBackedField {
         /** The name of the generated batch-rows helper method (e.g. {@code "loadFilms"}). */
         public String rowsMethodName() {
             return "load" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
@@ -240,7 +240,7 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef returnType,
         List<JoinStep> joinPath,
         MethodRef method
-    ) implements ChildField {}
+    ) implements ChildField, MethodBackedField {}
 
     record RecordTableField(
         String parentTypeName,

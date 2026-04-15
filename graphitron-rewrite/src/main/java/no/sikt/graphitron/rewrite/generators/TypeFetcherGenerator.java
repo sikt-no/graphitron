@@ -154,9 +154,7 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildQueryTableFetcher(QueryField.QueryTableField qtf) {
         var tableRef = qtf.returnType().table();
-        var tableClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite.types", qtf.returnType().returnTypeName());
-        var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
-        var jooqTableClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName());
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName());
         boolean isList = qtf.returnType().wrapper().isList();
 
         var returnType = isList
@@ -168,14 +166,14 @@ public class TypeFetcherGenerator {
             .returns(returnType)
             .addParameter(ENV, "env");
 
-        builder.addStatement("$T table = $T.$L", jooqTableClass, tablesClass, tableRef.javaFieldName());
+        builder.addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName());
         builder.addCode(buildConditionCall(qtf));
 
         if (isList) {
             builder.addCode(buildOrderByCode(qtf.orderBy()));
-            builder.addStatement("return $T.selectMany(env, condition, orderBy)", tableClass);
+            builder.addStatement("return $T.selectMany(env, condition, orderBy)", names.typeClass());
         } else {
-            builder.addStatement("return $T.selectOne(env, condition)", tableClass);
+            builder.addStatement("return $T.selectOne(env, condition)", names.typeClass());
         }
 
         return builder.build();
@@ -191,19 +189,23 @@ public class TypeFetcherGenerator {
                         LIST, String.class, toCamelCase(param.name()) + "Keys", param.name());
                 }
             }
-            var callArgs = buildCallArgs(filter);
+            var callArgs = buildCallArgs(filter.callParams(), filter.className());
             code.addStatement("condition = condition.and($T.$L($L))",
                 ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
         }
         return code.build();
     }
 
-    /** Builds the argument list for one condition method call: {@code table} first, then one arg per {@link CallParam}. */
-    private static CodeBlock buildCallArgs(WhereFilter filter) {
+    /**
+     * Builds the argument list for one condition method call: {@code table} first, then one arg
+     * per {@link CallParam}. The {@code conditionsClassName} is used by
+     * {@link CallSiteExtraction.TextMapLookup} to reference a static map field on the class.
+     */
+    private static CodeBlock buildCallArgs(List<CallParam> params, String conditionsClassName) {
         var args = CodeBlock.builder();
         args.add("table");
-        for (var param : filter.callParams()) {
-            args.add(", $L", buildArgExtraction(param, filter.className()));
+        for (var param : params) {
+            args.add(", $L", buildArgExtraction(param, conditionsClassName));
         }
         return args.build();
     }
@@ -308,16 +310,14 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildQueryLookupRowsMethod(QueryField.QueryLookupTableField field) {
         var tableRef = field.returnType().table();
-        var tableClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite.types", field.returnType().returnTypeName());
-        var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
-        var jooqTableClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName());
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, field.returnType().returnTypeName());
 
         var builder = MethodSpec.methodBuilder(field.lookupMethodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(RESULT, RECORD))
             .addParameter(ENV, "env");
 
-        builder.addStatement("$T table = $T.$L", jooqTableClass, tablesClass, tableRef.javaFieldName());
+        builder.addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName());
         builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
 
         for (var filter : field.filters()) {
@@ -329,13 +329,16 @@ public class TypeFetcherGenerator {
                         LIST, String.class, toCamelCase(bp.name()) + "Keys", bp.name());
                 }
             }
+            var callParams = gcf.bodyParams().stream()
+                .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list(), bp.javaType()))
+                .toList();
             builder.addStatement("condition = condition.and($T.$L($L))",
                 ClassName.bestGuess(gcf.className()), gcf.methodName(),
-                buildLookupCallArgs(gcf));
+                buildCallArgs(callParams, gcf.className()));
         }
 
         builder.addCode(buildOrderByCode(field.orderBy()));
-        builder.addStatement("return $T.selectMany(env, condition, orderBy)", tableClass);
+        builder.addStatement("return $T.selectMany(env, condition, orderBy)", names.typeClass());
         return builder.build();
     }
 
@@ -379,11 +382,7 @@ public class TypeFetcherGenerator {
         var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
 
-        var sourcesParam = smr.params().stream()
-            .filter(p -> p instanceof MethodRef.Param.Sourced)
-            .map(p -> (MethodRef.Param.Sourced) p)
-            .findFirst()
-            .orElseThrow();
+        var sourcesParam = smr.sourcedParam();
         var batchKey = sourcesParam.batchKey();
         TypeName keyType = keyElementType(batchKey);
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
@@ -409,7 +408,7 @@ public class TypeFetcherGenerator {
                 "    .computeIfAbsent(name, k -> $T.newDataLoaderWithContext($L));\n",
                 loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
-        var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
+        var tablesClass = GeneratorUtils.ResolvedTableNames.ofTable(prt).tablesClass();
         switch (batchKey) {
             case BatchKey.RowKeyed rk -> {
                 String tableField = prt.javaFieldName();
@@ -458,11 +457,7 @@ public class TypeFetcherGenerator {
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         var returnType = isList ? ParameterizedTypeName.get(LIST, listOfRecord) : listOfRecord;
 
-        var sourcesParam = smr.params().stream()
-            .filter(p -> p instanceof MethodRef.Param.Sourced)
-            .map(p -> (MethodRef.Param.Sourced) p)
-            .findFirst()
-            .orElseThrow();
+        var sourcesParam = smr.sourcedParam();
         TypeName keysElementType = keyElementType(sourcesParam.batchKey());
 
         var builder = MethodSpec.methodBuilder(sf.rowsMethodName())
@@ -486,14 +481,14 @@ public class TypeFetcherGenerator {
             smr.methodName(),
             String.join(", ", serviceCallArgs));
 
-        var tableClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite.types", tb.returnTypeName());
+        var typeClass = GeneratorUtils.ResolvedTableNames.of(rt, tb.returnTypeName()).typeClass();
         String selectManyName = sourcesParam.batchKey().selectManyMethodName();
         String selectOneName  = sourcesParam.batchKey().selectOneMethodName();
         if (isList) {
             builder.addStatement("return $T.$L(keys, env, sel, ($T<?>) serviceResult)",
-                tableClass, selectManyName, List.class);
+                typeClass, selectManyName, List.class);
         } else {
-            builder.addStatement("return $T.$L(keys, env, sel, serviceResult)", tableClass, selectOneName);
+            builder.addStatement("return $T.$L(keys, env, sel, serviceResult)", typeClass, selectOneName);
         }
 
         return builder.build();
@@ -617,24 +612,6 @@ public class TypeFetcherGenerator {
             .returns(WIRING_BUILDER)
             .addCode(body.build())
             .build();
-    }
-
-    /**
-     * Builds the argument list for a lookup conditions method call.
-     *
-     * <p>The first argument is always {@code table} (the local variable declared in the fetcher).
-     * Subsequent arguments are extracted via {@link #buildArgExtraction} — the {@link CallSiteExtraction}
-     * variant on each param drives the generated expression. List {@link CallSiteExtraction.JooqConvert}
-     * params reference a pre-declared {@code List<String>} local variable (emitted by the caller).
-     */
-    private static CodeBlock buildLookupCallArgs(GeneratedConditionFilter gcf) {
-        var args = CodeBlock.builder();
-        args.add("table");
-        for (var bp : gcf.bodyParams()) {
-            var callParam = new CallParam(bp.name(), bp.extraction(), bp.list(), bp.javaType());
-            args.add(", $L", buildArgExtraction(callParam, gcf.className()));
-        }
-        return args.build();
     }
 
     /** Converts a snake_case GraphQL argument name to lowerCamelCase for use as a Java local variable. */

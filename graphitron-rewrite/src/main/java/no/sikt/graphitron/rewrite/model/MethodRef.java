@@ -31,6 +31,20 @@ public interface MethodRef {
     List<Param> params();
 
     /**
+     * Returns the single {@link Param.Sourced} parameter — the DataLoader batch-key parameter
+     * whose value comes from the DataLoader {@code keys} list.
+     *
+     * <p>Throws if no such parameter exists. Service methods always have exactly one.
+     */
+    default Param.Sourced sourcedParam() {
+        return params().stream()
+            .filter(p -> p instanceof Param.Sourced)
+            .map(p -> (Param.Sourced) p)
+            .findFirst()
+            .orElseThrow();
+    }
+
+    /**
      * Extracted parameters only — {@link ParamSource.Arg} and {@link ParamSource.Context} —
      * in declaration order. Skips implicit structural parameters ({@link ParamSource.Table},
      * {@link ParamSource.SourceTable}, {@link ParamSource.DslContext},

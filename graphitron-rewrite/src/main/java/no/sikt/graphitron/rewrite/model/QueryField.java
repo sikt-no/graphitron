@@ -69,7 +69,7 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         MethodRef method
-    ) implements QueryField {}
+    ) implements QueryField, MethodBackedField {}
 
     record QueryNodeField(
         String parentTypeName,
@@ -121,7 +121,7 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         MethodRef method
-    ) implements QueryField {}
+    ) implements QueryField, MethodBackedField {}
 
     /**
      * A root query field backed by a developer-provided service method, returning a non-table type.
@@ -135,5 +135,5 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef returnType,
         MethodRef method
-    ) implements QueryField {}
+    ) implements QueryField, MethodBackedField {}
 }

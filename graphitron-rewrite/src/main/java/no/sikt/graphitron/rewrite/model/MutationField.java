@@ -51,7 +51,7 @@ public sealed interface MutationField extends RootField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         MethodRef method
-    ) implements MutationField {}
+    ) implements MutationField, MethodBackedField {}
 
     /**
      * A mutation field backed by a developer-provided service method, returning a non-table type.
@@ -65,5 +65,5 @@ public sealed interface MutationField extends RootField
         SourceLocation location,
         ReturnTypeRef returnType,
         MethodRef method
-    ) implements MutationField {}
+    ) implements MutationField, MethodBackedField {}
 }
