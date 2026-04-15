@@ -18,9 +18,9 @@
 
 ### 1. Dynamic ordering cursor support
 
-For `OrderBySpec.Argument`, the cursor columns depend on which `NamedOrder` the client selected. The fetcher must resolve the active ordering, pass it into the `ConnectionResult`, and `ConnectionHelper` must use it for cursor encoding.
+For `OrderBySpec.Argument`, the cursor columns depend on which `NamedOrder` the client selected. The fetcher must resolve the active ordering (via the now-generated `<fieldName>OrderBy` helper), pass the resolved column list into the `ConnectionResult`, and `ConnectionHelper` must use it for cursor encoding.
 
-Currently the connection fetcher only handles `OrderBySpec.Fixed`. This step depends on the [orderBy implementation](orderby-implementation.md) completing `namedOrders` population and the `<fieldName>OrderBy` helper method.
+The orderBy implementation is complete — `namedOrders` are populated, the `<fieldName>OrderBy` helper is generated, direction handling works. What remains is threading the resolved columns from the helper into the `ConnectionResult` carrier so `ConnectionHelper.edges()` and `pageInfo()` can encode cursors from the correct columns.
 
 ### 2. Backward pagination (`last`/`before`)
 

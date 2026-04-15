@@ -33,8 +33,7 @@ This folder contains documentation about Graphitron's design, philosophy, and ho
 ## Active Development
 
 - **[Rewrite Roadmap](rewrite-roadmap.md)** - Remaining generator work, design principles, and known gaps
-- **[OrderBy Implementation](orderby-implementation.md)** - Plan for implementing `OrderBySpec.Argument` generation (namedOrders population, base nullability fix, generator)
-- **[Paginated Fields](paginated-fields.md)** - Relay Connection pagination: keyset seek, generated wiring, native @asConnection
+- **[Paginated Fields](paginated-fields.md)** - Remaining: dynamic ordering cursors, backward pagination, execution test
 - **[ConditionFilter Builder Path](condition-filter-builder.md)** - Reading `@condition` directives in the builder, override flag, tests
 
 ## Other Documentation
