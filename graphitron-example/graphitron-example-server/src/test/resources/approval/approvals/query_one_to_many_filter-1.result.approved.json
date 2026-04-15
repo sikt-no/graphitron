@@ -1,0 +1,32 @@
+{
+    "data": {
+        "languagesFilteredByFilm": {
+            "nodes": [
+                {
+                    "id": "TGFuZ3VhZ2U6MQ",
+                    "name": "English             "
+                },
+                {
+                    "id": "TGFuZ3VhZ2U6Mg",
+                    "name": "Italian             "
+                },
+                {
+                    "id": "TGFuZ3VhZ2U6Mw",
+                    "name": "Japanese            "
+                },
+                {
+                    "id": "TGFuZ3VhZ2U6NA",
+                    "name": "Mandarin            "
+                },
+                {
+                    "id": "TGFuZ3VhZ2U6NQ",
+                    "name": "French              "
+                },
+                {
+                    "id": "TGFuZ3VhZ2U6Ng",
+                    "name": "German              "
+                }
+            ]
+        }
+    }
+}

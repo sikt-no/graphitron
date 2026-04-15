@@ -34,11 +34,12 @@ public class ReferenceInputTest extends ReferenceTest {
     }
 
     @Test
-    @DisplayName("Reverse table path")
+    @DisplayName("Reverse table path - uses EXISTS to avoid row duplication from one-to-many LEFT JOIN")
     void tableBackwards() {
         assertGeneratedContentContains(
                 "tableBackwards", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(_a_address_223244161_customer_left"
+                "DSL.exists(DSL.selectOne().from(_a_address_223244161_customer_left).where(",
+                "customer_left.ADDRESS_ID.eq(_a_address.ADDRESS_ID)"
         );
     }
 
@@ -63,11 +64,12 @@ public class ReferenceInputTest extends ReferenceTest {
     }
 
     @Test
-    @DisplayName("Reverse key path")
+    @DisplayName("Reverse key path - uses EXISTS to avoid row duplication from one-to-many LEFT JOIN")
     void keyBackwards() {
         assertGeneratedContentContains(
                 "keyBackwards", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(_a_address_223244161_customer_left"
+                "DSL.exists(DSL.selectOne().from(_a_address_223244161_customer_left).where(",
+                "customer_left.ADDRESS_ID.eq(_a_address.ADDRESS_ID)"
         );
     }
 
@@ -169,6 +171,45 @@ public class ReferenceInputTest extends ReferenceTest {
                 "keyWithMultiplePathsAndNestedSplitQuery",
                 "DSL.select(filmsForLanguage_film())",
                 "private static SelectField<Film> filmsForLanguage_film()"
+        );
+    }
+
+    @Test
+    @DisplayName("Reverse condition path - one-to-many with condition uses EXISTS with condition inside")
+    void conditionBackwards() {
+        assertGeneratedContentContains("conditionBackwards",
+                "DSL.exists(DSL.selectOne().from(_a_address_email_customer_left).where(",
+                ".email(_a_address, _a_address_email_customer_left)"
+        );
+    }
+
+    @Test
+    @DisplayName("Reverse key+condition path - condition appears inside EXISTS")
+    void keyAndConditionBackwards() {
+        assertGeneratedContentContains("keyAndConditionBackwards",
+                "DSL.exists(DSL.selectOne().from(_a_address_223244161_customer_left).where(",
+                ".email(_a_address, _a_address_223244161_customer_left)");
+    }
+
+    @Test
+    @DisplayName("Multi-step path with one-to-many as final step uses EXISTS for the last join")
+    void multiStepEndingInOneToMany() {
+        assertGeneratedContentContains("multiStepEndingInOneToMany", Set.of(CUSTOMER_TABLE),
+                ".leftJoin(_a_customer_2168032777_address_left)",
+                "DSL.exists(DSL.selectOne().from(_a_address_2138977089_staff_left).where("
+        );
+    }
+
+    @Test
+    @DisplayName("Reverse key path with bidirectional FKs uses EXISTS when key disambiguates direction")
+    void reverseWithMultiplePaths() {
+        // Store and Staff have FKs in both directions (STAFF__STAFF_STORE_ID_FKEY and STORE__STORE_MANAGER_STAFF_ID_FKEY).
+        // The explicit key ensures the reverse (one-to-many) direction is detected and wrapped in EXISTS.
+        assertGeneratedContentContains(
+                "reverseWithMultiplePaths",
+                "DSL.exists(DSL.selectOne().from(_a_store_",
+                "_left).where(",
+                ".STORE_ID.eq(_a_store.STORE_ID)"
         );
     }
 }

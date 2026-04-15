@@ -21,7 +21,7 @@ public class VacationRecord extends UpdatableRecordImpl<VacationRecord> {
         return (Long) get(0);
     }
 
-    public void setDescription(Long value) {
+    public void setDescription(String value) {
         set(1, value);
     }
 
@@ -39,6 +39,13 @@ public class VacationRecord extends UpdatableRecordImpl<VacationRecord> {
 
     public VacationRecord() {
         super(Vacation.VACATION);
+    }
+
+    public VacationRecord(Long vacationId, String description) {
+        super(Vacation.VACATION);
+        setVacationId(vacationId);
+        setDescription(description);
+        resetTouchedOnNotNull();
     }
 
     @Override

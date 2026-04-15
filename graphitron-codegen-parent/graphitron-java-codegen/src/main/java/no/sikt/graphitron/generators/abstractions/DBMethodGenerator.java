@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.abstractions;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -18,17 +18,25 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_STRATEGY;
  * Generic select query generation functionality is contained within this class.
  * @param <T> Field type that this generator operates on.
  */
-abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractSchemaMethodGenerator<T, ObjectDefinition> {
+abstract public class DBMethodGenerator<T extends GenerationTarget> extends AbstractSchemaMethodGenerator<T, ObjectDefinition> {
     public DBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
     }
 
     @Override
     public MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType) {
+        return getDefaultSpecBuilder(methodName, returnType, false);
+    }
+
+    /**
+     * @param skipNodeIdStrategy If true, the node ID strategy parameter is never added,
+     *                           regardless of the global {@link GeneratorConfig#shouldMakeNodeStrategy()} setting.
+     */
+    public MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType, boolean skipNodeIdStrategy) {
         return super
                 .getDefaultSpecBuilder(methodName, returnType)
                 .addModifiers(Modifier.STATIC)
                 .addParameter(DSL_CONTEXT.className, VariableNames.VAR_CONTEXT)
-                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY);
+                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy() && !skipNodeIdStrategy, NODE_ID_STRATEGY.className, VAR_NODE_STRATEGY);
     }
 }

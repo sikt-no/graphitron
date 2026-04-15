@@ -1,5 +1,6 @@
 package no.sikt.graphitron.validation;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -161,5 +162,31 @@ public class MutationTest extends ValidationTest { // TODO: Some of these tests 
     @DisplayName("Neither service nor mutation directive is set on a mutation")
     void noHandlingSet() {
         assertErrorsContain("noHandlingSet", "Mutation 'mutation' is set to generate, but has neither a service nor mutation type set.");
+    }
+
+    @Test
+    @DisplayName("Upsert mutation fails validation when failOnMerge is enabled")
+    void failOnMerge() {
+        try {
+            GeneratorConfig.setFailOnMerge(true);
+            assertErrorsContain("upsert", Set.of(CUSTOMER_INPUT_TABLE),
+                    "MERGE generation is disabled (failOnMerge is enabled), but mutation 'upsertCustomer' uses UPSERT. " +
+                            "Possible workaround is enabling generateUpsertAsStore.");
+        } finally {
+            GeneratorConfig.setFailOnMerge(false);
+        }
+    }
+
+    @Test
+    @DisplayName("Upsert mutation should not fail validation when both failOnMerge and generateUpsertAsStore is enabled")
+    void failOnMergeButStoreEnabled() {
+        try {
+            GeneratorConfig.setFailOnMerge(true);
+            GeneratorConfig.setGenerateUpsertAsStore(true);
+            getProcessedSchema("upsert", Set.of(CUSTOMER_INPUT_TABLE));
+        } finally {
+            GeneratorConfig.setFailOnMerge(false);
+            GeneratorConfig.setGenerateUpsertAsStore(false);
+        }
     }
 }

@@ -10,6 +10,7 @@ import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.TableRelation;
+import no.sikt.graphitron.definitions.mapping.TableRelationType;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -38,6 +39,7 @@ public class FetchContext {
     private final LinkedHashSet<AliasWrapper> aliasSet;
     private final List<GenerationField> conditionSourceFields;
     private final ArrayList<CodeBlock> conditionList;
+    private ExistsJoin existsJoin;
     private final String graphPath;
     private final int recCounter;
     private final KeyWrapper resolverKey;
@@ -83,10 +85,10 @@ public class FetchContext {
         this.processedSchema = processedSchema;
 
         if (referenceObjectField.hasNodeID()) {
-             referenceObject = processedSchema.getNodeTypeForNodeIdFieldOrThrow(referenceObjectField);
-         } else {
-             referenceObject = processedSchema.getRecordType(referenceObjectField);
-         }
+            referenceObject = processedSchema.getNodeTypeForNodeIdFieldOrThrow(referenceObjectField);
+        } else {
+            referenceObject = processedSchema.getRecordType(referenceObjectField);
+        }
 
         this.joinSet = joinSet;
         this.aliasSet = aliasSet;
@@ -171,6 +173,30 @@ public class FetchContext {
      */
     public Set<SQLJoinStatement> getJoinSet() {
         return joinSet;
+    }
+
+    /**
+     * Retrieves and removes a one-to-many EXISTS join along with any associated conditions (e.g., from @condition).
+     * The join and conditions were diverted from joinSet/conditionList by resolveNextSequence to avoid row duplication.
+     */
+    public Optional<ExistsJoin> pollExistsJoin() {
+        var result = Optional.ofNullable(existsJoin);
+        existsJoin = null; // Reset after consumption, otherwise the next filter field in the iteration would incorrectly wrap its condition in EXISTS
+        return result;
+    }
+
+    public static class ExistsJoin {
+        private final SQLJoinStatement join;
+        private final List<CodeBlock> conditions = new ArrayList<>();
+
+        ExistsJoin(SQLJoinStatement join) {
+            this.join = join;
+        }
+
+        public SQLJoinStatement join() { return join; }
+        public List<CodeBlock> conditions() { return Collections.unmodifiableList(conditions); }
+
+        void addCondition(CodeBlock condition) { conditions.add(condition); }
     }
 
     /**
@@ -441,7 +467,7 @@ public class FetchContext {
      * Iterate through the provided references and create a new join sequence.
      * @return The new join sequence, with the provided join sequence extended by all the references provided.
      */
-    private JoinListSequence processFieldReferences(JoinListSequence joinSequence, JOOQMapping refTable, List<FieldReference> references, boolean requiresLeftJoin, boolean checkLastRef) {
+    private JoinListSequence processFieldReferences(JoinListSequence joinSequence, JOOQMapping refTable, List<FieldReference> references, boolean isInputReference, boolean checkLastRef) {
         var previousTable = joinSequence.isEmpty() ? getPreviousTable() : joinSequence.getLast().getTable();
         if (getReferenceObjectField().createsDataFetcher() && previousContext != null && checkLastRef) previousTable = previousContext.getPreviousTable();
 
@@ -462,12 +488,12 @@ public class FetchContext {
 
         for (int i = 0; i < references.size(); i++) {
             if (getReferenceObjectField().createsDataFetcher() && previousContext == null && i > 0) break;
-            joinSequence = resolveNextSequence(references.get(i), relations.get(i), joinSequence, requiresLeftJoin);
+            joinSequence = resolveNextSequence(references.get(i), relations.get(i), joinSequence, isInputReference);
         }
         return joinSequence;
     }
 
-    private JoinListSequence resolveNextSequence(FieldReference fRef, TableRelation relation, JoinListSequence joinSequence, boolean requiresLeftJoin) {
+    private JoinListSequence resolveNextSequence(FieldReference fRef, TableRelation relation, JoinListSequence joinSequence, boolean isInputReference) {
         var previous = relation.getFrom();
         var target = relation.getToTable();
 
@@ -504,8 +530,8 @@ public class FetchContext {
                     this.conditionList.add(CodeBlock.of("$L.$L.eq($L.$L)", previousContext.getCurrentJoinSequence().getLast().getMappingName(), fieldName, joinElement.getMappingName(), fieldName));
                 }
             }
-            var join = fRef.createConditionJoinFor(newSequence, targetOrPrevious, requiresLeftJoin);
-            if (!newSequence.isEmpty() || addAllJoinsToJoinSet) joinSet.add(join);
+            var join = fRef.createConditionJoinFor(newSequence, targetOrPrevious, isInputReference);
+            addToJoinSet(join, isInputReference, previous, targetOrPrevious, null, newSequence);
             aliasSet.add(join.getJoinAlias());
             return newSequence.cloneAdd(join.getJoinAlias().getAlias());
         }
@@ -515,15 +541,15 @@ public class FetchContext {
             if (newSequence.isEmpty()) aliasJoinSequence = aliasJoinSequence.cloneAdd(previousContext == null || previousContext.getCurrentJoinSequence().isEmpty() ? previous : previousContext.getCurrentJoinSequence().getLast());
             aliasJoinSequence = aliasJoinSequence.cloneAdd(keyToUse);
 
-            var join = createJoinOnExplicitPathFor(fRef, keyToUse, aliasJoinSequence, target, requiresLeftJoin);
-            if (!newSequence.isEmpty() || addAllJoinsToJoinSet)  joinSet.add(join);
+            var join = createJoinOnExplicitPathFor(fRef, keyToUse, aliasJoinSequence, target, isInputReference);
+            addToJoinSet(join, isInputReference, previous, targetOrPrevious, keyToUse, newSequence);
             aliasSet.add(join.getJoinAlias());
             newSequence = newSequence.cloneAdd(join.getJoinAlias().getAlias());
         }
 
         if (fRef.hasTableCondition() && relation.hasRelation()) {
             var previousTableWithAlias = newSequence.getSecondLast() == null && previousContext != null ? previousContext.getCurrentJoinSequence().render() : newSequence.render(newSequence.getSecondLast());
-            this.conditionList.add(fRef.getTableCondition().formatToString(List.of(previousTableWithAlias, newSequence.render())));
+            addCondition(fRef.getTableCondition().formatToString(List.of(previousTableWithAlias, newSequence.render())));
         }
 
         return newSequence;
@@ -543,6 +569,41 @@ public class FetchContext {
     }
 
     /**
+     * Adds a join to joinSet, or stores it as an EXISTS join if it's a one-to-many filter join.
+     */
+    private void addToJoinSet(SQLJoinStatement join, boolean isInputReference, JOOQMapping from, JOOQMapping to, JOOQMapping key, JoinListSequence currentSequence) {
+        if (!currentSequence.isEmpty() || addAllJoinsToJoinSet) {
+            if (isExistsJoin(isInputReference, from, to, key)) {
+                existsJoin = new ExistsJoin(join);
+            } else {
+                joinSet.add(join);
+            }
+        }
+    }
+
+    /**
+     * Adds a condition to the current EXISTS join if one exists, otherwise to the regular condition list.
+     */
+    private void addCondition(CodeBlock condition) {
+        if (existsJoin != null) {
+            existsJoin.addCondition(condition);
+        } else {
+            conditionList.add(condition);
+        }
+    }
+
+    /**
+     * Checks if a filter LEFT JOIN represents a one-to-many relationship that should use an EXISTS subquery
+     * instead of a regular LEFT JOIN, to avoid row duplication.
+     */
+    private boolean isExistsJoin(boolean isInputReference, JOOQMapping from, JOOQMapping to, JOOQMapping key) {
+        if (isInputReference && from != null && to != null && !from.getMappingName().equalsIgnoreCase(to.getMappingName())) {
+            var relationType = inferRelationType(from.getMappingName(), to.getMappingName(), key);
+            return relationType == TableRelationType.REVERSE_IMPLICIT || relationType == TableRelationType.REVERSE_KEY;
+        }
+        return false;
+    }
+
     /**
      * @return A join statement based on a key reference using path
      */
@@ -558,7 +619,8 @@ public class FetchContext {
                 targetTable,
                 alias,
                 List.of(),
-                isNullable
+                isNullable,
+                keyOverride
         );
     }
 

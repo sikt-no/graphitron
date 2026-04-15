@@ -182,6 +182,8 @@ The options are the same for both goals.
   * `onExternalFields` - Enable optional selects for external fields.
 * `useJdbcBatchingForDeletes` - Enables JDBC batching for delete operations in generated mutations. Enabled by default. If disabled, improved delete query with returning clause will be generated.
 * `useJdbcBatchingForInserts` - Enables JDBC batching for insert operations in generated mutations. Enabled by default. If disabled, improved insert query with returning clause will be generated.
+* `failOnMerge` - When enabled, code generation will fail if an upsert mutation with MERGE is encountered. Disabled by default.
+* `generateUpsertAsStore` - Use jOOQ `batchStore` instead of `batchMerge` for upsert mutations. Disabled by default. When enabled, existing records are fetched by primary key before mutation, and only the input-provided fields are applied onto them. This lets jOOQ decide whether to INSERT or UPDATE based on the record state.
 
 See the [pom.xml](https://github.com/sikt-no/graphitron/blob/main/graphitron-example/graphitron-example-spec/pom.xml)
 of _graphitron-example-spec_ for an example on how to configure these settings.
@@ -867,6 +869,8 @@ Note that mutations need either the **@mutation** or the **@service** directive 
 
 > **Important:** The output from generated update and insert mutations are currently incorrect when using JDBC batching.
 > The mutation output is being fetched and filtered based on the input fields rather than returning the actual mutated record(s). To enable improved queries with returning clauses, disable JDBC batching by setting `useJdbcBatchingForInserts` and/or `useJdbcBatchingForDeletes` to `false` in the [query generation settings](#query-generation-settings).
+
+> **Note:** By default, upsert mutations use SQL MERGE via jOOQ's `batchMerge`. If `batchStore` is preferred, enable `generateUpsertAsStore` in the [query generation settings](#query-generation-settings). This changes the generated code to fetch existing records first and use `batchStore`.
 
 ### Custom logic with @service
 The **service** directive allows for full customization of any database operations while still generating data fetchers.

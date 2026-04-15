@@ -1,0 +1,11 @@
+type Query {
+  addresses(storeId: ID @nodeId(typeName: "Store") @reference(path: [{table: "CUSTOMER"}])): [Address]
+}
+
+type Address @table {
+  id: ID!
+}
+
+type Store implements Node @table @node {
+  id: ID! @nodeId
+}

@@ -191,16 +191,18 @@ The output is a JSON file (default: `target/graphitron-lsp-config.json`) with th
 
 ### Code Generation Configuration
 
-| Parameter              | Description                                                 | Required | Default                    |
-|------------------------|-------------------------------------------------------------|----------|----------------------------|
-| `jooqGeneratedPackage` | Package containing jOOQ generated classes                   | Yes      | -                          |
-| `outputPackage`        | Package for generated GraphQL code                          | No       | `no.sikt.graphql`          |
-| `outputPath`           | Directory for generated sources                             | No       | `target/generated-sources` |
-| `schemaFiles`          | Pre-transformed schema files (when not using `<transform>`) | No       | -                          |
-| `userSchemaFiles`      | Schema files to expose to clients                           | No       | ***                        |
-| `makeNodeStrategy`     | Enable Relay Global Object Identification                   | No       | `false`                    |
-| `scalars`              | Custom scalar implementations                               | No       | -                          |
-| `maxAllowedPageSize`   | Maximum page size for connections                           | No       | `1000`                     |
+| Parameter               | Description                                                     | Required | Default                    |
+|-------------------------|-----------------------------------------------------------------|----------|----------------------------|
+| `jooqGeneratedPackage`  | Package containing jOOQ generated classes                       | Yes      | -                          |
+| `outputPackage`         | Package for generated GraphQL code                              | No       | `no.sikt.graphql`          |
+| `outputPath`            | Directory for generated sources                                 | No       | `target/generated-sources` |
+| `schemaFiles`           | Pre-transformed schema files (when not using `<transform>`)     | No       | -                          |
+| `userSchemaFiles`       | Schema files to expose to clients                               | No       | ***                        |
+| `makeNodeStrategy`      | Enable Relay Global Object Identification                       | No       | `false`                    |
+| `scalars`               | Custom scalar implementations                                   | No       | -                          |
+| `maxAllowedPageSize`    | Maximum page size for connections                               | No       | `1000`                     |
+| `failOnMerge`           | Fail code generation if a upsert mutation with `MERGE` is found | No       | `false`                    |
+| `generateUpsertAsStore` | Use jOOQ `batchStore` instead of `batchMerge` for upserts       | No       | `false`                    |
 
 \*\*\* Defaults to `schema.graphql` when using `<transform>`, otherwise defaults to `schemaFiles`.
 

@@ -18,6 +18,7 @@ import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
+import no.sikt.graphitron.generators.db.FetchTableRecordDBMethodGenerator;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
@@ -38,7 +39,10 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.resolveColumnNamesForNodeIdField;
 import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodNameForField;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.javapoet.CodeBlock.declare;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.FUNCTION;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
+import static no.sikt.graphitron.mappings.TableReflection.getRecordClass;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -48,7 +52,8 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 public class OperationMethodGenerator extends DataFetcherMethodGenerator {
     private static final String
             RESPONSE_NAME = internalPrefix("response"),
-            TRANSFORMER_LAMBDA_NAME = internalPrefix("recordTransform");
+            TRANSFORMER_LAMBDA_NAME = internalPrefix("recordTransform"),
+            FETCHED_RECORDS_VAR_SUFFIX = "ForFetchRecords";
 
     public OperationMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -57,6 +62,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
     @Override
     public MethodSpec generate(ObjectField target) {
         var isMutationReturningData = processedSchema.isDeleteMutationWithReturning(target) || processedSchema.isInsertMutationWithReturning(target);
+        var isBatchStoreMutation = GeneratorConfig.generateUpsertAsStore() && target.hasMutationType() && target.getMutationType().equals(MutationType.UPSERT);
         var parser = new InputParser(target, processedSchema);
         var methodCall = getMethodCall(target, parser, false); // Note, do this before declaring services.
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
@@ -66,13 +72,42 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .beginControlFlow("return $N ->", VAR_ENV)
                 .addCode(extractParams(target))
                 .addCode(declareContextArgs(target))
-                .addCode(transformInputs(target, parser))
+                .addCode(transformInputs(target, parser, isBatchStoreMutation))
                 .addCode(validateInputs(parser))
+                .addCodeIf(isBatchStoreMutation, () -> fetchExistingRecordsAndPrepareForStore(parser))
                 .addCode(declareAllServiceClasses(target.getName()))
                 .addCodeIf(!isMutationReturningData && localObject.getName().equals(SCHEMA_MUTATION.getName()),
                         () -> getMethodCall(target, parser, true))
                 .addCode(methodCall)
                 .endControlFlow("") // Keep this, logic to set semicolon only kicks in if a string is set.
+                .build();
+    }
+
+    /**
+     * @return Code block that fetches existing records by primary key and prepares input records for store.
+     */
+    private CodeBlock fetchExistingRecordsAndPrepareForStore(InputParser parser) {
+        var recordInput = parser.getJOOQRecords().entrySet().stream().findFirst().orElseThrow();
+        var targetTable = processedSchema.getInputType(recordInput.getValue().getTypeName()).getTable();
+
+        var fetchedRecordsVariableName = inputPrefix(recordInput.getKey() + FETCHED_RECORDS_VAR_SUFFIX);
+        var fetchRecordsMethodName = FetchTableRecordDBMethodGenerator.getMethodName(getRecordClass(targetTable.getName()).orElseThrow().getSimpleName());
+
+        var fetchTableRecordsCall = CodeBlock.of("$L.$L($L, $L)",
+                asQueryClass(localObject.getName()),
+                fetchRecordsMethodName,
+                asMethodCall(VAR_TRANSFORMER, METHOD_CONTEXT_NAME),
+                !recordInput.getValue().isIterableWrapped() ? listOf(fetchedRecordsVariableName) : fetchedRecordsVariableName
+        );
+
+        return CodeBlock.builder()
+                .add(declare(internalPrefix("existingRecords"), fetchTableRecordsCall))
+                .add(declare(inputPrefix(recordInput.getKey()),
+                        "$T.prepareRecordsForStore($N, $N)",
+                        RESOLVER_HELPERS.className,
+                        internalPrefix("existingRecords"),
+                        fetchedRecordsVariableName)
+                )
                 .build();
     }
 
@@ -357,7 +392,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
     /**
      * @return CodeBlock for declaring the transformer class and calling it on each record input.
      */
-    private CodeBlock transformInputs(ObjectField field, InputParser parser) {
+    private CodeBlock transformInputs(ObjectField field, InputParser parser, boolean isBatchStoreMutation) {
         if (!parser.hasRecords()) {
             if (field.hasServiceReference()) {
                 return declareTransform();
@@ -375,7 +410,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         var inputObjects = field.getNonReservedArguments().stream().filter(processedSchema::isInputType).toList();
         for (var in : inputObjects) {
             var context = MapperContext.createResolverContext(in, true, processedSchema);
-            code.add(declareRecords(context, 0));
+            code.add(declareRecords(context, 0, isBatchStoreMutation));
             recordCode.add(unwrapRecords(context));
         }
 
@@ -503,14 +538,16 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         }
     }
 
-    private CodeBlock declareRecords(MapperContext context, int recursion) {
+    private CodeBlock declareRecords(MapperContext context, int recursion, boolean isBatchStoreMutation) {
         recursionCheck(recursion);
         if (!context.targetIsType()) {
             return CodeBlock.empty();
         }
 
         var target = context.getTarget();
-        var declareBlock = CodeBlock.declare(inputPrefix(asListedRecordNameIf(target.getName(), context.isIterable())), context.transformInputRecord());
+        var baseName = inputPrefix(asListedRecordNameIf(target.getName(), context.isIterable()));
+        var variableName = baseName + (isBatchStoreMutation ? FETCHED_RECORDS_VAR_SUFFIX : "");
+        var declareBlock = declare(variableName, context.transformInputRecord());
         if (context.hasJavaRecordReference()) {
             return declareBlock; // If the input type is a Java record, no further records should be declared.
         }
@@ -528,7 +565,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                         .getFields()
                         .stream()
                         .filter(processedSchema::isInputType)
-                        .map(in -> declareRecords(context.iterateContext(in), recursion + 1))
+                        .map(in -> declareRecords(context.iterateContext(in), recursion + 1, isBatchStoreMutation))
                         .toList()
         );
 

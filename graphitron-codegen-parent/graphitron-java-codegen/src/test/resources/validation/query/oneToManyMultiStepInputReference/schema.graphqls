@@ -1,0 +1,7 @@
+type Query {
+  cities(email: String @field(name: "EMAIL") @reference(path: [{table: "ADDRESS"}, {table: "CUSTOMER"}])): [City]
+}
+
+type City @table {
+  id: ID!
+}

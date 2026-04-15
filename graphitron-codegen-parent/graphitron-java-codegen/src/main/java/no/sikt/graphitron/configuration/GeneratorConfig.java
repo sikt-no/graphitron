@@ -44,6 +44,8 @@ public class GeneratorConfig {
     private static boolean useJdbcBatchingForInserts = true;
     private static boolean requireTypeIdOnNode = false;
     private static boolean validateOverlappingInputFields = true;
+    private static boolean generateUpsertAsStore = false;
+    private static boolean failOnMerge = false;
 
     private static int maxAllowedPageSize;
 
@@ -121,6 +123,8 @@ public class GeneratorConfig {
         requireTypeIdOnNode = mojo.requireTypeIdOnNode();
         optionalSelect = mojo.getOptionalSelect();
         validateOverlappingInputFields = mojo.validateOverlappingInputFields();
+        generateUpsertAsStore = mojo.generateUpsertAsStore();
+        failOnMerge = mojo.failOnMerge();
     }
 
     /**
@@ -200,6 +204,7 @@ public class GeneratorConfig {
         globalTransforms = List.of();
         recordValidation = new RecordValidation();
         codeGenerationThresholds = new CodeGenerationThresholds();
+        generateUpsertAsStore = false;
     }
 
     public static Set<String> generatorSchemaFiles() {
@@ -340,6 +345,22 @@ public class GeneratorConfig {
 
     public static void setValidateOverlappingInputFields(boolean validate) {
         validateOverlappingInputFields = validate;
+    }
+
+    public static boolean failOnMerge() {
+        return failOnMerge;
+    }
+
+    public static void setFailOnMerge(boolean fail) {
+        failOnMerge = fail;
+    }
+
+    public static boolean generateUpsertAsStore() {
+        return generateUpsertAsStore;
+    }
+
+    public static void setGenerateUpsertAsStore(boolean enable) {
+        generateUpsertAsStore = enable;
     }
 
     public static void setUseOptionalSelects(boolean enable) {
