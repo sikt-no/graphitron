@@ -33,8 +33,7 @@ This folder contains documentation about Graphitron's design, philosophy, and ho
 ## Active Development
 
 - **[Rewrite Roadmap](rewrite-roadmap.md)** - Remaining generator work, design principles, and known gaps
-- **[Call-Site Unification](call-site-unification.md)** - Design for unifying argument-extraction patterns across condition, service, and table method call sites
-- **[Taxonomy Improvements](taxonomy-improvements.md)** - Structural issues in the GraphitronSchema model and their fixes
+- **[Call-Site Unification](call-site-unification.md)** - Remaining work: enum detection for service params, orderBy extraction via CallParam
 
 ## Other Documentation
 
