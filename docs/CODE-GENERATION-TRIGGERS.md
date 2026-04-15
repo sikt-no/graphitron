@@ -19,7 +19,7 @@ GraphitronSchema
   └── Map<String, GraphitronField>  (one per field)
       ↓
 Generators
-  ├── TypeFieldsGenerator      →  rewrite.types.*Fields
+  ├── TypeFetcherGenerator     →  rewrite.types.*Fetchers
   ├── TypeClassGenerator       →  rewrite.types.*
   └── TypeConditionsGenerator  →  rewrite.types.*Conditions
 ```
@@ -82,13 +82,13 @@ Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
 
 | Directive Pattern on Type | `GraphitronType` Variant | Generator Output |
 |---|---|---|
-| `@table` (no `@node`, no `@discriminate`) | `TableType` | `*Fields` class + `*` class |
-| `@table` + `@node` | `NodeType` | `*Fields` class + `*` class (with Relay ID handling) |
-| `@record` | `ResultType` | `*Fields` class only (no SQL scope of its own) |
-| `Query` or `Mutation` root type | `RootType` | `*Fields` class only |
-| Interface with `@table` + `@discriminate` | `TableInterfaceType` | `*Fields` class |
-| Interface without `@table` (multi-table) | `InterfaceType` | `*Fields` class |
-| Union type | `UnionType` | `*Fields` class |
+| `@table` (no `@node`, no `@discriminate`) | `TableType` | `*Fetchers` class + `*` class |
+| `@table` + `@node` | `NodeType` | `*Fetchers` class + `*` class (with Relay ID handling) |
+| `@record` | `ResultType` | `*Fetchers` class only (no SQL scope of its own) |
+| `Query` or `Mutation` root type | `RootType` | `*Fetchers` class only |
+| Interface with `@table` + `@discriminate` | `TableInterfaceType` | `*Fetchers` class |
+| Interface without `@table` (multi-table) | `InterfaceType` | `*Fetchers` class |
+| Union type | `UnionType` | `*Fetchers` class |
 | `@error` | `ErrorType` | No generation (error mapping config) |
 | Input type with `@table` | `TableInputType` | Used in mutation generation |
 | Input type without `@table` | `InputType` | No generation (developer-provided class) |
@@ -102,7 +102,7 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 
 ### Query Fields
 
-| Schema Pattern | `QueryField` Variant | `*Fields` Generates |
+| Schema Pattern | `QueryField` Variant | `*Fetchers` Generates |
 |---|---|---|
 | Any argument has `@lookupKey` | `QueryLookupTableField` | Async DataLoader fetcher + sync `lookup*()` rows method |
 | `@tableMethod` | `QueryTableMethodTableField` | Field method stub |
@@ -118,7 +118,7 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 
 ### Mutation Fields
 
-| Schema Pattern | `MutationField` Variant | `*Fields` Generates |
+| Schema Pattern | `MutationField` Variant | `*Fetchers` Generates |
 |---|---|---|
 | `@mutation(typeName: INSERT)` | `MutationInsertTableField` | Field method stub |
 | `@mutation(typeName: UPDATE)` | `MutationUpdateTableField` | Field method stub |
@@ -133,7 +133,7 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 
 #### Scalar / Enum return type
 
-| Schema Pattern | `ChildField` Variant | `*Fields` Generates |
+| Schema Pattern | `ChildField` Variant | `*Fetchers` Generates |
 |---|---|---|
 | `@nodeId(typeName:)` | `NodeIdReferenceField` | Column method in `wiring()` |
 | `@nodeId` (no typeName) | `NodeIdField` | Column method in `wiring()` |
@@ -142,7 +142,7 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 
 #### Object return type
 
-| Schema Pattern | `ChildField` Variant | `*Fields` Generates |
+| Schema Pattern | `ChildField` Variant | `*Fetchers` Generates |
 |---|---|---|
 | `@externalField` | `ComputedField` | Column method in `wiring()` (developer supplies `Field<?>`) |
 | `@tableMethod` | `TableMethodField` | Field method stub |
@@ -161,7 +161,7 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 
 ### Child Fields (on `@record` parent)
 
-| Schema Pattern | `ChildField` Variant | `*Fields` Generates |
+| Schema Pattern | `ChildField` Variant | `*Fetchers` Generates |
 |---|---|---|
 | Scalar/enum with `@field` | `PropertyField` | Column method in `wiring()` |
 | Return `@table`, `@lookupKey` | `RecordLookupTableField` | Async DataLoader fetcher + `rows*()` method |
@@ -221,7 +221,7 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 
 | Generator | Output | File |
 |---|---|---|
-| `TypeFieldsGenerator` | `rewrite.types.*Fields` — wiring + field methods | `TypeFieldsGenerator.java` |
+| `TypeFetcherGenerator` | `rewrite.types.*Fetchers` — wiring + field fetcher/rows methods | `TypeFetcherGenerator.java` |
 | `TypeClassGenerator` | `rewrite.types.*` — select/subselect/batch methods | `TypeClassGenerator.java` |
 | `TypeConditionsGenerator` | `rewrite.types.*Conditions` — pure-function WHERE predicates | `TypeConditionsGenerator.java` |
 

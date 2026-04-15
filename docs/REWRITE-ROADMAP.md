@@ -55,6 +55,8 @@ When different variants of a concept carry different data, use a sealed interfac
 
 `JooqCatalog`, `TypeBuilder`, `FieldBuilder`, and `ServiceCatalog` are the only classes permitted to hold raw jOOQ types (`Table<?>`, `ForeignKey<?,?>`) or raw graphql-java schema types. If a generator needs information not yet in a taxonomy record, the fix is to add a component and extract the value in the builder — not to reach past the taxonomy boundary.
 
+`CallSiteExtraction` illustrates the principle for argument extraction: `FieldBuilder` decides once (at classify time) which extraction strategy applies to each argument — `Direct`, `EnumValueOf`, `TextMapLookup`, `ContextArg`, or `JooqConvert` — and stores that decision in `CallParam.extraction`. The generator switches on the pre-classified value and emits code directly. The alternative (an inline `"ID".equals(graphqlTypeName)` check inside the generator) would be a leaked classification decision: the generator would be reading schema-level information that the builder should have already resolved.
+
 ### Narrow component types over broad interfaces
 
 Field record components are declared with the narrowest type the classifier can guarantee rather than the broad sealed-interface root. A field whose return type is always table-bound (e.g. `TableField`, `ServiceTableField`, `QueryTableField`) declares `ReturnTypeRef.TableBoundReturnType` directly; a field whose return type is always polymorphic declares `ReturnTypeRef.PolymorphicReturnType` directly.
