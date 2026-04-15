@@ -381,7 +381,7 @@ class TypeFetcherGeneratorTest {
             ? (FieldWrapper) new FieldWrapper.List(true, true)
             : new FieldWrapper.Single(true);
         var returnType = new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, returnWrapper);
-        var method = new MethodRef(
+        var method = new MethodRef.Basic(
             "no.example.FilmService", "getFilms", "java.util.List",
             List.of(
                 new MethodRef.Param.Sourced("keys",

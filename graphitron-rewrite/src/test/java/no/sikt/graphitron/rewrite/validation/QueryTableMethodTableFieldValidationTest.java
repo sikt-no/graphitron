@@ -22,7 +22,7 @@ class QueryTableMethodTableFieldValidationTest {
         VALID("single cardinality — valid",
             new QueryTableMethodTableField("Query", "filmsByMethod", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)),
-                new MethodRef("com.example.TableMethods", "filmsByMethod", "org.jooq.Table", List.of())),
+                new MethodRef.Basic("com.example.TableMethods", "filmsByMethod", "org.jooq.Table", List.of())),
             List.of());
 
         private final String description;

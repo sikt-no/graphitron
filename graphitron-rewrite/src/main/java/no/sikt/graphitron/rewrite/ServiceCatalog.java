@@ -178,7 +178,7 @@ class ServiceCatalog {
                 }
             }
             return new ServiceReflectionResult(
-                new MethodRef(className, methodName, javaMethod.getReturnType().getName(), List.copyOf(params)),
+                new MethodRef.Basic(className, methodName, javaMethod.getReturnType().getName(), List.copyOf(params)),
                 null);
         } catch (ClassNotFoundException e) {
             return new ServiceReflectionResult(null, "class '" + className + "' could not be loaded");
@@ -254,7 +254,7 @@ class ServiceCatalog {
                     + "' has no Table<?> parameter — @tableMethod requires exactly one Table<?> parameter");
             }
             return new ServiceReflectionResult(
-                new MethodRef(className, methodName, javaMethod.getReturnType().getName(), List.copyOf(params)),
+                new MethodRef.Basic(className, methodName, javaMethod.getReturnType().getName(), List.copyOf(params)),
                 null);
         } catch (ClassNotFoundException e) {
             return new ServiceReflectionResult(null, "class '" + className + "' could not be loaded");

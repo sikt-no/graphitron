@@ -31,7 +31,7 @@ class ColumnReferenceFieldValidationTest {
 
         CONDITION_METHOD("path resolved via condition method instead of a FK",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "languageCondition", "org.jooq.Condition", List.of()), "")), false),
+                List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "languageCondition", "org.jooq.Condition", List.of()), "")), false),
             List.of()),
 
         JAVA_NAME_PRESENT("@field(javaName:) is not supported — validation error",

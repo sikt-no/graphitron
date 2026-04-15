@@ -21,7 +21,7 @@ class QueryServiceRecordFieldValidationTest {
         VALID("service query field with non-table return — always valid",
             new QueryServiceRecordField("Query", "externalData", null,
                 new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null),
-                new MethodRef("com.example.Service", "method", "void", List.of())),
+                new MethodRef.Basic("com.example.Service", "method", "void", List.of())),
             List.of());
 
         private final String description;

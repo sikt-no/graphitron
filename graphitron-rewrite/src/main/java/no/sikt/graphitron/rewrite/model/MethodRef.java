@@ -3,11 +3,10 @@ package no.sikt.graphitron.rewrite.model;
 import java.util.List;
 
 /**
- * A successfully resolved reference to a Java method, with reflection data captured at parse time.
+ * A resolved reference to a user-provided Java method.
  *
  * <p>Used for all user-provided method references: {@code @service} methods, {@code @condition}
- * methods, and {@code @tableMethod} references. When resolution fails via reflection the builder
- * classifies the containing field as {@link GraphitronField.UnclassifiedField}.
+ * methods, and {@code @tableMethod} references.
  *
  * <p>{@code className} is the binary class name, e.g. {@code "com.example.FilmService"}.
  *
@@ -18,13 +17,18 @@ import java.util.List;
  *
  * <p>{@code params} is the list of parameters in declaration order; an empty list means the
  * method takes no parameters.
+ *
+ * <p>Implementors: {@link Basic} is the general-purpose record built from reflection data
+ * (service methods, table methods) or directive configuration (join conditions).
+ * {@link ConditionFilter} implements this interface directly — a {@code @condition} method IS a
+ * method reference with the additional {@link WhereFilter} contract.
  */
-public record MethodRef(
-    String className,
-    String methodName,
-    String returnTypeName,
-    List<Param> params
-) {
+public interface MethodRef {
+
+    String className();
+    String methodName();
+    String returnTypeName();
+    List<Param> params();
 
     /**
      * Extracted parameters only — {@link ParamSource.Arg} and {@link ParamSource.Context} —
@@ -34,11 +38,10 @@ public record MethodRef(
      *
      * <p>Used by generators to build the argument list for a method call via a single
      * {@code buildArgExtraction(CallParam)} switch rather than an inline {@code ParamSource}
-     * switch in each generator. Implicit parameters are handled by the structural code around
-     * the call, not by this list.
+     * switch in each generator.
      */
-    public List<CallParam> callParams() {
-        return params.stream()
+    default List<CallParam> callParams() {
+        return params().stream()
             .filter(p -> p.source() instanceof ParamSource.Arg || p.source() instanceof ParamSource.Context)
             .map(p -> new CallParam(p.name(), toCallSiteExtraction(p.source()), false, p.typeName()))
             .toList();
@@ -51,6 +54,19 @@ public record MethodRef(
         };
     }
 
+    /**
+     * The concrete record implementation for method references resolved from reflection
+     * (service methods, table methods) or from directive configuration (join conditions).
+     *
+     * <p>When resolution fails, the builder classifies the containing field as
+     * {@link GraphitronField.UnclassifiedField}.
+     */
+    record Basic(
+        String className,
+        String methodName,
+        String returnTypeName,
+        List<Param> params
+    ) implements MethodRef {}
 
     /**
      * Reflection data for one parameter of a resolved method.
@@ -67,7 +83,7 @@ public record MethodRef(
      *
      * <p>{@code name} is the parameter name from the compiled class (requires {@code -parameters}).
      */
-    public sealed interface Param permits Param.Typed, Param.Sourced {
+    sealed interface Param permits Param.Typed, Param.Sourced {
         String name();
         String typeName();
         ParamSource source();

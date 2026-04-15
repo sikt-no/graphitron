@@ -25,7 +25,7 @@ class ComputedFieldValidationTest {
 
         WITH_LIFT_CONDITION("lift condition with a resolved method",
             new ComputedField("Film", "fullTitle", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "liftCondition", "org.jooq.Condition", List.of()), ""))),
+                new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "liftCondition", "org.jooq.Condition", List.of()), ""))),
             List.of());
 
         private final String description;

@@ -22,19 +22,19 @@ class TableMethodFieldValidationTest {
 
         NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)),
-                List.of(), new MethodRef("com.example.TableMethods", "filteredActors", "org.jooq.Table", List.of())),
+                List.of(), new MethodRef.Basic("com.example.TableMethods", "filteredActors", "org.jooq.Table", List.of())),
             List.of()),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new JoinStep.FkJoin("film_actor_film_id_fkey", "", new TableRef("film_actor", "", "", List.of()), null, "")),
-                new MethodRef("com.example.TableMethods", "filteredActors", "org.jooq.Table", List.of())),
+                new MethodRef.Basic("com.example.TableMethods", "filteredActors", "org.jooq.Table", List.of())),
             List.of()),
 
         WITH_CONDITION_ONLY("condition method only — no FK",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), "")),
-                new MethodRef("com.example.TableMethods", "filteredActors", "org.jooq.Table", List.of())),
+                new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), "")),
+                new MethodRef.Basic("com.example.TableMethods", "filteredActors", "org.jooq.Table", List.of())),
             List.of());
 
         private final String description;

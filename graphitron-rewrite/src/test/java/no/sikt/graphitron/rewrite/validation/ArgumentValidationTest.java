@@ -57,7 +57,7 @@ class ArgumentValidationTest {
             List.of()),
 
         WITH_CONDITION_FILTER("ConditionFilter — no errors",
-            tableField(List.of(new ConditionFilter(new MethodRef("com.example.Conditions", "cond", "org.jooq.Condition", List.of())))),
+            tableField(List.of(new ConditionFilter("com.example.Conditions", "cond", List.of()))),
             List.of());
 
         private final String description;

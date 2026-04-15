@@ -40,19 +40,19 @@ class TableFieldValidationTest {
 
         WITH_CONDITION_ONLY("condition-only join step — no FK",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), "")),
+                List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), "")),
                 List.of(), new OrderBySpec.None(), null),
             List.of()),
 
         FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause; no errors",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(),
-                List.of(new ConditionFilter(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()))),
+                List.of(new ConditionFilter("com.example.Conditions", "actorCondition", List.of())),
                 new OrderBySpec.None(), null),
             List.of()),
 
         FIELD_CONDITION_RESOLVED_OVERRIDE("resolved @condition with override:true — override applied at build time; no errors",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(),
-                List.of(new ConditionFilter(new MethodRef("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()))),
+                List.of(new ConditionFilter("com.example.Conditions", "actorCondition", List.of())),
                 new OrderBySpec.None(), null),
             List.of()),
 

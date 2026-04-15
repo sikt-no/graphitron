@@ -27,7 +27,7 @@ class ServiceFieldValidationTest {
 
     // ===== ServiceRecordField — non-table return type =====
 
-    private static final MethodRef RESOLVED_METHOD = new MethodRef("com.example.Service", "method", "void", List.of());
+    private static final MethodRef RESOLVED_METHOD = new MethodRef.Basic("com.example.Service", "method", "void", List.of());
 
     enum RecordCase implements ValidatorCase {
 
@@ -37,7 +37,7 @@ class ServiceFieldValidationTest {
 
         WITH_LIFT_CONDITION("lift condition with a resolved method",
             new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(
-                new JoinStep.ConditionJoin(new MethodRef("com.example.Conditions", "liftCondition", "org.jooq.Condition",
+                new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "liftCondition", "org.jooq.Condition",
                     List.of(new MethodRef.Param.Typed("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))), "")),
                 RESOLVED_METHOD),
             List.of());
@@ -75,7 +75,7 @@ class ServiceFieldValidationTest {
                     new TableRef("film", "FILM", "Film", List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))),
                     new FieldWrapper.Single(true)),
                 List.of(), List.of(), new OrderBySpec.None(), null,
-                new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
+                new MethodRef.Basic("com.example.FilmService", "getFilms", "java.lang.Object",
                     List.of(new MethodRef.Param.Sourced("filmKeys", new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))))))),
             List.of());
 
@@ -143,7 +143,7 @@ class ServiceFieldValidationTest {
     private static ServiceTableField serviceField(BatchKey batchKey) {
         return new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
             List.of(), List.of(), new OrderBySpec.None(), null,
-            new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
+            new MethodRef.Basic("com.example.FilmService", "getFilms", "java.lang.Object",
                 List.of(new MethodRef.Param.Sourced("filmKeys", batchKey))));
     }
 
@@ -191,7 +191,7 @@ class ServiceFieldValidationTest {
             filmTableType(FILM_TABLE_SINGLE_PK),
             new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
                 List.of(), List.of(), new OrderBySpec.None(), null,
-                new MethodRef("com.example.FilmService", "getFilms", "java.lang.Object",
+                new MethodRef.Basic("com.example.FilmService", "getFilms", "java.lang.Object",
                     List.of(
                         new MethodRef.Param.Sourced("filmKeys1", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
                         new MethodRef.Param.Sourced("filmKeys2", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns()))))),
