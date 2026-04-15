@@ -446,6 +446,6 @@ ctx.select(USERS.fields()).from(USERS).fetch();
 ---
 
 **See also:**
-- [Security Model](SECURITY.md) - Database-level security philosophy
+- [Security Model](security.md) - Database-level security philosophy
 - [Common Module README](../graphitron-common/README.md) - GraphitronContext API reference
 - [Example Server](../graphitron-example/graphitron-example-server) - Working implementation

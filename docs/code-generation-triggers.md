@@ -233,4 +233,4 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 ---
 
 **See also:**
-- [Rewrite Roadmap](REWRITE-ROADMAP.md) — remaining generator work, design principles, and known gaps
+- [Rewrite Roadmap](rewrite-roadmap.md) — remaining generator work, design principles, and known gaps

@@ -1,7 +1,7 @@
 # Rewrite Roadmap
 
 This document tracks remaining generator work and design principles for the rewrite pipeline.
-For the model taxonomy (types, fields, directives, and what they generate), see [Code Generation Triggers](CODE-GENERATION-TRIGGERS.md).
+For the model taxonomy (types, fields, directives, and what they generate), see [Code Generation Triggers](code-generation-triggers.md).
 
 ---
 
@@ -146,7 +146,7 @@ When adding new jOOQ existence checks in the validator or builder, follow the sa
 
 ## Implementation Guidance
 
-No DTOs, no TypeMappers. DataFetchers return `Result<Record>`; GraphQL-Java traverses the records using the registered field DataFetchers. For what each generator produces, see the [Source Map](CODE-GENERATION-TRIGGERS.md#source-map).
+No DTOs, no TypeMappers. DataFetchers return `Result<Record>`; GraphQL-Java traverses the records using the registered field DataFetchers. For what each generator produces, see the [Source Map](code-generation-triggers.md#source-map).
 
 ### Selection-aware queries and multiset
 

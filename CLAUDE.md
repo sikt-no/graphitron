@@ -32,11 +32,11 @@ graphitron/
 ### Conceptual Documentation (Start Here)
 The `/docs` folder contains conceptual guides explaining Graphitron's design, philosophy, and how it works:
 - **Documentation Guide**: [/docs/README.md](/docs/README.md) - **START HERE** - Navigation and reading order for all documentation
-- **Vision and Goal**: [/docs/VISION-AND-GOAL.md](/docs/VISION-AND-GOAL.md) - What problem Graphitron solves and how it approaches the solution
-- **Graphitron Principles**: [/docs/GRAPHITRON-PRINCIPLES.md](/docs/GRAPHITRON-PRINCIPLES.md) - Design philosophy and long-term thinking that shapes architectural decisions
-- **Dependencies**: [/docs/DEPENDENCIES.md](/docs/DEPENDENCIES.md) - Why we chose jOOQ and GraphQL-Java as foundational dependencies
-- **Code Generation Triggers**: [/docs/CODE-GENERATION-TRIGGERS.md](/docs/CODE-GENERATION-TRIGGERS.md) - Schema patterns → sealed type variants → what gets generated (rewrite pipeline)
-- **Security**: [/docs/SECURITY.md](/docs/SECURITY.md) - Security model and database-level enforcement approach
+- **Vision and Goal**: [/docs/vision-and-goal.md](/docs/vision-and-goal.md) - What problem Graphitron solves and how it approaches the solution
+- **Graphitron Principles**: [/docs/graphitron-principles.md](/docs/graphitron-principles.md) - Design philosophy and long-term thinking that shapes architectural decisions
+- **Dependencies**: [/docs/dependencies.md](/docs/dependencies.md) - Why we chose jOOQ and GraphQL-Java as foundational dependencies
+- **Code Generation Triggers**: [/docs/code-generation-triggers.md](/docs/code-generation-triggers.md) - Schema patterns → sealed type variants → what gets generated (rewrite pipeline)
+- **Security**: [/docs/security.md](/docs/security.md) - Security model and database-level enforcement approach
 
 ### Technical Reference Documentation
 - **Main README**: [/README.md](/README.md) - Project overview and getting started
@@ -47,7 +47,7 @@ The `/docs` folder contains conceptual guides explaining Graphitron's design, ph
 - **JavaPoet README**: [/graphitron-codegen-parent/graphitron-javapoet/README.md](/graphitron-codegen-parent/graphitron-javapoet/README.md) - About the JavaPoet fork
 
 ### Active Rewrite
-- **Rewrite Roadmap**: [/docs/REWRITE-ROADMAP.md](/docs/REWRITE-ROADMAP.md) - Remaining generator work, design principles, and known gaps
+- **Rewrite Roadmap**: [/docs/rewrite-roadmap.md](/docs/rewrite-roadmap.md) - Remaining generator work, design principles, and known gaps
 
 
 ## Key Architecture
