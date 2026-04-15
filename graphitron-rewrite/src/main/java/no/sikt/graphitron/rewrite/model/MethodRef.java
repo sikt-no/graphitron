@@ -27,6 +27,32 @@ public record MethodRef(
 ) {
 
     /**
+     * Extracted parameters only — {@link ParamSource.Arg} and {@link ParamSource.Context} —
+     * in declaration order. Skips implicit structural parameters ({@link ParamSource.Table},
+     * {@link ParamSource.SourceTable}, {@link ParamSource.DslContext},
+     * {@link ParamSource.Sources}).
+     *
+     * <p>Used by generators to build the argument list for a method call via a single
+     * {@code buildArgExtraction(CallParam)} switch rather than an inline {@code ParamSource}
+     * switch in each generator. Implicit parameters are handled by the structural code around
+     * the call, not by this list.
+     */
+    public List<CallParam> callParams() {
+        return params.stream()
+            .filter(p -> p.source() instanceof ParamSource.Arg || p.source() instanceof ParamSource.Context)
+            .map(p -> new CallParam(p.name(), toCallSiteExtraction(p.source()), false))
+            .toList();
+    }
+
+    private static CallSiteExtraction toCallSiteExtraction(ParamSource source) {
+        return switch (source) {
+            case ParamSource.Context ignored -> new CallSiteExtraction.ContextArg();
+            default -> new CallSiteExtraction.Direct();
+        };
+    }
+
+
+    /**
      * Reflection data for one parameter of a resolved method.
      *
      * <p>Two variants:

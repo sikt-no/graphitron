@@ -19,7 +19,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
-import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -470,17 +469,11 @@ public class TypeFetcherGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
             .addParameter(ParameterizedTypeName.get(LIST, keysElementType), "keys")
-            .addParameter(ENV, "dfe")
+            .addParameter(ENV, "env")
             .addParameter(SELECTED_FIELD, "sel");
 
-        for (var param : smr.params()) {
-            if (param instanceof MethodRef.Param.Typed t) switch (t.source()) {
-                case ParamSource.Arg a ->
-                    builder.addStatement("$T $L = dfe.getArgument($S)", Object.class, t.name(), t.name());
-                case ParamSource.Context c ->
-                    builder.addStatement("$T $L = graphitronContext(dfe).getContextArgument(dfe, $S)", Object.class, t.name(), t.name());
-                default -> {} // DslContext, Table, SourceTable: not applicable here
-            }
+        for (var param : smr.callParams()) {
+            builder.addStatement("var $L = $L", param.name(), buildArgExtraction(param, smr.className()));
         }
 
         var serviceCallArgs = smr.params().stream()
@@ -497,10 +490,10 @@ public class TypeFetcherGenerator {
         String selectManyName = sourcesParam.batchKey().selectManyMethodName();
         String selectOneName  = sourcesParam.batchKey().selectOneMethodName();
         if (isList) {
-            builder.addStatement("return $T.$L(keys, dfe, sel, ($T<?>) serviceResult)",
+            builder.addStatement("return $T.$L(keys, env, sel, ($T<?>) serviceResult)",
                 tableClass, selectManyName, List.class);
         } else {
-            builder.addStatement("return $T.$L(keys, dfe, sel, serviceResult)", tableClass, selectOneName);
+            builder.addStatement("return $T.$L(keys, env, sel, serviceResult)", tableClass, selectOneName);
         }
 
         return builder.build();

@@ -45,26 +45,17 @@ public record ConditionFilter(
     }
 
     /**
-     * Derives the fetcher call-site parameters from {@link #method()} by skipping the implicit
-     * {@link ParamSource.Table} first parameter and mapping each remaining parameter's source to
-     * the corresponding {@link CallSiteExtraction}.
+     * Delegates to {@link MethodRef#callParams()}, which skips implicit parameters
+     * ({@link ParamSource.Table}, etc.) and maps each extracted parameter's source to
+     * the appropriate {@link CallSiteExtraction}.
      *
      * <p>When the builder gains support for constructing {@code ConditionFilter} instances
-     * (currently a deferred deliverable), this derivation will move to the builder and
-     * {@code callParams} will become a record component carrying the pre-resolved list.
+     * (currently a deferred deliverable), richer extraction strategies ({@link CallSiteExtraction.EnumValueOf},
+     * {@link CallSiteExtraction.TextMapLookup}) can be assigned at build time — generator code
+     * requires no changes.
      */
     @Override
     public List<CallParam> callParams() {
-        return method.params().stream()
-            .filter(p -> !(p.source() instanceof ParamSource.Table))
-            .map(p -> new CallParam(p.name(), toExtraction(p.source()), false))
-            .toList();
-    }
-
-    private static CallSiteExtraction toExtraction(ParamSource source) {
-        return switch (source) {
-            case ParamSource.Context ignored -> new CallSiteExtraction.ContextArg();
-            default -> new CallSiteExtraction.Direct();
-        };
+        return method.callParams();
     }
 }

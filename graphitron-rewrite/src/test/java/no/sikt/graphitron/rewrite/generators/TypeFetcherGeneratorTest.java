@@ -415,6 +415,6 @@ class TypeFetcherGeneratorTest {
     @Test
     void serviceField_list_rowsMethodSignature() {
         var m = method(specWithServiceField("Language", "films", true), "loadFilms");
-        assertThat(m.parameters()).extracting(p -> p.name()).containsExactly("keys", "dfe", "sel");
+        assertThat(m.parameters()).extracting(p -> p.name()).containsExactly("keys", "env", "sel");
     }
 }
