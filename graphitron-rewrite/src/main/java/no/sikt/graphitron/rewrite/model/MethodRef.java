@@ -40,7 +40,7 @@ public record MethodRef(
     public List<CallParam> callParams() {
         return params.stream()
             .filter(p -> p.source() instanceof ParamSource.Arg || p.source() instanceof ParamSource.Context)
-            .map(p -> new CallParam(p.name(), toCallSiteExtraction(p.source()), false))
+            .map(p -> new CallParam(p.name(), toCallSiteExtraction(p.source()), false, p.typeName()))
             .toList();
     }
 

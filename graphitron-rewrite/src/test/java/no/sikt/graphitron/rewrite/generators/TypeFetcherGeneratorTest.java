@@ -211,7 +211,7 @@ class TypeFetcherGeneratorTest {
         var wrapper = new FieldWrapper.List(false, false);
         var returnType = new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
         var callParams = bodyParams.stream()
-            .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list()))
+            .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list(), bp.javaType()))
             .toList();
         var filter = new GeneratedConditionFilter(
             "fake.code.generated.rewrite.types.FilmConditions",

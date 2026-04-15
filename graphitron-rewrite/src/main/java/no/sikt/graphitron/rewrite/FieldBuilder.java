@@ -548,7 +548,7 @@ class FieldBuilder {
         String conditionsClassName = RewriteConfig.outputPackage() + ".rewrite.types." + returnTypeName + "Conditions";
         String methodName = fieldDef.getName() + "Condition";
         var callParams = bodyParams.stream()
-            .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list()))
+            .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list(), bp.javaType()))
             .toList();
         return List.of(new GeneratedConditionFilter(conditionsClassName, methodName, rt, callParams, List.copyOf(bodyParams)));
     }

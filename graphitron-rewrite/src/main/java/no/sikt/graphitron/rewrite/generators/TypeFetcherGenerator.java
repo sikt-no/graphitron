@@ -473,7 +473,7 @@ public class TypeFetcherGenerator {
             .addParameter(SELECTED_FIELD, "sel");
 
         for (var param : smr.callParams()) {
-            builder.addStatement("$T $L = $L", Object.class, param.name(), buildArgExtraction(param, smr.className()));
+            builder.addStatement("$T $L = $L", ClassName.bestGuess(param.typeName()), param.name(), buildArgExtraction(param, smr.className()));
         }
 
         var serviceCallArgs = smr.params().stream()
@@ -631,7 +631,7 @@ public class TypeFetcherGenerator {
         var args = CodeBlock.builder();
         args.add("table");
         for (var bp : gcf.bodyParams()) {
-            var callParam = new CallParam(bp.name(), bp.extraction(), bp.list());
+            var callParam = new CallParam(bp.name(), bp.extraction(), bp.list(), bp.javaType());
             args.add(", $L", buildArgExtraction(callParam, gcf.className()));
         }
         return args.build();
