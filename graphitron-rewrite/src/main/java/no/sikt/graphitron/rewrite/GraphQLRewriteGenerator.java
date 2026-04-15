@@ -5,8 +5,7 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.GraphitronWiringClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
-import no.sikt.graphitron.rewrite.generators.TypeFetcherClassGenerator;
-import no.sikt.graphitron.rewrite.generators.TypeFieldsGenerator;
+import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator;
 import org.slf4j.Logger;
@@ -47,14 +46,13 @@ public class GraphQLRewriteGenerator {
             throw new RuntimeException("Rewrite schema validation failed with " + errors.size() + " error(s)");
         }
 
-        var fetcherClasses = TypeFetcherClassGenerator.generate(schema);
+        var fetcherClasses = TypeFetcherGenerator.generate(schema);
         var fetcherClassNames = fetcherClasses.stream().map(TypeSpec::name).toList();
 
         write(GraphitronValuesClassGenerator.generate(),          "rewrite");
         write(ColumnFetcherClassGenerator.generate(),             "rewrite");
         write(TypeClassGenerator.generate(schema),                "rewrite.types");
         write(TypeConditionsGenerator.generate(schema),           "rewrite.types");
-        write(TypeFieldsGenerator.generate(schema),               "rewrite.types");
         write(fetcherClasses,                                      "rewrite.types");
         write(List.of(GraphitronWiringClassGenerator.generate(fetcherClassNames)), "rewrite");
     }

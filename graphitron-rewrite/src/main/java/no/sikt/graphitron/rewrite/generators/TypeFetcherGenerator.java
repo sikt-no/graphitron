@@ -40,10 +40,14 @@ import java.util.Map;
  *   <li>{@link QueryField.QueryTableField} — {@code public static} method taking
  *       {@code DataFetchingEnvironment}, returning {@code Result<Record>} or {@code Record},
  *       wired by method reference.</li>
+ *   <li>{@link QueryField.QueryLookupTableField} — two methods: a thin data fetcher (named after
+ *       the field, e.g. {@code filmById}) that delegates to a rows method (e.g.
+ *       {@code lookupFilmById}) which performs the actual SQL. The rows method is callable
+ *       independently (e.g. by Apollo Federation {@code _entities} resolution).</li>
  *   <li>All other field types — stub throwing {@link UnsupportedOperationException}.</li>
  * </ul>
  */
-public class TypeFetcherClassGenerator {
+public class TypeFetcherGenerator {
 
     public static List<TypeSpec> generate(GraphitronSchema schema) {
         return schema.types().entrySet().stream()
@@ -102,6 +106,7 @@ public class TypeFetcherClassGenerator {
                 // Column fields with a parent table are handled directly in wiring via ColumnFetcher
             } else if (field instanceof QueryField.QueryLookupTableField qlf) {
                 builder.addMethod(buildQueryLookupFetcher(qlf));
+                builder.addMethod(buildQueryLookupRowsMethod(qlf));
             } else if (field instanceof QueryField.QueryTableField qtf) {
                 builder.addMethod(buildQueryTableFetcher(qtf));
                 if (hasContextArg(qtf)) needsGraphitronContextHelper = true;
@@ -248,34 +253,56 @@ public class TypeFetcherClassGenerator {
     }
 
     /**
-     * Generates a fetcher for a lookup query field. Lookup fields receive a list of primary-key
-     * values from the GraphQL client (DataLoader pattern) and return all matching rows in a single
-     * SQL query using a WHERE IN (or WHERE IN + WHERE EQ) condition.
+     * Generates a thin data fetcher for a lookup query field that delegates to the rows method.
+     *
+     * <p>Generated code:
+     * <pre>{@code
+     * public static Result<Record> filmById(DataFetchingEnvironment env) {
+     *     return lookupFilmById(env);
+     * }
+     * }</pre>
+     *
+     * <p>The split between this thin entry point and {@link #buildQueryLookupRowsMethod} allows the
+     * rows method to be called independently (e.g. by an Apollo Federation {@code _entities}
+     * resolver) without going through the GraphQL data fetcher path.
+     */
+    private static MethodSpec buildQueryLookupFetcher(QueryField.QueryLookupTableField field) {
+        return MethodSpec.methodBuilder(field.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(RESULT, RECORD))
+            .addParameter(ENV, "env")
+            .addStatement("return $L(env)", field.lookupMethodName())
+            .build();
+    }
+
+    /**
+     * Generates the lookup rows method that builds the condition and delegates to the table's
+     * {@code selectMany}. The method name comes from {@link QueryField.QueryLookupTableField#lookupMethodName()}.
      *
      * <p>List-keyed arguments (annotated {@code @lookupKey} on a {@code [T]} argument) become an
      * IN condition; scalar-keyed arguments become an EQ condition. Type conversion via
-     * {@code Type.valueOf(String.valueOf(...))} handles both {@code ID} (delivered as String) and
-     * numeric GraphQL scalars transparently.
+     * {@code getDataType().convert()} handles both {@code ID} (delivered as String) and numeric
+     * GraphQL scalars transparently.
      *
      * <p>Generated code (single list key):
      * <pre>{@code
-     * public static Result<Record> filmById(DataFetchingEnvironment env) {
-     *     var table = Tables.FILM;
-     *     var condition = DSL.noCondition();
-     *     List<?> filmIdKeys = env.getArgument("film_id");
-     *     condition = condition.and(table.FILM_ID.in(filmIdKeys.stream().map(k -> Integer.valueOf(String.valueOf(k))).toList()));
+     * public static Result<Record> lookupFilmById(DataFetchingEnvironment env) {
+     *     Film table = Tables.FILM;
+     *     Condition condition = DSL.noCondition();
+     *     List<String> filmIdKeys = env.getArgument("film_id");
+     *     condition = condition.and(FilmConditions.filmByIdCondition(table, filmIdKeys.stream().map(table.FILM_ID.getDataType()::convert).toList()));
      *     List<SortField<?>> orderBy = List.of();
      *     return Film.selectMany(env, condition, orderBy);
      * }
      * }</pre>
      */
-    private static MethodSpec buildQueryLookupFetcher(QueryField.QueryLookupTableField field) {
+    private static MethodSpec buildQueryLookupRowsMethod(QueryField.QueryLookupTableField field) {
         var tableRef = field.returnType().table();
         var tableClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite.types", field.returnType().returnTypeName());
         var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
         var jooqTableClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName());
 
-        var builder = MethodSpec.methodBuilder(field.name())
+        var builder = MethodSpec.methodBuilder(field.lookupMethodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(RESULT, RECORD))
             .addParameter(ENV, "env");

@@ -26,15 +26,21 @@ GraphitronSchemaBuilder  →  GraphitronSchemaValidator  →  Generators (partia
 
 | Generator / method | State |
 |---|---|
-| `TypeFieldsGenerator` — `wiring()` | **Done** — registers all field DataFetchers via method references |
-| `TypeFieldsGenerator` — `ColumnField` data fetcher | **Done** — reads from `env.getSource()` via `TABLE.COLUMN` |
-| `TypeFieldsGenerator` — `@service` field DataLoader + `load*()` body | **Done** — `computeIfAbsent`, `newDataLoaderWithContext`, delegates to service |
-| `TypeFieldsGenerator` — `@splitQuery` field wiring | **Done** — async fetcher stub + typed `rows*()` stub |
-| `TypeFieldsGenerator` — `QueryTableField` fetcher | **Done** — condition call + orderBy build + delegates to `Tables.selectMany/selectOne` |
+| `TypeFetcherGenerator` — `wiring()` | **Done** — registers all field DataFetchers via method references |
+| `TypeFetcherGenerator` — `ColumnField` data fetcher | **Done** — reads from `env.getSource()` via `TABLE.COLUMN` |
+| `TypeFetcherGenerator` — `@service` field DataLoader + `load*()` body | **Done** — `computeIfAbsent`, `newDataLoaderWithContext`, delegates to service |
+| `TypeFetcherGenerator` — `@splitQuery` field wiring | **Done** — async fetcher stub + typed `rows*()` stub |
+| `TypeFetcherGenerator` — `QueryTableField` fetcher | **Done** — condition call + orderBy build + delegates to `Tables.selectMany/selectOne` |
+| `TypeFetcherGenerator` — `QueryLookupTableField` thin fetcher + `lookup*()` rows method | **Done** — thin `fieldName(env)` delegates to `lookupFieldName(env)` which builds condition + calls `selectMany` |
 | `TypeClassGenerator` — `selectMany` / `selectOne` | **Done** — `getDslContext().select(fields(env.getSelectionSet())).from(table).where(condition)...` |
 | `TypeClassGenerator` — `subselectMany` / `subselectOne` | **Done** — `DSL.multiset(DSL.select(fields(sel.getSelectionSet())).from(table).where(condition)...)` |
 | `TypeConditionsGenerator` | **Done** — one `*Conditions` class per type with argument-driven predicate methods |
 | All other field types | Stub — signature generated, body throws `UnsupportedOperationException` |
+
+> **Note on `TypeFieldsGenerator`:** this generator was removed. It previously emitted empty `*Fields`
+> placeholder classes (no methods) for every `TableType`/`NodeType`/`RootType` — it added noise
+> without value. A future `TypeReferencesGenerator` will replace it in G5 when field-level
+> reference constants are needed.
 
 The rewrite pipeline produces Java code for the cases above. Full SQL generation across all field types is Phase 2.
 
@@ -347,8 +353,10 @@ Special: `NotGeneratedField` (explicit `@notGenerated`), `UnclassifiedField` (ca
 **`FieldWrapper`** — cardinality: `Single(nullable)`, `List(listNullable, itemNullable)`, `Connection(connectionNullable, itemNullable)`. Use `wrapper.isList()` instead of `!(wrapper instanceof Single)` — both `List` and `Connection` return `true`.
 
 **`JoinStep`** — one hop in a `@reference` path:
-- `FkJoin(fkName, targetTableSqlName, whereFilter)` — navigates via a jOOQ FK; `whereFilter` is an optional WHERE clause (not the JOIN ON)
-- `ConditionJoin(condition)` — navigates via a user condition method, which becomes the ON clause
+- `FkJoin(fkName, fkJavaConstant, targetTable, whereFilter, alias)` — navigates via a jOOQ FK. `fkName` is the SQL constraint name (for error messages); `fkJavaConstant` is the Java constant name in the generated `Keys` class (e.g. `FK_FILM__FILM_LANGUAGE_ID_FKEY`); `targetTable` is the fully-resolved `TableRef`; `whereFilter` is an optional WHERE clause on the enclosing SELECT (not the JOIN ON); `alias` is the pre-computed unique table alias (`fieldName + "_" + stepIndex`).
+- `ConditionJoin(condition, alias)` — navigates via a user condition method, which becomes the ON clause. `alias` follows the same `fieldName + "_" + stepIndex` convention.
+
+Alias uniqueness: two fields on the same parent targeting the same table via different FKs get distinct aliases because their field names differ (e.g. `language_0` vs `originalLanguage_0`). A multi-hop path on the same field gets distinct aliases because the step index increments (`city_0`, `city_1`). For MULTISET correlated subqueries aliases never collide across calls (each subquery has its own SQL scope); for flat batch JOINs the alias is injected into a shared SELECT, where uniqueness is essential. `fields()` currently uses the global table singleton and is safe for MULTISET only — flat-JOIN generation will require `fields(TableAlias alias, sel)` parameterisation.
 
 **`WhereFilter`** — one WHERE predicate. Sealed interface; `className()`, `methodName()`, `callParams()` define the call-site contract used uniformly by fetcher generators:
 - `GeneratedConditionFilter` — Graphitron-generated predicate driven by field arguments. The builder produces one per SQL-generating field that has filterable arguments. Carries `className`, `methodName`, `tableRef`, `callParams` (call-site: argument extraction expressions), `bodyParams` (body-generation: column refs, nullability, enum mappings). A corresponding method is generated on the `*Conditions` class.
