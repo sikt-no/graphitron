@@ -35,6 +35,7 @@ This folder contains documentation about Graphitron's design, philosophy, and ho
 - **[Rewrite Roadmap](rewrite-roadmap.md)** - Remaining generator work, design principles, and known gaps
 - **[Call-Site Unification](call-site-unification.md)** - Design for unifying argument-extraction patterns across condition, service, and table method call sites
 - **[Generator Building Blocks](generator-building-blocks.md)** - Common abstractions to extract from generators before implementing remaining stubs
+- **[Testing Strategy](testing-strategy.md)** - Test pyramid assessment and concrete improvements for the rewrite test suite
 
 ## Other Documentation
 
