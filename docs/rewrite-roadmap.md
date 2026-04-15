@@ -5,28 +5,6 @@ For the model taxonomy (types, fields, directives, and what they generate), see 
 
 ---
 
-## Generator Progress
-
-| Generator / method | State |
-|---|---|
-| `TypeFetcherGenerator` — `wiring()` | **Done** — registers all field DataFetchers via method references |
-| `TypeFetcherGenerator` — `ColumnField` data fetcher | **Done** — reads from `env.getSource()` via `TABLE.COLUMN` |
-| `TypeFetcherGenerator` — `@service` field DataLoader + `load*()` body | **Done** — `computeIfAbsent`, `newDataLoaderWithContext`, delegates to service |
-| `TypeFetcherGenerator` — `@splitQuery` field wiring | **Done** — async fetcher stub + typed `rows*()` stub |
-| `TypeFetcherGenerator` — `QueryTableField` fetcher | **Done** — condition call + orderBy build + delegates to `Tables.selectMany/selectOne` |
-| `TypeFetcherGenerator` — `QueryLookupTableField` thin fetcher + `lookup*()` rows method | **Done** — thin `fieldName(env)` delegates to `lookupFieldName(env)` which builds condition + calls `selectMany` |
-| `TypeClassGenerator` — `selectMany` / `selectOne` | **Done** — `getDslContext().select(fields(env.getSelectionSet())).from(table).where(condition)...` |
-| `TypeClassGenerator` — `subselectMany` / `subselectOne` | **Done** — `DSL.multiset(DSL.select(fields(sel.getSelectionSet())).from(table).where(condition)...)` |
-| `TypeConditionsGenerator` | **Done** — one `*Conditions` class per type with argument-driven predicate methods |
-| All other field types | Stub — signature generated, body throws `UnsupportedOperationException` |
-
-> **Note on `TypeFieldsGenerator`:** this generator was removed. It previously emitted empty `*Fields`
-> placeholder classes (no methods) for every `TableType`/`NodeType`/`RootType` — it added noise
-> without value. A future `TypeReferencesGenerator` will replace it in G5 when field-level
-> reference constants are needed.
-
----
-
 ## Design Principles
 
 ### Generation-thinking
@@ -55,13 +33,22 @@ When different variants of a concept carry different data, use a sealed interfac
 
 `JooqCatalog`, `TypeBuilder`, `FieldBuilder`, and `ServiceCatalog` are the only classes permitted to hold raw jOOQ types (`Table<?>`, `ForeignKey<?,?>`) or raw graphql-java schema types. If a generator needs information not yet in a taxonomy record, the fix is to add a component and extract the value in the builder — not to reach past the taxonomy boundary.
 
-`CallSiteExtraction` illustrates the principle for argument extraction: `FieldBuilder` decides once (at classify time) which extraction strategy applies to each argument — `Direct`, `EnumValueOf`, `TextMapLookup`, `ContextArg`, or `JooqConvert` — and stores that decision in `CallParam.extraction`. The generator switches on the pre-classified value and emits code directly. The alternative (an inline `"ID".equals(graphqlTypeName)` check inside the generator) would be a leaked classification decision: the generator would be reading schema-level information that the builder should have already resolved.
+`CallSiteExtraction` illustrates the principle for argument extraction: the builder decides once (at classify time) which extraction strategy applies to each argument — `Direct`, `EnumValueOf`, `TextMapLookup`, `ContextArg`, or `JooqConvert` — and stores that decision in `CallParam.extraction` or `ParamSource.Arg.extraction`. The generator switches on the pre-classified value and emits code directly.
+
+### Capability interfaces over dispatch chains
+
+When a generation pattern applies across multiple field variants, use an orthogonal capability interface rather than an N-way `instanceof` chain. The interface declares what a field can do; the generator matches on the capability.
+
+Established interfaces:
+- `SqlGeneratingField` — `returnType()`, `filters()`, `orderBy()`, `pagination()` (11 variants)
+- `MethodBackedField` — `method()` returning `MethodRef` (8 variants)
+- `BatchKeyField` — `batchKey()`, `rowsMethodName()` (3 variants, more planned)
 
 ### Narrow component types over broad interfaces
 
-Field record components are declared with the narrowest type the classifier can guarantee rather than the broad sealed-interface root. A field whose return type is always table-bound (e.g. `TableField`, `ServiceTableField`, `QueryTableField`) declares `ReturnTypeRef.TableBoundReturnType` directly; a field whose return type is always polymorphic declares `ReturnTypeRef.PolymorphicReturnType` directly.
+Field record components are declared with the narrowest type the classifier can guarantee rather than the broad sealed-interface root. A field whose return type is always table-bound declares `ReturnTypeRef.TableBoundReturnType` directly; a field whose return type is always polymorphic declares `ReturnTypeRef.PolymorphicReturnType` directly.
 
-This pushes classification certainty into the type system: code that receives a `ServiceTableField` knows its `returnType` is `TableBoundReturnType` without a runtime check. Where the return type genuinely varies, the broad `ReturnTypeRef` is retained. The same discipline applies to splitting semantically distinct variants into separate records rather than using a discriminating boolean or enum.
+This pushes classification certainty into the type system: code that receives a `ServiceTableField` knows its `returnType` is `TableBoundReturnType` without a runtime check.
 
 ### Sub-taxonomies for resolution outcomes
 
@@ -71,22 +58,26 @@ Complex resolution outcomes get their own sealed type rather than being stored a
 
 ## Remaining Work
 
-Complete the generator bodies that currently throw `UnsupportedOperationException`.
+### Active
 
-**Prerequisite**: before implementing any stub body, check that the model is generation-ready (see Design Principle above). If the model for that field type still carries raw strings or requires resolution logic in the generator, fix the model first.
+- **OrderBy `Argument` variant** — populate `namedOrders` in `FieldBuilder`, generate `<fieldName>OrderBy` helper method. See [orderby-implementation.md](orderby-implementation.md).
+- **Paginated fields** — keyset pagination, `@asConnection` native in builder, `ConnectionHelper` wiring. See [paginated-fields.md](paginated-fields.md).
 
-Stubs to complete (approximate priority order):
+### Stubs to complete
+
+Generator bodies that currently throw `UnsupportedOperationException`, approximate priority:
+
 1. `TypeFetcherGenerator` — `TableField` / `LookupTableField` inline-subquery field methods (call `Tables.subselectMany/subselectOne` with condition + orderBy)
 2. `TypeFetcherGenerator` — `SplitTableField` / `SplitLookupTableField` rows method bodies (DataLoader batch SQL)
 3. `TypeFetcherGenerator` — `QueryTableInterfaceField`, `QueryInterfaceField`, `QueryUnionField` fetchers
 4. `TypeFetcherGenerator` — Mutation field bodies (all four DML variants: INSERT/UPDATE/DELETE/UPSERT)
 5. `TypeClassGenerator` — `selectManyByRowKeys` / `selectOneByRowKeys` and `selectManyByRecordKeys` / `selectOneByRecordKeys` bodies
 
-#### G5 — Inline `TableField`
+### G5 — Inline `TableField`
 
 `TableField` in table-mapped source context (no `@splitQuery`). Extends the SQL scope with an inline subselect — does not start a new scope or use a DataLoader. Introduces the static field method pattern (called from the parent type class during SELECT assembly).
 
-#### G6 — Split/Lookup field categories
+### G6 — Split/Lookup field categories
 
 G6 covers four categories of DataLoader-backed field. Before implementing any category, verify the model is generation-ready.
 
@@ -97,56 +88,33 @@ G6 covers four categories of DataLoader-backed field. Before implementing any ca
 | **Result-mapped `TableField`** (`@splitQuery`, no `@lookupKey`) | Yes | Derived source only | Allowed | Allowed |
 | **Result-mapped `LookupTableField`** (`@splitQuery` + `@lookupKey`, result-mapped parent) | Yes | Both | Blocked | Never — result count = N × M |
 
-Bespoke method signatures (all take `SelectedField sel` for argument unpacking; args are never passed as separate parameters):
-
-| Category | Bespoke method | Return type |
-|---|---|---|
-| `LookupQueryField` | `static List<Record> lookup<FieldName>(DataFetchingEnvironment env, SelectedField sel)` | M results total |
-| Table-mapped `LookupTableField` | `static Field<Result<Record>> subselect<FieldName>(<ParentAlias> alias, SelectedField sel)` | jOOQ multiset — embedded in parent SELECT |
-| Result-mapped `TableField` — returns `[T]` | `static List<List<Record>> load<FieldName>(List<Row> sourceRows, DataFetchingEnvironment env, SelectedField sel)` | One inner list per source |
-| Result-mapped `TableField` — returns `T` | `static List<Record> load<FieldName>(List<Row> sourceRows, DataFetchingEnvironment env, SelectedField sel)` | One Record per source |
-| Result-mapped `TableField` — paginated | `static List<List<Record>> load<FieldName>Page(List<Row> sourceRows, DataFetchingEnvironment env, SelectedField sel)` | One page per source |
-| Result-mapped `LookupTableField` | `static List<List<Record>> lookup<FieldName>(List<Row> sourceRows, DataFetchingEnvironment env, SelectedField sel)` | N inner lists, each up to M records |
-
-SQL structure: each bespoke method builds an indexed `VALUES(…)` derived table (prepending a 1-based `idx`), JOINs it against the target, and partitions results back by `idx`. Result-mapped lookup fields use two `idx` columns (`src_idx`, `tgt_idx`). The table-mapped `LookupTableField` is built as a `DSL.multiset(…)` correlated subquery with the FK join condition baked into the generated method.
-
 ---
 
 ## Known Gaps
-
-These are concrete, bounded problems identified during implementation. They block specific functionality but do not block the remaining generator work.
 
 ### `ConditionFilter` has no builder path
 
 `FieldBuilder` currently produces `GeneratedConditionFilter` entries for filterable arguments, but never produces `ConditionFilter` entries for `@condition` directives. Field-level `@condition` annotations are not yet classified into the rewrite pipeline's filter list.
 
-The gap is invisible to existing tests because `ConditionFilter` is constructed directly in test helpers (bypassing the builder). To expose it: write a `FieldBuilder` test that reads a schema with a `@condition` directive and asserts the resulting field carries a `ConditionFilter`.
-
-**Fix**: add `@condition` directive reading to `FieldBuilder.resolveFilters()` (or equivalent). When the builder constructs `ConditionFilter`, it should also pre-resolve `callParams` (currently derived lazily from `method.params()`) and promote them to a record component, consistent with how `GeneratedConditionFilter` carries pre-resolved `callParams` and `bodyParams`.
+**Fix**: add `@condition` directive reading to `FieldBuilder.resolveFilters()`. `ConditionFilter` now implements `MethodRef` directly, so the builder constructs it with `(className, methodName, params)` and `callParams()` is derived automatically.
 
 ### `ObjectBased` batch loading is unimplemented
 
-`BatchKey.ObjectBased.selectManyMethodName()` and `selectOneMethodName()` throw `UnsupportedOperationException`. The `TypeClassGenerator` generates no `selectManyByObjectKeys` / `selectOneByObjectKeys` method.
+`BatchKey.ObjectBased.selectManyMethodName()` and `selectOneMethodName()` throw `UnsupportedOperationException`.
 
-Two options to resolve:
-- **Option A** — determine that `ObjectBased` always implies a jOOQ `TableRecord` parent in practice, and collapse it into `RecordKeyed`. Remove `ObjectBased` from the sealed hierarchy.
-- **Option B** — implement `selectManyByObjectKeys(List<SomeClass> keys, env, sel, serviceResult)` in `TypeClassGenerator`, handling the case where the key is an arbitrary Java object (not a jOOQ Record/Row).
+Two options:
+- **Option A** — collapse `ObjectBased` into `RecordKeyed` if it always implies a jOOQ `TableRecord` parent in practice.
+- **Option B** — implement `selectManyByObjectKeys` / `selectOneByObjectKeys` in `TypeClassGenerator`.
 
 Decision needed before implementing any `ObjectBased`-keyed service field.
 
 ---
 
-## Error Quality: Candidate Hints
-
-`GraphitronSchemaBuilder` already implements `candidateHint(attempt, candidates)` using Levenshtein distance to sort candidates by similarity. It is used in 12 places: table name lookups, column name lookups, FK name lookups, service method name lookups, and type name lookups. `ValidationError` carries `SourceLocation`.
-
-When adding new jOOQ existence checks in the validator or builder, follow the same pattern — pass the relevant candidate list from `JooqCatalog` (`allTableSqlNames()`, `columnSqlNamesOf(table)`, `allForeignKeySqlNames()`) to `candidateHint`.
-
----
-
 ## Implementation Guidance
 
-No DTOs, no TypeMappers. DataFetchers return `Result<Record>`; GraphQL-Java traverses the records using the registered field DataFetchers. For what each generator produces, see the [Source Map](code-generation-triggers.md#source-map).
+No DTOs, no TypeMappers. DataFetchers return `Result<Record>`; GraphQL-Java traverses the records using the registered field DataFetchers.
+
+**Exception:** Connection fields return `ConnectionResult` — a generated carrier wrapping `Result<Record>` + pagination context. See [paginated-fields.md](paginated-fields.md).
 
 ### Selection-aware queries and multiset
 
@@ -159,3 +127,7 @@ No DTOs, no TypeMappers. DataFetchers return `Result<Record>`; GraphQL-Java trav
 ### Query plan caching trade-off
 
 Selection-driven queries produce different SQL per request (different column lists). The database cannot reuse cached query plans across requests. This is an acceptable cost for wide tables with large optional columns, but for narrow tables (≤10 columns) where most fields are always requested, selecting `TABLE.*` is simpler and the overhead of dynamic column selection exceeds the benefit.
+
+### Error quality
+
+`GraphitronSchemaBuilder` implements `candidateHint(attempt, candidates)` using Levenshtein distance to sort candidates by similarity. Used in 12 places. When adding new jOOQ existence checks in the validator or builder, follow the same pattern — pass the relevant candidate list from `JooqCatalog` to `candidateHint`.

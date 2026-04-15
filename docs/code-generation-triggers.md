@@ -194,7 +194,9 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 |---|---|---|
 | Type hierarchy | `GraphitronType.java` | Sealed interface — all type variants and their record components |
 | Field hierarchy | `GraphitronField.java` | Sealed interface — `RootField`/`ChildField`/`InputField` sub-hierarchies |
-| SQL-generating marker | `SqlGeneratingField.java` | Orthogonal interface — use `instanceof SqlGeneratingField` for uniform SQL field access |
+| SQL-generating marker | `SqlGeneratingField.java` | Orthogonal interface — `returnType()`, `filters()`, `orderBy()`, `pagination()` |
+| Method-backed marker | `MethodBackedField.java` | Orthogonal interface — `method()` returning `MethodRef` |
+| DataLoader marker | `BatchKeyField.java` | Orthogonal interface — `batchKey()`, `rowsMethodName()` |
 | Table reference | `TableRef.java` | Resolved jOOQ table with PK columns |
 | Column reference | `ColumnRef.java` | Resolved column with Java type |
 | Return type | `ReturnTypeRef.java` | `TableBound` / `Result` / `Scalar` / `Polymorphic` |
@@ -219,11 +221,14 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 
 ### Generators (`generators/`)
 
-| Generator | Output | File |
+| Component | Output | File |
 |---|---|---|
 | `TypeFetcherGenerator` | `rewrite.types.*Fetchers` — wiring + field fetcher/rows methods | `TypeFetcherGenerator.java` |
 | `TypeClassGenerator` | `rewrite.types.*` — select/subselect/batch methods | `TypeClassGenerator.java` |
 | `TypeConditionsGenerator` | `rewrite.types.*Conditions` — pure-function WHERE predicates | `TypeConditionsGenerator.java` |
+| `GeneratorUtils` | Shared building blocks — `ResolvedTableNames`, key type construction, constants | `GeneratorUtils.java` |
+| `ColumnFetcherClassGenerator` | `rewrite.ColumnFetcher<T>` — `LightDataFetcher` for column fields | `util/ColumnFetcherClassGenerator.java` |
+| `GraphitronValuesClassGenerator` | `rewrite.GraphitronValues` — shared constants (`GRAPHITRON_INPUT_IDX`) | `util/GraphitronValuesClassGenerator.java` |
 
 ### Directives
 
