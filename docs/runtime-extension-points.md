@@ -1,16 +1,12 @@
 # Runtime Extension Points
 
-> **Draft:** Some code examples in this document have not been verified against the current codebase and may be inaccurate. The extension point concepts and architecture are correct; specific API signatures and method names should be checked against the source before relying on them.
-
-Generated code is intentionally simple — no tenant filtering, no auth checks, no transaction management. These concerns belong at runtime, injected through three extension points without touching generated code.
+Generated code is intentionally simple — no tenant filtering, no auth checks, no transaction management. These concerns belong at runtime, injected through `GraphitronContext` without touching generated code.
 
 ---
 
-## Extension Point 1: GraphitronContext
+## GraphitronContext
 
-### What It Is
-
-`GraphitronContext` is an interface that bridges GraphQL execution and database access. It's called by every generated DataFetcher to obtain the `DSLContext` for executing queries.
+`GraphitronContext` is the sole runtime extension point that Graphitron defines. Every generated DataFetcher retrieves it and calls its methods. You control what happens at runtime by providing your own implementation.
 
 **Location:** `graphitron-common/src/main/java/no/sikt/graphql/GraphitronContext.java`
 
@@ -22,430 +18,205 @@ public interface GraphitronContext {
 }
 ```
 
-### How It Works
+The default implementation is `DefaultGraphitronContext`. The example server uses it in `GraphqlServlet`:
 
-**1. Application provides GraphitronContext at startup:**
 ```java
-@Override
-protected ExecutionInput buildExecutionInput(ExecutionInput.Builder builder) {
-    GraphitronContext context = new MyCustomGraphitronContext(dataSource);
-    return builder.graphQLContext(Map.of("graphitronContext", context)).build();
+// From graphitron-example-server GraphqlServlet.java — real code
+var config = new DefaultConfiguration();
+config.set(SQLDialect.POSTGRES);
+config.set(dataSource);
+QueryCapturingExecuteListener.getInstanceIfEnabled().ifPresent(config::set);
+DSLContext ctx = DSL.using(config);
+input.graphQLContext(Map.of("graphitronContext", new DefaultGraphitronContext(ctx)));
+```
+
+Generated code retrieves the context by key. The rewrite generator emits a private helper per Fetchers class:
+
+```java
+// GENERATED — from TypeFetcherGenerator.buildGraphitronContextHelper()
+private static GraphitronContext graphitronContext(DataFetchingEnvironment env) {
+    return env.getGraphQlContext().get("graphitronContext");
 }
 ```
 
-**2. Generated code retrieves it per-request:**
-```java
-// GENERATED in every DataFetcher
-GraphitronContext graphitronContext = env.getGraphQlContext().get("graphitronContext");
-DSLContext ctx = graphitronContext.getDslContext(env);
+Query methods (in generated `TypeClass` files) inline the retrieval and immediately call `getDslContext`:
 
-// Use ctx to execute queries
-return ctx.select(...).fetch();
+```java
+// GENERATED — from TypeClassGenerator.selectMany()
+DSLContext dsl = ((GraphitronContext) env.getGraphQlContext().get("graphitronContext")).getDslContext(env);
 ```
 
-**3. Your implementation controls what DSLContext is returned:**
+### getDslContext — database access
+
+Every generated query method calls `getDslContext(env)` to obtain the `DSLContext` for executing SQL. Your implementation controls what `DSLContext` is returned — this is where you configure connection pooling, session variables, transaction boundaries, and jOOQ listeners.
+
+The generated code makes no assumptions about how the `DSLContext` is configured. It receives it, uses it, and doesn't inspect it. This means you can freely add jOOQ `ExecuteListener`s, set PostgreSQL session variables for RLS, wrap it in a transaction, or do anything else jOOQ supports.
+
+*Illustrative example (no implementation of this exists in the codebase):*
+
 ```java
-public class TenantGraphitronContext implements GraphitronContext {
-    @Override
-    public DSLContext getDslContext(DataFetchingEnvironment env) {
-        String tenantId = env.getGraphQlContext().get("tenantId");
-
-        // Create DSLContext with tenant-specific configuration
-        DSLContext ctx = DSL.using(dataSource, SQLDialect.POSTGRES);
-
-        // Execute SET SESSION for PostgreSQL RLS
-        ctx.execute("SET app.tenant_id = ?", tenantId);
-        ctx.execute("SET app.user_id = ?", getCurrentUserId());
-
-        return ctx;
-    }
-}
-```
-
-### Use Case: Multi-Tenancy with PostgreSQL RLS
-
-**Application setup:**
-```java
+// ILLUSTRATIVE — shows how you could use getDslContext for multi-tenancy
 public class TenantGraphitronContext implements GraphitronContext {
     private final DataSource dataSource;
 
     @Override
     public DSLContext getDslContext(DataFetchingEnvironment env) {
-        // Extract tenant from GraphQL context
         String tenantId = env.getGraphQlContext().get("tenantId");
-        if (tenantId == null) {
-            throw new UnauthorizedException("No tenant context");
-        }
 
-        // Create connection and set session variables
         DSLContext ctx = DSL.using(dataSource, SQLDialect.POSTGRES);
+
+        // Set session variables for PostgreSQL RLS policies
         ctx.execute("SET app.tenant_id = ?", tenantId);
 
         return ctx;
     }
+
+    // ... getContextArgument and getDataLoaderName omitted for brevity
 }
 ```
 
-**Database setup (PostgreSQL RLS):**
-```sql
--- Enable RLS on tables
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+### getContextArgument — passing runtime values to generated code
 
--- Create policy using session variable
-CREATE POLICY tenant_isolation ON users
-    USING (tenant_id = current_setting('app.tenant_id')::uuid);
+`getContextArgument` passes values from the GraphQL context into generated condition and service method calls. The default implementation delegates to `env.getGraphQlContext().get(name)`.
 
-CREATE POLICY tenant_isolation ON orders
-    USING (tenant_id = current_setting('app.tenant_id')::uuid);
-```
-
-**Result:** Every query automatically filtered by tenant. Generated code stays simple, database enforces security.
-
-### Use Case: Transaction Management
+This is used by the `contextArguments` directive parameter on `@service` and `@tableMethod`. When a method parameter is classified as `ParamSource.Context`, the generator emits:
 
 ```java
-public class TransactionalGraphitronContext implements GraphitronContext {
-    private final DataSource dataSource;
-
-    @Override
-    public DSLContext getDslContext(DataFetchingEnvironment env) {
-        // Mutations run in transactions
-        if (env.getFieldDefinition().getType().getName().endsWith("Payload")) {
-            DSLContext ctx = DSL.using(dataSource, SQLDialect.POSTGRES);
-            return ctx.configuration()
-                      .derive()
-                      .dsl(); // Transaction-aware context
-        }
-
-        // Queries don't need transactions
-        return DSL.using(dataSource, SQLDialect.POSTGRES);
-    }
-}
+// GENERATED — from TypeFetcherGenerator.buildArgExtraction(), ContextArg branch
+graphitronContext(env).getContextArgument(env, "paramName")
 ```
 
-### Context Arguments
+This is inlined directly as an argument to the method call — not a separate variable declaration. For example, a `@service` method with `contextArguments: ["tenantId"]` produces something like:
 
-GraphitronContext provides `getContextArgument()` for passing values from GraphQL context to service methods and conditions:
-
-**Schema:**
-```graphql
-type Query {
-  myData: [Data!]!
-    @condition(
-      condition: {className: "Filters", method: "forCurrentUser"},
-      contextArguments: ["userId"]
-    )
-}
-```
-
-**Generated code passes context argument:**
 ```java
-String userId = graphitronContext.getContextArgument(env, "userId");
-Condition filter = Filters.forCurrentUser(userId);
+// GENERATED
+condition = condition.and(MyService.filterByTenant(table, graphitronContext(env).getContextArgument(env, "tenantId")));
 ```
 
-**GraphitronContext implementation:**
+**Limitation:** The `@condition` directive also has a `contextArguments` parameter in the SDL, but the rewrite pipeline's `FieldBuilder` does not yet read `@condition` on field definitions. Context arguments currently work only with `@service` and `@tableMethod`. See [ConditionFilter Builder Path](condition-filter-builder.md) for the plan.
+
+### getDataLoaderName — DataLoader isolation
+
+Generated DataLoader fetchers call `getDataLoaderName(env)` to determine the registry key for `DataLoaderRegistry.computeIfAbsent`. This controls which requests share a DataLoader instance.
+
+The default implementation in `DefaultGraphitronContext`:
+
 ```java
-@Override
-public <T> T getContextArgument(DataFetchingEnvironment env, String name) {
-    return env.getGraphQlContext().get(name);
-}
-```
-
-This allows passing security context (user ID, tenant ID) to queries without exposing them as GraphQL arguments.
-
-### DataLoader Names and Multi-Tenancy
-
-GraphitronContext provides `getDataLoaderName()` to control how DataLoaders are named. **This is critical for multi-tenancy security.**
-
-**The Problem:** DataLoaders cache results to batch database queries. If different tenants share the same DataLoader instance, tenant A could see cached data from tenant B.
-
-**The Solution:** Scope DataLoader names per-tenant.
-
-**Default implementation (single-tenant):**
-```java
+// From DefaultGraphitronContext.java — real code
 @Override
 public String getDataLoaderName(DataFetchingEnvironment env) {
     return String.format("%sFor%s",
         capitalize(env.getField().getName()),
         env.getExecutionStepInfo().getObjectType().getName());
-    // Returns: "filmsForActor"
+    // Example: field "films" on type "Actor" → "FilmsForActor"
 }
 ```
 
-**Multi-tenant implementation:**
+Note: `capitalize` (from `graphql.util.StringKit`) uppercases the first letter, so the output is `"FilmsForActor"`, not `"filmsForActor"`.
+
+A fresh `DataLoaderRegistry` is created per HTTP request (in `GraphitronServlet`), so DataLoaders are never shared across requests. The naming only affects sharing *within* a single request — two fields in the same query that resolve to the same name will batch together.
+
+**Design note:** The `GraphitronContext` Javadoc recommends encoding the full execution path (stripped of list indices) rather than just `fieldName + "For" + typeName`. The default implementation uses the simpler formula, which works when the same field+type always has the same arguments. For cases where different parts of a query reach the same type via different paths with different arguments, a path-based implementation prevents unintended batching. The rewrite test suite uses the path-based approach:
+
 ```java
+// From GraphQLQueryTest.java — real test code
 @Override
 public String getDataLoaderName(DataFetchingEnvironment env) {
-    String tenantId = env.getGraphQlContext().get("tenantId");
-    String baseName = String.format("%sFor%s",
-        capitalize(env.getField().getName()),
-        env.getExecutionStepInfo().getObjectType().getName());
-
-    // Scope DataLoader per tenant
-    return baseName + "-" + tenantId;
-    // Returns: "filmsForActor-tenant123"
+    return env.getExecutionStepInfo().getPath().toString().replaceAll("/\\d+", "");
 }
 ```
-
-**Result:** Each tenant gets isolated DataLoader instances. No cache leakage between tenants.
-
-**Important:** If you use multi-tenancy with GraphitronContext, you **must** also override `getDataLoaderName()` to prevent cache leakage.
 
 ---
 
-## Extension Point 2: jOOQ ExecuteListener
+## Complementary Technologies
 
-### What It Is
+The sections below describe standard jOOQ and PostgreSQL capabilities that compose naturally with `GraphitronContext`. They are not Graphitron-specific extension points — they work because `getDslContext()` gives you full control over the `DSLContext` and its configuration.
 
-jOOQ's `ExecuteListener` intercepts query execution at various lifecycle points. You can modify queries, log SQL, collect metrics, or add filters before execution.
+### jOOQ ExecuteListener
 
-**Use cases:**
-- Automatically add tenant filters to queries
-- Log all SQL for debugging
-- Measure query performance
-- Enforce security policies
+jOOQ's `ExecuteListener` intercepts query execution at lifecycle points (before rendering, before execution, after execution, etc.). You can log SQL, collect metrics, or modify queries.
 
-### How It Works
+The example server already uses this pattern — `QueryCapturingExecuteListener` captures executed SQL for integration testing:
 
-**1. Implement ExecuteListener:**
 ```java
-public class TenantFilterExecuteListener implements ExecuteListener {
-
-    @Override
-    public void renderStart(ExecuteContext ctx) {
-        // Called before query is converted to SQL
-        String tenantId = TenantContext.getCurrentTenant();
-
-        if (ctx.query() instanceof Select) {
-            Select<?> select = (Select<?>) ctx.query();
-
-            // Add WHERE clause to all SELECT queries
-            ctx.query(select.where(TENANT_ID.eq(tenantId)));
-        }
-    }
-
-    @Override
-    public void executeStart(ExecuteContext ctx) {
-        // Called just before execution - log SQL
-        logger.debug("Executing: {}", ctx.sql());
-    }
+// From QueryCapturingExecuteListener.java — real code
+@Override
+public void executeStart(ExecuteContext ctx) {
+    queries.add(ctx.sql());
 }
 ```
 
-**2. Register with DSLContext:**
-```java
-var config = new DefaultConfiguration();
-config.set(dataSource);
-config.set(new TenantFilterExecuteListener());  // Register listener
+It's registered on the `DefaultConfiguration` before creating the `DSLContext`:
 
+```java
+// From GraphqlServlet.java — real code
+var config = new DefaultConfiguration();
+config.set(SQLDialect.POSTGRES);
+config.set(dataSource);
+QueryCapturingExecuteListener.getInstanceIfEnabled().ifPresent(config::set);
 DSLContext ctx = DSL.using(config);
 ```
 
-**3. All queries through this DSLContext get intercepted:**
-```java
-// This query will automatically have tenant filter added
-ctx.select(USERS.fields()).from(USERS).fetch();
+You would follow the same pattern to add logging, metrics, or audit listeners — implement `ExecuteListener`, register it on the configuration in your `getDslContext()` implementation, and every generated query flows through it.
 
-// Becomes:
-// SELECT ... FROM users WHERE tenant_id = 'current-tenant-id'
-```
-
-### Use Case: Automatic Tenant Filtering
+*Illustrative example (not in the codebase):*
 
 ```java
-public class TenantFilterExecuteListener implements ExecuteListener {
-
-    @Override
-    public void renderStart(ExecuteContext ctx) {
-        String tenantId = getCurrentTenantId(); // From thread local or context
-
-        if (ctx.query() instanceof Select) {
-            Select<?> select = (Select<?>) ctx.query();
-
-            // Check if query uses a table with tenant_id column
-            if (queryHasTenantColumn(ctx)) {
-                ctx.query(select.where(TENANT_ID.eq(tenantId)));
-            }
-        }
-
-        if (ctx.query() instanceof Insert) {
-            // Automatically add tenant_id to inserts
-            Insert<?> insert = (Insert<?>) ctx.query();
-            ctx.query(insert.set(TENANT_ID, tenantId));
-        }
-    }
-}
-```
-
-### Use Case: SQL Logging
-
-```java
+// ILLUSTRATIVE — SQL logging listener
 public class SqlLoggingExecuteListener implements ExecuteListener {
-
     @Override
     public void executeStart(ExecuteContext ctx) {
-        logger.info("SQL: {}", ctx.sql());
-        logger.info("Bindings: {}", ctx.bindValues());
-    }
-
-    @Override
-    public void executeEnd(ExecuteContext ctx) {
-        long duration = ctx.executionTime();
-        if (duration > 1000) {
-            logger.warn("Slow query ({}ms): {}", duration, ctx.sql());
-        }
+        logger.debug("SQL: {}", ctx.sql());
     }
 }
 ```
 
-### Combining GraphitronContext and ExecuteListener
+### PostgreSQL Row-Level Security
 
-You can use both together:
+Graphitron's security model (see [Security](security.md)) designates the database as the enforcement point. PostgreSQL RLS is the recommended mechanism — policies filter rows transparently based on session variables.
 
-```java
-public class TenantGraphitronContext implements GraphitronContext {
-    private final DataSource dataSource;
+The connection point is `getDslContext()`: your implementation executes `SET` statements before returning the `DSLContext`, and RLS policies read those session variables.
 
-    @Override
-    public DSLContext getDslContext(DataFetchingEnvironment env) {
-        String tenantId = env.getGraphQlContext().get("tenantId");
+*Illustrative example (not in the codebase):*
 
-        // Configure DSLContext with ExecuteListener
-        var config = new DefaultConfiguration();
-        config.set(dataSource);
-        config.set(new TenantFilterExecuteListener(tenantId));  // Pass tenant to listener
-        config.set(new SqlLoggingExecuteListener());
+```sql
+-- ILLUSTRATIVE — PostgreSQL RLS setup
+ALTER TABLE students ENABLE ROW LEVEL SECURITY;
 
-        return DSL.using(config);
-    }
-}
+CREATE POLICY tenant_isolation ON students
+    USING (tenant_id = current_setting('app.tenant_id')::uuid);
 ```
 
----
-
-## Extension Point 3: Database Row-Level Security
-
-### What It Is
-
-PostgreSQL Row-Level Security (RLS) enforces access control at the database level. Even if application code is compromised, the database protects data.
-
-**From SECURITY.md:**
-> "The database is the authoritative security layer. That's why Graphitron's generated code is intentionally 'naive' about security—the database enforces it."
-
-### How It Works with GraphitronContext
-
-**1. GraphitronContext sets session variables:**
 ```java
+// ILLUSTRATIVE — setting session variables in getDslContext
 @Override
 public DSLContext getDslContext(DataFetchingEnvironment env) {
     String tenantId = env.getGraphQlContext().get("tenantId");
-    String userId = env.getGraphQlContext().get("userId");
-
     DSLContext ctx = DSL.using(dataSource, SQLDialect.POSTGRES);
-
-    // Set session variables for RLS policies to read
     ctx.execute("SET app.tenant_id = ?", tenantId);
-    ctx.execute("SET app.user_id = ?", userId);
-
     return ctx;
 }
 ```
 
-**2. Database policies read these variables:**
-```sql
--- Tenant isolation
-CREATE POLICY tenant_isolation ON users
-    USING (tenant_id = current_setting('app.tenant_id')::uuid);
-
--- User can only see own data
-CREATE POLICY own_data_only ON orders
-    USING (user_id = current_setting('app.user_id')::uuid);
-
--- Admin can see everything
-CREATE POLICY admin_all_access ON orders
-    USING (current_setting('app.user_role') = 'admin');
-```
-
-**3. All queries automatically filtered:**
-```java
-// Generated code just does:
-ctx.select(USERS.fields()).from(USERS).fetch();
-
-// Database enforces tenant filter automatically
-// Returns only users where tenant_id matches session variable
-```
-
-### RLS Benefits
-
-**Security:**
-- Enforced at database level (can't be bypassed by app bugs)
-- Applies to all queries (generated and custom)
-- Database is authoritative layer
-
-**Simplicity:**
-- Generated code stays simple (no tenant filters)
-- One place to define policies (database)
-- Easy to audit (check database policies)
-
-**Performance:**
-- Database can optimize filtered queries
-- Indexes work with RLS policies
-- No application-level filtering overhead
+Generated code is unaware of RLS — it issues plain `SELECT` statements, and the database enforces the policies automatically.
 
 ---
 
-## Choosing Your Extension Strategy
+## Choosing Your Approach
 
-### For Multi-Tenancy
+| Goal | Mechanism | How |
+|------|-----------|-----|
+| Multi-tenancy | `getDslContext()` + PostgreSQL RLS | Set session variables, create RLS policies |
+| Context values in queries | `getContextArgument()` + `@service`/`@tableMethod` `contextArguments` | Pass runtime values (user ID, tenant ID) to generated method calls |
+| SQL logging / metrics | jOOQ `ExecuteListener` | Register on `DefaultConfiguration` in `getDslContext()` |
+| DataLoader isolation | `getDataLoaderName()` | Override naming to scope per path or per tenant |
+| Transaction management | `getDslContext()` | Return a transaction-aware `DSLContext` for mutations |
 
-**Option A: GraphitronContext + RLS (Recommended)**
-- Set session variables in `getDslContext()`
-- Create RLS policies in database
-- Pro: Database enforces, app stays simple
-- Con: Requires PostgreSQL 9.5+ or equivalent
-
-**Option B: ExecuteListener**
-- Modify queries to add tenant filters
-- Pro: Works with any database
-- Con: More complex, application-level filtering
-
-**Option C: Context Arguments + @condition**
-- Pass tenant ID explicitly to every query
-- Pro: Explicit, visible in schema
-- Con: Tedious, easy to forget
-
-### For Logging/Metrics
-
-**ExecuteListener** - Perfect for observability without changing generated code
-
-### For Transaction Management
-
-**GraphitronContext** - Return transaction-aware DSLContext for mutations
-
-### For Custom Security Logic
-
-**Combination:**
-1. GraphitronContext sets session variables
-2. RLS policies enforce at database
-3. ExecuteListener adds audit logging
-
----
-
-## Summary
-
-| Extension Point | Purpose | Use When |
-|----------------|---------|----------|
-| **GraphitronContext** | Per-request DSLContext customization | Multi-tenancy, transactions, custom config |
-| **ExecuteListener** | Query interception and modification | Automatic filters, logging, metrics |
-| **Database RLS** | Row-level security at database | Tenant isolation, user permissions |
-
-**Key principle:** Keep generated code simple. Use extension points for runtime concerns.
+**Key principle:** Generated code calls `GraphitronContext` and uses whatever it returns. Runtime concerns live in your implementation, not in generated code.
 
 ---
 
 **See also:**
-- [Security Model](security.md) - Database-level security philosophy
-- [Common Module README](../graphitron-common/README.md) - GraphitronContext API reference
-- [Example Server](../graphitron-example/graphitron-example-server) - Working implementation
+- [Security Model](security.md) — Database-level security philosophy
+- [Common Module README](../graphitron-common/README.md) — GraphitronContext API reference
+- [Example Server](../graphitron-example/graphitron-example-server) — Working implementation
