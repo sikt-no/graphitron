@@ -21,7 +21,7 @@ What's been extracted, what's next, and how it connects to the remaining stub wo
 The second capability interface. Fields that need DataLoader setup all have a batch key, but it's accessed differently:
 - `SplitTableField`, `SplitLookupTableField` — direct `batchKey()` component
 - `ServiceTableField` — `method().sourcedParam().batchKey()`
-- `RecordTableField`, `RecordLookupTableField` — will need one (parent PK), not yet classified
+- `RecordTableField`, `RecordLookupTableField` — not yet classified
 
 ```java
 public interface BatchKeyField {
@@ -30,7 +30,11 @@ public interface BatchKeyField {
 }
 ```
 
-**Work:** Promote `batchKey` as a direct component on `ServiceTableField` (builder extracts it from `MethodRef` at classify time). Add `batchKey` to `RecordTableField` / `RecordLookupTableField` in the builder (derived from parent PK). All five variants implement `BatchKeyField`.
+**Design commitment: `RecordTableField` is always DataLoader-backed.** A field on a `@record` parent returning a `@table` type always starts a new scope via DataLoader, keyed by the parent's PK. It is never an inline subquery. This means the builder classifies it with a `BatchKey.RowKeyed` derived from the parent type's primary key columns, and it implements `BatchKeyField`.
+
+**`rowsMethodName()` naming.** Service fields use `"load..."`, split fields use `"rows..."`. The interface doesn't prescribe the naming convention — each variant returns whatever name it computes. The contract is simply: "the DataLoader fetcher and the rows method agree on this name." The fetcher references `bkf.rowsMethodName()` as a method-reference target.
+
+**Work:** Promote `batchKey` as a direct component on `ServiceTableField` (builder extracts it from `MethodRef` at classify time — `sourcedParam()` is still needed for the service call argument list, but no longer for key type resolution). Add `batchKey` to `RecordTableField` / `RecordLookupTableField` in the builder (derived from parent PK). All five variants implement `BatchKeyField`.
 
 ### 2. Key type and key extraction → GeneratorUtils
 
@@ -58,9 +62,11 @@ The service vs non-service distinction is the only branch within the DataLoader 
 
 **Prerequisite:** Steps 1 and 2 must be done first.
 
-### 4. Table local declaration and shared constants
+Step 3 also includes moving shared `ClassName` constants (`RECORD`, `CONDITION`, `DSL`, `ENV`, `SORT_FIELD`, `LIST`, etc.) to `GeneratorUtils`. Currently `TypeFetcherGenerator` and `TypeClassGenerator` each declare 8+ identical constants. Once the dispatch refactoring shares methods across both generators' conceptual scope, drift in these constants becomes a real risk.
 
-Minor polish. `GeneratorUtils.declareTableLocal(names, tableRef)` eliminates a repeated statement across ~7 methods. Shared ClassName constants (`RECORD`, `CONDITION`, `DSL`, `ENV`, etc.) prevent drift between generators. Low priority — do alongside other work.
+### 4. Table local declaration
+
+Minor polish. `GeneratorUtils.declareTableLocal(names, tableRef)` eliminates the repeated `$T table = $T.$L` statement across ~7 methods. Low priority — do alongside other work.
 
 ## Relationship to other design docs
 
