@@ -33,6 +33,7 @@ This folder contains documentation about Graphitron's design, philosophy, and ho
 ## Active Development
 
 - **[Rewrite Roadmap](REWRITE-ROADMAP.md)** - Remaining generator work, design principles, and known gaps
+- **[Call-Site Unification](CALL-SITE-UNIFICATION.md)** - Design for unifying argument-extraction patterns across condition, service, and table method call sites
 
 ## Other Documentation
 
