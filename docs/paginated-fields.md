@@ -18,6 +18,16 @@
 
 **Structural tests:** 8 tests covering connection field return type, pagination arg names, helper method presence, OrderByResult return type, custom arg names.
 
+## Known limitation
+
+### `encodeCursor` doesn't escape quotes in values
+
+`encodeCursor` wraps each value as `"tag:val"` — the value is stringified via `val.toString()` with no escaping. If a column value contains a `"` character (e.g., `He said "hello"`), the inner quote is written unescaped, producing a malformed cursor like `["s:He said "hello""]`. The quote-aware tokenizer in `decodeCursor` would toggle `inQuotes` on the inner quote, breaking the parse.
+
+**Risk:** Low for typical ordering columns (PKs, timestamps, numeric IDs), but any `VARCHAR` ordering column with user-entered text could trigger it.
+
+**Fix:** Escape `"` as `\"` in `encodeCursor` and unescape in `decodeCursor` before stripping the outer quotes. Alternatively, switch to a proper JSON serializer — the current hand-rolled format was simple for numeric keys but doesn't scale to arbitrary string values.
+
 ## What's next
 
 ### 1. Backward pagination (`last`/`before`)
