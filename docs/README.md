@@ -20,7 +20,7 @@ You're writing a GraphQL schema and want Graphitron to generate the wiring code.
 
 4. **[Java Codegen README](/graphitron-codegen-parent/graphitron-java-codegen/README.md)** — Complete directive reference with examples. This is where you learn `@table`, `@field`, `@service`, `@splitQuery`, and every other directive.
 5. **[Security](security.md)** — Graphitron's security model and why we chose database-level enforcement.
-6. **[Runtime Extension Points](runtime-extension-points.md)** — How to wire `GraphitronContext`, `ExecuteListener`, and PostgreSQL RLS into your application. *(Draft — some code examples need verification.)*
+6. **[Runtime Extension Points](runtime-extension-points.md)** — How to wire `GraphitronContext`, jOOQ `ExecuteListener`, and PostgreSQL RLS into your application.
 7. **[Example README](/graphitron-example/README.md)** — Working example with the Sakila database.
 
 ## Working on Graphitron internals (contributors)
@@ -45,7 +45,7 @@ Active implementation plans (read when you're working on the specific feature):
 | [Dependencies](dependencies.md) | Everyone | Why jOOQ and GraphQL-Java |
 | [Java Codegen README](/graphitron-codegen-parent/graphitron-java-codegen/README.md) | Schema authors | Directive reference with examples |
 | [Security](security.md) | Schema authors | Security model explanation |
-| [Runtime Extension Points](runtime-extension-points.md) | Schema authors | GraphitronContext, ExecuteListener, RLS *(draft)* |
+| [Runtime Extension Points](runtime-extension-points.md) | Schema authors | GraphitronContext, ExecuteListener, RLS |
 | [Example README](/graphitron-example/README.md) | Schema authors | Working Sakila example |
 | [Code Generation Triggers](code-generation-triggers.md) | Contributors | Schema → classification → generated code |
 | [Rewrite Roadmap](rewrite-roadmap.md) | Contributors | Design principles, remaining work, known gaps |
