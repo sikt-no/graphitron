@@ -57,13 +57,20 @@ public interface MethodRef {
     default List<CallParam> callParams() {
         return params().stream()
             .filter(p -> p.source() instanceof ParamSource.Arg || p.source() instanceof ParamSource.Context)
-            .map(p -> new CallParam(p.name(), toCallSiteExtraction(p.source()), false, p.typeName()))
+            .map(p -> new CallParam(p.name(), toCallSiteExtraction(p), false, p.typeName()))
             .toList();
     }
 
-    private static CallSiteExtraction toCallSiteExtraction(ParamSource source) {
-        return switch (source) {
+    private static CallSiteExtraction toCallSiteExtraction(Param p) {
+        return switch (p.source()) {
             case ParamSource.Context ignored -> new CallSiteExtraction.ContextArg();
+            case ParamSource.Arg ignored -> {
+                try {
+                    Class<?> cls = Class.forName(p.typeName());
+                    if (cls.isEnum()) yield new CallSiteExtraction.EnumValueOf(p.typeName());
+                } catch (ClassNotFoundException ignored2) {}
+                yield new CallSiteExtraction.Direct();
+            }
             default -> new CallSiteExtraction.Direct();
         };
     }
