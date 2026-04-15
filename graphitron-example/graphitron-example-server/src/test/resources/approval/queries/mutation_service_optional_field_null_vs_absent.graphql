@@ -1,0 +1,9 @@
+mutation CheckOptionalFields($input: [OptionalFieldServiceInput!]!) {
+    checkOptionalFields(input: $input) {
+        results {
+            title
+            rentalDurationStatus
+            descriptionStatus
+        }
+    }
+}

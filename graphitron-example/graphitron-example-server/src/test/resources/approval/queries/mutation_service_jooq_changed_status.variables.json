@@ -1,0 +1,11 @@
+[
+  {
+    "input": {"id": "Q3VzdG9tZXI6MQ", "firstName": "John"}
+  },
+  {
+    "input": {"id": "Q3VzdG9tZXI6MQ", "firstName": null}
+  },
+  {
+    "input": {"id": "Q3VzdG9tZXI6MQ"}
+  }
+]

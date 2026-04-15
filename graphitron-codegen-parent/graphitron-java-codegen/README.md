@@ -1069,6 +1069,92 @@ public class CustomerService {
     public String customer(JavaCustomerRecord person) { … }
 }
 ```
+#### Explicit null vs not provided in services
+
+##### jOOQ record inputs
+To distinguish between explicit null from omitted one can track the `changed()` status of the jOOQ record in the service code.
+If the jOOQ record's `changed()` status is `true` for a given field, then the value was provided (even if it was `null`).
+If `changed()` is `false`, the field was omitted from the request entirely.
+
+_Example service code_:
+```java
+public Customer updateCustomer(CustomerRecord record) {
+    if (record.changed(CUSTOMER.FIRST_NAME)) {
+        // Field was provided (value may be null or non-null)
+    } else {
+        // Field was omitted from the request entirely — do not update
+    }
+}
+```
+
+For `@mutation` insert operations, Graphitron's generated queries use this automatically: omitted fields fall back to the database column default, while explicitly provided `null` values are inserted as `null`.
+
+##### Java record inputs (experimental)
+
+> **Note:** This feature is experimental and may change in future versions.
+
+> ⚠️ Important: This pattern intentionally uses null on an Optional field to represent "omitted". This goes against conventional Java usage of Optional. See the table below for the three states.
+
+For Java records (using `@record`), Graphitron does not have built-in `changed()` tracking.
+Instead, you can use `Optional<T>` setter parameters to distinguish between three states for a nullable input field:
+
+| Client sends | Java value | Meaning |
+|---|---|---|
+| `field: "hello"` | `Optional.of("hello")` | A value was provided |
+| `field: null` | `Optional.empty()` | The field was explicitly set to null |
+| _(field omitted)_ | `null` | The field was not included in the request |
+
+##### How to use
+
+No schema-level changes are needed. The feature is driven entirely by the setter signatures in the Java record class referenced via `@record`.
+
+1. **Define your input type as usual** in the GraphQL schema:
+
+```graphql
+input EditFilmInput @record(record: {className: "com.example.EditFilmRecord"}) {
+    title: String!
+    description: String
+    rentalDuration: Int
+}
+```
+
+2. **Use `Optional<T>` setter parameters** in your Java record for fields that should track null vs omitted:
+
+```java
+public class EditFilmRecord {
+    private String title;
+    private Optional<String> description;
+    private Optional<Integer> rentalDuration;
+
+    public void setTitle(String title) { this.title = title; }
+
+    // Optional<T> parameter signals Graphitron to wrap the value
+    public void setDescription(Optional<String> description) { this.description = description; }
+    public void setRentalDuration(Optional<Integer> rentalDuration) { this.rentalDuration = rentalDuration; }
+
+    // Getters...
+}
+```
+
+3. **Handle the three states** in your service code:
+
+```java
+public class FilmService {
+    public String editFilm(EditFilmRecord input) {
+        if (input.getDescription() == null) {
+            // Field was omitted — do not update
+        } else if (input.getDescription().isEmpty()) {
+            // Field was explicitly set to null — clear the value
+        } else {
+            // Field has a value — update it
+            String value = input.getDescription().get();
+        }
+    }
+}
+```
+
+Graphitron detects `Optional<T>` setter parameters at code generation time via reflection and generates mapper code that wraps values with `Optional.ofNullable(...)`. The setter is only called when the field is present in the GraphQL request arguments, so omitted fields leave the Java record field as `null`.
+Note: Many IDEs will give a warning about comparing optional values to null. In IntelliJ IDEA, this can be suppressed by adding `@SuppressWarnings("OptionalAssignedToNull")` to the method or class.
 
 #### Context variables
 Using the _contextArguments_ parameter on the **service** or **condition** directives, one can specify which context values should be passed to the referenced method.

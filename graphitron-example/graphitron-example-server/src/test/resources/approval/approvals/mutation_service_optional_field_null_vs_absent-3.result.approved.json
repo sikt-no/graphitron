@@ -1,0 +1,13 @@
+{
+    "data": {
+        "checkOptionalFields": {
+            "results": [
+                {
+                    "title": "Omitted Fields",
+                    "rentalDurationStatus": "OMITTED",
+                    "descriptionStatus": "OMITTED"
+                }
+            ]
+        }
+    }
+}
