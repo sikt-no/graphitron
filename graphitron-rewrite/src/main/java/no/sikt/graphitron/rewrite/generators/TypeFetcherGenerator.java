@@ -358,13 +358,7 @@ public class TypeFetcherGenerator {
                     code.addStatement("$T<$T<?>> orderBy = $T.of($L)", LIST, SORT_FIELD, LIST, parts.build());
                 }
             }
-            case OrderBySpec.Argument arg -> {
-                if (arg.base() != null) {
-                    code.add(buildOrderByCode(arg.base()));
-                } else {
-                    code.addStatement("$T<$T<?>> orderBy = $T.of()", LIST, SORT_FIELD, LIST);
-                }
-            }
+            case OrderBySpec.Argument arg -> code.add(buildOrderByCode(arg.base()));
             case OrderBySpec.None none ->
                 code.addStatement("$T<$T<?>> orderBy = $T.of()", LIST, SORT_FIELD, LIST);
         }

@@ -76,13 +76,13 @@ class QueryLookupTableFieldValidationTest {
             List.of("Field 'filmById': lookup fields must not return a connection")),
 
         ORDERBY_ARG("@orderBy on a lookup field — not valid on lookup",
-            singleReturn(List.of(), new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "direction", List.of(), null)),
+            singleReturn(List.of(), new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "direction", List.of(), new OrderBySpec.None())),
             List.of("Field 'filmById': @orderBy is not valid on a lookup field")),
 
         CONNECTION_AND_ORDERBY("connection return AND @orderBy — two independent errors",
             new QueryLookupTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, true)),
-                List.of(), new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "direction", List.of(), null), null),
+                List.of(), new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "direction", List.of(), new OrderBySpec.None()), null),
             List.of(
                 "Field 'filmById': lookup fields must not return a connection",
                 "Field 'filmById': @orderBy is not valid on a lookup field"));

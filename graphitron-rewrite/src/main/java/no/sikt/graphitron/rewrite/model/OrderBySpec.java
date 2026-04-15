@@ -77,8 +77,8 @@ public sealed interface OrderBySpec
      * {@code namedOrders} maps each enum value to its column-order expression (populated at
      * build time from the enum type's {@code @order} directives; may be empty while that
      * feature is not yet fully implemented).
-     * {@code base} is the fallback {@link Fixed} ordering used when no argument is provided at
-     * runtime; may be {@code null} when the table has no primary key and no {@code @defaultOrder}.
+     * {@code base} is the fallback ordering used when no argument is provided at runtime;
+     * {@link None} when the table has no primary key and no {@code @defaultOrder}.
      */
     record Argument(
         String name,
@@ -88,7 +88,7 @@ public sealed interface OrderBySpec
         String sortFieldName,
         String directionFieldName,
         List<NamedOrder> namedOrders,
-        Fixed base
+        OrderBySpec base
     ) implements OrderBySpec {}
 
     /**

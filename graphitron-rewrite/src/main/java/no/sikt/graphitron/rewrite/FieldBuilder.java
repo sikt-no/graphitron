@@ -498,10 +498,10 @@ class FieldBuilder {
             return null;
         }
         OrderBySpec baseSpec = resolveDefaultOrderSpec(fieldDef, tableSqlName);
-        OrderBySpec.Fixed base = baseSpec instanceof OrderBySpec.Fixed f ? f : null;
+        if (baseSpec == null) return null; // resolveColumnOrderSpec failed; error already appended
         return new OrderBySpec.Argument(name, typeName, nonNull, list, sortFieldName, directionFieldName,
-            List.of(), // namedOrders: deferred
-            base);
+            List.of(), // namedOrders: deferred to Step 2
+            baseSpec);
     }
 
     /**
