@@ -48,7 +48,7 @@ The `/docs` folder contains conceptual guides explaining Graphitron's design, ph
 
 ### Active Rewrite
 - **Rewrite Roadmap**: [/docs/rewrite-roadmap.md](/docs/rewrite-roadmap.md) - Remaining generator work, design principles, and known gaps
-- **Call-Site Unification**: [/docs/call-site-unification.md](/docs/call-site-unification.md) - Remaining work: enum detection for service params, orderBy extraction via CallParam
+- **OrderBy Implementation**: [/docs/orderby-implementation.md](/docs/orderby-implementation.md) - Plan for OrderBySpec.Argument generation: namedOrders, base nullability, generator
 
 
 ## Key Architecture

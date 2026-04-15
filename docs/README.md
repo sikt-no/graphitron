@@ -33,7 +33,7 @@ This folder contains documentation about Graphitron's design, philosophy, and ho
 ## Active Development
 
 - **[Rewrite Roadmap](rewrite-roadmap.md)** - Remaining generator work, design principles, and known gaps
-- **[Call-Site Unification](call-site-unification.md)** - Remaining work: enum detection for service params, orderBy extraction via CallParam
+- **[OrderBy Implementation](orderby-implementation.md)** - Plan for implementing `OrderBySpec.Argument` generation (namedOrders population, base nullability fix, generator)
 
 ## Other Documentation
 
