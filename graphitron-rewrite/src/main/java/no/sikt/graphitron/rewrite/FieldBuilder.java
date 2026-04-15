@@ -51,6 +51,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.rewrite.model.QueryField;
@@ -167,7 +168,7 @@ class FieldBuilder {
         if (result.failed()) {
             return new ServiceResolution(null, null, "service method could not be resolved — " + result.failureReason());
         }
-        return new ServiceResolution(result.ref(), returnType, null);
+        return new ServiceResolution(enrichArgExtractions(result.ref(), fieldDef), returnType, null);
     }
 
     private record TableFieldComponents(List<WhereFilter> filters, OrderBySpec orderBy, PaginationSpec pagination, String error) {}
@@ -569,6 +570,42 @@ class FieldBuilder {
     }
 
     /**
+     * Post-processes {@link ParamSource.Arg} parameters on a method reference to detect
+     * text-mapped enum arguments. {@link no.sikt.graphitron.rewrite.ServiceCatalog} handles jOOQ
+     * enum detection (requires reflection); this method handles text-mapped enums (requires the
+     * GraphQL schema, which only {@link FieldBuilder} holds).
+     *
+     * <p>A parameter is text-mapped when its Java type is {@code String} (already defaulted to
+     * {@link CallSiteExtraction.Direct} by {@code ServiceCatalog}) and the corresponding GraphQL
+     * argument type is an enum with value mappings. The enriched extraction emits a static-map
+     * lookup that delivers the DB string to the service method — service code does not know about
+     * GraphQL enum value names.
+     *
+     * <p>The generated static map field lives in the {@code *Fetchers} class for this type.
+     */
+    MethodRef enrichArgExtractions(MethodRef method, GraphQLFieldDefinition fieldDef) {
+        var argTypes = fieldDef.getArguments().stream()
+            .collect(java.util.stream.Collectors.toMap(
+                GraphQLArgument::getName,
+                a -> ((graphql.schema.GraphQLNamedType) graphql.schema.GraphQLTypeUtil.unwrapAll(a.getType())).getName()));
+        var newParams = method.params().stream().map(p -> {
+            if (!(p.source() instanceof ParamSource.Arg arg)) return p;
+            if (!(arg.extraction() instanceof CallSiteExtraction.Direct)) return p;
+            if (!String.class.getName().equals(p.typeName())) return p;
+            String graphqlTypeName = argTypes.get(p.name());
+            if (graphqlTypeName == null) return p;
+            var textMapping = buildTextEnumMapping(graphqlTypeName);
+            if (textMapping == null) return p;
+            String mapFieldName = fieldDef.getName().toUpperCase() + "_"
+                + p.name().toUpperCase() + "_MAP";
+            return (MethodRef.Param) new MethodRef.Param.Typed(p.name(), p.typeName(),
+                new ParamSource.Arg(new CallSiteExtraction.TextMapLookup(mapFieldName, textMapping)));
+        }).toList();
+        return new MethodRef.Basic(method.className(), method.methodName(),
+            method.returnTypeName(), newParams);
+    }
+
+    /**
      * If the GraphQL type is an enum, builds a mapping from GraphQL enum value names to database
      * string values (from {@code @field(name:)} or the value name itself). Returns {@code null}
      * when the GraphQL type is not an enum.
@@ -776,7 +813,7 @@ class FieldBuilder {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "table method could not be resolved — " + qtmResult.failureReason());
             }
-            return new QueryField.QueryTableMethodTableField(parentTypeName, name, location, tb, qtmResult.ref());
+            return new QueryField.QueryTableMethodTableField(parentTypeName, name, location, tb, enrichArgExtractions(qtmResult.ref(), fieldDef));
         }
 
         String rawTypeName = baseTypeName(fieldDef);
@@ -1081,7 +1118,7 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "table method could not be resolved — " + tmResult.failureReason());
             }
-            return new TableMethodField(parentTypeName, name, location, returnType, tableMethodPath.elements(), tmResult.ref());
+            return new TableMethodField(parentTypeName, name, location, returnType, tableMethodPath.elements(), enrichArgExtractions(tmResult.ref(), fieldDef));
         }
 
         if (!isScalarOrEnum(fieldDef)) {

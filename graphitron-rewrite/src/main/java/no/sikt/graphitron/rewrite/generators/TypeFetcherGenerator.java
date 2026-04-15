@@ -107,7 +107,7 @@ public class TypeFetcherGenerator {
             } else if (field instanceof BatchKeyField bkf) {
                 if (field instanceof MethodBackedField mbf && field instanceof SqlGeneratingField sgf && parentTable != null) {
                     builder.addMethod(buildServiceDataFetcher(field.name(), bkf, mbf.method(), sgf.returnType(), parentTable, className));
-                    builder.addMethod(buildServiceRowsMethod(bkf, mbf.method(), sgf.returnType(), sgf.returnType().table(), parentTable));
+                    builder.addMethod(buildServiceRowsMethod(bkf, mbf.method(), sgf.returnType(), sgf.returnType().table(), parentTable, className));
                     needsGraphitronContextHelper = true;
                 } else {
                     builder.addMethod(buildSplitQueryDataFetcher(field.name(), bkf.batchKey()));
@@ -121,6 +121,23 @@ public class TypeFetcherGenerator {
         if (needsGraphitronContextHelper) {
             builder.addMethod(buildGraphitronContextHelper());
         }
+
+        // Emit static map fields for any TextMapLookup extractions on method-backed fields.
+        // The *Fetchers class is the home for these maps because service/table-method code
+        // must not reference user class names or GraphQL enum names directly.
+        fields.stream()
+            .filter(f -> f instanceof MethodBackedField)
+            .map(f -> (MethodBackedField) f)
+            .flatMap(f -> f.method().callParams().stream())
+            .filter(p -> p.extraction() instanceof CallSiteExtraction.TextMapLookup)
+            .map(p -> (CallSiteExtraction.TextMapLookup) p.extraction())
+            .collect(java.util.stream.Collectors.toMap(
+                CallSiteExtraction.TextMapLookup::mapFieldName,
+                tl -> tl,
+                (a, b) -> a,
+                java.util.LinkedHashMap::new))
+            .values()
+            .forEach(tl -> builder.addField(TypeConditionsGenerator.buildTextEnumMapField(tl)));
 
         builder.addMethod(buildWiringMethod(typeName, className, parentTable, fields));
         return builder.build();
@@ -418,7 +435,8 @@ public class TypeFetcherGenerator {
             MethodRef smr,
             ReturnTypeRef.TableBoundReturnType tb,
             TableRef rt,
-            TableRef prt) {
+            TableRef prt,
+            String fetchersClassName) {
 
         boolean isList = tb.wrapper().isList();
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
@@ -434,7 +452,7 @@ public class TypeFetcherGenerator {
             .addParameter(SELECTED_FIELD, "sel");
 
         for (var param : smr.callParams()) {
-            builder.addStatement("$T $L = $L", ClassName.bestGuess(param.typeName()), param.name(), buildArgExtraction(param, smr.className()));
+            builder.addStatement("$T $L = $L", ClassName.bestGuess(param.typeName()), param.name(), buildArgExtraction(param, fetchersClassName));
         }
 
         var serviceCallArgs = smr.params().stream()

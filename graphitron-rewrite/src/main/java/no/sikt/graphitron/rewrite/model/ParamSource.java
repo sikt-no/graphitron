@@ -30,8 +30,14 @@ public sealed interface ParamSource
     /**
      * A GraphQL field argument bound via {@code DataFetchingEnvironment.getArgument(name)}.
      * The argument name equals the parameter name on the enclosing {@link MethodRef.Param}.
+     *
+     * <p>{@code extraction} is the pre-resolved strategy for extracting this argument's value
+     * from the GraphQL execution context. Set at classification time by
+     * {@link no.sikt.graphitron.rewrite.ServiceCatalog} (jOOQ enum detection) and enriched by
+     * {@link no.sikt.graphitron.rewrite.FieldBuilder} (text-map detection). Defaults to
+     * {@link CallSiteExtraction.Direct} for plain scalar arguments.
      */
-    record Arg() implements ParamSource {}
+    record Arg(CallSiteExtraction extraction) implements ParamSource {}
 
     /**
      * A context argument bound via {@code GraphitronContext.getContextArgument(dfe, name)}.

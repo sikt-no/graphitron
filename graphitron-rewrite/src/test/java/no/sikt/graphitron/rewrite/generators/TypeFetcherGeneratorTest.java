@@ -381,7 +381,7 @@ class TypeFetcherGeneratorTest {
             List.of(
                 new MethodRef.Param.Sourced("keys",
                     new BatchKey.RowKeyed(List.of(languageIdCol()))),
-                new MethodRef.Param.Typed("filter", "java.lang.String", new ParamSource.Arg()),
+                new MethodRef.Param.Typed("filter", "java.lang.String", new ParamSource.Arg(new CallSiteExtraction.Direct())),
                 new MethodRef.Param.Typed("tenantId", "java.lang.String", new ParamSource.Context())
             )
         );

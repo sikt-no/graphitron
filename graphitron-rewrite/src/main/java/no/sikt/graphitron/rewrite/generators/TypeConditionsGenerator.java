@@ -122,7 +122,7 @@ public class TypeConditionsGenerator {
         return builder.build();
     }
 
-    private static FieldSpec buildTextEnumMapField(CallSiteExtraction.TextMapLookup tl) {
+    static FieldSpec buildTextEnumMapField(CallSiteExtraction.TextMapLookup tl) {
         var MAP = ClassName.get(java.util.Map.class);
         var mapType = ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(String.class));
         var mapEntries = CodeBlock.builder();

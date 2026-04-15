@@ -1,10 +1,11 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.model.BatchKey;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -159,7 +160,7 @@ class ServiceCatalog {
                 String displayName = pName != null ? pName : p.getType().getSimpleName();
                 String typeName = p.getParameterizedType().getTypeName();
                 if (pName != null && argNames.contains(pName)) {
-                    params.add(new MethodRef.Param.Typed(displayName, typeName, new ParamSource.Arg()));
+                    params.add(new MethodRef.Param.Typed(displayName, typeName, new ParamSource.Arg(argExtraction(typeName))));
                 } else if (pName != null && ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(displayName, typeName, new ParamSource.Context()));
                 } else {
@@ -239,7 +240,7 @@ class ServiceCatalog {
                 }
                 String typeName = p.getParameterizedType().getTypeName();
                 if (argNames.contains(pName)) {
-                    params.add(new MethodRef.Param.Typed(pName, typeName, new ParamSource.Arg()));
+                    params.add(new MethodRef.Param.Typed(pName, typeName, new ParamSource.Arg(argExtraction(typeName))));
                 } else if (ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(pName, typeName, new ParamSource.Context()));
                 } else {
@@ -274,6 +275,24 @@ class ServiceCatalog {
                 + "      </configuration>\n"
                 + "    </plugin>");
         }
+    }
+
+    /**
+     * Returns the {@link CallSiteExtraction} for a GraphQL {@code Arg} parameter based on its
+     * Java type. jOOQ-generated enums get {@link CallSiteExtraction.EnumValueOf}; all other
+     * types default to {@link CallSiteExtraction.Direct}.
+     *
+     * <p>Text-mapped enum detection (String Java type + GraphQL enum with value mappings) requires
+     * GraphQL schema access and is handled as a post-processing step in
+     * {@link FieldBuilder#enrichArgExtractions}.
+     */
+    static CallSiteExtraction argExtraction(String typeName) {
+        try {
+            if (Class.forName(typeName).isEnum()) {
+                return new CallSiteExtraction.EnumValueOf(typeName);
+            }
+        } catch (ClassNotFoundException ignored) {}
+        return new CallSiteExtraction.Direct();
     }
 
     /**
