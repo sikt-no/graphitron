@@ -14,6 +14,8 @@ import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 
+import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
+
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -34,8 +36,7 @@ import java.util.Optional;
  */
 public class TypeConditionsGenerator {
 
-    private static final ClassName CONDITION = ClassName.get("org.jooq", "Condition");
-    private static final ClassName DSL       = ClassName.get("org.jooq.impl", "DSL");
+    // CONDITION and DSL come from GeneratorUtils via static import.
 
     public static List<TypeSpec> generate(GraphitronSchema schema) {
         // Collect GeneratedConditionFilters grouped by their conditions class name
@@ -90,7 +91,6 @@ public class TypeConditionsGenerator {
             .returns(CONDITION)
             .addParameter(jooqTableClass, "table");
 
-        var LIST = ClassName.get("java.util", "List");
         for (var bp : gcf.bodyParams()) {
             var paramType = bp.list()
                 ? ParameterizedTypeName.get(LIST, ClassName.bestGuess(bp.javaType()))

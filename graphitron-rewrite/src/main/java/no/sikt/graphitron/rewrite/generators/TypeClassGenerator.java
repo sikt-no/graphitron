@@ -13,6 +13,8 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
+import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
+
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -53,20 +55,12 @@ import static javax.lang.model.element.Modifier.STATIC;
  */
 public class TypeClassGenerator {
 
-    private static final ClassName RESULT         = ClassName.get("org.jooq", "Result");
-    private static final ClassName RECORD         = ClassName.get("org.jooq", "Record");
-    private static final ClassName ROW            = ClassName.get("org.jooq", "Row");
+    // Cross-generator constants (RESULT, RECORD, ROW, CONDITION, SORT_FIELD, DSL, LIST,
+    // ENV, SELECTED_FIELD, GRAPHITRON_CONTEXT) come from GeneratorUtils via static import.
     private static final ClassName FIELD          = ClassName.get("org.jooq", "Field");
-    private static final ClassName CONDITION      = ClassName.get("org.jooq", "Condition");
-    private static final ClassName SORT_FIELD     = ClassName.get("org.jooq", "SortField");
     private static final ClassName DSL_CONTEXT    = ClassName.get("org.jooq", "DSLContext");
-    private static final ClassName DSL            = ClassName.get("org.jooq.impl", "DSL");
-    private static final ClassName LIST           = ClassName.get(List.class);
-    private static final ClassName ENV            = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName SELECTION_SET  = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
-    private static final ClassName SELECTED_FIELD = ClassName.get("graphql.schema", "SelectedField");
-    private static final ClassName GRAPHITRON_CONTEXT = ClassName.get("no.sikt.graphql", "GraphitronContext");
-    private static final ClassName ARRAY_LIST = ClassName.get(ArrayList.class);
+    private static final ClassName ARRAY_LIST     = ClassName.get(ArrayList.class);
 
     public static List<TypeSpec> generate(GraphitronSchema schema) {
         return schema.types().entrySet().stream()

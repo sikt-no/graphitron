@@ -10,18 +10,23 @@ import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.model.BatchKey;
+import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
+
+import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
 
 import javax.lang.model.element.Modifier;
 import java.util.Comparator;
@@ -69,20 +74,12 @@ public class TypeFetcherGenerator {
         return generateTypeSpec(typeName, parentTable, fields);
     }
 
-    private static final ClassName ENV                  = ClassName.get("graphql.schema", "DataFetchingEnvironment");
-    private static final ClassName SELECTED_FIELD       = ClassName.get("graphql.schema", "SelectedField");
+    // Fetcher-specific constants (cross-generator constants come from GeneratorUtils via static import)
     private static final ClassName TYPE_WIRING          = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring");
     private static final ClassName WIRING_BUILDER       = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring", "Builder");
     private static final ClassName COMPLETABLE_FUTURE   = ClassName.get("java.util.concurrent", "CompletableFuture");
-    private static final ClassName LIST                 = ClassName.get("java.util", "List");
-    private static final ClassName CONDITION             = ClassName.get("org.jooq", "Condition");
-    private static final ClassName RECORD               = ClassName.get("org.jooq", "Record");
-    private static final ClassName RESULT               = ClassName.get("org.jooq", "Result");
-    private static final ClassName SORT_FIELD           = ClassName.get("org.jooq", "SortField");
-    private static final ClassName DSL                  = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName DATA_LOADER          = ClassName.get("org.dataloader", "DataLoader");
     private static final ClassName DATA_LOADER_FACTORY  = ClassName.get("org.dataloader", "DataLoaderFactory");
-    private static final ClassName GRAPHITRON_CONTEXT   = ClassName.get("no.sikt.graphql", "GraphitronContext");
 
     /**
      * Generates the {@code *Fetchers} class TypeSpec for the given GraphQL type.
@@ -107,16 +104,15 @@ public class TypeFetcherGenerator {
             } else if (field instanceof QueryField.QueryTableField qtf) {
                 builder.addMethod(buildQueryTableFetcher(qtf));
                 if (hasContextArg(qtf)) needsGraphitronContextHelper = true;
-            } else if (field instanceof ChildField.ServiceTableField sf && parentTable != null) {
-                builder.addMethod(buildServiceDataFetcher(sf, sf.method(), sf.returnType(), parentTable, className));
-                builder.addMethod(buildServiceRowsMethod(sf, sf.method(), sf.returnType(), sf.returnType().table(), parentTable));
-                needsGraphitronContextHelper = true;
-            } else if (field instanceof ChildField.SplitTableField stf) {
-                builder.addMethod(buildSplitQueryDataFetcher(stf));
-                builder.addMethod(buildSplitRowsMethod(stf));
-            } else if (field instanceof ChildField.SplitLookupTableField slft) {
-                builder.addMethod(buildSplitQueryDataFetcher(slft.name(), slft.batchKey()));
-                builder.addMethod(buildSplitRowsMethod(slft.name(), slft.batchKey()));
+            } else if (field instanceof BatchKeyField bkf) {
+                if (field instanceof MethodBackedField mbf && field instanceof SqlGeneratingField sgf && parentTable != null) {
+                    builder.addMethod(buildServiceDataFetcher(field.name(), bkf, mbf.method(), sgf.returnType(), parentTable, className));
+                    builder.addMethod(buildServiceRowsMethod(bkf, mbf.method(), sgf.returnType(), sgf.returnType().table(), parentTable));
+                    needsGraphitronContextHelper = true;
+                } else {
+                    builder.addMethod(buildSplitQueryDataFetcher(field.name(), bkf.batchKey()));
+                    builder.addMethod(buildSplitRowsMethod(bkf));
+                }
             } else {
                 builder.addMethod(buildStub(field.name()));
             }
@@ -370,7 +366,8 @@ public class TypeFetcherGenerator {
      * Single: returns {@code CompletableFuture<Record>}.
      */
     private static MethodSpec buildServiceDataFetcher(
-            ChildField.ServiceTableField sf,
+            String fieldName,
+            BatchKeyField bkf,
             MethodRef smr,
             ReturnTypeRef.TableBoundReturnType tb,
             TableRef prt,
@@ -380,22 +377,22 @@ public class TypeFetcherGenerator {
         var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
 
-        var batchKey = sf.batchKey();
+        var batchKey = bkf.batchKey();
         TypeName keyType = GeneratorUtils.keyElementType(batchKey);
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
-        String rowsMethodName = sf.rowsMethodName();
+        String rowsMethodName = bkf.rowsMethodName();
 
         var lambdaBlock = CodeBlock.builder()
             .add("(keys, batchEnv) -> {\n")
             .indent()
             .addStatement("$T dfe = ($T) batchEnv.getKeyContextsList().get(0)", ENV, ENV)
-            .addStatement("$T sel = dfe.getSelectionSet().getField($S)", SELECTED_FIELD, sf.name())
+            .addStatement("$T sel = dfe.getSelectionSet().getField($S)", SELECTED_FIELD, fieldName)
             .addStatement("return $T.completedFuture($L(keys, dfe, sel))", COMPLETABLE_FUTURE, rowsMethodName)
             .unindent()
             .add("}")
             .build();
 
-        var methodBuilder = MethodSpec.methodBuilder(sf.name())
+        var methodBuilder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
             .addParameter(ENV, "env")
@@ -417,7 +414,7 @@ public class TypeFetcherGenerator {
      * {@code selectMany} or {@code selectOne}.
      */
     private static MethodSpec buildServiceRowsMethod(
-            ChildField.ServiceTableField sf,
+            BatchKeyField bkf,
             MethodRef smr,
             ReturnTypeRef.TableBoundReturnType tb,
             TableRef rt,
@@ -427,9 +424,9 @@ public class TypeFetcherGenerator {
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         var returnType = isList ? ParameterizedTypeName.get(LIST, listOfRecord) : listOfRecord;
 
-        TypeName keysElementType = GeneratorUtils.keyElementType(sf.batchKey());
+        TypeName keysElementType = GeneratorUtils.keyElementType(bkf.batchKey());
 
-        var builder = MethodSpec.methodBuilder(sf.rowsMethodName())
+        var builder = MethodSpec.methodBuilder(bkf.rowsMethodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
             .addParameter(ParameterizedTypeName.get(LIST, keysElementType), "keys")
@@ -451,8 +448,8 @@ public class TypeFetcherGenerator {
             String.join(", ", serviceCallArgs));
 
         var typeClass = GeneratorUtils.ResolvedTableNames.of(rt, tb.returnTypeName()).typeClass();
-        String selectManyName = sf.batchKey().selectManyMethodName();
-        String selectOneName  = sf.batchKey().selectOneMethodName();
+        String selectManyName = bkf.batchKey().selectManyMethodName();
+        String selectOneName  = bkf.batchKey().selectOneMethodName();
         if (isList) {
             builder.addStatement("return $T.$L(keys, env, sel, ($T<?>) serviceResult)",
                 typeClass, selectManyName, List.class);
@@ -467,10 +464,6 @@ public class TypeFetcherGenerator {
     // SplitTableField / SplitLookupTableField — CompletableFuture stubs
     // -----------------------------------------------------------------------
 
-    private static MethodSpec buildSplitQueryDataFetcher(ChildField.SplitTableField field) {
-        return buildSplitQueryDataFetcher(field.name(), field.batchKey());
-    }
-
     private static MethodSpec buildSplitQueryDataFetcher(String fieldName, BatchKey batchKey) {
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, ParameterizedTypeName.get(LIST, RECORD));
         return MethodSpec.methodBuilder(fieldName)
@@ -481,14 +474,10 @@ public class TypeFetcherGenerator {
             .build();
     }
 
-    private static MethodSpec buildSplitRowsMethod(ChildField.SplitTableField field) {
-        return buildSplitRowsMethod(field.name(), field.batchKey());
-    }
-
-    private static MethodSpec buildSplitRowsMethod(String fieldName, BatchKey batchKey) {
-        TypeName keysElementType = GeneratorUtils.keyElementType(batchKey);
+    private static MethodSpec buildSplitRowsMethod(BatchKeyField bkf) {
+        TypeName keysElementType = GeneratorUtils.keyElementType(bkf.batchKey());
         var sourcesType = ParameterizedTypeName.get(LIST, keysElementType);
-        return MethodSpec.methodBuilder("rows" + capitalize(fieldName))
+        return MethodSpec.methodBuilder(bkf.rowsMethodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object.class)
             .addParameter(sourcesType, "sources")

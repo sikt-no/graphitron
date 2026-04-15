@@ -13,12 +13,41 @@ import java.util.List;
 
 /**
  * Shared utilities and resolved name records used across all generator classes.
+ *
+ * <p>The {@code ClassName} constants below are package-private so generators in this package
+ * can import them via {@code import static GeneratorUtils.*}. Having one definition prevents
+ * drift between generators that target the same runtime types.
  */
 class GeneratorUtils {
 
-    private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
-    private static final ClassName ROW    = ClassName.get("org.jooq", "Row");
-    private static final ClassName DSL    = ClassName.get("org.jooq.impl", "DSL");
+    // -----------------------------------------------------------------------
+    // Shared ClassName constants (package-private — imported via static import)
+    // -----------------------------------------------------------------------
+
+    /** {@code org.jooq.Record} */
+    static final ClassName RECORD           = ClassName.get("org.jooq", "Record");
+    /** {@code org.jooq.Row} */
+    static final ClassName ROW              = ClassName.get("org.jooq", "Row");
+    /** {@code org.jooq.Result} */
+    static final ClassName RESULT           = ClassName.get("org.jooq", "Result");
+    /** {@code org.jooq.Condition} */
+    static final ClassName CONDITION        = ClassName.get("org.jooq", "Condition");
+    /** {@code org.jooq.SortField} */
+    static final ClassName SORT_FIELD       = ClassName.get("org.jooq", "SortField");
+    /** {@code org.jooq.impl.DSL} */
+    static final ClassName DSL              = ClassName.get("org.jooq.impl", "DSL");
+    /** {@code java.util.List} */
+    static final ClassName LIST             = ClassName.get("java.util", "List");
+    /** {@code graphql.schema.DataFetchingEnvironment} */
+    static final ClassName ENV              = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+    /** {@code graphql.schema.SelectedField} */
+    static final ClassName SELECTED_FIELD   = ClassName.get("graphql.schema", "SelectedField");
+    /** {@code no.sikt.graphql.GraphitronContext} */
+    static final ClassName GRAPHITRON_CONTEXT = ClassName.get("no.sikt.graphql", "GraphitronContext");
+
+    // -----------------------------------------------------------------------
+    // ResolvedTableNames
+    // -----------------------------------------------------------------------
 
     /**
      * The three JavaPoet {@link ClassName}s that every SQL-touching generator method resolves
@@ -50,6 +79,10 @@ class GeneratorUtils {
                 null);
         }
     }
+
+    // -----------------------------------------------------------------------
+    // BatchKey utilities
+    // -----------------------------------------------------------------------
 
     /**
      * Returns the JavaPoet {@link TypeName} for the DataLoader key element type
