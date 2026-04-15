@@ -130,4 +130,4 @@ Selection-driven queries produce different SQL per request (different column lis
 
 ### Error quality
 
-`GraphitronSchemaBuilder` implements `candidateHint(attempt, candidates)` using Levenshtein distance to sort candidates by similarity. Used in 12 places. When adding new jOOQ existence checks in the validator or builder, follow the same pattern — pass the relevant candidate list from `JooqCatalog` to `candidateHint`.
+`BuildContext` implements `candidateHint(attempt, candidates)` using Levenshtein distance to sort candidates by similarity. Used in 14 places (5 in `FieldBuilder`, 5 in `TypeBuilder`, 2 in `BuildContext`, 2 in `ServiceCatalog`). When adding new jOOQ existence checks in the validator or builder, follow the same pattern — pass the relevant candidate list from `JooqCatalog` to `candidateHint`.

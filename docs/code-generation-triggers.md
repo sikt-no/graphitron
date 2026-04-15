@@ -84,15 +84,20 @@ Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
 |---|---|---|
 | `@table` (no `@node`, no `@discriminate`) | `TableType` | `*Fetchers` class + `*` class |
 | `@table` + `@node` | `NodeType` | `*Fetchers` class + `*` class (with Relay ID handling) |
-| `@record` | `ResultType` | `*Fetchers` class only (no SQL scope of its own) |
+| `@record` | `ResultType`* | `*Fetchers` class only (no SQL scope of its own) |
 | `Query` or `Mutation` root type | `RootType` | `*Fetchers` class only |
 | Interface with `@table` + `@discriminate` | `TableInterfaceType` | `*Fetchers` class |
 | Interface without `@table` (multi-table) | `InterfaceType` | `*Fetchers` class |
 | Union type | `UnionType` | `*Fetchers` class |
 | `@error` | `ErrorType` | No generation (error mapping config) |
 | Input type with `@table` | `TableInputType` | Used in mutation generation |
-| Input type without `@table` | `InputType` | No generation (developer-provided class) |
+| Input type without `@table` | `InputType`* | No generation (developer-provided class) |
 | Conflicting or unresolvable directives | `UnclassifiedType` | Validation error — build fails |
+
+**Intermediate sealed interfaces** (not shown in the table — grouping nodes in the hierarchy):
+- `TableBackedType` — groups `TableType`, `NodeType`, `TableInterfaceType`. Builders switch on this to detect table-mapped types.
+- `ResultType` is itself a sealed sub-interface with four concrete variants: `JavaRecordType`, `PojoResultType`, `JooqRecordType`, `JooqTableRecordType` — reflecting how the result class is represented in Java.
+- `InputType` is itself a sealed sub-interface with four concrete variants: `JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType` — same split by Java representation.
 
 ---
 
@@ -114,7 +119,7 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 | `@service`, return `@table` type | `QueryServiceTableField` | Async DataLoader fetcher + `rows*()` method |
 | `@service`, return non-table type | `QueryServiceRecordField` | Field method stub |
 | Return: `@table` type (default) | `QueryTableField` | Full fetcher — condition call + orderBy build + delegates to `Tables.selectMany/selectOne` |
-| Anything else | `UnclassifiedField` | Validation error — build fails |
+| Anything else | `UnclassifiedField`** | Validation error — build fails |
 
 ### Mutation Fields
 
@@ -126,8 +131,8 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 | `@mutation(typeName: UPSERT)` | `MutationUpsertTableField` | Field method stub |
 | `@service`, return `@table` type | `MutationServiceTableField` | Async DataLoader fetcher + `rows*()` method |
 | `@service`, return non-table type | `MutationServiceRecordField` | Field method stub |
-| Neither `@service` nor `@mutation` | `UnclassifiedField` | Validation error — build fails |
-| Both `@service` and `@mutation` | `UnclassifiedField` | Validation error — build fails |
+| Neither `@service` nor `@mutation` | `UnclassifiedField`** | Validation error — build fails |
+| Both `@service` and `@mutation` | `UnclassifiedField`** | Validation error — build fails |
 
 ### Child Fields (on `@table` parent)
 
@@ -156,8 +161,10 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 | Return multi-table interface | `InterfaceField` | Field method stub |
 | Return union | `UnionField` | Field method stub |
 | Return plain object (no `@table`) | `NestingField` | Field method stub (inherits parent table context) |
-| `@notGenerated` | `NotGeneratedField` | Nothing — field is omitted from `wiring()` |
-| Conflicting directives | `UnclassifiedField` | Validation error — build fails |
+| Constructor-mapped field | `ConstructorField` | Field method stub |
+| `@reference` to multi-table interface | `MultitableReferenceField` | Field method stub |
+| `@notGenerated` | `NotGeneratedField`** | Nothing — field is omitted from `wiring()` |
+| Conflicting directives | `UnclassifiedField`** | Validation error — build fails |
 
 ### Child Fields (on `@record` parent)
 
@@ -169,6 +176,17 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 | Return non-table type | `RecordField` | Column method in `wiring()` |
 | `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method |
 | `@service`, return non-table | `ServiceRecordField` | Field method stub |
+
+### Input Fields (on `@table` input parent)
+
+| Schema Pattern | `InputField` Variant | Used for |
+|---|---|---|
+| `@field(name:)` or matching column name | `InputField.ColumnField` | Maps input argument to a table column |
+| `@reference` on input scalar | `InputField.ColumnReferenceField` | Maps input argument to a FK column |
+
+`InputField` is a separate top-level sub-hierarchy of `GraphitronField`, alongside `RootField` and `ChildField`. It classifies fields on `TableInputType` for mutation input processing.
+
+**\*\* `UnclassifiedField` and `NotGeneratedField`** are direct permits of `GraphitronField` — they are not nested under `QueryField`, `MutationField`, or `ChildField`. They are listed in the tables above for completeness, but structurally they sit at the top level of the sealed hierarchy. `TableTargetField` is an intermediate sealed sub-interface of `ChildField` grouping all 8 SQL-generating child field variants (`TableField`, `SplitTableField`, `LookupTableField`, `SplitLookupTableField`, `TableInterfaceField`, `ServiceTableField`, `RecordTableField`, `RecordLookupTableField`).
 
 ---
 
@@ -207,6 +225,8 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 | DataLoader keys | `BatchKey.java` | `RowKeyed` / `RecordKeyed` / `ObjectBased` |
 | Ordering | `OrderBySpec.java` | `Fixed` / `Argument` / `None` |
 | Pagination | `PaginationSpec.java` | Relay cursor arguments |
+| Argument extraction | `CallSiteExtraction.java` | `Direct` / `EnumValueOf` / `TextMapLookup` / `ContextArg` / `JooqConvert` |
+| Input field hierarchy | `InputField.java` | Sealed interface — `ColumnField` / `ColumnReferenceField` for mutation inputs |
 | Condition params | `CallParam.java`, `BodyParam.java` | Call-site vs body-generation views |
 
 ### Builders (root package)
