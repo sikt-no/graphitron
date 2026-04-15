@@ -129,6 +129,6 @@ Steps 1-3 are mechanical and can be done together. Step 4 is an enhancement. Ste
 |---|---|
 | `model/MethodRef.java` | Add `callParams()` method |
 | `model/ConditionFilter.java` | Delegate `callParams()` to `method.callParams()`, remove `toExtraction()` |
-| `generators/TypeFieldsGenerator.java` | Refactor `buildServiceRowsMethod()` to use `callParams()` + `buildArgExtraction()` |
+| `generators/TypeFetcherGenerator.java` | Refactor `buildServiceRowsMethod()` to use `callParams()` + `buildArgExtraction()` |
 | `ServiceCatalog.java` | No change for steps 1-3; enum detection in step 4 |
 | `FieldBuilder.java` | No change for steps 1-3; extraction-strategy resolution for service params in step 4 |
