@@ -133,6 +133,21 @@ class FieldBuilder {
     private record ServiceResolution(MethodRef method, ReturnTypeRef returnType, String error) {}
 
     /**
+     * Extracts the {@link BatchKey} from the first {@link MethodRef.Param.Sourced} parameter of the
+     * given method, or {@code null} when the method has no such parameter.
+     *
+     * <p>A {@code null} result means the service method lacks the required {@code Sources}
+     * parameter — the validator will surface this as an error before code generation runs.
+     */
+    private static BatchKey extractBatchKey(MethodRef method) {
+        return method.params().stream()
+            .filter(p -> p instanceof MethodRef.Param.Sourced)
+            .map(p -> ((MethodRef.Param.Sourced) p).batchKey())
+            .findFirst()
+            .orElse(null);
+    }
+
+    /**
      * Resolves the {@code @service} directive on a field: unwraps connection types, parses the
      * external reference, reflects the service method, and returns the resolved method + return type.
      * Returns a non-null {@code error} when resolution fails.
@@ -962,7 +977,8 @@ class FieldBuilder {
             return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new ServiceTableField(parentTypeName, name, location, tb,
-                        servicePath.elements(), List.of(), new OrderBySpec.None(), null, svcResult.method());
+                        servicePath.elements(), List.of(), new OrderBySpec.None(), null,
+                        svcResult.method(), extractBatchKey(svcResult.method()));
                 case ReturnTypeRef.ResultReturnType r ->
                     new ServiceRecordField(parentTypeName, name, location, r, servicePath.elements(), svcResult.method());
                 case ReturnTypeRef.ScalarReturnType s ->
@@ -1024,7 +1040,8 @@ class FieldBuilder {
             return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new ServiceTableField(parentTypeName, name, location, tb,
-                        servicePath.elements(), List.of(), new OrderBySpec.None(), null, svcResult.method());
+                        servicePath.elements(), List.of(), new OrderBySpec.None(), null,
+                        svcResult.method(), extractBatchKey(svcResult.method()));
                 case ReturnTypeRef.ResultReturnType r ->
                     new ServiceRecordField(parentTypeName, name, location, r, servicePath.elements(), svcResult.method());
                 case ReturnTypeRef.ScalarReturnType s ->

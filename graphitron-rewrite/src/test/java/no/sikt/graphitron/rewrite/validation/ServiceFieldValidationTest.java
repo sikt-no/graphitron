@@ -76,7 +76,8 @@ class ServiceFieldValidationTest {
                     new FieldWrapper.Single(true)),
                 List.of(), List.of(), new OrderBySpec.None(), null,
                 new MethodRef.Basic("com.example.FilmService", "getFilms", "java.lang.Object",
-                    List.of(new MethodRef.Param.Sourced("filmKeys", new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))))))),
+                    List.of(new MethodRef.Param.Sourced("filmKeys", new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))))),
+                new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))),
             List.of());
 
         private final String description;
@@ -144,7 +145,8 @@ class ServiceFieldValidationTest {
         return new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
             List.of(), List.of(), new OrderBySpec.None(), null,
             new MethodRef.Basic("com.example.FilmService", "getFilms", "java.lang.Object",
-                List.of(new MethodRef.Param.Sourced("filmKeys", batchKey))));
+                List.of(new MethodRef.Param.Sourced("filmKeys", batchKey))),
+            batchKey);
     }
 
     enum TablePkValidationCase implements TablePkCase {
@@ -194,7 +196,8 @@ class ServiceFieldValidationTest {
                 new MethodRef.Basic("com.example.FilmService", "getFilms", "java.lang.Object",
                     List.of(
                         new MethodRef.Param.Sourced("filmKeys1", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
-                        new MethodRef.Param.Sourced("filmKeys2", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns()))))),
+                        new MethodRef.Param.Sourced("filmKeys2", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())))),
+                new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
             List.of());
 
         private final String description;

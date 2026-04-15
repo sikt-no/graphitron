@@ -382,8 +382,7 @@ public class TypeFetcherGenerator {
         var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
 
-        var sourcesParam = smr.sourcedParam();
-        var batchKey = sourcesParam.batchKey();
+        var batchKey = sf.batchKey();
         TypeName keyType = keyElementType(batchKey);
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         String rowsMethodName = sf.rowsMethodName();
@@ -457,8 +456,7 @@ public class TypeFetcherGenerator {
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         var returnType = isList ? ParameterizedTypeName.get(LIST, listOfRecord) : listOfRecord;
 
-        var sourcesParam = smr.sourcedParam();
-        TypeName keysElementType = keyElementType(sourcesParam.batchKey());
+        TypeName keysElementType = keyElementType(sf.batchKey());
 
         var builder = MethodSpec.methodBuilder(sf.rowsMethodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -482,8 +480,8 @@ public class TypeFetcherGenerator {
             String.join(", ", serviceCallArgs));
 
         var typeClass = GeneratorUtils.ResolvedTableNames.of(rt, tb.returnTypeName()).typeClass();
-        String selectManyName = sourcesParam.batchKey().selectManyMethodName();
-        String selectOneName  = sourcesParam.batchKey().selectOneMethodName();
+        String selectManyName = sf.batchKey().selectManyMethodName();
+        String selectOneName  = sf.batchKey().selectOneMethodName();
         if (isList) {
             builder.addStatement("return $T.$L(keys, env, sel, ($T<?>) serviceResult)",
                 typeClass, selectManyName, List.class);

@@ -114,7 +114,12 @@ public sealed interface ChildField extends GraphitronField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         BatchKey batchKey
-    ) implements TableTargetField {}
+    ) implements TableTargetField, BatchKeyField {
+        @Override
+        public String rowsMethodName() {
+            return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
+        }
+    }
 
     record LookupTableField(
         String parentTypeName,
@@ -137,7 +142,12 @@ public sealed interface ChildField extends GraphitronField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         BatchKey batchKey
-    ) implements TableTargetField {}
+    ) implements TableTargetField, BatchKeyField {
+        @Override
+        public String rowsMethodName() {
+            return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
+        }
+    }
 
     /**
      * A child field using {@code @tableMethod} — the developer provides a pre-filtered
@@ -209,6 +219,13 @@ public sealed interface ChildField extends GraphitronField
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
      */
+    /**
+     * @param batchKey the batch key derived from the service method's {@link MethodRef.Param.Sourced}
+     *     parameter at classification time, or {@code null} when the method has no such parameter.
+     *     A {@code null} batch key means the field will fail validation — the validator reports the
+     *     missing {@code Sources} parameter. Generation never sees a {@code null} batch key because
+     *     validation is a prerequisite.
+     */
     record ServiceTableField(
         String parentTypeName,
         String name,
@@ -218,9 +235,10 @@ public sealed interface ChildField extends GraphitronField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
-        MethodRef method
-    ) implements TableTargetField, MethodBackedField {
-        /** The name of the generated batch-rows helper method (e.g. {@code "loadFilms"}). */
+        MethodRef method,
+        BatchKey batchKey
+    ) implements TableTargetField, MethodBackedField, BatchKeyField {
+        @Override
         public String rowsMethodName() {
             return "load" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
         }

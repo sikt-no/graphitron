@@ -392,7 +392,8 @@ class TypeFetcherGeneratorTest {
         );
         return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
-            List.of(), List.of(), new OrderBySpec.None(), null, method);
+            List.of(), List.of(), new OrderBySpec.None(), null, method,
+            new BatchKey.RowKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer"))));
     }
 
     private static TypeSpec specWithServiceField(String parentType, String fieldName, boolean isList) {
