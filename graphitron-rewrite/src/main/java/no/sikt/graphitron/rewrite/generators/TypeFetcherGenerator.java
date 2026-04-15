@@ -473,7 +473,7 @@ public class TypeFetcherGenerator {
             .addParameter(SELECTED_FIELD, "sel");
 
         for (var param : smr.callParams()) {
-            builder.addStatement("var $L = $L", param.name(), buildArgExtraction(param, smr.className()));
+            builder.addStatement("$T $L = $L", Object.class, param.name(), buildArgExtraction(param, smr.className()));
         }
 
         var serviceCallArgs = smr.params().stream()
