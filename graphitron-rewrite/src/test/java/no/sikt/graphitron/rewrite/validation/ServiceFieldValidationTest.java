@@ -78,7 +78,17 @@ class ServiceFieldValidationTest {
                 new MethodRef.Basic("com.example.FilmService", "getFilms", "java.lang.Object",
                     List.of(new MethodRef.Param.Sourced("filmKeys", new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))))),
                 new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))),
-            List.of());
+            List.of()),
+
+        NO_SOURCES_PARAM("no Sources param — missing DataLoader batch key error",
+            new ServiceTableField("Film", "externalChild", null,
+                new ReturnTypeRef.TableBoundReturnType("Film",
+                    new TableRef("film", "FILM", "Film", List.of()),
+                    new FieldWrapper.Single(true)),
+                List.of(), List.of(), new OrderBySpec.None(), null,
+                new MethodRef.Basic("com.example.FilmService", "getFilms", "java.lang.Object", List.of()),
+                null),
+            List.of("Field 'externalChild': @service on a table-bound return type requires a Sources parameter for DataLoader batching"));
 
         private final String description;
         private final GraphitronField field;

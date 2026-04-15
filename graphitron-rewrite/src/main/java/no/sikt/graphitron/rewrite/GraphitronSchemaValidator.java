@@ -337,6 +337,16 @@ public class GraphitronSchemaValidator {
 
         var smr = field.method();
 
+        // A table-bound service field requires at least one Sources parameter for DataLoader batching.
+        boolean hasSources = smr.params().stream().anyMatch(p -> p instanceof MethodRef.Param.Sourced);
+        if (!hasSources) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': @service on a table-bound return type requires a Sources parameter for DataLoader batching",
+                field.location()
+            ));
+            return;
+        }
+
         // For Row-keyed and Record-keyed, the parent must have a PK so the key
         // expression can be built. ObjectBased uses the whole parent as the key.
         boolean hasRowOrRecordKeyed = smr.params().stream()
@@ -345,7 +355,7 @@ public class GraphitronSchemaValidator {
             .anyMatch(s -> s instanceof BatchKey.RowKeyed || s instanceof BatchKey.RecordKeyed);
 
         if (!hasRowOrRecordKeyed) {
-            return; // TableRecordKeyed — no PK constraint on the parent table
+            return; // ObjectBased — no PK constraint on the parent table
         }
 
         var parentType = types.get(field.parentTypeName());
