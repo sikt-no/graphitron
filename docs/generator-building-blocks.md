@@ -1,192 +1,27 @@
 # Generator Building Blocks
 
-Design document for extracting common abstractions from the rewrite generators ahead of the remaining stub implementations.
+What's been extracted, what's next, and how it connects to the remaining stub work.
 
-## Motivation
+## What's in place
 
-The three main generators (`TypeFetcherGenerator`, `TypeClassGenerator`, `TypeConditionsGenerator`) share structural patterns that are currently copy-pasted across methods. As more stubs get implemented (inline `TableField`, split/lookup fields, mutations, batch select methods), each will need the same patterns. Extracting them now — while the code is still small — makes the remaining work compositional rather than duplicative.
+**`GeneratorUtils.ResolvedTableNames`** — resolves the three ClassNames (tablesClass, jooqTableClass, typeClass) from a `TableRef`. Used across all three generators. Two factory methods: `of(tableRef, returnTypeName)` for the full triple, `ofTable(tableRef)` when typeClass isn't needed.
 
-Every pattern identified below already exists in at least two places in the current code. Nothing here is speculative.
+**`MethodRef` as sealed interface** — `callParams()` and `sourcedParam()` are default methods. `MethodRef.Basic` is the concrete record. `ConditionFilter` implements both `WhereFilter` and `MethodRef` directly.
 
-## Pattern 1: Table name resolution
+**`MethodBackedField` capability interface** — 8 field variants implement it. Orthogonal to the sealed hierarchy, like `SqlGeneratingField`.
 
-**Problem:** Every SQL-touching method resolves the same trio of ClassNames from a `TableRef`:
+**`CallParam` with `typeName`** — the generator emits typed locals (`String filter = ...`) instead of erased `Object`.
 
-```java
-var tablesClass    = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
-var jooqTableClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName());
-var typeClass      = ClassName.get(RewriteConfig.outputPackage() + ".rewrite.types", returnTypeName);
-```
+**Unified `buildCallArgs(List<CallParam>, String)`** — one method for both condition and lookup call-arg construction.
 
-This appears in `buildQueryTableFetcher`, `buildQueryLookupRowsMethod`, `buildServiceDataFetcher`, `buildServiceRowsMethod`, `TypeClassGenerator.buildSelectManyMethod`, `buildSelectOneMethod`, `buildSubselectManyMethod`, `buildSubselectOneMethod`, `buildFieldsMethod`, and `TypeConditionsGenerator.buildConditionMethod`.
+## What's next
 
-**Proposal:** A record that resolves these once:
+### 1. `BatchKeyField` interface and batchKey promotion
 
-```java
-record ResolvedTableNames(ClassName tablesClass, ClassName jooqTableClass, ClassName typeClass) {
-    static ResolvedTableNames of(TableRef tableRef, String returnTypeName) {
-        return new ResolvedTableNames(
-            ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables"),
-            ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName()),
-            ClassName.get(RewriteConfig.outputPackage() + ".rewrite.types", returnTypeName));
-    }
-}
-```
-
-Every generator method receives this instead of recomputing. The `table` local variable declaration (pattern 5 below) also uses it.
-
-## Pattern 2: Table local variable declaration
-
-**Problem:** Nearly every SQL method opens with:
-
-```java
-builder.addStatement("$T table = $T.$L", jooqTableClass, tablesClass, tableRef.javaFieldName());
-```
-
-Appears in `buildQueryTableFetcher`, `buildQueryLookupRowsMethod`, and all five SQL methods in `TypeClassGenerator`. Always named `table`, always using the same resolved ClassNames.
-
-**Proposal:** A shared method:
-
-```java
-static CodeBlock declareTableLocal(ResolvedTableNames names, TableRef tableRef) {
-    return CodeBlock.of("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName());
-}
-```
-
-Or, since it always appears as a statement on a `MethodSpec.Builder`, a one-liner that adds it directly.
-
-## Pattern 3: Key type construction
-
-**Problem:** `keyElementType`, `buildRowKeyType`, `buildRecordNKeyType` convert `BatchKey` → JavaPoet `TypeName`. They're private to `TypeFetcherGenerator` but used by `buildServiceDataFetcher`, `buildServiceRowsMethod`, `buildSplitRowsMethod`, and will be needed by every future DataLoader-backed field type.
-
-They're pure functions: `BatchKey` → `TypeName`, no generator state.
-
-**Proposal:** Move to a shared utility (e.g., `GeneratorUtils`) or onto `BatchKey` itself as a model-level concern (since `BatchKey` already carries `javaTypeName()` as a string — this would be the JavaPoet equivalent).
-
-## Pattern 4: Sourced param lookup
-
-**Problem:** The same stream chain appears in both `buildServiceDataFetcher` (line 382) and `buildServiceRowsMethod` (line 461):
-
-```java
-var sourcesParam = smr.params().stream()
-    .filter(p -> p instanceof MethodRef.Param.Sourced)
-    .map(p -> (MethodRef.Param.Sourced) p)
-    .findFirst()
-    .orElseThrow();
-```
-
-**Proposal:** Add to `MethodRef`:
-
-```java
-public Param.Sourced sourcedParam() {
-    return params.stream()
-        .filter(p -> p instanceof Param.Sourced)
-        .map(p -> (Param.Sourced) p)
-        .findFirst()
-        .orElseThrow();
-}
-```
-
-Analogous to the existing `callParams()` — a derived accessor for a specific subset of params.
-
-## Pattern 5: Condition call-args builders
-
-**Problem:** `buildCallArgs(WhereFilter)` and `buildLookupCallArgs(GeneratedConditionFilter)` are near-duplicates. Both produce `table, arg1, arg2, ...`. The only difference: one iterates `callParams()` directly, the other iterates `bodyParams()` and wraps each in `new CallParam(...)`.
-
-**Proposal:** Unify into one method that takes `List<CallParam>`:
-
-```java
-static CodeBlock buildCallArgs(List<CallParam> params, String conditionsClassName) {
-    var args = CodeBlock.builder();
-    args.add("table");
-    for (var param : params) {
-        args.add(", $L", buildArgExtraction(param, conditionsClassName));
-    }
-    return args.build();
-}
-```
-
-The lookup path constructs its `List<CallParam>` from `bodyParams()` before calling. This also makes `buildArgExtraction` usable without the intermediate `buildCallArgs` wrapper.
-
-## Pattern 6: DataLoader setup template
-
-**Problem:** `buildServiceDataFetcher` (70 lines) follows a rigid template that will be needed by every DataLoader-backed field type. The template has five fixed steps:
-
-1. Resolve key type from `BatchKey` (pattern 3)
-2. Resolve value type from wrapper (`isList` → `List<Record>` or `Record`)
-3. Build lambda: `(keys, batchEnv) -> { extract dfe, extract sel, call rows method }`
-4. Emit `computeIfAbsent(name, k -> DataLoaderFactory.newDataLoaderWithContext(lambda))`
-5. Extract key from `env.getSource()` via `BatchKey` switch (RowKeyed → `DSL.row(...)`, RecordKeyed → `into(...)`, ObjectBased → cast)
-6. Emit `loader.load(key, env)`
-
-Steps 1, 3-6 are identical for every DataLoader-backed field. Step 2 varies only by wrapper. Step 5 is a pure function of `(BatchKey, parentTable)` → `CodeBlock`.
-
-**Proposal:** Extract step 5 (key extraction from source) as a standalone building block:
-
-```java
-static CodeBlock buildKeyExtraction(BatchKey batchKey, TableRef parentTable, TypeName keyType) { ... }
-```
-
-The full DataLoader setup can then be composed from: key type (pattern 3) + key extraction + a rows-method-name string. Whether we extract the full template or just the key extraction piece depends on how much the lambda body varies across field types — service fields call a service then delegate to the type class; split fields will do SQL directly. The key extraction is the clearly reusable part.
-
-## Pattern 7: Shared ClassName constants
-
-**Problem:** `TypeFetcherGenerator` and `TypeClassGenerator` both declare private `static final ClassName` constants for the same jOOQ and GraphQL types (`RECORD`, `RESULT`, `CONDITION`, `DSL`, `ENV`, `SORT_FIELD`, `LIST`, etc.). `TypeConditionsGenerator` has its own subset.
-
-**Proposal:** A shared constants class (e.g., `GeneratorTypes` or placed in a `GeneratorUtils` class alongside patterns 1-3):
-
-```java
-static final ClassName RECORD    = ClassName.get("org.jooq", "Record");
-static final ClassName RESULT    = ClassName.get("org.jooq", "Result");
-static final ClassName CONDITION = ClassName.get("org.jooq", "Condition");
-static final ClassName DSL       = ClassName.get("org.jooq.impl", "DSL");
-static final ClassName ENV       = ClassName.get("graphql.schema", "DataFetchingEnvironment");
-// ...
-```
-
-This is the lowest-value extraction (it's just deduplication, not an abstraction), but it eliminates the drift risk when a new generator needs the same constants.
-
-## Extraction order
-
-| Order | Pattern | Complexity | Impact | Files touched |
-|---|---|---|---|---|
-| 1 | Pattern 4: `MethodRef.sourcedParam()` | Trivial | Eliminates duplicate stream chain | `MethodRef.java`, `TypeFetcherGenerator.java` |
-| 2 | Pattern 1: `ResolvedTableNames` | Small | Eliminates ~30 repeated lines across all generators | New record, `TypeFetcherGenerator.java`, `TypeClassGenerator.java`, `TypeConditionsGenerator.java` |
-| 3 | Pattern 5: Unified `buildCallArgs` | Small | Collapses two near-duplicate methods | `TypeFetcherGenerator.java` |
-| 4 | Pattern 3: Key type utility | Small | Unblocks all DataLoader field implementations | Extract from `TypeFetcherGenerator.java` to shared utility |
-| 5 | Pattern 6: Key extraction from source | Medium | Unblocks split/lookup field implementations | Extract from `TypeFetcherGenerator.java` to shared utility |
-| 6 | Pattern 2: Table local declaration | Trivial | Minor cleanup, follows naturally from pattern 1 | All generators |
-| 7 | Pattern 7: Shared constants | Trivial | Drift prevention | All generators |
-
-Patterns 1-5 are worth doing now — they directly unblock or simplify the remaining stub work. Patterns 6-7 are polish that can happen alongside or after.
-
-## Capability interfaces on the model
-
-The building blocks above are shared *functions*. But the dispatch in `generateTypeSpec` is an N-way `instanceof` chain that grows with each field variant. Capability interfaces on the sealed hierarchy let the generator match on *what a field can do* rather than *which specific variant it is*.
-
-`SqlGeneratingField` already proves the pattern: 11 variants across `QueryField` and `ChildField.TableTargetField` implement it, and the generator accesses `filters()`, `orderBy()`, `pagination()` uniformly.
-
-### Precedent: MethodRef as interface
-
-The `MethodRef` refactoring (commit `dfb6917`) converted `MethodRef` from a record to a sealed interface. `ConditionFilter` now implements both `WhereFilter` and `MethodRef` directly — a condition method IS a method reference. `MethodRef.Basic` is the concrete record for service/table method references resolved from reflection.
-
-This establishes the pattern: an interface defines a capability contract (`className()`, `methodName()`, `params()`, `callParams()`), and types implement it directly when they ARE that thing, or carry an instance when they HAVE one.
-
-### Proposed interfaces
-
-**`MethodBackedField`** — "this field delegates to a user-provided Java method"
-
-```java
-public interface MethodBackedField {
-    MethodRef method();
-}
-```
-
-7 variants carry `method: MethodRef` today: `ServiceTableField`, `TableMethodField`, `ServiceRecordField`, `QueryTableMethodTableField`, `QueryServiceTableField`, `QueryServiceRecordField`, `MutationServiceTableField`, `MutationServiceRecordField`.
-
-The generator uses `mbf.method().callParams()` for argument extraction — one code path for all 7.
-
-**`BatchKeyField`** — "this field uses a DataLoader with a batch key"
+The second capability interface. Fields that need DataLoader setup all have a batch key, but it's accessed differently:
+- `SplitTableField`, `SplitLookupTableField` — direct `batchKey()` component
+- `ServiceTableField` — `method().sourcedParam().batchKey()`
+- `RecordTableField`, `RecordLookupTableField` — will need one (parent PK), not yet classified
 
 ```java
 public interface BatchKeyField {
@@ -195,39 +30,40 @@ public interface BatchKeyField {
 }
 ```
 
-Currently `batchKey` is explicit on `SplitTableField` and `SplitLookupTableField`. `ServiceTableField` accesses it via `method().sourcedParam().batchKey()`. `RecordTableField` and `RecordLookupTableField` will need it once their stubs are implemented (keyed by parent PK).
+**Work:** Promote `batchKey` as a direct component on `ServiceTableField` (builder extracts it from `MethodRef` at classify time). Add `batchKey` to `RecordTableField` / `RecordLookupTableField` in the builder (derived from parent PK). All five variants implement `BatchKeyField`.
 
-The builder should promote `batchKey` to a direct component on all DataLoader-backed variants, so the interface contract is clean and uniform.
+### 2. Key type and key extraction → GeneratorUtils
 
-### How interfaces compose with building blocks
+`keyElementType`, `buildRowKeyType`, `buildRecordNKeyType` are pure functions (`BatchKey` → `TypeName`) private to `TypeFetcherGenerator`. Move to `GeneratorUtils`.
 
-The building blocks become methods that take interface types:
+The BatchKey switch that builds key extraction from `env.getSource()` (lines 413-438 of `buildServiceDataFetcher`) is a pure function of `(BatchKey, TableRef parentTable, TypeName keyType)` → `CodeBlock`. Extract to `GeneratorUtils.buildKeyExtraction(...)`.
+
+### 3. Refactor generator dispatch to use capability interfaces
+
+The N-way `instanceof` chain in `generateTypeSpec` (lines 103-125) doesn't yet use `MethodBackedField` or `SqlGeneratingField`. The refactoring collapses it:
 
 ```java
-// Before: specific types, N branches
-if (field instanceof ChildField.ServiceTableField sf) {
-    buildServiceDataFetcher(sf, sf.method(), sf.returnType(), parentTable, className);
-}
-
-// After: capability interface, 1 branch for all DataLoader fields
+// DataLoader-backed fields (ServiceTableField, SplitTableField, SplitLookupTableField, RecordTableField, ...)
 if (field instanceof BatchKeyField bkf && field instanceof SqlGeneratingField sgf) {
     builder.addMethod(buildDataLoaderFetcher(bkf, sgf, parentTable, className));
-    builder.addMethod(buildRowsMethod(bkf, sgf, parentTable));
+    if (field instanceof MethodBackedField mbf) {
+        builder.addMethod(buildServiceRowsMethod(bkf, mbf, sgf, parentTable));
+    } else {
+        builder.addMethod(buildSqlRowsMethod(bkf, sgf, parentTable));  // split/record fields
+    }
 }
 ```
 
-A `ServiceTableField` implements `BatchKeyField`, `SqlGeneratingField`, and `MethodBackedField`. The generator composes: DataLoader setup (from `BatchKeyField`) + service call (from `MethodBackedField`) + condition/orderBy (from `SqlGeneratingField`).
+The service vs non-service distinction is the only branch within the DataLoader path — service fields call a user method then delegate to the type class; non-service fields do SQL directly. The DataLoader setup itself (key type, key extraction, computeIfAbsent, loader.load) is identical for all.
 
-### Order relative to building blocks
+**Prerequisite:** Steps 1 and 2 must be done first.
 
-Interfaces come first:
-1. Add `MethodBackedField` (trivial — 7 records add `implements MethodBackedField`)
-2. Promote `batchKey` onto DataLoader-backed variants, add `BatchKeyField`
-3. Extract building blocks that take interface types
-4. Refactor `generateTypeSpec` dispatch to match on capabilities
+### 4. Table local declaration and shared constants
 
-## Non-goals
+Minor polish. `GeneratorUtils.declareTableLocal(names, tableRef)` eliminates a repeated statement across ~7 methods. Shared ClassName constants (`RECORD`, `CONDITION`, `DSL`, `ENV`, etc.) prevent drift between generators. Low priority — do alongside other work.
 
-- **No base class or framework.** The generators are static utility classes and should stay that way. The building blocks are shared functions, not an inheritance hierarchy.
-- **No "template engine."** The generated code varies enough between field types that a rigid template would fight the domain. Composable building blocks that each generator method assembles freely is the right level.
-- **No speculative abstractions.** Every pattern listed here exists in 2+ places today. Patterns that might emerge from future stub implementations are not pre-extracted.
+## Relationship to other design docs
+
+**[call-site-unification.md](call-site-unification.md)** — Steps 1-3 are done (`MethodRef.callParams()`, service rows method uses it, `CallParam` has `typeName`). Remaining: enum/text-map detection for service params in the builder (step 4 in that doc). This is independent of the work above.
+
+**[rewrite-roadmap.md](rewrite-roadmap.md)** — The remaining stubs (inline TableField, split/lookup rows methods, mutations, batch select) become simpler once steps 1-3 here are done. Each stub composes the building blocks rather than duplicating patterns.
