@@ -1,0 +1,8 @@
+# Verify explicit null vs absent field handling using jOOQ record changed() status (GG-407)
+mutation CheckJooqChangedStatus($input: CustomerInput!) {
+    checkJooqChangedStatus(input: $input) {
+        results {
+            firstNameStatus
+        }
+    }
+}

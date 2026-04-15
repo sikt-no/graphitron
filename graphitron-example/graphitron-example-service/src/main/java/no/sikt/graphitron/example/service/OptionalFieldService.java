@@ -1,5 +1,8 @@
 package no.sikt.graphitron.example.service;
 
+import no.sikt.graphitron.example.generated.jooq.tables.Customer;
+import no.sikt.graphitron.example.generated.jooq.tables.records.CustomerRecord;
+import no.sikt.graphitron.example.service.records.JooqChangedStatusResult;
 import no.sikt.graphitron.example.service.records.OptionalFieldInput;
 import no.sikt.graphitron.example.service.records.OptionalFieldResult;
 import org.jooq.DSLContext;
@@ -25,5 +28,19 @@ public class OptionalFieldService {
             return "OMITTED";
         }
         return field.map(Object::toString).orElse("EXPLICIT_NULL");
+    }
+
+    public List<JooqChangedStatusResult> checkJooqChangedStatus(CustomerRecord input) {
+        return List.of(new JooqChangedStatusResult(
+                describeChangedState(input)
+        ));
+    }
+
+    private static String describeChangedState(CustomerRecord record) {
+        if (!record.changed(Customer.CUSTOMER.FIRST_NAME)) {
+            return "OMITTED";
+        }
+        String value = record.getFirstName();
+        return value == null ? "EXPLICIT_NULL" : value;
     }
 }

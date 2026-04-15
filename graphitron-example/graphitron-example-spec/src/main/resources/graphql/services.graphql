@@ -128,7 +128,7 @@ extend type Mutation {
             method: "check"
         }
     )
-    """Test explicit null vs absent handling for service operations with Optional fields (GG-407)"""
+    """Test explicit null vs absent handling for service operations with Optional fields"""
     checkOptionalFields(input: [OptionalFieldServiceInput!]!)
     : OptionalFieldCheckPayload @service(
         service: {
@@ -136,6 +136,15 @@ extend type Mutation {
             method: "checkOptionalFields"
         }
     )
+    """Test explicit null vs absent handling for service operations with jOOQ record changed() status (GG-407)"""
+    checkJooqChangedStatus(input: CustomerInput!)
+    : JooqChangedStatusPayload @service(
+        service: {
+            className: "no.sikt.graphitron.example.service.OptionalFieldService",
+            method: "checkJooqChangedStatus"
+        }
+    )
+
     checkWrappedFieldPresence(in: [WrappedFieldInput!]!)
     : [WrappedFieldResult] @service(
         service: {
@@ -238,6 +247,14 @@ type NestedRecordResult @record(record: {className: "no.sikt.graphitron.example.
     middleField: String
     deepField: String
     deepNumber: Int
+}
+
+type JooqChangedStatusPayload {
+    results: [JooqChangedStatusResult!]
+}
+
+type JooqChangedStatusResult @record(record: {className: "no.sikt.graphitron.example.service.records.JooqChangedStatusResult"}) {
+    firstNameStatus: String
 }
 
 extend type City {

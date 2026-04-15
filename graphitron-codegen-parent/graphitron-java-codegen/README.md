@@ -1067,16 +1067,29 @@ public class CustomerService {
 ```
 #### Explicit null vs not provided in services
 
-##### jOOQ records
-To distinguish between explicit null from omitted one can track the `changed()` status of the jOOQ record.
+##### jOOQ record inputs
+To distinguish between explicit null from omitted one can track the `changed()` status of the jOOQ record in the service code.
 If the jOOQ record's `changed()` status is `true` for a given field, then the value was provided (even if it was `null`).
 If `changed()` is `false`, the field was omitted from the request entirely.
 
-For `@mutation` insert operations, Graphitron's generated queries use this automatically — omitted fields fall back to the database column default, while explicitly provided `null` values are inserted as `null`.
+_Example service code_:
+```java
+public Customer updateCustomer(CustomerRecord record) {
+    if (record.changed(CUSTOMER.FIRST_NAME)) {
+        // Field was provided (value may be null or non-null)
+    } else {
+        // Field was omitted from the request entirely — do not update
+    }
+}
+```
 
-##### Java records (experimental)
+For `@mutation` insert operations, Graphitron's generated queries use this automatically: omitted fields fall back to the database column default, while explicitly provided `null` values are inserted as `null`.
+
+##### Java record inputs (experimental)
 
 > **Note:** This feature is experimental and may change in future versions.
+
+> ⚠️ Important: This pattern intentionally uses null on an Optional field to represent "omitted". This goes against conventional Java usage of Optional. See the table below for the three states.
 
 For Java records (using `@record`), Graphitron does not have built-in `changed()` tracking.
 Instead, you can use `Optional<T>` setter parameters to distinguish between three states for a nullable input field:
