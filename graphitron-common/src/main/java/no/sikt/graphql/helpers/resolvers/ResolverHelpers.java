@@ -1,11 +1,11 @@
 package no.sikt.graphql.helpers.resolvers;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jooq.Field;
+import org.jooq.UpdatableRecord;
 
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class ResolverHelpers {
@@ -88,5 +88,54 @@ public class ResolverHelpers {
             map.put((String) keysAndValues[i], keysAndValues[i + 1]);
         }
         assertSameColumnValues(map);
+    }
+
+    /**
+     * Prepares jOOQ table records for a {@code store()} call by reconciling input with existing database state.
+     * For records with matching keys, non-PK fields that are touched in {@code inputRecords} are applied onto
+     * the corresponding record in {@code existingRecords}, preparing them for UPDATE.
+     * For records without a match, the record is added as-is with its PK fields marked as touched to trigger an INSERT.
+     *
+     * @param existingRecords records fetched from the database
+     * @param inputRecords new records whose touched fields will be applied
+     * @return list of records ready for store
+     */
+    public static <T extends UpdatableRecord<T>> List<T> prepareRecordsForStore(List<T> existingRecords, List<T> inputRecords) {
+        var preparedRecords = new ArrayList<T>();
+        var existingByKey = existingRecords.stream().collect(Collectors.toMap(UpdatableRecord::key, Function.identity()));
+        inputRecords.forEach(r -> {
+            if (existingByKey.containsKey(r.key())) {
+                var prepared = applyTouchedFields(existingByKey.get(r.key()), r);
+                preparedRecords.add(prepared);
+            } else {
+                r.key().fieldStream().forEach(f -> r.changed(f, true)); // Set PK to changed to trigger an INSERT
+                preparedRecords.add(r);
+            }
+        });
+        return preparedRecords;
+    }
+
+    /**
+     * Prepares a single record for a jOOQ {@code store()} call by matching it against existing records.
+     *
+     * @param existingRecords records fetched from the database, matched by primary key
+     * @param inputRecord record whose touched fields will be applied
+     * @return the prepared record, or {@code null} if no match was found
+     */
+    public static <T extends UpdatableRecord<T>> T prepareRecordsForStore(List<T> existingRecords, T inputRecord) {
+        return prepareRecordsForStore(existingRecords, List.of(inputRecord)).stream().findFirst()
+                .orElseThrow(() -> new RuntimeException("Preparing TableRecord for store failed."));
+    }
+
+    private static <T extends UpdatableRecord<T>> T applyTouchedFields(T existingRecord, T inputRecord) {
+        inputRecord.fieldStream()
+                .filter(it -> existingRecord.key().fieldStream().noneMatch(pkField -> pkField.equals(it)))
+                .filter(inputRecord::changed)
+                .forEach(field -> setField(existingRecord, field, inputRecord));
+        return existingRecord;
+    }
+
+    private static <V> void setField(UpdatableRecord<?> target, Field<V> field, UpdatableRecord<?> source) {
+        target.set(field, source.get(field));
     }
 }

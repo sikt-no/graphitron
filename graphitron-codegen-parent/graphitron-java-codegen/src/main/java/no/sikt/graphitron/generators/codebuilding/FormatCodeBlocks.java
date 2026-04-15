@@ -27,8 +27,7 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArra
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
-import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldNamesForKey;
-import static no.sikt.graphitron.mappings.TableReflection.getTableByJavaFieldName;
+import static no.sikt.graphitron.mappings.TableReflection.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -687,9 +686,20 @@ public class FormatCodeBlocks {
      * Returns condition for filtering on resolver key.
      */
     public static CodeBlock inResolverKeysBlock(String resolverKeyParamName, FetchContext context) {
+        return inResolverKeysBlock(resolverKeyParamName, context.getResolverKey().key(), context.getTargetTableName(), context.getTargetAlias());
+    }
+
+    /**
+     * Returns condition for filtering on resolver key, using the table's primary key.
+     */
+    public static CodeBlock inResolverKeysBlock(String resolverKeyParamName, String targetTableJavaName) {
+        return inResolverKeysBlock(resolverKeyParamName, getPrimaryKeyForTable(targetTableJavaName).orElseThrow(), targetTableJavaName, targetTableJavaName);
+    }
+
+    private static CodeBlock inResolverKeysBlock(String resolverKeyParamName, Key<?> key, String tableName, String alias) {
         return CodeBlock.of(
                 "$1L.in($2N.stream().map($3N -> $3N.key().valuesRow()).toList())",
-                wrapRow(commaSeparatedKeyFields(context.getResolverKey().key(), context.getTargetTableName(), context.getTargetAlias())),
+                wrapRow(commaSeparatedKeyFields(key, tableName, alias)),
                 resolverKeyParamName,
                 VAR_ITERATOR
         );
@@ -726,7 +736,7 @@ public class FormatCodeBlocks {
     }
 
     public static CodeBlock getPrimaryKeyFieldsWithTableAliasBlock(String targetAlias) {
-        return CodeBlock.of("$N.fields($L)", targetAlias, getPrimaryKeyFieldsBlock(targetAlias));
+        return CodeBlock.of("$N.fields($L)", targetAlias, getPrimaryKeyFieldsArrayBlock(targetAlias));
     }
 
     public static CodeBlock getPrimaryKeyFieldsWithTableAliasBlock(String targetAlias, String direction) {
@@ -739,11 +749,11 @@ public class FormatCodeBlocks {
     public static CodeBlock getPrimaryKeyFieldsWithTableAliasBlock(String targetAlias, CodeBlock sortOrder) {
         return CodeBlock.of(
                 "$T.of($N.fields($L)).map(f -> f.sort($L)).toArray($T[]::new)",
-                STREAM.className, targetAlias, getPrimaryKeyFieldsBlock(targetAlias),
+                STREAM.className, targetAlias, getPrimaryKeyFieldsArrayBlock(targetAlias),
                 sortOrder, SORT_FIELD.className);
     }
 
-    private static @NotNull CodeBlock getPrimaryKeyFieldsBlock(String target) {
+    private static @NotNull CodeBlock getPrimaryKeyFieldsArrayBlock(String target) {
         return CodeBlock.of("$L.getPrimaryKey().getFieldsArray()", target);
     }
 

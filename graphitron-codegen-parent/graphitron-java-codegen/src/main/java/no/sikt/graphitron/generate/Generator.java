@@ -44,5 +44,7 @@ public interface Generator {
 
     boolean failOnMerge();
 
+    boolean generateUpsertAsStore();
+
     OptionalSelect getOptionalSelect();
 }

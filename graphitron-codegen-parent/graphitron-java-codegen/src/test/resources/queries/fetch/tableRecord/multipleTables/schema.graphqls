@@ -1,0 +1,9 @@
+type Mutation {
+  mutation1(in: CustomerInputTable): ID @mutation(typeName: UPSERT)
+  mutation2(in: AddressInputTable): ID @mutation(typeName: UPSERT)
+  mutation3(in: CustomerInputTable): ID @mutation(typeName: UPSERT)
+}
+
+input AddressInputTable @table(name: "ADDRESS") {
+  id: ID!
+}

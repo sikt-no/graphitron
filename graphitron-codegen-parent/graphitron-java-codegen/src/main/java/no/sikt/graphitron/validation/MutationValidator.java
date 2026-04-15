@@ -72,11 +72,11 @@ class MutationValidator extends AbstractSchemaValidator {
                 .filter(it -> it.hasMutationType() && !new InputParser(it, schema).hasJOOQRecords())
                 .forEach(it -> addErrorMessage("Mutations must have at least one table attached when generating resolvers with queries. Mutation '%s' has no tables attached.", it.getName()));
 
-        if (GeneratorConfig.failOnMerge()) {
+        if (GeneratorConfig.failOnMerge() && !GeneratorConfig.generateUpsertAsStore()) {
             mutations
                     .stream()
                     .filter(it -> it.hasMutationType() && it.getMutationType() == MutationType.UPSERT)
-                    .forEach(it -> addErrorMessage("MERGE generation is disabled (failOnMerge is enabled), but mutation '%s' uses UPSERT.", it.getName()));
+                    .forEach(it -> addErrorMessage("MERGE generation is disabled (failOnMerge is enabled), but mutation '%s' uses UPSERT. Possible workaround is enabling generateUpsertAsStore.", it.getName()));
         }
     }
 
