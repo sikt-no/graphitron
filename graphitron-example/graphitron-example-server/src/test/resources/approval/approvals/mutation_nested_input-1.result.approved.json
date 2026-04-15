@@ -1,0 +1,14 @@
+{
+    "data": {
+        "testingNestedInputType": [
+            {
+                "id": "Q3VzdG9tZXI6MTAw",
+                "email": "updated@example.com",
+                "name": {
+                    "firstName": "UpdatedFirst",
+                    "lastName": "UpdatedLast"
+                }
+            }
+        ]
+    }
+}
