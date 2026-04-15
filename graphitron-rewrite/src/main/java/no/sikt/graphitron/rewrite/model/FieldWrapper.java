@@ -53,9 +53,24 @@ public sealed interface FieldWrapper
      * <p>{@code connectionNullable} is {@code true} when the connection wrapper itself may be
      * null. {@code itemNullable} is {@code true} when individual {@code edges.node} items may be
      * null.
+     *
+     * <p>{@code defaultPageSize} is the default page size when the client omits the {@code first}
+     * argument (from {@code @asConnection(defaultFirstValue:)}). Defaults to 100.
+     *
+     * <p>{@code connectionName} overrides the generated Connection type name (from
+     * {@code @asConnection(connectionName:)}). When {@code null}, the generator derives the name
+     * from the parent type and field name ({@code {ParentType}{FieldName}Connection}).
      */
     record Connection(
         boolean connectionNullable,
-        boolean itemNullable
-    ) implements FieldWrapper {}
+        boolean itemNullable,
+        int defaultPageSize,
+        String connectionName
+    ) implements FieldWrapper {
+
+        /** Convenience constructor for structural detection (pre-expanded connection types). */
+        public Connection(boolean connectionNullable, boolean itemNullable) {
+            this(connectionNullable, itemNullable, 100, null);
+        }
+    }
 }

@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -78,7 +79,31 @@ class TableFieldValidationTest {
                 List.of(), List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
                 null),
-            List.of());
+            List.of()),
+
+        PAGINATED_WITH_ORDERING("connection with pagination and ordering — valid",
+            new TableField("Film", "actors", null,
+                actorReturn(new FieldWrapper.Connection(true, true)),
+                List.of(), List.of(),
+                new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
+                new PaginationSpec(
+                    new PaginationSpec.PaginationArg("first", "Int", false),
+                    null,
+                    new PaginationSpec.PaginationArg("after", "String", false),
+                    null)),
+            List.of()),
+
+        PAGINATED_WITHOUT_ORDERING("connection with pagination but no ordering — error",
+            new TableField("Film", "actors", null,
+                actorReturn(new FieldWrapper.Connection(true, true)),
+                List.of(), List.of(),
+                new OrderBySpec.None(),
+                new PaginationSpec(
+                    new PaginationSpec.PaginationArg("first", "Int", false),
+                    null,
+                    new PaginationSpec.PaginationArg("after", "String", false),
+                    null)),
+            List.of("Field 'actors': paginated fields must have ordering (add @defaultOrder or @orderBy)"));
 
         private final String description;
         private final GraphitronField field;

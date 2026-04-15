@@ -138,6 +138,19 @@ directive @condition(
 directive @lookupKey on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 directive @mutation(typeName: MutationType!) on FIELD_DEFINITION
 
+"""
+Marks a list field as a Relay cursor-paginated connection. The rewrite pipeline synthesizes
+Connection, Edge, and PageInfo types and generates keyset-based pagination code.
+If pagination arguments (first, after, last, before) are not already present on the field,
+forward-pagination arguments (first: Int, after: String) are added automatically.
+"""
+directive @asConnection(
+  """Default page size when the client omits the 'first' argument."""
+  defaultFirstValue: Int = 100
+  """Override the generated Connection type name (default: {ParentType}{FieldName}Connection)."""
+  connectionName: String
+) on FIELD_DEFINITION
+
 """Handle this input argument as orderBy functionality"""
 directive @orderBy on ARGUMENT_DEFINITION
 

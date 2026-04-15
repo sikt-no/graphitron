@@ -74,6 +74,8 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_COLLATE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CLASS_NAME;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONNECTION_NAME;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_DEFAULT_FIRST_VALUE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONDITION;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONTEXT_ARGUMENTS;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_DIRECTION;
@@ -89,6 +91,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_SERVICE_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TABLE_METHOD_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_ID;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_AS_CONNECTION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_DEFAULT_ORDER;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_EXTERNAL_FIELD;
@@ -289,19 +292,33 @@ class FieldBuilder {
      * Builds a {@link FieldWrapper} from the return type shape of the field (cardinality and
      * nullability only). Ordering is separated into {@link #buildOrderBySpec}.
      *
-     * <p>Connection is detected structurally — the return type must be a {@link GraphQLObjectType}
-     * that has an {@code edges} field whose element type in turn has a {@code node} field.
+     * <p>Connection is detected two ways:
+     * <ol>
+     *   <li><b>Directive-driven:</b> the field has {@code @asConnection} — the schema type is a
+     *       bare list {@code [Film]} but the wrapper is {@link FieldWrapper.Connection}.</li>
+     *   <li><b>Structural:</b> the return type has an {@code edges.node} pattern (pre-expanded
+     *       connection from the schema transform or hand-written).</li>
+     * </ol>
      */
     private FieldWrapper buildWrapper(GraphQLFieldDefinition fieldDef) {
         GraphQLType fieldType = fieldDef.getType();
         boolean outerNullable = !(fieldType instanceof GraphQLNonNull);
         GraphQLType unwrappedOnce = GraphQLTypeUtil.unwrapNonNull(fieldType);
 
+        // @asConnection on a list field → Connection wrapper
+        if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION) && unwrappedOnce instanceof GraphQLList listType) {
+            boolean itemNullable = !(listType.getWrappedType() instanceof GraphQLNonNull);
+            int defaultPageSize = resolveDefaultFirstValue(fieldDef);
+            String connectionName = argString(fieldDef, DIR_AS_CONNECTION, ARG_CONNECTION_NAME).orElse(null);
+            return new FieldWrapper.Connection(outerNullable, itemNullable, defaultPageSize, connectionName);
+        }
+
         if (unwrappedOnce instanceof GraphQLList listType) {
             boolean itemNullable = !(listType.getWrappedType() instanceof GraphQLNonNull);
             return new FieldWrapper.List(outerNullable, itemNullable);
         }
 
+        // Structural detection: pre-expanded Connection type with edges.node pattern
         String typeName = baseTypeName(fieldDef);
         if (ctx.isConnectionType(typeName)) {
             boolean itemNullable = ctx.connectionItemNullable(typeName);
@@ -323,7 +340,9 @@ class FieldBuilder {
      */
     private OrderBySpec buildOrderBySpec(GraphQLFieldDefinition fieldDef, String tableSqlName, List<String> errors) {
         GraphQLType unwrapped = GraphQLTypeUtil.unwrapNonNull(fieldDef.getType());
-        boolean isList = (unwrapped instanceof GraphQLList) || ctx.isConnectionType(baseTypeName(fieldDef));
+        boolean isList = (unwrapped instanceof GraphQLList)
+            || ctx.isConnectionType(baseTypeName(fieldDef))
+            || fieldDef.hasAppliedDirective(DIR_AS_CONNECTION);
         if (!isList || tableSqlName == null) return new OrderBySpec.None();
 
         for (var arg : fieldDef.getArguments()) {
@@ -687,6 +706,14 @@ class FieldBuilder {
                 case "before" -> before = paginationArg;
             }
         }
+
+        // @asConnection without explicit pagination args: synthesize forward-pagination defaults
+        if (first == null && last == null && after == null && before == null
+                && fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)) {
+            first = new PaginationSpec.PaginationArg("first", "Int", false);
+            after = new PaginationSpec.PaginationArg("after", "String", false);
+        }
+
         if (first == null && last == null && after == null && before == null) return null;
         return new PaginationSpec(first, last, after, before);
     }
@@ -694,6 +721,17 @@ class FieldBuilder {
     private static boolean isPaginationArg(String argName) {
         return "first".equals(argName) || "last".equals(argName)
             || "after".equals(argName) || "before".equals(argName);
+    }
+
+    private static int resolveDefaultFirstValue(GraphQLFieldDefinition fieldDef) {
+        var dir = fieldDef.getAppliedDirective(DIR_AS_CONNECTION);
+        if (dir == null) return 100;
+        var arg = dir.getArgument(ARG_DEFAULT_FIRST_VALUE);
+        if (arg == null || arg.getValue() == null) return 100;
+        Object val = arg.getValue();
+        if (val instanceof graphql.language.IntValue iv) return iv.getValue().intValueExact();
+        if (val instanceof Number n) return n.intValue();
+        return 100;
     }
 
     // ===== Field classification =====

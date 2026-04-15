@@ -7,12 +7,17 @@ import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 import static no.sikt.graphql.schema.SchemaReadingHelper.getTypeDefinitionRegistry;
@@ -49,12 +54,29 @@ public class GraphQLRewriteGenerator {
         var fetcherClasses = TypeFetcherGenerator.generate(schema);
         var fetcherClassNames = fetcherClasses.stream().map(TypeSpec::name).toList();
 
+        // Collect connection wiring info from schema
+        var connectionWirings = new ArrayList<GraphitronWiringClassGenerator.ConnectionWiring>();
+        schema.fields().forEach((coords, field) -> {
+            if (field instanceof SqlGeneratingField sgf
+                    && sgf.returnType().wrapper() instanceof FieldWrapper.Connection conn) {
+                String parentType = coords.getTypeName();
+                String fieldName = coords.getFieldName();
+                String connName = conn.connectionName() != null
+                    ? conn.connectionName()
+                    : parentType + capitalize(fieldName) + "Connection";
+                String edgeName = connName.replace("Connection", "Edge");
+                connectionWirings.add(new GraphitronWiringClassGenerator.ConnectionWiring(connName, edgeName));
+            }
+        });
+
         write(GraphitronValuesClassGenerator.generate(),          "rewrite");
         write(ColumnFetcherClassGenerator.generate(),             "rewrite");
+        write(ConnectionResultClassGenerator.generate(),          "rewrite");
+        write(ConnectionHelperClassGenerator.generate(),          "rewrite");
         write(TypeClassGenerator.generate(schema),                "rewrite.types");
         write(TypeConditionsGenerator.generate(schema),           "rewrite.types");
         write(fetcherClasses,                                      "rewrite.types");
-        write(List.of(GraphitronWiringClassGenerator.generate(fetcherClassNames)), "rewrite");
+        write(List.of(GraphitronWiringClassGenerator.generate(fetcherClassNames, connectionWirings)), "rewrite");
     }
 
     private static void write(List<TypeSpec> specs, String subPackage) {
@@ -68,5 +90,9 @@ public class GraphQLRewriteGenerator {
             }
         });
         LOGGER.info("Rewrite: generated sources to: {}", packageName);
+    }
+
+    private static String capitalize(String s) {
+        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 }

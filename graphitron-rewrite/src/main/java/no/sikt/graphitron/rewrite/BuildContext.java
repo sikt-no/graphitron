@@ -69,6 +69,7 @@ class BuildContext {
     static final String DIR_CONDITION           = "condition";
     static final String DIR_MUTATION            = "mutation";
     static final String DIR_DISCRIMINATOR       = "discriminator";
+    static final String DIR_AS_CONNECTION       = "asConnection";
 
     // ===== Argument names =====
 
@@ -100,6 +101,8 @@ class BuildContext {
     static final String ARG_SQL_STATE          = "sqlState";
     static final String ARG_MATCHES            = "matches";
     static final String ARG_DESCRIPTION        = "description";
+    static final String ARG_DEFAULT_FIRST_VALUE = "defaultFirstValue";
+    static final String ARG_CONNECTION_NAME     = "connectionName";
 
     // ===== Shared state =====
 

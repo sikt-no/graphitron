@@ -7,6 +7,9 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.model.BatchKey;
@@ -101,6 +104,10 @@ public class TypeFetcherGenerator {
             } else if (field instanceof QueryField.QueryLookupTableField qlf) {
                 builder.addMethod(buildQueryLookupFetcher(qlf));
                 builder.addMethod(buildQueryLookupRowsMethod(qlf));
+            } else if (field instanceof QueryField.QueryTableField qtf
+                    && qtf.returnType().wrapper() instanceof FieldWrapper.Connection) {
+                builder.addMethod(buildQueryConnectionFetcher(qtf));
+                if (hasContextArg(qtf)) needsGraphitronContextHelper = true;
             } else if (field instanceof QueryField.QueryTableField qtf) {
                 builder.addMethod(buildQueryTableFetcher(qtf));
                 if (hasContextArg(qtf)) needsGraphitronContextHelper = true;
@@ -203,6 +210,95 @@ public class TypeFetcherGenerator {
             var callArgs = buildCallArgs(filter.callParams(), filter.className());
             code.addStatement("condition = condition.and($T.$L($L))",
                 ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
+        }
+        return code.build();
+    }
+
+    /**
+     * Generates a connection field fetcher that returns a {@code ConnectionResult}.
+     *
+     * <p>Extracts pagination args, decodes cursor, builds condition and orderBy, calls the
+     * paginated {@code selectMany} overload, and wraps the result in a {@code ConnectionResult}.
+     */
+    private static MethodSpec buildQueryConnectionFetcher(QueryField.QueryTableField qtf) {
+        var tableRef = qtf.returnType().table();
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName());
+        var connectionResultClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite", ConnectionResultClassGenerator.CLASS_NAME);
+        var conn = (FieldWrapper.Connection) qtf.returnType().wrapper();
+        var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
+        var WILDCARD_FIELD = ParameterizedTypeName.get(JOOQ_FIELD,
+            no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
+        var listOfField = ParameterizedTypeName.get(LIST, WILDCARD_FIELD);
+
+        var builder = MethodSpec.methodBuilder(qtf.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(connectionResultClass)
+            .addParameter(ENV, "env");
+
+        builder.addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName());
+        builder.addCode(buildConditionCall(qtf));
+        builder.addCode(buildOrderByCode(qtf.orderBy()));
+
+        // Extract pagination arguments
+        builder.addStatement("Integer first = env.getArgument(\"first\")");
+        builder.addStatement("String after = env.getArgument(\"after\")");
+        builder.addStatement("int pageSize = first != null ? first : $L", conn.defaultPageSize());
+
+        // Build extra fields (ORDER BY columns) for cursor construction
+        builder.addCode(buildOrderByExtraFieldsCode(qtf.orderBy(), names));
+
+        // Decode cursor to seek values (null if no cursor)
+        var connectionHelperClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite", ConnectionHelperClassGenerator.CLASS_NAME);
+        builder.addStatement("Object[] seekValues = after != null ? $T.decodeCursor(after) : null",
+            connectionHelperClass);
+
+        // Call paginated selectMany
+        builder.addStatement("var result = $T.selectMany(env, condition, orderBy, extraFields, seekValues, pageSize + 1)",
+            names.typeClass());
+
+        // Wrap in ConnectionResult
+        builder.addStatement("return new $T(result, pageSize, after, extraFields)", connectionResultClass);
+
+        return builder.build();
+    }
+
+    /**
+     * Generates code to build the list of ORDER BY columns as jOOQ Field references.
+     * These are the extra fields that must be in the SELECT for cursor construction.
+     */
+    private static CodeBlock buildOrderByExtraFieldsCode(OrderBySpec orderBy, GeneratorUtils.ResolvedTableNames names) {
+        var code = CodeBlock.builder();
+        var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
+        var WILDCARD_FIELD = ParameterizedTypeName.get(JOOQ_FIELD,
+            no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
+
+        switch (orderBy) {
+            case OrderBySpec.Fixed fixed -> {
+                code.add("$T<$T> extraFields = $T.of(", LIST, WILDCARD_FIELD, LIST);
+                for (int i = 0; i < fixed.columns().size(); i++) {
+                    if (i > 0) code.add(", ");
+                    code.add("table.$L", fixed.columns().get(i).column().javaName());
+                }
+                code.add(");\n");
+            }
+            case OrderBySpec.Argument arg -> {
+                // Dynamic ordering: resolve from the base (fallback) columns
+                if (arg.base() != null) {
+                    code.add("$T<$T> extraFields = $T.of(", LIST, WILDCARD_FIELD, LIST);
+                    for (int i = 0; i < arg.base().columns().size(); i++) {
+                        if (i > 0) code.add(", ");
+                        code.add("table.$L", arg.base().columns().get(i).column().javaName());
+                    }
+                    code.add(");\n");
+                } else {
+                    code.addStatement("$T<$T> extraFields = $T.of()", LIST, WILDCARD_FIELD, LIST);
+                }
+            }
+            case OrderBySpec.None ignored -> {
+                code.addStatement("$T<$T> extraFields = $T.of()", LIST, WILDCARD_FIELD, LIST);
+            }
         }
         return code.build();
     }

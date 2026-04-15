@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.QueryField.QueryTableField;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -80,7 +81,29 @@ class QueryTableFieldValidationTest {
                         new OrderBySpec.NamedOrder("ID", PK_ORDER)),
                     INDEX_ORDER),
                 null),
-            List.of());
+            List.of()),
+
+        PAGINATED_WITH_ORDERING("connection with pagination and ordering — valid",
+            new QueryTableField("Query", "films", null,
+                filmReturn(new FieldWrapper.Connection(true, true)),
+                List.of(), PK_ORDER,
+                new PaginationSpec(
+                    new PaginationSpec.PaginationArg("first", "Int", false),
+                    null,
+                    new PaginationSpec.PaginationArg("after", "String", false),
+                    null)),
+            List.of()),
+
+        PAGINATED_WITHOUT_ORDERING("connection with pagination but no ordering — error",
+            new QueryTableField("Query", "films", null,
+                filmReturn(new FieldWrapper.Connection(true, true)),
+                List.of(), new OrderBySpec.None(),
+                new PaginationSpec(
+                    new PaginationSpec.PaginationArg("first", "Int", false),
+                    null,
+                    new PaginationSpec.PaginationArg("after", "String", false),
+                    null)),
+            List.of("Field 'films': paginated fields must have ordering (add @defaultOrder or @orderBy)"));
 
         private final String description;
         private final GraphitronField field;

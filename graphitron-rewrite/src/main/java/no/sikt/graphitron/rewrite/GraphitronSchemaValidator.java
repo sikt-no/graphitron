@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
@@ -111,6 +112,24 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField f  -> validateInputColumnReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField f -> validateNotGeneratedField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f -> validateUnclassifiedField(f, errors);
+        }
+        validatePaginationRequiresOrdering(field, errors);
+    }
+
+    /**
+     * Cross-cutting check: any SQL-generating field that has pagination arguments must also have
+     * ordering. Keyset pagination without ordering is broken by definition — the cursor encodes
+     * ORDER BY column values, so there must be columns to encode.
+     */
+    private void validatePaginationRequiresOrdering(GraphitronField field, List<ValidationError> errors) {
+        if (field instanceof SqlGeneratingField sgf
+                && sgf.pagination() != null
+                && sgf.orderBy() instanceof OrderBySpec.None) {
+            errors.add(new ValidationError(
+                "Field '" + field.name() + "': paginated fields must have ordering "
+                    + "(add @defaultOrder or @orderBy)",
+                field.location()
+            ));
         }
     }
 

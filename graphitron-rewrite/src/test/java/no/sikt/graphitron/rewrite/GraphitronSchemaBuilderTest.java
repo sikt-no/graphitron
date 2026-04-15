@@ -494,6 +494,78 @@ class GraphitronSchemaBuilderTest {
                 assertThat(tf.returnType().returnTypeName()).isEqualTo("Actor");
             }),
 
+        AS_CONNECTION_DIRECTIVE(
+            "@asConnection on a list field → Connection wrapper with element type from list item",
+            """
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") { actors: [Actor!]! @asConnection @defaultOrder(primaryKey: true) }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var tf = (TableField) schema.field("Film", "actors");
+                assertThat(tf.returnType().wrapper()).isInstanceOf(FieldWrapper.Connection.class);
+                assertThat(tf.returnType().returnTypeName()).isEqualTo("Actor");
+                var conn = (FieldWrapper.Connection) tf.returnType().wrapper();
+                assertThat(conn.connectionNullable()).isFalse();
+                assertThat(conn.itemNullable()).isFalse();
+                assertThat(conn.defaultPageSize()).isEqualTo(100);
+                assertThat(conn.connectionName()).isNull();
+            }),
+
+        AS_CONNECTION_CUSTOM_PAGE_SIZE(
+            "@asConnection(defaultFirstValue: 50) → Connection with custom page size",
+            """
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") { actors: [Actor!]! @asConnection(defaultFirstValue: 50) @defaultOrder(primaryKey: true) }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var tf = (TableField) schema.field("Film", "actors");
+                var conn = (FieldWrapper.Connection) tf.returnType().wrapper();
+                assertThat(conn.defaultPageSize()).isEqualTo(50);
+            }),
+
+        AS_CONNECTION_CUSTOM_NAME(
+            "@asConnection(connectionName: \"MovieActorsConnection\") → Connection with custom name",
+            """
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") { actors: [Actor!]! @asConnection(connectionName: "MovieActorsConnection") @defaultOrder(primaryKey: true) }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var tf = (TableField) schema.field("Film", "actors");
+                var conn = (FieldWrapper.Connection) tf.returnType().wrapper();
+                assertThat(conn.connectionName()).isEqualTo("MovieActorsConnection");
+            }),
+
+        AS_CONNECTION_SYNTHESIZES_PAGINATION(
+            "@asConnection synthesizes PaginationSpec when no explicit pagination args",
+            """
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") { actors: [Actor!]! @asConnection @defaultOrder(primaryKey: true) }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var tf = (TableField) schema.field("Film", "actors");
+                assertThat(tf.pagination()).isNotNull();
+                assertThat(tf.pagination().first()).isNotNull();
+                assertThat(tf.pagination().first().name()).isEqualTo("first");
+                assertThat(tf.pagination().after()).isNotNull();
+                assertThat(tf.pagination().after().name()).isEqualTo("after");
+            }),
+
+        AS_CONNECTION_ORDERING_DETECTED(
+            "@asConnection field is treated as list for ordering detection",
+            """
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") { actors: [Actor!]! @asConnection @defaultOrder(primaryKey: true) }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var tf = (TableField) schema.field("Film", "actors");
+                assertThat(tf.orderBy()).isInstanceOf(OrderBySpec.Fixed.class);
+            }),
+
         SPLIT_QUERY(
             "@splitQuery — field classified as SplitTableField",
             """

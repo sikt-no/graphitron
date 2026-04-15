@@ -90,6 +90,7 @@ public class GraphitronSchemaBuilder {
         assertDirective(ctx, DIR_ORDER_BY);
         assertDirective(ctx, DIR_CONDITION);
         assertDirective(ctx, DIR_MUTATION, ARG_TYPE_NAME);
+        assertDirective(ctx, DIR_AS_CONNECTION, ARG_DEFAULT_FIRST_VALUE, ARG_CONNECTION_NAME);
     }
 
     private static void assertDirective(BuildContext ctx, String name, String... args) {

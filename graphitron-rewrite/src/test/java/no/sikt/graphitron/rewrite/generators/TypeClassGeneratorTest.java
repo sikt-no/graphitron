@@ -51,6 +51,13 @@ class TypeClassGeneratorTest {
             .orElseThrow(() -> new AssertionError("Method not found: " + methodName));
     }
 
+    private static MethodSpec method(String methodName, int paramCount) {
+        return spec().methodSpecs().stream()
+            .filter(m -> m.name().equals(methodName) && m.parameters().size() == paramCount)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Method not found: " + methodName + " with " + paramCount + " params"));
+    }
+
     // ===== Class structure =====
 
     @Test
@@ -59,11 +66,11 @@ class TypeClassGeneratorTest {
     }
 
     @Test
-    void generate_allNineMethodsArePresent() {
+    void generate_allMethodsArePresent() {
         assertThat(spec().methodSpecs()).extracting(MethodSpec::name)
             .containsExactlyInAnyOrder(
-                "fields",
-                "selectMany", "selectOne",
+                "fields", "fields",
+                "selectMany", "selectMany", "selectOne",
                 "selectManyByRowKeys", "selectOneByRowKeys",
                 "selectManyByRecordKeys", "selectOneByRecordKeys",
                 "subselectMany", "subselectOne");
@@ -87,18 +94,34 @@ class TypeClassGeneratorTest {
      */
     @Test
     void fields_signature() {
-        var m = method("fields");
+        var m = method("fields", 1);
         assertThat(m.returnType().toString()).isEqualTo("java.util.List<org.jooq.Field<?>>");
         assertThat(m.parameters()).extracting(p -> p.type().toString())
             .containsExactly("graphql.schema.DataFetchingFieldSelectionSet");
     }
 
     @Test
+    void fieldsWithExtra_signature() {
+        var m = method("fields", 2);
+        assertThat(m.returnType().toString()).isEqualTo("java.util.List<org.jooq.Field<?>>");
+        assertThat(m.parameters()).extracting(p -> p.name())
+            .containsExactly("sel", "extraFields");
+    }
+
+    @Test
     void selectMany_signature() {
-        var m = method("selectMany");
+        var m = method("selectMany", 3);
         assertThat(m.returnType().toString()).isEqualTo("org.jooq.Result<org.jooq.Record>");
         assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("env", "condition", "orderBy");
+    }
+
+    @Test
+    void selectManyPaginated_signature() {
+        var m = method("selectMany", 6);
+        assertThat(m.returnType().toString()).isEqualTo("org.jooq.Result<org.jooq.Record>");
+        assertThat(m.parameters()).extracting(p -> p.name())
+            .containsExactly("env", "condition", "orderBy", "extraFields", "seekValues", "limit");
     }
 
     @Test

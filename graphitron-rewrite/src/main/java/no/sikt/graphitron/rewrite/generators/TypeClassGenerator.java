@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
 
+import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -91,7 +92,9 @@ public class TypeClassGenerator {
         return TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
             .addMethod(buildFieldsMethod(tableRef, columnFields))
+            .addMethod(buildFieldsWithExtraMethod(tableRef, columnFields))
             .addMethod(buildSelectManyMethod(tableRef))
+            .addMethod(buildSelectManyPaginatedMethod(tableRef))
             .addMethod(buildSelectOneMethod(tableRef))
             .addMethod(buildSelectManyFromRowServiceMethod())
             .addMethod(buildSelectOneFromRowServiceMethod())
@@ -150,6 +153,31 @@ public class TypeClassGenerator {
     }
 
     /**
+     * Generates a {@code fields(sel, extraFields)} overload that appends additional fields
+     * (typically ORDER BY columns for connection/pagination queries) to the selection set.
+     *
+     * <p>This ensures cursor construction has access to the ORDER BY column values even when
+     * the client's GraphQL selection set doesn't include them.
+     */
+    private static MethodSpec buildFieldsWithExtraMethod(TableRef tableRef, List<ChildField.ColumnField> columnFields) {
+        var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
+        var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
+        var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
+
+        return MethodSpec.methodBuilder("fields")
+            .addModifiers(PUBLIC, STATIC)
+            .returns(listOfField)
+            .addParameter(SELECTION_SET, "sel")
+            .addParameter(listOfField, "extraFields")
+            .addStatement("$T<$T> result = new $T<>(fields(sel))", ARRAY_LIST, fieldWildcard, ARRAY_LIST)
+            .addCode("for ($T extra : extraFields) {\n", fieldWildcard)
+            .addCode("    if (!result.contains(extra)) result.add(extra);\n")
+            .addCode("}\n")
+            .addStatement("return result")
+            .build();
+    }
+
+    /**
      * Generates a {@code selectMany} method that uses {@code fields(sel)} for the SELECT list.
      */
     private static MethodSpec buildSelectManyMethod(TableRef tableRef) {
@@ -172,6 +200,46 @@ public class TypeClassGenerator {
                 .add(".orderBy(orderBy)\n")
                 .add(".fetch();\n")
                 .unindent()
+                .build())
+            .build();
+    }
+
+    /**
+     * Generates a paginated {@code selectMany} overload:
+     * {@code selectMany(env, condition, orderBy, extraFields, seekValues, limit)}.
+     *
+     * <p>Uses jOOQ {@code .seek(seekValues)} for keyset pagination and
+     * {@code .limit(limit)} for page size. {@code extraFields} ensures ORDER BY columns
+     * are in the SELECT list for cursor construction.
+     */
+    private static MethodSpec buildSelectManyPaginatedMethod(TableRef tableRef) {
+        var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
+        var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
+        var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
+        var objectArray = ArrayTypeName.of(Object.class);
+
+        return MethodSpec.methodBuilder("selectMany")
+            .addModifiers(PUBLIC, STATIC)
+            .returns(ParameterizedTypeName.get(RESULT, RECORD))
+            .addParameter(ENV, "env")
+            .addParameter(CONDITION, "condition")
+            .addParameter(sortFieldList(), "orderBy")
+            .addParameter(listOfField, "extraFields")
+            .addParameter(objectArray, "seekValues")
+            .addParameter(int.class, "limit")
+            .addStatement("$T dsl = (($T) env.getGraphQlContext().get($S)).getDslContext(env)",
+                DSL_CONTEXT, GRAPHITRON_CONTEXT, "graphitronContext")
+            .addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName())
+            .addCode(CodeBlock.builder()
+                .add("var query = dsl\n")
+                .indent()
+                .add(".select(fields(env.getSelectionSet(), extraFields))\n")
+                .add(".from(table)\n")
+                .add(".where(condition)\n")
+                .add(".orderBy(orderBy);\n")
+                .unindent()
+                .add("if (seekValues != null && seekValues.length > 0) query = query.seek(seekValues);\n")
+                .add("return query.limit(limit).fetch();\n")
                 .build())
             .build();
     }
