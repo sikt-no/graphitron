@@ -1,7 +1,6 @@
 # Code Generation Triggers
 
-This document is a reference for what schema patterns trigger what code generation in Graphitron.
-For the rewrite pipeline architecture, see [Rewrite Roadmap](REWRITE-ROADMAP.md).
+A guide to how GraphQL schema patterns drive Graphitron's code generation. This document introduces the classification pipeline and the vocabulary needed to read the source code. For variant details and record components, read the Javadoc on each source file listed in the [Source Map](#source-map) below.
 
 ---
 
@@ -172,492 +171,65 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 
 ---
 
-## What the Generators Produce
+## Implicit Classification Rules
 
-### `*Fields` class (`rewrite.types.<TypeName>Fields`)
-
-One class per `TableType`, `NodeType`, `ResultType`, `RootType`, interface, or union.
-
-**`wiring()` method** — registers all field DataFetchers:
-```java
-public static TypeRuntimeWiring.Builder wiring() {
-    return TypeRuntimeWiring.newTypeWiring("Film")
-        .dataFetcher("title",    FilmFields::title)
-        .dataFetcher("actors",   FilmFields::actors)
-        .dataFetcher("language", FilmFields::language);
-}
-```
-
-**Column methods** (for `ColumnField`, `NodeIdField`, `ComputedField`, `PropertyField`, etc.):
-```java
-// Generated — registered in wiring()
-public static Object title(DataFetchingEnvironment env) { ... }
-```
-
-**Async DataLoader methods** (for `SplitTableField`, `ServiceTableField`, `QueryLookupTableField`, etc.):
-```java
-// Async fetcher — schedules batched load
-public static CompletableFuture<List<Record>> actors(DataFetchingEnvironment env) { ... }
-
-// Rows method — executes batched SQL when DataLoader fires
-public static List<List<Record>> loadActors(List<Record> sourceRows, SelectedField sel, ...) { ... }
-```
-
-### `*Conditions` class (`rewrite.types.<TypeName>Conditions`)
-
-One class per type that has fields with Graphitron-generated argument predicates.
-
-Each method is a pure function — takes the jOOQ table alias and typed argument values,
-returns an `org.jooq.Condition`. No dependency on GraphQL runtime types.
-
-```java
-public class FilmConditions {
-    // Generated for a text-enum argument (e.g. `rating: String @lookupArg`)
-    static final Map<String, String> RATING_MAP = Map.of("G", "G", "PG", "PG", ...);
-
-    public static Condition films(FilmTable table, String title, String rating) {
-        var condition = DSL.noCondition();
-        if (title != null) condition = condition.and(table.TITLE.eq(DSL.val(title, table.TITLE)));
-        condition = condition.and(table.RATING.eq(DSL.val(RATING_MAP.get(rating), table.RATING)));
-        return condition;
-    }
-}
-```
-
-The fetcher calls this method to build the WHERE clause, then delegates to the `*` class.
-
----
-
-### `*` class (`rewrite.types.<TypeName>`)
-
-One class per GraphQL type (e.g. `Film` for `type Film @table`). Named after the GraphQL type,
-not the SQL table — two GraphQL types mapped to the same table each get their own class.
-
-```java
-// SELECT list builder — iterates the selection set, adds table columns for requested fields
-List<Field<?>>       fields(DataFetchingFieldSelectionSet sel)
-
-// Top-level queries (root Query/Mutation fields)
-Result<Record>       selectMany(DataFetchingEnvironment env, Condition condition, List<SortField<?>> orderBy)
-Record               selectOne (DataFetchingEnvironment env, Condition condition)
-
-// Inline nested data (ChildField.TableField / LookupTableField) — returns a multiset expression
-Field<Result<Record>> subselectMany(DataFetchingEnvironment env, SelectedField sel, Condition condition, List<SortField<?>> orderBy)
-Field<Record>         subselectOne (DataFetchingEnvironment env, SelectedField sel, Condition condition)
-
-// DataLoader batch queries (SplitTableField, Row-keyed service fields)
-List<List<Record>>  selectManyByRowKeys(List<? extends Row> keys, DataFetchingEnvironment env, SelectedField sel, List<?> serviceRecords)
-List<Record>        selectOneByRowKeys (List<? extends Row> keys, DataFetchingEnvironment env, SelectedField sel, Object serviceRecord)
-
-// DataLoader batch queries (Record-keyed service fields — TableRecord or RecordN parents)
-List<List<Record>>  selectManyByRecordKeys(List<? extends Record> keys, DataFetchingEnvironment env, SelectedField sel, List<?> serviceRecords)
-List<Record>        selectOneByRecordKeys (List<? extends Record> keys, DataFetchingEnvironment env, SelectedField sel, Object serviceRecord)
-```
-
-`env` is threaded through all methods for context arguments (e.g. tenant ID). `SelectedField` and
-`DataFetchingFieldSelectionSet` allow implementations to build selection-aware queries (only fetch
-requested columns). The batch overloads are currently stubs throwing `UnsupportedOperationException`.
-
----
-
-## Directive Reference
-
-### `@table`
-
-Classifies a type as table-backed. Required for SQL generation on that type.
-
-```graphql
-type Film @table(name: "FILM") {
-  title: String!   # Maps to FILM.TITLE
-}
-```
-
-Optional `name` argument — defaults to the type name uppercased if omitted.
-
----
-
-### `@node`
-
-Adds Relay Global Object Identification. Pair with `@table`.
-
-```graphql
-type Film implements Node @table(name: "FILM") @node {
-  id: ID! @nodeId
-}
-```
-
-Optional parameters: `typeId` (custom string embedded in the global ID),
-`keyColumns` (ordered list of PK columns for composite keys).
-
----
-
-### `@nodeId`
-
-Marks a field as a Relay global ID. Required on the `id` field of any `@node` type.
-Also used on input types to decode incoming global IDs.
-
-```graphql
-input FilmInput @table(name: "FILM") {
-  id: ID! @nodeId(typeName: "Film")  # decoded to PK before use
-}
-```
-
----
-
-### `@field`
-
-Maps a GraphQL field to a differently-named database column.
-
-```graphql
-type Film @table(name: "FILM") {
-  releaseYear: Int @field(name: "RELEASE_YEAR")
-}
-```
-
-Also supports `javaName` for Java record field mapping.
-
----
-
-### `@reference`
-
-Defines the FK path from the current type to the field's return type.
-
-```graphql
-type Film @table(name: "FILM") {
-  language: Language @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
-}
-```
-
-Path elements can contain:
-- `key` — explicit jOOQ foreign key name (e.g. `{key: "FILM__FILM_LANGUAGE_ID_FKEY"}`)
-- `table` — implicit FK resolution: finds the unique FK from the current table to the named target table automatically (e.g. `{table: "LANGUAGE"}`); build fails if multiple FKs exist between the two tables
-- `condition` — extra SQL condition on this step (`{className, method}`)
-
-Without `@splitQuery` or arguments → inline subquery via `Tables.subselectMany/subselectOne`.
-With `@splitQuery` or arguments → DataLoader.
-
----
-
-### `@splitQuery`
-
-Forces a DataLoader (batched separate query) for a child field, even when inline would work.
-
-```graphql
-type Film @table(name: "FILM") {
-  activityLog: [Activity!]! @splitQuery @reference(path: [{key: "FK_ACTIVITY_FILM"}])
-}
-```
-
----
-
-### `@lookupKey`
-
-Marks an argument or input field as a primary/unique key for `WHERE pk IN (?)` lookup.
-Preserves result order matching input order.
-
-```graphql
-type Query {
-  films(ids: [ID!]! @lookupKey): [Film]!
-}
-```
-
-Composite key: use an input type where each field maps to a key column.
-
----
-
-### `@orderBy`
-
-Enables ORDER BY with index validation. Uses `@index` on enum values to reference DB indexes.
-
-```graphql
-type Query {
-  films(orderBy: FilmOrderBy @orderBy): [Film]!
-}
-
-enum FilmOrderByField {
-  TITLE       @index(name: "IDX_FILM_TITLE")
-  RELEASE_YEAR @index(name: "IDX_FILM_RELEASE_YEAR")
-}
-```
-
----
-
-### `@mutation`
-
-Classifies a Mutation field as INSERT, UPDATE, DELETE, or UPSERT.
-
-```graphql
-type Mutation {
-  createFilm(input: FilmInput!): Film! @mutation(typeName: INSERT)
-  updateFilm(id: ID!, input: FilmInput!): Film! @mutation(typeName: UPDATE)
-  deleteFilm(id: ID!): Boolean! @mutation(typeName: DELETE)
-}
-```
-
-Mutations on PostgreSQL use `RETURNING *` to fetch the result in a single round-trip.
-
----
-
-### `@service`
-
-Escapes SQL generation entirely. The field is backed by a developer-provided Java method
-rather than a generated query.
-
-```graphql
-type Film @table(name: "FILM") {
-  recommendations: [Film!]!
-    @service(service: {className: "RecommendationService", method: "forFilm"})
-}
-```
-
-If the return type is `@table`-backed, Graphitron generates a DataLoader that calls the service
-method and then runs the result through the normal table SQL scope.
-
----
-
-### `@condition`
-
-Injects a developer-provided `Condition` into the WHERE clause of the generated query.
-
-```graphql
-type Query {
-  activeFilms: [Film!]!
-    @condition(condition: {className: "FilmConditions", method: "isActive"}, override: true)
-}
-```
-
-Can also appear inside a `@reference` path element to filter a specific join step.
-
----
-
-### `@externalField`
-
-Injects a developer-provided `Field<T>` expression into the SELECT clause.
-
-```graphql
-type Film @table(name: "FILM") {
-  fullTitle: String! @externalField
-}
-```
-
-Developer provides:
-```java
-public static Field<String> fullTitle(FilmTable film) {
-    return DSL.concat(film.TITLE, DSL.val(" ("), film.RELEASE_YEAR.cast(String.class), DSL.val(")"));
-}
-```
-
----
-
-### `@tableMethod`
-
-Replaces the FROM clause table with a developer-provided expression (e.g. a function-valued
-table, a filtered view, or a renamed alias).
-
-```graphql
-type Query {
-  topFilms: [Film!]! @tableMethod(tableMethodReference: {className: "FilmMethods", method: "top100"})
-}
-```
-
----
-
-### `@record`
-
-Maps an object or input type to a developer-provided Java record class rather than a
-generated jOOQ table record. Used for service-backed types or custom input shapes.
-
-```graphql
-input FilmInput @record(record: {className: "FilmJavaRecord"}) {
-  title: String!
-}
-```
-
----
-
-### `@discriminate` and `@discriminator`
-
-Single-table inheritance pattern. The interface specifies which column holds the
-discriminator; each implementing type specifies its value.
-
-```graphql
-interface Vehicle @table(name: "VEHICLES") @discriminate(on: "TYPE") { id: ID! }
-type Car  implements Vehicle @discriminator(value: "CAR")  { doors: Int! }
-type Bike implements Vehicle @discriminator(value: "BIKE") { gears: Int! }
-```
-
----
-
-### `@notGenerated`
-
-Suppresses generation for a specific field. The field is declared in the schema but
-Graphitron will not register a DataFetcher for it — the developer provides the
-implementation at runtime.
-
-```graphql
-type Film @table(name: "FILM") {
-  computedScore: Float! @notGenerated
-}
-```
-
----
-
-### Schema Transformation Directives
-
-These are processed by `graphitron-schema-transform` **before** code generation.
-
-#### `@asConnection`
-
-Transforms a list field into a Relay Connection type (adds `edges`, `pageInfo`, `nodes`,
-and optionally `totalCount`).
-
-```graphql
-type Query {
-  films: [Film] @asConnection  # becomes FilmConnection
-}
-```
-
-Optional: `defaultFirstValue` (default page size), `connectionName` (custom type name).
-
----
-
-## Implicit Triggers
-
-These generate code without any directive.
+Not all classification requires directives. The builder also classifies based on:
 
 | Schema Pattern | Classification Effect |
 |---|---|
-| Field on `Query` root | Classified as a `QueryField` variant |
-| Field on `Mutation` root | Classified as a `MutationField` variant |
 | Field name matches column name (on `@table` type) | `ColumnField` — direct column mapping |
-| Field returns `*Connection` type | `FieldWrapper.Connection` — pagination logic |
-| Field named `totalCount` on `*Connection` | Separate `COUNT(*)` query |
-| Fields named `edges`, `pageInfo`, `nodes` on `*Connection` | Trivial extraction from pagination result |
-| GraphQL enum on `@table` field | Enum↔DB string/int mapping |
-| Interface with different `@table` per impl | `InterfaceType` — multi-table type resolver |
-| Union type | `UnionType` — type resolver by record class |
+| Field returns `*Connection` type (from `@asConnection` transform) | `FieldWrapper.Connection` — pagination logic |
+| GraphQL enum on `@table` field | Enum-to-DB string/int mapping |
 
 ---
 
-## Quick Lookup
+## Source Map
 
-| Schema Pattern | `GraphitronField` Variant | `*Fields` Generates |
+All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/`. Each file has Javadoc documenting its variants and record components.
+
+### Model (`model/`)
+
+| Concept | File | What to look for |
 |---|---|---|
-| Root Query field (default) | `QueryTableField` | Full fetcher — condition + orderBy + `Tables.selectMany/selectOne` |
-| Root Query field + `@lookupKey` | `QueryLookupTableField` | Async DataLoader fetcher |
-| Root Query field + `@service` | `QueryServiceTableField` | Async DataLoader fetcher |
-| Root Mutation field + `@mutation` | `MutationInsertTableField` / `Update` / `Delete` / `Upsert` | Method stub |
-| Child: scalar/enum on `@table` | `ColumnField` | Column method in `wiring()` |
-| Child: `@field(name:)` | `ColumnField` | Column method in `wiring()` |
-| Child: `@nodeId` | `NodeIdField` | Column method in `wiring()` |
-| Child: `@externalField` | `ComputedField` | Column method in `wiring()` |
-| Child: `@reference` (default) | `TableField` | Method stub; SQL from `Tables.subselectMany/subselectOne` |
-| Child: `@splitQuery` | `SplitTableField` | Async DataLoader fetcher |
-| Child: `@lookupKey` (non-root) | `LookupTableField` | Method stub; SQL from `Tables.subselectMany/subselectOne` |
-| Child: `@service` | `ServiceTableField` | Async DataLoader fetcher |
-| `@notGenerated` | `NotGeneratedField` | Nothing |
-| Invalid combination | `UnclassifiedField` | Validation error |
+| Type hierarchy | `GraphitronType.java` | Sealed interface — all type variants and their record components |
+| Field hierarchy | `GraphitronField.java` | Sealed interface — `RootField`/`ChildField`/`InputField` sub-hierarchies |
+| SQL-generating marker | `SqlGeneratingField.java` | Orthogonal interface — use `instanceof SqlGeneratingField` for uniform SQL field access |
+| Table reference | `TableRef.java` | Resolved jOOQ table with PK columns |
+| Column reference | `ColumnRef.java` | Resolved column with Java type |
+| Return type | `ReturnTypeRef.java` | `TableBound` / `Result` / `Scalar` / `Polymorphic` |
+| Cardinality | `FieldWrapper.java` | `Single` / `List` / `Connection` |
+| Join path | `JoinStep.java` | `FkJoin` / `ConditionJoin` |
+| WHERE filters | `WhereFilter.java` | `GeneratedConditionFilter` / `ConditionFilter` — call-site contract |
+| Service methods | `MethodRef.java` | Resolved Java method with `ParamSource` variants |
+| DataLoader keys | `BatchKey.java` | `RowKeyed` / `RecordKeyed` / `ObjectBased` |
+| Ordering | `OrderBySpec.java` | `Fixed` / `Argument` / `None` |
+| Pagination | `PaginationSpec.java` | Relay cursor arguments |
+| Condition params | `CallParam.java`, `BodyParam.java` | Call-site vs body-generation views |
 
----
+### Builders (root package)
 
-## Model Reference
+| Component | File | Responsibility |
+|---|---|---|
+| Entry point | `GraphitronSchemaBuilder.java` | Sole directive-reading boundary — assembles `GraphitronSchema` |
+| Type classification | `TypeBuilder.java` | Two-pass: classify types, then enrich interfaces/unions with participants |
+| Field classification | `FieldBuilder.java` | Classifies fields based on parent type, directives, and return type |
+| jOOQ lookups | `JooqCatalog.java` | Lazy wrapper around jOOQ `Catalog` — tables, columns, FKs, indexes, PKs |
+| Service reflection | `ServiceCatalog.java` | Reflects `@service`/`@tableMethod` Java methods into `MethodRef` |
 
-`GraphitronSchemaBuilder` produces a `GraphitronSchema` — two flat maps a generator can query:
+### Generators (`generators/`)
 
-```java
-schema.type("Film")          // → GraphitronType (or null)
-schema.field("Film", "title") // → GraphitronField (or null)
-schema.fieldsOf("Film")       // → List<GraphitronField> in declaration order
-```
+| Generator | Output | File |
+|---|---|---|
+| `TypeFieldsGenerator` | `rewrite.types.*Fields` — wiring + field methods | `TypeFieldsGenerator.java` |
+| `TypeClassGenerator` | `rewrite.types.*` — select/subselect/batch methods | `TypeClassGenerator.java` |
+| `TypeConditionsGenerator` | `rewrite.types.*Conditions` — pure-function WHERE predicates | `TypeConditionsGenerator.java` |
 
-The values in those maps are sealed hierarchies. Pattern-match to get what you need.
+### Directives
 
-### JooqCatalog
-
-Lazy wrapper around the jOOQ `Catalog`. Used only by `GraphitronSchemaBuilder` and its permitted collaborators — generators never call it directly.
-
-Key methods:
-- `findTable(sqlName)` → `Optional<TableEntry>` (`javaFieldName`, `Table<?>`)
-- `findColumn(table, sqlColumnName)` → `Optional<ColumnEntry>` (`javaName`, `columnClass`, `nullable`)
-- `findForeignKey(name)` → searches by SQL constraint name or jOOQ Java constant name, case-insensitive
-- `findForeignKeysBetweenTables(tableA, tableB)` → all FKs where one endpoint is `tableA` and the other is `tableB` (either direction)
-- `findIndexColumns(tableSqlName, indexName)` → ordered list of `ColumnEntry` for a named index
-- `findPkColumns(tableSqlName)` → PK columns in key-field order; empty when no PK
-- `allColumnsOf(tableSqlName)` → all columns in declaration order
-- `columnSqlNamesOf(tableSqlName)` → SQL column names only, for candidate hints in error messages
-- `allTableSqlNames()` → all table SQL names, for candidate hints
-- `allForeignKeySqlNames()` → all FK constraint names, for candidate hints
-
-### GraphitronType variants
-
-**Table-backed** (carry `TableRef table()`):
-- `TableType` — `@table` without `@node`
-- `NodeType` — `@table` + `@node`; also carries `typeId`, `nodeKeyColumns`
-- `TableInterfaceType` — single-table discriminated interface; carries `discriminatorColumn`, `participants`
-
-**Result-mapped** (`@record` types, carry `fqClassName`):
-- `JavaRecordType`, `PojoResultType`, `JooqRecordType`, `JooqTableRecordType`
-
-**Other**:
-- `RootType` — Query or Mutation
-- `InterfaceType`, `UnionType` — multi-table polymorphic; carry `participants`
-- `ErrorType` — `@error` type; carries `handlers`
-- `InputType` variants — `JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType`
-- `TableInputType` — `@table` input; owns DML; carries `table` and resolved `inputFields`
-- `UnclassifiedType` — build-time classification failure; carries `reason`
-
-### GraphitronField variants
-
-Root fields (`RootField`):
-- `QueryField` variants: `QueryTableField`, `QueryLookupTableField` (exposes `lookupMethodName()`), `QueryTableMethodTableField`, `QueryNodeField`, `QueryEntityField`, `QueryTableInterfaceField`, `QueryInterfaceField`, `QueryUnionField`, `QueryServiceTableField`, `QueryServiceRecordField`
-  - `QueryTableField`, `QueryLookupTableField`, `QueryTableInterfaceField` implement `SqlGeneratingField`
-- `MutationField` variants: `MutationInsertTableField`, `MutationUpdateTableField`, `MutationDeleteTableField`, `MutationUpsertTableField`, `MutationServiceTableField`, `MutationServiceRecordField`
-
-Child fields (`ChildField`):
-- Column access: `ColumnField`, `ColumnReferenceField`
-- Node id: `NodeIdField`, `NodeIdReferenceField`
-- Table-navigating (`TableTargetField` — implements `SqlGeneratingField`; carry `returnType`, `joinPath`, `filters`, `orderBy`, `pagination`): `TableField`, `SplitTableField`, `LookupTableField`, `SplitLookupTableField`, `TableInterfaceField`, `ServiceTableField`, `RecordTableField`, `RecordLookupTableField`
-  - `SplitTableField`, `SplitLookupTableField` also carry `batchKey: BatchKey`
-  - `ServiceTableField` also carries `method: MethodRef` and `batchKey` (via `method.params()`); exposes `rowsMethodName()` — the generated `load*()` helper name
-- Other: `TableMethodField` (carries `method: MethodRef`), `InterfaceField`, `UnionField`, `NestingField`, `ConstructorField`, `ServiceRecordField`, `RecordField`, `ComputedField`, `PropertyField`, `MultitableReferenceField`
-
-Special: `NotGeneratedField` (explicit `@notGenerated`), `UnclassifiedField` (carries `reason`)
-
-### Support types
-
-**`TableRef`** — a resolved jOOQ table: `tableName()` (SQL), `javaFieldName()` (e.g. `FILM`), `javaClassName()` (e.g. `Film`), `primaryKeyColumns()`, `hasPrimaryKey()`.
-
-**`ColumnRef`** — a resolved column: `sqlName()`, `javaName()`, `columnClass()` (fully-qualified Java type).
-
-**`ReturnTypeRef`** — what a field returns, combined with its `FieldWrapper`:
-- `TableBoundReturnType` — Graphitron generates SQL; carries `table`
-- `ResultReturnType` — `@record` type; no SQL
-- `ScalarReturnType` — scalar or enum; no SQL
-- `PolymorphicReturnType` — multi-table interface/union; generation not yet implemented
-
-**`FieldWrapper`** — cardinality: `Single(nullable)`, `List(listNullable, itemNullable)`, `Connection(connectionNullable, itemNullable)`. Use `wrapper.isList()` instead of `!(wrapper instanceof Single)` — both `List` and `Connection` return `true`.
-
-**`JoinStep`** — one hop in a `@reference` path:
-- `FkJoin(fkName, targetTableSqlName, whereFilter)` — navigates via a jOOQ FK; `whereFilter` is an optional WHERE clause (not the JOIN ON)
-- `ConditionJoin(condition)` — navigates via a user condition method, which becomes the ON clause
-
-**`WhereFilter`** — one WHERE predicate. Sealed interface; `className()`, `methodName()`, `callParams()` define the call-site contract used uniformly by fetcher generators:
-- `GeneratedConditionFilter` — Graphitron-generated predicate driven by field arguments. The builder produces one per SQL-generating field that has filterable arguments. Carries `className`, `methodName`, `tableRef`, `callParams` (call-site: argument extraction expressions), `bodyParams` (body-generation: column refs, nullability, enum mappings). A corresponding method is generated on the `*Conditions` class.
-- `ConditionFilter` — developer-supplied `@condition` method. Carries `MethodRef method`; `callParams()` is derived from `method.params()` by skipping the implicit `Table` parameter.
-
-**`SqlGeneratingField`** — orthogonal capability interface (does not extend `GraphitronField`). Implemented by `QueryTableField`, `QueryLookupTableField`, `QueryTableInterfaceField`, and all `TableTargetField` variants. Exposes `returnType()`, `filters()`, `orderBy()`, `pagination()`. Use `field instanceof SqlGeneratingField sgf` in generators that process all SQL-generating fields uniformly — no need to switch between `QueryField` and `ChildField` branches.
-
-**`MethodRef`** — a resolved Java method: `className`, `methodName`, `returnTypeName`, `params`. Each param is either `Typed(name, typeName, source)` or `Sourced(name, batchKey)`. `ParamSource` variants: `Arg`, `Context`, `DslContext`, `Table`, `SourceTable`, `Sources(batchKey)`.
-
-**`BatchKey`** — the DataLoader key strategy for a `Sourced` parameter: `RowKeyed(keyColumns)` (element type `RowN<T…>`), `RecordKeyed(keyColumns)` (element type `RecordN<T…>`), or `ObjectBased(fqClassName)` (whole parent record/DTO). `keyColumns` comes from the parent type's `primaryKeyColumns()`; it is empty for root operation fields with no backing table. All three carry `javaTypeName()` (the `List<?>` parameter type as a string). `RowKeyed` and `RecordKeyed` also carry `selectManyMethodName()` / `selectOneMethodName()` — the names of the generated table-class batch methods. `ObjectBased` batch loading is not yet implemented.
-
-**`OrderBySpec`** — the ordering strategy for a SQL-generating field. Three variants:
-- `Fixed(columns, direction)` — statically resolved ORDER BY. `direction` is `"ASC"` or `"DESC"` (from the directive); use `jooqMethodName()` when building jOOQ sort calls (returns `"asc"` or `"desc"`).
-- `Argument(name, typeName, nonNull, list, sortFieldName, directionFieldName, namedOrders, base)` — dynamic ordering from an `@orderBy` argument; `base` is a `Fixed` fallback (may be `null`).
-- `None` — no ordering applicable (single-value field, or no PK and no `@defaultOrder`).
+- **SDL definitions**: `graphitron-common/src/main/resources/directives.graphqls`
+- **Directive reference with examples**: [graphitron-java-codegen README](../graphitron-codegen-parent/graphitron-java-codegen/README.md)
 
 ---
 
 **See also:**
 - [Rewrite Roadmap](REWRITE-ROADMAP.md) — remaining generator work, design principles, and known gaps
-- [graphitron-java-codegen README](../graphitron-codegen-parent/graphitron-java-codegen/README.md) — complete directive reference with examples
