@@ -124,3 +124,47 @@ Steps 1-3 clean up the builder. Step 4 unblocks `@condition`. Steps 5-9 implemen
 
 - **Child-level lookup fields** (`LookupTableField`, `SplitLookupTableField`, `RecordLookupTableField`) — same VALUES pattern in subquery or DataLoader context. The VALUES builder (step 7) is reusable; integration is roadmap G6 work.
 - **Mutations** — input-type arguments for DML use different mapping. Separate concern.
+
+---
+
+## Review notes
+
+Reviewed 2026-04-15 against the current implementation (commit `de928a62`). The plan is structurally sound. The items below need resolution before or during implementation.
+
+### Problem statement correction
+
+The "Problem" section describes argument processing as "one pass through `buildFilters()`" — this understates the current situation. There are actually **three independent methods** that each iterate all arguments:
+
+1. `buildFilters()` (line 559) — skips `@orderBy`, pagination args, `@condition`, input-type; classifies the rest into `BodyParam`/`CallParam`
+2. `buildOrderBySpec()` (line 343) — scans for `@orderBy` directive
+3. `buildPaginationSpec()` (line 732) — scans for `first`/`last`/`after`/`before` by hardcoded name
+
+The coordination between these three passes is implicit: `buildFilters()` skips pagination args using the same hardcoded `isPaginationArg()` check (line 760) that `buildPaginationSpec()` uses. The plan should reference the three-pass structure, since `classifyArguments()` must unify all three, not just replace `buildFilters()`.
+
+### Gap 1: Lookup key vs filter dispatch
+
+`ColumnArg` is projected into `GeneratedConditionFilter` for filter fields and into `LookupMapping` for lookup fields. The plan doesn't specify what decides which projection applies. The builder currently uses `hasLookupKeyAnywhere()` (line 979) which returns a boolean — it doesn't identify *which* argument is the lookup key. The classification step needs a concrete rule: e.g., "if the field has `@lookupKey` and the argument name matches a lookup key column, project to `LookupMapping`; otherwise `GeneratedConditionFilter`".
+
+### Gap 2: `TableInputArg` components unspecified
+
+`TableInputArg` appears in the variant list and the projection table but has no record components defined (`(...)`). Filter-side `ColumnArg` carries `ColumnRef` and `CallSiteExtraction`. `TableInputArg` needs at least: the input type's table reference, the list of field→column mappings for its scalar fields, and whether it represents a single composite key or a list of keys. Without this, step 9 ("Handle `TableInputArg` in lookup mapping") has no specification to implement against.
+
+### Gap 3: `PaginationArg` name collision
+
+The plan defines `PaginationArg` as a variant of `ArgumentRef`. The existing model already has `PaginationSpec.PaginationArg` (a record carrying `argName` + `typeName`). These will collide at import time if they're in related packages. Options: rename the `ArgumentRef` variant (e.g., `PaginationArgRef`), or nest it inside `ArgumentRef` so the qualified name disambiguates.
+
+### Gap 4: `@condition` override timing
+
+Step 4 reads field-level `@condition` and applies `override: true` to suppress `GeneratedConditionFilter` entries. But with the new pipeline, `GeneratedConditionFilter` entries are projected from `ColumnArg` in step 3. The plan should clarify: does `override: true` suppress projection at step 3 (by marking `ColumnArg`s as suppressed), or does it remove them after projection (filter the list post-hoc)? The former is cleaner — it means `classifyArguments()` takes a `hasConditionOverride` flag and marks `ColumnArg`s accordingly.
+
+### Gap 5: Scope of `classifyArguments()` vs the other two methods
+
+The plan shows `classifyArguments()` producing `OrderByArg` and `PaginationArg` variants, implying it absorbs `buildOrderBySpec()` and `buildPaginationSpec()`. But the implementation order (steps 2-3) only mentions rebuilding `buildFilters()`. The plan should explicitly state that `classifyArguments()` replaces all three methods, and that step 3 projects `OrderByArg` → `OrderBySpec` and `PaginationArg` → `PaginationSpec` alongside `ColumnArg` → `GeneratedConditionFilter`.
+
+### What's solid
+
+- The sealed `ArgumentRef` hierarchy is the right abstraction — it makes argument classification exhaustive and compiler-checked.
+- `LookupMapping` with `LookupColumn` carrying `CallSiteExtraction` reuses the existing extraction machinery cleanly.
+- The implementation order (classify → project → @condition → lookup) correctly sequences the dependencies.
+- The test strategy covers each layer independently.
+- Keeping `ArgumentRef` builder-internal (never on field records) follows the "narrow component types" principle.
