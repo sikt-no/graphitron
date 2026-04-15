@@ -32,7 +32,7 @@ You're implementing generators, adding field variants, or fixing bugs in the rew
 
 Active implementation plans (read when you're working on the specific feature):
 - **[Paginated Fields](paginated-fields.md)** — Dynamic ordering cursors, backward pagination, known bugs.
-- **[ConditionFilter Builder Path](condition-filter-builder.md)** — Reading `@condition` directives in the builder, override flag, tests.
+- **[Argument Resolution](argument-resolution.md)** — Unified argument classification, @condition support, lookup VALUES generation.
 
 ---
 
@@ -50,7 +50,7 @@ Active implementation plans (read when you're working on the specific feature):
 | [Code Generation Triggers](code-generation-triggers.md) | Contributors | Schema → classification → generated code |
 | [Rewrite Roadmap](rewrite-roadmap.md) | Contributors | Design principles, remaining work, known gaps |
 | [Paginated Fields](paginated-fields.md) | Contributors | Pagination implementation plan |
-| [ConditionFilter Builder Path](condition-filter-builder.md) | Contributors | @condition builder plan |
+| [Argument Resolution](argument-resolution.md) | Contributors | Argument classification, @condition, lookup generation |
 
 ## Other Documentation
 

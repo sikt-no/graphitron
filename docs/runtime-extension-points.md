@@ -93,7 +93,7 @@ This is inlined directly as an argument to the method call — not a separate va
 condition = condition.and(MyService.filterByTenant(table, graphitronContext(env).getContextArgument(env, "tenantId")));
 ```
 
-**Limitation:** The `@condition` directive also has a `contextArguments` parameter in the SDL, but the rewrite pipeline's `FieldBuilder` does not yet read `@condition` on field definitions. Context arguments currently work only with `@service` and `@tableMethod`. See [ConditionFilter Builder Path](condition-filter-builder.md) for the plan.
+**Limitation:** The `@condition` directive also has a `contextArguments` parameter in the SDL, but the rewrite pipeline's `FieldBuilder` does not yet read `@condition` on field definitions. Context arguments currently work only with `@service` and `@tableMethod`. See [Argument Resolution](argument-resolution.md) for the plan.
 
 ### getDataLoaderName — DataLoader isolation
 
