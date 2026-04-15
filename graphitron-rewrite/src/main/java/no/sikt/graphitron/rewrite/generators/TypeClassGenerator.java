@@ -131,7 +131,7 @@ public class TypeClassGenerator {
             .addModifiers(PUBLIC, STATIC)
             .returns(listOfField)
             .addParameter(SELECTION_SET, "sel")
-            .addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName())
+            .addCode(GeneratorUtils.declareTableLocal(names, tableRef))
             .addStatement("$T<$T> fields = new $T<>()", ARRAY_LIST, fieldWildcard, ARRAY_LIST);
 
         builder.addCode("for ($T entry : sel.getFieldsGroupedByResultKey().entrySet()) {\n", entryType);
@@ -162,7 +162,7 @@ public class TypeClassGenerator {
             .addParameter(sortFieldList(), "orderBy")
             .addStatement("$T dsl = (($T) env.getGraphQlContext().get($S)).getDslContext(env)",
                 DSL_CONTEXT, GRAPHITRON_CONTEXT, "graphitronContext")
-            .addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName())
+            .addCode(GeneratorUtils.declareTableLocal(names, tableRef))
             .addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
@@ -188,7 +188,7 @@ public class TypeClassGenerator {
             .addParameter(CONDITION, "condition")
             .addStatement("$T dsl = (($T) env.getGraphQlContext().get($S)).getDslContext(env)",
                 DSL_CONTEXT, GRAPHITRON_CONTEXT, "graphitronContext")
-            .addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName())
+            .addCode(GeneratorUtils.declareTableLocal(names, tableRef))
             .addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
@@ -283,7 +283,7 @@ public class TypeClassGenerator {
             .addParameter(SELECTED_FIELD, "sel")
             .addParameter(CONDITION, "condition")
             .addParameter(sortFieldList(), "orderBy")
-            .addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName())
+            .addCode(GeneratorUtils.declareTableLocal(names, tableRef))
             .addStatement(
                 "return $T.multiset($T.select(fields(sel.getSelectionSet())).from(table).where(condition).orderBy(orderBy)).as(sel.getResultKey())",
                 DSL, DSL)
@@ -307,7 +307,7 @@ public class TypeClassGenerator {
             .addParameter(ENV, "env")
             .addParameter(SELECTED_FIELD, "sel")
             .addParameter(CONDITION, "condition")
-            .addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName())
+            .addCode(GeneratorUtils.declareTableLocal(names, tableRef))
             .addStatement(
                 "return $T.multiset($T.select(fields(sel.getSelectionSet())).from(table).where(condition).limit(1)).as(sel.getResultKey()).convertFrom(r -> r.isEmpty() ? null : r.get(0))",
                 DSL, DSL)

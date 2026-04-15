@@ -160,7 +160,7 @@ public class TypeFetcherGenerator {
             .returns(returnType)
             .addParameter(ENV, "env");
 
-        builder.addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName());
+        builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         builder.addCode(buildConditionCall(qtf));
 
         if (isList) {
@@ -311,7 +311,7 @@ public class TypeFetcherGenerator {
             .returns(ParameterizedTypeName.get(RESULT, RECORD))
             .addParameter(ENV, "env");
 
-        builder.addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName());
+        builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
 
         for (var filter : field.filters()) {

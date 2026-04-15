@@ -81,6 +81,28 @@ class GeneratorUtils {
     }
 
     // -----------------------------------------------------------------------
+    // Common code-block fragments
+    // -----------------------------------------------------------------------
+
+    /**
+     * Returns a {@link CodeBlock} that declares a local {@code table} variable from the
+     * jOOQ {@code Tables} constants class:
+     * <pre>{@code
+     * JooqTableClass table = Tables.TABLE_FIELD;
+     * }</pre>
+     *
+     * <p>Used by every SQL-generating method that needs a table alias. Pass the
+     * {@link ResolvedTableNames} already constructed for the method alongside the
+     * originating {@link TableRef} for the field name.
+     */
+    static CodeBlock declareTableLocal(ResolvedTableNames names, TableRef tableRef) {
+        return CodeBlock.builder()
+            .addStatement("$T table = $T.$L",
+                names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName())
+            .build();
+    }
+
+    // -----------------------------------------------------------------------
     // BatchKey utilities
     // -----------------------------------------------------------------------
 
