@@ -413,4 +413,68 @@ class TypeFetcherGeneratorTest {
         var m = method(specWithServiceField("Language", "films", true), "loadFilms");
         assertThat(m.parameters()).extracting(p -> p.name()).containsExactly("keys", "env", "sel");
     }
+
+    // ===== QueryTableField with OrderBySpec.Argument → orderBy helper method =====
+
+    private static QueryField.QueryTableField queryTableFieldWithOrderByArg(String fieldName) {
+        var filmIdCol = TestFixtures.filmIdCol();
+        var base = new OrderBySpec.Fixed(
+            List.of(new OrderBySpec.ColumnOrderEntry(filmIdCol, null)), "ASC");
+        var namedOrder = new OrderBySpec.NamedOrder(
+            "TITLE",
+            new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(filmIdCol, null)), "ASC"));
+        var orderBy = new OrderBySpec.Argument(
+            "order", "FilmOrder", false, false, "field", "direction",
+            List.of(namedOrder), base);
+        return new QueryField.QueryTableField("Query", fieldName, null,
+            TestFixtures.tableBoundFilm(TestFixtures.nonNullList()),
+            List.of(), orderBy, null);
+    }
+
+    @Test
+    void orderByArg_emitsHelperMethod() {
+        var field = queryTableFieldWithOrderByArg("films");
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(spec.methodSpecs()).extracting(MethodSpec::name).contains("filmsOrderBy");
+    }
+
+    @Test
+    void orderByArg_helperMethod_isPrivateStatic() {
+        var field = queryTableFieldWithOrderByArg("films");
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        var m = method(spec, "filmsOrderBy");
+        assertThat(m.modifiers()).containsExactlyInAnyOrder(
+            javax.lang.model.element.Modifier.PRIVATE, javax.lang.model.element.Modifier.STATIC);
+    }
+
+    @Test
+    void orderByArg_helperMethod_returnsSortFieldList() {
+        var field = queryTableFieldWithOrderByArg("films");
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(method(spec, "filmsOrderBy").returnType().toString())
+            .isEqualTo("java.util.List<org.jooq.SortField<?>>");
+    }
+
+    @Test
+    void orderByArg_helperMethod_takesEnvParameter() {
+        var field = queryTableFieldWithOrderByArg("films");
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(method(spec, "filmsOrderBy").parameters())
+            .extracting(p -> p.type().toString())
+            .containsExactly("graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void orderByArg_fetcherBody_callsHelperMethod() {
+        var field = queryTableFieldWithOrderByArg("films");
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(method(spec, "films").code().toString()).contains("filmsOrderBy(env)");
+    }
+
+    @Test
+    void noOrderByArg_noHelperMethod() {
+        var field = queryTableField("films", true); // OrderBySpec.None
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(spec.methodSpecs()).extracting(MethodSpec::name).doesNotContain("filmsOrderBy");
+    }
 }

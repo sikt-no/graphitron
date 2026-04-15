@@ -6,6 +6,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
@@ -32,6 +33,7 @@ import no.sikt.graphitron.rewrite.model.WhereFilter;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
 
 import javax.lang.model.element.Modifier;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -83,6 +85,11 @@ public class TypeFetcherGenerator {
     private static final ClassName COMPLETABLE_FUTURE   = ClassName.get("java.util.concurrent", "CompletableFuture");
     private static final ClassName DATA_LOADER          = ClassName.get("org.dataloader", "DataLoader");
     private static final ClassName DATA_LOADER_FACTORY  = ClassName.get("org.dataloader", "DataLoaderFactory");
+    private static final ClassName ARRAY_LIST           = ClassName.get("java.util", "ArrayList");
+    private static final ClassName MAP                  = ClassName.get("java.util", "Map");
+    /** {@code List<SortField<?>>} — the return type of every {@code *OrderBy} helper method. */
+    private static final TypeName SORT_FIELD_LIST       = ParameterizedTypeName.get(LIST,
+        ParameterizedTypeName.get(SORT_FIELD, WildcardTypeName.subtypeOf(Object.class)));
 
     /**
      * Generates the {@code *Fetchers} class TypeSpec for the given GraphQL type.
@@ -146,6 +153,16 @@ public class TypeFetcherGenerator {
             .values()
             .forEach(tl -> builder.addField(TypeConditionsGenerator.buildTextEnumMapField(tl)));
 
+        // Emit orderBy helper methods for QueryTableFields with a dynamic @orderBy argument
+        for (var field : fields) {
+            if (field instanceof QueryField.QueryTableField qtf
+                    && qtf.orderBy() instanceof OrderBySpec.Argument arg) {
+                var tableRef = qtf.returnType().table();
+                var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName());
+                builder.addMethod(buildOrderByHelperMethod(qtf.name(), arg, names, tableRef));
+            }
+        }
+
         builder.addMethod(buildWiringMethod(typeName, className, parentTable, fields));
         return builder.build();
     }
@@ -188,7 +205,7 @@ public class TypeFetcherGenerator {
         builder.addCode(buildConditionCall(qtf));
 
         if (isList) {
-            builder.addCode(buildOrderByCode(qtf.orderBy()));
+            builder.addCode(buildOrderByCode(qtf.orderBy(), qtf.name()));
             builder.addStatement("return $T.selectMany(env, condition, orderBy)", names.typeClass());
         } else {
             builder.addStatement("return $T.selectOne(env, condition)", names.typeClass());
@@ -342,7 +359,14 @@ public class TypeFetcherGenerator {
         };
     }
 
-    private static CodeBlock buildOrderByCode(OrderBySpec orderBy) {
+    /**
+     * Builds the {@code orderBy} variable declaration for a fetcher body.
+     *
+     * <p>When {@code fieldName} is non-null and {@code orderBy} is an {@link OrderBySpec.Argument},
+     * emits a call to the {@code <fieldName>OrderBy} helper method. Otherwise, inlines the
+     * fixed or empty list.
+     */
+    private static CodeBlock buildOrderByCode(OrderBySpec orderBy, String fieldName) {
         var code = CodeBlock.builder();
         switch (orderBy) {
             case OrderBySpec.Fixed fixed -> {
@@ -358,10 +382,166 @@ public class TypeFetcherGenerator {
                     code.addStatement("$T<$T<?>> orderBy = $T.of($L)", LIST, SORT_FIELD, LIST, parts.build());
                 }
             }
-            case OrderBySpec.Argument arg -> code.add(buildOrderByCode(arg.base()));
+            case OrderBySpec.Argument arg -> {
+                if (fieldName != null) {
+                    code.addStatement("$T orderBy = $LOrderBy(env)", SORT_FIELD_LIST, fieldName);
+                } else {
+                    code.add(buildOrderByCode(arg.base(), null));
+                }
+            }
             case OrderBySpec.None none ->
                 code.addStatement("$T<$T<?>> orderBy = $T.of()", LIST, SORT_FIELD, LIST);
         }
+        return code.build();
+    }
+
+    /** Convenience overload — no helper method available; falls back to base for {@link OrderBySpec.Argument}. */
+    private static CodeBlock buildOrderByCode(OrderBySpec orderBy) {
+        return buildOrderByCode(orderBy, null);
+    }
+
+    // -----------------------------------------------------------------------
+    // OrderBy helper method generation (Steps 3+4 of orderby-implementation.md)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Generates the private static {@code <fieldName>OrderBy(DataFetchingEnvironment env)} helper.
+     *
+     * <p>The helper reads the {@code @orderBy} argument from {@code env}, dispatches over the
+     * sort-field name via a switch expression (single arg) or accumulates into a list (list arg),
+     * and returns a {@code List<SortField<?>>}. Fetcher bodies call this helper instead of
+     * inlining the dispatch logic.
+     */
+    private static MethodSpec buildOrderByHelperMethod(
+            String fieldName,
+            OrderBySpec.Argument arg,
+            GeneratorUtils.ResolvedTableNames names,
+            TableRef tableRef) {
+
+        var builder = MethodSpec.methodBuilder(fieldName + "OrderBy")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(SORT_FIELD_LIST)
+            .addParameter(ENV, "env");
+
+        builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
+
+        var baseExpr = buildBaseReturnExpr(arg.base());
+        if (arg.list()) {
+            builder.addCode(buildListArgOrderByBody(arg, baseExpr));
+        } else {
+            builder.addCode(buildSingleArgOrderByBody(arg, baseExpr));
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Returns the fallback expression ({@code List.of(table.COL.asc())} or {@code List.of()})
+     * used when no {@code @orderBy} argument is supplied at runtime.
+     */
+    private static CodeBlock buildBaseReturnExpr(OrderBySpec base) {
+        return switch (base) {
+            case OrderBySpec.Fixed fixed when !fixed.columns().isEmpty() -> {
+                var parts = CodeBlock.builder();
+                for (int i = 0; i < fixed.columns().size(); i++) {
+                    if (i > 0) parts.add(", ");
+                    var col = fixed.columns().get(i);
+                    parts.add("table.$L.$L()", col.column().javaName(), fixed.jooqMethodName());
+                }
+                yield CodeBlock.of("$T.of($L)", LIST, parts.build());
+            }
+            default -> CodeBlock.of("$T.of()", LIST);
+        };
+    }
+
+    /**
+     * Builds the body for an orderBy helper where the argument is a single map
+     * ({@code Map<String, Object>}).
+     *
+     * <pre>{@code
+     * Map<String, Object> orderArg = env.getArgument("order");
+     * if (orderArg == null) return List.of(table.FILM_ID.asc());
+     * String field = (String) orderArg.get("field");
+     * String dir   = (String) orderArg.get("direction");
+     * return switch (field) {
+     *     case "TITLE" -> List.of("DESC".equals(dir) ? table.TITLE.desc() : table.TITLE.asc());
+     *     default -> List.of(table.FILM_ID.asc());
+     * };
+     * }</pre>
+     */
+    private static CodeBlock buildSingleArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr) {
+        var code = CodeBlock.builder();
+        code.addStatement("$T<$T, $T> orderArg = env.getArgument($S)", MAP, String.class, Object.class, arg.name());
+        code.add("if (orderArg == null) return $L;\n", baseExpr);
+        code.addStatement("$T field = ($T) orderArg.get($S)", String.class, String.class, arg.sortFieldName());
+        code.addStatement("$T dir = ($T) orderArg.get($S)", String.class, String.class, arg.directionFieldName());
+        code.add("return switch (field) {\n");
+        code.indent();
+        for (var namedOrder : arg.namedOrders()) {
+            var cols = namedOrder.order().columns();
+            code.add("case $S -> $T.of(", namedOrder.name(), LIST);
+            for (int i = 0; i < cols.size(); i++) {
+                if (i > 0) code.add(", ");
+                var col = cols.get(i);
+                code.add("$S.equals(dir) ? table.$L.desc() : table.$L.$L()",
+                    "DESC", col.column().javaName(), col.column().javaName(),
+                    namedOrder.order().jooqMethodName());
+            }
+            code.add(");\n");
+        }
+        code.add("default -> $L;\n", baseExpr);
+        code.unindent();
+        code.add("};\n");
+        return code.build();
+    }
+
+    /**
+     * Builds the body for an orderBy helper where the argument is a list of maps
+     * ({@code List<Map<String, Object>>}).
+     *
+     * <pre>{@code
+     * List<Map<String, Object>> orderArgs = env.getArgument("order");
+     * if (orderArgs == null || orderArgs.isEmpty()) return List.of(table.FILM_ID.asc());
+     * var parts = new ArrayList<SortField<?>>();
+     * for (var entry : orderArgs) {
+     *     String f = (String) entry.get("field");
+     *     String d = (String) entry.get("direction");
+     *     switch (f) {
+     *         case "TITLE" -> parts.add("DESC".equals(d) ? table.TITLE.desc() : table.TITLE.asc());
+     *     }
+     * }
+     * return parts;
+     * }</pre>
+     */
+    private static CodeBlock buildListArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr) {
+        var code = CodeBlock.builder();
+        code.addStatement("$T<$T<$T, $T>> orderArgs = env.getArgument($S)",
+            LIST, MAP, String.class, Object.class, arg.name());
+        code.add("if (orderArgs == null || orderArgs.isEmpty()) return $L;\n", baseExpr);
+        code.addStatement("var parts = new $T<$T<?>>()", ARRAY_LIST, SORT_FIELD);
+        code.add("for (var entry : orderArgs) {\n");
+        code.indent();
+        code.addStatement("$T f = ($T) entry.get($S)", String.class, String.class, arg.sortFieldName());
+        code.addStatement("$T d = ($T) entry.get($S)", String.class, String.class, arg.directionFieldName());
+        code.add("switch (f) {\n");
+        code.indent();
+        for (var namedOrder : arg.namedOrders()) {
+            var cols = namedOrder.order().columns();
+            code.add("case $S -> {\n", namedOrder.name());
+            code.indent();
+            for (var col : cols) {
+                code.addStatement("parts.add($S.equals(d) ? table.$L.desc() : table.$L.$L())",
+                    "DESC", col.column().javaName(), col.column().javaName(),
+                    namedOrder.order().jooqMethodName());
+            }
+            code.unindent();
+            code.add("}\n");
+        }
+        code.unindent();
+        code.add("}\n");
+        code.unindent();
+        code.add("}\n");
+        code.addStatement("return parts");
         return code.build();
     }
 
