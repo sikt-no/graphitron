@@ -61,8 +61,7 @@ Complex resolution outcomes get their own sealed type rather than being stored a
 ### Active
 
 - **Paginated fields** — dynamic ordering cursors, backward pagination, execution test. See [paginated-fields.md](paginated-fields.md).
-- **Argument taxonomy** — sealed hierarchy for field arguments, absorbs `@condition` builder path. See [argument-taxonomy.md](argument-taxonomy.md).
-- **Lookup field generation** — `VALUES(...)` derived table pattern. See [lookup-field-generation.md](lookup-field-generation.md).
+- **Argument resolution** — unified classification, `@condition` support, lookup VALUES generation. See [argument-resolution.md](argument-resolution.md).
 
 ### Stubs to complete
 

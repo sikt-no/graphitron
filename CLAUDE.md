@@ -49,8 +49,7 @@ The `/docs` folder contains conceptual guides explaining Graphitron's design, ph
 ### Active Rewrite
 - **Rewrite Roadmap**: [/docs/rewrite-roadmap.md](/docs/rewrite-roadmap.md) - Remaining generator work, design principles, and known gaps
 - **Paginated Fields**: [/docs/paginated-fields.md](/docs/paginated-fields.md) - Remaining: dynamic ordering cursors, backward pagination, execution test
-- **Argument Taxonomy**: [/docs/argument-taxonomy.md](/docs/argument-taxonomy.md) - Sealed hierarchy for field arguments, absorbs @condition builder path
-- **Lookup Field Generation**: [/docs/lookup-field-generation.md](/docs/lookup-field-generation.md) - VALUES(...) derived table pattern for lookup fields
+- **Argument Resolution**: [/docs/argument-resolution.md](/docs/argument-resolution.md) - Unified argument classification, @condition support, lookup VALUES generation
 
 
 ## Key Architecture
