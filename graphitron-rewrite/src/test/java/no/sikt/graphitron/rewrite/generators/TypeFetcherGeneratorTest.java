@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.RewriteConfig;
+import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallParam;
@@ -26,6 +27,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
+import static no.sikt.graphitron.rewrite.TestFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -36,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class TypeFetcherGeneratorTest {
 
-    private static final TableRef FILM_TABLE = new TableRef("film", "FILM", "Film", List.of());
+    private static final TableRef FILM_TABLE = filmTable();
 
     @BeforeEach
     void setup() {
@@ -49,15 +51,12 @@ class TypeFetcherGeneratorTest {
     }
 
     private static GraphitronField columnField(String name, String columnName, String javaName, String columnClass) {
-        return new ChildField.ColumnField("Film", name, null, columnName,
-            new ColumnRef(columnName, javaName, columnClass), false);
+        return TestFixtures.columnField("Film", name, columnName, javaName, columnClass);
     }
 
     private static GraphitronField queryTableField(String name, boolean isList) {
-        var wrapper = isList
-            ? (FieldWrapper) new FieldWrapper.List(false, false)
-            : new FieldWrapper.Single(true);
-        var returnType = new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
+        var wrapper = isList ? (FieldWrapper) nonNullList() : single();
+        var returnType = tableBoundFilm(wrapper);
         return new QueryField.QueryTableField("Query", name, null, returnType,
             List.of(), new OrderBySpec.None(), null);
     }
@@ -208,8 +207,7 @@ class TypeFetcherGeneratorTest {
     // ===== QueryLookupTableField =====
 
     private static GraphitronField lookupQueryField(String name, List<BodyParam> bodyParams) {
-        var wrapper = new FieldWrapper.List(false, false);
-        var returnType = new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
+        var returnType = tableBoundFilm(nonNullList());
         var callParams = bodyParams.stream()
             .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list(), bp.javaType()))
             .toList();
@@ -224,17 +222,17 @@ class TypeFetcherGeneratorTest {
     }
 
     private static BodyParam listKeyParam(String name, String javaName, String javaType) {
-        return new BodyParam(name, new ColumnRef(name, javaName, javaType), javaType, false, true,
+        return new BodyParam(name, col(name, javaName, javaType), javaType, false, true,
             new CallSiteExtraction.Direct());
     }
 
     private static BodyParam scalarKeyParam(String name, String javaName, String javaType) {
-        return new BodyParam(name, new ColumnRef(name, javaName, javaType), javaType, false, false,
+        return new BodyParam(name, col(name, javaName, javaType), javaType, false, false,
             new CallSiteExtraction.Direct());
     }
 
     private static BodyParam listIdKeyParam(String name, String javaName, String javaType) {
-        return new BodyParam(name, new ColumnRef(name, javaName, javaType), javaType, false, true,
+        return new BodyParam(name, col(name, javaName, javaType), javaType, false, true,
             new CallSiteExtraction.JooqConvert(javaName));
     }
 
@@ -314,14 +312,13 @@ class TypeFetcherGeneratorTest {
 
     // ===== @splitQuery TableField =====
 
-    private static final TableRef LANGUAGE_TABLE = new TableRef("language", "LANGUAGE", "Language",
-        List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer")));
+    private static final TableRef LANGUAGE_TABLE = languageTableWithPk();
 
     private static GraphitronField splitQueryField(String parentType, String name) {
         return new ChildField.SplitTableField(parentType, name, null,
-            new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, new FieldWrapper.List(false, false)),
+            tableBoundFilm(nonNullList()),
             List.of(), List.of(), new OrderBySpec.None(), null,
-            new BatchKey.RowKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer"))));
+            new BatchKey.RowKeyed(List.of(languageIdCol())));
     }
 
     private static TypeSpec specWithSplitQuery(String parentType, String fieldName) {
@@ -377,15 +374,13 @@ class TypeFetcherGeneratorTest {
     // ===== @service field with TableBoundReturnType =====
 
     private static GraphitronField serviceField(String parentType, String name, boolean isList) {
-        var returnWrapper = isList
-            ? (FieldWrapper) new FieldWrapper.List(true, true)
-            : new FieldWrapper.Single(true);
-        var returnType = new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, returnWrapper);
+        var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
+        var returnType = tableBoundFilm(returnWrapper);
         var method = new MethodRef.Basic(
             "no.example.FilmService", "getFilms", "java.util.List",
             List.of(
                 new MethodRef.Param.Sourced("keys",
-                    new BatchKey.RowKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer")))),
+                    new BatchKey.RowKeyed(List.of(languageIdCol()))),
                 new MethodRef.Param.Typed("filter", "java.lang.String", new ParamSource.Arg()),
                 new MethodRef.Param.Typed("tenantId", "java.lang.String", new ParamSource.Context())
             )

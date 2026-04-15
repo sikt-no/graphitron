@@ -1,11 +1,8 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import graphql.schema.idl.SchemaParser;
-import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
-import no.sikt.graphql.schema.SchemaReadingHelper;
+import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -190,9 +187,6 @@ class TablePipelineTest {
     }
 
     private GraphitronSchema buildSchema(String schemaText) {
-        String directives = SchemaReadingHelper.fileAsString(
-            java.nio.file.Paths.get("../graphitron-common/src/main/resources/directives.graphqls"));
-        TypeDefinitionRegistry registry = new SchemaParser().parse(directives + "\n" + schemaText);
-        return GraphitronSchemaBuilder.build(registry);
+        return TestSchemaHelper.buildSchema(schemaText);
     }
 }

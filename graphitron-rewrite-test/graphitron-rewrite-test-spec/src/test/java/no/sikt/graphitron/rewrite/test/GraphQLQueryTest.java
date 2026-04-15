@@ -18,6 +18,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.PostgreSQLContainer;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -39,19 +42,19 @@ class GraphQLQueryTest {
 
     @BeforeAll
     static void startDatabase() throws Exception {
-        postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+        postgres = new PostgreSQLContainer<>("postgres:18-alpine");
         postgres.start();
 
         dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
 
-        // Load schema and test data
-        var initSql = Files.readString(Path.of("src/test/resources/init.sql"));
+        // Load schema and test data from the shared fixtures init.sql (on classpath via graphitron-rewrite-test-fixtures)
+        var initSql = readClasspathResource("init.sql");
         dsl.execute(initSql);
 
         // Build GraphQL schema from the SDL used by the generator
         var sdl = Files.readString(Path.of("src/main/resources/graphql/schema.graphqls"));
         // Add directives so the schema parses (the generator needs them, and so does SchemaGenerator)
-        var directives = Files.readString(Path.of("../../graphitron-common/src/main/resources/directives.graphqls"));
+        var directives = readClasspathResource("directives.graphqls");
         var registry = new SchemaParser().parse(directives + "\n" + sdl);
 
         var wiring = GraphitronWiring.build()
@@ -91,6 +94,15 @@ class GraphQLQueryTest {
         var result = graphql.execute(input);
         assertThat(result.getErrors()).isEmpty();
         return result.getData();
+    }
+
+    private static String readClasspathResource(String name) {
+        try (InputStream is = GraphQLQueryTest.class.getClassLoader().getResourceAsStream(name)) {
+            if (is == null) throw new IllegalStateException(name + " not found on classpath");
+            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     // ===== Multi-field root query =====

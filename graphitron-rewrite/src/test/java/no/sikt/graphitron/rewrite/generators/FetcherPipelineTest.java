@@ -1,18 +1,14 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import graphql.schema.idl.SchemaParser;
-import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.RewriteConfig;
-import no.sikt.graphql.schema.SchemaReadingHelper;
+import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Set;
 
@@ -288,9 +284,6 @@ class FetcherPipelineTest {
     }
 
     private GraphitronSchema buildSchema(String schemaText) {
-        String directives = SchemaReadingHelper.fileAsString(
-            Paths.get("../graphitron-common/src/main/resources/directives.graphqls"));
-        TypeDefinitionRegistry registry = new SchemaParser().parse(directives + "\n" + schemaText);
-        return GraphitronSchemaBuilder.build(registry);
+        return TestSchemaHelper.buildSchema(schemaText);
     }
 }

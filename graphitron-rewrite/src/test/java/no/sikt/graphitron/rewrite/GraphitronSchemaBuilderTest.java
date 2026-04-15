@@ -45,7 +45,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.TableRef;
-import no.sikt.graphql.schema.SchemaReadingHelper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -2163,14 +2162,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== Helper =====
 
-    /**
-     * Parses {@code schemaText} together with the Graphitron directive definitions and
-     * builds a {@link GraphitronSchema} via {@link GraphitronSchemaBuilder}.
-     */
     private GraphitronSchema build(String schemaText) {
-        String directivesContent = SchemaReadingHelper.fileAsString(
-            java.nio.file.Paths.get("../graphitron-common/src/main/resources/directives.graphqls"));
-        TypeDefinitionRegistry registry = new SchemaParser().parse(directivesContent + "\n" + schemaText);
-        return GraphitronSchemaBuilder.build(registry);
+        return TestSchemaHelper.buildSchema(schemaText);
     }
 }

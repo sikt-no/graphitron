@@ -1,11 +1,10 @@
 package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.rewrite.RewriteConfig;
+import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
+import static no.sikt.graphitron.rewrite.TestFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -34,16 +34,13 @@ class TypeClassGeneratorTest {
     }
 
     private static final List<ChildField.ColumnField> FILM_COLUMNS = List.of(
-        new ChildField.ColumnField("Film", "title", null, "title",
-            new ColumnRef("title", "TITLE", "java.lang.String"), false),
-        new ChildField.ColumnField("Film", "filmId", null, "film_id",
-            new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), false)
+        TestFixtures.columnField("Film", "title", "title", "TITLE", "java.lang.String"),
+        TestFixtures.columnField("Film", "filmId", "film_id", "FILM_ID", "java.lang.Integer")
     );
 
     private static TypeSpec spec() {
         return TypeClassGenerator.buildTypeSpec("Film",
-            new TableRef("film", "FILM", "Film",
-                List.of(new ColumnRef("id", "ID", "java.lang.Integer"))),
+            filmTable(List.of(col("id", "ID", "java.lang.Integer"))),
             FILM_COLUMNS);
     }
 
