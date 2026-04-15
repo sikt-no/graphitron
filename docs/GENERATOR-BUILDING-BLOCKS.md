@@ -160,6 +160,72 @@ This is the lowest-value extraction (it's just deduplication, not an abstraction
 
 Patterns 1-5 are worth doing now — they directly unblock or simplify the remaining stub work. Patterns 6-7 are polish that can happen alongside or after.
 
+## Capability interfaces on the model
+
+The building blocks above are shared *functions*. But the dispatch in `generateTypeSpec` is an N-way `instanceof` chain that grows with each field variant. Capability interfaces on the sealed hierarchy let the generator match on *what a field can do* rather than *which specific variant it is*.
+
+`SqlGeneratingField` already proves the pattern: 11 variants across `QueryField` and `ChildField.TableTargetField` implement it, and the generator accesses `filters()`, `orderBy()`, `pagination()` uniformly.
+
+### Precedent: MethodRef as interface
+
+The `MethodRef` refactoring (commit `dfb6917`) converted `MethodRef` from a record to a sealed interface. `ConditionFilter` now implements both `WhereFilter` and `MethodRef` directly — a condition method IS a method reference. `MethodRef.Basic` is the concrete record for service/table method references resolved from reflection.
+
+This establishes the pattern: an interface defines a capability contract (`className()`, `methodName()`, `params()`, `callParams()`), and types implement it directly when they ARE that thing, or carry an instance when they HAVE one.
+
+### Proposed interfaces
+
+**`MethodBackedField`** — "this field delegates to a user-provided Java method"
+
+```java
+public interface MethodBackedField {
+    MethodRef method();
+}
+```
+
+7 variants carry `method: MethodRef` today: `ServiceTableField`, `TableMethodField`, `ServiceRecordField`, `QueryTableMethodTableField`, `QueryServiceTableField`, `QueryServiceRecordField`, `MutationServiceTableField`, `MutationServiceRecordField`.
+
+The generator uses `mbf.method().callParams()` for argument extraction — one code path for all 7.
+
+**`BatchKeyField`** — "this field uses a DataLoader with a batch key"
+
+```java
+public interface BatchKeyField {
+    BatchKey batchKey();
+    String rowsMethodName();
+}
+```
+
+Currently `batchKey` is explicit on `SplitTableField` and `SplitLookupTableField`. `ServiceTableField` accesses it via `method().sourcedParam().batchKey()`. `RecordTableField` and `RecordLookupTableField` will need it once their stubs are implemented (keyed by parent PK).
+
+The builder should promote `batchKey` to a direct component on all DataLoader-backed variants, so the interface contract is clean and uniform.
+
+### How interfaces compose with building blocks
+
+The building blocks become methods that take interface types:
+
+```java
+// Before: specific types, N branches
+if (field instanceof ChildField.ServiceTableField sf) {
+    buildServiceDataFetcher(sf, sf.method(), sf.returnType(), parentTable, className);
+}
+
+// After: capability interface, 1 branch for all DataLoader fields
+if (field instanceof BatchKeyField bkf && field instanceof SqlGeneratingField sgf) {
+    builder.addMethod(buildDataLoaderFetcher(bkf, sgf, parentTable, className));
+    builder.addMethod(buildRowsMethod(bkf, sgf, parentTable));
+}
+```
+
+A `ServiceTableField` implements `BatchKeyField`, `SqlGeneratingField`, and `MethodBackedField`. The generator composes: DataLoader setup (from `BatchKeyField`) + service call (from `MethodBackedField`) + condition/orderBy (from `SqlGeneratingField`).
+
+### Order relative to building blocks
+
+Interfaces come first:
+1. Add `MethodBackedField` (trivial — 7 records add `implements MethodBackedField`)
+2. Promote `batchKey` onto DataLoader-backed variants, add `BatchKeyField`
+3. Extract building blocks that take interface types
+4. Refactor `generateTypeSpec` dispatch to match on capabilities
+
 ## Non-goals
 
 - **No base class or framework.** The generators are static utility classes and should stay that way. The building blocks are shared functions, not an inheritance hierarchy.
