@@ -5,8 +5,10 @@ import graphql.language.BooleanValue;
 import graphql.language.EnumValue;
 import graphql.language.SourceLocation;
 import graphql.language.StringValue;
+import graphql.schema.GraphQLAppliedDirective;
 import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLEnumType;
+import graphql.schema.GraphQLEnumValueDefinition;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLList;
@@ -378,16 +380,8 @@ class FieldBuilder {
      * Resolves the {@code @defaultOrder} directive on a field into a fully-normalised
      * {@link OrderBySpec.Fixed} against {@code tableSqlName}.
      *
-     * <p>All three source variants are resolved at build time:
-     * <ul>
-     *   <li>{@code index:} — columns come from the named index via the jOOQ catalog.</li>
-     *   <li>{@code primaryKey:} — columns come from the table's primary key.</li>
-     *   <li>{@code fields:} — each column name is looked up in the table via the jOOQ catalog.</li>
-     * </ul>
-     * Returns {@code null} when any lookup fails (index not found, PK absent, or a column name is
-     * unresolvable). The caller must treat {@code null} as a classification failure.
-     *
-     * <p>Only called when the directive is confirmed present.
+     * <p>Only called when the directive is confirmed present. Returns {@code null} when any
+     * catalog lookup fails; the caller generates a diagnostic message in that case.
      */
     private OrderBySpec.Fixed resolveColumnOrderSpec(GraphQLFieldDefinition fieldDef, String tableSqlName) {
         var dir = fieldDef.getAppliedDirective(DIR_DEFAULT_ORDER);
@@ -401,6 +395,44 @@ class FieldBuilder {
             else if (dirVal instanceof String s) direction = s;
         }
 
+        var entries = resolveOrderEntries(dir, tableSqlName);
+        if (entries == null) return null;
+        return new OrderBySpec.Fixed(entries, direction);
+    }
+
+    /**
+     * Resolves an {@code @order} directive on an enum value into a {@link OrderBySpec.Fixed}.
+     *
+     * <p>The direction is not stored here — it comes from the runtime input object's direction
+     * field and is applied at code-generation time in the {@code *OrderBy} helper method.
+     * Returns {@code null} and appends an error when catalog lookup fails.
+     */
+    private OrderBySpec.Fixed resolveEnumValueOrderSpec(
+            GraphQLEnumValueDefinition ev,
+            String tableSqlName,
+            List<String> errors) {
+        var dir = ev.getAppliedDirective("order");
+        var entries = resolveOrderEntries(dir, tableSqlName);
+        if (entries == null) {
+            errors.add("enum value '" + ev.getName() + "': could not resolve @order columns in table '" + tableSqlName + "'");
+            return null;
+        }
+        return new OrderBySpec.Fixed(entries, "ASC");
+    }
+
+    /**
+     * Resolves the column entries from an {@code @order} or {@code @defaultOrder} directive.
+     *
+     * <p>All three source variants are resolved at build time:
+     * <ul>
+     *   <li>{@code index:} — columns come from the named index via the jOOQ catalog.</li>
+     *   <li>{@code primaryKey:} — columns come from the table's primary key.</li>
+     *   <li>{@code fields:} — each column name is looked up in the table via the jOOQ catalog.</li>
+     * </ul>
+     * Returns {@code null} when any lookup fails (index not found, PK absent, or a column name is
+     * unresolvable). The caller is responsible for generating a diagnostic message.
+     */
+    private List<OrderBySpec.ColumnOrderEntry> resolveOrderEntries(GraphQLAppliedDirective dir, String tableSqlName) {
         var indexArg = dir.getArgument(ARG_INDEX);
         if (indexArg != null) {
             Object indexVal = indexArg.getValue();
@@ -409,10 +441,9 @@ class FieldBuilder {
             if (indexName != null) {
                 var colsOpt = ctx.catalog.findIndexColumns(tableSqlName, indexName);
                 if (colsOpt.isEmpty() || colsOpt.get().isEmpty()) return null;
-                var entries = colsOpt.get().stream()
+                return colsOpt.get().stream()
                     .map(ce -> new OrderBySpec.ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
                     .toList();
-                return new OrderBySpec.Fixed(entries, direction);
             }
         }
 
@@ -423,10 +454,9 @@ class FieldBuilder {
         if (primaryKey) {
             var pkCols = ctx.catalog.findPkColumns(tableSqlName);
             if (pkCols.isEmpty()) return null;
-            var entries = pkCols.stream()
+            return pkCols.stream()
                 .map(ce -> new OrderBySpec.ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
                 .toList();
-            return new OrderBySpec.Fixed(entries, direction);
         }
 
         var fieldsArg = dir.getArgument(ARG_FIELDS);
@@ -446,7 +476,7 @@ class FieldBuilder {
                 var ce = ceOpt.get();
                 entries.add(new OrderBySpec.ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), collation));
             }
-            return new OrderBySpec.Fixed(entries, direction);
+            return entries;
         }
 
         return null;
@@ -497,10 +527,19 @@ class FieldBuilder {
             errors.add("argument '" + name + "': @orderBy input type '" + typeName + "' has no direction field");
             return null;
         }
+        GraphQLEnumType sortEnum = (GraphQLEnumType) GraphQLTypeUtil.unwrapNonNull(
+            inputType.getFieldDefinition(sortFieldName).getType());
+        var namedOrders = new ArrayList<OrderBySpec.NamedOrder>();
+        for (var value : sortEnum.getValues()) {
+            if (!value.hasAppliedDirective("order")) continue;
+            OrderBySpec.Fixed order = resolveEnumValueOrderSpec(value, tableSqlName, errors);
+            if (order == null) return null; // error already appended
+            namedOrders.add(new OrderBySpec.NamedOrder(value.getName(), order));
+        }
         OrderBySpec baseSpec = resolveDefaultOrderSpec(fieldDef, tableSqlName);
         if (baseSpec == null) return null; // resolveColumnOrderSpec failed; error already appended
         return new OrderBySpec.Argument(name, typeName, nonNull, list, sortFieldName, directionFieldName,
-            List.of(), // namedOrders: deferred to Step 2
+            List.copyOf(namedOrders),
             baseSpec);
     }
 

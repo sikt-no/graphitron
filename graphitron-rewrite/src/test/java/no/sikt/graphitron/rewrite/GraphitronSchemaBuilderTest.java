@@ -1163,7 +1163,10 @@ class GraphitronSchemaBuilderTest {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("Film", "actors");
                 assertThat(f.filters()).isEmpty();
                 assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Argument.class);
-                assertThat(((OrderBySpec.Argument) f.orderBy()).typeName()).isEqualTo("ActorOrder");
+                var orderBy = (OrderBySpec.Argument) f.orderBy();
+                assertThat(orderBy.typeName()).isEqualTo("ActorOrder");
+                assertThat(orderBy.namedOrders()).hasSize(1);
+                assertThat(orderBy.namedOrders().get(0).name()).isEqualTo("FIRST_NAME");
             }),
 
         SERVICE_FIELD_CONTEXT_ARGS(
@@ -1655,7 +1658,7 @@ class GraphitronSchemaBuilderTest {
         LOOKUP_FIELD_ORDERBY_ARG(
             "@orderBy arg with valid input type structure → OrderBySpec.Argument with resolved field names",
             """
-            enum FilmOrderField { TITLE @order(index: "IDX_TITLE") }
+            enum FilmOrderField { TITLE @order(primaryKey: true) }
             enum Direction { ASC DESC }
             input FilmOrder { sortField: FilmOrderField! direction: Direction! }
             type Film @table(name: "film") { title: String }
@@ -1667,6 +1670,8 @@ class GraphitronSchemaBuilderTest {
                 var orderBy = (OrderBySpec.Argument) f.orderBy();
                 assertThat(orderBy.sortFieldName()).isEqualTo("sortField");
                 assertThat(orderBy.directionFieldName()).isEqualTo("direction");
+                assertThat(orderBy.namedOrders()).hasSize(1);
+                assertThat(orderBy.namedOrders().get(0).name()).isEqualTo("TITLE");
                 assertThat(f.filters()).hasSize(1);
                 assertThat(((GeneratedConditionFilter) f.filters().get(0)).bodyParams().get(0).name()).isEqualTo("film_id");
             }),
@@ -1696,7 +1701,7 @@ class GraphitronSchemaBuilderTest {
         TABLE_QUERY_FIELD_WITH_ARGS(
             "table query field with @orderBy argument → OrderBySpec.Argument on orderBy(); filters empty",
             """
-            enum FilmOrderField { TITLE @order(index: "IDX_TITLE") }
+            enum FilmOrderField { TITLE @order(primaryKey: true) }
             enum Direction { ASC DESC }
             input FilmOrder { sortField: FilmOrderField! direction: Direction! }
             type Film @table(name: "film") { title: String }
@@ -1706,6 +1711,9 @@ class GraphitronSchemaBuilderTest {
                 var f = (QueryField.QueryTableField) schema.field("Query", "films");
                 assertThat(f.filters()).isEmpty();
                 assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Argument.class);
+                var orderBy = (OrderBySpec.Argument) f.orderBy();
+                assertThat(orderBy.namedOrders()).hasSize(1);
+                assertThat(orderBy.namedOrders().get(0).name()).isEqualTo("TITLE");
             }),
 
         TABLE_METHOD_QUERY_FIELD(
