@@ -10,6 +10,7 @@ import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import org.slf4j.Logger;
@@ -73,6 +74,7 @@ public class GraphQLRewriteGenerator {
         write(ColumnFetcherClassGenerator.generate(),             "rewrite");
         write(ConnectionResultClassGenerator.generate(),          "rewrite");
         write(ConnectionHelperClassGenerator.generate(),          "rewrite");
+        write(OrderByResultClassGenerator.generate(),             "rewrite");
         write(TypeClassGenerator.generate(schema),                "rewrite.types");
         write(TypeConditionsGenerator.generate(schema),           "rewrite.types");
         write(fetcherClasses,                                      "rewrite.types");

@@ -15,6 +15,7 @@ import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
+import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -448,11 +449,22 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void orderByArg_helperMethod_returnsSortFieldList() {
+    void orderByArg_helperMethod_returnsOrderByResult() {
         var field = queryTableFieldWithOrderByArg("films");
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "filmsOrderBy").returnType().toString())
-            .isEqualTo("java.util.List<org.jooq.SortField<?>>");
+            .endsWith("OrderByResult");
+    }
+
+    @Test
+    void orderByArg_helperMethod_bodyConstructsOrderByResult() {
+        // The helper must construct OrderByResult — which packages both sort fields (for SQL)
+        // and cursor columns (for pagination) in a single object so the two are always in sync.
+        var field = queryTableFieldWithOrderByArg("films");
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        var body = method(spec, "filmsOrderBy").code().toString();
+        // Body must use the OrderByResult constructor, not return a bare list.
+        assertThat(body).contains("OrderByResult(");
     }
 
     @Test
@@ -476,5 +488,102 @@ class TypeFetcherGeneratorTest {
         var field = queryTableField("films", true); // OrderBySpec.None
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(spec.methodSpecs()).extracting(MethodSpec::name).doesNotContain("filmsOrderBy");
+    }
+
+    // ===== QueryTableField with FieldWrapper.Connection → connection fetcher =====
+
+    private static PaginationSpec forwardPagination() {
+        return new PaginationSpec(
+            new PaginationSpec.PaginationArg("first", "Int", false),
+            null,
+            new PaginationSpec.PaginationArg("after", "String", false),
+            null);
+    }
+
+    private static QueryField.QueryTableField connectionField(String name) {
+        var orderBy = new OrderBySpec.Fixed(
+            List.of(new OrderBySpec.ColumnOrderEntry(TestFixtures.filmIdCol(), null)), "ASC");
+        return new QueryField.QueryTableField("Query", name, null,
+            TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, true, 100, null)),
+            List.of(), orderBy, forwardPagination());
+    }
+
+    private static QueryField.QueryTableField connectionFieldWithArgOrderBy(String name) {
+        var filmIdCol = TestFixtures.filmIdCol();
+        var base = new OrderBySpec.Fixed(
+            List.of(new OrderBySpec.ColumnOrderEntry(filmIdCol, null)), "ASC");
+        var namedOrder = new OrderBySpec.NamedOrder(
+            "TITLE",
+            new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(filmIdCol, null)), "ASC"));
+        var orderBy = new OrderBySpec.Argument(
+            "order", "FilmOrder", false, false, "field", "direction",
+            List.of(namedOrder), base);
+        return new QueryField.QueryTableField("Query", name, null,
+            TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, true, 100, null)),
+            List.of(), orderBy, forwardPagination());
+    }
+
+    @Test
+    void connectionField_returnsConnectionResult() {
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
+        assertThat(method(spec, "films").returnType().toString()).endsWith("ConnectionResult");
+    }
+
+    @Test
+    void connectionField_isNotStub() {
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
+        assertThat(method(spec, "films").code().toString()).doesNotContain("UnsupportedOperationException");
+    }
+
+    @Test
+    void connectionField_usesPaginationArgNamesFromModel() {
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
+        var code = method(spec, "films").code().toString();
+        assertThat(code).contains("\"first\"");
+        assertThat(code).contains("\"after\"");
+    }
+
+    @Test
+    void connectionField_withOrderByArg_emitsHelperMethod() {
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null,
+            List.of(connectionFieldWithArgOrderBy("films")));
+        assertThat(spec.methodSpecs()).extracting(MethodSpec::name).contains("filmsOrderBy");
+    }
+
+    @Test
+    void connectionField_withOrderByArg_fetcherCallsHelper() {
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null,
+            List.of(connectionFieldWithArgOrderBy("films")));
+        assertThat(method(spec, "films").code().toString()).contains("filmsOrderBy(env)");
+    }
+
+    @Test
+    void connectionField_withOrderByArg_extraFieldsComeFromOrderingResult() {
+        // Both orderBy (for SQL) and extraFields (for cursor) must be derived from the same dispatch.
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null,
+            List.of(connectionFieldWithArgOrderBy("films")));
+        var code = method(spec, "films").code().toString();
+        assertThat(code).contains("ordering.sortFields()");
+        assertThat(code).contains("ordering.columns()");
+    }
+
+    @Test
+    void connectionField_customPaginationArgNames_emittedInFetcher() {
+        var orderBy = new OrderBySpec.Fixed(
+            List.of(new OrderBySpec.ColumnOrderEntry(TestFixtures.filmIdCol(), null)), "ASC");
+        var customPagination = new PaginationSpec(
+            new PaginationSpec.PaginationArg("pageSize", "Int", false),
+            null,
+            new PaginationSpec.PaginationArg("cursor", "String", false),
+            null);
+        var field = new QueryField.QueryTableField("Query", "films", null,
+            TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, true, 100, null)),
+            List.of(), orderBy, customPagination);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        var code = method(spec, "films").code().toString();
+        assertThat(code).contains("\"pageSize\"");
+        assertThat(code).contains("\"cursor\"");
+        assertThat(code).doesNotContain("\"first\"");
+        assertThat(code).doesNotContain("\"after\"");
     }
 }

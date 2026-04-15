@@ -38,7 +38,7 @@ public class ConnectionResultClassGenerator {
         // Fields
         var resultField = FieldSpec.builder(resultOfRecord, "result", Modifier.PRIVATE, Modifier.FINAL).build();
         var pageSizeField = FieldSpec.builder(int.class, "pageSize", Modifier.PRIVATE, Modifier.FINAL).build();
-        var cursorField = FieldSpec.builder(String.class, "cursor", Modifier.PRIVATE, Modifier.FINAL).build();
+        var afterCursorField = FieldSpec.builder(String.class, "afterCursor", Modifier.PRIVATE, Modifier.FINAL).build();
         var orderByColumnsField = FieldSpec.builder(listOfField, "orderByColumns", Modifier.PRIVATE, Modifier.FINAL).build();
 
         // Constructor
@@ -46,11 +46,11 @@ public class ConnectionResultClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .addParameter(resultOfRecord, "result")
             .addParameter(int.class, "pageSize")
-            .addParameter(String.class, "cursor")
+            .addParameter(String.class, "afterCursor")
             .addParameter(listOfField, "orderByColumns")
             .addStatement("this.result = result")
             .addStatement("this.pageSize = pageSize")
-            .addStatement("this.cursor = cursor")
+            .addStatement("this.afterCursor = afterCursor")
             .addStatement("this.orderByColumns = orderByColumns")
             .build();
 
@@ -67,10 +67,10 @@ public class ConnectionResultClassGenerator {
             .addStatement("return pageSize")
             .build();
 
-        var getCursor = MethodSpec.methodBuilder("cursor")
+        var getAfterCursor = MethodSpec.methodBuilder("afterCursor")
             .addModifiers(Modifier.PUBLIC)
             .returns(String.class)
-            .addStatement("return cursor")
+            .addStatement("return afterCursor")
             .build();
 
         var getOrderByColumns = MethodSpec.methodBuilder("orderByColumns")
@@ -95,23 +95,23 @@ public class ConnectionResultClassGenerator {
             .addStatement("return result.size() > pageSize")
             .build();
 
-        // hasPreviousPage() — true when cursor (after) was non-null (pragmatic shortcut)
+        // hasPreviousPage() — true when an afterCursor was supplied (we came from a previous page)
         var hasPreviousPage = MethodSpec.methodBuilder("hasPreviousPage")
             .addModifiers(Modifier.PUBLIC)
             .returns(boolean.class)
-            .addStatement("return cursor != null")
+            .addStatement("return afterCursor != null")
             .build();
 
         var spec = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC)
             .addField(resultField)
             .addField(pageSizeField)
-            .addField(cursorField)
+            .addField(afterCursorField)
             .addField(orderByColumnsField)
             .addMethod(constructor)
             .addMethod(getResult)
             .addMethod(getPageSize)
-            .addMethod(getCursor)
+            .addMethod(getAfterCursor)
             .addMethod(getOrderByColumns)
             .addMethod(trimmedResult)
             .addMethod(hasNextPage)

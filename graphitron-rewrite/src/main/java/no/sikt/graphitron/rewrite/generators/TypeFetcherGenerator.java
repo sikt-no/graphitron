@@ -10,6 +10,7 @@ import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.RewriteConfig;
@@ -255,15 +256,17 @@ public class TypeFetcherGenerator {
 
         builder.addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName());
         builder.addCode(buildConditionCall(qtf));
-        builder.addCode(buildOrderByCode(qtf.orderBy()));
+        // Single dispatch produces both orderBy (for SQL) and extraFields (for cursor columns),
+        // keeping them in sync when the client picks a dynamic named order.
+        builder.addCode(buildConnectionOrderingBlock(qtf.orderBy(), qtf.name(), names));
 
-        // Extract pagination arguments
-        builder.addStatement("Integer first = env.getArgument(\"first\")");
-        builder.addStatement("String after = env.getArgument(\"after\")");
+        // Extract pagination arguments using arg names from the model
+        var pagination = qtf.pagination();
+        var firstArgName = pagination != null && pagination.first() != null ? pagination.first().name() : "first";
+        var afterArgName = pagination != null && pagination.after() != null ? pagination.after().name() : "after";
+        builder.addStatement("Integer first = env.getArgument($S)", firstArgName);
+        builder.addStatement("String after = env.getArgument($S)", afterArgName);
         builder.addStatement("int pageSize = first != null ? first : $L", conn.defaultPageSize());
-
-        // Build extra fields (ORDER BY columns) for cursor construction
-        builder.addCode(buildOrderByExtraFieldsCode(qtf.orderBy(), names));
 
         // Decode cursor to seek values (null if no cursor)
         var connectionHelperClass = ClassName.get(
@@ -282,39 +285,53 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Generates code to build the list of ORDER BY columns as jOOQ Field references.
-     * These are the extra fields that must be in the SELECT for cursor construction.
+     * Generates both the {@code orderBy} and {@code extraFields} variable declarations for a
+     * connection fetcher body. The two variables are always derived from the same source, keeping
+     * the cursor columns in sync with the SQL ordering.
+     *
+     * <ul>
+     *   <li>{@link OrderBySpec.Fixed} — inlines both lists directly from the fixed columns.</li>
+     *   <li>{@link OrderBySpec.Argument} — delegates to the {@code <fieldName>OrderBy(env)} helper
+     *       (which returns an {@code OrderByResult}) and extracts {@code .sortFields()} and
+     *       {@code .columns()} from the single result object.</li>
+     *   <li>{@link OrderBySpec.None} — emits two empty lists.</li>
+     * </ul>
      */
-    private static CodeBlock buildOrderByExtraFieldsCode(OrderBySpec orderBy, GeneratorUtils.ResolvedTableNames names) {
+    private static CodeBlock buildConnectionOrderingBlock(
+            OrderBySpec orderBy, String fieldName, GeneratorUtils.ResolvedTableNames names) {
         var code = CodeBlock.builder();
         var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
         var WILDCARD_FIELD = ParameterizedTypeName.get(JOOQ_FIELD,
             no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
+        var listOfField = ParameterizedTypeName.get(LIST, WILDCARD_FIELD);
 
         switch (orderBy) {
             case OrderBySpec.Fixed fixed -> {
-                code.add("$T<$T> extraFields = $T.of(", LIST, WILDCARD_FIELD, LIST);
-                for (int i = 0; i < fixed.columns().size(); i++) {
-                    if (i > 0) code.add(", ");
-                    code.add("table.$L", fixed.columns().get(i).column().javaName());
+                if (fixed.columns().isEmpty()) {
+                    code.addStatement("$T orderBy = $T.of()", SORT_FIELD_LIST, LIST);
+                    code.addStatement("$T extraFields = $T.of()", listOfField, LIST);
+                } else {
+                    var sortParts = CodeBlock.builder();
+                    var colParts = CodeBlock.builder();
+                    for (int i = 0; i < fixed.columns().size(); i++) {
+                        var col = fixed.columns().get(i);
+                        if (i > 0) { sortParts.add(", "); colParts.add(", "); }
+                        sortParts.add("table.$L.$L()", col.column().javaName(), fixed.jooqMethodName());
+                        colParts.add("table.$L", col.column().javaName());
+                    }
+                    code.addStatement("$T orderBy = $T.of($L)", SORT_FIELD_LIST, LIST, sortParts.build());
+                    code.addStatement("$T extraFields = $T.of($L)", listOfField, LIST, colParts.build());
                 }
-                code.add(");\n");
             }
             case OrderBySpec.Argument arg -> {
-                // Dynamic ordering: resolve from the base (fallback) columns
-                if (arg.base() != null) {
-                    code.add("$T<$T> extraFields = $T.of(", LIST, WILDCARD_FIELD, LIST);
-                    for (int i = 0; i < arg.base().columns().size(); i++) {
-                        if (i > 0) code.add(", ");
-                        code.add("table.$L", arg.base().columns().get(i).column().javaName());
-                    }
-                    code.add(");\n");
-                } else {
-                    code.addStatement("$T<$T> extraFields = $T.of()", LIST, WILDCARD_FIELD, LIST);
-                }
+                // Single dispatch: OrderByResult carries both sort fields and cursor columns.
+                code.addStatement("var ordering = $LOrderBy(env)", fieldName);
+                code.addStatement("$T orderBy = ordering.sortFields()", SORT_FIELD_LIST);
+                code.addStatement("$T extraFields = ordering.columns()", listOfField);
             }
             case OrderBySpec.None ignored -> {
-                code.addStatement("$T<$T> extraFields = $T.of()", LIST, WILDCARD_FIELD, LIST);
+                code.addStatement("$T orderBy = $T.of()", SORT_FIELD_LIST, LIST);
+                code.addStatement("$T extraFields = $T.of()", listOfField, LIST);
             }
         }
         return code.build();
@@ -384,7 +401,8 @@ public class TypeFetcherGenerator {
             }
             case OrderBySpec.Argument arg -> {
                 if (fieldName != null) {
-                    code.addStatement("$T orderBy = $LOrderBy(env)", SORT_FIELD_LIST, fieldName);
+                    // Helper now returns OrderByResult; extract just the sort fields for non-connection fetchers
+                    code.addStatement("$T orderBy = $LOrderBy(env).sortFields()", SORT_FIELD_LIST, fieldName);
                 } else {
                     code.add(buildOrderByCode(arg.base(), null));
                 }
@@ -418,9 +436,12 @@ public class TypeFetcherGenerator {
             GeneratorUtils.ResolvedTableNames names,
             TableRef tableRef) {
 
+        var orderByResultClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite", OrderByResultClassGenerator.CLASS_NAME);
+
         var builder = MethodSpec.methodBuilder(fieldName + "OrderBy")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(SORT_FIELD_LIST)
+            .returns(orderByResultClass)
             .addParameter(ENV, "env");
 
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
@@ -436,21 +457,27 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Returns the fallback expression ({@code List.of(table.COL.asc())} or {@code List.of()})
-     * used when no {@code @orderBy} argument is supplied at runtime.
+     * Returns the fallback expression ({@code new OrderByResult(List.of(table.COL.asc()), List.of(table.COL))}
+     * or {@code new OrderByResult(List.of(), List.of())}) used when no {@code @orderBy} argument is
+     * supplied at runtime.
      */
     private static CodeBlock buildBaseReturnExpr(OrderBySpec base) {
+        var orderByResultClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite", OrderByResultClassGenerator.CLASS_NAME);
         return switch (base) {
             case OrderBySpec.Fixed fixed when !fixed.columns().isEmpty() -> {
-                var parts = CodeBlock.builder();
+                var sortParts = CodeBlock.builder();
+                var colParts = CodeBlock.builder();
                 for (int i = 0; i < fixed.columns().size(); i++) {
-                    if (i > 0) parts.add(", ");
+                    if (i > 0) { sortParts.add(", "); colParts.add(", "); }
                     var col = fixed.columns().get(i);
-                    parts.add("table.$L.$L()", col.column().javaName(), fixed.jooqMethodName());
+                    sortParts.add("table.$L.$L()", col.column().javaName(), fixed.jooqMethodName());
+                    colParts.add("table.$L", col.column().javaName());
                 }
-                yield CodeBlock.of("$T.of($L)", LIST, parts.build());
+                yield CodeBlock.of("new $T($T.of($L), $T.of($L))",
+                    orderByResultClass, LIST, sortParts.build(), LIST, colParts.build());
             }
-            default -> CodeBlock.of("$T.of()", LIST);
+            default -> CodeBlock.of("new $T($T.of(), $T.of())", orderByResultClass, LIST, LIST);
         };
     }
 
@@ -471,6 +498,8 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock buildSingleArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr) {
         var code = CodeBlock.builder();
+        var orderByResultClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite", OrderByResultClassGenerator.CLASS_NAME);
         code.addStatement("$T<$T, $T> orderArg = env.getArgument($S)", MAP, String.class, Object.class, arg.name());
         code.add("if (orderArg == null) return $L;\n", baseExpr);
         code.addStatement("$T field = ($T) orderArg.get($S)", String.class, String.class, arg.sortFieldName());
@@ -479,15 +508,18 @@ public class TypeFetcherGenerator {
         code.indent();
         for (var namedOrder : arg.namedOrders()) {
             var cols = namedOrder.order().columns();
-            code.add("case $S -> $T.of(", namedOrder.name(), LIST);
+            var sortParts = CodeBlock.builder();
+            var colParts = CodeBlock.builder();
             for (int i = 0; i < cols.size(); i++) {
-                if (i > 0) code.add(", ");
+                if (i > 0) { sortParts.add(", "); colParts.add(", "); }
                 var col = cols.get(i);
-                code.add("$S.equals(dir) ? table.$L.desc() : table.$L.$L()",
+                sortParts.add("$S.equals(dir) ? table.$L.desc() : table.$L.$L()",
                     "DESC", col.column().javaName(), col.column().javaName(),
                     namedOrder.order().jooqMethodName());
+                colParts.add("table.$L", col.column().javaName());
             }
-            code.add(");\n");
+            code.add("case $S -> new $T($T.of($L), $T.of($L));\n",
+                namedOrder.name(), orderByResultClass, LIST, sortParts.build(), LIST, colParts.build());
         }
         code.add("default -> $L;\n", baseExpr);
         code.unindent();
@@ -515,10 +547,16 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock buildListArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr) {
         var code = CodeBlock.builder();
+        var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
+        var WILDCARD_FIELD = ParameterizedTypeName.get(JOOQ_FIELD,
+            no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
+        var orderByResultClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite", OrderByResultClassGenerator.CLASS_NAME);
         code.addStatement("$T<$T<$T, $T>> orderArgs = env.getArgument($S)",
             LIST, MAP, String.class, Object.class, arg.name());
         code.add("if (orderArgs == null || orderArgs.isEmpty()) return $L;\n", baseExpr);
-        code.addStatement("var parts = new $T<$T<?>>()", ARRAY_LIST, SORT_FIELD);
+        code.addStatement("var sortParts = new $T<$T<?>>()", ARRAY_LIST, SORT_FIELD);
+        code.addStatement("var colParts = new $T<$T>()", ARRAY_LIST, WILDCARD_FIELD);
         code.add("for (var entry : orderArgs) {\n");
         code.indent();
         code.addStatement("$T f = ($T) entry.get($S)", String.class, String.class, arg.sortFieldName());
@@ -530,9 +568,10 @@ public class TypeFetcherGenerator {
             code.add("case $S -> {\n", namedOrder.name());
             code.indent();
             for (var col : cols) {
-                code.addStatement("parts.add($S.equals(d) ? table.$L.desc() : table.$L.$L())",
+                code.addStatement("sortParts.add($S.equals(d) ? table.$L.desc() : table.$L.$L())",
                     "DESC", col.column().javaName(), col.column().javaName(),
                     namedOrder.order().jooqMethodName());
+                code.addStatement("colParts.add(table.$L)", col.column().javaName());
             }
             code.unindent();
             code.add("}\n");
@@ -541,7 +580,7 @@ public class TypeFetcherGenerator {
         code.add("}\n");
         code.unindent();
         code.add("}\n");
-        code.addStatement("return parts");
+        code.addStatement("return new $T(sortParts, colParts)", orderByResultClass);
         return code.build();
     }
 
