@@ -48,9 +48,7 @@ The `/docs` folder contains conceptual guides explaining Graphitron's design, ph
 
 ### Active Rewrite
 - **Rewrite Roadmap**: [/docs/rewrite-roadmap.md](/docs/rewrite-roadmap.md) - Remaining generator work, design principles, and known gaps
-- **Generator Building Blocks**: [/docs/generator-building-blocks.md](/docs/generator-building-blocks.md) - Common abstractions to extract before implementing remaining stubs; capability interfaces
-- **Call-Site Unification**: [/docs/call-site-unification.md](/docs/call-site-unification.md) - Design for unifying the three parallel extraction patterns
-- **Taxonomy Improvements**: [/docs/taxonomy-improvements.md](/docs/taxonomy-improvements.md) - Model cleanup: PaginationSpec sealed, OrderBySpec nullable removal, UnclassifiedField.definition, naming
+- **Call-Site Unification**: [/docs/call-site-unification.md](/docs/call-site-unification.md) - Remaining work: enum detection for service params, orderBy extraction via CallParam
 
 
 ## Key Architecture
