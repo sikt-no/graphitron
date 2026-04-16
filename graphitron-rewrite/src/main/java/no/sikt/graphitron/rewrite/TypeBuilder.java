@@ -39,6 +39,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CLASS_NAME;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_ORDER_BY;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_DESCRIPTION;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CODE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_COLLATE;
@@ -162,6 +163,8 @@ class TypeBuilder {
             if (gt instanceof TableBackedType tbt && !(gt instanceof TableInterfaceType)) {
                 String discriminatorValue = argString(ctx.schema.getObjectType(typeName), DIR_DISCRIMINATOR, ARG_VALUE).orElse(null);
                 result.add(new ParticipantRef(typeName, tbt.table(), discriminatorValue));
+            } else if (gt != null && !(gt instanceof UnclassifiedType)) {
+                result.add(new ParticipantRef(typeName, null, null));
             } else {
                 errors.add("implementing type '" + typeName + "' is not table-bound (missing @table directive)");
             }
@@ -177,6 +180,10 @@ class TypeBuilder {
     GraphitronType classifyType(GraphQLNamedType namedType) {
         if (namedType instanceof graphql.schema.GraphQLScalarType
                 || namedType instanceof graphql.schema.GraphQLEnumType) {
+            return null;
+        }
+        // Federation-injected types (e.g. _Service, _Any) are not Graphitron-managed.
+        if (namedType.getName().startsWith("_")) {
             return null;
         }
         if (namedType instanceof GraphQLInputObjectType inputType) {
@@ -331,9 +338,7 @@ class TypeBuilder {
             return buildNonTableInputType(inputType, name, location);
         }
         if (tables.size() > 1) {
-            var tableNames = String.join("', '", tables.keySet());
-            return new UnclassifiedType(name, location,
-                "used as argument on fields with conflicting return tables: '" + tableNames + "'");
+            return buildNonTableInputType(inputType, name, location);
         }
         return buildTableInputType(name, location, filteredFields, tables.values().iterator().next());
     }
@@ -410,6 +415,7 @@ class TypeBuilder {
                         || fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)
                         || fieldDef.hasAppliedDirective(DIR_MUTATION)) continue;
                 boolean usesInput = fieldDef.getArguments().stream()
+                    .filter(arg -> !arg.hasAppliedDirective(DIR_ORDER_BY))
                     .anyMatch(arg -> inputTypeName.equals(
                         ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(arg.getType())).getName()));
                 if (!usesInput) continue;

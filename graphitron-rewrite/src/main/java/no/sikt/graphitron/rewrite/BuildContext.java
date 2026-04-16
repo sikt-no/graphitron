@@ -473,6 +473,11 @@ class BuildContext {
 
     private String extractConditionQualifiedName(Map<String, Object> conditionMap) {
         Object name = conditionMap.get(ARG_NAME);
-        return name != null ? name.toString() : "unknown";
+        if (name != null) return name.toString();
+        String cls    = Optional.ofNullable(conditionMap.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
+        String method = Optional.ofNullable(conditionMap.get(ARG_METHOD)).map(Object::toString).orElse(null);
+        if (cls != null && method != null) return "method '" + method + "' in class '" + cls + "'";
+        if (cls != null) return "class '" + cls + "'";
+        return "unknown";
     }
 }

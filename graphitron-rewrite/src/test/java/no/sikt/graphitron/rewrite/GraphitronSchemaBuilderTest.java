@@ -1356,7 +1356,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         IMPLICIT_TABLE_CONFLICT(
-            "input type used on fields with different return tables → UnclassifiedType",
+            "input type used on fields with different return tables → PojoInputType (unbound)",
             """
             input SharedInput { id: Int! }
             type Customer @table(name: "customer") { customerId: Int! @field(name: "customer_id") }
@@ -1367,7 +1367,7 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> assertThat(schema.type("SharedInput"))
-                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class)),
+                .isInstanceOf(PojoInputType.class)),
 
         COLUMN_REFERENCE_FIELD(
             "@reference on an input field → ColumnReferenceField with resolved join path and column",

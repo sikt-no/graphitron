@@ -504,7 +504,7 @@ class FieldBuilder {
             var fieldType = GraphQLTypeUtil.unwrapNonNull(field.getType());
             if (!(fieldType instanceof GraphQLEnumType enumType)) continue;
             boolean isSortEnum = enumType.getValues().stream()
-                .anyMatch(v -> v.hasAppliedDirective("order"));
+                .anyMatch(v -> v.hasAppliedDirective("order") || v.hasAppliedDirective("index"));
             if (isSortEnum) {
                 if (sortFieldName != null) {
                     errors.add("argument '" + name + "': @orderBy input type '" + typeName + "' must have exactly one sort enum field, but found multiple");
@@ -531,7 +531,7 @@ class FieldBuilder {
             inputType.getFieldDefinition(sortFieldName).getType());
         var namedOrders = new ArrayList<OrderBySpec.NamedOrder>();
         for (var value : sortEnum.getValues()) {
-            if (!value.hasAppliedDirective("order")) continue;
+            if (!value.hasAppliedDirective("order") && !value.hasAppliedDirective("index")) continue;
             OrderBySpec.Fixed order = resolveEnumValueOrderSpec(value, tableSqlName, errors);
             if (order == null) return null; // error already appended
             namedOrders.add(new OrderBySpec.NamedOrder(value.getName(), order));
