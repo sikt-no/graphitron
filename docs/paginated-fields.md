@@ -54,6 +54,8 @@ dsl.select(...)
 
 `encodeCursor` and `decodeCursor` signatures change to accept `List<Field<?>> orderByColumns`. `ConnectionHelper` already receives the column list — the threading is in place.
 
+**Cursor serialisation format:** rather than a hand-rolled comma-split parser, use `org.jooq.tools.json.JSONValue` / `JSONArray` which are bundled inside the jOOQ jar (`org.jooq.tools.json` package). This eliminates the quote-aware split loop in `decodeCursor` for free. Note that `org.jooq.tools` is treated as internal by jOOQ — no stability guarantee — but for self-contained generated utility code this is an acceptable trade-off.
+
 ### 2. Document transform coexistence
 
 When the schema goes through both the transform AND the builder, `@asConnection` is stripped by the transform before the builder sees it. The builder falls back to structural detection, which works but loses `defaultPageSize` (defaults to 100). Document this.
