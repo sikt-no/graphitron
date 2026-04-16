@@ -39,11 +39,11 @@ private static GraphitronContext graphitronContext(DataFetchingEnvironment env) 
 }
 ```
 
-Query methods (in generated `TypeClass` files) inline the retrieval and immediately call `getDslContext`:
+Query methods (in generated `*Fetchers` files) call the helper and immediately use `getDslContext`:
 
 ```java
-// GENERATED — from TypeClassGenerator.selectMany()
-DSLContext dsl = ((GraphitronContext) env.getGraphQlContext().get("graphitronContext")).getDslContext(env);
+// GENERATED — from TypeFetcherGenerator (inlined in each query method)
+var dsl = graphitronContext(env).getDslContext(env);
 ```
 
 ### getDslContext — database access

@@ -6,11 +6,11 @@
 
 **Native `@asConnection`:** `FieldBuilder` reads the directive directly, produces `FieldWrapper.Connection` with `defaultPageSize` and `connectionName`. `PaginationSpec` synthesized. Pre-expanded Connection types continue to work via structural detection.
 
-**Keyset pagination SQL:** `TypeClassGenerator.selectMany` paginated overload with `seekValues` + `limit` using jOOQ `.seek()` + `.limit()`. `fields(sel, extraFields)` force-includes ORDER BY columns.
+**Keyset pagination SQL:** `buildQueryConnectionFetcher` inlines a paginated DSL chain using jOOQ `.seek()` + `.limit()`. `Type.$fields(sel, table, env)` is called for projection; extra ordering columns are merged by name into the select list.
 
 **Generated utilities:** `ConnectionResult` (carrier: `Result<Record>` + pageSize + afterCursor + ORDER BY columns), `ConnectionHelper` (edges, nodes, pageInfo, edgeNode, edgeCursor, encodeCursor, decodeCursor with quote-aware parsing), `OrderByResult` (pairs `List<SortField<?>>` with `List<Field<?>>` for cursor columns). All emitted as source files.
 
-**Connection fetcher:** `buildQueryConnectionFetcher` reads pagination arg names from `PaginationSpec`, decodes cursor, calls paginated `selectMany`, wraps in `ConnectionResult`.
+**Connection fetcher:** `buildQueryConnectionFetcher` reads pagination arg names from `PaginationSpec`, decodes cursor, calls `$fields` for projection (merging extra ordering columns), and executes the inline paginated query, wrapping the result in `ConnectionResult`.
 
 **Dynamic ordering cursors:** `<fieldName>OrderBy` helper returns `OrderByResult`, so sort fields and cursor columns are derived together from a single dispatch. `buildConnectionOrderingBlock` emits both `orderBy` and `extraFields` for Fixed/Argument/None.
 

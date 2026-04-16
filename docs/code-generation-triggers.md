@@ -118,7 +118,7 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 | Return: union | `QueryUnionField` | Field method stub |
 | `@service`, return `@table` type | `QueryServiceTableField` | Async DataLoader fetcher + `rows*()` method |
 | `@service`, return non-table type | `QueryServiceRecordField` | Field method stub |
-| Return: `@table` type (default) | `QueryTableField` | Full fetcher — condition call + orderBy build + delegates to `Tables.selectMany/selectOne` |
+| Return: `@table` type (default) | `QueryTableField` | Full fetcher — condition call + orderBy build + inline DSL chain (`dsl.select(Type.$fields(...)).from(table)...`) |
 | Anything else | `UnclassifiedField`** | Validation error — build fails |
 
 ### Mutation Fields
@@ -154,9 +154,9 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 | `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method |
 | `@service`, return non-table | `ServiceRecordField` | Field method stub |
 | Return `@table`, `@splitQuery` + `@lookupKey` | `SplitLookupTableField` | Async DataLoader fetcher + `rows*()` method |
-| Return `@table`, `@lookupKey` (no split) | `LookupTableField` | Field method stub (`Tables.subselectMany/subselectOne`) |
+| Return `@table`, `@lookupKey` (no split) | `LookupTableField` | Field method stub (correlated subquery — G5 pending) |
 | Return `@table`, `@splitQuery` | `SplitTableField` | Async DataLoader fetcher + `rows*()` method |
-| Return `@table` (default) | `TableField` | Field method stub (`Tables.subselectMany/subselectOne`) |
+| Return `@table` (default) | `TableField` | Field method stub (correlated subquery — G5 pending) |
 | Return `@table`+`@discriminate` interface | `TableInterfaceField` | Field method stub |
 | Return multi-table interface | `InterfaceField` | Field method stub |
 | Return union | `UnionField` | Field method stub |
@@ -244,7 +244,7 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 | Component | Output | File |
 |---|---|---|
 | `TypeFetcherGenerator` | `rewrite.types.*Fetchers` — wiring + field fetcher/rows methods | `TypeFetcherGenerator.java` |
-| `TypeClassGenerator` | `rewrite.types.*` — select/subselect/batch methods | `TypeClassGenerator.java` |
+| `TypeClassGenerator` | `rewrite.types.*` — `$fields(sel, table, env)` projection method | `TypeClassGenerator.java` |
 | `TypeConditionsGenerator` | `rewrite.types.*Conditions` — pure-function WHERE predicates | `TypeConditionsGenerator.java` |
 | `GeneratorUtils` | Shared building blocks — `ResolvedTableNames`, key type construction, constants | `GeneratorUtils.java` |
 | `ColumnFetcherClassGenerator` | `rewrite.ColumnFetcher<T>` — `LightDataFetcher` for column fields | `util/ColumnFetcherClassGenerator.java` |

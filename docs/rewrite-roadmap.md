@@ -67,11 +67,10 @@ Complex resolution outcomes get their own sealed type rather than being stored a
 
 Generator bodies that currently throw `UnsupportedOperationException`, approximate priority:
 
-1. `TypeFetcherGenerator` — `TableField` / `LookupTableField` inline-subquery field methods (call `Tables.subselectMany/subselectOne` with condition + orderBy)
+1. `TypeFetcherGenerator` — `TableField` / `LookupTableField` inline-subquery field methods (G5: inline correlated subquery using `Type.$fields(sel, table, env)` for projection)
 2. `TypeFetcherGenerator` — `SplitTableField` / `SplitLookupTableField` rows method bodies (DataLoader batch SQL)
 3. `TypeFetcherGenerator` — `QueryTableInterfaceField`, `QueryInterfaceField`, `QueryUnionField` fetchers
 4. `TypeFetcherGenerator` — Mutation field bodies (all four DML variants: INSERT/UPDATE/DELETE/UPSERT)
-5. `TypeClassGenerator` — `selectManyByRowKeys` / `selectOneByRowKeys` and `selectManyByRecordKeys` / `selectOneByRecordKeys` bodies
 
 ### G5 — Inline `TableField`
 
@@ -100,11 +99,11 @@ G6 covers four categories of DataLoader-backed field. Before implementing any ca
 
 ### `ObjectBased` batch loading is unimplemented
 
-`BatchKey.ObjectBased.selectManyMethodName()` and `selectOneMethodName()` throw `UnsupportedOperationException`.
+`BatchKey.ObjectBased` exists in the sealed hierarchy but has no rows-method implementation in `TypeFetcherGenerator` — the service rows method currently throws `UnsupportedOperationException` for all `BatchKey` variants.
 
 Two options:
 - **Option A** — collapse `ObjectBased` into `RecordKeyed` if it always implies a jOOQ `TableRecord` parent in practice.
-- **Option B** — implement `selectManyByObjectKeys` / `selectOneByObjectKeys` in `TypeClassGenerator`.
+- **Option B** — implement a distinct `selectManyByObjectKeys` / `selectOneByObjectKeys` path in `TypeFetcherGenerator`.
 
 Decision needed before implementing any `ObjectBased`-keyed service field.
 
@@ -120,7 +119,7 @@ No DTOs, no TypeMappers. DataFetchers return `Result<Record>`; GraphQL-Java trav
 
 `DataFetchingFieldSelectionSet` and `SelectedField` are already threaded through all table method signatures, structurally committing to selection-aware queries. When the table method bodies are implemented:
 
-- **Top-level**: build the column list from `selection.contains("fieldName")` checks, then `ctx.select(columns).from(TABLE)...`
+- **Top-level**: call `Type.$fields(sel, table, env)` for the column list, then `dsl.select(fields).from(table)...`
 - **Inline nesting**: use jOOQ `multiset(select(columns).from(CHILD).where(...)).as("alias")`, returned as `Field<?>` (type-erased). Use type erasure at every helper method boundary — jOOQ's generic types compound badly with nesting depth, causing slow compile times.
 - **`@splitQuery`**: separate DataLoader; parent fetches the FK/PK columns, child batches by those keys.
 
