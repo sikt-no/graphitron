@@ -161,10 +161,10 @@ public abstract class DTOGenerator<T extends GenerationTarget> extends AbstractS
 
     private MethodSpec getEqualsMethod(String targetName, List<String> fieldNames) {
         CodeBlock returnCodeBlock = CodeBlock.join(
-                fieldNames.stream()
+                " && ", fieldNames.stream()
                         .map(field -> CodeBlock.of("$T.equals($N, that.$N)", Objects.class, field, field))
-                        .toList(),
-                " && ");
+                        .toList()
+        );
 
         return MethodSpec.methodBuilder(EQUALS)
                 .returns(boolean.class)

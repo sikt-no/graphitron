@@ -10,6 +10,7 @@ import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.CodeBlocks;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
@@ -335,14 +336,18 @@ public class FormatCodeBlocks {
      * @return CodeBlock consisting of a function for a count DB call.
      */
     @NotNull
-    public static CodeBlock countFunction(String queryLocation, String queryMethodName, List<String> inputList, boolean isService) {
+    public static CodeBlock countFunction(String queryLocation, String queryMethodName, CodeBlocks inputList, boolean isService) {
+        var lambdaVars = CodeBlocks
+                .create()
+                .addVarIf(!isService, VAR_CONTEXT)
+                .addVar(VAR_RESOLVER_KEYS)
+                .join(", ");
         return CodeBlock.of(
-                isService ? "($L$L) -> $L.count$L($L)" : "($L$L) -> $T.count$L($L)",
-                CodeBlock.ofIf(!isService, "$L, ", VAR_CONTEXT),
-                VAR_RESOLVER_KEYS,
-                isService ? uncapitalize(queryLocation) : getQueryClassName(queryLocation),
+                "($L) -> $L.count$L($L)",
+                lambdaVars,
+                getSource(queryLocation, isService),
                 capitalize(queryMethodName),
-                String.join(", ", inputList)
+                inputList.join(", ")
         );
     }
 
@@ -354,31 +359,28 @@ public class FormatCodeBlocks {
      * @return CodeBlock consisting of a function for a generic DB call.
      */
     @NotNull
-    public static CodeBlock queryFunction(String queryLocation, String queryMethodName, List<String> inputList, boolean hasKeyValues, boolean usesKeyValues, boolean isService) {
-        var inputs = new ArrayList<String>();
-        var params = new ArrayList<String>();
-        if (!isService) {
-            inputs.add(VAR_CONTEXT);
-            params.add(VAR_CONTEXT);
-            if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                params.add(VAR_NODE_STRATEGY);
-            }
-        }
-        if (hasKeyValues) {
-            inputs.add(VAR_RESOLVER_KEYS);
-        }
-        if (usesKeyValues) {
-            params.add(VAR_RESOLVER_KEYS);
-        }
-        params.addAll(inputList);
-        if (!isService) {
-            inputs.add(VAR_SELECTION_SET);
-            params.add(VAR_SELECTION_SET);
-        }
-        var source = isService ? CodeBlock.of("$N", uncapitalize(queryLocation)) : CodeBlock.of("$T", getQueryClassName(queryLocation));
-        return CodeBlock.of("($L) -> $L",
-                String.join(", ", inputs),
-                invokeExternalMethod(source, queryMethodName, CodeBlock.of(String.join(", ", params))));
+    public static CodeBlock queryFunction(String queryLocation, String queryMethodName, CodeBlocks inputList, boolean hasKeyValues, boolean usesKeyValues, boolean isService) {
+        var inputs = CodeBlocks
+                .create()
+                .addVarIf(!isService, VAR_CONTEXT)
+                .addVarIf(hasKeyValues, VAR_RESOLVER_KEYS)
+                .addVarIf(!isService, VAR_SELECTION_SET)
+                .join(", ");
+
+        var params = CodeBlocks
+                .create()
+                .addVarIf(!isService, VAR_CONTEXT)
+                .addVarIf(!isService && GeneratorConfig.shouldMakeNodeStrategy(), VAR_NODE_STRATEGY)
+                .addVarIf(usesKeyValues, VAR_RESOLVER_KEYS)
+                .addAll(inputList)
+                .addVarIf(!isService, VAR_SELECTION_SET)
+                .join(", ");
+
+        return CodeBlock.of("($L) -> $L", inputs, invokeExternalMethod(getSource(queryLocation, isService), queryMethodName, params));
+    }
+
+    private static CodeBlock getSource(String queryLocation, boolean isService) {
+        return isService ? CodeBlock.of("$N", uncapitalize(queryLocation)) : CodeBlock.of("$T", getQueryClassName(queryLocation));
     }
 
     public static CodeBlock invokeExternalMethod(CodeBlock source, String methodName, CodeBlock parameters) {
@@ -590,8 +592,8 @@ public class FormatCodeBlocks {
 
         return CodeBlock.of(
                 "$L, $L",
-                listOf(CodeBlock.join(fromBlocks, ", ")),
-                listOf(CodeBlock.join(toBlocks, ", "))
+                listOf(CodeBlock.join(", ", fromBlocks)),
+                listOf(CodeBlock.join(", ", toBlocks))
         );
     }
 

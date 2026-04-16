@@ -168,7 +168,7 @@ public class FetchEntityImplementationDBMethodGenerator extends FetchDBMethodGen
                 for (var key : containedKeys) {
                     conditions.add(getEntitiesConditionCode(context, key, type.getFieldByName(key), implementation));
                 }
-                code.add("$T.and($L)", DSL.className, indentIfMultiline(CodeBlock.join(conditions, ",\n")));
+                code.add("$T.and($L)", DSL.className, indentIfMultiline(CodeBlock.join(",\n", conditions)));
             }
             conditionBlocks.add(code.build());
             // var nestedKeys = k.getNestedKeys();  # TODO: Support nested keys.

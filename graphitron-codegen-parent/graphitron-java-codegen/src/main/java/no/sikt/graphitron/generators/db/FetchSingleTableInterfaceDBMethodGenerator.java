@@ -179,7 +179,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                     }
                     rowElements.add(CodeBlock.of("$L.as($S)", getSelectCode(field, fieldContext), fieldAlias));
                 });
-        return CodeBlock.join(rowElements, ",\n");
+        return CodeBlock.join(",\n", rowElements);
     }
 
     private CodeBlock fetchAndMap(ObjectField target, List<ObjectDefinition> implementations, String querySource, HashMap<String, Set<String>> overriddenFields, FetchContext context) {

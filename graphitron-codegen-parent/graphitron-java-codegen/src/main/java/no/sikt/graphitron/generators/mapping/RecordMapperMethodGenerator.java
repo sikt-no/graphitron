@@ -98,7 +98,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
             }
         }
 
-        return context.wrapFields(CodeBlock.join(fieldCode, "\n"));
+        return context.wrapFields(CodeBlock.join("\n", fieldCode));
     }
 
     @Override
