@@ -39,6 +39,8 @@ private static GraphitronContext graphitronContext(DataFetchingEnvironment env) 
 }
 ```
 
+FIXME: These should be using a common utility instead.
+
 Query methods (in generated `TypeClass` files) inline the retrieval and immediately call `getDslContext`:
 
 ```java
@@ -75,6 +77,7 @@ public class TenantGraphitronContext implements GraphitronContext {
 }
 ```
 
+FIXME: The above won’t work unless the DSLContext has been created directly on a JDBC Connection. If it’s wrapping a DataSource then jOOQ will return the connection to the pool immediately after executing the statement.
 ### getContextArgument — passing runtime values to generated code
 
 `getContextArgument` passes values from the GraphQL context into generated condition and service method calls. The default implementation delegates to `env.getGraphQlContext().get(name)`.
@@ -86,6 +89,8 @@ This is used by the `contextArguments` directive parameter on `@service` and `@t
 graphitronContext(env).getContextArgument(env, "paramName")
 ```
 
+FIXME: @tableMethod is currently called @externalField in the directives. The same holds for @condition so include it. It’s almost ready so let’s just document as if it’s live. 
+
 This is inlined directly as an argument to the method call — not a separate variable declaration. For example, a `@service` method with `contextArguments: ["tenantId"]` produces something like:
 
 ```java
@@ -93,7 +98,7 @@ This is inlined directly as an argument to the method call — not a separate va
 condition = condition.and(MyService.filterByTenant(table, graphitronContext(env).getContextArgument(env, "tenantId")));
 ```
 
-**Limitation:** The `@condition` directive also has a `contextArguments` parameter in the SDL, but the rewrite pipeline's `FieldBuilder` does not yet read `@condition` on field definitions. Context arguments currently work only with `@service` and `@tableMethod`. See [Argument Resolution](argument-resolution.md) for the plan.
+FIXME: This is wrong. A service is responsible for the entire query and will never be inlined in a condition like this.
 
 ### getDataLoaderName — DataLoader isolation
 
@@ -114,7 +119,11 @@ public String getDataLoaderName(DataFetchingEnvironment env) {
 
 Note: `capitalize` (from `graphql.util.StringKit`) uppercases the first letter, so the output is `"FilmsForActor"`, not `"filmsForActor"`.
 
+FIXME: The detail level her is wrong. Users shouldn’t know about or be able to decide the name of the dataloaders we create.
+
 A fresh `DataLoaderRegistry` is created per HTTP request (in `GraphitronServlet`), so DataLoaders are never shared across requests. The naming only affects sharing *within* a single request — two fields in the same query that resolve to the same name will batch together.
+
+FIXME: See previous FIXME. Is this relevant?
 
 **Design note:** The `GraphitronContext` Javadoc recommends encoding the full execution path (stripped of list indices) rather than just `fieldName + "For" + typeName`. The default implementation uses the simpler formula, which works when the same field+type always has the same arguments. For cases where different parts of a query reach the same type via different paths with different arguments, a path-based implementation prevents unintended batching. The rewrite test suite uses the path-based approach:
 
@@ -126,13 +135,26 @@ public String getDataLoaderName(DataFetchingEnvironment env) {
 }
 ```
 
+FIXME: See previous FIXME. Is this relevant?
 ---
 
 ## Complementary Technologies
 
 The sections below describe standard jOOQ and PostgreSQL capabilities that compose naturally with `GraphitronContext`. They are not Graphitron-specific extension points — they work because `getDslContext()` gives you full control over the `DSLContext` and its configuration.
 
+FIXME: Oracle and other databases also have similar support, so let’s be generic here. Use Postgres as an example but not as the standard. 
+
+### FIXME: jOOQ Configuration
+
+Most users will be using the jOOQ configuration to do datatype conversion, synthetic keys, embedded records etc.
+
+This is one of the MAIN extension points.
+
+Make sure we link to upstream since there is a lot of things here.
+
 ### jOOQ ExecuteListener
+
+FIXME: This is for very advanced use cases. A lot can be done here but most people won’t need it.
 
 jOOQ's `ExecuteListener` intercepts query execution at lifecycle points (before rendering, before execution, after execution, etc.). You can log SQL, collect metrics, or modify queries.
 
@@ -171,7 +193,12 @@ public class SqlLoggingExecuteListener implements ExecuteListener {
 }
 ```
 
+FIXME: We should link to upstream documentation.
+
+
 ### PostgreSQL Row-Level Security
+
+FIXME: Database security model, make it generic with examples from Postgres. Make sure our examples are in line with best practice performance guides from supabase. 
 
 Graphitron's security model (see [Security](security.md)) designates the database as the enforcement point. PostgreSQL RLS is the recommended mechanism — policies filter rows transparently based on session variables.
 
