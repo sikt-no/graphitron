@@ -33,17 +33,15 @@ private String extractConditionQualifiedName(Map<String, Object> conditionMap) {
     if (name != null) return name.toString();
     String cls    = Optional.ofNullable(conditionMap.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
     String method = Optional.ofNullable(conditionMap.get(ARG_METHOD)).map(Object::toString).orElse(null);
-    if (cls != null && method != null) return cls + "#" + method;
-    if (cls != null) return cls;
+    if (cls != null && method != null) return "method '" + method + "' in class '" + cls + "'";
+    if (cls != null) return "class '" + cls + "'";
     return "unknown";
 }
 ```
 
-These two fixes are independent one-liners; ship them first so every subsequent build run produces actionable output.
+The format `"method 'X' in class 'Y'"` matches `ServiceCatalog`'s existing failure messages (`"method 'X' not found in class 'Y'"`), keeping the style consistent across all reference-resolution errors.
 
-<review>
-The `#` separator in `cls + "#" + method` (e.g. `"no.sikt.Conditions#myCondition"`) — check that this matches the format used in other error messages in the codebase that refer to class+method pairs. If `ServiceCatalog` or the validator uses `.` (e.g. `"no.sikt.Conditions.myCondition"`) then `#` will be inconsistent. Pick one format and use it everywhere. This is cosmetic but worth standardising since P3 will produce many of these messages.
-</review>
+These two fixes are independent one-liners; ship them first so every subsequent build run produces actionable output.
 
 ---
 
@@ -61,9 +59,7 @@ boolean isSortEnum = enumType.getValues().stream()
     .anyMatch(v -> v.hasAppliedDirective("order") || v.hasAppliedDirective("index"));
 ```
 
-<review>
-Check whether `@index` can also appear on the *enum type itself* (not just individual values) in the legacy schema. If `QueryEmnerOrderByField` has `@index` at the type level, the values-stream check won't catch it and `isSortEnum` will still be `false`. The fix above is correct for value-level `@index`; just confirm the legacy usage is value-level before closing this one.
-</review>
+`@index` is declared `on ENUM_VALUE` only in `directives.graphqls` — it cannot appear at the enum type level. The value-stream check is correct and complete.
 
 ### O2 — `@orderBy` input types misclassified at the type level
 
@@ -107,38 +103,35 @@ This is a cascade: once `interface Error` becomes `UnclassifiedType`, the valida
 
 ### Design
 
-`buildParticipantList()` currently accepts only `TableBackedType` members. The fix is to also accept `ErrorType`:
+**Generalise, not patch.** The root cause applies to three cases in the SIS graph: error types (`@error`), structural interfaces like `Datoperiode`, and error unions. Rather than fixing each independently and then merging, generalise `buildParticipantList()` once: accept any non-table-bound type whose fields require no SQL generation. The condition is: the implementing type is not `TableBackedType` AND is not itself `UnclassifiedType`. This covers `ErrorType`, any future structural types, and value types.
 
 ```java
 if (gt instanceof TableBackedType tbt && !(gt instanceof TableInterfaceType)) {
     // existing table-backed path
-} else if (gt instanceof ErrorType) {
+} else if (gt != null && !(gt instanceof UnclassifiedType)) {
     result.add(new ParticipantRef(typeName, null, null));  // no table, no discriminator
 } else {
     errors.add("implementing type '" + typeName + "' is not table-bound (missing @table directive)");
 }
 ```
 
-`ParticipantRef` needs to accommodate a null `TableRef` for error members. The validator and generator for `InterfaceType` / `UnionType` already skip generation for error-union and error-interface contexts — the `ErrorType` branch in the validator is `{}` (no checks). The generator side needs to recognise that a union/interface whose members are all `ErrorType` is handled entirely at runtime (error dispatch), not by generated SQL.
+**Null `TableRef` safety.** `ParticipantRef.table()` is currently a non-null `TableRef`. Allowing null requires auditing every call site. The current validator stub `validateParticipants()` does nothing — no dereference. The generators do not yet use `participants()` at all (those field variants are unimplemented). Before step 3, add a `boolean isTableBound()` method to `ParticipantRef` and switch all future generator code on it rather than null-checking `table()` directly:
 
-A new sealed variant `ErrorUnionType` (parallel to `ErrorType`) may be cleaner than patching `UnionType` to carry mixed members. Decision: introduce `ErrorUnionType` if the generator needs to distinguish "pure error union" from "mixed table/error union". For the SIS graph all error unions are pure, so start with `ErrorUnionType` and revisit if mixed unions appear.
+```java
+public record ParticipantRef(String typeName, TableRef table, String discriminatorValue) {
+    public boolean isTableBound() { return table != null; }
+}
+```
+
+**Mixed unions.** A union mixing table-backed and error members (e.g. `union Result = SomeEntity | UgyldigInput`) is not expected in the SIS graph but is not structurally invalid. With the generalised fix above, `buildParticipantList()` will classify it as a `UnionType` with mixed participants. The generator must check `participant.isTableBound()` and skip non-table participants in SQL generation; the type resolver still dispatches all members. This is acceptable — document it in the `UnionType` Javadoc.
+
+**`ErrorUnionType` variant dropped.** With the generalised fix, there is no need for a separate `ErrorUnionType`. Pure error unions become `UnionType` with all-null-table participants, which the generator handles via `isTableBound()` checks. The validator's `UnionType` case remains a no-op (`{}`) since all validation is done at build time.
 
 **Implementation steps:**
-1. Add `ErrorUnionType` to the `GraphitronType` sealed hierarchy
-2. In `enrichUnionType()`: if all members are `ErrorType`, return `ErrorUnionType` instead of calling `buildParticipantList()`
-3. In `enrichInterfaceType()`: accept `ErrorType` members in `buildParticipantList()` (they carry no table; they are structural members only)
-4. Add `case ErrorUnionType ignored -> {}` to the validator's type switch
-5. Add `case ErrorUnionType ignored -> type` to the second-pass `replaceAll` switch in `buildTypes()`
-
-<review>
-Three concerns:
-
-**Null TableRef downstream.** `ParticipantRef(typeName, null, null)` for error members is noted but the plan doesn't audit where `ParticipantRef.tableRef()` is dereferenced. Any generator or validator that switches on participants and unconditionally calls `.tableRef().javaFieldName()` (or similar) will NPE at generation time even though classification succeeds. Before step 3, grep for all `.tableRef()` call sites on `ParticipantRef` and confirm each either null-checks or is only reached for table-backed members.
-
-**Mixed unions left open.** The plan handles pure error unions (`ErrorUnionType`) and error-interface members (step 3), but says nothing about a union that mixes table-backed and error types (e.g., a mutation result union that is either a data type or an error). That case still hits the original `buildParticipantList()` rejection path. Either document that mixed unions are not expected in the SIS graph and add a clear error for them, or extend the design to cover them.
-
-**Potential unification with `Datoperiode`.** The structural interface issue (see "Remaining Unclassified Errors") has the same root cause: `buildParticipantList()` rejects non-table-bound implementing types. If step 3 is generalised from "accept `ErrorType`" to "accept any non-table-bound type that has no generated SQL", `Datoperiode` is fixed for free. Consider whether to generalise at this step or handle structural interfaces separately — but note it so the two fixes don't get implemented independently and then have to be merged.
-</review>
+1. Add `isTableBound()` to `ParticipantRef`
+2. Generalise `buildParticipantList()` to accept non-table-bound, non-unclassified types (covers `ErrorType`, structural types, any future non-SQL type)
+3. In `enrichInterfaceType()` and `enrichUnionType()`: no additional changes needed — both call `buildParticipantList()` which now handles all cases
+4. In any future generator code that iterates `participants()`, gate SQL-emitting paths behind `participant.isTableBound()`
 
 ---
 
@@ -159,25 +152,18 @@ This is the single largest source of errors in the SIS build — the graph makes
 
 ### Design
 
-Implement `resolveConditionRef()` using the existing `reflectServiceMethod()` path for class-form references. For name-form references, the resolution requires looking up the registered class for the symbolic name — the same mechanism needed for named `@service` references (see next section).
+**Prerequisites confirmed:**
 
-Condition methods typically return `org.jooq.Condition` and receive table aliases as parameters. The reflection must classify those parameters into `MethodRef.Param` entries — the same `ParamSource` classification already used for service and tableMethod parameters.
+`ConditionJoin` already carries `MethodRef condition` — `record ConditionJoin(MethodRef condition, String alias)`. The stub `resolveConditionRef()` returns null, so the builder currently emits an error instead of a `ConditionJoin`. No model change is needed; the fix is implementing the resolution.
+
+Condition methods have the form `Condition foo(SomeTable t1, OtherTable t2)`. `ServiceCatalog.reflectTableMethod()` already classifies `org.jooq.Table<?>` parameters as `ParamSource.Sources` (line 228). Condition methods must therefore be reflected via `reflectTableMethod()`, not `reflectServiceMethod()` — using the wrong path would leave table-alias parameters unrecognised.
 
 **Implementation steps:**
-1. Read `className` (class form) or look up name (name form) from the condition map
-2. Reflect the method via `reflectServiceMethod()` (or a shared helper) and build a `MethodRef`
-3. Store the resolved `MethodRef` on `ConditionJoin` (already present in the model)
-4. Generator: emit the condition call using the `MethodRef` in the JOIN `ON` clause
+1. Implement `resolveConditionRef()`: resolve `className` from class form or name form (see Named References section); call `ServiceCatalog.reflectTableMethod()` to build the `MethodRef`
+2. In `BuildContext.parsePathElement()`: the existing error path (`resolved == null → errors.add(…)`) stays; once `resolveConditionRef()` returns a real value, it is automatically used
+3. Generator: emit the condition method call in the JOIN `ON` clause using `ConditionJoin.condition()` and its parameters
 
 This work is coupled to the named-reference resolution (next section) for the name form.
-
-<review>
-Two prerequisites to verify before starting:
-
-**`ConditionJoin` model field.** Step 3 says "`MethodRef` already present in the model" but this should be confirmed. Open `ConditionJoin.java` and check whether it currently carries a `MethodRef` or just the raw strings (`className`, `methodName`). If it carries raw strings, adding a `MethodRef` component is the actual step 0 — and it means `FieldBuilder` (or wherever `ConditionJoin` is constructed) must be updated to resolve the method at build time rather than deferring to the generator.
-
-**`ParamSource` coverage for table-alias parameters.** Condition methods typically receive jOOQ table alias parameters — e.g. `Condition myCondition(FilmTable film, ActorTable actor)`. The existing `ParamSource` taxonomy (`Arg`, `Context`, `Sources`, `TextMapLookup`) covers service and tableMethod parameters, none of which are table aliases. `reflectServiceMethod()` will classify an unrecognised parameter type as... what? Check whether it errors, returns `null`, or produces `UnclassifiedField`. A new `ParamSource.TableAlias` variant (carrying the table's Java type) is likely needed, and the generator must emit the corresponding alias at the call site. This may be a significant addition to the `ParamSource` taxonomy.
-</review>
 
 ---
 
@@ -190,18 +176,12 @@ Two prerequisites to verify before starting:
 **Legacy mechanism:** The old codegen uses `ExternalReferences` — a wrapper around a `Map<String, Class<?>>` built from the plugin's `externalReferences` config list. `CodeReference` reads both `name` (→ `schemaClassReference`) and `className`. `ExternalReferences.getClassFrom()` resolves: className → `Class.forName` + import-path lookup; name → map lookup. The map itself is not present in the rewrite at all; it's missing config plumbing.
 
 **Fix:**
-1. Add a `Map<String, String> namedReferences` field to `RewriteConfig` — the same `externalReferences` list from the Maven plugin, stored as `name → fqcn`
-2. Pass it into `GraphitronSchemaBuilder` (via constructor or field on `JooqCatalog`/config)
-3. In `parseExternalRef()`, when `ARG_CLASS_NAME` is null but `ARG_NAME` is present, look up the name in the map to obtain the class name; if not found, produce an explicit error
-4. Log a deprecation warning whenever the `name` form is used: `"ExternalCodeReference 'name' is deprecated; use 'className' instead"`. These are schema-side strings in a large graph so individual warnings per-field are useful here
+1. Add a `Map<String, String> namedReferences` field to `RewriteConfig` (via `setProperties()`, consistent with how `outputPackage`, `jooqPackage`, and feature flags are carried — avoids threading a new parameter through `GraphitronSchemaBuilder`'s constructor)
+2. In the Maven plugin's `GenerateMojo`, populate `namedReferences` from the existing `externalReferences` config list (same list that feeds the legacy `ExternalReferences` map)
+3. In `parseExternalRef()`, when `ARG_CLASS_NAME` is null but `ARG_NAME` is present: look up in `RewriteConfig.namedReferences()`; if found, use the resolved class name; if not found, classify the field as `UnclassifiedField` with message `"named reference 'X' not found in namedReferences config"` — a build-failure error, not a warning
+4. Log a deprecation warning per-field when the `name` form is used: `"ExternalCodeReference 'name' is deprecated; use 'className' instead"`
 
 **Note:** This also unblocks the `name` form in `@condition` reference paths (see previous section).
-
-<review>
-Step 2 is underspecified. "Via constructor or field on `JooqCatalog`/config" leaves the decision open. The established pattern for cross-cutting configuration is `RewriteConfig.setProperties()` — it already carries `outputPackage`, `jooqPackage`, and the feature-flag set. Adding `namedReferences` there is consistent and avoids threading a new parameter through `GraphitronSchemaBuilder`'s constructor (which is likely called from the Maven plugin). Commit to this approach or explain why a different entry point is better.
-
-Also: step 3 says "produce an explicit error" for an unresolved name, but doesn't say what kind. This should be a build-time `ValidationError` that fails the build — not a runtime exception or a log warning. A field using an unresolvable named reference is classified as `UnclassifiedField`, which already causes a build failure; the error message just needs to be actionable (name + "not found in namedReferences config").
-</review>
 
 ---
 
@@ -224,11 +204,7 @@ if (tables.size() > 1) {
 }
 ```
 
-The validator should then check, for each field that uses an unbound input as `@lookupKey` or filter, that all input fields can be resolved against the field's return table.
-
-<review>
-The validator check is under-specified. "Resolve the column mapping at field-classification time" needs a concrete description: for each argument of an unbound input type on a `@lookupKey` or filter field, iterate the input's `InputField` list and verify that each name maps to a column on the field's `returnType().table()`. If any input field name has no matching column, produce a `ValidationError` naming the unresolved field and the table. Without this check, an unbound input with a stale or mismatched field name will silently produce bad SQL or an NPE at generation time. The check should live in `FieldBuilder.resolveFilters()` or wherever `@lookupKey` argument types are resolved — not deferred to the generator.
-</review>
+At field-classification time, when a `PojoInputType` (unbound) appears as a `@lookupKey` or filter argument, the builder must validate it eagerly: iterate the input's `InputField` list and verify each field name resolves to a column on `returnType().table()`. Any unresolved field produces an `UnclassifiedField` with a message naming the input field and the table — not a deferred generator-time failure. This check belongs in `FieldBuilder` at the point where `@lookupKey` argument types are resolved, before the field is promoted to a lookup variant.
 
 ---
 
@@ -280,21 +256,21 @@ Several input types used as filter arguments have fields that don't map to table
 
 `Datoperiode` is an interface for period types (fraTermin/tilTermin). Its implementing types are nested structural types, not table-backed entities — similar in spirit to the `Error` interface. If this is a recurring pattern (interfaces used purely for structural typing, not for polymorphic dispatch), the E1/E2 fix may need to be generalised to allow interfaces whose members are all non-table-bound.
 
-For now: if these types are intentionally non-generated (no SQL generated for them), annotate them `@notGenerated` to suppress classification errors.
-
-<review>
-The `@notGenerated` workaround is a schema-side patch for a builder-side gap. If E1's fix to `buildParticipantList()` is generalised from "accept `ErrorType`" to "accept any non-table-bound member" (see the E1 review comment), `Datoperiode` is fixed at the same time for free. Before recommending `@notGenerated`, decide whether to generalise E1 at that step. If the decision is to keep E1 `ErrorType`-only, then `@notGenerated` is reasonable but should be documented as a known workaround — not a permanent design.
-</review>
+The E1 fix generalises `buildParticipantList()` to accept any non-table-bound, non-unclassified type — `Datoperiode` is fixed for free by that change, with no schema annotation needed.
 
 ### Apollo Federation `_service` field
 
 `Field '_service': could not be classified — return type '_Service' is not a @table, interface, or union Graphitron type`
 
-`_service` is a built-in Federation field that returns schema SDL. It should be classified as `NotGeneratedField` (the runtime provides it). Fix: detect `__`-prefixed or known Federation built-in field names in the field classifier and emit `NotGeneratedField`.
+`_service` is a built-in Federation field that returns schema SDL. It should be classified as `NotGeneratedField` (the runtime provides it).
 
-<review>
-`_service` has a single underscore, not double — the "detect `__`-prefixed" wording is wrong for this case. The existing `_entities` Federation field is handled as `QueryEntityField` (presumably by exact name match). Check how that classification is triggered: if it's an `if (name.equals("_entities"))` branch, then add `"_service"` as another named exception in the same block. The "detect `__`-prefix" suggestion would only work if there are genuinely `__`-prefixed fields causing problems, which are introspection fields and shouldn't appear in the schema. Also worth checking: is the actual root cause `_service` being unclassified, or is it `_Service` (the return type) being unclassified? If `_Service` type is what fails type classification, the fix belongs in `TypeBuilder`, not the field classifier.
-</review>
+**Root cause:** The error message says the *return type* `_Service` could not be classified, not the field itself. `_Service` is never annotated with `@table` or any Graphitron directive, so `TypeBuilder` produces `UnclassifiedType` for it, which then causes the field classification to fail.
+
+**Fix options:**
+- In `TypeBuilder`, add a guard: types whose name starts with `_` (or specifically `_Service`) are skipped and produce no `GraphitronType` entry — the type classifier simply ignores them.
+- Alternatively, add `name.equals("_service")` alongside the existing `name.equals("_entities")` exact-match branch in `FieldBuilder` and emit `NotGeneratedField` there; `_Service` would still be classified as `UnclassifiedType` but the field would never reach the type-lookup step.
+
+The `TypeBuilder` guard is cleaner because it prevents `_Service` from polluting the type map at all. The `FieldBuilder` guard is more targeted if other `_`-prefixed types should remain classifiable.
 
 ### Schema-side issues (not Graphitron bugs)
 
@@ -344,13 +320,9 @@ The generator then emits `record.setId(input.getId())` for mutation inputs using
 
 This is low priority since it only affects graphs that predate the `@nodeId` directive. New schemas should use `@node` + `@nodeId`.
 
-<review>
-Two prerequisites to confirm:
+**Prerequisite — `TableRef` does not carry the record class.** `TableRef` is `record(String tableName, String javaFieldName, String javaClassName, List<ColumnRef> primaryKeyColumns)` — no `Class<?>` component. Step 2 requires the record class to reflect `getId`/`setId`. The prerequisite is: `JooqCatalog` must expose `table.getRecordType()` at build time (available on jOOQ's `Table<?>` before abstraction), and pass it into `TableRef` as a `Class<?>` (or via a `JooqCatalog` lookup method keyed on `tableName`).
 
-**`TableRef` record class access.** Step 2 requires reflecting the jOOQ record class from `TableRef`. Check whether `TableRef` currently carries the record class (as a `Class<?>` or `String fqcn`). If it doesn't, this is a prerequisite: `JooqCatalog` must expose the record class for a given table, and `TableRef` must carry it. This is non-trivial — look at what `JooqCatalog` exposes today and whether `Table.getRecordType()` is available on the jOOQ `Table<?>` object before it's abstracted away.
-
-**Failure mode.** If `catalog.findColumn()` returns empty for an `id` field and there are no `getId`/`setId` methods on the record class, the current path falls through to `UnclassifiedType`. That's acceptable, but the error message should say "field 'id' has no matching column and no platformId methods (getId/setId) — use @nodeId for Relay IDs" rather than a generic "could not be classified" message. Without a clear message, this failure mode looks the same as any other unclassified field.
-</review>
+**Failure mode error message.** If `catalog.findColumn()` returns empty for an `id` field and `getId`/`setId` are not found on the record, the fallback should produce a specific error: `"field 'id' has no matching column and no platformId methods (getId/setId) found on record class — use @nodeId for Relay IDs"`, not the generic "could not be classified" message.
 
 ---
 
