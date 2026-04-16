@@ -414,7 +414,23 @@ class FieldBuilder {
             String tableSqlName,
             List<String> errors) {
         var dir = ev.getAppliedDirective("order");
-        var entries = resolveOrderEntries(dir, tableSqlName);
+        List<OrderBySpec.ColumnOrderEntry> entries;
+        if (dir != null) {
+            entries = resolveOrderEntries(dir, tableSqlName);
+        } else {
+            // @index is a deprecated alias: @index(name: "idx") ≡ @order(index: "idx")
+            var indexDir = ev.getAppliedDirective("index");
+            var nameArg = indexDir != null ? indexDir.getArgument(ARG_NAME) : null;
+            Object nameVal = nameArg != null ? nameArg.getValue() : null;
+            String indexName = nameVal instanceof StringValue sv ? sv.getValue().strip()
+                : nameVal instanceof String s ? s.strip() : null;
+            var colsOpt = indexName != null ? ctx.catalog.findIndexColumns(tableSqlName, indexName) : Optional.empty();
+            entries = (colsOpt.isPresent() && !colsOpt.get().isEmpty())
+                ? colsOpt.get().stream()
+                    .map(ce -> new OrderBySpec.ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
+                    .toList()
+                : null;
+        }
         if (entries == null) {
             errors.add("enum value '" + ev.getName() + "': could not resolve @order columns in table '" + tableSqlName + "'");
             return null;
