@@ -424,18 +424,23 @@ class FieldBuilder {
             Object nameVal = nameArg != null ? nameArg.getValue() : null;
             String indexName = nameVal instanceof StringValue sv ? sv.getValue().strip()
                 : nameVal instanceof String s ? s.strip() : null;
-            var colsOpt = indexName != null ? ctx.catalog.findIndexColumns(tableSqlName, indexName) : Optional.empty();
-            entries = (colsOpt.isPresent() && !colsOpt.get().isEmpty())
-                ? colsOpt.get().stream()
-                    .map(ce -> new OrderBySpec.ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
-                    .toList()
-                : null;
+            entries = resolveIndexColumns(tableSqlName, indexName);
         }
         if (entries == null) {
             errors.add("enum value '" + ev.getName() + "': could not resolve @order columns in table '" + tableSqlName + "'");
             return null;
         }
         return new OrderBySpec.Fixed(entries, "ASC");
+    }
+
+    /** Looks up named index columns from the catalog; returns {@code null} when not found. */
+    private List<OrderBySpec.ColumnOrderEntry> resolveIndexColumns(String tableSqlName, String indexName) {
+        if (indexName == null) return null;
+        var colsOpt = ctx.catalog.findIndexColumns(tableSqlName, indexName);
+        if (colsOpt.isEmpty() || colsOpt.get().isEmpty()) return null;
+        return colsOpt.get().stream()
+            .map(ce -> new OrderBySpec.ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
+            .toList();
     }
 
     /**
@@ -456,13 +461,7 @@ class FieldBuilder {
             Object indexVal = indexArg.getValue();
             String indexName = indexVal instanceof StringValue sv ? sv.getValue().strip()
                 : indexVal instanceof String s ? s.strip() : null;
-            if (indexName != null) {
-                var colsOpt = ctx.catalog.findIndexColumns(tableSqlName, indexName);
-                if (colsOpt.isEmpty() || colsOpt.get().isEmpty()) return null;
-                return colsOpt.get().stream()
-                    .map(ce -> new OrderBySpec.ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
-                    .toList();
-            }
+            if (indexName != null) return resolveIndexColumns(tableSqlName, indexName);
         }
 
         var pkArg = dir.getArgument(ARG_PRIMARY_KEY);
