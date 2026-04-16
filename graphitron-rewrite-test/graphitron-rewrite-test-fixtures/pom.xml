@@ -19,7 +19,20 @@
         <db.url>jdbc:tc:postgresql:18:///rewrite_test?TC_TMPFS=/testtmpfs:rw&amp;TC_INITSCRIPT=file:${project.basedir}/src/main/resources/init.sql</db.url>
         <db.username>postgres</db.username>
         <db.password>postgres</db.password>
+        <db.driver>org.testcontainers.jdbc.ContainerDatabaseDriver</db.driver>
     </properties>
+
+    <profiles>
+        <!-- Use a pre-existing local PostgreSQL instead of TestContainers.
+             Requires: pg running on localhost:5432, database rewrite_test created, init.sql applied. -->
+        <profile>
+            <id>local-db</id>
+            <properties>
+                <db.url>jdbc:postgresql://localhost:5432/rewrite_test</db.url>
+                <db.driver>org.postgresql.Driver</db.driver>
+            </properties>
+        </profile>
+    </profiles>
 
     <dependencies>
         <dependency>
@@ -42,7 +55,7 @@
                         </goals>
                         <configuration>
                             <jdbc>
-                                <driver>org.testcontainers.jdbc.ContainerDatabaseDriver</driver>
+                                <driver>${db.driver}</driver>
                                 <url>${db.url}</url>
                                 <user>${db.username}</user>
                                 <password>${db.password}</password>
