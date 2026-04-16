@@ -161,18 +161,15 @@ This work is coupled to the named-reference resolution (next section) for the na
 
 **Root cause:** `parseExternalRef()` reads `ARG_CLASS_NAME` but ignores the deprecated `name` field. When a field uses `@service(service: {name: "SERVICE_PERSONBILDE"})` or a reference uses `condition: {name: "CONDITION_EMNE", method: "…"}`, `parseExternalRef()` returns `ExternalRef(null, method)` and `reflectServiceMethod(null, …)` fails immediately.
 
-The `ExternalCodeReference.name` field carries a symbolic key; the directive comment says "Available values are set in the plugin configuration." The plugin must therefore maintain a `name → fully-qualified class name` registry, the same way `@tableMethod` references are registered.
+**Legacy mechanism:** The old codegen uses `ExternalReferences` — a wrapper around a `Map<String, Class<?>>` built from the plugin's `externalReferences` config list. `CodeReference` reads both `name` (→ `schemaClassReference`) and `className`. `ExternalReferences.getClassFrom()` resolves: className → `Class.forName` + import-path lookup; name → map lookup. The map itself is not present in the rewrite at all; it's missing config plumbing.
 
-**Open question:** What is the current plugin config structure for named references? The old codegen had a `serviceReferences` / `conditionReferences` map in `GeneratorConfig`. Is the same config available in the rewrite's `RewriteConfig`? This needs to be confirmed before the fix can be specified — the answer determines whether the name lookup is a one-liner against an existing map or requires new config plumbing.
+**Fix:**
+1. Add a `Map<String, String> namedReferences` field to `RewriteConfig` — the same `externalReferences` list from the Maven plugin, stored as `name → fqcn`
+2. Pass it into `GraphitronSchemaBuilder` (via constructor or field on `JooqCatalog`/config)
+3. In `parseExternalRef()`, when `ARG_CLASS_NAME` is null but `ARG_NAME` is present, look up the name in the map to obtain the class name; if not found, produce an explicit error
+4. Log a deprecation warning whenever the `name` form is used: `"ExternalCodeReference 'name' is deprecated; use 'className' instead"`. These are schema-side strings in a large graph so individual warnings per-field are useful here
 
-**Interim fix (unblock builds):** If the resolution can't be implemented immediately, `parseExternalRef()` should at least detect the name-only form and produce a clear error:
-
-```
-service reference uses deprecated 'name' form ("SERVICE_PERSONBILDE");
-use 'className' instead or register the name in plugin config
-```
-
-rather than the current opaque "service reference is incomplete."
+**Note:** This also unblocks the `name` form in `@condition` reference paths (see previous section).
 
 ---
 
@@ -274,7 +271,7 @@ The column name `TIDSENHET_` appears truncated (missing suffix). Check whether t
 
 ---
 
-## Legacy platformId (Low Priority — Needs Design Input)
+## Legacy platformId (Low Priority)
 
 Several mutation input types use `id: ID!` as the identifier field, but the underlying table has no column named `id`. Examples:
 
@@ -285,14 +282,23 @@ input AngiBankkontonummerForPersonProfilInput @table(name: "PERSON") {
 }
 ```
 
-The `PERSON` table uses a legacy composite platform key rather than a single `id` column. The rewrite has not designed support for this pattern — `@nodeId` / `@node` are the documented mechanisms for ID fields, but the SIS graph predates those directives and doesn't use them.
+The `PERSON` table uses a legacy composite platform key; there is no `id` column.
 
-**Questions for the team:**
-1. How is the legacy `id` field currently mapped to the platform key in the old codegen? Is there a directive, a naming convention, or a plugin config entry?
-2. Should the rewrite introduce a new directive (e.g., `@platformId`) to mark these fields, or should existing `@nodeId` be extended to cover the mutation-input case?
-3. What SQL does the old codegen emit for a mutation that receives a legacy `id`? Does it decode the ID to extract the composite key, or pass it through as-is?
+**How the legacy codegen handles it:** The project uses a custom jOOQ code generator that adds `getId()` / `setId(String)` convenience methods to every generated jOOQ table record. These methods encode/decode the composite primary key into a platform-compatible ID string. In `LookupHelpers.getKeyFieldBlock()`, when an `id: ID!` field has no `@nodeId`, the legacy codegen emits `record.getId()` / `record.setId(input)` directly via the field's `MethodMapping` (i.e. the GraphQL field name `id` is camel-cased to `getId`/`setId`). The custom jOOQ method handles the encoding/decoding internally.
 
-This is deliberately left as open questions rather than a plan — the answers determine the design.
+**Design for the rewrite:**
+
+At classification time, when `buildInputColumnField()` fails to find an `id` column in the jOOQ table, the builder should not immediately produce `UnclassifiedType`. Instead, check whether the jOOQ record class has a `setId(String)` / `getId()` method (detectable via reflection on the `TableRef`'s record class). If those methods exist, classify the field as a new `InputField.PlatformIdField` variant carrying the `TableRef` and the method names.
+
+The generator then emits `record.setId(input.getId())` for mutation inputs using this variant, relying on the custom jOOQ method for the actual encoding.
+
+**Implementation steps:**
+1. Add `InputField.PlatformIdField` to the `InputField` sealed hierarchy (alongside the existing `ColumnField`)
+2. In `buildInputColumnField()`, when `catalog.findColumn()` returns empty for an `id` field on an `ID` type, reflect the record class for `getId`/`setId` methods; if found, return `PlatformIdField`
+3. Add `case PlatformIdField ignored -> {}` to the validator (no structural checks needed)
+4. In the mutation generator, emit `record.setId(…)` for `PlatformIdField`
+
+This is low priority since it only affects graphs that predate the `@nodeId` directive. New schemas should use `@node` + `@nodeId`.
 
 ---
 
