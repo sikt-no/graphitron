@@ -140,6 +140,27 @@ docker ps  # verify it's running
 
 Docker must be running before building `graphitron-java-codegen` (jOOQ code generation uses TestContainers to start a Postgres database) and before any integration test that uses TestContainers (e.g. the Sakila database integration tests).
 
+**If Docker bridge networking is broken** (e.g. iptables/nft not supported), use the native PostgreSQL
+instance instead for `graphitron-rewrite-test-fixtures`:
+
+```bash
+# One-time setup: start the native PG cluster and initialise the schema
+pg_ctlcluster 16 main start
+sudo -u postgres psql -c "CREATE DATABASE rewrite_test;"
+sudo -u postgres psql -d rewrite_test \
+  -f graphitron-rewrite-test/graphitron-rewrite-test-fixtures/src/main/resources/init.sql
+
+# Build test-fixtures against native Postgres (skip TestContainers entirely)
+mvn install -pl :graphitron-rewrite-test-fixtures -am -Plocal-db
+
+# Then run the rewrite unit tests normally (no Docker needed)
+mvn test -pl :graphitron-rewrite
+```
+
+The `local-db` profile is defined in `graphitron-rewrite-test-fixtures/pom.xml` and switches the
+jOOQ codegen driver from `ContainerDatabaseDriver` to `org.postgresql.Driver` pointing at
+`localhost:5432/rewrite_test`.
+
 ---
 
 ## Common Development Commands
