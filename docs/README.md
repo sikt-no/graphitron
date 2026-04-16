@@ -28,7 +28,8 @@ You're writing a GraphQL schema and want Graphitron to generate the wiring code.
 You're implementing generators, adding field variants, or fixing bugs in the rewrite pipeline.
 
 4. **[Code Generation Triggers](code-generation-triggers.md)** — The full classification taxonomy: schema patterns → sealed variants → generated output. This is the reference for what the code does.
-5. **[Rewrite Roadmap](rewrite-roadmap.md)** — Design principles for the rewrite, remaining generator work, and known gaps.
+5. **[Rewrite Model](rewrite-model.md)** — Visual Mermaid diagrams of the sealed type hierarchy: field variants, type variants, and support/composition types. Includes notes on structural redundancy and potential cleanup.
+6. **[Rewrite Roadmap](rewrite-roadmap.md)** — Design principles for the rewrite, remaining generator work, and known gaps.
 
 Active implementation plans (read when you're working on the specific feature):
 - **[Paginated Fields](paginated-fields.md)** — Dynamic ordering cursors, backward pagination, known bugs.
@@ -48,6 +49,7 @@ Active implementation plans (read when you're working on the specific feature):
 | [Runtime Extension Points](runtime-extension-points.md) | Schema authors | GraphitronContext, ExecuteListener, RLS |
 | [Example README](/graphitron-example/README.md) | Schema authors | Working Sakila example |
 | [Code Generation Triggers](code-generation-triggers.md) | Contributors | Schema → classification → generated code |
+| [Rewrite Model](rewrite-model.md) | Contributors | Sealed type hierarchy diagrams and cleanup notes |
 | [Rewrite Roadmap](rewrite-roadmap.md) | Contributors | Design principles, remaining work, known gaps |
 | [Paginated Fields](paginated-fields.md) | Contributors | Pagination implementation plan |
 | [Argument Resolution](argument-resolution.md) | Contributors | Argument classification, @condition, lookup generation |
