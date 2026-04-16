@@ -5,29 +5,45 @@
 The Type class (`TypeClassGenerator`) currently serves two roles:
 
 1. **Projection** — `fields(sel)` builds the SELECT list from a `DataFetchingFieldSelectionSet`
-2. **Execution** — `selectMany`, `selectOne`, `subselectMany`, `subselectOne`, and four batch-key methods run queries or build subquery expressions
+2. **Execution** — `selectMany`, `selectOne`, `subselectMany`, `subselectOne`, and four batch-key
+   methods run queries or build subquery expressions
 
 This conflation causes several problems:
 
 ### Shared methods with fixed signatures don't fit all callers
 
-`selectMany(env, condition, orderBy)` assumes every list query has the same shape. But root queries, paginated queries, lookup queries, and batch queries all have different execution needs. The result is overloads (two `selectMany` variants), special-case parameters (`seekValues`, `limit`, `extraFields`), and "consistency" parameters (`env` on `subselectMany` where it has no structural role).
+`selectMany(env, condition, orderBy)` assumes every list query has the same shape. But root
+queries, paginated queries, lookup queries, and batch queries all have different execution needs.
+The result is overloads (two `selectMany` variants), special-case parameters (`seekValues`,
+`limit`, `extraFields`), and "consistency" parameters (`env` on `subselectMany` where it has no
+structural role).
 
 ### Table alias is hidden, blocking recursive composition
 
-`fields(sel)` creates its own `table` local internally. When inline nested fields (G5) need the parent's table alias for correlated join conditions, there is no way to pass it. The parent type class must pass its alias to the child's `$fields` method so the child can construct correlated multiset expressions. The current design makes this impossible without adding yet another parameter to the already-overloaded shared methods.
+`fields(sel)` creates its own `table` local internally. When inline nested fields (G5) need the
+parent's table alias for correlated join conditions, there is no way to pass it. The parent type
+class must pass its alias to the child's `$fields` method so the child can construct correlated
+multiset expressions. The current design makes this impossible without adding yet another parameter
+to the already-overloaded shared methods.
 
 ### Batch-key method names encoded on the Type class
 
-`selectManyByRowKeys`, `selectManyByRecordKeys`, etc. encode the key type in the method name, creating combinatorial growth. Each new `BatchKey` variant forces new methods on every Type class. These are field-specific concerns that belong closer to the field.
+`selectManyByRowKeys`, `selectManyByRecordKeys`, etc. encode the key type in the method name,
+creating combinatorial growth. Each new `BatchKey` variant forces new methods on every Type class.
+These are field-specific concerns that belong closer to the field.
 
 ### Method count inflated with stubs
 
-Every Type class gets 11 methods. Many are stubs (`UnsupportedOperationException`). Types used only as subselect targets never need `selectMany`; types never accessed via services never need batch-key methods.
+Every Type class gets 11 methods. Many are stubs (`UnsupportedOperationException`). Types used
+only as subselect targets never need `selectMany`; types never accessed via services never need
+batch-key methods.
 
 ### Reuse is the wrong goal for generated code
 
-The shared execution methods attempt to reduce duplication across call sites. But in a code generation context, each call site can generate exactly the SQL it needs — the generator has full knowledge at generation time. Generating targeted code per call site is simpler and more direct than routing through shared parameterized methods.
+The shared execution methods attempt to reduce duplication across call sites. But in a code
+generation context, each call site can generate exactly the SQL it needs — the generator has full
+knowledge at generation time. Generating targeted code per call site is simpler and more direct
+than routing through shared parameterised methods.
 
 ---
 
@@ -35,7 +51,8 @@ The shared execution methods attempt to reduce duplication across call sites. Bu
 
 ### Type class: SQL expression construction, no execution
 
-The Type class becomes a recursive projection tree builder. It receives its table alias as a parameter and never executes queries.
+The Type class becomes a recursive projection tree builder. It receives its table alias as a
+parameter and never executes queries.
 
 ```java
 class Film {
@@ -58,15 +75,24 @@ class Film {
 }
 ```
 
-**`$fields`** is prefixed with `$` to avoid collision with GraphQL fields named `fields`.
+**`$fields` is `public static`.** Fetchers classes (e.g. `QueryFetchers`) call it cross-class, so
+`public` is required. The `$` prefix is chosen because the GraphQL specification defines field
+names as `/[_A-Za-z][_0-9A-Za-z]*/` — a name starting with `$` is impossible by spec, so
+`$fields` can never collide with a GraphQL field name regardless of the schema.
 
-**`table` parameter** — typed as the concrete jOOQ table class (e.g. `no.sikt.jooq.tables.Film`). The caller provides the alias. This is the prerequisite for G5: when `$fields` later handles inline nested fields, it passes this alias to child subselect methods for correlated join conditions.
+**`table` parameter** — typed as the concrete jOOQ table class (e.g. `FilmTable`). The caller
+provides the alias. This is the prerequisite for G5: when `$fields` later handles inline nested
+fields, it passes this alias to per-field methods for correlated join conditions.
 
-**`env` parameter** — threaded through for context argument extraction in custom conditions and fields. The Type class uses `env` for argument/context access but never for DSL context or execution.
+**`env` parameter** — included now rather than deferred to G5. G5 is the immediate next roadmap
+item; omitting `env` here would require migrating this signature across every generated type class
+again one step later. The parameter is unused in this refactor but costs only one extra argument
+per `$fields` call.
 
 ### Fetchers class: execution entry points
 
-Fetchers own everything that touches execution — DSL context extraction, query building, pagination, DataLoaders. They call `Type.$fields()` for projection and build the query around it.
+Fetchers own everything that touches execution — DSL context extraction, query building,
+pagination, DataLoaders. They call `Type.$fields()` for projection and build the query around it.
 
 ```java
 class QueryFetchers {
@@ -96,6 +122,9 @@ class QueryFetchers {
 
 ### Pagination inlined in the fetcher
 
+Extra ordering columns (cursor fields) are merged into the select list by name, not by reference,
+to avoid dependence on jOOQ `Field.equals()` semantics.
+
 ```java
 static ConnectionResult filmsConnection(DataFetchingEnvironment env) {
     var dsl = graphitronContext(env).getDslContext(env);
@@ -110,8 +139,9 @@ static ConnectionResult filmsConnection(DataFetchingEnvironment env) {
     Object[] seekValues = after != null ? ConnectionHelper.decodeCursor(after) : null;
 
     var fields = new ArrayList<>(Film.$fields(env.getSelectionSet(), table, env));
+    var selectedNames = fields.stream().map(Field::getName).collect(toSet());
     for (var extra : extraFields) {
-        if (!fields.contains(extra)) fields.add(extra);
+        if (!selectedNames.contains(extra.getName())) fields.add(extra);
     }
 
     var query = dsl.select(fields).from(table)
@@ -140,42 +170,32 @@ static Result<Record> lookupFilmById(DataFetchingEnvironment env) {
 }
 ```
 
-### Split query / service batch fields stay on the Fetchers class
+### Split query / service batch fields
 
-Batch rows methods inline their own SQL. The Type class is involved only for projection:
-
-```java
-// Split query rows method (currently a stub — body TBD)
-static List<List<Record>> rowsActors(
-        List<Row1<Integer>> keys, DataFetchingEnvironment env, SelectedField sel) {
-    throw new UnsupportedOperationException();
-}
-
-// Service field rows method (currently a stub — body TBD)
-static List<List<Record>> loadRecommendations(
-        List<Row1<Integer>> keys, DataFetchingEnvironment env, SelectedField sel) {
-    var serviceResult = RecommendationService.recommend(keys, ...);
-    var dsl = graphitronContext(env).getDslContext(env);
-    var table = Tables.FILM;
-    return dsl.select(Film.$fields(sel.getSelectionSet(), table, env))
-              .from(table)
-              .where(...)
-              .fetch()
-              .intoGroups(...);
-}
-```
+Split query and service rows methods remain stubs (`UnsupportedOperationException`). The only
+change is that service rows methods no longer delegate to batch-key method names on the type class
+— they throw directly, exactly like split query rows methods already do. The eventual implemented
+bodies will call `Type.$fields(sel.getSelectionSet(), table, env)` for projection, but that work
+is out of scope here.
 
 ### BatchKey simplification
 
-`BatchKey.selectManyMethodName()` and `selectOneMethodName()` are removed — they existed solely to dispatch to Type class methods that no longer exist. `BatchKey` retains `javaTypeName()` for DataLoader key types and `keyColumns` for key extraction.
+`BatchKey.selectManyMethodName()` and `selectOneMethodName()` are removed — they existed solely
+to dispatch to Type class methods that no longer exist. `BatchKey` retains `javaTypeName()` for
+DataLoader key types and `keyColumns` for key extraction. `ObjectBased` currently throws
+`UnsupportedOperationException` on both removed methods; its removal is compatible with both
+roadmap options for ObjectBased batch loading (collapse into `RecordKeyed` or implement a new
+rows method), since neither option requires the removed dispatch interface.
 
 ---
 
 ## What this sets up for G5
 
-After this refactor, the Type class has one method (`$fields`) that receives its table alias as a parameter. Adding inline nested fields means:
+After this refactor, the Type class has one method (`$fields`) that receives its table alias and
+env as parameters. Adding inline nested fields means:
 
-1. Per-field methods on the Type class: `Film.language(sf, table, env)` returns a `Field<?>` (multiset expression with correlated join condition using `table`).
+1. Per-field methods on the Type class: `Film.language(sf, table, env)` returns a `Field<?>`
+   (multiset expression with correlated join condition using `table`).
 
 2. `$fields` switch dispatches to these methods alongside scalar column fields.
 
@@ -183,8 +203,9 @@ The recursive pattern:
 
 ```java
 class Film {
-    static List<Field<?>> $fields(SelectionSet sel, FilmTable table,
-                                   DataFetchingEnvironment env) {
+    public static List<Field<?>> $fields(DataFetchingFieldSelectionSet sel,
+                                          FilmTable table,
+                                          DataFetchingEnvironment env) {
         // ...
         switch (sf.getName()) {
             case "title"    -> fields.add(table.TITLE);
@@ -194,7 +215,7 @@ class Film {
     }
 
     static Field<?> language(SelectedField sf, FilmTable table,
-                             DataFetchingEnvironment env) {
+                              DataFetchingEnvironment env) {
         var lang = Tables.LANGUAGE;
         return DSL.multiset(
             DSL.select(Language.$fields(sf.getSelectionSet(), lang, env))
@@ -206,80 +227,106 @@ class Film {
 }
 ```
 
-Each type class mirrors the GraphQL type. Each method mirrors a field. The table alias threads through the recursion, enabling correct correlated subqueries at any nesting depth.
+Each type class mirrors the GraphQL type. Each method mirrors a field. The table alias threads
+through the recursion, enabling correct correlated subqueries at any nesting depth.
 
 ---
 
 ## Implementation Steps
 
-### Step 1: Rename and re-sign `fields()` in TypeClassGenerator
+Steps are ordered so the codebase compiles and tests pass at every intermediate state.
 
-**File:** `graphitron-rewrite/.../generators/TypeClassGenerator.java`
-
-- Rename `fields` to `$fields`
-- Add `table` parameter (concrete jOOQ table class) — replaces the internal `table` local
-- Add `env` parameter (`DataFetchingEnvironment`)
-- Remove the `fields(sel, extraFields)` overload — the fetcher handles extra-field merging
-
-### Step 2: Remove execution methods from TypeClassGenerator
-
-**File:** `graphitron-rewrite/.../generators/TypeClassGenerator.java`
-
-Remove from `buildTypeSpec` and delete the builder methods:
-- `buildSelectManyMethod`, `buildSelectManyPaginatedMethod`
-- `buildSelectOneMethod`
-- `buildSubselectManyMethod`, `buildSubselectOneMethod`
-- `buildSelectManyFromRowServiceMethod`, `buildSelectOneFromRowServiceMethod`
-- `buildSelectManyFromRecordServiceMethod`, `buildSelectOneFromRecordServiceMethod`
-- `sortFieldList()` helper
-
-### Step 3: Inline query execution in TypeFetcherGenerator
+### Step 1: Inline query execution in TypeFetcherGenerator
 
 **File:** `graphitron-rewrite/.../generators/TypeFetcherGenerator.java`
+
+Stop delegating to the Type class for execution. Build the query inline at each call site using
+the table local and `Type.$fields(sel, table, env)` for projection. The Type class still has the
+old `fields(sel)` signature at this point — update the calls to `$fields(sel, table, env)` once
+the Type class is updated in step 2.
 
 | Method | Current delegation | New pattern |
 |---|---|---|
 | `buildQueryTableFetcher` (list) | `Type.selectMany(env, condition, orderBy)` | `dsl.select(Type.$fields(sel, table, env)).from(table).where(condition).orderBy(orderBy).fetch()` |
 | `buildQueryTableFetcher` (single) | `Type.selectOne(env, condition)` | Same chain with `.fetchOne()` |
-| `buildQueryConnectionFetcher` | `Type.selectMany(env, condition, orderBy, extraFields, seekValues, limit)` | Inlined paginated query with extra-field merge, seek, limit |
+| `buildQueryConnectionFetcher` | `Type.selectMany(env, condition, orderBy, extraFields, seekValues, limit)` | Inlined paginated query with name-based extra-field merge, seek, limit |
 | `buildQueryLookupRowsMethod` | `Type.selectMany(env, condition, orderBy)` | Same as list pattern |
-| `buildServiceRowsMethod` | `Type.selectManyByRowKeys(...)` / `Type.selectOneByRowKeys(...)` | Stub throws `UnsupportedOperationException` directly in the rows method |
+| `buildServiceRowsMethod` | `Type.selectManyByRowKeys(...)` / `Type.selectOneByRowKeys(...)` | Throw `UnsupportedOperationException` directly — no type class delegation |
 
-Expand `needsGraphitronContextHelper` to be `true` whenever any query-executing field exists (not just context-arg fields), since all fetchers now need `graphitronContext(env).getDslContext(env)`.
+Update `needsGraphitronContextHelper` to emit the helper whenever the fetchers class contains at
+least one `SqlGeneratingField` — i.e., whenever there is a field that executes inline SQL rather
+than stubbing. All such fetchers now need `graphitronContext(env).getDslContext(env)` directly.
 
-### Step 4: Clean up BatchKey
+### Step 2: Reshape TypeClassGenerator
+
+**File:** `graphitron-rewrite/.../generators/TypeClassGenerator.java`
+
+- Rename `buildFieldsMethod` → generates `$fields` (public static, 3 parameters: `sel`, `table`,
+  `env`) — replaces the internal `table` local with the parameter
+- Remove `buildFieldsWithExtraMethod` — the fetcher now handles extra-field merging
+- Remove execution builder methods and their `sortFieldList()` helper:
+  - `buildSelectManyMethod`, `buildSelectManyPaginatedMethod`
+  - `buildSelectOneMethod`
+  - `buildSubselectManyMethod`, `buildSubselectOneMethod` — these were never called from
+    `TypeFetcherGenerator` and are dead code; their removal is safe
+  - `buildSelectManyFromRowServiceMethod`, `buildSelectOneFromRowServiceMethod`
+  - `buildSelectManyFromRecordServiceMethod`, `buildSelectOneFromRecordServiceMethod`
+
+### Step 3: Clean up BatchKey
 
 **File:** `graphitron-rewrite/.../model/BatchKey.java`
 
-Remove `selectManyMethodName()` and `selectOneMethodName()` from the sealed interface and all implementations.
+Remove `selectManyMethodName()` and `selectOneMethodName()` from the sealed interface and all
+three implementations (`RowKeyed`, `RecordKeyed`, `ObjectBased`).
 
-### Step 5: Update tests
+### Step 4: Remove dead tests
 
-**`TypeClassGeneratorTest`:**
-- `generate_allMethodsArePresent` → assert only `"$fields"`
-- Remove signature tests for all removed methods (9 tests)
-- Update `fields_signature` → verify `$fields` with 3 parameters `[sel, table, env]`
-- Remove `fieldsWithExtra_signature`
+Tests that verified the now-removed execution methods and delegation patterns should be **deleted**,
+not updated with different body-string assertions. Body-content assertions test implementation
+details that break on every refactor; correctness coverage transfers to the compilation and
+execution tests in step 5.
 
-**`TablePipelineTest`:**
-- Remove `subselectMany_usesMultiset`, `subselectOne_usesMultisetWithLimit`, `subselectMany_tableRefIsCorrectForSchema`
-- Update `fieldsMethod_*` tests for `$fields` name and parameter-based table
+**`TypeClassGeneratorTest` — delete:**
+- `fieldsWithExtra_signature`
+- `selectMany_signature`, `selectManyPaginated_signature`
+- `selectOne_signature`
+- `subselectMany_signature`, `subselectOne_signature`
+- `selectManyByRowKeys_signature`, `selectOneByRowKeys_signature`
+- `selectManyByRecordKeys_signature`, `selectOneByRecordKeys_signature`
 
-**`TypeFetcherGeneratorTest`:**
-- Update body assertions: `contains("selectMany")` → `contains("$fields")` + `contains(".fetch()")`
-- Service field tests: rows method no longer delegates to batch-key methods
-- Connection/pagination: update for inlined query pattern
+**`TypeClassGeneratorTest` — update:**
+- `generate_allMethodsArePresent` → assert only `"$fields"` is present
+- `fields_signature` → rename to `$fields_signature`; verify `public static`, name `"$fields"`,
+  parameters `[sel: DataFetchingFieldSelectionSet, table: <ConcreteTable>, env: DataFetchingEnvironment]`
 
-**`FetcherPipelineTest`:**
-- `queryTableField_list_delegatesToSelectMany` → assert `contains("$fields")` and `contains(".fetch()")`
-- `queryTableField_single_delegatesToSelectOne` → assert `contains("$fields")` and `contains(".fetchOne()")`
+**`TablePipelineTest` — delete:**
+- `subselectMany_usesMultiset`, `subselectOne_usesMultisetWithLimit`,
+  `subselectMany_tableRefIsCorrectForSchema` — these tested dead code
 
-### Step 6: Verify
+**`TablePipelineTest` — update:**
+- `fieldsMethod_*` tests: update for `$fields` name, `public static` modifier, and
+  parameter-based table (no internal local)
+
+**`TypeFetcherGeneratorTest` — delete:**
+- Any test asserting `contains("selectMany")`, `contains("selectOne")`,
+  `contains("selectManyByRowKeys")`, or equivalent delegation strings
+- These include the service field rows tests that verified dispatch to batch-key method names
+
+**`TypeFetcherGeneratorTest` — keep / add:**
+- Structural tests (return types, parameter signatures, method presence) are unaffected
+- OrderBy helper method tests are unaffected
+
+**`FetcherPipelineTest` — delete:**
+- `queryTableField_list_delegatesToSelectMany`
+- `queryTableField_single_delegatesToSelectOne`
+- Any further pipeline tests asserting `contains("selectMany")` / `contains("selectOne")`
+
+### Step 5: Verify
 
 ```
 mvn test -pl :graphitron-rewrite                    # unit + pipeline tests
-mvn compile -pl :graphitron-rewrite-test-spec       # generated code compiles
-mvn test -pl :graphitron-rewrite-test-spec          # execution tests pass
+mvn compile -pl :graphitron-rewrite-test-spec       # generated code compiles against real jOOQ
+mvn test -pl :graphitron-rewrite-test-spec          # execution tests pass against real database
 ```
 
 ---
@@ -288,10 +335,10 @@ mvn test -pl :graphitron-rewrite-test-spec          # execution tests pass
 
 | Component | Removed |
 |---|---|
-| `TypeClassGenerator` | 9 builder methods, 10 generated methods per type class |
-| `BatchKey` | `selectManyMethodName()`, `selectOneMethodName()` on interface + 3 implementations |
-| `TypeFetcherGenerator` | All `$T.selectMany(...)` / `$T.selectOne(...)` delegation statements |
-| Tests | ~12 tests for removed method signatures and delegation patterns |
+| `TypeClassGenerator` | 10 builder methods (`buildFieldsWithExtraMethod` + 9 execution builders including `sortFieldList()`); 10 generated methods per type class (the old `fields(sel, extra)` overload + 9 execution methods; `fields(sel)` is replaced by `$fields(sel, table, env)`, not removed) |
+| `BatchKey` | `selectManyMethodName()`, `selectOneMethodName()` on interface + all 3 implementations |
+| `TypeFetcherGenerator` | All `$T.selectMany(...)` / `$T.selectOne(...)` / `$T.selectManyByRowKeys(...)` delegation statements |
+| Tests | ~14 tests for removed method signatures and body-delegation assertions |
 
 ## What stays unchanged
 
