@@ -63,29 +63,29 @@ class QueryLookupTableFieldValidationTest {
             new QueryLookupTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.List(true, true)),
                 List.of(), new OrderBySpec.None(), null),
-            List.of("Field 'filmById': result type does not match input cardinality")),
+            List.of("Field 'Query.filmById': result type does not match input cardinality")),
 
         SINGLE_RETURN_LIST_ARG("single return with list filter — cardinality mismatch",
             singleReturn(List.of(columnFilter("id", false, true)), new OrderBySpec.None()),
-            List.of("Field 'filmById': result type does not match input cardinality")),
+            List.of("Field 'Query.filmById': result type does not match input cardinality")),
 
         CONNECTION_RETURN("connection return — never valid on lookup",
             new QueryLookupTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, true)),
                 List.of(), new OrderBySpec.None(), null),
-            List.of("Field 'filmById': lookup fields must not return a connection")),
+            List.of("Field 'Query.filmById': lookup fields must not return a connection")),
 
         ORDERBY_ARG("@orderBy on a lookup field — not valid on lookup",
             singleReturn(List.of(), new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "direction", List.of(), new OrderBySpec.None())),
-            List.of("Field 'filmById': @orderBy is not valid on a lookup field")),
+            List.of("Field 'Query.filmById': @orderBy is not valid on a lookup field")),
 
         CONNECTION_AND_ORDERBY("connection return AND @orderBy — two independent errors",
             new QueryLookupTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, true)),
                 List.of(), new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "direction", List.of(), new OrderBySpec.None()), null),
             List.of(
-                "Field 'filmById': lookup fields must not return a connection",
-                "Field 'filmById': @orderBy is not valid on a lookup field"));
+                "Field 'Query.filmById': lookup fields must not return a connection",
+                "Field 'Query.filmById': @orderBy is not valid on a lookup field"));
 
         private final String description;
         private final GraphitronField field;

@@ -37,17 +37,17 @@ class ColumnReferenceFieldValidationTest {
         JAVA_NAME_PRESENT("@field(javaName:) is not supported — validation error",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
                 List.of(new JoinStep.FkJoin("film_language_id_fkey", "", new TableRef("language", "", "", List.of()), null, "")), true),
-            List.of("Field 'languageName': @field(javaName:) is not supported in record-based output")),
+            List.of("Field 'Film.languageName': @field(javaName:) is not supported in record-based output")),
 
         MISSING_PATH("no @reference directive — path is empty",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""), List.of(), false),
-            List.of("Field 'languageName': @reference path is required")),
+            List.of("Field 'Film.languageName': @reference path is required")),
 
         JAVA_NAME_AND_MISSING_PATH("@field(javaName:) present AND path is empty — both validators fire independently",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""), List.of(), true),
             List.of(
-                "Field 'languageName': @field(javaName:) is not supported in record-based output",
-                "Field 'languageName': @reference path is required"));
+                "Field 'Film.languageName': @field(javaName:) is not supported in record-based output",
+                "Field 'Film.languageName': @reference path is required"));
 
         private final String description;
         private final GraphitronField field;

@@ -26,7 +26,7 @@ class ColumnFieldValidationTest {
 
         JAVA_NAME_PRESENT("@field(javaName:) is not supported — validation error",
             new ColumnField("Film", "title", null, "title", new ColumnRef("TITLE", "", ""), true),
-            List.of("Field 'title': @field(javaName:) is not supported in record-based output"));
+            List.of("Field 'Film.title': @field(javaName:) is not supported in record-based output"));
 
         private final String description;
         private final GraphitronField field;

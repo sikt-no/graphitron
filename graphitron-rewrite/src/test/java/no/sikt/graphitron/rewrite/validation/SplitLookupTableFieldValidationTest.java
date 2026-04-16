@@ -37,7 +37,7 @@ class SplitLookupTableFieldValidationTest {
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field",
             new SplitLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true)), List.of(), List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
-            List.of("Field 'films': lookup fields must not return a connection"));
+            List.of("Field 'Language.films': lookup fields must not return a connection"));
 
         private final String description;
         private final GraphitronField field;

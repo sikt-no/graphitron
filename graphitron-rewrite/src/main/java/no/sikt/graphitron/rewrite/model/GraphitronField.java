@@ -15,6 +15,11 @@ public sealed interface GraphitronField
 
     String name();
 
+    /** Qualified name in {@code ParentType.fieldName} form, for use in error messages. */
+    default String qualifiedName() {
+        return parentTypeName() + "." + name();
+    }
+
     /** SDL source location, or {@code null} for runtime-wired fields with no SDL definition. */
     SourceLocation location();
 

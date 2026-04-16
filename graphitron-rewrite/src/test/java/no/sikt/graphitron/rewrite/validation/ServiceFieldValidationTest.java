@@ -88,7 +88,7 @@ class ServiceFieldValidationTest {
                 List.of(), List.of(), new OrderBySpec.None(), null,
                 new MethodRef.Basic("com.example.FilmService", "getFilms", "java.lang.Object", List.of()),
                 null),
-            List.of("Field 'externalChild': @service on a table-bound return type requires a Sources parameter for DataLoader batching"));
+            List.of("Field 'Film.externalChild': @service on a table-bound return type requires a Sources parameter for DataLoader batching"));
 
         private final String description;
         private final GraphitronField field;
@@ -171,7 +171,7 @@ class ServiceFieldValidationTest {
             "RowKeyed — parent table has no PK — missing PK error",
             filmTableType(FILM_TABLE_NO_PK),
             serviceField(new BatchKey.RowKeyed(List.of())),
-            List.of("Field 'externalChild': @service on a table-bound return type requires the " +
+            List.of("Field 'Film.externalChild': @service on a table-bound return type requires the " +
                 "parent table 'film' to have a primary key")),
 
         ROW_KEYED_COMPOSITE_PK(

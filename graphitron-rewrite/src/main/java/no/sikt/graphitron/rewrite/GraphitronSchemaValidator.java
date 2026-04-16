@@ -126,7 +126,7 @@ public class GraphitronSchemaValidator {
                 && sgf.pagination() != null
                 && sgf.orderBy() instanceof OrderBySpec.None) {
             errors.add(new ValidationError(
-                "Field '" + field.name() + "': paginated fields must have ordering "
+                "Field '" + field.qualifiedName() + "': paginated fields must have ordering "
                     + "(add @defaultOrder or @orderBy)",
                 field.location()
             ));
@@ -171,7 +171,7 @@ public class GraphitronSchemaValidator {
     private void validateQueryLookupTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             errors.add(new ValidationError(
-                "Field '" + field.name() + "': lookup fields must not return a connection",
+                "Field '" + field.qualifiedName() + "': lookup fields must not return a connection",
                 field.location()
             ));
         } else {
@@ -183,34 +183,34 @@ public class GraphitronSchemaValidator {
             boolean returnIsList = field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List;
             if (anyFilterIsList != returnIsList) {
                 errors.add(new ValidationError(
-                    "Field '" + field.name() + "': result type does not match input cardinality",
+                    "Field '" + field.qualifiedName() + "': result type does not match input cardinality",
                     field.location()
                 ));
             }
         }
         if (field.orderBy() instanceof OrderBySpec.Argument) {
             errors.add(new ValidationError(
-                "Field '" + field.name() + "': @orderBy is not valid on a lookup field",
+                "Field '" + field.qualifiedName() + "': @orderBy is not valid on a lookup field",
                 field.location()
             ));
         }
     }
     private void validateQueryTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateQueryTableMethodTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryTableMethodTableField field, List<ValidationError> errors) {
-        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateQueryNodeField(no.sikt.graphitron.rewrite.model.QueryField.QueryNodeField field, List<ValidationError> errors) {}
     private void validateQueryEntityField(no.sikt.graphitron.rewrite.model.QueryField.QueryEntityField field, List<ValidationError> errors) {}
     private void validateQueryTableInterfaceField(no.sikt.graphitron.rewrite.model.QueryField.QueryTableInterfaceField field, List<ValidationError> errors) {
-        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateQueryInterfaceField(no.sikt.graphitron.rewrite.model.QueryField.QueryInterfaceField field, List<ValidationError> errors) {
-        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateQueryUnionField(no.sikt.graphitron.rewrite.model.QueryField.QueryUnionField field, List<ValidationError> errors) {
-        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateQueryServiceTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         // Unresolved service method is caught by the builder (UnclassifiedField).
@@ -228,7 +228,7 @@ public class GraphitronSchemaValidator {
     private void validateColumnField(no.sikt.graphitron.rewrite.model.ChildField.ColumnField field, List<ValidationError> errors) {
         if (field.javaNamePresent()) {
             errors.add(new ValidationError(
-                "Field '" + field.name() + "': @field(javaName:) is not supported in record-based output",
+                "Field '" + field.qualifiedName() + "': @field(javaName:) is not supported in record-based output",
                 field.location()
             ));
         }
@@ -236,17 +236,17 @@ public class GraphitronSchemaValidator {
     private void validateColumnReferenceField(no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField field, List<ValidationError> errors) {
         if (field.javaNamePresent()) {
             errors.add(new ValidationError(
-                "Field '" + field.name() + "': @field(javaName:) is not supported in record-based output",
+                "Field '" + field.qualifiedName() + "': @field(javaName:) is not supported in record-based output",
                 field.location()
             ));
         }
         if (field.joinPath().isEmpty()) {
             errors.add(new ValidationError(
-                "Field '" + field.name() + "': @reference path is required",
+                "Field '" + field.qualifiedName() + "': @reference path is required",
                 field.location()
             ));
         } else {
-            validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
+            validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         }
     }
     private void validateNodeIdField(no.sikt.graphitron.rewrite.model.ChildField.NodeIdField field, List<ValidationError> errors) {
@@ -257,7 +257,7 @@ public class GraphitronSchemaValidator {
         // @node is always resolved — builder returns UnclassifiedField if the type is missing or lacks @node
         // Use targetType for table-level FK and path validation
         if (!(field.targetType() instanceof ReturnTypeRef.TableBoundReturnType tb)) {
-            validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
+            validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
             return;
         }
         no.sikt.graphitron.rewrite.model.TableRef targetTable = tb.table();
@@ -270,7 +270,7 @@ public class GraphitronSchemaValidator {
                     parentTable.tableName(), targetTable.tableName()).size();
                 if (fkCount == 0) {
                     errors.add(new ValidationError(
-                        "Field '" + field.name() + "': no foreign key found between tables '"
+                        "Field '" + field.qualifiedName() + "': no foreign key found between tables '"
                             + parentTable.tableName() + "' and '"
                             + targetTable.tableName()
                             + "'; add a @reference directive to specify the join path",
@@ -278,7 +278,7 @@ public class GraphitronSchemaValidator {
                     ));
                 } else if (fkCount > 1) {
                     errors.add(new ValidationError(
-                        "Field '" + field.name() + "': multiple foreign keys found between tables '"
+                        "Field '" + field.qualifiedName() + "': multiple foreign keys found between tables '"
                             + parentTable.tableName() + "' and '"
                             + targetTable.tableName()
                             + "'; add a @reference directive to specify the join path",
@@ -288,8 +288,8 @@ public class GraphitronSchemaValidator {
             }
         } else {
             // Explicit reference path: validate steps and check it leads to the target type's table
-            validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
-            validateReferenceLeadsToType(field.name(), field.location(), field.joinPath(), field.typeName(), targetTable, errors);
+            validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
+            validateReferenceLeadsToType(field.qualifiedName(), field.location(), field.joinPath(), field.typeName(), targetTable, errors);
         }
     }
 
@@ -308,51 +308,51 @@ public class GraphitronSchemaValidator {
         }
     }
     private void validateTableField(no.sikt.graphitron.rewrite.model.ChildField.TableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
-        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateSplitTableField(no.sikt.graphitron.rewrite.model.ChildField.SplitTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
-        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.LookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
+        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             errors.add(new ValidationError(
-                "Field '" + field.name() + "': lookup fields must not return a connection",
+                "Field '" + field.qualifiedName() + "': lookup fields must not return a connection",
                 field.location()
             ));
         }
-        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateSplitLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
+        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             errors.add(new ValidationError(
-                "Field '" + field.name() + "': lookup fields must not return a connection",
+                "Field '" + field.qualifiedName() + "': lookup fields must not return a connection",
                 field.location()
             ));
         }
-        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateTableMethodField(no.sikt.graphitron.rewrite.model.ChildField.TableMethodField field, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
-        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateTableInterfaceField(no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField field, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
-        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateInterfaceField(no.sikt.graphitron.rewrite.model.ChildField.InterfaceField field, List<ValidationError> errors) {
-        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateUnionField(no.sikt.graphitron.rewrite.model.ChildField.UnionField field, List<ValidationError> errors) {
-        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateNestingField(no.sikt.graphitron.rewrite.model.ChildField.NestingField field, List<ValidationError> errors) {}
     private void validateConstructorField(no.sikt.graphitron.rewrite.model.ChildField.ConstructorField field, List<ValidationError> errors) {}
     private void validateServiceTableField(no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
+        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
 
         var smr = field.method();
 
@@ -360,7 +360,7 @@ public class GraphitronSchemaValidator {
         boolean hasSources = smr.params().stream().anyMatch(p -> p instanceof MethodRef.Param.Sourced);
         if (!hasSources) {
             errors.add(new ValidationError(
-                "Field '" + field.name() + "': @service on a table-bound return type requires a Sources parameter for DataLoader batching",
+                "Field '" + field.qualifiedName() + "': @service on a table-bound return type requires a Sources parameter for DataLoader batching",
                 field.location()
             ));
             return;
@@ -384,37 +384,37 @@ public class GraphitronSchemaValidator {
         TableRef parentTable = tbt.table();
         if (!parentTable.hasPrimaryKey()) {
             errors.add(new ValidationError(
-                "Field '" + field.name() + "': @service on a table-bound return type requires the parent table '" + parentTable.tableName() + "' to have a primary key",
+                "Field '" + field.qualifiedName() + "': @service on a table-bound return type requires the parent table '" + parentTable.tableName() + "' to have a primary key",
                 field.location()
             ));
         }
     }
     private void validateServiceRecordField(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
+        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
     }
     private void validateRecordTableField(no.sikt.graphitron.rewrite.model.ChildField.RecordTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
-        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateRecordLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
+        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             errors.add(new ValidationError(
-                "Field '" + field.name() + "': lookup fields must not return a connection",
+                "Field '" + field.qualifiedName() + "': lookup fields must not return a connection",
                 field.location()
             ));
         }
-        validateCardinality(field.name(), field.location(), field.returnType().wrapper(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateRecordField(no.sikt.graphitron.rewrite.model.ChildField.RecordField field, List<ValidationError> errors) {}
 
     private void validateComputedField(no.sikt.graphitron.rewrite.model.ChildField.ComputedField field, List<ValidationError> errors) {
-        validateReferencePath(field.name(), field.location(), field.joinPath(), errors);
+        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
     }
     private void validatePropertyField(no.sikt.graphitron.rewrite.model.ChildField.PropertyField field, List<ValidationError> errors) {}
     private void validateMultitableReferenceField(no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField field, List<ValidationError> errors) {
         errors.add(new ValidationError(
-            "Field '" + field.name() + "': @multitableReference is not supported in record-based output",
+            "Field '" + field.qualifiedName() + "': @multitableReference is not supported in record-based output",
             field.location()
         ));
     }
@@ -434,7 +434,7 @@ public class GraphitronSchemaValidator {
 
     private void validateUnclassifiedField(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField field, List<ValidationError> errors) {
         errors.add(new ValidationError(
-            "Field '" + field.name() + "': could not be classified — " + field.reason(),
+            "Field '" + field.qualifiedName() + "': could not be classified — " + field.reason(),
             field.location()
         ));
     }

@@ -17,7 +17,7 @@ class MultitableReferenceFieldValidationTest {
 
         UNSUPPORTED("@multitableReference is not supported in record-based output — always an error",
             new MultitableReferenceField("Film", "languages", null),
-            List.of("Field 'languages': @multitableReference is not supported in record-based output"));
+            List.of("Field 'Film.languages': @multitableReference is not supported in record-based output"));
 
         private final String description;
         private final GraphitronField field;

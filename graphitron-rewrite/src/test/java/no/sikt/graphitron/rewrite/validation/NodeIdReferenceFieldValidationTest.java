@@ -41,7 +41,7 @@ class NodeIdReferenceFieldValidationTest {
                 new TableRef("film", "FILM", "Film", List.of()),
                 null, List.of(),
                 List.of()),
-            List.of("Field 'categoryId': no foreign key found between tables 'film' and 'category'; add a @reference directive to specify the join path")),
+            List.of("Field 'Film.categoryId': no foreign key found between tables 'film' and 'category'; add a @reference directive to specify the join path")),
 
         IMPLICIT_MULTIPLE_FKS("multiple FKs between tables — error suggesting @reference",
             new NodeIdReferenceField("Film", "languageId", null, "Language",
@@ -49,7 +49,7 @@ class NodeIdReferenceFieldValidationTest {
                 new TableRef("film", "FILM", "Film", List.of()),
                 null, List.of(),
                 List.of()),
-            List.of("Field 'languageId': multiple foreign keys found between tables 'film' and 'language'; add a @reference directive to specify the join path")),
+            List.of("Field 'Film.languageId': multiple foreign keys found between tables 'film' and 'language'; add a @reference directive to specify the join path")),
 
         WITH_EXPLICIT_PATH("explicit FK path leading to the correct table — no errors",
             new NodeIdReferenceField("Film", "languageId", null, "Language",
@@ -65,7 +65,7 @@ class NodeIdReferenceFieldValidationTest {
                 new TableRef("film", "FILM", "Film", List.of()),
                 null, List.of(),
                 List.of(new JoinStep.FkJoin("sequel_fkey", "", new TableRef("film", "", "", List.of()), null, ""))),
-            List.of("Field 'languageId': @reference path does not lead to the table of type 'Language'")),
+            List.of("Field 'Film.languageId': @reference path does not lead to the table of type 'Language'")),
 
         NULL_PARENT_TABLE_IMPLICIT("null parentTable with empty path — FK check is silently skipped, no error produced",
             new NodeIdReferenceField("SomeResult", "filmId", null, "Film",

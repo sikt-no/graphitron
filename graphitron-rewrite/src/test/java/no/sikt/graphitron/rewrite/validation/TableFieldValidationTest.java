@@ -103,7 +103,7 @@ class TableFieldValidationTest {
                     null,
                     new PaginationSpec.PaginationArg("after", "String", false),
                     null)),
-            List.of("Field 'actors': paginated fields must have ordering (add @defaultOrder or @orderBy)"));
+            List.of("Field 'Film.actors': paginated fields must have ordering (add @defaultOrder or @orderBy)"));
 
         private final String description;
         private final GraphitronField field;
