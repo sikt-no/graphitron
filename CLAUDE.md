@@ -36,6 +36,7 @@ The `/docs` folder contains conceptual guides explaining Graphitron's design, ph
 - **Graphitron Principles**: [/docs/graphitron-principles.md](/docs/graphitron-principles.md) - Design philosophy and long-term thinking that shapes architectural decisions
 - **Dependencies**: [/docs/dependencies.md](/docs/dependencies.md) - Why we chose jOOQ and GraphQL-Java as foundational dependencies
 - **Code Generation Triggers**: [/docs/code-generation-triggers.md](/docs/code-generation-triggers.md) - Schema patterns → sealed type variants → what gets generated (rewrite pipeline)
+- **Rewrite Model**: [/docs/rewrite-model.md](/docs/rewrite-model.md) - Visual Mermaid diagrams of the sealed type hierarchy (fields, types, support/composition types)
 - **Security**: [/docs/security.md](/docs/security.md) - Security model and database-level enforcement approach
 
 ### Technical Reference Documentation
