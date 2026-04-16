@@ -6,13 +6,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Graphitron is a Maven-based code generation tool that creates Java source code by linking GraphQL schemas to underlying database models. It's developed by Sikt – the Norwegian Agency for Shared Services in Education and Research.
 
 ## Technology Stack
-- **Language**: Java 21 with Jakarta EE 
+- **Language**: Java 21 (the generator itself) / Java 17 (generated output — see note below)
 - **Build Tool**: Maven (multi-module project)
 - **GraphQL**: GraphQL Java 24.2 with Apollo Federation support
 - **Database**: jOOQ 3.19.18 for database access
 - **Testing**: JUnit 5 with AssertJ assertions
 - **Database**: PostgreSQL
 - **Example Server**: Quarkus framework
+
+> **Java version policy:** Graphitron is a code generator. The version used to *build* the generator
+> is independent of the version of the code it *produces*. Generator implementation code may freely
+> use Java 21 features. Generated source files must target Java 17 — consumers may be on Java 17,
+> and Graphitron controls what syntax appears in those files, not what the consumer compiles with.
 
 ## Project Structure
 ```
