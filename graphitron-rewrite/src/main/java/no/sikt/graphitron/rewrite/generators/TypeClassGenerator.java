@@ -81,7 +81,7 @@ public class TypeClassGenerator {
      * level of the query from a {@link graphql.schema.DataFetchingFieldSelectionSet}.
      *
      * <p>{@code public static} — called cross-class from the {@code *Fetchers} classes.
-     * The {@code $} prefix is chosen because GraphQL field names match {@code /[_A-Za-z][_0-9A-Za-z]*/}
+     * The {@code $} prefix is chosen because GraphQL field names match {@code /[_A-Za-z][_0-9A-Za-z]&#42;/}
      * by spec, so {@code $fields} can never collide with a GraphQL field name.
      *
      * <p>{@code table} is the caller-supplied alias — the prerequisite for G5 inline nested fields,
