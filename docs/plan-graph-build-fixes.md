@@ -6,6 +6,75 @@ Source material: `generator-schema-errors.org` and `generator-schema.graphql` on
 
 ---
 
+## Step 0 — Testing and Code Cleanup (do first)
+
+Two cleanup items produced by the SIS fixes that must be addressed before adding more features.
+
+### Missing test: `@index` on sort enum values
+
+The `@index` NPE (O1 regression) was not caught by tests because no test exercises an enum value annotated with `@index` rather than `@order`. Every existing `@orderBy` test uses `@order(index: …)`, `@order(primaryKey: true)`, or `@order(fields: …)`.
+
+**Add to `GraphitronSchemaBuilderTest`** a case alongside the existing `@orderBy` argument cases:
+
+```
+"@orderBy with @index on sort enum value → same OrderBySpec.Argument as @order(index:)"
+enum ActorOrderField { FIRST_NAME @index(name: "IDX_ACTOR_LAST_NAME") }
+input ActorOrder { orderByField: ActorOrderField, direction: SortOrder }
+type Query { actors(order: ActorOrder @orderBy): [Actor!]! }
+→ assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Argument.class)
+→ assertThat(namedOrders).hasSize(1)  // one sort-enum value resolved
+```
+
+This test would have caught the NPE before the fix was shipped.
+
+### Code duplication in `resolveEnumValueOrderSpec`
+
+The `@index` fallback added to `resolveEnumValueOrderSpec` duplicates the index-catalog-lookup-to-`ColumnOrderEntry` conversion that already lives in `resolveOrderEntries`. Both paths call `ctx.catalog.findIndexColumns(tableSqlName, indexName)` and stream the result into `ColumnOrderEntry` records.
+
+**Extract a private method** `resolveIndexColumns(String tableSqlName, String indexName)` and call it from both sites:
+
+```java
+private List<OrderBySpec.ColumnOrderEntry> resolveIndexColumns(String tableSqlName, String indexName) {
+    var colsOpt = ctx.catalog.findIndexColumns(tableSqlName, indexName);
+    if (colsOpt.isEmpty() || colsOpt.get().isEmpty()) return null;
+    return colsOpt.get().stream()
+        .map(ce -> new OrderBySpec.ColumnOrderEntry(
+                new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
+        .toList();
+}
+```
+
+`resolveOrderEntries` calls it for the `index:` argument path; `resolveEnumValueOrderSpec` calls it for the `@index` fallback path.
+
+### Model gap: `ParticipantRef` should be a sealed hierarchy
+
+`ParticipantRef` now has two structurally distinct states:
+
+| State | `table` | `discriminatorValue` |
+|---|---|---|
+| Table-bound | non-null `TableRef` | string or null |
+| Unbound | null | always null |
+
+The project's own principle is **"sealed hierarchies over enums for typed information — different variants carry different data."** A nullable `table` field is a nullable-field discriminant, not a sealed type. Generator code will need to switch on `isTableBound()` in every place that iterates participants, and nothing in the type system enforces the check.
+
+**Refactor before any generator touches `participants()`:**
+
+```java
+sealed interface ParticipantRef permits TableBoundParticipant, UnboundParticipant {
+    String typeName();
+}
+record TableBoundParticipant(String typeName, TableRef table, String discriminatorValue)
+    implements ParticipantRef {}
+record UnboundParticipant(String typeName)
+    implements ParticipantRef {}
+```
+
+Generator switches become exhaustive — the compiler catches missing `UnboundParticipant` cases. `TableRef table` can only be accessed on `TableBoundParticipant`, making null-access impossible. The current `buildParticipantList()` call sites pass `null` for both `table` and `discriminatorValue` for unbound types — those become `new UnboundParticipant(typeName)`.
+
+This is the right time: generators don't yet use `participants()`, so the blast radius is one builder method and one record file.
+
+---
+
 ## Named References — `name:` Form of `ExternalCodeReference`
 
 **Observed:** `service method could not be resolved — service reference is incomplete`
