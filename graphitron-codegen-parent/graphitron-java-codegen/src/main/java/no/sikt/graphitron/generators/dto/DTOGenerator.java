@@ -86,7 +86,7 @@ public abstract class DTOGenerator<T extends GenerationTarget> extends AbstractS
                     }
                 });
 
-        if (hasErrors) {
+        if (hasErrors && !isJavaRecord) {
             classBuilder.addMethod(constructorNoErrorsBuilder.build());
         }
         return classBuilder
