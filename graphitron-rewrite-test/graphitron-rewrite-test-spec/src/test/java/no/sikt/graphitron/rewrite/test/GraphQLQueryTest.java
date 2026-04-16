@@ -42,14 +42,17 @@ class GraphQLQueryTest {
 
     @BeforeAll
     static void startDatabase() throws Exception {
-        postgres = new PostgreSQLContainer<>("postgres:18-alpine");
-        postgres.start();
-
-        dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-
-        // Load schema and test data from the shared fixtures init.sql (on classpath via graphitron-rewrite-test-fixtures)
-        var initSql = readClasspathResource("init.sql");
-        dsl.execute(initSql);
+        var localUrl = System.getProperty("test.db.url");
+        if (localUrl != null) {
+            var user = System.getProperty("test.db.username", "postgres");
+            var pass = System.getProperty("test.db.password", "postgres");
+            dsl = DSL.using(localUrl, user, pass);
+        } else {
+            postgres = new PostgreSQLContainer<>("postgres:18-alpine")
+                .withInitScript("init.sql");
+            postgres.start();
+            dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+        }
 
         // Build GraphQL schema from the SDL used by the generator
         var sdl = Files.readString(Path.of("src/main/resources/graphql/schema.graphqls"));

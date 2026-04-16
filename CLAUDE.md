@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Graphitron is a Maven-based code generation tool that creates Java source code by linking GraphQL schemas to underlying database models. It's developed by Sikt – the Norwegian Agency for Shared Services in Education and Research.
 
 ## Technology Stack
-- **Language**: Java 17 with Jakarta EE 
+- **Language**: Java 21 with Jakarta EE 
 - **Build Tool**: Maven (multi-module project)
 - **GraphQL**: GraphQL Java 24.2 with Apollo Federation support
 - **Database**: jOOQ 3.19.18 for database access
@@ -153,8 +153,14 @@ sudo -u postgres psql -d rewrite_test \
 # Build test-fixtures against native Postgres (skip TestContainers entirely)
 mvn install -pl :graphitron-rewrite-test-fixtures -am -Plocal-db
 
-# Then run the rewrite unit tests normally (no Docker needed)
+# Unit and structural tests (no DB needed at test time)
 mvn test -pl :graphitron-rewrite
+
+# Compilation test — generated code compiles against real jOOQ classes
+mvn compile -pl :graphitron-rewrite-test-spec -Plocal-db
+
+# Execution tests — generated code runs against native PostgreSQL
+mvn test -pl :graphitron-rewrite-test-spec -Plocal-db
 ```
 
 The `local-db` profile is defined in `graphitron-rewrite-test-fixtures/pom.xml` and switches the

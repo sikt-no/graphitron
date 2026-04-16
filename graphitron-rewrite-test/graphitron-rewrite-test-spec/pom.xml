@@ -74,6 +74,29 @@
         </dependency>
     </dependencies>
 
+    <profiles>
+        <!-- Connect execution tests to a pre-existing local PostgreSQL instead of TestContainers.
+             Caller is responsible for running init.sql against the target database beforehand. -->
+        <profile>
+            <id>local-db</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <test.db.url>jdbc:postgresql://localhost:5432/rewrite_test</test.db.url>
+                                <test.db.username>postgres</test.db.username>
+                                <test.db.password>postgres</test.db.password>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
     <build>
         <plugins>
             <!--
