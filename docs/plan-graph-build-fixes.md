@@ -75,6 +75,55 @@ This is the right time: generators don't yet use `participants()`, so the blast 
 
 ---
 
+## Error Message Quality (Phase 2)
+
+Two output verbosity problems that make large-graph build output hard to read. Both are small, independent, and should be fixed before running SIS again.
+
+### Cap candidate lists at 5 entries
+
+`BuildContext.candidateHint()` emits all candidates sorted by Levenshtein distance. On a wide table (50+ columns), every column-not-found error appends a line with all column names. Only the closest matches are useful.
+
+**Fix in `candidateHint()`:** take the first 5 after sorting.
+
+```java
+static String candidateHint(String attempt, List<String> candidates) {
+    if (candidates.isEmpty()) return "";
+    String lc = attempt.toLowerCase();
+    var top = candidates.stream()
+        .sorted(Comparator.comparingInt(c -> levenshteinDistance(lc, c.toLowerCase())))
+        .limit(5)
+        .collect(Collectors.joining(", "));
+    return "; did you mean: " + top;
+}
+```
+
+Changing the prefix from `"available: "` to `"did you mean: "` also makes the intent clearer: this is a best-guess hint, not an exhaustive list.
+
+### Drop the redundant parent-type name from cascade field errors
+
+When a field can't be classified because its parent type is unclassified, the current message reads:
+
+```
+Field 'BrukernavnErIkkeUnikt.fieldName': could not be classified — parent type 'BrukernavnErIkkeUnikt' has no supported Graphitron classification
+```
+
+Two redundancies:
+- The parent type name appears twice — once in the qualified field name (F1), once in the message body.
+- "could not be classified" and "has no supported Graphitron classification" say the same thing.
+
+The field error is also a cascade: the root cause is the type failing classification; the field errors are noise that obscures it.
+
+**Fix in `FieldBuilder.classifyField()`** at the fallthrough `UnclassifiedField`:
+
+```java
+return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+    "parent type is unclassified");
+```
+
+The qualified name (`BrukernavnErIkkeUnikt.fieldName`) in the outer `ValidationError` message already identifies the parent type; the body just needs to name the cause.
+
+---
+
 ## Named References — `name:` Form of `ExternalCodeReference`
 
 **Observed:** `service method could not be resolved — service reference is incomplete`
@@ -214,6 +263,7 @@ This is low priority since it only affects graphs that predate the `@nodeId` dir
 
 | # | Item | Effort | Blocks |
 |---|------|--------|--------|
+| EQ | Error message quality (cap candidates, cascade message) | Trivial | Readable SIS build output |
 | NR | Named reference resolution | Medium | Named @service + @condition (depends on config answer) |
 | C1 | @condition in reference paths (P3) | Large | All condition joins in SIS |
 | LK | @lookupKey list input (composite) | Medium | Covered by argument-resolution plan |
