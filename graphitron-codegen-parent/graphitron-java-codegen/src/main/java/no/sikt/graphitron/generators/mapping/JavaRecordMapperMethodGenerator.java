@@ -87,12 +87,9 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                     innerCode.add(innerContext.getRecordSetMappingBlock());
                 } else if (toRecord) {
                     var nextArgsVar = nextArgPresenceVar();
-                    innerCode.add(
-                            CodeBlock.builder()
-                                    .declare(nextArgsVar, "$N.child($S)", argumentSetName, innerField.getName())
-                                    .add(iterateRecords(innerContext, nextArgsVar))
-                                    .build()
-                    );
+                    innerCode.
+                            declare(nextArgsVar, "$N.child($S)", argumentSetName, innerField.getName()).
+                            add(iterateRecords(innerContext, nextArgsVar));
                 } else {
                     innerCode.add(iterateRecords(innerContext));
                 }
@@ -104,18 +101,18 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 var notAlreadyDefined = innerContext.variableNotAlreadyDeclared();
                 var shouldDeclareVariable = notAlreadyDefined || innerContext.getTarget().createsDataFetcher();
                 var nullBlock = CodeBlock.ofIf(shouldDeclareVariable, "$N != null", varName);
-                var isNonRecordWrapper = innerContext.targetIsType() && !innerContext.hasRecordReference() && !innerContext.getTarget().createsDataFetcher();
+                var isWrapperWithoutRecord = innerContext.targetIsType() && !innerContext.hasRecordReference() && !innerContext.getTarget().createsDataFetcher();
 
-                var presenceCheck = isNonRecordWrapper && toRecord
+                var presenceCheck = isWrapperWithoutRecord && toRecord
                         ? CodeBlock.empty()
                         : toRecord
                             ? CodeBlock.of("$L.hasField($S)", argumentSetName, innerField.getName())
                             : selectionSetLookup(innerContext.getPath(), false, false);
-                var condition = nullBlock.isEmpty()
+                var condition = !shouldDeclareVariable
                         ? presenceCheck
                         : presenceCheck.isEmpty()
                             ? nullBlock
-                            : CodeBlock.of("$L && $L", nullBlock, presenceCheck);
+                            : CodeBlock.join(" && ", nullBlock, presenceCheck);
                 fieldCode
                         .declareIf(shouldDeclareVariable, varName, innerContext.getSourceGetCallBlock())
                         .beginControlFlow("if ($L)", condition)
