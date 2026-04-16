@@ -10,6 +10,9 @@ import jakarta.inject.Inject;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import no.fellesstudentsystem.schema_transformer.transform.SchemaFeatureFilter;
+import no.sikt.graphitron.example.datafetchers.AddressInterfaceDataFetcher;
+import no.sikt.graphitron.example.datafetchers.AddressInterfaceTypeResolver;
+import no.sikt.graphitron.example.datafetchers.JooqRecordFetcher.*;
 import no.sikt.graphitron.example.datafetchers.QueryDataFetcher;
 import no.sikt.graphitron.example.exceptionhandling.SchemaBasedErrorStrategyImpl;
 import no.sikt.graphitron.example.generated.graphitron.exception.GeneratedExceptionStrategyConfiguration;
@@ -32,6 +35,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+
+import static no.sikt.graphitron.example.datafetchers.JooqRecordFetcher.JooqRecordAliasFetcher;
+import static no.sikt.graphitron.example.generated.jooq.Tables.*;
 
 @WebServlet(name = "GraphqlServlet", urlPatterns = {"graphql/*"}, loadOnStartup = 1)
 public class GraphqlServlet extends GraphitronServlet {
@@ -64,6 +70,49 @@ public class GraphqlServlet extends GraphitronServlet {
                 TypeRuntimeWiring.newTypeWiring("City")
                         .dataFetcher("addressExample", QueryDataFetcher.addressExample())
         );
+
+        newWiring
+                .type("Query", builder ->
+                        builder.dataFetcher("singleTableInterfaceNewMapping", AddressInterfaceDataFetcher.singleTableInterfaceNewMapping(nodeIdStrategy)))
+
+                // Type mapping for single table interface
+                .type("AddressInterface", builder -> builder.typeResolver(AddressInterfaceTypeResolver.getName()))
+
+
+                // Type mapping
+                .type("AddressImplOne", builder ->
+                        builder.typeResolver(AddressInterfaceTypeResolver.getName())
+                                .dataFetcher("mostSignificantAddressLine", env -> JooqRecordFieldFetcher.get(env, ADDRESS.ADDRESS_))
+                                .dataFetcher("id", env -> JooqRecordAliasFetcher.get(env, "AddressImplOne_id"))
+                                .dataFetcher("spokenLanguage", env -> JooqRecordAliasFetcher.get(env, "spokenLanguage"))
+                                .dataFetcher("city", AddressInterfaceDataFetcher.city(nodeIdStrategy))
+                                .dataFetcher("cityAsSubquery", env -> JooqRecordAliasFetcher.get(env, "cityAsSubquery"))
+                )
+                .type("AddressImplTwo", builder ->
+                        builder.typeResolver(AddressInterfaceTypeResolver.getName())
+                                .dataFetcher("mostSignificantAddressLine", env -> JooqRecordFieldFetcher.get(env, ADDRESS.ADDRESS2))
+                                .dataFetcher("id", env -> JooqRecordAliasFetcher.get(env, "AddressImplTwo_id"))
+                                .dataFetcher("spokenLanguage", env -> JooqRecordAliasFetcher.get(env, "spokenLanguage"))
+                                .dataFetcher("city", AddressInterfaceDataFetcher.city(nodeIdStrategy))
+                                .dataFetcher("cityAsSubquery", env -> JooqRecordAliasFetcher.get(env, "cityAsSubquery"))
+                )
+                .type("CityMinimal", builder -> builder
+                        .dataFetcher("cityId", env -> JooqRecordFieldFetcher.get(env, CITY.CITY_ID))
+
+                        // Country (altså subquery i subquery) fungerer ikke med alias. Må i så fall bruke indeks :mariopain:
+//                        .dataFetcher("country", env -> JooqRecordFieldFetcher.get(env, "country"))
+
+                        // Dette blir ikke gøy å debugge hvis man får feil....
+                        .dataFetcher("country", env -> JooqRecordIndexFetcher.get(env, 1))
+                )
+                .type("CountryMinimal", builder -> builder
+                        .dataFetcher("countryId", env -> JooqRecordFieldFetcher.get(env, COUNTRY.COUNTRY_ID))
+                );
+
+        /*
+        Bekymring: blir wiring riktig når vi kommer fra andre steder i grafen?
+         */
+
         var schema = Graphitron.getFederatedSchema(registry, newWiring, nodeIdStrategy);
 
         schema = applyFeatureFlags(request, schema);

@@ -1,5 +1,35 @@
 extend type Query {
     addressesByPostalCode: [AddressByPostalCode] @asConnection
+    singleTableInterfaceNewMapping: [AddressInterface] @notGenerated
+}
+
+interface AddressInterface @table(name: "ADDRESS") @discriminate(on: "POSTAL_CODE") {
+    mostSignificantAddressLine: String @field(name: "ADDRESS_")
+    city: City @splitQuery @notGenerated
+    cityAsSubquery: CityMinimal
+}
+
+type AddressImplOne implements AddressInterface & Node @node(typeId: "TEST_1") @table(name: "ADDRESS") @discriminator(value: "22474") {
+    id: ID! @nodeId
+    mostSignificantAddressLine: String @field(name: "ADDRESS_")
+    city: City @splitQuery @notGenerated
+    cityAsSubquery: CityMinimal
+}
+
+type AddressImplTwo implements AddressInterface & Node @node(typeId: "TEST_2") @table(name: "ADDRESS") @discriminator(value: "9668") {
+    id: ID! @nodeId
+    mostSignificantAddressLine: String @field(name: "ADDRESS2")
+    city: City @splitQuery @notGenerated
+    cityAsSubquery: CityMinimal
+}
+
+type CityMinimal @table(name: "CITY") {
+    cityId: Int @field(name: "CITY_ID")
+    country: CountryMinimal
+}
+
+type CountryMinimal @table(name: "COUNTRY") {
+    countryId: Int @field(name: "COUNTRY_ID")
 }
 
 interface AddressByPostalCode @table(name: "ADDRESS") @discriminate(on: "POSTAL_CODE") {

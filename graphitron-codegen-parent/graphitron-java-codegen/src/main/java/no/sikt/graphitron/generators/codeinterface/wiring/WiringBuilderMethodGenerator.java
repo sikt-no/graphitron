@@ -91,14 +91,17 @@ public class WiringBuilderMethodGenerator extends SimpleMethodGenerator {
         var code = CodeBlock
                 .builder()
                 .declare(VAR_WIRING, asMethodCall(RUNTIME_WIRING.className, "newRuntimeWiring"));
-        wiringByType.forEach((k, v) ->
+        wiringByType
+                .entrySet().stream()
+                .filter(it -> !it.getKey().equals("AddressInterface"))
+                .forEach((e) ->
                 code
                         .add("$N.type(", VAR_WIRING)
                         .add(
                                 indentIfMultiline(
                                         CodeBlock.join(
-                                                newTypeWiring(k),
-                                                indentIfMultiline(v.stream().map(ClassWiringContainer::toCode).collect(CodeBlock.joining("\n")))
+                                                newTypeWiring(e.getKey()),
+                                                indentIfMultiline(e.getValue().stream().map(ClassWiringContainer::toCode).collect(CodeBlock.joining("\n")))
                                         )
                                 )
                         )
