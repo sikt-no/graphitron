@@ -92,12 +92,13 @@ Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
 | `@error` | `ErrorType` | No generation (error mapping config) |
 | Input type with `@table` | `TableInputType` | Used in mutation generation |
 | Input type without `@table` | `InputType`* | No generation (developer-provided class) |
+| Input type with `@table` used on fields with conflicting return tables | `PojoInputType` (unbound) | No generation — column binding resolved per field-usage |
 | Conflicting or unresolvable directives | `UnclassifiedType` | Validation error — build fails |
 
 **Intermediate sealed interfaces** (not shown in the table — grouping nodes in the hierarchy):
 - `TableBackedType` — groups `TableType`, `NodeType`, `TableInterfaceType`. Builders switch on this to detect table-mapped types.
 - `ResultType` is itself a sealed sub-interface with four concrete variants: `JavaRecordType`, `PojoResultType`, `JooqRecordType`, `JooqTableRecordType` — reflecting how the result class is represented in Java.
-- `InputType` is itself a sealed sub-interface with four concrete variants: `JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType` — same split by Java representation.
+- `InputType` is itself a sealed sub-interface with four concrete variants: `JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType` — same split by Java representation. `PojoInputType` is also used when an input type appears as an argument on fields with different return tables — it is classified as unbound rather than failing.
 
 ---
 

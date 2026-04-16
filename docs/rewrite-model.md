@@ -180,6 +180,8 @@ graph LR
 
 `ColumnFilterArg` and `InputFilterArg` are shown with orange dashed borders — they are missing a `FieldCondition condition` component for `@condition` on `ARGUMENT_DEFINITION`.
 
+`ParticipantRef` carries `(typeName, table?, discriminatorValue?)` where `table` is nullable. Non-table-bound members of an interface or union (e.g. `ErrorType`, structural types) are recorded with `table = null`. `ParticipantRef.isTableBound()` returns `table != null`; generators gate SQL-emitting paths behind this check.
+
 ---
 
 ## 5. Key Compositions (HAS-A)

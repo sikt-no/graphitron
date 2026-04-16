@@ -266,11 +266,9 @@ The E1 fix generalises `buildParticipantList()` to accept any non-table-bound, n
 
 **Root cause:** The error message says the *return type* `_Service` could not be classified, not the field itself. `_Service` is never annotated with `@table` or any Graphitron directive, so `TypeBuilder` produces `UnclassifiedType` for it, which then causes the field classification to fail.
 
-**Fix options:**
-- In `TypeBuilder`, add a guard: types whose name starts with `_` (or specifically `_Service`) are skipped and produce no `GraphitronType` entry — the type classifier simply ignores them.
-- Alternatively, add `name.equals("_service")` alongside the existing `name.equals("_entities")` exact-match branch in `FieldBuilder` and emit `NotGeneratedField` there; `_Service` would still be classified as `UnclassifiedType` but the field would never reach the type-lookup step.
+**Implemented:** `TypeBuilder.classifyType()` returns `null` (skips entirely) for any type whose name starts with `_`. This prevents `_Service` and any other Federation-injected `_`-prefixed types from entering the type map, so the downstream field classifier never encounters an unclassified return type for `_service`.
 
-The `TypeBuilder` guard is cleaner because it prevents `_Service` from polluting the type map at all. The `FieldBuilder` guard is more targeted if other `_`-prefixed types should remain classifiable.
+The alternative (`FieldBuilder` guard on the field name) was not taken — the `TypeBuilder` guard is cleaner because it fixes the root cause rather than patching the symptom.
 
 ### Schema-side issues (not Graphitron bugs)
 
@@ -328,16 +326,17 @@ This is low priority since it only affects graphs that predate the `@nodeId` dir
 
 ## Priority Order
 
-| # | Item | Effort | Blocks |
-|---|------|--------|--------|
-| F1 | Field errors include parent type | Trivial | Better diagnostics for all other work |
-| F2 | Condition error message "unknown" | Trivial | Clearer @condition errors |
-| O1 | `@index` support in `resolveOrderByArg` | Small | @orderBy fields in SIS |
-| O2 | `@orderBy` input type classification | Small | @orderBy input types in SIS |
-| E1–E3 | @error interface/union classification | Medium | All error types and unions |
-| IP | Input type polymorphism | Small | Shared key inputs (EmnekodeInput) |
-| NR | Named reference resolution | Medium | Named @service + @condition (depends on config answer) |
-| C1 | @condition in reference paths (P3) | Large | All condition joins in SIS |
-| LK | @lookupKey list input (composite) | Medium | Covered by argument-resolution plan |
-| Misc | _service, structural interfaces, FK issues | Small–Medium | Covered individually |
-| LPid | Legacy platformId | Unknown | Needs design input first |
+| # | Item | Effort | Status | Blocks |
+|---|------|--------|--------|--------|
+| F1 | Field errors include parent type | Trivial | **Done** | Better diagnostics for all other work |
+| F2 | Condition error message "unknown" | Trivial | **Done** | Clearer @condition errors |
+| O1 | `@index` support in `resolveOrderByArg` | Small | **Done** | @orderBy fields in SIS |
+| O2 | `@orderBy` input type classification | Small | **Done** | @orderBy input types in SIS |
+| E1–E3 | @error interface/union classification | Medium | **Done** | All error types and unions |
+| IP | Input type polymorphism | Small | **Done** | Shared key inputs (EmnekodeInput) |
+| Misc (_service) | Federation `_service` field | Small | **Done** | _service field in SIS |
+| NR | Named reference resolution | Medium | Not started | Named @service + @condition (depends on config answer) |
+| C1 | @condition in reference paths (P3) | Large | Not started | All condition joins in SIS |
+| LK | @lookupKey list input (composite) | Medium | Not started | Covered by argument-resolution plan |
+| Misc (FK) | Structural interfaces, FK issues | Small–Medium | Not started | Covered individually |
+| LPid | Legacy platformId | Unknown | Not started | Needs design input first |
