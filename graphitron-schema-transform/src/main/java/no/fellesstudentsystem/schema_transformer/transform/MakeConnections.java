@@ -88,9 +88,6 @@ public class MakeConnections {
             var pageInfo = createPageInfo(queryLocation, !sharableConnectionTypes.isEmpty() ? List.of(SHAREABLE) : List.of());
             typeDefinitionRegistry.add(pageInfo);
         }
-        typeDefinitionRegistry
-                .getDirectiveDefinition(AS_CONNECTION.getName())
-                .ifPresent(typeDefinitionRegistry::remove);
     }
 
     private static Set<String> collectSharableConnectionTypes(List<ObjectTypeDefinition> objects, List<InterfaceTypeDefinition> interfaces) {
