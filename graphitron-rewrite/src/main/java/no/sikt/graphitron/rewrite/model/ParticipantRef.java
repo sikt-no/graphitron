@@ -3,20 +3,35 @@ package no.sikt.graphitron.rewrite.model;
 /**
  * An implementing or member type of an interface or union.
  *
- * <p>{@code typeName} is the simple GraphQL type name (e.g. {@code "Film"}).
- *
- * <p>{@code table} is the resolved jOOQ table for this participant type, or {@code null} for
- * non-table-bound types such as {@code @error} types, structural interfaces, or value types.
- * Generator code must check {@link #isTableBound()} before emitting SQL for a participant.
- *
- * <p>{@code discriminatorValue} is the value from {@code @discriminator(value:)} on this type,
- * used by the type resolver to map a discriminator column value to a concrete type.
- * {@code null} when {@code @discriminator} is absent or the type is not table-bound.
+ * <p>Two variants:
+ * <ul>
+ *   <li>{@link TableBound} — the participant has a resolved jOOQ table and an optional
+ *       discriminator value. Generator code may emit SQL for this participant.</li>
+ *   <li>{@link Unbound} — the participant is not table-backed (e.g. {@code @error} types,
+ *       structural interfaces, value types). Generator code must skip SQL generation for
+ *       unbound participants.</li>
+ * </ul>
  */
-public record ParticipantRef(String typeName, TableRef table, String discriminatorValue) {
+public sealed interface ParticipantRef permits ParticipantRef.TableBound, ParticipantRef.Unbound {
 
-    /** Returns {@code true} when this participant has an associated jOOQ table. */
-    public boolean isTableBound() {
-        return table != null;
-    }
+    /** The simple GraphQL type name (e.g. {@code "Film"}). */
+    String typeName();
+
+    /**
+     * A table-backed participant.
+     *
+     * <p>{@code table} is always non-null. {@code discriminatorValue} is the value from
+     * {@code @discriminator(value:)} on this type, or {@code null} when {@code @discriminator}
+     * is absent.
+     */
+    record TableBound(String typeName, TableRef table, String discriminatorValue)
+            implements ParticipantRef {}
+
+    /**
+     * A non-table-backed participant.
+     *
+     * <p>Used for {@code @error} types, structural interfaces, and other types that carry no
+     * jOOQ table. Generator switches must handle this variant and skip SQL-emitting paths.
+     */
+    record Unbound(String typeName) implements ParticipantRef {}
 }

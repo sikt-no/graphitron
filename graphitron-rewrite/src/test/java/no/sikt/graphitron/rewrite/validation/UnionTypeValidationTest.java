@@ -24,8 +24,8 @@ class UnionTypeValidationTest {
 
         ALL_BOUND("all member types are table-bound — valid",
             new UnionType("SearchResult", null, List.of(
-                new ParticipantRef("Film", new TableRef("film", "FILM", "Film", List.of()), null),
-                new ParticipantRef("Category", new TableRef("category", "CATEGORY", "Category", List.of()), null)
+                new ParticipantRef.TableBound("Film", new TableRef("film", "FILM", "Film", List.of()), null),
+                new ParticipantRef.TableBound("Category", new TableRef("category", "CATEGORY", "Category", List.of()), null)
             )),
             List.of());
 

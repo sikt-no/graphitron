@@ -141,8 +141,7 @@ public sealed interface GraphitronType
      * <p>{@code table} is the resolved jOOQ table (always present — failure to resolve produces
      * {@link UnclassifiedType}).
      *
-     * <p>{@code participants} holds one {@link ParticipantRef} per implementing type. Any
-     * unbound participant causes classification to fail with {@link UnclassifiedType}.
+     * <p>{@code participants} holds one {@link ParticipantRef} per implementing type. Unbound participants (e.g. {@code @error} types) are recorded as {@link ParticipantRef.Unbound}.
      */
     record TableInterfaceType(
         String name,
@@ -156,8 +155,7 @@ public sealed interface GraphitronType
      * An interface with no directives whose implementing types each have {@code @table}.
      * Multi-table interface pattern.
      *
-     * <p>{@code participants} holds one {@link ParticipantRef} per implementing type. Any
-     * unbound participant causes classification to fail with {@link UnclassifiedType}.
+     * <p>{@code participants} holds one {@link ParticipantRef} per implementing type. Unbound participants (e.g. {@code @error} types) are recorded as {@link ParticipantRef.Unbound}.
      */
     record InterfaceType(
         String name,
@@ -168,8 +166,7 @@ public sealed interface GraphitronType
     /**
      * A union type whose member types all have {@code @table}.
      *
-     * <p>{@code participants} holds one {@link ParticipantRef} per member type. Any
-     * unbound participant causes classification to fail with {@link UnclassifiedType}.
+     * <p>{@code participants} holds one {@link ParticipantRef} per member type. Unbound participants (e.g. {@code @error} types) are recorded as {@link ParticipantRef.Unbound}.
      */
     record UnionType(
         String name,

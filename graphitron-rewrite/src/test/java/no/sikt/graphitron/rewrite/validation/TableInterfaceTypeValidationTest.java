@@ -26,8 +26,8 @@ class TableInterfaceTypeValidationTest {
             new TableInterfaceType("FilmStatus", null, "status_type",
                 new TableRef("film_status", "FILM_STATUS", "FilmStatus", List.of()),
                 List.of(
-                    new ParticipantRef("NewFilm", new TableRef("film", "FILM", "Film", List.of()), null),
-                    new ParticipantRef("OldFilm", new TableRef("film", "FILM", "Film", List.of()), null)
+                    new ParticipantRef.TableBound("NewFilm", new TableRef("film", "FILM", "Film", List.of()), null),
+                    new ParticipantRef.TableBound("OldFilm", new TableRef("film", "FILM", "Film", List.of()), null)
                 )),
             List.of());
 

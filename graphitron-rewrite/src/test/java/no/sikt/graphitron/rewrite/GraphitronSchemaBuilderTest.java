@@ -1169,6 +1169,26 @@ class GraphitronSchemaBuilderTest {
                 assertThat(orderBy.namedOrders().get(0).name()).isEqualTo("FIRST_NAME");
             }),
 
+        TABLE_FIELD_ORDER_BY_LEGACY_INDEX(
+            "@orderBy with deprecated @index on sort enum value → same OrderBySpec.Argument as @order(index:)",
+            """
+            enum ActorOrderField { FIRST_NAME @index(name: "IDX_ACTOR_LAST_NAME") }
+            enum Direction { ASC DESC }
+            input ActorOrder { sortField: ActorOrderField! direction: Direction! }
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+                actors(order: ActorOrder @orderBy): [Actor!]!
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("Film", "actors");
+                assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Argument.class);
+                var orderBy = (OrderBySpec.Argument) f.orderBy();
+                assertThat(orderBy.namedOrders()).hasSize(1);
+                assertThat(orderBy.namedOrders().get(0).name()).isEqualTo("FIRST_NAME");
+            }),
+
         SERVICE_FIELD_CONTEXT_ARGS(
             "@service field is classified as ServiceRecordField — method reference resolved",
             """

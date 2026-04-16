@@ -162,9 +162,9 @@ class TypeBuilder {
             var gt = ctx.types.get(typeName);
             if (gt instanceof TableBackedType tbt && !(gt instanceof TableInterfaceType)) {
                 String discriminatorValue = argString(ctx.schema.getObjectType(typeName), DIR_DISCRIMINATOR, ARG_VALUE).orElse(null);
-                result.add(new ParticipantRef(typeName, tbt.table(), discriminatorValue));
+                result.add(new ParticipantRef.TableBound(typeName, tbt.table(), discriminatorValue));
             } else if (gt != null && !(gt instanceof UnclassifiedType)) {
-                result.add(new ParticipantRef(typeName, null, null));
+                result.add(new ParticipantRef.Unbound(typeName));
             } else {
                 errors.add("implementing type '" + typeName + "' is not table-bound (missing @table directive)");
             }

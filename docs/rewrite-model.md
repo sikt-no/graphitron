@@ -175,12 +175,14 @@ graph LR
     MR["MethodRef"]:::val
     PS["ParamSource\n«sealed»"]:::val
     SR["BatchKey\n«sealed»"]:::val
-    PR["ParticipantRef"]:::val
+    PR["ParticipantRef\n«sealed»"]:::sup
+    PR --> PRB["TableBound\ntypeName · table · discriminatorValue"]:::val
+    PR --> PRU["Unbound\ntypeName"]:::val
 ```
 
 `ColumnFilterArg` and `InputFilterArg` are shown with orange dashed borders — they are missing a `FieldCondition condition` component for `@condition` on `ARGUMENT_DEFINITION`.
 
-`ParticipantRef` carries `(typeName, table?, discriminatorValue?)` where `table` is nullable. Non-table-bound members of an interface or union (e.g. `ErrorType`, structural types) are recorded with `table = null`. `ParticipantRef.isTableBound()` returns `table != null`; generators gate SQL-emitting paths behind this check.
+`ParticipantRef` is a sealed interface with two variants: `TableBound(typeName, table, discriminatorValue)` and `Unbound(typeName)`. Non-table-backed members (e.g. `ErrorType`, structural interfaces) are recorded as `Unbound`. Generator switches must handle both variants and skip SQL-emitting paths for `Unbound`.
 
 ---
 
