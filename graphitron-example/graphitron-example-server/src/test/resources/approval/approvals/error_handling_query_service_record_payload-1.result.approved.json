@@ -1,0 +1,15 @@
+{
+    "data": {
+        "allCustomerEmails_recordPayload": {
+            "errors": [
+                {
+                    "__typename": "CustomerEmailsError",
+                    "path": [
+                        "allCustomerEmails_recordPayload"
+                    ],
+                    "message": "You do not have access (Record payload exception)"
+                }
+            ]
+        }
+    }
+}

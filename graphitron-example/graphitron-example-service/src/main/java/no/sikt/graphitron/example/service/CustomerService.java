@@ -2,6 +2,7 @@ package no.sikt.graphitron.example.service;
 
 import no.sikt.graphitron.example.generated.jooq.tables.records.CustomerRecord;
 import no.sikt.graphitron.example.service.records.HelloWorldInput;
+import no.sikt.graphitron.example.service.records.CustomerEmailsRecordPayload;
 import no.sikt.graphitron.example.service.records.UpdateCustomerEmailRecord;
 import no.sikt.graphitron.example.service.records.UpdateCustomerEmailResult;
 import org.jooq.DSLContext;
@@ -66,6 +67,10 @@ public class CustomerService {
 
     public List<CustomerRecord> allCustomerEmails_customException() {
         throw new CustomBusinessException("Custom business rule violated: restricted access");
+    }
+
+    public CustomerEmailsRecordPayload allCustomerEmails_recordPayload() {
+        throw new IllegalStateException("Record payload exception");
     }
 
     public List<UpdateCustomerEmailResult> updateCustomerEmail(List<UpdateCustomerEmailRecord> input) {

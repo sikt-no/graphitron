@@ -171,7 +171,8 @@ class RecordMappingValidator extends AbstractSchemaValidator {
                 ? schema.getInputType(field)
                 : schema.getObject(field.getTypeName());
 
-        if (nested != null && !nested.hasJavaRecordReference() && !nested.hasTable()) {
+        if (nested != null && !nested.hasJavaRecordReference() && !nested.hasTable()
+                && !schema.isExceptionOrExceptionUnion(field.getTypeName())) {
             return Optional.of(nested);
         }
         return Optional.empty();

@@ -34,6 +34,13 @@ extend type Query {
             method: "allCustomerEmails_customException"
         }
     )
+    #Tests error handling for @record type with list @table field and errors
+    allCustomerEmails_recordPayload: CustomerEmailsRecordPayload @service(
+        service: {
+            className: "no.sikt.graphitron.example.service.CustomerService",
+            method: "allCustomerEmails_recordPayload"
+        }
+    )
 }
 
 type CustomerEmailsPayload{
@@ -42,7 +49,8 @@ type CustomerEmailsPayload{
 }
 
 type CustomerEmailsError implements Error @error(handlers: [
-    {handler: GENERIC, matches: "not allowed", className: "java.lang.IllegalStateException" description: "You do not have access to customer emails"}]) {
+    {handler: GENERIC, matches: "not allowed", className: "java.lang.IllegalStateException" description: "You do not have access to customer emails"},
+    {handler: GENERIC, matches: "Record payload exception", className: "java.lang.IllegalStateException" description: "You do not have access (Record payload exception)"}]) {
     path: [String!]!
     message: String!
 }
@@ -79,4 +87,9 @@ type CustomExceptionError implements Error @error(handlers: [
     {handler: GENERIC, className: "no.sikt.graphitron.example.service.CustomBusinessException", description: "Access to customer emails is restricted by business rules"}]) {
     path: [String!]!
     message: String!
+}
+
+type CustomerEmailsRecordPayload @record(record: {className: "no.sikt.graphitron.example.service.records.CustomerEmailsRecordPayload"}) {
+    customers: [Customer!]
+    errors: [CustomerEmailsError!]
 }

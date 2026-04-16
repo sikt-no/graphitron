@@ -1,0 +1,10 @@
+# Tests error handling for @record type with list @table field and errors
+{
+    allCustomerEmails_recordPayload {
+        errors {
+            __typename
+            path
+            message
+        }
+    }
+}
