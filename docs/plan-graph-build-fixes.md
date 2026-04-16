@@ -79,7 +79,7 @@ This is the right time: generators don't yet use `participants()`, so the blast 
 
 Two output verbosity problems that make large-graph build output hard to read. Both are small, independent, and should be fixed before running SIS again.
 
-### Cap candidate lists at 5 entries
+### Cap candidate lists at 5 entries ✅
 
 `BuildContext.candidateHint()` emits all candidates sorted by Levenshtein distance. On a wide table (50+ columns), every column-not-found error appends a line with all column names. Only the closest matches are useful.
 
@@ -99,7 +99,7 @@ static String candidateHint(String attempt, List<String> candidates) {
 
 Changing the prefix from `"available: "` to `"did you mean: "` also makes the intent clearer: this is a best-guess hint, not an exhaustive list.
 
-### Drop the redundant parent-type name from cascade field errors
+### Drop the redundant parent-type name from cascade field errors ✅
 
 When a field can't be classified because its parent type is unclassified, the current message reads:
 
@@ -121,6 +121,38 @@ return new UnclassifiedField(parentTypeName, name, location, fieldDef,
 ```
 
 The qualified name (`BrukernavnErIkkeUnikt.fieldName`) in the outer `ValidationError` message already identifies the parent type; the body just needs to name the cause.
+
+### Drop "could not be classified" from field error messages
+
+Field error messages prepend `"could not be classified — "` before the specific reason. For self-explanatory errors this preamble is redundant noise — the specific reason already states the problem:
+
+```
+Field 'VurderingsoppbygningsdelIHierarki.parent': could not be classified — condition method 'CONDITION_VURDERINGSOPPBYGNING' could not be resolved
+Field 'SomeField.bar': could not be classified — service method could not be resolved — service reference is incomplete
+```
+
+The double-hyphened "could not be classified — service method could not be resolved" is particularly awkward.
+
+**Fix in `validateUnclassifiedField()` in `GraphitronSchemaValidator`:**
+
+Change:
+```java
+"Field '" + field.qualifiedName() + "': could not be classified — " + field.reason()
+```
+To:
+```java
+"Field '" + field.qualifiedName() + "': " + field.reason()
+```
+
+Each existing `reason()` string is already a self-contained description:
+- `"condition method 'X' could not be resolved"` → reads as "Field '…': condition method 'X' could not be resolved"
+- `"parent type is unclassified"` → reads as "Field '…': parent type is unclassified"
+- `"service method could not be resolved — service reference is incomplete"` → reads as "Field '…': service method could not be resolved — service reference is incomplete"
+
+**Note:** also apply the same fix to `validateUnclassifiedType()`:
+```java
+"Type '" + type.name() + "': " + type.reason()
+```
 
 ---
 
@@ -263,7 +295,8 @@ This is low priority since it only affects graphs that predate the `@nodeId` dir
 
 | # | Item | Effort | Blocks |
 |---|------|--------|--------|
-| EQ | Error message quality (cap candidates, cascade message) | Trivial | Readable SIS build output |
+| ~~EQ~~ | ~~Error message quality (cap candidates, cascade message)~~ | ~~Trivial~~ | ✅ Done |
+| EQ2 | Drop "could not be classified" preamble from field/type errors | Trivial | Cleaner SIS build output |
 | NR | Named reference resolution | Medium | Named @service + @condition (depends on config answer) |
 | C1 | @condition in reference paths (P3) | Large | All condition joins in SIS |
 | LK | @lookupKey list input (composite) | Medium | Covered by argument-resolution plan |
