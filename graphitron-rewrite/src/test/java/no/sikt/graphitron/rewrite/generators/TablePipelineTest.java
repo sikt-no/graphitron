@@ -90,7 +90,7 @@ class TablePipelineTest {
         assertThat(classes).doesNotContain("Query");
     }
 
-    // ===== fields() method =====
+    // ===== $fields() method =====
 
     @Test
     void fieldsMethod_containsScalarColumnsFromSchema() {
@@ -99,7 +99,7 @@ class TablePipelineTest {
             type Query { dummy: String }
             """);
         var fields = filmSpec.methodSpecs().stream()
-            .filter(m -> m.name().equals("fields")).findFirst().orElseThrow();
+            .filter(m -> m.name().equals("$fields")).findFirst().orElseThrow();
         var code = fields.code().toString();
         assertThat(code).contains("case \"title\"");
         assertThat(code).contains("table.TITLE");
@@ -114,64 +114,13 @@ class TablePipelineTest {
             type Query { dummy: String }
             """);
         var fields = filmSpec.methodSpecs().stream()
-            .filter(m -> m.name().equals("fields")).findFirst().orElseThrow();
+            .filter(m -> m.name().equals("$fields")).findFirst().orElseThrow();
         var code = fields.code().toString();
         assertThat(code).contains("case \"title\"");
         assertThat(code).doesNotContain("hidden");
     }
 
-    // ===== subselectMany / subselectOne =====
-
-    @Test
-    void subselectMany_usesMultiset() {
-        var code = findSubselectMethod("Film", "subselectMany", """
-            type Film @table(name: "film") { title: String }
-            type Query { dummy: String }
-            """).code().toString();
-        assertThat(code).contains("DSL.multiset(");
-        assertThat(code).contains("fields(sel.getSelectionSet())");
-        assertThat(code).contains(".from(");
-        assertThat(code).contains(".where(condition)");
-        assertThat(code).contains(".orderBy(orderBy)");
-        assertThat(code).contains(".as(sel.getResultKey())");
-        assertThat(code).doesNotContain("UnsupportedOperationException");
-    }
-
-    @Test
-    void subselectOne_usesMultisetWithLimit() {
-        var code = findSubselectMethod("Film", "subselectOne", """
-            type Film @table(name: "film") { title: String }
-            type Query { dummy: String }
-            """).code().toString();
-        assertThat(code).contains("DSL.multiset(");
-        assertThat(code).contains("fields(sel.getSelectionSet())");
-        assertThat(code).contains(".from(");
-        assertThat(code).contains(".where(condition)");
-        assertThat(code).contains(".limit(1)");
-        assertThat(code).contains(".as(sel.getResultKey())");
-        assertThat(code).contains(".convertFrom(");
-        assertThat(code).doesNotContain("UnsupportedOperationException");
-    }
-
-    @Test
-    void subselectMany_tableRefIsCorrectForSchema() {
-        // Verify the table variable references the schema-bound jOOQ table (FILM), not a hardcoded one
-        var code = findSubselectMethod("Film", "subselectMany", """
-            type Film @table(name: "film") { title: String }
-            type Query { dummy: String }
-            """).code().toString();
-        assertThat(code).contains("FILM");
-    }
-
     // ===== Helpers =====
-
-    private no.sikt.graphitron.javapoet.MethodSpec findSubselectMethod(
-            String className, String methodName, String sdl) {
-        return findSpec(className, sdl).methodSpecs().stream()
-            .filter(m -> m.name().equals(methodName))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Method not found: " + methodName));
-    }
 
     private no.sikt.graphitron.javapoet.TypeSpec findSpec(String className, String sdl) {
         return TypeClassGenerator.generate(buildSchema(sdl)).stream()

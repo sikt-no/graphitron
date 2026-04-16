@@ -51,13 +51,6 @@ class TypeClassGeneratorTest {
             .orElseThrow(() -> new AssertionError("Method not found: " + methodName));
     }
 
-    private static MethodSpec method(String methodName, int paramCount) {
-        return spec().methodSpecs().stream()
-            .filter(m -> m.name().equals(methodName) && m.parameters().size() == paramCount)
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Method not found: " + methodName + " with " + paramCount + " params"));
-    }
-
     // ===== Class structure =====
 
     @Test
@@ -68,118 +61,22 @@ class TypeClassGeneratorTest {
     @Test
     void generate_allMethodsArePresent() {
         assertThat(spec().methodSpecs()).extracting(MethodSpec::name)
-            .containsExactlyInAnyOrder(
-                "fields", "fields",
-                "selectMany", "selectMany", "selectOne",
-                "selectManyByRowKeys", "selectOneByRowKeys",
-                "selectManyByRecordKeys", "selectOneByRecordKeys",
-                "subselectMany", "subselectOne");
+            .containsExactly("$fields");
     }
 
     // ===== Signatures =====
 
-    /**
-     * {@code fields()} takes exactly one parameter — the selection set — not a table instance.
-     *
-     * <p>This is intentional for the MULTISET correlated subquery strategy: each call to
-     * {@code subselectMany} or {@code subselectOne} creates its own SQL scope, so calling the
-     * same type method twice (e.g. {@code Actor.subselectMany} for both {@code leadMaleActor}
-     * and {@code leadFemaleActor} on {@code Film}) does NOT produce alias collisions — each
-     * subquery is independent.
-     *
-     * <p>For flat batch JOINs (DataLoader), the table would need to be aliased per field
-     * to avoid duplicate aliases in the shared SELECT. In that case {@code fields()} would
-     * need to accept the aliased table instance. That extension is deferred to the flat-JOIN
-     * generation phase; the single-parameter signature here documents the current safe design.
-     */
     @Test
-    void fields_signature() {
-        var m = method("fields", 1);
+    void $fields_signature() {
+        var m = method("$fields");
+        assertThat(m.modifiers()).contains(
+            javax.lang.model.element.Modifier.PUBLIC,
+            javax.lang.model.element.Modifier.STATIC);
         assertThat(m.returnType().toString()).isEqualTo("java.util.List<org.jooq.Field<?>>");
         assertThat(m.parameters()).extracting(p -> p.type().toString())
-            .containsExactly("graphql.schema.DataFetchingFieldSelectionSet");
-    }
-
-    @Test
-    void fieldsWithExtra_signature() {
-        var m = method("fields", 2);
-        assertThat(m.returnType().toString()).isEqualTo("java.util.List<org.jooq.Field<?>>");
-        assertThat(m.parameters()).extracting(p -> p.name())
-            .containsExactly("sel", "extraFields");
-    }
-
-    @Test
-    void selectMany_signature() {
-        var m = method("selectMany", 3);
-        assertThat(m.returnType().toString()).isEqualTo("org.jooq.Result<org.jooq.Record>");
-        assertThat(m.parameters()).extracting(p -> p.name())
-            .containsExactly("env", "condition", "orderBy");
-    }
-
-    @Test
-    void selectManyPaginated_signature() {
-        var m = method("selectMany", 6);
-        assertThat(m.returnType().toString()).isEqualTo("org.jooq.Result<org.jooq.Record>");
-        assertThat(m.parameters()).extracting(p -> p.name())
-            .containsExactly("env", "condition", "orderBy", "extraFields", "seekValues", "limit");
-    }
-
-    @Test
-    void selectOne_signature() {
-        var m = method("selectOne");
-        assertThat(m.returnType().toString()).isEqualTo("org.jooq.Record");
-        assertThat(m.parameters()).extracting(p -> p.name())
-            .containsExactly("env", "condition");
-    }
-
-    @Test
-    void subselectMany_signature() {
-        var m = method("subselectMany");
-        assertThat(m.returnType().toString())
-            .isEqualTo("org.jooq.Field<org.jooq.Result<org.jooq.Record>>");
-        assertThat(m.parameters()).extracting(p -> p.name())
-            .containsExactly("env", "sel", "condition", "orderBy");
-    }
-
-    @Test
-    void subselectOne_signature() {
-        var m = method("subselectOne");
-        assertThat(m.returnType().toString()).isEqualTo("org.jooq.Field<org.jooq.Record>");
-        assertThat(m.parameters()).extracting(p -> p.name())
-            .containsExactly("env", "sel", "condition");
-    }
-
-    @Test
-    void selectManyByRowKeys_signature() {
-        var m = method("selectManyByRowKeys");
-        assertThat(m.returnType().toString())
-            .isEqualTo("java.util.List<java.util.List<org.jooq.Record>>");
-        assertThat(m.parameters()).extracting(p -> p.name())
-            .containsExactly("keys", "env", "sel", "serviceRecords");
-    }
-
-    @Test
-    void selectOneByRowKeys_signature() {
-        var m = method("selectOneByRowKeys");
-        assertThat(m.returnType().toString()).isEqualTo("java.util.List<org.jooq.Record>");
-        assertThat(m.parameters()).extracting(p -> p.name())
-            .containsExactly("keys", "env", "sel", "serviceRecord");
-    }
-
-    @Test
-    void selectManyByRecordKeys_signature() {
-        var m = method("selectManyByRecordKeys");
-        assertThat(m.returnType().toString())
-            .isEqualTo("java.util.List<java.util.List<org.jooq.Record>>");
-        assertThat(m.parameters()).extracting(p -> p.name())
-            .containsExactly("keys", "env", "sel", "serviceRecords");
-    }
-
-    @Test
-    void selectOneByRecordKeys_signature() {
-        var m = method("selectOneByRecordKeys");
-        assertThat(m.returnType().toString()).isEqualTo("java.util.List<org.jooq.Record>");
-        assertThat(m.parameters()).extracting(p -> p.name())
-            .containsExactly("keys", "env", "sel", "serviceRecord");
+            .containsExactly(
+                "graphql.schema.DataFetchingFieldSelectionSet",
+                DEFAULT_JOOQ_PACKAGE + ".tables.Film",
+                "graphql.schema.DataFetchingEnvironment");
     }
 }

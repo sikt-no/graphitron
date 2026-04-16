@@ -117,24 +117,21 @@ class FetcherPipelineTest {
     // ===== Root query table fields =====
 
     @Test
-    void queryTableField_list_delegatesToSelectMany() {
+    void queryTableField_list_returnsResultRecord() {
         var films = method(findSpec("QueryFetchers", """
             type Film @table(name: "film") { title: String }
             type Query { films: [Film!]! }
             """), "films");
         assertThat(films.returnType().toString()).isEqualTo("org.jooq.Result<org.jooq.Record>");
-        assertThat(films.code().toString()).contains("selectMany");
-        assertThat(films.code().toString()).doesNotContain("UnsupportedOperationException");
     }
 
     @Test
-    void queryTableField_single_delegatesToSelectOne() {
+    void queryTableField_single_returnsRecord() {
         var film = method(findSpec("QueryFetchers", """
             type Film @table(name: "film") { title: String }
             type Query { film: Film }
             """), "film");
         assertThat(film.returnType().toString()).isEqualTo("org.jooq.Record");
-        assertThat(film.code().toString()).contains("selectOne");
     }
 
     @Test

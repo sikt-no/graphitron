@@ -104,7 +104,9 @@ public class TypeFetcherGenerator {
         var builder = TypeSpec.classBuilder(className)
             .addModifiers(Modifier.PUBLIC);
 
-        boolean needsGraphitronContextHelper = false;
+        // Emit the graphitronContext() helper whenever any field executes inline SQL —
+        // i.e., whenever any SqlGeneratingField is present in this fetchers class.
+        boolean needsGraphitronContextHelper = fields.stream().anyMatch(f -> f instanceof SqlGeneratingField);
 
         for (var field : fields) {
             if (field instanceof ChildField.ColumnField && parentTable != null) {
@@ -115,15 +117,12 @@ public class TypeFetcherGenerator {
             } else if (field instanceof QueryField.QueryTableField qtf
                     && qtf.returnType().wrapper() instanceof FieldWrapper.Connection) {
                 builder.addMethod(buildQueryConnectionFetcher(qtf));
-                if (hasContextArg(qtf)) needsGraphitronContextHelper = true;
             } else if (field instanceof QueryField.QueryTableField qtf) {
                 builder.addMethod(buildQueryTableFetcher(qtf));
-                if (hasContextArg(qtf)) needsGraphitronContextHelper = true;
             } else if (field instanceof BatchKeyField bkf) {
                 if (field instanceof MethodBackedField mbf && field instanceof SqlGeneratingField sgf && parentTable != null) {
                     builder.addMethod(buildServiceDataFetcher(field.name(), bkf, mbf.method(), sgf.returnType(), parentTable, className));
                     builder.addMethod(buildServiceRowsMethod(bkf, mbf.method(), sgf.returnType(), sgf.returnType().table(), parentTable, className));
-                    needsGraphitronContextHelper = true;
                 } else {
                     builder.addMethod(buildSplitQueryDataFetcher(field.name(), bkf.batchKey()));
                     builder.addMethod(buildSplitRowsMethod(bkf));
@@ -168,23 +167,19 @@ public class TypeFetcherGenerator {
         return builder.build();
     }
 
-    /** Returns true if any filter on this field uses a {@link CallSiteExtraction.ContextArg}. */
-    private static boolean hasContextArg(QueryField.QueryTableField qtf) {
-        return qtf.filters().stream()
-            .flatMap(f -> f.callParams().stream())
-            .anyMatch(p -> p.extraction() instanceof CallSiteExtraction.ContextArg);
-    }
-
     /**
      * Generates a fetcher for a root-query table field that builds the condition, optional
-     * orderBy, and delegates to the table's {@code selectMany} or {@code selectOne}.
+     * orderBy, and executes inline SQL using {@code Type.$fields(sel, table, env)} for projection.
      *
      * <p>Generated code (list variant):
      * <pre>{@code
      * public static Result<Record> films(DataFetchingEnvironment env) {
+     *     var dsl = graphitronContext(env).getDslContext(env);
+     *     FilmTable table = Tables.FILM;
      *     var condition = DSL.noCondition();
      *     List<SortField<?>> orderBy = List.of();
-     *     return Film.selectMany(env, condition, orderBy);
+     *     return dsl.select(Film.$fields(env.getSelectionSet(), table, env))
+     *               .from(table).where(condition).orderBy(orderBy).fetch();
      * }
      * }</pre>
      */
@@ -202,14 +197,32 @@ public class TypeFetcherGenerator {
             .returns(returnType)
             .addParameter(ENV, "env");
 
+        builder.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         builder.addCode(buildConditionCall(qtf));
 
         if (isList) {
             builder.addCode(buildOrderByCode(qtf.orderBy(), qtf.name()));
-            builder.addStatement("return $T.selectMany(env, condition, orderBy)", names.typeClass());
+            builder.addCode(CodeBlock.builder()
+                .add("return dsl\n")
+                .indent()
+                .add(".select($T.$$fields(env.getSelectionSet(), table, env))\n", names.typeClass())
+                .add(".from(table)\n")
+                .add(".where(condition)\n")
+                .add(".orderBy(orderBy)\n")
+                .add(".fetch();\n")
+                .unindent()
+                .build());
         } else {
-            builder.addStatement("return $T.selectOne(env, condition)", names.typeClass());
+            builder.addCode(CodeBlock.builder()
+                .add("return dsl\n")
+                .indent()
+                .add(".select($T.$$fields(env.getSelectionSet(), table, env))\n", names.typeClass())
+                .add(".from(table)\n")
+                .add(".where(condition)\n")
+                .add(".fetchOne();\n")
+                .unindent()
+                .build());
         }
 
         return builder.build();
@@ -235,8 +248,9 @@ public class TypeFetcherGenerator {
     /**
      * Generates a connection field fetcher that returns a {@code ConnectionResult}.
      *
-     * <p>Extracts pagination args, decodes cursor, builds condition and orderBy, calls the
-     * paginated {@code selectMany} overload, and wraps the result in a {@code ConnectionResult}.
+     * <p>Extracts pagination args, decodes cursor, builds condition and orderBy, executes inline
+     * paginated SQL with name-based extra-field deduplication, and wraps the result in
+     * a {@code ConnectionResult}.
      */
     private static MethodSpec buildQueryConnectionFetcher(QueryField.QueryTableField qtf) {
         var tableRef = qtf.returnType().table();
@@ -247,13 +261,14 @@ public class TypeFetcherGenerator {
         var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
         var WILDCARD_FIELD = ParameterizedTypeName.get(JOOQ_FIELD,
             no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
-        var listOfField = ParameterizedTypeName.get(LIST, WILDCARD_FIELD);
+        var HASH_SET = ClassName.get("java.util", "HashSet");
 
         var builder = MethodSpec.methodBuilder(qtf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(connectionResultClass)
             .addParameter(ENV, "env");
 
+        builder.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
         builder.addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName());
         builder.addCode(buildConditionCall(qtf));
         // Single dispatch produces both orderBy (for SQL) and extraFields (for cursor columns),
@@ -274,12 +289,29 @@ public class TypeFetcherGenerator {
         builder.addStatement("Object[] seekValues = after != null ? $T.decodeCursor(after) : null",
             connectionHelperClass);
 
-        // Call paginated selectMany
-        builder.addStatement("var result = $T.selectMany(env, condition, orderBy, extraFields, seekValues, pageSize + 1)",
-            names.typeClass());
+        // Build select list: $fields + extra fields not already present (by name)
+        builder.addStatement("var fields = new $T<>($T.$$fields(env.getSelectionSet(), table, env))",
+            ARRAY_LIST, names.typeClass());
+        builder.addStatement("var selectedNames = new $T<$T>()", HASH_SET, String.class);
+        builder.addCode("for (var f : fields) selectedNames.add(f.getName());\n");
+        builder.addCode("for (var extra : extraFields) {\n");
+        builder.addCode("    if (!selectedNames.contains(extra.getName())) fields.add(extra);\n");
+        builder.addCode("}\n");
 
-        // Wrap in ConnectionResult
-        builder.addStatement("return new $T(result, pageSize, after, extraFields)", connectionResultClass);
+        // Build and execute paginated query inline
+        builder.addCode(CodeBlock.builder()
+            .add("var query = dsl\n")
+            .indent()
+            .add(".select(fields)\n")
+            .add(".from(table)\n")
+            .add(".where(condition)\n")
+            .add(".orderBy(orderBy);\n")
+            .unindent()
+            .add("if (seekValues != null && seekValues.length > 0) query = query.seek(seekValues);\n")
+            .build());
+
+        builder.addStatement("return new $T(query.limit(pageSize + 1).fetch(), pageSize, after, extraFields)",
+            connectionResultClass);
 
         return builder.build();
     }
@@ -637,6 +669,7 @@ public class TypeFetcherGenerator {
             .returns(ParameterizedTypeName.get(RESULT, RECORD))
             .addParameter(ENV, "env");
 
+        builder.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
 
@@ -658,7 +691,16 @@ public class TypeFetcherGenerator {
         }
 
         builder.addCode(buildOrderByCode(field.orderBy()));
-        builder.addStatement("return $T.selectMany(env, condition, orderBy)", names.typeClass());
+        builder.addCode(CodeBlock.builder()
+            .add("return dsl\n")
+            .indent()
+            .add(".select($T.$$fields(env.getSelectionSet(), table, env))\n", names.typeClass())
+            .add(".from(table)\n")
+            .add(".where(condition)\n")
+            .add(".orderBy(orderBy)\n")
+            .add(".fetch();\n")
+            .unindent()
+            .build());
         return builder.build();
     }
 
@@ -733,11 +775,12 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Generates the batch rows method for a {@link ChildField.ServiceTableField}.
+     * Generates a stub rows method for a {@link ChildField.ServiceTableField}.
      *
-     * <p>The method extracts arguments from the DFE, calls the service method with the
-     * batch {@code keys} as the sources parameter, and delegates to the table's
-     * {@code selectMany} or {@code selectOne}.
+     * <p>Throws {@link UnsupportedOperationException} directly — no longer delegates to
+     * batch-key method names on the type class (which no longer exist). The eventual
+     * implemented body will call {@code Type.$fields(sel.getSelectionSet(), table, env)}
+     * for projection, but that work is out of scope here.
      */
     private static MethodSpec buildServiceRowsMethod(
             BatchKeyField bkf,
@@ -753,38 +796,14 @@ public class TypeFetcherGenerator {
 
         TypeName keysElementType = GeneratorUtils.keyElementType(bkf.batchKey());
 
-        var builder = MethodSpec.methodBuilder(bkf.rowsMethodName())
+        return MethodSpec.methodBuilder(bkf.rowsMethodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
             .addParameter(ParameterizedTypeName.get(LIST, keysElementType), "keys")
             .addParameter(ENV, "env")
-            .addParameter(SELECTED_FIELD, "sel");
-
-        for (var param : smr.callParams()) {
-            builder.addStatement("$T $L = $L", ClassName.bestGuess(param.typeName()), param.name(), buildArgExtraction(param, fetchersClassName));
-        }
-
-        var serviceCallArgs = smr.params().stream()
-            .map(p -> p instanceof MethodRef.Param.Sourced ? "keys" : p.name())
-            .toList();
-
-        builder.addStatement("$T serviceResult = $T.$L($L)",
-            Object.class,
-            ClassName.bestGuess(smr.className()),
-            smr.methodName(),
-            String.join(", ", serviceCallArgs));
-
-        var typeClass = GeneratorUtils.ResolvedTableNames.of(rt, tb.returnTypeName()).typeClass();
-        String selectManyName = bkf.batchKey().selectManyMethodName();
-        String selectOneName  = bkf.batchKey().selectOneMethodName();
-        if (isList) {
-            builder.addStatement("return $T.$L(keys, env, sel, ($T<?>) serviceResult)",
-                typeClass, selectManyName, List.class);
-        } else {
-            builder.addStatement("return $T.$L(keys, env, sel, serviceResult)", typeClass, selectOneName);
-        }
-
-        return builder.build();
+            .addParameter(SELECTED_FIELD, "sel")
+            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .build();
     }
 
     // -----------------------------------------------------------------------

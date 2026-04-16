@@ -1,9 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
 
-import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
@@ -28,38 +26,21 @@ import static javax.lang.model.element.Modifier.STATIC;
  * Produces one type class per table-mapped GraphQL type in the schema.
  *
  * <p>Class names follow the GraphQL type name (e.g. {@code Film} for GraphQL type {@code Film}).
- * If two GraphQL types map to the same SQL table, each gets its own type class with its own
- * {@code fields()}, {@code selectMany}, etc.
+ * If two GraphQL types map to the same SQL table, each gets its own type class.
  *
- * <p>Each class contains a {@code fields()} method that assembles the SELECT list, plus
- * scope-establishing stub methods covering SQL projection:
- * <ul>
- *   <li>{@code selectMany} — executes a new SQL statement and returns all rows
- *       (list root queries)</li>
- *   <li>{@code selectOne} — executes a new SQL statement and returns a single row
- *       (single root queries)</li>
- *   <li>{@code subselectMany} — contributes a multiset subquery to an existing statement,
- *       returning many rows (inline list {@code TableField})</li>
- *   <li>{@code subselectOne} — contributes a scalar subquery to an existing statement,
- *       returning a single row (inline single {@code TableField})</li>
- * </ul>
- *
- * <p>DataLoader batch methods ({@code load*} / {@code lookup*}) are generated bespoke
- * per-field and live in {@code rewrite.types.<TypeName>Fields} alongside their data fetchers,
- * not in this class.
- *
- * <p>All stubs throw {@link UnsupportedOperationException} until their bodies are filled in by
- * subsequent deliverables.
+ * <p>Each class contains a single {@code $fields(sel, table, env)} method that assembles the
+ * SELECT list from a {@link graphql.schema.DataFetchingFieldSelectionSet}. The caller supplies
+ * the table alias as a parameter — this is the prerequisite for G5 inline nested fields, which
+ * need the parent alias for correlated join conditions. Execution (DSL context, query building,
+ * pagination) is the responsibility of the calling {@code *Fetchers} class.
  *
  * <p>Generated files are placed in the {@code rewrite.types} sub-package of the configured
  * output package.
  */
 public class TypeClassGenerator {
 
-    // Cross-generator constants (RESULT, RECORD, ROW, CONDITION, SORT_FIELD, DSL, LIST,
-    // ENV, SELECTED_FIELD, GRAPHITRON_CONTEXT) come from GeneratorUtils via static import.
+    // Cross-generator constants (LIST, ENV, SELECTED_FIELD) come from GeneratorUtils via static import.
     private static final ClassName FIELD          = ClassName.get("org.jooq", "Field");
-    private static final ClassName DSL_CONTEXT    = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName SELECTION_SET  = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
     private static final ClassName ARRAY_LIST     = ClassName.get(ArrayList.class);
 
@@ -86,42 +67,30 @@ public class TypeClassGenerator {
     /**
      * @param typeName      the GraphQL type name (used as the class name)
      * @param tableRef      the resolved table reference with jOOQ field/class names
-     * @param columnFields  the scalar column fields to include in {@code fields()}, in declaration order
+     * @param columnFields  the scalar column fields to include in {@code $fields()}, in declaration order
      */
     static TypeSpec buildTypeSpec(String typeName, TableRef tableRef, List<ChildField.ColumnField> columnFields) {
         return TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
-            .addMethod(buildFieldsMethod(tableRef, columnFields))
-            .addMethod(buildFieldsWithExtraMethod(tableRef, columnFields))
-            .addMethod(buildSelectManyMethod(tableRef))
-            .addMethod(buildSelectManyPaginatedMethod(tableRef))
-            .addMethod(buildSelectOneMethod(tableRef))
-            .addMethod(buildSelectManyFromRowServiceMethod())
-            .addMethod(buildSelectOneFromRowServiceMethod())
-            .addMethod(buildSelectManyFromRecordServiceMethod())
-            .addMethod(buildSelectOneFromRecordServiceMethod())
-            .addMethod(buildSubselectManyMethod(tableRef))
-            .addMethod(buildSubselectOneMethod(tableRef))
+            .addMethod(build$FieldsMethod(tableRef, columnFields))
             .build();
     }
 
     /**
-     * Generates a {@code fields()} method that assembles the SELECT list for one level of the
-     * query from a {@link graphql.schema.DataFetchingFieldSelectionSet}.
+     * Generates a {@code $fields(sel, table, env)} method that assembles the SELECT list for one
+     * level of the query from a {@link graphql.schema.DataFetchingFieldSelectionSet}.
      *
-     * <p>Uses {@code sel.getFieldsGroupedByResultKey()} to iterate the selected fields. Each
-     * entry is matched by {@code SelectedField.getName()} (the schema field name, not the alias)
-     * against the known scalar columns. This correctly handles aliased fields — e.g.
-     * {@code myTitle: title} has result key {@code "myTitle"} but name {@code "title"}.
+     * <p>{@code public static} — called cross-class from the {@code *Fetchers} classes.
+     * The {@code $} prefix is chosen because GraphQL field names match {@code /[_A-Za-z][_0-9A-Za-z]*/}
+     * by spec, so {@code $fields} can never collide with a GraphQL field name.
      *
-     * <p>The entry point is {@code env.getSelectionSet()} (root level). For nested fields,
-     * callers drill down via {@code selectedField.getSelectionSet()} at each level.
+     * <p>{@code table} is the caller-supplied alias — the prerequisite for G5 inline nested fields,
+     * which need the parent alias for correlated join conditions.
      *
-     * <p>When inline nested fields are added (G5), the {@code SelectedField} from each entry
-     * provides {@code getArguments()} for WHERE clauses and {@code getSelectionSet()} for
-     * recursive drill-down.
+     * <p>{@code env} is included now rather than deferred to G5. G5 is the immediate next roadmap
+     * item; omitting it here would require a second signature migration one step later.
      */
-    private static MethodSpec buildFieldsMethod(TableRef tableRef, List<ChildField.ColumnField> columnFields) {
+    private static MethodSpec build$FieldsMethod(TableRef tableRef, List<ChildField.ColumnField> columnFields) {
         var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
@@ -130,11 +99,12 @@ public class TypeClassGenerator {
             ClassName.get(String.class),
             ParameterizedTypeName.get(LIST, SELECTED_FIELD));
 
-        var builder = MethodSpec.methodBuilder("fields")
+        var builder = MethodSpec.methodBuilder("$fields")
             .addModifiers(PUBLIC, STATIC)
             .returns(listOfField)
             .addParameter(SELECTION_SET, "sel")
-            .addCode(GeneratorUtils.declareTableLocal(names, tableRef))
+            .addParameter(names.jooqTableClass(), "table")
+            .addParameter(ENV, "env")
             .addStatement("$T<$T> fields = new $T<>()", ARRAY_LIST, fieldWildcard, ARRAY_LIST);
 
         builder.addCode("for ($T entry : sel.getFieldsGroupedByResultKey().entrySet()) {\n", entryType);
@@ -150,240 +120,5 @@ public class TypeClassGenerator {
 
         builder.addStatement("return fields");
         return builder.build();
-    }
-
-    /**
-     * Generates a {@code fields(sel, extraFields)} overload that appends additional fields
-     * (typically ORDER BY columns for connection/pagination queries) to the selection set.
-     *
-     * <p>This ensures cursor construction has access to the ORDER BY column values even when
-     * the client's GraphQL selection set doesn't include them.
-     */
-    private static MethodSpec buildFieldsWithExtraMethod(TableRef tableRef, List<ChildField.ColumnField> columnFields) {
-        var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
-        var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
-        var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
-
-        return MethodSpec.methodBuilder("fields")
-            .addModifiers(PUBLIC, STATIC)
-            .returns(listOfField)
-            .addParameter(SELECTION_SET, "sel")
-            .addParameter(listOfField, "extraFields")
-            .addStatement("$T<$T> result = new $T<>(fields(sel))", ARRAY_LIST, fieldWildcard, ARRAY_LIST)
-            .addCode("for ($T extra : extraFields) {\n", fieldWildcard)
-            .addCode("    if (!result.contains(extra)) result.add(extra);\n")
-            .addCode("}\n")
-            .addStatement("return result")
-            .build();
-    }
-
-    /**
-     * Generates a {@code selectMany} method that uses {@code fields(sel)} for the SELECT list.
-     */
-    private static MethodSpec buildSelectManyMethod(TableRef tableRef) {
-        var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
-        return MethodSpec.methodBuilder("selectMany")
-            .addModifiers(PUBLIC, STATIC)
-            .returns(ParameterizedTypeName.get(RESULT, RECORD))
-            .addParameter(ENV, "env")
-            .addParameter(CONDITION, "condition")
-            .addParameter(sortFieldList(), "orderBy")
-            .addStatement("$T dsl = (($T) env.getGraphQlContext().get($S)).getDslContext(env)",
-                DSL_CONTEXT, GRAPHITRON_CONTEXT, "graphitronContext")
-            .addCode(GeneratorUtils.declareTableLocal(names, tableRef))
-            .addCode(CodeBlock.builder()
-                .add("return dsl\n")
-                .indent()
-                .add(".select(fields(env.getSelectionSet()))\n")
-                .add(".from(table)\n")
-                .add(".where(condition)\n")
-                .add(".orderBy(orderBy)\n")
-                .add(".fetch();\n")
-                .unindent()
-                .build())
-            .build();
-    }
-
-    /**
-     * Generates a paginated {@code selectMany} overload:
-     * {@code selectMany(env, condition, orderBy, extraFields, seekValues, limit)}.
-     *
-     * <p>Uses jOOQ {@code .seek(seekValues)} for keyset pagination and
-     * {@code .limit(limit)} for page size. {@code extraFields} ensures ORDER BY columns
-     * are in the SELECT list for cursor construction.
-     */
-    private static MethodSpec buildSelectManyPaginatedMethod(TableRef tableRef) {
-        var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
-        var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
-        var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
-        var objectArray = ArrayTypeName.of(Object.class);
-
-        return MethodSpec.methodBuilder("selectMany")
-            .addModifiers(PUBLIC, STATIC)
-            .returns(ParameterizedTypeName.get(RESULT, RECORD))
-            .addParameter(ENV, "env")
-            .addParameter(CONDITION, "condition")
-            .addParameter(sortFieldList(), "orderBy")
-            .addParameter(listOfField, "extraFields")
-            .addParameter(objectArray, "seekValues")
-            .addParameter(int.class, "limit")
-            .addStatement("$T dsl = (($T) env.getGraphQlContext().get($S)).getDslContext(env)",
-                DSL_CONTEXT, GRAPHITRON_CONTEXT, "graphitronContext")
-            .addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName())
-            .addCode(CodeBlock.builder()
-                .add("var query = dsl\n")
-                .indent()
-                .add(".select(fields(env.getSelectionSet(), extraFields))\n")
-                .add(".from(table)\n")
-                .add(".where(condition)\n")
-                .add(".orderBy(orderBy);\n")
-                .unindent()
-                .add("if (seekValues != null && seekValues.length > 0) query = query.seek(seekValues);\n")
-                .add("return query.limit(limit).fetch();\n")
-                .build())
-            .build();
-    }
-
-    /**
-     * Generates a {@code selectOne} method that uses {@code fields(sel)} for the SELECT list.
-     */
-    private static MethodSpec buildSelectOneMethod(TableRef tableRef) {
-        var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
-        return MethodSpec.methodBuilder("selectOne")
-            .addModifiers(PUBLIC, STATIC)
-            .returns(RECORD)
-            .addParameter(ENV, "env")
-            .addParameter(CONDITION, "condition")
-            .addStatement("$T dsl = (($T) env.getGraphQlContext().get($S)).getDslContext(env)",
-                DSL_CONTEXT, GRAPHITRON_CONTEXT, "graphitronContext")
-            .addCode(GeneratorUtils.declareTableLocal(names, tableRef))
-            .addCode(CodeBlock.builder()
-                .add("return dsl\n")
-                .indent()
-                .add(".select(fields(env.getSelectionSet()))\n")
-                .add(".from(table)\n")
-                .add(".where(condition)\n")
-                .add(".fetchOne();\n")
-                .unindent()
-                .build())
-            .build();
-    }
-
-    /** Row-keyed service overload: {@code selectManyByRowKeys(List<? extends Row>, env, sel, List<?>)}. */
-    private static MethodSpec buildSelectManyFromRowServiceMethod() {
-        var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
-        return MethodSpec.methodBuilder("selectManyByRowKeys")
-            .addModifiers(PUBLIC, STATIC)
-            .returns(ParameterizedTypeName.get(LIST, listOfRecord))
-            .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(ROW)), "keys")
-            .addParameter(ENV, "env")
-            .addParameter(SELECTED_FIELD, "sel")
-            .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(Object.class)), "serviceRecords")
-            .addStatement("throw new $T()", UnsupportedOperationException.class)
-            .build();
-    }
-
-    /** Row-keyed service overload: {@code selectOneByRowKeys(List<? extends Row>, env, sel, Object)}. */
-    private static MethodSpec buildSelectOneFromRowServiceMethod() {
-        return MethodSpec.methodBuilder("selectOneByRowKeys")
-            .addModifiers(PUBLIC, STATIC)
-            .returns(ParameterizedTypeName.get(LIST, RECORD))
-            .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(ROW)), "keys")
-            .addParameter(ENV, "env")
-            .addParameter(SELECTED_FIELD, "sel")
-            .addParameter(Object.class, "serviceRecord")
-            .addStatement("throw new $T()", UnsupportedOperationException.class)
-            .build();
-    }
-
-    /**
-     * Record-keyed service overload: {@code selectManyByRecordKeys(List<? extends Record>, env, sel, List<?>)}.
-     * Handles both {@code RecordN<T>}-keyed and {@code TableRecord}-keyed callers (both implement
-     * {@code org.jooq.Record}).
-     */
-    private static MethodSpec buildSelectManyFromRecordServiceMethod() {
-        var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
-        return MethodSpec.methodBuilder("selectManyByRecordKeys")
-            .addModifiers(PUBLIC, STATIC)
-            .returns(ParameterizedTypeName.get(LIST, listOfRecord))
-            .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(RECORD)), "keys")
-            .addParameter(ENV, "env")
-            .addParameter(SELECTED_FIELD, "sel")
-            .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(Object.class)), "serviceRecords")
-            .addStatement("throw new $T()", UnsupportedOperationException.class)
-            .build();
-    }
-
-    /**
-     * Record-keyed service overload: {@code selectOneByRecordKeys(List<? extends Record>, env, sel, Object)}.
-     * Handles both {@code RecordN<T>}-keyed and {@code TableRecord}-keyed callers.
-     */
-    private static MethodSpec buildSelectOneFromRecordServiceMethod() {
-        return MethodSpec.methodBuilder("selectOneByRecordKeys")
-            .addModifiers(PUBLIC, STATIC)
-            .returns(ParameterizedTypeName.get(LIST, RECORD))
-            .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(RECORD)), "keys")
-            .addParameter(ENV, "env")
-            .addParameter(SELECTED_FIELD, "sel")
-            .addParameter(Object.class, "serviceRecord")
-            .addStatement("throw new $T()", UnsupportedOperationException.class)
-            .build();
-    }
-
-    /**
-     * Subselect overload for inline list fields:
-     * {@code subselectMany(env, sel, condition, orderBy)}.
-     *
-     * <p>Returns a jOOQ {@code multiset} expression — a passive field expression that is embedded
-     * into the parent SELECT and executed in the same round-trip. The alias
-     * ({@code sel.getResultKey()}) tells the parent record which key to use when storing the
-     * nested result.
-     *
-     * <p>{@code env} is included for consistency with all table methods (context arguments, tenant
-     * ID); the plain multiset body does not need it.
-     */
-    private static MethodSpec buildSubselectManyMethod(TableRef tableRef) {
-        var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
-        return MethodSpec.methodBuilder("subselectMany")
-            .addModifiers(PUBLIC, STATIC)
-            .returns(ParameterizedTypeName.get(FIELD, ParameterizedTypeName.get(RESULT, RECORD)))
-            .addParameter(ENV, "env")
-            .addParameter(SELECTED_FIELD, "sel")
-            .addParameter(CONDITION, "condition")
-            .addParameter(sortFieldList(), "orderBy")
-            .addCode(GeneratorUtils.declareTableLocal(names, tableRef))
-            .addStatement(
-                "return $T.multiset($T.select(fields(sel.getSelectionSet())).from(table).where(condition).orderBy(orderBy)).as(sel.getResultKey())",
-                DSL, DSL)
-            .build();
-    }
-
-    /**
-     * Subselect overload for inline single fields:
-     * {@code subselectOne(env, sel, condition)}.
-     *
-     * <p>Uses {@code multiset(...).limit(1)} and {@code convertFrom} to peel the first
-     * (only) row out of the nested result, returning {@code Field<Record>} rather than
-     * {@code Field<Result<Record>>}. Returns {@code null} when the multiset is empty
-     * (i.e. the join produced no row — treated as a nullable single).
-     */
-    private static MethodSpec buildSubselectOneMethod(TableRef tableRef) {
-        var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
-        return MethodSpec.methodBuilder("subselectOne")
-            .addModifiers(PUBLIC, STATIC)
-            .returns(ParameterizedTypeName.get(FIELD, RECORD))
-            .addParameter(ENV, "env")
-            .addParameter(SELECTED_FIELD, "sel")
-            .addParameter(CONDITION, "condition")
-            .addCode(GeneratorUtils.declareTableLocal(names, tableRef))
-            .addStatement(
-                "return $T.multiset($T.select(fields(sel.getSelectionSet())).from(table).where(condition).limit(1)).as(sel.getResultKey()).convertFrom(r -> r.isEmpty() ? null : r.get(0))",
-                DSL, DSL)
-            .build();
-    }
-
-    private static ParameterizedTypeName sortFieldList() {
-        return ParameterizedTypeName.get(LIST,
-            ParameterizedTypeName.get(SORT_FIELD, WildcardTypeName.subtypeOf(Object.class)));
     }
 }
