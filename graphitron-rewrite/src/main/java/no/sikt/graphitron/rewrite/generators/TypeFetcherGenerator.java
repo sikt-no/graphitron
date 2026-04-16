@@ -122,7 +122,7 @@ public class TypeFetcherGenerator {
             } else if (field instanceof BatchKeyField bkf) {
                 if (field instanceof MethodBackedField mbf && field instanceof SqlGeneratingField sgf && parentTable != null) {
                     builder.addMethod(buildServiceDataFetcher(field.name(), bkf, mbf.method(), sgf.returnType(), parentTable, className));
-                    builder.addMethod(buildServiceRowsMethod(bkf, mbf.method(), sgf.returnType(), sgf.returnType().table(), parentTable, className));
+                    builder.addMethod(buildServiceRowsMethod(bkf, sgf.returnType()));
                 } else {
                     builder.addMethod(buildSplitQueryDataFetcher(field.name(), bkf.batchKey()));
                     builder.addMethod(buildSplitRowsMethod(bkf));
@@ -197,12 +197,12 @@ public class TypeFetcherGenerator {
             .returns(returnType)
             .addParameter(ENV, "env");
 
-        builder.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         builder.addCode(buildConditionCall(qtf));
 
         if (isList) {
             builder.addCode(buildOrderByCode(qtf.orderBy(), qtf.name()));
+            builder.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
             builder.addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
@@ -214,6 +214,7 @@ public class TypeFetcherGenerator {
                 .unindent()
                 .build());
         } else {
+            builder.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
             builder.addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
@@ -258,17 +259,12 @@ public class TypeFetcherGenerator {
         var connectionResultClass = ClassName.get(
             RewriteConfig.outputPackage() + ".rewrite", ConnectionResultClassGenerator.CLASS_NAME);
         var conn = (FieldWrapper.Connection) qtf.returnType().wrapper();
-        var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
-        var WILDCARD_FIELD = ParameterizedTypeName.get(JOOQ_FIELD,
-            no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
-        var HASH_SET = ClassName.get("java.util", "HashSet");
 
         var builder = MethodSpec.methodBuilder(qtf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(connectionResultClass)
             .addParameter(ENV, "env");
 
-        builder.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
         builder.addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName());
         builder.addCode(buildConditionCall(qtf));
         // Single dispatch produces both orderBy (for SQL) and extraFields (for cursor columns),
@@ -289,11 +285,13 @@ public class TypeFetcherGenerator {
         builder.addStatement("Object[] seekValues = after != null ? $T.decodeCursor(after) : null",
             connectionHelperClass);
 
-        // Build select list: $fields + extra fields not already present (by name)
+        // Build select list from $fields; merge extra ordering columns by name to avoid
+        // dependence on Field.equals() identity (avoids missed deduplication if Field instances differ)
+        builder.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
         builder.addStatement("var fields = new $T<>($T.$$fields(env.getSelectionSet(), table, env))",
             ARRAY_LIST, names.typeClass());
-        builder.addStatement("var selectedNames = new $T<$T>()", HASH_SET, String.class);
-        builder.addCode("for (var f : fields) selectedNames.add(f.getName());\n");
+        builder.addStatement("var selectedNames = fields.stream().map($T::getName).collect($T.toSet())",
+            ClassName.get("org.jooq", "Field"), ClassName.get("java.util.stream", "Collectors"));
         builder.addCode("for (var extra : extraFields) {\n");
         builder.addCode("    if (!selectedNames.contains(extra.getName())) fields.add(extra);\n");
         builder.addCode("}\n");
@@ -669,7 +667,6 @@ public class TypeFetcherGenerator {
             .returns(ParameterizedTypeName.get(RESULT, RECORD))
             .addParameter(ENV, "env");
 
-        builder.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
 
@@ -691,6 +688,7 @@ public class TypeFetcherGenerator {
         }
 
         builder.addCode(buildOrderByCode(field.orderBy()));
+        builder.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
         builder.addCode(CodeBlock.builder()
             .add("return dsl\n")
             .indent()
@@ -777,18 +775,15 @@ public class TypeFetcherGenerator {
     /**
      * Generates a stub rows method for a {@link ChildField.ServiceTableField}.
      *
-     * <p>Throws {@link UnsupportedOperationException} directly — no longer delegates to
-     * batch-key method names on the type class (which no longer exist). The eventual
-     * implemented body will call {@code Type.$fields(sel.getSelectionSet(), table, env)}
-     * for projection, but that work is out of scope here.
+     * <p>Currently a stub — throws {@link UnsupportedOperationException}. The signature
+     * ({@code keys, env, sel}) is correct and matches the DataLoader lambda that calls it.
+     * The body will be filled in when service field execution is implemented; it will call
+     * the service method and then {@code Type.$fields(sel.getSelectionSet(), table, env)}
+     * for projection.
      */
     private static MethodSpec buildServiceRowsMethod(
             BatchKeyField bkf,
-            MethodRef smr,
-            ReturnTypeRef.TableBoundReturnType tb,
-            TableRef rt,
-            TableRef prt,
-            String fetchersClassName) {
+            ReturnTypeRef.TableBoundReturnType tb) {
 
         boolean isList = tb.wrapper().isList();
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
