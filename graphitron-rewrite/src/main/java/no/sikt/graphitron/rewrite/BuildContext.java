@@ -273,8 +273,9 @@ class BuildContext {
     static String candidateHint(String attempt, List<String> candidates) {
         if (candidates.isEmpty()) return "";
         String lc = attempt.toLowerCase();
-        return "; available: " + candidates.stream()
+        return "; did you mean: " + candidates.stream()
             .sorted(Comparator.comparingInt(c -> levenshteinDistance(lc, c.toLowerCase())))
+            .limit(5)
             .collect(Collectors.joining(", "));
     }
 

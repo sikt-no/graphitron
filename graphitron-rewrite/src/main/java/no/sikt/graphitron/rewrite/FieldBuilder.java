@@ -824,7 +824,7 @@ class FieldBuilder {
         }
 
         return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-            "parent type '" + parentTypeName + "' has no supported Graphitron classification");
+            "parent type is unclassified");
     }
 
     // ===== Root field classification (P5) =====
