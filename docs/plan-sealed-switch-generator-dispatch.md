@@ -1,11 +1,10 @@
 # Plan — Sealed-Switch Generator Dispatch
 
-Convert the field-dispatch chains in the rewrite generators from `instanceof`
-chains terminating in `buildStub(field.name())` to sealed `switch` expressions
-with a named `NotImplementedYet` branch per unimplemented variant. Restores
-the exhaustive-switch guarantee the sealed hierarchy is meant to provide —
-adding a new `permits` variant must become a compile error, not a runtime
-`UnsupportedOperationException`.
+Convert the field-dispatch chain in `TypeFetcherGenerator.generateTypeSpec`
+from an `instanceof` chain terminating in `buildStub(field.name())` into a
+sealed `switch` statement. Restore the exhaustive-switch guarantee the sealed
+hierarchy is meant to provide — adding a new `permits` variant must become a
+compile error, not a runtime `UnsupportedOperationException`.
 
 Tracked as P1 #1 in
 [rewrite-roadmap.md](rewrite-roadmap.md#architecture-review-priorities-2026-04-17).
@@ -17,108 +16,185 @@ Tracked as P1 #1 in
 **In scope:** `TypeFetcherGenerator.generateTypeSpec`
 ([`TypeFetcherGenerator.java:111-132`](../graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)).
 This is the only generator where the dispatch emits a runtime stub —
-`buildQueryLookupFetcher`, `buildQueryTableFetcher`, `buildQueryConnectionFetcher`,
-and `buildServiceDataFetcher` are the implemented branches; everything else
-falls through to `buildStub`.
+`buildQueryLookupFetcher`, `buildQueryTableFetcher`,
+`buildQueryConnectionFetcher`, and `buildServiceDataFetcher` are the
+implemented branches; everything else falls through to `buildStub`.
 
-**Out of scope for this plan:** `GraphitronWiringClassGenerator`,
-`TypeClassGenerator`, `TypeConditionsGenerator`. Their `instanceof` checks
-are filters ("emit an entry for this variant? yes/no"), not stub-emitters;
-their exhaustiveness matters less and the refactor would be mostly noise.
-Convert them only if the meta-test from P1 #2 flags uncovered variants.
+**Out of scope:** `GraphitronWiringClassGenerator`, `TypeClassGenerator`,
+`TypeConditionsGenerator`. Their `instanceof` checks are filters ("emit an
+entry for this variant? yes/no"), not stub-emitters; exhaustiveness matters
+less and the refactor would be mostly noise. Convert them only if the meta-
+test from P1 #2 flags uncovered variants.
+
+---
+
+## Counting the leaves
+
+The review of this plan's first draft surfaced that "~6 unimplemented
+variants" was a large undercount. The real sealed taxonomy:
+
+| Sealed root | Direct permits | Leaf count |
+|---|---|---|
+| `QueryField` | 10 (all leaves) | 10 |
+| `MutationField` | 6 (all leaves) | 6 |
+| `ChildField` | 15 (incl. `TableTargetField` nested sealed) | 15 direct + 8 via `TableTargetField` = 23 |
+
+Of those 39 total leaves, `TypeFetcherGenerator` currently handles
+`QueryLookupTableField`, `QueryTableField` (with and without
+`FieldWrapper.Connection`), `ColumnField` (when `parentTable != null`), and
+`ServiceTableField` + `SplitTableField` via the `BatchKeyField` branch.
+Everything else — roughly **30+ leaves** — currently falls through to
+`buildStub`.
+
+This count drives the D2 design choice below.
 
 ---
 
 ## Design decisions
 
-### D1: Capability-interface dispatch stays as nested checks
+### D1: Capability-interface dispatch stays inside sealed arms
 
 The dispatch mixes sealed variants (`QueryField.QueryTableField`) with
 capability interfaces (`BatchKeyField`, `MethodBackedField`,
 `SqlGeneratingField`). A sealed `switch` on `ChildField` / `RootField` can't
-directly match a capability interface.
+match capability interfaces directly.
 
-**Decision:** keep the outer switch on the sealed hierarchy; resolve capability
-within each sealed arm. For example:
+**Decision:** keep the outer switch on the sealed hierarchy; use narrow
+component access within each arm. The model already declares narrow
+components (roadmap principle *"Narrow component types over broad
+interfaces"*) — a `ServiceTableField` statically *is* a `MethodBackedField +
+BatchKeyField + SqlGeneratingField`, so each arm calls `.method()`,
+`.batchKey()`, etc. directly rather than checking `instanceof`.
 
 ```java
 case ChildField.ServiceTableField stf -> {
-    // stf already implements BatchKeyField + MethodBackedField + SqlGeneratingField
-    // by its class declaration — no runtime check needed, narrow component types
-    // per the "Narrow component types over broad interfaces" principle.
-    builder.addMethod(buildServiceDataFetcher(stf.name(), stf.batchKey(), stf.method(), stf.returnType(), parentTable, className));
+    builder.addMethod(buildServiceDataFetcher(
+        stf.name(), stf.batchKey(), stf.method(), stf.returnType(),
+        parentTable, className));
     builder.addMethod(buildServiceRowsMethod(stf.batchKey(), stf.returnType()));
 }
 ```
 
-Variants that genuinely need capability dispatch (e.g. split vs service
-variants of the same shape) get a small helper method dispatching on
-`BatchKey` (itself sealed), not on `instanceof`. The model already carries
-narrow component types (roadmap principle "Narrow component types over
-broad interfaces"), so most capability checks collapse to direct field
-access.
+Where genuine capability dispatch is unavoidable (e.g. two variants share a
+body shape parameterised by `BatchKey`), dispatch on `BatchKey` (itself
+sealed), not on `instanceof`.
 
 **Rejected alternative:** adding a `generationCategory()` component to every
-field variant. This shifts classification into the model for no net gain —
-the category is already implicit in the sealed class.
+field variant. Redundant — the category is already implicit in the sealed
+class.
 
-### D2: `NotImplementedYet` as explicit named branches
+### D2: Stub reasons live in a single `Map<Class<?>, String>`
 
-Two plausible shapes:
-- **(a)** One `buildXxxStub(field)` method per unimplemented variant.
-- **(b)** A sentinel record returned by the dispatch, handled in one place.
+At 30+ stubbed variants, an explicit named stub method per variant (the
+first-draft shape) would add ~120 lines of one-line method declarations.
+The grep-ability argument thins out at that scale: grepping a `Map` entry
+is no worse than grepping a method name, and the map is the natural data
+structure for the validator to consume under P2 #4.
 
-**Decision: (a), explicit named branches.** Each unimplemented variant gets
-its own case arm and its own stub builder method, so the set of gaps is
-grep-able and each gap has a Javadoc pointing at the tracking issue.
-Boilerplate is ~4 lines per variant (case arm + method signature delegating
-to a shared `buildStub(fieldName, message)` helper). With ~6 unimplemented
-variants, that is ~24 lines — the readability tradeoff comes out in (a)'s
-favour.
-
-The shared helper carries a message parameter so stubs fail with an
-actionable message:
+**Decision:** a single `NOT_IMPLEMENTED_REASONS` map replaces the per-variant
+stub methods. Each sealed family has one `NotImplementedYet` arm per
+stubbed leaf; the arm calls a shared `stub(field)` helper that looks up
+the reason:
 
 ```java
-private static MethodSpec buildStub(String fieldName, String reason) {
-    return MethodSpec.methodBuilder(fieldName)
+private static final Map<Class<? extends GraphitronField>, String>
+    NOT_IMPLEMENTED_REASONS = Map.ofEntries(
+    Map.entry(MutationField.MutationInsertTableField.class,
+        "Mutation generator not yet implemented — 'Stubs to complete' #4"),
+    Map.entry(MutationField.MutationUpdateTableField.class,
+        "Mutation generator not yet implemented — 'Stubs to complete' #4"),
+    // … one entry per stubbed leaf, grouped by comment blocks matching the
+    // 'Stubs to complete' categories (G5 inline TableField, G6 split/lookup,
+    // query-interface fetchers, mutation DML, misc leaves)
+    Map.entry(ChildField.SplitLookupTableField.class,
+        "Split/lookup rows method — 'Stubs to complete' #2 (G6)")
+);
+
+private static MethodSpec stub(GraphitronField field) {
+    String reason = Objects.requireNonNull(
+        NOT_IMPLEMENTED_REASONS.get(field.getClass()),
+        () -> "No stub reason registered for " + field.getClass().getSimpleName()
+              + " — either implement a real generator branch or add an entry to NOT_IMPLEMENTED_REASONS");
+    return MethodSpec.methodBuilder(field.name())
         .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
         .returns(Object.class)
         .addParameter(ENV, "env")
         .addStatement("throw new $T($S)", UnsupportedOperationException.class, reason)
         .build();
 }
-
-private static MethodSpec buildMutationInsertStub(MutationField.MutationInsertTableField f) {
-    return buildStub(f.name(),
-        "Mutation generator not yet implemented — tracked as 'Stubs to complete' #4 in rewrite-roadmap.md");
-}
 ```
 
-**Rejected alternative (b):** a sentinel enum. Less boilerplate, but loses
-the Javadoc-per-gap hook and makes P2 #4 (validator coupling) harder: the
-validator would need runtime introspection to know which variants stub,
-rather than a static list.
-
-### D3: Validator coupling (P2 #4) consumes a static set
-
-`TypeFetcherGenerator` exposes a `Set<Class<? extends GraphitronField>>
-UNIMPLEMENTED_VARIANTS` constant — the same set the stub arms reference.
-`GraphitronSchemaValidator` adds one arm:
+Each arm for a stubbed leaf is a single line:
 
 ```java
-if (UNIMPLEMENTED_VARIANTS.contains(field.getClass())) {
+case MutationField.MutationInsertTableField f -> builder.addMethod(stub(f));
+```
+
+Total cost: ~30 one-line case arms + ~30 map entries = ~60 lines, down
+from ~120.
+
+**Rejected alternative (a):** one `buildXxxStub` method per variant. Too
+much boilerplate at this leaf count.
+
+**Rejected alternative (b):** a sentinel return type handled in one place.
+The validator (P2 #4) would still need the set of stubbed classes; a
+separate constant for that alongside a sentinel is worse than the map,
+which is the set.
+
+### D3: Validator coupling (P2 #4) consumes `NOT_IMPLEMENTED_REASONS.keySet()`
+
+`NOT_IMPLEMENTED_REASONS.keySet()` is the set of field classes whose
+generator throws at request time. `GraphitronSchemaValidator` adds one arm:
+
+```java
+if (TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.containsKey(field.getClass())) {
     errors.add(new ValidationError(
-        field.qualifiedName() + ": field variant "
-            + field.getClass().getSimpleName()
-            + " is not yet supported by the generator (see rewrite-roadmap.md)",
+        field.qualifiedName() + ": "
+            + TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.get(field.getClass()),
         field.location()));
 }
 ```
 
 This is not part of this plan's commit — it happens under P2 #4. But the
-`UNIMPLEMENTED_VARIANTS` constant is defined in this plan so P2 #4 is a
-one-line validator change.
+map shape is designed so that addition is a single lookup.
+
+### D4: `ColumnField` with null `parentTable` is an error, not a silent stub
+
+The current loop short-circuits `ColumnField` only when `parentTable != null`
+(line 112–113). `ColumnField` with null `parentTable` falls through to
+`buildStub` — a silent runtime failure. A sealed switch must confront this
+case directly.
+
+**Decision:** it is unreachable in a classified schema. `ColumnField`
+represents a column projection on its parent; the parent must be
+table-backed for the column to resolve. The classifier guarantees this
+pairing today, but enforces it only implicitly via the table-resolution
+path.
+
+The sealed-switch refactor is the natural moment to make the invariant
+explicit. Two parts:
+
+1. **Assertion in the switch arm:**
+   ```java
+   case ChildField.ColumnField cf -> {
+       if (parentTable == null) {
+           throw new IllegalStateException(
+               "ColumnField '" + cf.qualifiedName()
+               + "' classified on a non-table-backed parent — "
+               + "classifier invariant violated");
+       }
+       // ColumnField with a table-backed parent is handled in wiring via ColumnFetcher;
+       // no method emitted here.
+   }
+   ```
+2. **Validator check (rides along):** `GraphitronSchemaValidator` adds a
+   structural rule rejecting any `ColumnField` whose parent type is not
+   `TableBackedType`, so the error surfaces at validation time rather than
+   as an `IllegalStateException` at generation time. One short arm in the
+   existing field-type switch.
+
+This closes the silent-failure path without introducing it as a new
+"NotImplementedYet" entry.
 
 ---
 
@@ -126,14 +202,16 @@ one-line validator change.
 
 | Step | What |
 |---|---|
-| 1 | Extract shared `buildStub(String, String)` helper; delete the current single-argument form |
-| 2 | Add `UNIMPLEMENTED_VARIANTS` constant listing `Class<? extends GraphitronField>` for each currently-stubbed variant |
-| 3 | Replace `generateTypeSpec`'s `instanceof` chain with a sealed `switch` on `GraphitronField`. Fan out to the sealed children (`RootField`, `ChildField`) via nested switches where required. Use `yield`-based switch expressions to compose the `List<MethodSpec>` result |
-| 4 | Add one named `buildXxxStub` method per unimplemented variant. Each delegates to `buildStub(name, "...")` with a variant-specific reason string |
-| 5 | Prove exhaustiveness: remove every `default ->` arm. Compiler must accept the switch without one |
-| 6 | Update `UNIMPLEMENTED_VARIANTS` Javadoc to call out that adding a new permit without adding a case is a compile error, and adding a case that delegates to `buildStub` must also add the class to `UNIMPLEMENTED_VARIANTS` |
+| 1 | Add `NOT_IMPLEMENTED_REASONS: Map<Class<? extends GraphitronField>, String>` constant with an entry per currently-stubbed sealed leaf. Group entries by `Stubs to complete` category using block comments, so the map reads as a roadmap |
+| 2 | Add the private `stub(GraphitronField)` helper. Delete the existing single-argument `buildStub(String)` method (no remaining callers after steps 3–4) |
+| 3 | Replace the `instanceof` chain in `generateTypeSpec` with a sealed `switch` **statement** (not expression — variants emit 0/1/2 methods, direct `builder.addMethod(...)` calls are cleaner than composing `List<MethodSpec>` via `yield`). Fan out to the sealed children (`RootField` → `QueryField`/`MutationField`; `ChildField` → direct permits and nested `TableTargetField`) via nested switches |
+| 4 | Each stubbed leaf gets a one-liner: `case X x -> builder.addMethod(stub(x));`. Each implemented leaf gets the existing method calls, lifted from the `instanceof` chain. `ColumnField` arm follows D4 (assertion + no-op for the happy path) |
+| 5 | Confirm exhaustiveness: no `default ->` arms anywhere in the nested switches. Compiler must accept without them |
+| 6 | Add the structural validator rule from D4 (reject `ColumnField` on a non-table-backed parent) to `GraphitronSchemaValidator` |
+| 7 | Update `NOT_IMPLEMENTED_REASONS` Javadoc to state the invariants: adding a new sealed permit triggers a compile error in the switch; adding a case that calls `stub(f)` must add the class to `NOT_IMPLEMENTED_REASONS`; removing the last `stub(f)` reference for a class must remove the map entry |
 
-Steps 1–6 stay in `TypeFetcherGenerator.java`. No cross-module changes.
+Steps 1–5 and 7 stay in `TypeFetcherGenerator.java`. Step 6 touches
+`GraphitronSchemaValidator.java` only.
 
 ---
 
@@ -142,61 +220,91 @@ Steps 1–6 stay in `TypeFetcherGenerator.java`. No cross-module changes.
 ### Regression
 
 All 416 existing `graphitron-rewrite` tests must pass unchanged. The
-refactor is behaviour-preserving — same methods emitted, same stubs for
-the same variants.
+refactor is behaviour-preserving — same methods emitted, same stubs emit
+an `UnsupportedOperationException` (now with an actionable message).
 
-### Meta-test (rides along — satisfies P1 #2)
+### Map-integrity sanity test (rides along)
 
-New `GeneratorCoverageTest` under `graphitron-rewrite/src/test/`:
+Not the full P1 #2 meta-test — that one iterates every sealed root in
+`model/` and asserts classification-test coverage, which is a broader
+concern. This plan ships a narrower sanity test that guards the map
+against rot:
 
 ```java
 @Test
-void everyChildFieldPermitIsHandledByTypeFetcherGenerator() {
-    var permits = Stream.concat(
-        Arrays.stream(ChildField.class.getPermittedSubclasses()),
-        Arrays.stream(RootField.class.getPermittedSubclasses())
-    ).collect(toSet());
+void notImplementedReasonsContainsOnlyConcreteSealedLeaves() {
+    var roots = List.of(
+        GraphitronField.class, RootField.class, QueryField.class,
+        MutationField.class, ChildField.class, InputField.class);
+    var leaves = roots.stream()
+        .flatMap(r -> sealedLeaves(r).stream())
+        .collect(toSet());
 
-    var handled = Stream.concat(
-        TypeFetcherGenerator.IMPLEMENTED_VARIANTS.stream(),
-        TypeFetcherGenerator.UNIMPLEMENTED_VARIANTS.stream()
-    ).collect(toSet());
+    assertThat(TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.keySet())
+        .as("every map key must be a concrete sealed leaf — no interfaces, no "
+            + "classes outside the GraphitronField hierarchy")
+        .isSubsetOf(leaves);
+}
 
-    assertThat(permits).isSubsetOf(handled);
+/** Recursive leaf walker — `getPermittedSubclasses()` is shallow; it returns
+ *  `TableTargetField.class` (a nested sealed interface) rather than its eight
+ *  concrete implementations. */
+private static Set<Class<?>> sealedLeaves(Class<?> type) {
+    var direct = type.getPermittedSubclasses();
+    if (direct == null || direct.length == 0) return Set.of(type);
+    return Arrays.stream(direct)
+        .flatMap(p -> sealedLeaves(p).stream())
+        .collect(toSet());
 }
 ```
 
-Adding a new `permits` variant without updating the generator becomes a
-compile error (the switch) OR a test failure (the meta-test) — belt and
-braces. The meta-test also serves P1 #2 for this generator; analogous
-tests for the other three generators can be added incrementally as they
-gain equivalent coverage sets.
+What this catches:
+- A class in `NOT_IMPLEMENTED_REASONS` that is not a sealed leaf (typo,
+  interface, or stale entry after a variant was removed).
+- Nothing else — it does **not** assert that every leaf is either handled
+  or in the map. The sealed `switch` already guarantees that via
+  compilation; a runtime test adds no signal.
+
+The broader "every sealed leaf has ≥1 classification test case" meta-test
+belongs to P1 #2 proper and is not scoped here.
+
+### Compile check
+
+`mvn -pl graphitron-rewrite compile` must succeed without any
+`default ->` arms in the refactored switches. This is the load-bearing
+guarantee: remove an arm and compilation fails.
 
 ---
 
 ## Interaction with existing plans
 
-- **P1 #2 (variant-coverage meta-test)** — this plan ships the first instance
-  of the meta-test as `GeneratorCoverageTest`. P1 #2 generalises it to every
-  sealed root and every generator.
-- **P2 #4 (validator ≠ can generate)** — consumes `UNIMPLEMENTED_VARIANTS`.
-  Single-line validator addition.
+- **P1 #2 (variant-coverage meta-test)** — the sanity test shipped here is
+  a narrow slice. P1 #2 proper covers "every leaf has a classification
+  test case across every sealed root" and should reuse the `sealedLeaves`
+  helper from this plan.
+- **P2 #4 (validator ≠ can generate)** — consumes
+  `NOT_IMPLEMENTED_REASONS`. Single-arm validator addition, already
+  drafted in D3.
 - **Stubs to complete (#1–#4 in Remaining Work)** — each newly-implemented
-  variant deletes one entry from `UNIMPLEMENTED_VARIANTS` and replaces one
-  stub arm with a real implementation. The sealed switch guarantees they
-  can't forget to remove the stub.
+  variant (i) replaces its `case X x -> builder.addMethod(stub(x));` arm
+  with a real implementation and (ii) removes its `NOT_IMPLEMENTED_REASONS`
+  entry. The map-integrity test fails loudly if step (ii) is forgotten.
 
 ---
 
 ## Risk and reversibility
 
-**Low risk.** Pure refactor of one method's dispatch. No emitted-code
-changes. Existing tests assert structural properties (method names,
-return types) and are agnostic to dispatch shape.
+**Low risk.** Behaviour-preserving refactor of one method's dispatch plus
+two new structural validator arms. Existing tests assert structural
+properties (method names, return types) and are agnostic to dispatch
+shape. Stub error messages change from the default
+`UnsupportedOperationException` to a variant-specific message — strictly
+an improvement.
 
-**Fully reversible.** Revert the commit; `buildStub` goes back to
-single-argument and the `instanceof` chain returns. No consumer-visible
-change.
+**Fully reversible.** Revert the commit: `buildStub` returns to its
+single-argument shape and the `instanceof` chain comes back. No
+consumer-visible change.
 
-**Effort:** half a day to implement, including the meta-test. Review: this
-plan.
+**Effort:** ~1 day — enumerating the 30+ sealed leaves and writing their
+map entries and switch arms is the bulk of the work. The sanity test and
+validator additions are short.
