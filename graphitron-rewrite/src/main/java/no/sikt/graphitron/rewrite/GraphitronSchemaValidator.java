@@ -90,6 +90,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField f    -> validateColumnReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.NodeIdField f             -> validateNodeIdField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField f    -> validateNodeIdReferenceField(f, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.PlatformIdField f         -> validateChildPlatformIdField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableField f              -> validateTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.SplitTableField f        -> validateSplitTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.LookupTableField f       -> validateLookupTableField(f, types, errors);
@@ -253,6 +254,9 @@ public class GraphitronSchemaValidator {
     private void validateNodeIdField(no.sikt.graphitron.rewrite.model.ChildField.NodeIdField field, List<ValidationError> errors) {
         // NodeIdField is only classified when the parent type is a NodeType.
         // The absence-of-@node case is classified as UnclassifiedField in the builder.
+    }
+    private void validateChildPlatformIdField(no.sikt.graphitron.rewrite.model.ChildField.PlatformIdField field, List<ValidationError> errors) {
+        // Detection confirmed the table-class method exists; no further structural checks needed.
     }
     private void validateNodeIdReferenceField(no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField field, List<ValidationError> errors) {
         // @node is always resolved — builder returns UnclassifiedField if the type is missing or lacks @node

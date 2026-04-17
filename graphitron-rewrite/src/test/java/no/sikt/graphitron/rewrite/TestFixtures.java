@@ -101,4 +101,8 @@ public final class TestFixtures {
         return new ChildField.ColumnField(parentType, name, null, columnName,
             new ColumnRef(columnName, javaName, columnClass), false);
     }
+
+    public static ChildField.PlatformIdField platformIdField(String parentType, String name, String getterName) {
+        return new ChildField.PlatformIdField(parentType, name, null, getterName);
+    }
 }

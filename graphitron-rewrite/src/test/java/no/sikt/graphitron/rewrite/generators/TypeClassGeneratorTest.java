@@ -41,7 +41,8 @@ class TypeClassGeneratorTest {
     private static TypeSpec spec() {
         return TypeClassGenerator.buildTypeSpec("Film",
             filmTable(List.of(col("id", "ID", "java.lang.Integer"))),
-            FILM_COLUMNS);
+            FILM_COLUMNS,
+            List.of());
     }
 
     private static MethodSpec method(String methodName) {
@@ -62,6 +63,34 @@ class TypeClassGeneratorTest {
     void generate_allMethodsArePresent() {
         assertThat(spec().methodSpecs()).extracting(MethodSpec::name)
             .containsExactly("$fields");
+    }
+
+    // ===== Platform-id fields =====
+
+    @Test
+    void $fields_containsPlatformIdMethodCall() {
+        var spec = TypeClassGenerator.buildTypeSpec("Film",
+            filmTable(),
+            List.of(),
+            List.of(platformIdField("Film", "id", "getId")));
+        var code = spec.methodSpecs().stream()
+            .filter(m -> m.name().equals("$fields")).findFirst().orElseThrow()
+            .code().toString();
+        assertThat(code).contains("case \"id\"");
+        assertThat(code).contains("table.getId()");
+    }
+
+    @Test
+    void $fields_platformIdUsesMethodCallNotFieldAccess() {
+        var spec = TypeClassGenerator.buildTypeSpec("Film",
+            filmTable(),
+            List.of(),
+            List.of(platformIdField("Film", "personId", "getPersonId")));
+        var code = spec.methodSpecs().stream()
+            .filter(m -> m.name().equals("$fields")).findFirst().orElseThrow()
+            .code().toString();
+        assertThat(code).contains("table.getPersonId()");
+        assertThat(code).doesNotContain("table.PERSONID");
     }
 
     // ===== Signatures =====

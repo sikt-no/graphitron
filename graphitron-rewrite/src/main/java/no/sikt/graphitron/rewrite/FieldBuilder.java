@@ -26,6 +26,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
 import no.sikt.graphitron.rewrite.model.ChildField.NodeIdField;
 import no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField;
+import no.sikt.graphitron.rewrite.model.ChildField.PlatformIdField;
 import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField;
@@ -1290,6 +1291,16 @@ class FieldBuilder {
         if (column.isEmpty()) {
             String tableSqlName = tableType.table().tableName();
             var platformIdMethods = ctx.catalog.platformIdOutputMethodNames(tableSqlName);
+            // Fallback: check for legacy platform-key output accessor on the jOOQ table class.
+            // Conditions: scalar ID type, not a list. @nodeId is already handled above.
+            boolean isList = GraphQLTypeUtil.unwrapNonNull(fieldDef.getType()) instanceof GraphQLList;
+            String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(fieldDef.getType())).getName();
+            if ("ID".equals(typeName) && !isList) {
+                String getterName = "get" + JooqCatalog.sqlToAccessorSuffix(columnName);
+                if (platformIdMethods.contains(getterName)) {
+                    return new PlatformIdField(parentTypeName, name, location, getterName);
+                }
+            }
             String platformHint = platformIdMethods.isEmpty() ? ""
                 : candidateHint(columnName, platformIdMethods, "; platform-id methods on table class: ");
             return new UnclassifiedField(parentTypeName, name, location, fieldDef,

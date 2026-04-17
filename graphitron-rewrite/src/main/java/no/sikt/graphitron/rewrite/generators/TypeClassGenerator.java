@@ -61,18 +61,26 @@ public class TypeClassGenerator {
             .map(f -> (ChildField.ColumnField) f)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
-        return buildTypeSpec(typeName, type.table(), columnFields);
+        var platformIdFields = schema.fieldsOf(typeName).stream()
+            .filter(f -> f instanceof ChildField.PlatformIdField)
+            .map(f -> (ChildField.PlatformIdField) f)
+            .sorted(Comparator.comparing(GraphitronField::name))
+            .toList();
+        return buildTypeSpec(typeName, type.table(), columnFields, platformIdFields);
     }
 
     /**
-     * @param typeName      the GraphQL type name (used as the class name)
-     * @param tableRef      the resolved table reference with jOOQ field/class names
-     * @param columnFields  the scalar column fields to include in {@code $fields()}, in declaration order
+     * @param typeName        the GraphQL type name (used as the class name)
+     * @param tableRef        the resolved table reference with jOOQ field/class names
+     * @param columnFields    the scalar column fields to include in {@code $fields()}, in declaration order
+     * @param platformIdFields the legacy platform-id fields whose getters return {@code SelectField<String>}
      */
-    static TypeSpec buildTypeSpec(String typeName, TableRef tableRef, List<ChildField.ColumnField> columnFields) {
+    static TypeSpec buildTypeSpec(String typeName, TableRef tableRef,
+            List<ChildField.ColumnField> columnFields,
+            List<ChildField.PlatformIdField> platformIdFields) {
         return TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
-            .addMethod(build$FieldsMethod(tableRef, columnFields))
+            .addMethod(build$FieldsMethod(tableRef, columnFields, platformIdFields))
             .build();
     }
 
@@ -90,7 +98,9 @@ public class TypeClassGenerator {
      * <p>{@code env} is included now rather than deferred to G5. G5 is the immediate next roadmap
      * item; omitting it here would require a second signature migration one step later.
      */
-    private static MethodSpec build$FieldsMethod(TableRef tableRef, List<ChildField.ColumnField> columnFields) {
+    private static MethodSpec build$FieldsMethod(TableRef tableRef,
+            List<ChildField.ColumnField> columnFields,
+            List<ChildField.PlatformIdField> platformIdFields) {
         var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
@@ -113,6 +123,10 @@ public class TypeClassGenerator {
         for (var cf : columnFields) {
             builder.addCode("        case $S -> fields.add(table.$L);\n",
                 cf.name(), cf.column().javaName());
+        }
+        for (var pf : platformIdFields) {
+            builder.addCode("        case $S -> fields.add(table.$L());\n",
+                pf.name(), pf.getterName());
         }
         builder.addCode("        default -> { } // nested/unhandled fields\n");
         builder.addCode("    }\n");
