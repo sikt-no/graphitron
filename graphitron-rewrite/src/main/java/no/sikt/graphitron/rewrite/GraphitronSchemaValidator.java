@@ -86,7 +86,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.MutationField.MutationUpsertTableField f     -> validateMutationUpsertTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField f    -> validateMutationServiceTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField f   -> validateMutationServiceRecordField(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.ColumnField f             -> validateColumnField(f, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.ColumnField f             -> validateColumnField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField f    -> validateColumnReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.NodeIdField f             -> validateNodeIdField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField f    -> validateNodeIdReferenceField(f, errors);
@@ -227,7 +227,13 @@ public class GraphitronSchemaValidator {
         // Unresolved service method is caught by the builder (UnclassifiedField).
     }
     private void validateMutationServiceRecordField(no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField field, List<ValidationError> errors) {}
-    private void validateColumnField(no.sikt.graphitron.rewrite.model.ChildField.ColumnField field, List<ValidationError> errors) {
+    private void validateColumnField(no.sikt.graphitron.rewrite.model.ChildField.ColumnField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        if (!(types.get(field.parentTypeName()) instanceof GraphitronType.TableBackedType)) {
+            errors.add(new ValidationError(
+                "Field '" + field.qualifiedName() + "': @column is not valid on a non-table-backed type",
+                field.location()
+            ));
+        }
         if (field.javaNamePresent()) {
             errors.add(new ValidationError(
                 "Field '" + field.qualifiedName() + "': @field(javaName:) is not supported in record-based output",

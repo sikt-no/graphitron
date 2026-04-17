@@ -30,6 +30,7 @@ import java.util.Set;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.rewrite.TestFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Unit tests for {@link TypeFetcherGenerator}. Tests verify structural properties of the
@@ -83,30 +84,15 @@ class TypeFetcherGeneratorTest {
         assertThat(spec.methodSpecs()).extracting(MethodSpec::name).contains("wiring");
     }
 
-    // ===== Stub methods (column field without parentTable falls to stub) =====
+    // ===== ColumnField with null parentTable → classifier invariant violated (D4) =====
 
     @Test
-    void stub_hasEnvParameter() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Film", null,
-            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
-        assertThat(method(spec, "title").parameters())
-            .extracting(p -> p.type().toString())
-            .containsExactly("graphql.schema.DataFetchingEnvironment");
-    }
-
-    @Test
-    void stub_returnsObject() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Film", null,
-            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
-        assertThat(method(spec, "title").returnType().toString())
-            .isEqualTo("java.lang.Object");
-    }
-
-    @Test
-    void stub_bodyThrowsUnsupportedOperationException() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Film", null,
-            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
-        assertThat(method(spec, "title").code().toString()).contains("UnsupportedOperationException");
+    void columnField_nullParentTable_throwsIllegalState() {
+        assertThatThrownBy(() ->
+            TypeFetcherGenerator.generateTypeSpec("Film", null,
+                List.of(columnField("title", "title", "TITLE", "java.lang.String"))))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("classifier invariant violated");
     }
 
     // ===== ColumnField with parentTable → wired via ColumnFetcher, no per-field method =====
