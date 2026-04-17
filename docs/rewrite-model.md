@@ -10,7 +10,6 @@ Colour legend:
 | 🟩 Green | `GraphitronType` variants |
 | 🟣 Purple | Support / composition types |
 | ⚫ Dark grey | Value / leaf types — stable, rarely changed |
-| 🟠 Orange dashed border | Model gap — not yet modelled |
 
 ---
 
@@ -63,38 +62,38 @@ graph LR
     classDef ttf   fill:#0E6655,stroke:#0A5344,color:#fff,font-weight:bold
 
     QF["QueryField\n«sealed»"]:::rootf
-    QF --> QTF["QueryTableField\n+ condition"]:::rootf
-    QF --> QLF["QueryLookupTableField\n+ condition"]:::rootf
-    QF --> QTI["QueryTableInterfaceField\n+ condition"]:::rootf
-    QF --> QTMF["QueryTableMethodField"]:::rootf
+    QF --> QTF["QueryTableField"]:::rootf
+    QF --> QLF["QueryLookupTableField"]:::rootf
+    QF --> QTI["QueryTableInterfaceField"]:::rootf
+    QF --> QTMF["QueryTableMethodTableField\n+ method"]:::rootf
     QF --> QNF["QueryNodeField"]:::rootf
     QF --> QEF["QueryEntityField"]:::rootf
     QF --> QIF["QueryInterfaceField"]:::rootf
     QF --> QUF["QueryUnionField"]:::rootf
-    QF --> QSTF["QueryServiceTableField"]:::rootf
-    QF --> QSRF["QueryServiceRecordField"]:::rootf
+    QF --> QSTF["QueryServiceTableField\n+ method"]:::rootf
+    QF --> QSRF["QueryServiceRecordField\n+ method"]:::rootf
 
     MF["MutationField\n«sealed»"]:::rootf
     MF --> MIF["MutationInsertTableField"]:::rootf
     MF --> MUF["MutationUpdateTableField"]:::rootf
     MF --> MDF["MutationDeleteTableField"]:::rootf
     MF --> MUpF["MutationUpsertTableField"]:::rootf
-    MF --> MSTF["MutationServiceTableField"]:::rootf
-    MF --> MSRF["MutationServiceRecordField"]:::rootf
+    MF --> MSTF["MutationServiceTableField\n+ method"]:::rootf
+    MF --> MSRF["MutationServiceRecordField\n+ method"]:::rootf
 
     TTF["TableTargetField\n«sealed»"]:::ttf
-    TTF --> TF["TableField\n+ arguments"]:::ttf
-    TTF --> STF["SplitTableField\n+ arguments"]:::ttf
-    TTF --> LF["LookupTableField\n+ arguments"]:::ttf
-    TTF --> SLF["SplitLookupTableField\n+ arguments"]:::ttf
+    TTF --> TF["TableField"]:::ttf
+    TTF --> STF["SplitTableField\n+ batchKey"]:::ttf
+    TTF --> LF["LookupTableField"]:::ttf
+    TTF --> SLF["SplitLookupTableField\n+ batchKey"]:::ttf
     TTF --> TIF["TableInterfaceField"]:::ttf
-    TTF --> SVCTF["ServiceTableField\n+ arguments · method"]:::ttf
-    TTF --> RTF["RecordTableField\n+ arguments"]:::ttf
-    TTF --> RLF["RecordLookupTableField\n+ arguments"]:::ttf
+    TTF --> SVCTF["ServiceTableField\n+ method · batchKey"]:::ttf
+    TTF --> RTF["RecordTableField"]:::ttf
+    TTF --> RLF["RecordLookupTableField"]:::ttf
 ```
 
-All `TableTargetField` variants carry `returnType · joinPath · condition`.
-`QueryTableField`, `QueryLookupTableField`, and `QueryTableInterfaceField` carry `returnType · condition · arguments` (no `joinPath` — no parent table to navigate from).
+All `TableTargetField` variants carry `returnType · joinPath · filters · orderBy · pagination`.
+`QueryTableField`, `QueryLookupTableField`, and `QueryTableInterfaceField` carry `returnType · filters · orderBy · pagination` (no `joinPath` — no parent table to navigate from).
 
 ---
 
@@ -141,7 +140,6 @@ graph LR
 graph LR
     classDef sup fill:#6C3483,stroke:#5B2C6F,color:#fff
     classDef val fill:#4A5568,stroke:#2C3E50,color:#fff
-    classDef gap stroke:#D35400,stroke-dasharray:5 3
 
     RTR["ReturnTypeRef\n«sealed»"]:::sup
     RTR --> TBRT["TableBoundReturnType"]:::sup
@@ -149,15 +147,16 @@ graph LR
     RTR --> ResRTR["ResultReturnType"]:::sup
     RTR --> ScRTR["ScalarReturnType"]:::sup
 
-    AR["ArgumentRef\n«sealed»"]:::sup
-    AR --> MPA["MethodParamArg\n«sealed»"]:::sup
-    MPA --> SPA["ScalarParamArg"]:::sup
-    MPA --> OPA["ObjectParamArg"]:::sup
-    AR --> TA["TableArg\n«sealed»"]:::sup
-    TA --> CFA["ColumnFilterArg"]:::gap
-    TA --> IFA["InputFilterArg"]:::gap
-    TA --> OBA["OrderByArg"]:::sup
-    TA --> PagA["First / Last\nAfter / Before"]:::sup
+    WF["WhereFilter\n«sealed»"]:::sup
+    WF --> CoF["ConditionFilter"]:::sup
+    WF --> GCF["GeneratedConditionFilter"]:::sup
+
+    OBS["OrderBySpec\n«sealed»"]:::sup
+    OBS --> OBF["Fixed"]:::sup
+    OBS --> OBA["Argument"]:::sup
+    OBS --> OBN["None"]:::sup
+
+    PSp["PaginationSpec\nfirst · last · after · before · defaultPageSize"]:::val
 
     FW["FieldWrapper\n«sealed»"]:::sup
     FW --> SFW["Single"]:::sup
@@ -167,8 +166,6 @@ graph LR
     JS["JoinStep\n«sealed»"]:::sup
     JS --> FKJ["FkJoin"]:::sup
     JS --> CJ["ConditionJoin"]:::sup
-
-    FC["FieldCondition\nmethod · override · contextArgs"]:::sup
 
     TR["TableRef"]:::val
     CR["ColumnRef"]:::val
@@ -180,7 +177,7 @@ graph LR
     PR --> PRU["Unbound\ntypeName"]:::val
 ```
 
-`ColumnFilterArg` and `InputFilterArg` are shown with orange dashed borders — they are missing a `FieldCondition condition` component for `@condition` on `ARGUMENT_DEFINITION`.
+`WhereFilter` has two variants: `ConditionFilter` (a developer-supplied `@condition` method on a `FIELD_DEFINITION`, implements both `WhereFilter` and `MethodRef`) and `GeneratedConditionFilter` (a Graphitron-generated filter built from filterable arguments).
 
 `ParticipantRef` is a sealed interface with two variants: `TableBound(typeName, table, discriminatorValue)` and `Unbound(typeName)`. Non-table-backed members (e.g. `ErrorType`, structural interfaces) are recorded as `Unbound`. Generator switches must handle both variants and skip SQL-emitting paths for `Unbound`.
 
@@ -192,13 +189,16 @@ graph LR
 |---|---|---|
 | `TableTargetField` | `returnType` | `TableBoundReturnType` |
 | `TableTargetField` | `joinPath` | `List<JoinStep>` |
-| `TableTargetField` | `condition` | `FieldCondition?` |
-| `TableTargetField` | `arguments` | `List<ArgumentRef>` |
-| `QueryTableField` / `QueryLookupTableField` / `QueryTableInterfaceField` | `condition` | `FieldCondition?` |
+| `TableTargetField` | `filters` | `List<WhereFilter>` |
+| `TableTargetField` | `orderBy` | `OrderBySpec` |
+| `TableTargetField` | `pagination` | `PaginationSpec?` |
+| `QueryTableField` / `QueryLookupTableField` / `QueryTableInterfaceField` | `filters` | `List<WhereFilter>` |
+| `QueryTableField` / `QueryLookupTableField` / `QueryTableInterfaceField` | `orderBy` | `OrderBySpec` |
+| `QueryTableField` / `QueryLookupTableField` / `QueryTableInterfaceField` | `pagination` | `PaginationSpec?` |
 | `TableBoundReturnType` | `table` | `TableRef` |
 | `TableBackedType` | `table` | `TableRef` |
 | `TableRef` | `primaryKey?` | `List<ColumnRef>?` |
-| `FieldCondition` | `method` | `MethodRef` — signature: `(Table tgt, Arg...)` |
+| `ConditionFilter` | `className · methodName · params` | implements `WhereFilter` and `MethodRef` — signature: `(Table tgt, Arg...)` |
 | `FkJoin` | `whereFilter?` | `MethodRef?` — signature: `(SourceTable src, Table tgt)` |
 | `ConditionJoin` | `condition` | `MethodRef` — signature: `(SourceTable src, Table tgt)` |
 | `QueryServiceTableField` | `method` | `MethodRef` |
@@ -213,7 +213,7 @@ graph LR
 
 `TableField`, `SplitTableField`, `LookupTableField`, `SplitLookupTableField`, `RecordTableField`,
 and `RecordLookupTableField` all share the same component set
-(`returnType · joinPath · condition · arguments`). The only classifying difference is:
+(`returnType · joinPath · filters · orderBy · pagination`). The only classifying difference is:
 
 | Type | Parent context | Split query | Lookup key |
 |---|---|---|---|
@@ -241,13 +241,13 @@ Several `QueryField` variants structurally mirror their `ChildField` counterpart
 | `QueryServiceRecordField` | `ServiceRecordField` |
 
 The only structural difference is that root fields have no `joinPath` — there is no parent table
-to FK-navigate from. `QueryTableField`, `QueryLookupTableField`, and `QueryTableInterfaceField`
-now carry `FieldCondition condition` alongside their `ChildField` counterparts.
-`QueryTableMethodTableField` and `QueryServiceTableField` intentionally do not carry condition —
-the developer-controlled method/service replaces SQL generation entirely.
+to FK-navigate from. Both the child and root variants listed above carry the same
+`filters · orderBy · pagination` triple via `SqlGeneratingField`.
+`QueryTableMethodTableField` and `QueryServiceTableField` intentionally do not carry those
+components — the developer-controlled method/service replaces SQL generation entirely.
 
 Whether a shared interface between root and child table-bound fields could capture the common
-parts (`returnType · condition · arguments`) is worth exploring.
+parts (`returnType · filters · orderBy · pagination`) is worth exploring.
 
 ### `TableTargetField` interface vs. `NestingField`
 
@@ -255,9 +255,9 @@ parts (`returnType · condition · arguments`) is worth exploring.
 `TableTargetField` because it does not navigate to a new table scope. This exclusion is
 architecturally correct but worth documenting clearly at the use sites.
 
-### `ConditionJoin` vs. `FkJoin.whereFilter` vs. `FieldCondition`
+### `ConditionJoin` vs. `FkJoin.whereFilter` vs. `ConditionFilter`
 
-All three hold a `MethodRef`, which is intentional: `MethodRef` is the general model-level
+All three hold (or are) a `MethodRef`, which is intentional: `MethodRef` is the general model-level
 representation of any user-provided Java method (the javadoc says so explicitly). What varies is
 the calling convention, and that is already encoded per-parameter in `MethodRef.Param.source`
 via `ParamSource`:
@@ -266,11 +266,11 @@ via `ParamSource`:
 |---|---|---|
 | `ConditionJoin.condition` | `SourceTable`, `Table` | `method(srcAlias, tgtAlias)` → ON clause |
 | `FkJoin.whereFilter` | `SourceTable`, `Table` | `method(srcAlias, tgtAlias)` → WHERE clause |
-| `FieldCondition.method` | `Table`, then `Arg`/`Context`... | `method(tgtTable, arg1, ...)` → WHERE predicate |
+| `ConditionFilter` (implements `MethodRef`) | `Table`, then `Arg`/`Context`... | `method(tgtTable, arg1, ...)` → WHERE predicate |
 
 The interesting structural observation is that `ConditionJoin.condition` and `FkJoin.whereFilter`
 share an identical calling convention (`SourceTable, Table → Condition`), while
-`FieldCondition.method` is structurally different (`Table, Arg... → Condition`). The model does
+`ConditionFilter` is structurally different (`Table, Arg... → Condition`). The model does
 not express this grouping. A potential improvement: introduce a `JoinConditionRef` wrapper used
 in both join-step types to make the shared `(source, target)` contract explicit in the type system
 and separate it cleanly from the field-condition contract.
