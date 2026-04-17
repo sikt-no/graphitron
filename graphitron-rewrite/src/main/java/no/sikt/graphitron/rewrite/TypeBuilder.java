@@ -355,7 +355,7 @@ class TypeBuilder {
             if (field.isEmpty()) {
                 String colName = f.hasAppliedDirective(DIR_FIELD)
                     ? argString(f, DIR_FIELD, ARG_NAME).orElse(f.getName()) : f.getName();
-                errors.add("field '" + f.getName() + "' column '" + colName + "' could not be resolved in the jOOQ table"
+                errors.add("input field '" + f.getName() + "' column '" + colName + "' could not be resolved in the jOOQ table"
                     + candidateHint(colName, ctx.catalog.columnSqlNamesOf(tableRef.tableName())));
             } else {
                 resolvedFields.add(field.get());
