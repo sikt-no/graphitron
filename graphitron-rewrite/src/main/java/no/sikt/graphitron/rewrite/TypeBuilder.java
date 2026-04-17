@@ -442,6 +442,11 @@ class TypeBuilder {
 
     private InputFieldResolution buildInputField(GraphQLInputObjectField field,
             String parentTypeName, TableRef resolvedTable) {
+        return buildInputField(field, parentTypeName, resolvedTable, new java.util.LinkedHashSet<>());
+    }
+
+    private InputFieldResolution buildInputField(GraphQLInputObjectField field,
+            String parentTypeName, TableRef resolvedTable, java.util.Set<String> expandingTypes) {
         String name = field.getName();
         GraphQLType type = field.getType();
         boolean nonNull = type instanceof GraphQLNonNull;
@@ -459,6 +464,44 @@ class TypeBuilder {
                     parentTypeName, name, locationOf(field), typeName, nonNull, list, col, path.elements())))
                 .orElseGet(() -> new InputFieldResolution.Unresolved(name, columnName,
                     "no column '" + columnName + "' reachable via @reference path"));
+        }
+        // Nesting: field type is a plain input object (no @table) — expand its fields inline
+        // against the parent table, parallel to ChildField.NestingField on the output side.
+        var baseType = GraphQLTypeUtil.unwrapAll(type);
+        if (baseType instanceof GraphQLInputObjectType nestedInputType
+                && !nestedInputType.hasAppliedDirective(DIR_TABLE)) {
+            if (expandingTypes.contains(typeName)) {
+                return new InputFieldResolution.Unresolved(name, null,
+                    "circular input type reference detected while expanding '" + typeName + "'");
+            }
+            var newExpanding = new java.util.LinkedHashSet<>(expandingTypes);
+            newExpanding.add(typeName);
+            var failures = new ArrayList<InputFieldResolution.Unresolved>();
+            var resolvedFields = new ArrayList<InputField>();
+            for (var nested : nestedInputType.getFieldDefinitions().stream()
+                    .filter(f -> !f.hasAppliedDirective(DIR_NOT_GENERATED)).toList()) {
+                var res = buildInputField(nested, typeName, resolvedTable, newExpanding);
+                switch (res) {
+                    case InputFieldResolution.Resolved r -> resolvedFields.add(r.field());
+                    case InputFieldResolution.Unresolved u -> failures.add(u);
+                }
+            }
+            if (!failures.isEmpty()) {
+                String reasons = failures.stream()
+                    .map(u -> "'" + u.fieldName() + "': " + u.reason())
+                    .collect(Collectors.joining("; "));
+                String hint = failures.stream()
+                    .map(InputFieldResolution.Unresolved::lookupColumn)
+                    .filter(c -> c != null)
+                    .findFirst()
+                    .map(c -> candidateHint(c, ctx.catalog.columnSqlNamesOf(resolvedTable.tableName())))
+                    .orElse("");
+                return new InputFieldResolution.Unresolved(name, null,
+                    "nested input type '" + typeName + "' has unresolvable fields: " + reasons + hint);
+            }
+            return new InputFieldResolution.Resolved(new InputField.NestingField(
+                parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                List.copyOf(resolvedFields)));
         }
         String tableName = resolvedTable.tableName();
         var colEntry = ctx.catalog.findColumn(tableName, columnName);
