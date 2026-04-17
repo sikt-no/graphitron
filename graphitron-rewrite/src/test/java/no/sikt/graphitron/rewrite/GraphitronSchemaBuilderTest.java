@@ -1428,6 +1428,25 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.filters().get(1)).isInstanceOf(ConditionFilter.class);
             }),
 
+        QUERY_LOOKUP_TABLE_FIELD_MAPPING(
+            "QueryLookupTableField populates LookupMapping with one LookupColumn per @lookupKey arg",
+            """
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+                filmById(film_id: [ID] @lookupKey): [Film!]!
+            }
+            """,
+            schema -> {
+                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
+                assertThat(f.lookupMapping().targetTable().tableName()).isEqualTo("film");
+                assertThat(f.lookupMapping().columns())
+                    .hasSize(1)
+                    .extracting(no.sikt.graphitron.rewrite.model.LookupMapping.LookupColumn::argName)
+                    .containsExactly("film_id");
+                assertThat(f.lookupMapping().columns().get(0).targetColumn().sqlName()).isEqualTo("film_id");
+                assertThat(f.lookupMapping().columns().get(0).list()).isTrue();
+            }),
+
         ARG_CONDITION_CONTEXT_ARGS(
             "arg-level @condition with contextArguments — context param reflected into the ConditionFilter",
             """

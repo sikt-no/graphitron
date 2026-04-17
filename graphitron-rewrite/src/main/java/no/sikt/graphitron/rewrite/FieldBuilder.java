@@ -188,7 +188,13 @@ class FieldBuilder {
         return new ServiceResolution(enrichArgExtractions(result.ref(), fieldDef), returnType, null);
     }
 
-    private record TableFieldComponents(List<WhereFilter> filters, OrderBySpec orderBy, PaginationSpec pagination, String error) {}
+    private record TableFieldComponents(List<WhereFilter> filters, OrderBySpec orderBy, PaginationSpec pagination,
+                                        String error, LookupMapping lookupMapping) {
+        /** Construct an error result with no component values. */
+        static TableFieldComponents error(String message) {
+            return new TableFieldComponents(null, null, null, message, null);
+        }
+    }
 
     /**
      * Resolves the filter, order-by, and pagination components for a table-bound list field.
@@ -240,12 +246,12 @@ class FieldBuilder {
             if (hasSplitQuery && hasLookupKey) {
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), parentBatchKey,
-                    emptyLookupMapping(returnType.table()));
+                    tfc.lookupMapping());
             }
             if (!hasSplitQuery && hasLookupKey) {
                 return new no.sikt.graphitron.rewrite.model.ChildField.LookupTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                    emptyLookupMapping(returnType.table()));
+                    tfc.lookupMapping());
             }
             if (hasSplitQuery) {
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
@@ -802,10 +808,10 @@ class FieldBuilder {
     private TableFieldComponents projectForFilter(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
                                                   TableRef rt, String returnTypeName, List<String> errors) {
         var filters = projectFilters(refs, fieldDef, rt, returnTypeName, errors);
-        if (filters == null) return new TableFieldComponents(null, null, null, String.join("; ", errors));
+        if (filters == null) return TableFieldComponents.error(String.join("; ", errors));
         var fieldCondition = buildFieldCondition(fieldDef, errors);
         if (!errors.isEmpty() && fieldCondition == null && fieldDef.hasAppliedDirective(DIR_CONDITION)) {
-            return new TableFieldComponents(null, null, null, String.join("; ", errors));
+            return TableFieldComponents.error(String.join("; ", errors));
         }
         if (fieldCondition != null) {
             var withField = new ArrayList<>(filters);
@@ -816,20 +822,27 @@ class FieldBuilder {
         if (orderBy == null) {
             String msg = !errors.isEmpty() ? String.join("; ", errors)
                 : "could not resolve @defaultOrder columns in table '" + rt.tableName() + "'";
-            return new TableFieldComponents(null, null, null, msg);
+            return TableFieldComponents.error(msg);
         }
-        return new TableFieldComponents(filters, orderBy, projectPaginationSpec(refs, fieldDef), null);
+        var lookupMapping = projectForLookup(refs, fieldDef, rt);
+        return new TableFieldComponents(filters, orderBy, projectPaginationSpec(refs, fieldDef), null, lookupMapping);
     }
 
     /**
-     * Placeholder {@link LookupMapping} used when constructing {@link LookupField} variants before
-     * {@code projectForLookup} (argres step 6) populates the columns. The empty-columns mapping
-     * carries the target table so downstream code can still reach {@code lookupMapping().targetTable()}.
-     * Generators currently still read lookup keys from {@code filters()}; step 8 flips them to
-     * use {@code lookupMapping()} directly.
+     * Projects {@code @lookupKey}-bearing scalar arguments into a {@link LookupMapping} for the
+     * target table. Non-lookup fields simply receive an empty-columns mapping (the field will
+     * still validate and generate correctly via {@link GeneratedConditionFilter} or the standard
+     * filter path). {@link LookupField} variants read {@code lookupMapping()} in step 8.
      */
-    private static LookupMapping emptyLookupMapping(TableRef targetTable) {
-        return new LookupMapping(List.of(), targetTable);
+    private LookupMapping projectForLookup(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef, TableRef targetTable) {
+        var columns = new ArrayList<LookupMapping.LookupColumn>();
+        for (var ref : refs) {
+            if (!(ref instanceof ArgumentRef.ScalarArg.ColumnArg ca)) continue;
+            var arg = fieldDef.getArgument(ca.name());
+            if (arg == null || !arg.hasAppliedDirective(DIR_LOOKUP_KEY)) continue;
+            columns.add(new LookupMapping.LookupColumn(ca.name(), ca.column(), ca.extraction(), ca.list()));
+        }
+        return new LookupMapping(List.copyOf(columns), targetTable);
     }
 
     /**
@@ -1165,7 +1178,7 @@ class FieldBuilder {
             var tfc = resolveTableFieldComponents(fieldDef, tb.table(), lookupTypeName);
             if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
             return new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                emptyLookupMapping(tb.table()));
+                tfc.lookupMapping());
         }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
@@ -1426,7 +1439,7 @@ class FieldBuilder {
                 if (tfc.error() != null) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
                 if (hasLookupKeyAnywhere(fieldDef)) {
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                        emptyLookupMapping(tb.table()));
+                        tfc.lookupMapping());
                 }
                 yield new RecordTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
             }
