@@ -92,6 +92,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_JAVA_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
+import static no.sikt.graphitron.rewrite.BuildContext.argBoolean;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_PATH;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_PRIMARY_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_SERVICE_REF;
@@ -589,15 +591,17 @@ class FieldBuilder {
      * {@link ArgumentRef.ScalarArg.UnboundArg}).
      */
     List<ArgumentRef> classifyArguments(GraphQLFieldDefinition fieldDef, TableRef rt, List<String> errors) {
+        var fieldCondition = readConditionDirective(fieldDef);
+        boolean fieldOverride = fieldCondition != null && fieldCondition.override();
         var refs = new ArrayList<ArgumentRef>();
         for (var arg : fieldDef.getArguments()) {
-            refs.add(classifyArgument(fieldDef, arg, rt, errors));
+            refs.add(classifyArgument(fieldDef, arg, rt, fieldOverride, errors));
         }
         return List.copyOf(refs);
     }
 
     private ArgumentRef classifyArgument(GraphQLFieldDefinition fieldDef, GraphQLArgument arg,
-                                         TableRef rt, List<String> errors) {
+                                         TableRef rt, boolean fieldOverride, List<String> errors) {
         String name = arg.getName();
         GraphQLType type = arg.getType();
         boolean nonNull = type instanceof GraphQLNonNull;
@@ -617,19 +621,18 @@ class FieldBuilder {
             };
             return new ArgumentRef.PaginationArgRef(name, typeName, nonNull, list, role);
         }
-        if (arg.hasAppliedDirective(DIR_CONDITION)) {
-            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                "@condition on arguments is not yet supported (deferred to argres step 4)");
-        }
+
+        Optional<ArgConditionRef> argCondition = buildArgCondition(arg, errors);
+
         if (ctx.types.containsKey(typeName)) {
             var resolvedType = ctx.types.get(typeName);
             if (resolvedType instanceof GraphitronType.TableInputType tit) {
                 // Step 2: emit structurally. fieldBindings populated in step 9.
                 return new ArgumentRef.InputTypeArg.TableInputArg(
-                    name, typeName, nonNull, list, tit.table(), List.of(), Optional.empty());
+                    name, typeName, nonNull, list, tit.table(), List.of(), argCondition);
             }
             return new ArgumentRef.InputTypeArg.PlainInputArg(
-                name, typeName, nonNull, list, Optional.empty());
+                name, typeName, nonNull, list, argCondition);
         }
 
         // Scalar arg: bind to column
@@ -670,10 +673,81 @@ class FieldBuilder {
             }
         }
         return new ArgumentRef.ScalarArg.ColumnArg(
-            name, typeName, nonNull, list, columnRef, extraction,
-            Optional.empty(),  // argCondition populated in step 4
-            false              // suppressedByFieldOverride populated in step 4
-        );
+            name, typeName, nonNull, list, columnRef, extraction, argCondition, fieldOverride);
+    }
+
+    /**
+     * Builder-internal record for a parsed {@code @condition} directive. See
+     * {@code docs/argument-resolution.md#condition-on-field-and-argument-definitions}.
+     */
+    private record ConditionDirective(String className, String methodName, boolean override,
+                                      List<String> contextArguments) {}
+
+    /**
+     * Reads a {@code @condition} directive from a field or argument container. Returns
+     * {@code null} when the directive is absent or could not be parsed (e.g. missing
+     * {@code className}/{@code method}).
+     */
+    private ConditionDirective readConditionDirective(graphql.schema.GraphQLDirectiveContainer container) {
+        var dir = container.getAppliedDirective(DIR_CONDITION);
+        if (dir == null) return null;
+        var condArg = dir.getArgument(ARG_CONDITION);
+        if (condArg == null || condArg.getValue() == null) return null;
+        Map<String, Object> ref = asMap(condArg.getValue());
+        String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
+        String methodName = Optional.ofNullable(ref.get(ARG_METHOD)).map(Object::toString).orElse(null);
+        if (className == null) {
+            String refName = Optional.ofNullable(ref.get(ARG_NAME)).map(Object::toString).orElse(null);
+            if (refName != null) className = RewriteConfig.namedReferences().get(refName);
+        }
+        if (className == null || methodName == null) return null;
+        boolean override = argBoolean(container, DIR_CONDITION, ARG_OVERRIDE, false);
+        List<String> ctxArgs = argStringList(container, DIR_CONDITION, ARG_CONTEXT_ARGUMENTS);
+        return new ConditionDirective(className, methodName, override, ctxArgs);
+    }
+
+    /**
+     * Builds an {@link ArgConditionRef} from a {@code @condition} directive on one GraphQL argument.
+     * Reflects the condition method via {@link ServiceCatalog#reflectTableMethod} with the arg's
+     * name in {@code argNames} and any declared {@code contextArguments} in {@code ctxKeys}.
+     * Appends an error and returns {@link Optional#empty()} on reflection failure.
+     */
+    private Optional<ArgConditionRef> buildArgCondition(GraphQLArgument arg, List<String> errors) {
+        var cond = readConditionDirective(arg);
+        if (cond == null) return Optional.empty();
+        var argName = arg.getName();
+        var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
+            Set.of(argName), Set.copyOf(cond.contextArguments()));
+        if (result.failed()) {
+            errors.add("argument '" + argName + "' @condition: " + result.failureReason());
+            return Optional.empty();
+        }
+        var methodRef = result.ref();
+        return Optional.of(new ArgConditionRef(
+            new ConditionFilter(methodRef.className(), methodRef.methodName(), methodRef.params()),
+            cond.override()));
+    }
+
+    /**
+     * Builds a field-level {@link ConditionFilter} from a {@code @condition} directive on the
+     * field definition. Reflects via {@link ServiceCatalog#reflectTableMethod} with every field
+     * argument name in {@code argNames} and any declared {@code contextArguments}. Returns
+     * {@code null} when the directive is absent or reflection fails (error appended).
+     */
+    private ConditionFilter buildFieldCondition(GraphQLFieldDefinition fieldDef, List<String> errors) {
+        var cond = readConditionDirective(fieldDef);
+        if (cond == null) return null;
+        var argNames = fieldDef.getArguments().stream()
+            .map(GraphQLArgument::getName)
+            .collect(Collectors.toSet());
+        var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
+            argNames, Set.copyOf(cond.contextArguments()));
+        if (result.failed()) {
+            errors.add("field '" + fieldDef.getName() + "' @condition: " + result.failureReason());
+            return null;
+        }
+        var methodRef = result.ref();
+        return new ConditionFilter(methodRef.className(), methodRef.methodName(), methodRef.params());
     }
 
     private ArgumentRef classifyOrderByArg(GraphQLArgument arg, String name, String typeName,
@@ -726,6 +800,15 @@ class FieldBuilder {
                                                   TableRef rt, String returnTypeName, List<String> errors) {
         var filters = projectFilters(refs, fieldDef, rt, returnTypeName, errors);
         if (filters == null) return new TableFieldComponents(null, null, null, String.join("; ", errors));
+        var fieldCondition = buildFieldCondition(fieldDef, errors);
+        if (!errors.isEmpty() && fieldCondition == null && fieldDef.hasAppliedDirective(DIR_CONDITION)) {
+            return new TableFieldComponents(null, null, null, String.join("; ", errors));
+        }
+        if (fieldCondition != null) {
+            var withField = new ArrayList<>(filters);
+            withField.add(fieldCondition);
+            filters = List.copyOf(withField);
+        }
         var orderBy = projectOrderBySpec(refs, fieldDef, rt.tableName(), errors);
         if (orderBy == null) {
             String msg = !errors.isEmpty() ? String.join("; ", errors)
@@ -767,12 +850,22 @@ class FieldBuilder {
     private List<WhereFilter> projectFilters(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
                                              TableRef rt, String returnTypeName, List<String> errors) {
         var bodyParams = new ArrayList<BodyParam>();
+        var argConditions = new ArrayList<ConditionFilter>();
         boolean hadError = false;
         for (var ref : refs) {
             switch (ref) {
                 case ArgumentRef.OrderByArg ignored -> {}                     // handled by projectOrderBySpec
                 case ArgumentRef.PaginationArgRef ignored -> {}               // handled by projectPaginationSpec
-                case ArgumentRef.InputTypeArg ignored -> {}                   // TODO: lookup (step 6) / composite-key input (step 9)
+                case ArgumentRef.InputTypeArg.TableInputArg tia -> {
+                    // Auto-column binding for @table input types is deferred to step 9.
+                    // An arg-level @condition on the whole input still emits a predicate today.
+                    tia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
+                }
+                case ArgumentRef.InputTypeArg.PlainInputArg pia -> {
+                    // Plain input types are silently skipped unless paired with @condition;
+                    // see the out-of-scope note in docs/argument-resolution.md.
+                    pia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
+                }
                 case ArgumentRef.UnclassifiedArg u -> {
                     errors.add("argument '" + u.name() + "': " + u.reason());
                     hadError = true;
@@ -782,19 +875,29 @@ class FieldBuilder {
                     hadError = true;
                 }
                 case ArgumentRef.ScalarArg.ColumnArg ca -> {
-                    String javaType = javaTypeFor(ca.extraction(), ca.column());
-                    bodyParams.add(new BodyParam(ca.name(), ca.column(), javaType, ca.nonNull(), ca.list(), ca.extraction()));
+                    boolean autoSuppressed = ca.suppressedByFieldOverride()
+                        || (ca.argCondition().isPresent() && ca.argCondition().get().override());
+                    if (!autoSuppressed) {
+                        String javaType = javaTypeFor(ca.extraction(), ca.column());
+                        bodyParams.add(new BodyParam(ca.name(), ca.column(), javaType, ca.nonNull(), ca.list(), ca.extraction()));
+                    }
+                    ca.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
             }
         }
         if (hadError) return null;
-        if (bodyParams.isEmpty()) return List.of();
-        String conditionsClassName = RewriteConfig.outputPackage() + ".rewrite.types." + returnTypeName + "Conditions";
-        String methodName = fieldDef.getName() + "Condition";
-        var callParams = bodyParams.stream()
-            .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list(), bp.javaType()))
-            .toList();
-        return List.of(new GeneratedConditionFilter(conditionsClassName, methodName, rt, callParams, List.copyOf(bodyParams)));
+
+        var filters = new ArrayList<WhereFilter>();
+        if (!bodyParams.isEmpty()) {
+            String conditionsClassName = RewriteConfig.outputPackage() + ".rewrite.types." + returnTypeName + "Conditions";
+            String methodName = fieldDef.getName() + "Condition";
+            var callParams = bodyParams.stream()
+                .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list(), bp.javaType()))
+                .toList();
+            filters.add(new GeneratedConditionFilter(conditionsClassName, methodName, rt, callParams, List.copyOf(bodyParams)));
+        }
+        filters.addAll(argConditions);
+        return List.copyOf(filters);
     }
 
     /**

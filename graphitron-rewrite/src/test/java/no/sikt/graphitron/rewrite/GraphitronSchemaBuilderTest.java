@@ -30,6 +30,8 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
+import no.sikt.graphitron.rewrite.model.BodyParam;
+import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -1343,6 +1345,103 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.TableMethodField) schema.field("Film", "language");
                 assertThat(f.method().params())
+                    .filteredOn(p -> p instanceof no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed t
+                        && t.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Context)
+                    .extracting(p -> ((no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed) p).name())
+                    .containsExactly("tenantId");
+            }),
+
+        // ===== @condition directive on fields and arguments (argres step 4) =====
+        // These verify the four-state projection table in docs/argument-resolution.md. The stub
+        // methods live in TestConditionStub (fieldCondition, argCondition, argConditionWithContext).
+
+        FIELD_CONDITION_ADDITIVE(
+            "field-level @condition without override — filters contain auto-predicate AND ConditionFilter",
+            """
+            type Language @table(name: "language") { name: String }
+            type Query {
+                languages(cityNames: String @field(name: "name"), countryId: String @field(name: "name")):
+                    [Language!]! @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "fieldCondition"})
+            }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "languages");
+                assertThat(f.filters()).hasSize(2);
+                assertThat(f.filters().get(0)).isInstanceOf(GeneratedConditionFilter.class);
+                assertThat(f.filters().get(1)).isInstanceOf(ConditionFilter.class);
+                var cond = (ConditionFilter) f.filters().get(1);
+                assertThat(cond.methodName()).isEqualTo("fieldCondition");
+            }),
+
+        FIELD_CONDITION_OVERRIDE_SUPPRESSES_AUTO(
+            "field-level @condition(override: true) — filters contain ONLY the field-level ConditionFilter",
+            """
+            type Language @table(name: "language") { name: String }
+            type Query {
+                languages(cityNames: String @field(name: "name"), countryId: String @field(name: "name")):
+                    [Language!]! @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "fieldCondition"}, override: true)
+            }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "languages");
+                assertThat(f.filters()).hasSize(1);
+                assertThat(f.filters().get(0)).isInstanceOf(ConditionFilter.class);
+            }),
+
+        ARG_CONDITION_ADDITIVE(
+            "arg-level @condition without override — auto-predicate for that arg AND ConditionFilter are BOTH emitted",
+            """
+            type Language @table(name: "language") { name: String }
+            type Query {
+                languages(cityNames: String @field(name: "name")
+                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argCondition"})):
+                    [Language!]!
+            }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "languages");
+                assertThat(f.filters()).hasSize(2);
+                assertThat(f.filters().get(0)).isInstanceOf(GeneratedConditionFilter.class);
+                assertThat(((GeneratedConditionFilter) f.filters().get(0)).bodyParams().get(0).name())
+                    .isEqualTo("cityNames");
+                assertThat(f.filters().get(1)).isInstanceOf(ConditionFilter.class);
+                assertThat(((ConditionFilter) f.filters().get(1)).methodName()).isEqualTo("argCondition");
+            }),
+
+        ARG_CONDITION_OVERRIDE_SUPPRESSES_THIS_ARG(
+            "arg-level @condition(override: true) — that arg's auto is suppressed; other args' autos remain",
+            """
+            type Language @table(name: "language") { name: String }
+            type Query {
+                languages(
+                    cityNames: String @field(name: "name")
+                        @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argCondition"}, override: true),
+                    countryId: String @field(name: "name")
+                ): [Language!]!
+            }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "languages");
+                assertThat(f.filters()).hasSize(2);
+                var gcf = (GeneratedConditionFilter) f.filters().get(0);
+                assertThat(gcf.bodyParams()).extracting(BodyParam::name).containsExactly("countryId");
+                assertThat(f.filters().get(1)).isInstanceOf(ConditionFilter.class);
+            }),
+
+        ARG_CONDITION_CONTEXT_ARGS(
+            "arg-level @condition with contextArguments — context param reflected into the ConditionFilter",
+            """
+            type Language @table(name: "language") { name: String }
+            type Query {
+                languages(cityNames: String @field(name: "name")
+                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argConditionWithContext"}, contextArguments: ["tenantId"])):
+                    [Language!]!
+            }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "languages");
+                var cond = (ConditionFilter) f.filters().get(1);
+                assertThat(cond.params())
                     .filteredOn(p -> p instanceof no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed t
                         && t.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Context)
                     .extracting(p -> ((no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed) p).name())

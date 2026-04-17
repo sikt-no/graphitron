@@ -17,4 +17,28 @@ class TestConditionStub {
     public static Condition join(org.jooq.Table<?> src, org.jooq.Table<?> tgt) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * Field-level {@code @condition} method — receives the target table plus every field argument.
+     * Parameter names must match GraphQL argument names (requires the {@code -parameters} flag).
+     */
+    public static Condition fieldCondition(org.jooq.Table<?> table, String cityNames, String countryId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Arg-level {@code @condition} method — receives the target table plus one argument value.
+     * Parameter name must match the GraphQL argument name.
+     */
+    public static Condition argCondition(org.jooq.Table<?> table, String cityNames) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Arg-level {@code @condition} method with a {@code contextArguments} entry — receives the
+     * target table, the arg value, then context values as trailing parameters.
+     */
+    public static Condition argConditionWithContext(org.jooq.Table<?> table, String cityNames, String tenantId) {
+        throw new UnsupportedOperationException();
+    }
 }
