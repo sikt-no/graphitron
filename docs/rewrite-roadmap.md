@@ -190,6 +190,10 @@ how every subsequent plan lands.
 
 ### Active
 
+- **Drop `graphitron-common` runtime dependency** — inline `MultiSourceReader`-based schema
+  loading into `GraphQLRewriteGenerator`, auto-inject `directives.graphqls` so users need
+  not declare it, and remove the `graphitron-common` `<dependency>` from the rewrite pom.
+  See [plan-drop-common-dependency.md](plan-drop-common-dependency.md).
 - **Paginated fields** — document transform coexistence (builder fallback loses `defaultPageSize` when `@asConnection` is stripped). See [paginated-fields.md](paginated-fields.md).
 - **Argument resolution** — unified classification, `@condition` support, lookup VALUES generation. See [argument-resolution.md](argument-resolution.md).
 - **Legacy platformId** (low priority) — classify `id: ID!` input fields that bind to composite platform keys via record-level `getId`/`setId`. See [legacy-platform-id.md](legacy-platform-id.md).
