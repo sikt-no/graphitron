@@ -31,9 +31,11 @@ directive-pattern → variant → generator output chain.
 
 ## Classification Vocabulary
 
+Two independent classifications describe every field: the **source context** it is defined on (parent type), and the **target type** it returns. Both matter because scope transitions are determined by the pair, not by either alone.
+
 ### Source context
 
-Every field has a source context — the type on which it is defined.
+The type on which a field is defined.
 
 | Source context | Directive | What Graphitron generates |
 |---|---|---|
@@ -41,40 +43,55 @@ Every field has a source context — the type on which it is defined.
 | **Table-mapped** | `@table` | Full SQL generation — queries, joins, projections. |
 | **Result-mapped** | `@record` | Runtime wiring only. Graphitron validates types and wires data fetchers, but generates no SQL until a new scope starts. |
 
+### Target type
+
+The classification of the field's return type (the element type — looked through `List` and `Connection` wrappers). Encoded as `ReturnTypeRef`.
+
+| Target type | `ReturnTypeRef` variant | When it appears |
+|---|---|---|
+| **Target table** | `TableBoundReturnType` | Return type has `@table` (or is a `@table` + `@discriminate` interface), or a `NestingField` inherits the parent's table context. Carries a fully resolved `TableRef`. |
+| **Target record** | `ResultReturnType` | Return type has `@record`. |
+| **Target scalar** | `ScalarReturnType` | Scalar, enum, or an unclassified type name (e.g. `@nodeId(typeName:)` argument types). |
+| **Target polymorphic** | `PolymorphicReturnType` | Interfaces/unions spanning multiple tables, and the Relay/Federation built-ins `node` / `_entities`. |
+
+"Target table" is the pivot concept for scope transitions: every new scope is a query rooted in some target table, driven either by the root entering a table-mapped type or by a **record handoff** from a result-mapped source into a target-table return.
+
 ### Scope
 
-A Graphitron scope corresponds to one SQL statement. Fields within a scope contribute to the same query.
+A Graphitron scope corresponds to one SQL statement. Fields within a scope contribute to the same query. Scope is determined by the **(source context, target type)** pair — *independently* of `@lookupKey`, which is orthogonal.
 
 | Boundary | Trigger |
 |---|---|
-| **Enter** | An unmapped root field reaches a table-mapped type — the first scope starts |
-| **Split** | `@splitQuery` on a `SplitTableField` — new scope via DataLoader |
-| **Lookup** | `@lookupKey` (no `@splitQuery`) on a `LookupTableField` — result-mapped parent: new scope via DataLoader; table-mapped parent: correlated subquery inlined in the current scope |
-| **Split lookup** | `@splitQuery` + `@lookupKey` on a `SplitLookupTableField` — always a new scope via DataLoader with both derived tables |
-| **Record handoff** | A `TableField` or `LookupTableField` on a result-mapped type, or a user-provided return (`@service`, `@tableMethod`) reaching a table-mapped type — new scope via DataLoader, keyed by the parent's PK |
+| **Enter** | An unmapped root field reaches a target-table type — the first scope starts |
+| **Split** | `@splitQuery` on a table-mapped source — a new scope via DataLoader, keyed by the parent's PK |
+| **Record handoff** | A target-table field on a result-mapped source, or any user-provided return (`@service`, `@tableMethod`) reaching a target-table type — new scope via DataLoader, keyed by the parent's PK or a custom batch key |
+| **Exit** | `@service` fields create a **private scope** — their SQL statement is independent of any Graphitron-managed scope |
 
-`@service` fields use a **private scope** — they create their own SQL statement independently and do not participate in any Graphitron-managed scope.
+`@lookupKey` does not appear in this table on purpose. It shapes the batch (adds the derived target table and the N × M invariant) but does not by itself open or close a scope — that is always decided by the source/target pair above.
 
 ### Derived tables
 
 Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
 
 - **Derived source table** — built from parent source records. Contains the FK-relevant columns from the parent: the parent's PK/unique-key columns when the FK is on the child side, or the FK columns themselves when the FK is on the parent side. Used for `@splitQuery` table fields, user-provided returns (`@service`, `@tableMethod`), and mutation read-backs.
-- **Derived target table** — built from `@lookupKey` argument values (from `SelectedField.getArguments()`). Each argument value (or list element) is one row. **Identical for every source in a batch** — because all N parents in a batch share the same request arguments, M (the number of lookup rows) is constant for the entire batch. Result count is always exactly N × M. This is why `@condition` is blocked on lookup fields: any filter would break the positional invariant.
+- **Derived target table** — built from `@lookupKey` argument values (from `SelectedField.getArguments()`). Each argument value (or list element) is one row. **Identical for every source in a batch** — all N parents in a batch share the same request arguments, so M (the number of lookup rows) is constant for the entire batch. Base result count is exactly N × M.
+
+**`@condition` on lookup fields is allowed.** The condition method, however, must preserve the N × M positional contract: each (source, target) pair produced by the derived-table cross join is either kept in full or dropped in full, and no additional rows may be introduced. In practice this means the condition should be a predicate over the pair of rows, not a filter that can change the per-parent result cardinality non-uniformly. Violating the contract desynchronises batch dispatch — the client receives rows that cannot be reattached to their source. The contract is a developer responsibility, not a build-time check.
 
 ### Conditions
 
 | Kind | Purpose | Source |
 |---|---|---|
 | **Reference condition** | How two tables are joined within a scope | `@reference` directive: FK key → `FkJoin`; condition method → `ConditionJoin` |
-| **Filter condition** | Narrows the result set | `@condition` directive, arguments, cursor |
+| **Filter condition** | Narrows the result set of the current scope | `@condition` directive, arguments, cursor |
+| **Lookup condition** | Filters the (source × target) row pairs produced by a lookup's derived target table. Must preserve the N × M positional contract — see [Derived tables](#derived-tables) above. | `@condition` directive on a field with `@lookupKey` |
 
 ### Structural properties
 
 | Property | Effect |
 |---|---|
-| **`@splitQuery`** | Forces a new scope via DataLoader. On a `TableField` (no `@lookupKey`) → `SplitTableField`; on a field with `@lookupKey` → `SplitLookupTableField`. Error on result-mapped fields (they always start a new scope implicitly). |
-| **`@lookupKey`** | Argument values become the derived target table. Blocks `@condition` and pagination (preserves N × M result invariant). Without `@splitQuery` → `LookupTableField`; with `@splitQuery` → `SplitLookupTableField`. |
+| **`@splitQuery`** | On a table-mapped source, forces a new scope via DataLoader: `TableField` (no `@lookupKey`) → `SplitTableField`; field with `@lookupKey` → `SplitLookupTableField`. On a result-mapped source it is redundant — the record handoff already opens a new scope — and should produce a build **warning**, not an error. |
+| **`@lookupKey`** | Argument values become the derived target table (see [Derived tables](#derived-tables)). Blocks pagination (preserves the N × M result invariant). Without `@splitQuery` → `LookupTableField`; with `@splitQuery` → `SplitLookupTableField`. Orthogonal to scope — see [Scope](#scope). |
 
 ---
 
