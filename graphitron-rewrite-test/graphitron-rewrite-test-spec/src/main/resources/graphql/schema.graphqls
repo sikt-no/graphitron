@@ -8,6 +8,13 @@ type Query {
     filmById(film_id: [ID] @lookupKey): [Film!]!
     languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language!]!
     customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
+    filmsConnection(
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(primaryKey: true)
+    filmsOrderedConnection(
+        order: [FilmOrderBy] @orderBy,
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(primaryKey: true)
 }
 
 type Customer @table(name: "customer") {
@@ -34,6 +41,24 @@ type Language @table(name: "language") {
     films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
 }
 
+type FilmsConnection {
+    edges: [FilmsEdge!]!
+    nodes: [Film!]!
+    pageInfo: PageInfo!
+}
+
+type FilmsEdge {
+    cursor: String!
+    node: Film!
+}
+
+type PageInfo {
+    hasNextPage: Boolean!
+    hasPreviousPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
 enum MpaaRating {
     G
     PG
@@ -49,4 +74,14 @@ enum TextRating {
     PG_13 @field(name: "PG-13")
     R
     NC_17 @field(name: "NC-17")
+}
+
+enum FilmSort {
+    FILM_ID @order(primaryKey: true)
+    TITLE   @order(fields: [{name: "title"}])
+}
+
+input FilmOrderBy {
+    field: FilmSort!
+    direction: SortDirection
 }

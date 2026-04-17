@@ -320,11 +320,13 @@ class FieldBuilder {
             return new FieldWrapper.List(outerNullable, itemNullable);
         }
 
-        // Structural detection: pre-expanded Connection type with edges.node pattern
+        // Structural detection: pre-expanded Connection type with edges.node pattern.
+        // Pass typeName as connectionName so wiring uses the SDL type name directly
+        // instead of deriving "<Parent><Field>Connection" from the field declaration.
         String typeName = baseTypeName(fieldDef);
         if (ctx.isConnectionType(typeName)) {
             boolean itemNullable = ctx.connectionItemNullable(typeName);
-            return new FieldWrapper.Connection(outerNullable, itemNullable);
+            return new FieldWrapper.Connection(outerNullable, itemNullable, 100, typeName);
         }
 
         return new FieldWrapper.Single(outerNullable);

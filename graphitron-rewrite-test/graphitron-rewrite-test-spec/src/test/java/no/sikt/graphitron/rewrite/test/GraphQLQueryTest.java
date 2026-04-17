@@ -276,4 +276,145 @@ class GraphQLQueryTest {
         List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customerById");
         assertThat(customers).isEmpty();
     }
+
+    // ===== filmsConnection — forward pagination =====
+
+    @Test
+    void filmsConnection_firstPage_returnsFirstNFilms() {
+        Map<String, Object> data = execute(
+            "{ filmsConnection(first: 2) { nodes { title } pageInfo { hasNextPage hasPreviousPage } } }");
+        var conn = (Map<String, Object>) data.get("filmsConnection");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(nodes).hasSize(2);
+        assertThat(nodes).extracting(n -> n.get("title"))
+            .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER");
+        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
+        assertThat(pageInfo.get("hasNextPage")).isEqualTo(true);
+        assertThat(pageInfo.get("hasPreviousPage")).isEqualTo(false);
+    }
+
+    @Test
+    void filmsConnection_defaultPageSize_returnsUpToDefault() {
+        // Default page size is 100; test DB has 5 films, so all 5 are returned
+        Map<String, Object> data = execute(
+            "{ filmsConnection { nodes { filmId } } }");
+        var conn = (Map<String, Object>) data.get("filmsConnection");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(nodes).hasSize(5);
+    }
+
+    @Test
+    void filmsConnection_withAfterCursor_returnsNextPage() {
+        // Get page 1 cursor, then use it to get page 2
+        Map<String, Object> page1Data = execute(
+            "{ filmsConnection(first: 2) { edges { cursor node { title } } pageInfo { endCursor } } }");
+        var conn1 = (Map<String, Object>) page1Data.get("filmsConnection");
+        var pageInfo1 = (Map<String, Object>) conn1.get("pageInfo");
+        String endCursor = (String) pageInfo1.get("endCursor");
+        assertThat(endCursor).isNotNull();
+
+        Map<String, Object> page2Data = execute(
+            "{ filmsConnection(first: 2, after: \"" + endCursor + "\") { nodes { title } pageInfo { hasNextPage } } }");
+        var conn2 = (Map<String, Object>) page2Data.get("filmsConnection");
+        List<Map<String, Object>> nodes2 = (List<Map<String, Object>>) conn2.get("nodes");
+        assertThat(nodes2).extracting(n -> n.get("title"))
+            .containsExactly("ADAPTATION HOLES", "AFFAIR PREJUDICE");
+        var pageInfo2 = (Map<String, Object>) conn2.get("pageInfo");
+        assertThat(pageInfo2.get("hasNextPage")).isEqualTo(true);
+    }
+
+    @Test
+    void filmsConnection_lastPage_hasNextPageFalse() {
+        Map<String, Object> data = execute(
+            "{ filmsConnection(first: 5) { nodes { title } pageInfo { hasNextPage } } }");
+        var conn = (Map<String, Object>) data.get("filmsConnection");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(nodes).hasSize(5);
+        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
+        assertThat(pageInfo.get("hasNextPage")).isEqualTo(false);
+    }
+
+    // ===== filmsConnection — backward pagination =====
+
+    @Test
+    void filmsConnection_backward_returnsLastNFilms() {
+        Map<String, Object> data = execute(
+            "{ filmsConnection(last: 2) { nodes { title } pageInfo { hasNextPage hasPreviousPage } } }");
+        var conn = (Map<String, Object>) data.get("filmsConnection");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(nodes).hasSize(2);
+        // last 2 in ascending film_id order: AFFAIR PREJUDICE, AGENT TRUMAN
+        assertThat(nodes).extracting(n -> n.get("title"))
+            .containsExactly("AFFAIR PREJUDICE", "AGENT TRUMAN");
+        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
+        assertThat(pageInfo.get("hasPreviousPage")).isEqualTo(true);
+        assertThat(pageInfo.get("hasNextPage")).isEqualTo(false);
+    }
+
+    @Test
+    void filmsConnection_backward_withBeforeCursor_returnsPrevPage() {
+        // First get the last page to obtain a before cursor (startCursor of last page)
+        Map<String, Object> lastPageData = execute(
+            "{ filmsConnection(last: 2) { nodes { title } pageInfo { startCursor } } }");
+        var lastConn = (Map<String, Object>) lastPageData.get("filmsConnection");
+        var lastPageInfo = (Map<String, Object>) lastConn.get("pageInfo");
+        String startCursor = (String) lastPageInfo.get("startCursor");
+        assertThat(startCursor).isNotNull();
+
+        // Paginate backwards before that cursor
+        Map<String, Object> prevPageData = execute(
+            "{ filmsConnection(last: 2, before: \"" + startCursor + "\") { nodes { title } } }");
+        var prevConn = (Map<String, Object>) prevPageData.get("filmsConnection");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) prevConn.get("nodes");
+        // last: 2 returns [AFFAIR PREJUDICE (4), AGENT TRUMAN (5)]; startCursor = cursor(4).
+        // "2 items before cursor(4)" in ascending order = items 2, 3: ACE GOLDFINGER, ADAPTATION HOLES.
+        assertThat(nodes).extracting(n -> n.get("title"))
+            .containsExactly("ACE GOLDFINGER", "ADAPTATION HOLES");
+    }
+
+    // ===== filmsOrderedConnection — dynamic ordering pagination =====
+
+    @Test
+    void filmsOrderedConnection_defaultOrder_paginatesById() {
+        Map<String, Object> data = execute(
+            "{ filmsOrderedConnection(first: 2) { nodes { filmId title } } }");
+        var conn = (Map<String, Object>) data.get("filmsOrderedConnection");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(nodes).hasSize(2);
+        assertThat(nodes).extracting(n -> n.get("title"))
+            .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER");
+    }
+
+    @Test
+    void filmsOrderedConnection_orderByTitle_paginatesAlphabetically() {
+        Map<String, Object> data = execute(
+            "{ filmsOrderedConnection(order: [{field: TITLE, direction: ASC}], first: 3) { nodes { title } } }");
+        var conn = (Map<String, Object>) data.get("filmsOrderedConnection");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(nodes).hasSize(3);
+        // ACADEMY DINOSAUR < ACE GOLDFINGER < ADAPTATION HOLES alphabetically
+        assertThat(nodes).extracting(n -> n.get("title"))
+            .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER", "ADAPTATION HOLES");
+    }
+
+    @Test
+    void filmsOrderedConnection_orderByTitle_cursorNavigation() {
+        // Get page 1 ordered by title, then follow cursor
+        Map<String, Object> page1Data = execute(
+            "{ filmsOrderedConnection(order: [{field: TITLE, direction: ASC}], first: 2) { " +
+            "nodes { title } pageInfo { endCursor hasNextPage } } }");
+        var conn1 = (Map<String, Object>) page1Data.get("filmsOrderedConnection");
+        var pageInfo1 = (Map<String, Object>) conn1.get("pageInfo");
+        String endCursor = (String) pageInfo1.get("endCursor");
+        assertThat(endCursor).isNotNull();
+        assertThat(pageInfo1.get("hasNextPage")).isEqualTo(true);
+
+        Map<String, Object> page2Data = execute(
+            "{ filmsOrderedConnection(order: [{field: TITLE, direction: ASC}], first: 2, after: \"" +
+            endCursor + "\") { nodes { title } } }");
+        var conn2 = (Map<String, Object>) page2Data.get("filmsOrderedConnection");
+        List<Map<String, Object>> nodes2 = (List<Map<String, Object>>) conn2.get("nodes");
+        assertThat(nodes2).extracting(n -> n.get("title"))
+            .containsExactly("ADAPTATION HOLES", "AFFAIR PREJUDICE");
+    }
 }

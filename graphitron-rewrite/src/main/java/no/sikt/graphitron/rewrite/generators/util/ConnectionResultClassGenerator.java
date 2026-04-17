@@ -14,9 +14,9 @@ import java.util.List;
  * Generates the {@code ConnectionResult} carrier class, emitted once per code-generation run.
  *
  * <p>A connection field fetcher returns a {@code ConnectionResult} wrapping the raw
- * {@code Result<Record>} together with pagination context (page size, cursor, resolved ORDER BY
- * columns). This object becomes {@code env.getSource()} for all Connection-level resolvers
- * ({@code edges}, {@code nodes}, {@code pageInfo}).
+ * {@code Result<Record>} together with pagination context (page size, cursors, direction,
+ * resolved ORDER BY columns). This object becomes {@code env.getSource()} for all
+ * Connection-level resolvers ({@code edges}, {@code nodes}, {@code pageInfo}).
  *
  * <p>Generated as a source file rather than shipped as a library dependency so that consuming
  * projects have no runtime dependency on Graphitron itself.
@@ -39,6 +39,8 @@ public class ConnectionResultClassGenerator {
         var resultField = FieldSpec.builder(resultOfRecord, "result", Modifier.PRIVATE, Modifier.FINAL).build();
         var pageSizeField = FieldSpec.builder(int.class, "pageSize", Modifier.PRIVATE, Modifier.FINAL).build();
         var afterCursorField = FieldSpec.builder(String.class, "afterCursor", Modifier.PRIVATE, Modifier.FINAL).build();
+        var beforeCursorField = FieldSpec.builder(String.class, "beforeCursor", Modifier.PRIVATE, Modifier.FINAL).build();
+        var backwardField = FieldSpec.builder(boolean.class, "backward", Modifier.PRIVATE, Modifier.FINAL).build();
         var orderByColumnsField = FieldSpec.builder(listOfField, "orderByColumns", Modifier.PRIVATE, Modifier.FINAL).build();
 
         // Constructor
@@ -47,10 +49,14 @@ public class ConnectionResultClassGenerator {
             .addParameter(resultOfRecord, "result")
             .addParameter(int.class, "pageSize")
             .addParameter(String.class, "afterCursor")
+            .addParameter(String.class, "beforeCursor")
+            .addParameter(boolean.class, "backward")
             .addParameter(listOfField, "orderByColumns")
             .addStatement("this.result = result")
             .addStatement("this.pageSize = pageSize")
             .addStatement("this.afterCursor = afterCursor")
+            .addStatement("this.beforeCursor = beforeCursor")
+            .addStatement("this.backward = backward")
             .addStatement("this.orderByColumns = orderByColumns")
             .build();
 
@@ -73,33 +79,48 @@ public class ConnectionResultClassGenerator {
             .addStatement("return afterCursor")
             .build();
 
+        var getBeforeCursor = MethodSpec.methodBuilder("beforeCursor")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(String.class)
+            .addStatement("return beforeCursor")
+            .build();
+
+        var getBackward = MethodSpec.methodBuilder("backward")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(boolean.class)
+            .addStatement("return backward")
+            .build();
+
         var getOrderByColumns = MethodSpec.methodBuilder("orderByColumns")
             .addModifiers(Modifier.PUBLIC)
             .returns(listOfField)
             .addStatement("return orderByColumns")
             .build();
 
-        // trimmedResult() — trims to pageSize (the over-fetch row is excluded)
+        // trimmedResult() — trims to pageSize; re-reverses for backward pagination
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         var trimmedResult = MethodSpec.methodBuilder("trimmedResult")
             .addModifiers(Modifier.PUBLIC)
             .returns(listOfRecord)
-            .addStatement("if (result.size() <= pageSize) return result")
-            .addStatement("return result.subList(0, pageSize)")
+            .addStatement("var raw = result.size() <= pageSize ? result : result.subList(0, pageSize)")
+            .addCode("if (!backward) return raw;\n")
+            .addStatement("var rev = new java.util.ArrayList<$T>(raw.size())", RECORD)
+            .addCode("for (int i = raw.size() - 1; i >= 0; i--) rev.add(raw.get(i));\n")
+            .addStatement("return rev")
             .build();
 
-        // hasNextPage() — true when the result has more rows than the page size
+        // hasNextPage() — for forward: over-fetched; for backward: afterCursor was supplied
         var hasNextPage = MethodSpec.methodBuilder("hasNextPage")
             .addModifiers(Modifier.PUBLIC)
             .returns(boolean.class)
-            .addStatement("return result.size() > pageSize")
+            .addStatement("return backward ? afterCursor != null : result.size() > pageSize")
             .build();
 
-        // hasPreviousPage() — true when an afterCursor was supplied (we came from a previous page)
+        // hasPreviousPage() — for forward: afterCursor was supplied; for backward: over-fetched
         var hasPreviousPage = MethodSpec.methodBuilder("hasPreviousPage")
             .addModifiers(Modifier.PUBLIC)
             .returns(boolean.class)
-            .addStatement("return afterCursor != null")
+            .addStatement("return backward ? result.size() > pageSize : afterCursor != null")
             .build();
 
         var spec = TypeSpec.classBuilder(CLASS_NAME)
@@ -107,11 +128,15 @@ public class ConnectionResultClassGenerator {
             .addField(resultField)
             .addField(pageSizeField)
             .addField(afterCursorField)
+            .addField(beforeCursorField)
+            .addField(backwardField)
             .addField(orderByColumnsField)
             .addMethod(constructor)
             .addMethod(getResult)
             .addMethod(getPageSize)
             .addMethod(getAfterCursor)
+            .addMethod(getBeforeCursor)
+            .addMethod(getBackward)
             .addMethod(getOrderByColumns)
             .addMethod(trimmedResult)
             .addMethod(hasNextPage)

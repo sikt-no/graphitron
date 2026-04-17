@@ -586,4 +586,76 @@ class TypeFetcherGeneratorTest {
         assertThat(code).doesNotContain("\"first\"");
         assertThat(code).doesNotContain("\"after\"");
     }
+
+    // ===== Backward pagination and Relay validation =====
+
+    @Test
+    void connectionField_emitsLastAndBeforeArgReads() {
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
+        var code = method(spec, "films").code().toString();
+        assertThat(code).contains("\"last\"");
+        assertThat(code).contains("\"before\"");
+    }
+
+    @Test
+    void connectionField_emitsRelayValidation_firstAndLastConflict() {
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
+        var code = method(spec, "films").code().toString();
+        // Relay spec: must reject if both first and last are supplied
+        assertThat(code).contains("IllegalArgumentException");
+        assertThat(code).contains("first != null && last != null");
+    }
+
+    @Test
+    void connectionField_emitsBackwardFlag() {
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
+        var code = method(spec, "films").code().toString();
+        assertThat(code).contains("backward");
+        assertThat(code).contains("last != null");
+    }
+
+    @Test
+    void connectionField_emitsReverseOrderByHelper() {
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
+        assertThat(spec.methodSpecs()).extracting(MethodSpec::name).contains("reverseOrderBy");
+    }
+
+    @Test
+    void connectionField_reverseOrderByHelper_isPrivateStatic() {
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
+        var m = method(spec, "reverseOrderBy");
+        assertThat(m.modifiers()).containsExactlyInAnyOrder(
+            javax.lang.model.element.Modifier.PRIVATE, javax.lang.model.element.Modifier.STATIC);
+    }
+
+    @Test
+    void connectionField_reverseOrderByHelper_returnsSortFieldList() {
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
+        assertThat(method(spec, "reverseOrderBy").returnType().toString())
+            .isEqualTo("java.util.List<org.jooq.SortField<?>>");
+    }
+
+    @Test
+    void noConnectionField_noReverseOrderByHelper() {
+        var field = queryTableField("films", true);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(spec.methodSpecs()).extracting(MethodSpec::name).doesNotContain("reverseOrderBy");
+    }
+
+    @Test
+    void connectionField_usesSingleExpressionSeek() {
+        // Type-safe cursor: decodeCursor returns Field<?>[], used in .seek() directly — no if-branch
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
+        var code = method(spec, "films").code().toString();
+        assertThat(code).contains(".seek(seekFields)");
+        assertThat(code).doesNotContain("if (seekValues");
+    }
+
+    @Test
+    void connectionField_columnDrivenCursorDecode() {
+        // decodeCursor must receive extraFields (the ORDER BY column list) — not just the cursor string
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
+        var code = method(spec, "films").code().toString();
+        assertThat(code).contains("decodeCursor(cursor, extraFields)");
+    }
 }

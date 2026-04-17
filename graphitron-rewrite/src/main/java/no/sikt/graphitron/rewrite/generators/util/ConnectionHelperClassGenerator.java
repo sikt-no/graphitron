@@ -1,8 +1,7 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
+import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
@@ -26,7 +25,12 @@ import java.util.List;
  *
  * <p>Also contains a nested {@code Edge} record class carrying a {@code Record} and cursor string.
  *
- * <p>Cursor encoding: Base64-encoded JSON array of column values with type tags.
+ * <p>Cursor encoding: each ORDER BY column value is serialised as a JSON array element using
+ * {@code field.getDataType().convert(val)} for type-safe round-tripping. The array is
+ * Base64-encoded. {@code null} values are encoded as JSON {@code null}. Decoding returns
+ * {@code Field<?>[]} using {@code DSL.val(converted, dataType)} per column, so jOOQ's
+ * {@code .seek(Field<?>...)} receives correctly-typed bind values. When no cursor is present,
+ * {@code DSL.noField(field)} is returned per column — making {@code .seek()} a no-op.
  *
  * <p>Generated as a source file so consuming projects have no runtime dependency on Graphitron.
  */
@@ -38,6 +42,7 @@ public class ConnectionHelperClassGenerator {
     private static final ClassName RESULT           = ClassName.get("org.jooq", "Result");
     private static final ClassName RECORD           = ClassName.get("org.jooq", "Record");
     private static final ClassName JOOQ_FIELD       = ClassName.get("org.jooq", "Field");
+    private static final ClassName DSL              = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName LIST_CLASS       = ClassName.get(List.class);
     private static final ClassName MAP              = ClassName.get("java.util", "Map");
     private static final ClassName ARRAY_LIST       = ClassName.get("java.util", "ArrayList");
@@ -71,35 +76,62 @@ public class ConnectionHelperClassGenerator {
                 .build())
             .build();
 
-        // --- encodeCursor(Record, List<Field<?>>) ---
         var fieldWildcard = ParameterizedTypeName.get(JOOQ_FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST_CLASS, fieldWildcard);
 
+        // --- encodeCursor(Record, List<Field<?>>) ---
+        // Column-driven: each value serialised via DataType (no hand-rolled type tags).
         var encodeCursor = MethodSpec.methodBuilder("encodeCursor")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(String.class)
             .addParameter(RECORD, "record")
             .addParameter(listOfField, "orderByColumns")
-            .addStatement("var sb = new StringBuilder(\"[\")")
+            .addStatement("var sb = new $T()", ClassName.get("java.lang", "StringBuilder"))
+            .addStatement("sb.append('[')")
             .addCode("for (int i = 0; i < orderByColumns.size(); i++) {\n")
-            .addCode("    if (i > 0) sb.append(\",\");\n")
+            .addCode("    if (i > 0) sb.append(',');\n")
             .addCode("    Object val = record.get(orderByColumns.get(i));\n")
-            .addCode("    if (val == null) { sb.append(\"\\\"n:\\\"\"); continue; }\n")
-            .addCode("    String tag = switch (val) {\n")
-            .addCode("        case Integer ignored -> \"i\";\n")
-            .addCode("        case Long ignored -> \"l\";\n")
-            .addCode("        case String ignored -> \"s\";\n")
-            .addCode("        case java.math.BigDecimal ignored -> \"d\";\n")
-            .addCode("        case Short ignored -> \"h\";\n")
-            .addCode("        case java.sql.Timestamp ignored -> \"t\";\n")
-            .addCode("        case java.time.LocalDateTime ignored -> \"T\";\n")
-            .addCode("        case Boolean ignored -> \"b\";\n")
-            .addCode("        default -> \"s\";\n")
-            .addCode("    };\n")
-            .addCode("    sb.append('\"').append(tag).append(':').append(val).append('\"');\n")
+            .addCode("    if (val == null) {\n")
+            .addCode("        sb.append(\"null\");\n")
+            .addCode("    } else {\n")
+            .addCode("        sb.append(org.jooq.tools.json.JSONValue.toJSONString(val.toString()));\n")
+            .addCode("    }\n")
             .addCode("}\n")
-            .addStatement("sb.append(\"]\")")
+            .addStatement("sb.append(']')")
             .addStatement("return $T.getEncoder().encodeToString(sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))", BASE64)
+            .build();
+
+        // --- decodeCursor(String cursor, List<Field<?>>) → Field<?>[] ---
+        // Returns DSL.noField(col) per column when cursor is null (seek no-op).
+        // Returns DSL.val(DataType.convert(token), DataType) per column when cursor is present.
+        var decodeCursor = MethodSpec.methodBuilder("decodeCursor")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ArrayTypeName.of(fieldWildcard))
+            .addParameter(String.class, "cursor")
+            .addParameter(listOfField, "orderByColumns")
+            .addStatement("$T[] seekFields = new $T[orderByColumns.size()]", JOOQ_FIELD, JOOQ_FIELD)
+            .addCode("if (cursor == null) {\n")
+            .addCode("    for (int i = 0; i < orderByColumns.size(); i++)\n")
+            .addCode("        seekFields[i] = $T.noField(orderByColumns.get(i));\n", DSL)
+            .addCode("    return seekFields;\n")
+            .addCode("}\n")
+            .addStatement("String json = new String($T.getDecoder().decode(cursor), java.nio.charset.StandardCharsets.UTF_8)", BASE64)
+            .addCode("org.jooq.tools.json.JSONArray arr;\n")
+            .addCode("try {\n")
+            .addCode("    arr = (org.jooq.tools.json.JSONArray) org.jooq.tools.json.JSONValue.parseWithException(json);\n")
+            .addCode("} catch (org.jooq.tools.json.ParseException e) {\n")
+            .addCode("    throw new IllegalArgumentException(\"Invalid cursor\", e);\n")
+            .addCode("}\n")
+            .addCode("for (int i = 0; i < orderByColumns.size(); i++) {\n")
+            .addCode("    Object token = arr.get(i);\n")
+            .addCode("    $T col = orderByColumns.get(i);\n", JOOQ_FIELD)
+            .addCode("    if (token == null) {\n")
+            .addCode("        seekFields[i] = $T.val((Object) null, col.getDataType());\n", DSL)
+            .addCode("    } else {\n")
+            .addCode("        seekFields[i] = $T.val(col.getDataType().convert(token.toString()), col.getDataType());\n", DSL)
+            .addCode("    }\n")
+            .addCode("}\n")
+            .addStatement("return seekFields")
             .build();
 
         // --- edges(DataFetchingEnvironment) → List<Edge> ---
@@ -164,52 +196,6 @@ public class ConnectionHelperClassGenerator {
             .returns(String.class)
             .addParameter(ENV, "env")
             .addStatement("return (($L) env.getSource()).cursor()", "Edge")
-            .build();
-
-        // --- decodeCursor(String) → Object[] ---
-        var decodeCursor = MethodSpec.methodBuilder("decodeCursor")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(Object[].class)
-            .addParameter(String.class, "cursor")
-            .addStatement("String json = new String($T.getDecoder().decode(cursor), java.nio.charset.StandardCharsets.UTF_8)", BASE64)
-            .addCode("// Parse the JSON array of type-tagged values\n")
-            .addStatement("json = json.strip()")
-            .addStatement("if (!json.startsWith(\"[\") || !json.endsWith(\"]\")) throw new IllegalArgumentException(\"Invalid cursor format\")")
-            .addStatement("json = json.substring(1, json.length() - 1)")
-            .addStatement("if (json.isEmpty()) return new Object[0]")
-            .addCode("// Quote-aware split: don't split on commas inside quoted tokens\n")
-            .addCode("java.util.List<String> tokenList = new java.util.ArrayList<>();\n")
-            .addCode("boolean inQuotes = false;\n")
-            .addCode("int segStart = 0;\n")
-            .addCode("for (int k = 0; k < json.length(); k++) {\n")
-            .addCode("    char ch = json.charAt(k);\n")
-            .addCode("    if (ch == '\"') inQuotes = !inQuotes;\n")
-            .addCode("    else if (ch == ',' && !inQuotes) {\n")
-            .addCode("        tokenList.add(json.substring(segStart, k).strip());\n")
-            .addCode("        segStart = k + 1;\n")
-            .addCode("    }\n")
-            .addCode("}\n")
-            .addCode("tokenList.add(json.substring(segStart).strip());\n")
-            .addStatement("Object[] values = new Object[tokenList.size()]")
-            .addCode("for (int i = 0; i < tokenList.size(); i++) {\n")
-            .addCode("    String part = tokenList.get(i);\n")
-            .addCode("    if (part.startsWith(\"\\\"\")) part = part.substring(1, part.length() - 1);\n")
-            .addCode("    if (part.equals(\"n:\")) { values[i] = null; continue; }\n")
-            .addCode("    int colon = part.indexOf(':');\n")
-            .addCode("    String tag = part.substring(0, colon);\n")
-            .addCode("    String val = part.substring(colon + 1);\n")
-            .addCode("    values[i] = switch (tag) {\n")
-            .addCode("        case \"i\" -> Integer.parseInt(val);\n")
-            .addCode("        case \"l\" -> Long.parseLong(val);\n")
-            .addCode("        case \"h\" -> Short.parseShort(val);\n")
-            .addCode("        case \"d\" -> new java.math.BigDecimal(val);\n")
-            .addCode("        case \"b\" -> Boolean.parseBoolean(val);\n")
-            .addCode("        case \"t\" -> java.sql.Timestamp.valueOf(val);\n")
-            .addCode("        case \"T\" -> java.time.LocalDateTime.parse(val);\n")
-            .addCode("        default -> val;\n")
-            .addCode("    };\n")
-            .addCode("}\n")
-            .addStatement("return values")
             .build();
 
         var spec = TypeSpec.classBuilder(CLASS_NAME)

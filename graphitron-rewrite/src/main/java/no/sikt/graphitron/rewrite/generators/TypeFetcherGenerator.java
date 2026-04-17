@@ -163,6 +163,14 @@ public class TypeFetcherGenerator {
             }
         }
 
+        // Emit reverseOrderBy helper whenever any connection field is present
+        boolean hasConnectionField = fields.stream().anyMatch(f ->
+            f instanceof QueryField.QueryTableField qtf &&
+            qtf.returnType().wrapper() instanceof FieldWrapper.Connection);
+        if (hasConnectionField) {
+            builder.addMethod(buildReverseOrderByHelper());
+        }
+
         builder.addMethod(buildWiringMethod(typeName, className, parentTable, fields));
         return builder.build();
     }
@@ -249,16 +257,20 @@ public class TypeFetcherGenerator {
     /**
      * Generates a connection field fetcher that returns a {@code ConnectionResult}.
      *
-     * <p>Extracts pagination args, decodes cursor, builds condition and orderBy, executes inline
-     * paginated SQL with name-based extra-field deduplication, and wraps the result in
-     * a {@code ConnectionResult}.
+     * <p>Extracts all four Relay pagination args, validates that {@code first} and {@code last}
+     * are not both supplied, decodes cursor using column metadata, builds condition and orderBy,
+     * reverses ordering for backward pagination, executes inline paginated SQL with
+     * name-based extra-field deduplication, and wraps the result in a {@code ConnectionResult}.
      */
     private static MethodSpec buildQueryConnectionFetcher(QueryField.QueryTableField qtf) {
         var tableRef = qtf.returnType().table();
         var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName());
         var connectionResultClass = ClassName.get(
             RewriteConfig.outputPackage() + ".rewrite", ConnectionResultClassGenerator.CLASS_NAME);
+        var connectionHelperClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite", ConnectionHelperClassGenerator.CLASS_NAME);
         var conn = (FieldWrapper.Connection) qtf.returnType().wrapper();
+        var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
 
         var builder = MethodSpec.methodBuilder(qtf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -271,19 +283,31 @@ public class TypeFetcherGenerator {
         // keeping them in sync when the client picks a dynamic named order.
         builder.addCode(buildConnectionOrderingBlock(qtf.orderBy(), qtf.name(), names));
 
-        // Extract pagination arguments using arg names from the model
+        // Extract all four Relay pagination arguments using arg names from the model
         var pagination = qtf.pagination();
-        var firstArgName = pagination != null && pagination.first() != null ? pagination.first().name() : "first";
-        var afterArgName = pagination != null && pagination.after() != null ? pagination.after().name() : "after";
-        builder.addStatement("Integer first = env.getArgument($S)", firstArgName);
-        builder.addStatement("String after = env.getArgument($S)", afterArgName);
-        builder.addStatement("int pageSize = first != null ? first : $L", conn.defaultPageSize());
+        var firstArgName  = pagination != null && pagination.first()  != null ? pagination.first().name()  : "first";
+        var lastArgName   = pagination != null && pagination.last()   != null ? pagination.last().name()   : "last";
+        var afterArgName  = pagination != null && pagination.after()  != null ? pagination.after().name()  : "after";
+        var beforeArgName = pagination != null && pagination.before() != null ? pagination.before().name() : "before";
 
-        // Decode cursor to seek values (null if no cursor)
-        var connectionHelperClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", ConnectionHelperClassGenerator.CLASS_NAME);
-        builder.addStatement("Object[] seekValues = after != null ? $T.decodeCursor(after) : null",
-            connectionHelperClass);
+        builder.addStatement("Integer first = env.getArgument($S)", firstArgName);
+        builder.addStatement("Integer last = env.getArgument($S)", lastArgName);
+        builder.addStatement("String after = env.getArgument($S)", afterArgName);
+        builder.addStatement("String before = env.getArgument($S)", beforeArgName);
+
+        // Relay spec: clients must not supply both first and last
+        builder.addCode("if (first != null && last != null)\n");
+        builder.addCode("    throw new IllegalArgumentException(\"first and last must not both be specified\");\n");
+
+        builder.addStatement("boolean backward = last != null");
+        builder.addStatement("int pageSize = backward ? last : (first != null ? first : $L)", conn.defaultPageSize());
+        builder.addStatement("String cursor = backward ? before : after");
+
+        // Column-driven cursor decode: returns Field<?>[] — DSL.noField() per column when cursor is null (seek no-op)
+        builder.addStatement("$T[] seekFields = $T.decodeCursor(cursor, extraFields)", JOOQ_FIELD, connectionHelperClass);
+
+        // Reverse sort direction for backward pagination
+        builder.addStatement("$T effectiveOrderBy = backward ? reverseOrderBy(orderBy) : orderBy", SORT_FIELD_LIST);
 
         // Build select list from $fields; merge extra ordering columns by name to avoid
         // dependence on Field.equals() identity (avoids missed deduplication if Field instances differ)
@@ -291,27 +315,53 @@ public class TypeFetcherGenerator {
         builder.addStatement("var fields = new $T<>($T.$$fields(env.getSelectionSet(), table, env))",
             ARRAY_LIST, names.typeClass());
         builder.addStatement("var selectedNames = fields.stream().map($T::getName).collect($T.toSet())",
-            ClassName.get("org.jooq", "Field"), ClassName.get("java.util.stream", "Collectors"));
+            JOOQ_FIELD, ClassName.get("java.util.stream", "Collectors"));
         builder.addCode("for (var extra : extraFields) {\n");
         builder.addCode("    if (!selectedNames.contains(extra.getName())) fields.add(extra);\n");
         builder.addCode("}\n");
 
-        // Build and execute paginated query inline
+        // Single-expression paginated query — seek is a no-op when seekFields are noField()
         builder.addCode(CodeBlock.builder()
-            .add("var query = dsl\n")
+            .add("var result = dsl\n")
             .indent()
             .add(".select(fields)\n")
             .add(".from(table)\n")
             .add(".where(condition)\n")
-            .add(".orderBy(orderBy);\n")
+            .add(".orderBy(effectiveOrderBy.toArray(new $T[0]))\n", SORT_FIELD)
+            .add(".seek(seekFields)\n")
+            .add(".limit(pageSize + 1)\n")
+            .add(".fetch();\n")
             .unindent()
-            .add("if (seekValues != null && seekValues.length > 0) query = query.seek(seekValues);\n")
             .build());
 
-        builder.addStatement("return new $T(query.limit(pageSize + 1).fetch(), pageSize, after, extraFields)",
+        builder.addStatement("return new $T(result, pageSize, after, before, backward, extraFields)",
             connectionResultClass);
 
         return builder.build();
+    }
+
+    /**
+     * Generates the private {@code reverseOrderBy(List<SortField<?>>)} helper used by
+     * backward-paginating connection fetchers to flip sort directions.
+     *
+     * <p>Uses jOOQ's {@code $field()} and {@code $sortOrder()} model-API accessors (stable
+     * since jOOQ 3.17) — the only way to flip a {@code SortField}'s direction without losing
+     * its expression.
+     */
+    private static MethodSpec buildReverseOrderByHelper() {
+        var SORT_ORDER = ClassName.get("org.jooq", "SortOrder");
+        return MethodSpec.methodBuilder("reverseOrderBy")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(SORT_FIELD_LIST)
+            .addParameter(SORT_FIELD_LIST, "orderBy")
+            .addStatement("var reversed = new $T<$T<?>>(orderBy.size())", ARRAY_LIST, SORT_FIELD)
+            .addCode("for ($T<?> sf : orderBy) {\n", SORT_FIELD)
+            .addCode("    // $$field() and $$sortOrder() are jOOQ model-API accessors (stable since 3.17).\n")
+            .addCode("    reversed.add(sf.$$field().sort(\n")
+            .addCode("        sf.$$sortOrder() == $T.DESC ? $T.ASC : $T.DESC));\n", SORT_ORDER, SORT_ORDER, SORT_ORDER)
+            .addCode("}\n")
+            .addStatement("return reversed")
+            .build();
     }
 
     /**
