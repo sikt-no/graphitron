@@ -212,15 +212,41 @@ Once the sealed type hierarchy is stable (Active work and Stubs completed), fini
 
 Full plan: `docs/plan-docs-as-index-into-tests.md`.
 
+### Deferred: classification vocabulary follow-ups
+
+Five small items surfaced while rewriting
+[code-generation-triggers.md](code-generation-triggers.md) around the "source context vs. target
+type" split. None is a release blocker; they can land independently.
+
+- **Item 1** — fix the G6 table below (`@condition` is not blocked on lookup fields; the doc now
+  says "allowed, must preserve N × M contract"). Pure doc edit in this file.
+- **Item 2** — emit a build warning when `@splitQuery` appears on a result-mapped parent;
+  requires introducing a warnings channel on the builder (today only `LOG.warn` exists). Reusable
+  by P2 #3 if stubbed-variant schemas should warn in some configurations.
+- **Item 3** — audit `argument-resolution.md` and `graphitron-java-codegen/README.md` for
+  lingering "lookup-in-scope" or "condition-blocked-on-lookup" wording; prefer cross-links to
+  `code-generation-triggers.md#classification-vocabulary`.
+- **Item 4** — consider adding a source×target grid to `rewrite-model.md` (low priority; skip if
+  the existing diagrams are working well enough).
+- **Item 5** — document the lookup-condition method signature (parameters, valid `ParamSource`
+  variants) in the `graphitron-java-codegen` README, and add a `graphitron-rewrite-test-spec`
+  execution test covering it. **This item is the real blocker — it gates G5 and G6 execution
+  tests.** Cross-reference from the G5/G6 sections below.
+
+Full plan: [`docs/plan-classification-vocabulary-followups.md`](plan-classification-vocabulary-followups.md).
+
 ### G5 — Inline `TableField`
 
 `TableField` in table-mapped source context (no `@splitQuery`). Extends the SQL scope with an inline subselect — does not start a new scope or use a DataLoader. Introduces the static field method pattern (called from the parent type class during SELECT assembly).
 
 Join paths (`TableField.joinPath()`) may contain both `FkJoin` and `ConditionJoin` steps. The builder fully resolves both (condition-join `MethodRef` reflection is implemented). The generator must handle both: `FkJoin` emits a standard FK-driven JOIN; `ConditionJoin` emits a join whose ON clause is the result of calling `condition.method(srcAlias, tgtAlias)`.
 
+Execution-test prerequisite: document the lookup-condition method signature (see
+[classification-vocabulary-followups item 5](plan-classification-vocabulary-followups.md#5-document-the-lookup-condition-method-signature-prerequisite-for-g5g6-execution-tests)).
+
 ### G6 — Split/Lookup field categories
 
-G6 covers four categories of DataLoader-backed field. Before implementing any category, verify the model is generation-ready.
+G6 covers four categories of DataLoader-backed field. Before implementing any category, verify the model is generation-ready. Execution-test prerequisite same as G5 above.
 
 | Category | DataLoader | Derived tables | `@condition` / non-`@lookupKey` args | Pagination |
 |---|---|---|---|---|
