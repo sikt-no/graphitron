@@ -136,9 +136,10 @@ how every subsequent plan lands.
    from the top of this file once it exists.
 5. **Cross-plan ownership.** Two types are referenced by multiple plans
    but owned by none:
-   - `InputColumnBinding` — required by platformId step 6, owned by
-     argument-resolution. Argument-resolution plan must commit a
-     definition that accommodates `PlatformIdField`.
+   - `InputColumnBinding` — required by platformId step 6 and
+     argument-resolution step 9. Canonical definition now committed in
+     [argument-resolution.md](argument-resolution.md#cross-plan-ownership);
+     platformId reuses it. Implementation lands with argument-resolution.
    - `BatchKey.ObjectBased` — exists in the sealed hierarchy but has no
      generator path. Decision (collapse into `RecordKeyed` vs implement a
      distinct `selectManyByObjectKeys`) should land before the next
