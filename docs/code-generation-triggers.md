@@ -66,7 +66,7 @@ Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
 
 | Kind | Purpose | Source |
 |---|---|---|
-| **Reference condition** | How two tables are joined within a scope | `@reference` directive, FK metadata |
+| **Reference condition** | How two tables are joined within a scope | `@reference` directive: FK key → `FkJoin`; condition method → `ConditionJoin` |
 | **Filter condition** | Narrows the result set | `@condition` directive, arguments, cursor |
 
 ### Structural properties

@@ -101,6 +101,8 @@ Generator bodies that currently throw `UnsupportedOperationException`, approxima
 
 `TableField` in table-mapped source context (no `@splitQuery`). Extends the SQL scope with an inline subselect — does not start a new scope or use a DataLoader. Introduces the static field method pattern (called from the parent type class during SELECT assembly).
 
+Join paths (`TableField.joinPath()`) may contain both `FkJoin` and `ConditionJoin` steps. The builder fully resolves both (condition-join `MethodRef` reflection is implemented). The generator must handle both: `FkJoin` emits a standard FK-driven JOIN; `ConditionJoin` emits a join whose ON clause is the result of calling `condition.method(srcAlias, tgtAlias)`.
+
 ### G6 — Split/Lookup field categories
 
 G6 covers four categories of DataLoader-backed field. Before implementing any category, verify the model is generation-ready.
@@ -118,7 +120,9 @@ G6 covers four categories of DataLoader-backed field. Before implementing any ca
 
 ### `ConditionFilter` has no builder path
 
-`FieldBuilder` currently produces `GeneratedConditionFilter` entries for filterable arguments, but never produces `ConditionFilter` entries for `@condition` directives. Field-level `@condition` annotations are not yet classified into the rewrite pipeline's filter list.
+`FieldBuilder` currently produces `GeneratedConditionFilter` entries for filterable arguments, but never produces `ConditionFilter` entries for `@condition` directives on fields. Field-level `@condition` annotations — WHERE predicates applied to the field's own target table — are not yet classified into the rewrite pipeline's filter list.
+
+**Note:** This gap is about the `@condition` directive on *fields* (WHERE predicate). It is distinct from condition joins in `@reference` paths — `{condition: {className, method}}` in a `path:` element — which are fully resolved by the builder into `ConditionJoin` steps.
 
 **Fix**: add `@condition` directive reading to `FieldBuilder.resolveFilters()`. `ConditionFilter` now implements `MethodRef` directly, so the builder constructs it with `(className, methodName, params)` and `callParams()` is derived automatically.
 
