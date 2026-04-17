@@ -1025,7 +1025,17 @@ class GraphitronSchemaBuilderTest {
             type Actor @table(name: "actor") { media: MediaItem }
             type Query { actor: Actor }
             """,
-            schema -> assertThat(schema.field("Actor", "media")).isInstanceOf(UnionField.class));
+            schema -> assertThat(schema.field("Actor", "media")).isInstanceOf(UnionField.class)),
+
+        UNION_WITH_NESTING_MEMBER(
+            "union with a nesting-type member (no @table) → union classified as UnclassifiedType",
+            """
+            type Film @table(name: "film") { title: String }
+            type DatePeriod { fraDato: String @field(name: "DATO_FRA") }
+            union MediaOrPeriod = Film | DatePeriod
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.type("MediaOrPeriod")).isInstanceOf(UnclassifiedType.class));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;

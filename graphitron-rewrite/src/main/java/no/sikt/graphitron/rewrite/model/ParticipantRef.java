@@ -21,8 +21,9 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBound, Partic
      * A table-backed participant.
      *
      * <p>{@code table} is always non-null. {@code discriminatorValue} is the value from
-     * {@code @discriminator(value:)} on this type, or {@code null} when {@code @discriminator}
-     * is absent.
+     * {@code @discriminator(value:)} on this type, or {@code null} when the directive is absent.
+     * Only populated for {@link GraphitronType.TableInterfaceType} participants; always {@code null}
+     * for plain {@link GraphitronType.InterfaceType} (multi-table) participants.
      */
     record TableBound(String typeName, TableRef table, String discriminatorValue)
             implements ParticipantRef {}

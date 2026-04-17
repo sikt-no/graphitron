@@ -110,9 +110,9 @@ class TypeBuilder {
         ctx.types = result;
 
         result.replaceAll((name, type) -> switch (type) {
-            case TableInterfaceType tit   -> enrichTableInterfaceType(tit, result);
-            case InterfaceType it         -> enrichInterfaceType(it, result);
-            case UnionType ut             -> enrichUnionType(ut, result);
+            case TableInterfaceType tit   -> enrichTableInterfaceType(tit);
+            case InterfaceType it         -> enrichInterfaceType(it);
+            case UnionType ut             -> enrichUnionType(ut);
             case TableType ignored        -> type;
             case NodeType ignored         -> type;
             case ResultType ignored       -> type;
@@ -126,51 +126,45 @@ class TypeBuilder {
         return result;
     }
 
-    private GraphitronType enrichTableInterfaceType(TableInterfaceType type, Map<String, GraphitronType> types) {
-        var participants = buildParticipantList(implementorNames(type.name(), types));
+    private GraphitronType enrichTableInterfaceType(TableInterfaceType type) {
+        var participants = buildParticipantList(implementorNames(type.name()), false);
         if (participants.error() != null) {
             return new UnclassifiedType(type.name(), type.location(), participants.error());
         }
         return new TableInterfaceType(type.name(), type.location(), type.discriminatorColumn(), type.table(), participants.list());
     }
 
-    private GraphitronType enrichInterfaceType(InterfaceType type, Map<String, GraphitronType> types) {
-        var result = new ArrayList<ParticipantRef>();
-        var errors = new ArrayList<String>();
-        for (var typeName : implementorNames(type.name(), types)) {
-            var gt = ctx.types.get(typeName);
-            if (gt instanceof TableBackedType tbt && !(gt instanceof TableInterfaceType)) {
-                String discriminatorValue = argString(ctx.schema.getObjectType(typeName), DIR_DISCRIMINATOR, ARG_VALUE).orElse(null);
-                result.add(new ParticipantRef.TableBound(typeName, tbt.table(), discriminatorValue));
-            } else if (gt instanceof UnclassifiedType) {
-                errors.add("implementing type '" + typeName + "' is not table-bound (missing @table directive)");
-            } else {
-                // gt is null (nesting type, no @table) or another recognized non-table type → Unbound
-                result.add(new ParticipantRef.Unbound(typeName));
-            }
+    private GraphitronType enrichInterfaceType(InterfaceType type) {
+        var participants = buildParticipantList(implementorNames(type.name()), true);
+        if (participants.error() != null) {
+            return new UnclassifiedType(type.name(), type.location(), participants.error());
         }
-        if (!errors.isEmpty()) {
-            return new UnclassifiedType(type.name(), type.location(), String.join("; ", errors));
-        }
-        return new InterfaceType(type.name(), type.location(), List.copyOf(result));
+        return new InterfaceType(type.name(), type.location(), participants.list());
     }
 
-    private GraphitronType enrichUnionType(UnionType type, Map<String, GraphitronType> types) {
+    private GraphitronType enrichUnionType(UnionType type) {
         var unionType = (GraphQLUnionType) ctx.schema.getType(type.name());
         var names = unionType.getTypes().stream().map(t -> t.getName()).toList();
-        var participants = buildParticipantList(names);
+        var participants = buildParticipantList(names, false);
         if (participants.error() != null) {
             return new UnclassifiedType(type.name(), type.location(), participants.error());
         }
         return new UnionType(type.name(), type.location(), participants.list());
     }
 
-    private List<String> implementorNames(String interfaceName, Map<String, GraphitronType> types) {
+    private List<String> implementorNames(String interfaceName) {
         var iface = (GraphQLInterfaceType) ctx.schema.getType(interfaceName);
         return ctx.schema.getImplementations(iface).stream().map(obj -> obj.getName()).toList();
     }
 
-    private ParticipantListResult buildParticipantList(List<String> typeNames) {
+    /**
+     * @param allowNestingAsUnbound when {@code true}, types absent from {@code ctx.types} (no
+     *     {@code @table}, no {@code @record}, no {@code @error}) are accepted as
+     *     {@link ParticipantRef.Unbound} — they are nesting types whose fields expand against the
+     *     parent table. When {@code false} (union and {@code TableInterfaceType} participants),
+     *     every member must be table-bound or explicitly recognised; absent types are an error.
+     */
+    private ParticipantListResult buildParticipantList(List<String> typeNames, boolean allowNestingAsUnbound) {
         var result = new ArrayList<ParticipantRef>();
         var errors = new ArrayList<String>();
         for (var typeName : typeNames) {
@@ -179,6 +173,8 @@ class TypeBuilder {
                 String discriminatorValue = argString(ctx.schema.getObjectType(typeName), DIR_DISCRIMINATOR, ARG_VALUE).orElse(null);
                 result.add(new ParticipantRef.TableBound(typeName, tbt.table(), discriminatorValue));
             } else if (gt != null && !(gt instanceof UnclassifiedType)) {
+                result.add(new ParticipantRef.Unbound(typeName));
+            } else if (gt == null && allowNestingAsUnbound) {
                 result.add(new ParticipantRef.Unbound(typeName));
             } else {
                 errors.add("implementing type '" + typeName + "' is not table-bound (missing @table directive)");
