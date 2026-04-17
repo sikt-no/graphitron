@@ -143,7 +143,7 @@ Field-level override dominates: when set, per-arg `override` is irrelevant. When
 
 | Step | What | Depends on |
 |---|---|---|
-| 0 | Add `@orderBy` and `@asConnection` fields to `graphitron-rewrite-test-spec` so steps 2-3 regressions are caught end-to-end | Nothing |
+| 0 | ✅ **Done.** Existing test-spec already exercises `@orderBy` (`filmsOrderedConnection.order`) and pagination (`first/last/after/before`) end-to-end. Added one `rating: MpaaRating @field(name:"RATING")` arg to `filmsOrderedConnection` plus a `filmsOrderedConnection_filterPlusOrderPlusPagination_combinesAllThree` test so *all three* passes are exercised on a single field — without this, a refactor that broke cross-pass interaction would slip through single-pass tests. `@asConnection` directive-driven wrapper is not exercised end-to-end because the schema transform strips it before generation; covered by rewrite unit tests instead. | Nothing |
 | 1 | Define `ArgumentRef` + `ArgConditionRef` sealed hierarchy (builder-internal) | Nothing |
 | 2 | Extract `classifyArguments()` replacing all three passes (`buildFilters`, `buildOrderBySpec`, `buildPaginationSpec`). Returns `List<ArgumentRef>` only — no projection coupling. | Step 1 |
 | 3 | `projectForFilter(refs)` → `(List<WhereFilter>, OrderBySpec, PaginationSpec)` for non-lookup fields | Step 2 |
@@ -284,4 +284,4 @@ The original plan claimed "existing tests pass unchanged" without accounting for
 | 5 | Where `LookupMapping` lives | **`LookupField` capability interface** on the four lookup variants. |
 | 6 | `PlainInputArg` fate | Silent skip without `@condition`; project to `ConditionFilter` when `argCondition` is present. |
 | 7 | `InputColumnBinding` shape | Defined above; shared with legacy platform-id plan (roadmap P2 #5). |
-| 8 | `@orderBy`/`@asConnection` test-spec coverage | **Step 0** — add before step 2. |
+| 8 | `@orderBy`/`@asConnection` test-spec coverage | **Step 0 — done.** `@orderBy` and pagination were already covered; added a combined filter+orderBy+pagination test. `@asConnection` end-to-end coverage is blocked by the transform (covered via unit tests only). |

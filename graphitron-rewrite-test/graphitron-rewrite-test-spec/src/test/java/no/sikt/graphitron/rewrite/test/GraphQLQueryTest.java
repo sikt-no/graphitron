@@ -398,6 +398,20 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void filmsOrderedConnection_filterPlusOrderPlusPagination_combinesAllThree() {
+        // Exercises buildFilters + buildOrderBySpec + buildPaginationSpec on one field.
+        // Seed data: two G-rated films — ACE GOLDFINGER, AFFAIR PREJUDICE.
+        Map<String, Object> data = execute(
+            "{ filmsOrderedConnection(rating: G, order: [{field: TITLE, direction: ASC}], first: 1) { " +
+            "nodes { title } pageInfo { hasNextPage } } }");
+        var conn = (Map<String, Object>) data.get("filmsOrderedConnection");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
+        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
+        assertThat(nodes).extracting(n -> n.get("title")).containsExactly("ACE GOLDFINGER");
+        assertThat(pageInfo.get("hasNextPage")).isEqualTo(true);
+    }
+
+    @Test
     void filmsOrderedConnection_orderByTitle_cursorNavigation() {
         // Get page 1 ordered by title, then follow cursor
         Map<String, Object> page1Data = execute(

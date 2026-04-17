@@ -12,6 +12,7 @@ type Query {
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
     filmsOrderedConnection(
+        rating: MpaaRating @field(name: "RATING"),
         order: [FilmOrderBy] @orderBy,
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
