@@ -22,8 +22,10 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -38,6 +40,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Generates a {@link TypeSpec} for one {@code <TypeName>Fetchers} class in {@code rewrite.types}.
@@ -93,6 +96,69 @@ public class TypeFetcherGenerator {
         ParameterizedTypeName.get(SORT_FIELD, WildcardTypeName.subtypeOf(Object.class)));
 
     /**
+     * Field variants that generate real data fetcher code in {@link #generateTypeSpec}.
+     *
+     * <p>Together with {@link #UNIMPLEMENTED_VARIANTS} this set covers every leaf type reachable
+     * from {@link ChildField} and {@link RootField}. Adding a new {@code permits} variant without
+     * adding a case to the switch in {@link #generateTypeSpec} is a compile error. Adding a case
+     * that delegates to {@link #buildStub} must also add the class to {@link #UNIMPLEMENTED_VARIANTS}.
+     */
+    public static final Set<Class<? extends GraphitronField>> IMPLEMENTED_VARIANTS = Set.of(
+        ChildField.ColumnField.class,
+        QueryField.QueryLookupTableField.class,
+        QueryField.QueryTableField.class,
+        ChildField.ServiceTableField.class,
+        ChildField.SplitTableField.class,
+        ChildField.SplitLookupTableField.class
+    );
+
+    /**
+     * Field variants that emit a stub throwing {@link UnsupportedOperationException} at runtime.
+     * Each entry has a named {@code buildXxxStub} method in this class.
+     *
+     * <p>This constant is consumed by {@code GraphitronSchemaValidator} (P2 #4) to produce a
+     * build-time error rather than a runtime exception when a schema contains an unsupported
+     * variant. Adding a case that delegates to {@link #buildStub} must also register the class here.
+     */
+    public static final Set<Class<? extends GraphitronField>> UNIMPLEMENTED_VARIANTS = Set.of(
+        // QueryField stubs
+        QueryField.QueryTableMethodTableField.class,
+        QueryField.QueryNodeField.class,
+        QueryField.QueryEntityField.class,
+        QueryField.QueryTableInterfaceField.class,
+        QueryField.QueryInterfaceField.class,
+        QueryField.QueryUnionField.class,
+        QueryField.QueryServiceTableField.class,
+        QueryField.QueryServiceRecordField.class,
+        // MutationField stubs — see rewrite-roadmap.md 'Stubs to complete' #4
+        MutationField.MutationInsertTableField.class,
+        MutationField.MutationUpdateTableField.class,
+        MutationField.MutationDeleteTableField.class,
+        MutationField.MutationUpsertTableField.class,
+        MutationField.MutationServiceTableField.class,
+        MutationField.MutationServiceRecordField.class,
+        // ChildField stubs
+        ChildField.ColumnReferenceField.class,
+        ChildField.NodeIdField.class,
+        ChildField.NodeIdReferenceField.class,
+        ChildField.TableField.class,
+        ChildField.LookupTableField.class,
+        ChildField.TableInterfaceField.class,
+        ChildField.RecordTableField.class,
+        ChildField.RecordLookupTableField.class,
+        ChildField.TableMethodField.class,
+        ChildField.InterfaceField.class,
+        ChildField.UnionField.class,
+        ChildField.NestingField.class,
+        ChildField.ConstructorField.class,
+        ChildField.ServiceRecordField.class,
+        ChildField.RecordField.class,
+        ChildField.ComputedField.class,
+        ChildField.PropertyField.class,
+        ChildField.MultitableReferenceField.class
+    );
+
+    /**
      * Generates the {@code *Fetchers} class TypeSpec for the given GraphQL type.
      *
      * @param typeName    the GraphQL type name (e.g. {@code "Film"})
@@ -109,26 +175,77 @@ public class TypeFetcherGenerator {
         boolean needsGraphitronContextHelper = fields.stream().anyMatch(f -> f instanceof SqlGeneratingField);
 
         for (var field : fields) {
-            if (field instanceof ChildField.ColumnField && parentTable != null) {
-                // Column fields with a parent table are handled directly in wiring via ColumnFetcher
-            } else if (field instanceof QueryField.QueryLookupTableField qlf) {
-                builder.addMethod(buildQueryLookupFetcher(qlf));
-                builder.addMethod(buildQueryLookupRowsMethod(qlf));
-            } else if (field instanceof QueryField.QueryTableField qtf
-                    && qtf.returnType().wrapper() instanceof FieldWrapper.Connection) {
-                builder.addMethod(buildQueryConnectionFetcher(qtf));
-            } else if (field instanceof QueryField.QueryTableField qtf) {
-                builder.addMethod(buildQueryTableFetcher(qtf));
-            } else if (field instanceof BatchKeyField bkf) {
-                if (field instanceof MethodBackedField mbf && field instanceof SqlGeneratingField sgf && parentTable != null) {
-                    builder.addMethod(buildServiceDataFetcher(field.name(), bkf, mbf.method(), sgf.returnType(), parentTable, className));
-                    builder.addMethod(buildServiceRowsMethod(bkf, sgf.returnType()));
-                } else {
-                    builder.addMethod(buildSplitQueryDataFetcher(field.name(), bkf.batchKey()));
-                    builder.addMethod(buildSplitRowsMethod(bkf));
+            switch (field) {
+                case ChildField.ColumnField cf -> {
+                    if (parentTable != null) {
+                        // handled in wiring via ColumnFetcher — no method emitted
+                    } else {
+                        builder.addMethod(buildColumnFieldStub(cf));
+                    }
                 }
-            } else {
-                builder.addMethod(buildStub(field.name()));
+                case QueryField.QueryLookupTableField qlf -> {
+                    builder.addMethod(buildQueryLookupFetcher(qlf));
+                    builder.addMethod(buildQueryLookupRowsMethod(qlf));
+                }
+                case QueryField.QueryTableField qtf -> {
+                    if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection) {
+                        builder.addMethod(buildQueryConnectionFetcher(qtf));
+                    } else {
+                        builder.addMethod(buildQueryTableFetcher(qtf));
+                    }
+                }
+                case ChildField.ServiceTableField stf -> {
+                    builder.addMethod(buildServiceDataFetcher(stf.name(), stf, stf.method(), stf.returnType(), parentTable, className));
+                    builder.addMethod(buildServiceRowsMethod(stf, stf.returnType()));
+                }
+                case ChildField.SplitTableField stf -> {
+                    builder.addMethod(buildSplitQueryDataFetcher(stf.name(), stf.batchKey()));
+                    builder.addMethod(buildSplitRowsMethod(stf));
+                }
+                case ChildField.SplitLookupTableField slf -> {
+                    builder.addMethod(buildSplitQueryDataFetcher(slf.name(), slf.batchKey()));
+                    builder.addMethod(buildSplitRowsMethod(slf));
+                }
+                // Stub variants — see UNIMPLEMENTED_VARIANTS
+                case QueryField.QueryTableMethodTableField f  -> builder.addMethod(buildQueryTableMethodTableStub(f));
+                case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeStub(f));
+                case QueryField.QueryEntityField f            -> builder.addMethod(buildQueryEntityStub(f));
+                case QueryField.QueryTableInterfaceField f    -> builder.addMethod(buildQueryTableInterfaceStub(f));
+                case QueryField.QueryInterfaceField f         -> builder.addMethod(buildQueryInterfaceStub(f));
+                case QueryField.QueryUnionField f             -> builder.addMethod(buildQueryUnionStub(f));
+                case QueryField.QueryServiceTableField f      -> builder.addMethod(buildQueryServiceTableStub(f));
+                case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordStub(f));
+                case MutationField.MutationInsertTableField f  -> builder.addMethod(buildMutationInsertStub(f));
+                case MutationField.MutationUpdateTableField f  -> builder.addMethod(buildMutationUpdateStub(f));
+                case MutationField.MutationDeleteTableField f  -> builder.addMethod(buildMutationDeleteStub(f));
+                case MutationField.MutationUpsertTableField f  -> builder.addMethod(buildMutationUpsertStub(f));
+                case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableStub(f));
+                case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordStub(f));
+                case ChildField.ColumnReferenceField f          -> builder.addMethod(buildColumnReferenceStub(f));
+                case ChildField.NodeIdField f                   -> builder.addMethod(buildNodeIdStub(f));
+                case ChildField.NodeIdReferenceField f          -> builder.addMethod(buildNodeIdReferenceStub(f));
+                case ChildField.TableField f                    -> builder.addMethod(buildTableFieldStub(f));
+                case ChildField.LookupTableField f              -> builder.addMethod(buildLookupTableFieldStub(f));
+                case ChildField.TableInterfaceField f           -> builder.addMethod(buildTableInterfaceFieldStub(f));
+                case ChildField.RecordTableField f              -> builder.addMethod(buildRecordTableFieldStub(f));
+                case ChildField.RecordLookupTableField f        -> builder.addMethod(buildRecordLookupTableFieldStub(f));
+                case ChildField.TableMethodField f              -> builder.addMethod(buildTableMethodFieldStub(f));
+                case ChildField.InterfaceField f                -> builder.addMethod(buildInterfaceFieldStub(f));
+                case ChildField.UnionField f                    -> builder.addMethod(buildUnionFieldStub(f));
+                case ChildField.NestingField f                  -> builder.addMethod(buildNestingFieldStub(f));
+                case ChildField.ConstructorField f              -> builder.addMethod(buildConstructorFieldStub(f));
+                case ChildField.ServiceRecordField f            -> builder.addMethod(buildServiceRecordFieldStub(f));
+                case ChildField.RecordField f                   -> builder.addMethod(buildRecordFieldStub(f));
+                case ChildField.ComputedField f                 -> builder.addMethod(buildComputedFieldStub(f));
+                case ChildField.PropertyField f                 -> builder.addMethod(buildPropertyFieldStub(f));
+                case ChildField.MultitableReferenceField f      -> builder.addMethod(buildMultitableReferenceFieldStub(f));
+                // Cannot occur — filtered by generateForType before dispatch
+                case InputField ignored ->
+                    throw new AssertionError("InputField in type dispatch: " + ignored.qualifiedName());
+                case GraphitronField.NotGeneratedField ignored ->
+                    throw new AssertionError("NotGeneratedField in type dispatch: " + ignored.qualifiedName());
+                case GraphitronField.UnclassifiedField ignored ->
+                    throw new AssertionError("UnclassifiedField in type dispatch: " + ignored.qualifiedName());
             }
         }
 
@@ -753,22 +870,185 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Generates a stub that throws {@link UnsupportedOperationException} for unhandled field types.
-     *
-     * <p>Generated code:
-     * <pre>{@code
-     * public static Object fieldName(DataFetchingEnvironment env) {
-     *     throw new UnsupportedOperationException();
-     * }
-     * }</pre>
+     * Generates a stub method that throws {@link UnsupportedOperationException} with an
+     * actionable message pointing at the relevant roadmap entry.
      */
-    private static MethodSpec buildStub(String fieldName) {
+    private static MethodSpec buildStub(String fieldName, String reason) {
         return MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object.class)
             .addParameter(ENV, "env")
-            .addStatement("throw new $T()", UnsupportedOperationException.class)
+            .addStatement("throw new $T($S)", UnsupportedOperationException.class, reason)
             .build();
+    }
+
+    // -----------------------------------------------------------------------
+    // Named stub builders — one per UNIMPLEMENTED_VARIANTS entry
+    // -----------------------------------------------------------------------
+
+    private static MethodSpec buildColumnFieldStub(ChildField.ColumnField f) {
+        return buildStub(f.name(),
+            "ColumnField without a table-backed parent is not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildQueryTableMethodTableStub(QueryField.QueryTableMethodTableField f) {
+        return buildStub(f.name(),
+            "QueryTableMethodTableField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #1");
+    }
+
+    private static MethodSpec buildQueryNodeStub(QueryField.QueryNodeField f) {
+        return buildStub(f.name(),
+            "QueryNodeField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildQueryEntityStub(QueryField.QueryEntityField f) {
+        return buildStub(f.name(),
+            "QueryEntityField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildQueryTableInterfaceStub(QueryField.QueryTableInterfaceField f) {
+        return buildStub(f.name(),
+            "QueryTableInterfaceField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3");
+    }
+
+    private static MethodSpec buildQueryInterfaceStub(QueryField.QueryInterfaceField f) {
+        return buildStub(f.name(),
+            "QueryInterfaceField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3");
+    }
+
+    private static MethodSpec buildQueryUnionStub(QueryField.QueryUnionField f) {
+        return buildStub(f.name(),
+            "QueryUnionField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3");
+    }
+
+    private static MethodSpec buildQueryServiceTableStub(QueryField.QueryServiceTableField f) {
+        return buildStub(f.name(),
+            "QueryServiceTableField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildQueryServiceRecordStub(QueryField.QueryServiceRecordField f) {
+        return buildStub(f.name(),
+            "QueryServiceRecordField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildMutationInsertStub(MutationField.MutationInsertTableField f) {
+        return buildStub(f.name(),
+            "Mutation insert not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #4");
+    }
+
+    private static MethodSpec buildMutationUpdateStub(MutationField.MutationUpdateTableField f) {
+        return buildStub(f.name(),
+            "Mutation update not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #4");
+    }
+
+    private static MethodSpec buildMutationDeleteStub(MutationField.MutationDeleteTableField f) {
+        return buildStub(f.name(),
+            "Mutation delete not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #4");
+    }
+
+    private static MethodSpec buildMutationUpsertStub(MutationField.MutationUpsertTableField f) {
+        return buildStub(f.name(),
+            "Mutation upsert not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #4");
+    }
+
+    private static MethodSpec buildMutationServiceTableStub(MutationField.MutationServiceTableField f) {
+        return buildStub(f.name(),
+            "MutationServiceTableField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #4");
+    }
+
+    private static MethodSpec buildMutationServiceRecordStub(MutationField.MutationServiceRecordField f) {
+        return buildStub(f.name(),
+            "MutationServiceRecordField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #4");
+    }
+
+    private static MethodSpec buildColumnReferenceStub(ChildField.ColumnReferenceField f) {
+        return buildStub(f.name(),
+            "ColumnReferenceField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildNodeIdStub(ChildField.NodeIdField f) {
+        return buildStub(f.name(),
+            "NodeIdField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildNodeIdReferenceStub(ChildField.NodeIdReferenceField f) {
+        return buildStub(f.name(),
+            "NodeIdReferenceField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildTableFieldStub(ChildField.TableField f) {
+        return buildStub(f.name(),
+            "TableField inline subquery not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #1");
+    }
+
+    private static MethodSpec buildLookupTableFieldStub(ChildField.LookupTableField f) {
+        return buildStub(f.name(),
+            "LookupTableField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #1");
+    }
+
+    private static MethodSpec buildTableInterfaceFieldStub(ChildField.TableInterfaceField f) {
+        return buildStub(f.name(),
+            "TableInterfaceField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3");
+    }
+
+    private static MethodSpec buildRecordTableFieldStub(ChildField.RecordTableField f) {
+        return buildStub(f.name(),
+            "RecordTableField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildRecordLookupTableFieldStub(ChildField.RecordLookupTableField f) {
+        return buildStub(f.name(),
+            "RecordLookupTableField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildTableMethodFieldStub(ChildField.TableMethodField f) {
+        return buildStub(f.name(),
+            "TableMethodField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildInterfaceFieldStub(ChildField.InterfaceField f) {
+        return buildStub(f.name(),
+            "InterfaceField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3");
+    }
+
+    private static MethodSpec buildUnionFieldStub(ChildField.UnionField f) {
+        return buildStub(f.name(),
+            "UnionField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3");
+    }
+
+    private static MethodSpec buildNestingFieldStub(ChildField.NestingField f) {
+        return buildStub(f.name(),
+            "NestingField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildConstructorFieldStub(ChildField.ConstructorField f) {
+        return buildStub(f.name(),
+            "ConstructorField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildServiceRecordFieldStub(ChildField.ServiceRecordField f) {
+        return buildStub(f.name(),
+            "ServiceRecordField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildRecordFieldStub(ChildField.RecordField f) {
+        return buildStub(f.name(),
+            "RecordField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildComputedFieldStub(ChildField.ComputedField f) {
+        return buildStub(f.name(),
+            "ComputedField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildPropertyFieldStub(ChildField.PropertyField f) {
+        return buildStub(f.name(),
+            "PropertyField not yet implemented — see rewrite-roadmap.md");
+    }
+
+    private static MethodSpec buildMultitableReferenceFieldStub(ChildField.MultitableReferenceField f) {
+        return buildStub(f.name(),
+            "MultitableReferenceField not yet implemented — see rewrite-roadmap.md");
     }
 
     // -----------------------------------------------------------------------
