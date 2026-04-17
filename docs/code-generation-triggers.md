@@ -201,6 +201,7 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 |---|---|---|
 | `@field(name:)` or matching column name | `InputField.ColumnField` | Maps input argument to a table column |
 | `@reference` on input scalar | `InputField.ColumnReferenceField` | Maps input argument to a FK column |
+| Return plain object (no `@table`) | `InputField.NestingField` | Expands nested input fields inline against parent table |
 
 `InputField` is a separate top-level sub-hierarchy of `GraphitronField`, alongside `RootField` and `ChildField`. It classifies fields on `TableInputType` for mutation input processing.
 
@@ -244,7 +245,7 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 | Ordering | `OrderBySpec.java` | `Fixed` / `Argument` / `None` |
 | Pagination | `PaginationSpec.java` | Relay cursor arguments |
 | Argument extraction | `CallSiteExtraction.java` | `Direct` / `EnumValueOf` / `TextMapLookup` / `ContextArg` / `JooqConvert` |
-| Input field hierarchy | `InputField.java` | Sealed interface — `ColumnField` / `ColumnReferenceField` for mutation inputs |
+| Input field hierarchy | `InputField.java` | Sealed interface — `ColumnField` / `ColumnReferenceField` / `NestingField` for mutation inputs |
 | Condition params | `CallParam.java`, `BodyParam.java` | Call-site vs body-generation views |
 
 ### Builders (root package)
