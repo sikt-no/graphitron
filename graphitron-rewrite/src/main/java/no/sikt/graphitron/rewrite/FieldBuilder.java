@@ -133,7 +133,6 @@ class FieldBuilder {
 
     private final BuildContext ctx;
     private final ServiceCatalog svc;
-
     FieldBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
@@ -167,11 +166,11 @@ class FieldBuilder {
      * batch-key classification. Pass {@link List#of()} for root fields and result-type children
      * (no parent table); pass the parent table's primary-key columns for table-type children.
      */
-    private ServiceResolution resolveServiceField(GraphQLFieldDefinition fieldDef, List<ColumnRef> parentPkColumns) {
+    private ServiceResolution resolveServiceField(String parentTypeName, GraphQLFieldDefinition fieldDef, List<ColumnRef> parentPkColumns) {
         String rawTypeName = baseTypeName(fieldDef);
         String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
         ReturnTypeRef returnType = ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef));
-        ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
+        ExternalRef serviceRef = parseExternalRef(parentTypeName, fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
         if (serviceRef != null && serviceRef.lookupError() != null) {
             return new ServiceResolution(null, null, "service method could not be resolved — " + serviceRef.lookupError());
         }
@@ -858,7 +857,7 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            var svcResult = resolveServiceField(fieldDef, List.of());
+            var svcResult = resolveServiceField(parentTypeName, fieldDef, List.of());
             if (svcResult.error() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
             }
@@ -904,7 +903,7 @@ class FieldBuilder {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "@tableMethod requires a @table-annotated return type");
             }
-            var qtmRef = parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
+            var qtmRef = parseExternalRef(parentTypeName, fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
             if (qtmRef != null && qtmRef.lookupError() != null) {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "table method could not be resolved — " + qtmRef.lookupError());
@@ -964,7 +963,7 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            var svcResult = resolveServiceField(fieldDef, List.of());
+            var svcResult = resolveServiceField(parentTypeName, fieldDef, List.of());
             if (svcResult.error() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
             }
@@ -1109,7 +1108,7 @@ class FieldBuilder {
         SourceLocation location = locationOf(fieldDef);
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            var svcResult = resolveServiceField(fieldDef, List.of());
+            var svcResult = resolveServiceField(parentTypeName, fieldDef, List.of());
             if (svcResult.error() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
             }
@@ -1171,7 +1170,7 @@ class FieldBuilder {
         SourceLocation location = locationOf(fieldDef);
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            var svcResult = resolveServiceField(fieldDef, tableType.table().primaryKeyColumns());
+            var svcResult = resolveServiceField(parentTypeName, fieldDef, tableType.table().primaryKeyColumns());
             if (svcResult.error() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
             }
@@ -1213,7 +1212,7 @@ class FieldBuilder {
             if (tableMethodPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, tableMethodPath.errorMessage());
             }
-            var tmRef = parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
+            var tmRef = parseExternalRef(parentTypeName, fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
             if (tmRef != null && tmRef.lookupError() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                     "table method could not be resolved — " + tmRef.lookupError());
@@ -1312,7 +1311,7 @@ class FieldBuilder {
      * logged per field. If the name is not in the map, the returned {@code ExternalRef} carries a
      * non-null {@link ExternalRef#lookupError()} and the {@code className} is {@code null}.
      */
-    private ExternalRef parseExternalRef(GraphQLFieldDefinition fieldDef, String directiveName, String argName) {
+    private ExternalRef parseExternalRef(String parentTypeName, GraphQLFieldDefinition fieldDef, String directiveName, String argName) {
         var dir = fieldDef.getAppliedDirective(directiveName);
         if (dir == null) return null;
         var arg = dir.getArgument(argName);
@@ -1323,7 +1322,7 @@ class FieldBuilder {
         if (className == null) {
             String name = Optional.ofNullable(ref.get(ARG_NAME)).map(Object::toString).orElse(null);
             if (name != null) {
-                LOG.warn("ExternalCodeReference 'name' is deprecated on field '{}'; use 'className' instead", fieldDef.getName());
+                LOG.warn("ExternalCodeReference 'name' is deprecated on field '{}.{}'; use 'className' instead", parentTypeName, fieldDef.getName());
                 String resolved = RewriteConfig.namedReferences().get(name);
                 if (resolved != null) {
                     className = resolved;
