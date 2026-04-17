@@ -87,6 +87,7 @@ The practical implication: when adding code to a generator, distinguish between 
 
 - **Paginated fields** — document transform coexistence (builder fallback loses `defaultPageSize` when `@asConnection` is stripped). See [paginated-fields.md](paginated-fields.md).
 - **Argument resolution** — unified classification, `@condition` support, lookup VALUES generation. See [argument-resolution.md](argument-resolution.md).
+- **Legacy platformId** (low priority) — classify `id: ID!` input fields that bind to composite platform keys via record-level `getId`/`setId`. See [legacy-platform-id.md](legacy-platform-id.md).
 
 ### Stubs to complete
 

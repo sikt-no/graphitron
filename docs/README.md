@@ -34,6 +34,7 @@ You're implementing generators, adding field variants, or fixing bugs in the rew
 Active implementation plans (read when you're working on the specific feature):
 - **[Paginated Fields](paginated-fields.md)** — Dynamic ordering cursors, backward pagination, known bugs.
 - **[Argument Resolution](argument-resolution.md)** — Unified argument classification, @condition support, lookup VALUES generation.
+- **[Legacy PlatformId](legacy-platform-id.md)** — Classifying legacy `id: ID!` mutation input fields that bind to composite platform keys via record-level `getId`/`setId`.
 
 ---
 
@@ -53,6 +54,7 @@ Active implementation plans (read when you're working on the specific feature):
 | [Rewrite Roadmap](rewrite-roadmap.md) | Contributors | Design principles, remaining work, known gaps |
 | [Paginated Fields](paginated-fields.md) | Contributors | Pagination implementation plan |
 | [Argument Resolution](argument-resolution.md) | Contributors | Argument classification, @condition, lookup generation |
+| [Legacy PlatformId](legacy-platform-id.md) | Contributors | Legacy `id: ID!` input classification via record `getId`/`setId` |
 
 ## Other Documentation
 
