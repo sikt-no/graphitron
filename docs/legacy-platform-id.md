@@ -4,6 +4,9 @@ Design for classifying mutation input fields named `id: ID!` that resolve to a
 legacy platform key — a composite SQL key stored as a single string via custom
 jOOQ record methods (`getId` / `setId`) rather than a single `id` column.
 
+**Status:** Steps 1–5 implemented in `6bc2d95`. Step 6 (mutation generator
+integration) and the classification pipeline tests remain.
+
 Priority: **low**. New schemas should use `@node` + `@nodeId` and this plan
 does not block any in-flight work.
 
@@ -260,18 +263,18 @@ existence checks in the builder.
 
 ## Implementation order
 
-| Step | What | Depends on |
+| Step | What | Status |
 |---|---|---|
-| 1 | Add `JooqCatalog.findRecordClass(String)` + `hasPlatformIdMethods(String)` | Nothing |
-| 2 | Add `InputField.PlatformIdField` variant; update the `permits` clause on `InputField` | Nothing |
-| 3 | Add private `InputFieldResolution` nested sealed type inside `TypeBuilder`; change `buildInputField` to return it; update `buildTableInputType` to aggregate per-field reasons using `candidateHint` where applicable | Step 2 |
-| 4 | Add platformId fallback branch (all three conditions + `hasPlatformIdMethods` check) in `buildInputField` | Steps 1, 3 |
-| 5 | Add exhaustive-switch arm in `GraphitronSchemaValidator.validateField` | Step 2 |
-| 6 | (Deferred — picked up with mutation generator) Emit `record.setId(input.getId())` for `PlatformIdField` in the input-binding section. Requires `InputColumnBinding` (defined in `argument-resolution.md`) to be a sum type that accommodates `PlatformIdField` bindings alongside column bindings — see "Interaction with existing work" below. | Step 2 + mutation generator + `InputColumnBinding` design |
+| 1 | Add `JooqCatalog.findRecordClass(String)` + `hasPlatformIdMethods(String)` | ✅ `6bc2d95` |
+| 2 | Add `InputField.PlatformIdField` variant; update the `permits` clause on `InputField` | ✅ `6bc2d95` |
+| 3 | Add private `InputFieldResolution` nested sealed type inside `TypeBuilder`; change `buildInputField` to return it; update `buildTableInputType` to aggregate per-field reasons using `candidateHint` where applicable | ✅ `6bc2d95` |
+| 4 | Add platformId fallback branch (all three conditions + `hasPlatformIdMethods` check) in `buildInputField` | ✅ `6bc2d95` |
+| 5 | Add exhaustive-switch arm in `GraphitronSchemaValidator.validateField` | ✅ `6bc2d95` |
+| 6 | (Deferred — picked up with mutation generator) Emit `record.setId(input.getId())` for `PlatformIdField` in the input-binding section. Requires `InputColumnBinding` (defined in `argument-resolution.md`) to be a sum type that accommodates `PlatformIdField` bindings alongside column bindings — see "Interaction with existing work" below. | ⏳ Deferred |
 
-Steps 1–5 are the self-contained classification work. Step 6 happens
-naturally when someone implements the mutation generator (see
-[`rewrite-roadmap.md`](rewrite-roadmap.md), "Stubs to complete" item 4).
+Steps 1–5 are done. Step 6 happens naturally when someone implements the
+mutation generator (see [`rewrite-roadmap.md`](rewrite-roadmap.md),
+"Stubs to complete" item 4).
 
 ---
 
@@ -279,20 +282,22 @@ naturally when someone implements the mutation generator (see
 
 ### Builder / classification
 
-- **Pipeline test** (new): SDL with `input Foo @table(name: "bar") { id: ID! }`
+These three pipeline tests were specified but **not yet added** (step 6 is the
+right time to add them alongside the fixture work):
+
+- **Pipeline test**: SDL with `input Foo @table(name: "bar") { id: ID! }`
   against a jOOQ catalog whose `bar` record exposes `getId()`/`setId(String)`
   classifies the field as `PlatformIdField` — asserted via the resolved
   `GraphitronType.TableInputType.fields()` list.
-- **Pipeline test** (new): same SDL against a catalog whose record does **not**
+- **Pipeline test**: same SDL against a catalog whose record does **not**
   expose those methods → `UnclassifiedType` with the exact targeted error
   string.
-- **Pipeline test** (new): same SDL with `@nodeId` on the `id` field → reaches
+- **Pipeline test**: same SDL with `@nodeId` on the `id` field → reaches
   the existing `@nodeId` classification path; `PlatformIdField` is not produced.
 
 ### Validator
 
-- **Structural test** (new, under `rewrite/validation/`): constructing an
-  `InputField.PlatformIdField` and running the validator produces zero errors.
+- **Structural test** (`PlatformIdFieldValidationTest`) ✅ added in `6bc2d95`.
 
 ### Execution
 
