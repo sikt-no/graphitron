@@ -195,17 +195,9 @@ class FieldBuilder {
      *                       the {@code *Conditions} class name for any generated filter method
      */
     private TableFieldComponents resolveTableFieldComponents(GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName) {
-        var filterErrors = new ArrayList<String>();
-        var filters = buildFilters(fieldDef, table, returnTypeName, filterErrors);
-        if (filters == null) return new TableFieldComponents(null, null, null, String.join("; ", filterErrors));
-        var orderErrors = new ArrayList<String>();
-        var orderBy = buildOrderBySpec(fieldDef, table.tableName(), orderErrors);
-        if (orderBy == null) {
-            String msg = !orderErrors.isEmpty() ? String.join("; ", orderErrors)
-                : "could not resolve @defaultOrder columns in table '" + table.tableName() + "'";
-            return new TableFieldComponents(null, null, null, msg);
-        }
-        return new TableFieldComponents(filters, orderBy, buildPaginationSpec(fieldDef), null);
+        var errors = new ArrayList<String>();
+        var refs = classifyArguments(fieldDef, table, errors);
+        return projectForFilter(refs, fieldDef, table, returnTypeName, errors);
     }
 
     // ===== Object-return child field classification =====
@@ -342,24 +334,27 @@ class FieldBuilder {
     }
 
     /**
-     * Builds an {@link OrderBySpec} for a field.
+     * Projects the classified arguments into an {@link OrderBySpec}.
      *
      * <p>Returns {@link OrderBySpec.None} when ordering is not applicable: for single-value
      * returns, or when {@code tableSqlName} is {@code null} (non-table-bound field).
      * Returns {@link OrderBySpec.None} (not an error) when the table has no primary key and no
      * {@code @defaultOrder} is present.
-     * Returns {@code null} — signalling a build failure — only when a {@code @defaultOrder}
-     * directive is present but its column/index resolution fails.
+     * Returns {@code null} — signalling a build failure — when a {@code @defaultOrder}
+     * directive is present but its column/index resolution fails, or when an {@code @orderBy}
+     * argument failed to classify.
      */
-    private OrderBySpec buildOrderBySpec(GraphQLFieldDefinition fieldDef, String tableSqlName, List<String> errors) {
+    private OrderBySpec projectOrderBySpec(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
+                                           String tableSqlName, List<String> errors) {
         GraphQLType unwrapped = GraphQLTypeUtil.unwrapNonNull(fieldDef.getType());
         boolean isList = (unwrapped instanceof GraphQLList)
             || ctx.isConnectionType(baseTypeName(fieldDef))
             || fieldDef.hasAppliedDirective(DIR_AS_CONNECTION);
         if (!isList || tableSqlName == null) return new OrderBySpec.None();
 
-        for (var arg : fieldDef.getArguments()) {
-            if (arg.hasAppliedDirective(DIR_ORDER_BY)) {
+        for (var ref : refs) {
+            if (ref instanceof ArgumentRef.OrderByArg ob) {
+                var arg = fieldDef.getArgument(ob.name());
                 return resolveOrderByArgSpec(arg, fieldDef, tableSqlName, errors);
             }
         }
@@ -721,78 +716,76 @@ class FieldBuilder {
     }
 
     /**
-     * Builds the {@link WhereFilter} list for a table-bound field from its GraphQL arguments.
-     *
-     * <p>Skips {@code @orderBy} args (handled by {@link #buildOrderBySpec}) and the four standard
-     * Relay pagination args ({@code first}, {@code last}, {@code after}, {@code before}, handled by
-     * {@link #buildPaginationSpec}). Returns {@code null} when any filter classification fails
-     * (errors appended to {@code errors}).
-     *
-     * <p>All filterable scalar/enum arguments are grouped into a single
-     * {@link GeneratedConditionFilter} entry. The condition class is named
-     * {@code <returnTypeName>Conditions} and the method {@code <fieldName>Condition}.
-     * Table-bound input arguments are currently not yet handled (future deliverable).
+     * Runs the full filter / orderBy / pagination projection for a table-bound field, using
+     * {@link #classifyArguments} output as the single source of truth about each argument.
+     * Replaces the legacy three-pass model ({@code buildFilters} / {@code buildOrderBySpec} /
+     * {@code buildPaginationSpec}) with one classification + one projection step. See
+     * {@code docs/argument-resolution.md}.
      */
-    private List<WhereFilter> buildFilters(GraphQLFieldDefinition fieldDef, TableRef rt, String returnTypeName, List<String> errors) {
+    private TableFieldComponents projectForFilter(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
+                                                  TableRef rt, String returnTypeName, List<String> errors) {
+        var filters = projectFilters(refs, fieldDef, rt, returnTypeName, errors);
+        if (filters == null) return new TableFieldComponents(null, null, null, String.join("; ", errors));
+        var orderBy = projectOrderBySpec(refs, fieldDef, rt.tableName(), errors);
+        if (orderBy == null) {
+            String msg = !errors.isEmpty() ? String.join("; ", errors)
+                : "could not resolve @defaultOrder columns in table '" + rt.tableName() + "'";
+            return new TableFieldComponents(null, null, null, msg);
+        }
+        return new TableFieldComponents(filters, orderBy, projectPaginationSpec(refs, fieldDef), null);
+    }
+
+    /**
+     * Resolves the Java type that a {@link BodyParam} must carry given its extraction strategy
+     * and target column. Extracted from the old {@code buildFilters} switch so projection can
+     * derive {@link BodyParam#javaType} without re-classifying the argument.
+     */
+    private static String javaTypeFor(CallSiteExtraction extraction, ColumnRef column) {
+        return switch (extraction) {
+            case CallSiteExtraction.EnumValueOf ev -> ev.enumClassName();
+            case CallSiteExtraction.TextMapLookup ignored -> String.class.getName();
+            case CallSiteExtraction.JooqConvert ignored -> column.columnClass();
+            case CallSiteExtraction.Direct ignored -> column.columnClass();
+            case CallSiteExtraction.ContextArg ignored -> column.columnClass();
+        };
+    }
+
+    /**
+     * Projects the classified arguments into a {@link WhereFilter} list for a table-bound field.
+     *
+     * <p>{@link ArgumentRef.OrderByArg} and {@link ArgumentRef.PaginationArgRef} are skipped
+     * (handled by {@link #projectOrderBySpec} / {@link #projectPaginationSpec}).
+     * {@link ArgumentRef.UnclassifiedArg} and {@link ArgumentRef.ScalarArg.UnboundArg} add to
+     * {@code errors}. {@link ArgumentRef.InputTypeArg} variants are currently skipped (full
+     * support is deferred to step 9 / lookup projection in step 6). Returns {@code null} when
+     * any filter classification fails.
+     *
+     * <p>All column-bound scalar args are grouped into a single {@link GeneratedConditionFilter}
+     * entry. The condition class is named {@code <returnTypeName>Conditions} and the method
+     * {@code <fieldName>Condition}.
+     */
+    private List<WhereFilter> projectFilters(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
+                                             TableRef rt, String returnTypeName, List<String> errors) {
         var bodyParams = new ArrayList<BodyParam>();
         boolean hadError = false;
-        for (var arg : fieldDef.getArguments()) {
-            String name = arg.getName();
-            if (arg.hasAppliedDirective(DIR_ORDER_BY)) continue;
-            if (isPaginationArg(name)) continue;
-            if (arg.hasAppliedDirective(DIR_CONDITION)) {
-                errors.add("argument '" + name + "': @condition is only supported on field definitions, not on arguments");
-                hadError = true;
-                continue;
-            }
-            GraphQLType type = arg.getType();
-            boolean nonNull = type instanceof GraphQLNonNull;
-            boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
-            String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
-            if (ctx.types.containsKey(typeName)) {
-                // TODO: table-bound input types (InputFilter) — deferred deliverable
-                continue;
-            }
-            // Scalar arg: bind to column
-            String columnName = argString(arg, DIR_FIELD, ARG_NAME).orElse(name);
-            if (rt == null) {
-                errors.add("argument '" + name + "': column '" + columnName + "' could not be resolved (no table context)");
-                hadError = true;
-                continue;
-            }
-            var col = ctx.catalog.findColumn(rt.tableName(), columnName);
-            if (col.isEmpty()) {
-                errors.add("argument '" + name + "': column '" + columnName + "' could not be resolved in table '"
-                    + rt.tableName() + "'" + candidateHint(columnName, ctx.catalog.columnSqlNamesOf(rt.tableName())));
-                hadError = true;
-                continue;
-            }
-            var columnRef = new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass());
-            String enumClassName = validateEnumFilter(typeName, columnRef, errors);
-            if (enumClassName != null && enumClassName.isEmpty()) {
-                hadError = true;
-                continue;
-            }
-            CallSiteExtraction extraction;
-            String javaType;
-            if (enumClassName != null) {
-                extraction = new CallSiteExtraction.EnumValueOf(enumClassName);
-                javaType = enumClassName;
-            } else if ("ID".equals(typeName)) {
-                extraction = new CallSiteExtraction.JooqConvert(columnRef.javaName());
-                javaType = columnRef.columnClass();
-            } else {
-                var textEnumMapping = buildTextEnumMapping(typeName);
-                if (textEnumMapping != null) {
-                    String mapFieldName = fieldDef.getName().toUpperCase() + "_" + name.toUpperCase() + "_MAP";
-                    extraction = new CallSiteExtraction.TextMapLookup(mapFieldName, textEnumMapping);
-                    javaType = String.class.getName();
-                } else {
-                    extraction = new CallSiteExtraction.Direct();
-                    javaType = columnRef.columnClass();
+        for (var ref : refs) {
+            switch (ref) {
+                case ArgumentRef.OrderByArg ignored -> {}                     // handled by projectOrderBySpec
+                case ArgumentRef.PaginationArgRef ignored -> {}               // handled by projectPaginationSpec
+                case ArgumentRef.InputTypeArg ignored -> {}                   // TODO: lookup (step 6) / composite-key input (step 9)
+                case ArgumentRef.UnclassifiedArg u -> {
+                    errors.add("argument '" + u.name() + "': " + u.reason());
+                    hadError = true;
+                }
+                case ArgumentRef.ScalarArg.UnboundArg u -> {
+                    errors.add("argument '" + u.name() + "': " + u.reason());
+                    hadError = true;
+                }
+                case ArgumentRef.ScalarArg.ColumnArg ca -> {
+                    String javaType = javaTypeFor(ca.extraction(), ca.column());
+                    bodyParams.add(new BodyParam(ca.name(), ca.column(), javaType, ca.nonNull(), ca.list(), ca.extraction()));
                 }
             }
-            bodyParams.add(new BodyParam(name, columnRef, javaType, nonNull, list, extraction));
         }
         if (hadError) return null;
         if (bodyParams.isEmpty()) return List.of();
@@ -902,24 +895,20 @@ class FieldBuilder {
     }
 
     /**
-     * Builds a {@link PaginationSpec} when the field has any of the standard Relay pagination
-     * arguments ({@code first}, {@code last}, {@code after}, {@code before}).
-     * Returns {@code null} when none are present.
+     * Projects the classified arguments into a {@link PaginationSpec} for a list/connection field.
+     * Returns {@code null} when no pagination arguments are present and {@code @asConnection} is
+     * not declared on the field.
      */
-    private PaginationSpec buildPaginationSpec(GraphQLFieldDefinition fieldDef) {
+    private PaginationSpec projectPaginationSpec(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef) {
         PaginationSpec.PaginationArg first = null, last = null, after = null, before = null;
-        for (var arg : fieldDef.getArguments()) {
-            String argName = arg.getName();
-            if (!isPaginationArg(argName)) continue;
-            GraphQLType type = arg.getType();
-            boolean nonNull = type instanceof GraphQLNonNull;
-            String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
-            var paginationArg = new PaginationSpec.PaginationArg(argName, typeName, nonNull);
-            switch (argName) {
-                case "first"  -> first  = paginationArg;
-                case "last"   -> last   = paginationArg;
-                case "after"  -> after  = paginationArg;
-                case "before" -> before = paginationArg;
+        for (var ref : refs) {
+            if (!(ref instanceof ArgumentRef.PaginationArgRef p)) continue;
+            var paginationArg = new PaginationSpec.PaginationArg(p.name(), p.typeName(), p.nonNull());
+            switch (p.role()) {
+                case FIRST  -> first  = paginationArg;
+                case LAST   -> last   = paginationArg;
+                case AFTER  -> after  = paginationArg;
+                case BEFORE -> before = paginationArg;
             }
         }
 
