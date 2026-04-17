@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.language.ArrayValue;
+import graphql.language.BooleanValue;
 import graphql.language.NullValue;
 import graphql.language.SourceLocation;
 import graphql.language.StringValue;
@@ -104,6 +105,7 @@ class BuildContext {
     static final String ARG_DESCRIPTION        = "description";
     static final String ARG_DEFAULT_FIRST_VALUE = "defaultFirstValue";
     static final String ARG_CONNECTION_NAME     = "connectionName";
+    static final String ARG_OVERRIDE            = "override";
 
     // ===== Shared state =====
 
@@ -163,6 +165,22 @@ class BuildContext {
                 .toList();
         }
         return List.of();
+    }
+
+    /**
+     * Returns the boolean value of an applied directive argument, handling both AST literal form
+     * ({@link BooleanValue}) and coerced form ({@link Boolean}). Returns {@code defaultValue} if
+     * the directive or argument is absent, or the value cannot be interpreted as a boolean.
+     */
+    static boolean argBoolean(GraphQLDirectiveContainer container, String directive, String arg, boolean defaultValue) {
+        var dir = container.getAppliedDirective(directive);
+        if (dir == null) return defaultValue;
+        var argument = dir.getArgument(arg);
+        if (argument == null) return defaultValue;
+        Object value = argument.getValue();
+        if (value instanceof BooleanValue bv) return bv.isValue();
+        if (value instanceof Boolean b) return b;
+        return defaultValue;
     }
 
     /**

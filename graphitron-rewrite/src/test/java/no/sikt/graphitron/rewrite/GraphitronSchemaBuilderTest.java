@@ -1585,7 +1585,42 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             """,
             schema -> assertThat(schema.type("FilmInput"))
-                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class));
+                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class)),
+
+        ARG_CONDITION_OVERRIDE(
+            "input type used on an argument with @condition(override: true) → PojoInputType (skip table validation)",
+            """
+            input FilterInput { notAColumn: Int }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+              films(filter: FilterInput @condition(condition: {className: "C", method: "m"}, override: true)): [Film]
+            }
+            """,
+            schema -> assertThat(schema.type("FilterInput")).isInstanceOf(PojoInputType.class)),
+
+        FIELD_CONDITION_OVERRIDE(
+            "input type used on a field with @condition(override: true) → PojoInputType (skip table validation)",
+            """
+            input FilterInput { notAColumn: Int }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+              films(filter: FilterInput): [Film]
+                @condition(condition: {className: "C", method: "m"}, override: true)
+            }
+            """,
+            schema -> assertThat(schema.type("FilterInput")).isInstanceOf(PojoInputType.class)),
+
+        CONDITION_WITHOUT_OVERRIDE(
+            "@condition without override on the argument → override branch does not fire; implicit-table path still runs",
+            """
+            input FilterInput { filmId: Int! @field(name: "film_id") }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+              films(filter: FilterInput @condition(condition: {className: "C", method: "m"})): [Film]
+            }
+            """,
+            schema -> assertThat(schema.type("FilterInput"))
+                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType.class));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;

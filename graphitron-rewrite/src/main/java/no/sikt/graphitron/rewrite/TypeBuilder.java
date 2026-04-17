@@ -67,6 +67,9 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE_METHOD;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
+import static no.sikt.graphitron.rewrite.BuildContext.argBoolean;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 import static no.sikt.graphitron.rewrite.BuildContext.argStringList;
 import static no.sikt.graphitron.rewrite.BuildContext.asMap;
@@ -344,6 +347,9 @@ class TypeBuilder {
             }
             return buildTableInputType(name, location, filteredFields, tableOpt.get());
         }
+        if (isUsedWithOverrideCondition(name)) {
+            return buildNonTableInputType(inputType, name, location);
+        }
         var tables = findReturnTablesForInput(name);
         if (tables.isEmpty()) {
             return buildNonTableInputType(inputType, name, location);
@@ -447,6 +453,35 @@ class TypeBuilder {
             }
         }
         return tables;
+    }
+
+    /**
+     * Returns true if {@code inputTypeName} is used as the type of any field argument where
+     * either the field or the argument carries {@code @condition(override: true)}. When override
+     * is set, the consumer supplies custom condition code, so the input's fields should not be
+     * validated against table columns.
+     *
+     * <p>Only argument-level and field-level {@code @condition} are inspected here;
+     * {@code INPUT_FIELD_DEFINITION} override — the third legal position per the SDL — is not
+     * yet handled and is tracked in {@code docs/argument-resolution.md}.
+     */
+    private boolean isUsedWithOverrideCondition(String inputTypeName) {
+        for (var namedType : ctx.schema.getAllTypesAsList()) {
+            if (!(namedType instanceof GraphQLObjectType objType)) continue;
+            if (namedType.getName().startsWith("__")) continue;
+            for (var fieldDef : objType.getFieldDefinitions()) {
+                boolean fieldOverride = fieldDef.hasAppliedDirective(DIR_CONDITION)
+                    && argBoolean(fieldDef, DIR_CONDITION, ARG_OVERRIDE, false);
+                for (var arg : fieldDef.getArguments()) {
+                    String argTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(arg.getType())).getName();
+                    if (!inputTypeName.equals(argTypeName)) continue;
+                    if (fieldOverride) return true;
+                    if (arg.hasAppliedDirective(DIR_CONDITION)
+                            && argBoolean(arg, DIR_CONDITION, ARG_OVERRIDE, false)) return true;
+                }
+            }
+        }
+        return false;
     }
 
     private InputFieldResolution buildInputField(GraphQLInputObjectField field,
