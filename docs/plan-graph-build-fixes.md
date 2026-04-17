@@ -174,7 +174,7 @@ Each existing `reason()` string is already a self-contained description:
 
 ---
 
-## @condition — Reference Path Resolution (P3 stub)
+## @condition — Reference Path Resolution ✅
 
 **Observed:**
 - `condition method 'CONDITION_VURDERINGSOPPBYGNING' could not be resolved` (name-form)
@@ -298,7 +298,7 @@ This is low priority since it only affects graphs that predate the `@nodeId` dir
 | ~~EQ~~ | ~~Error message quality (cap candidates, cascade message)~~ | ~~Trivial~~ | ✅ Done |
 | ~~EQ2~~ | ~~Drop "could not be classified" preamble from field/type errors~~ | ~~Trivial~~ | ✅ Done |
 | ~~NR~~ | ~~Named reference resolution~~ | ~~Medium~~ | ✅ Done |
-| C1 | @condition in reference paths (P3) | Large | All condition joins in SIS |
+| ~~C1~~ | ~~@condition in reference paths~~ | ~~Large~~ | ✅ Done |
 | LK | @lookupKey list input (composite) | Medium | Covered by argument-resolution plan |
 | Misc | Filter inputs, @condition on args, FK issues | Small–Medium | Covered individually |
 | LPid | Legacy platformId | Unknown | Needs design input first |

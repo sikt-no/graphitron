@@ -46,6 +46,7 @@ public class GraphitronSchemaBuilder {
         var assembled = new SchemaGenerator().makeExecutableSchema(registry, runtimeWiring);
         var ctx = new BuildContext(assembled, new JooqCatalog(RewriteConfig.getGeneratedJooqPackage()));
         var svc = new ServiceCatalog(ctx);
+        ctx.svc = svc;
         var typeBuilder = new TypeBuilder(ctx, svc);
         var fieldBuilder = new FieldBuilder(ctx, svc);
         return buildSchema(ctx, typeBuilder, fieldBuilder);

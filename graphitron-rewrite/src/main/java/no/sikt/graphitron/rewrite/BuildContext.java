@@ -36,6 +36,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -113,6 +114,11 @@ class BuildContext {
      * All accesses after that point are safe; nothing reads it before it is set.
      */
     Map<String, GraphitronType> types;
+    /**
+     * Set by {@link GraphitronSchemaBuilder} immediately after constructing {@link ServiceCatalog}.
+     * Used by {@link #resolveConditionRef} for condition-join method reflection.
+     */
+    ServiceCatalog svc;
 
     BuildContext(GraphQLSchema schema, JooqCatalog catalog) {
         this.schema = schema;
@@ -465,11 +471,25 @@ class BuildContext {
     }
 
     /**
-     * Condition resolution via reflection is implemented in a later deliverable (P3).
-     * Returns {@code null} to signal that the condition is unresolved.
+     * Resolves an {@code ExternalCodeReference} condition map to a {@link MethodRef} via
+     * {@link ServiceCatalog#reflectTableMethod}. Returns {@code null} when the class/method cannot
+     * be determined or reflection fails — the caller adds a diagnostic error in that case.
+     *
+     * <p>The deprecated {@code name:} form is resolved via {@link RewriteConfig#namedReferences()},
+     * exactly as in {@link FieldBuilder#parseExternalRef}.
      */
     private MethodRef resolveConditionRef(Map<String, Object> conditionMap) {
-        return null;
+        String className = Optional.ofNullable(conditionMap.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
+        String methodName = Optional.ofNullable(conditionMap.get(ARG_METHOD)).map(Object::toString).orElse(null);
+        if (className == null) {
+            String name = Optional.ofNullable(conditionMap.get(ARG_NAME)).map(Object::toString).orElse(null);
+            if (name != null) {
+                className = RewriteConfig.namedReferences().get(name);
+            }
+        }
+        if (className == null || methodName == null || svc == null) return null;
+        var result = svc.reflectTableMethod(className, methodName, Set.of(), Set.of());
+        return result.failed() ? null : result.ref();
     }
 
     private String extractConditionQualifiedName(Map<String, Object> conditionMap) {

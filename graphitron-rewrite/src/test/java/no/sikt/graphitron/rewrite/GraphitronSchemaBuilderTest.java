@@ -266,7 +266,35 @@ class GraphitronSchemaBuilderTest {
                 var fk = (JoinStep.FkJoin) ref.joinPath().get(0);
                 assertThat(fk.targetTable().tableName()).isEqualToIgnoringCase("address");
                 assertThat(ref.column().javaName()).isEqualTo("DISTRICT");
-            });
+            }),
+
+        CONDITION_PATH(
+            "@reference with {condition: {className, method}} resolves to a ConditionJoin",
+            """
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") {
+              actor: Actor @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}])
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var ref = (TableField) schema.field("Film", "actor");
+                assertThat(ref.joinPath()).hasSize(1);
+                assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.ConditionJoin.class);
+                var cj = (JoinStep.ConditionJoin) ref.joinPath().get(0);
+                assertThat(cj.condition().methodName()).isEqualTo("join");
+            }),
+
+        CONDITION_PATH_UNKNOWN_CLASS(
+            "@reference with {condition:} pointing to a missing class → UnclassifiedField",
+            """
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") {
+              actor: Actor @reference(path: [{condition: {className: "no.sikt.does.not.Exist", method: "join"}}])
+            }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "actor")).isInstanceOf(UnclassifiedField.class));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
