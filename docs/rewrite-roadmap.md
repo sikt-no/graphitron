@@ -192,6 +192,7 @@ how every subsequent plan lands.
 - **Paginated fields** — document transform coexistence (builder fallback loses `defaultPageSize` when `@asConnection` is stripped). See [paginated-fields.md](paginated-fields.md).
 - **Argument resolution** — unified classification, `@condition` support, lookup VALUES generation. See [argument-resolution.md](argument-resolution.md).
 - **Legacy platformId** (low priority) — classify `id: ID!` input fields that bind to composite platform keys via record-level `getId`/`setId`. See [legacy-platform-id.md](legacy-platform-id.md).
+- **`@table` + `@record` on inputs** — classifier fails on a combination that legacy tolerates. Fix: treat `@record` as authoritative, log a warning naming `@table` as shadowed. Plan introduces a shared warnings channel also consumed by classification-vocabulary item 2. See [bug-record-input-table-validation.md](bug-record-input-table-validation.md).
 
 ### Stubs to complete
 

@@ -65,7 +65,9 @@ no way to discover it was a no-op.
 
 **Reusability.** The warnings channel will also serve P2 #3 ("validator asks can-this-generate")
 if we want `NOT_IMPLEMENTED_REASONS` hits to be warnings rather than errors in some
-configurations. Worth keeping that in mind while designing the channel.
+configurations. It is also a prerequisite of the `@table + @record` input-type fix (see
+[bug-record-input-table-validation.md](bug-record-input-table-validation.md)) — the channel
+should be designed once to serve all three callers, whichever lands first.
 
 ---
 
