@@ -110,6 +110,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField f -> validateMultitableReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.ColumnField f            -> validateInputColumnField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField f  -> validateInputColumnReferenceField(f, errors);
+            case no.sikt.graphitron.rewrite.model.InputField.PlatformIdField f       -> validateInputPlatformIdField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField f -> validateNotGeneratedField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f -> validateUnclassifiedField(f, errors);
         }
@@ -423,6 +424,9 @@ public class GraphitronSchemaValidator {
     }
     private void validateInputColumnReferenceField(no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField field, List<ValidationError> errors) {
         // Column and join path resolution is guaranteed by the builder (unresolved → UnclassifiedType). Nothing to validate here.
+    }
+    private void validateInputPlatformIdField(no.sikt.graphitron.rewrite.model.InputField.PlatformIdField field, List<ValidationError> errors) {
+        // platformId method presence is guaranteed by the builder (unresolved → UnclassifiedType). Nothing to validate here.
     }
     private void validateNotGeneratedField(no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField field, List<ValidationError> errors) {}
     private void validateUnclassifiedType(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType type, List<ValidationError> errors) {

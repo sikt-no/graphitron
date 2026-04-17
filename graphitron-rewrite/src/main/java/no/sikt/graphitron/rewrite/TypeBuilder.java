@@ -64,6 +64,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_NOT_GENERATED;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_RECORD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
@@ -349,22 +350,21 @@ class TypeBuilder {
      */
     GraphitronType buildTableInputType(String name, SourceLocation location,
             List<GraphQLInputObjectField> fields, TableRef tableRef) {
-        var failingNames = new ArrayList<String>();
+        var failures = new ArrayList<InputFieldResolution.Unresolved>();
         var resolvedFields = new ArrayList<InputField>();
         for (var f : fields) {
-            var field = buildInputField(f, name, tableRef);
-            if (field.isEmpty()) {
-                failingNames.add(f.getName());
-            } else {
-                resolvedFields.add(field.get());
+            var resolution = buildInputField(f, name, tableRef);
+            switch (resolution) {
+                case InputFieldResolution.Resolved r -> resolvedFields.add(r.field());
+                case InputFieldResolution.Unresolved u -> failures.add(u);
             }
         }
-        if (!failingNames.isEmpty()) {
-            String tableName = tableRef.tableName();
-            String fieldList = failingNames.stream().map(n -> "'" + n + "'").collect(Collectors.joining(", "));
-            String hint = candidateHint(failingNames.get(0), ctx.catalog.columnSqlNamesOf(tableName), ". Did you mean any of: ");
+        if (!failures.isEmpty()) {
+            String reasons = failures.stream()
+                .map(u -> "'" + u.fieldName() + "': " + u.reason())
+                .collect(Collectors.joining("; "));
             return new UnclassifiedType(name, location,
-                "mapped to table '" + tableName + "' — unresolvable fields: " + fieldList + hint);
+                "mapped to table '" + tableRef.tableName() + "' — unresolvable fields: " + reasons);
         }
         return new TableInputType(name, location, tableRef, List.copyOf(resolvedFields));
     }
@@ -434,7 +434,7 @@ class TypeBuilder {
         return tables;
     }
 
-    private Optional<InputField> buildInputField(GraphQLInputObjectField field,
+    private InputFieldResolution buildInputField(GraphQLInputObjectField field,
             String parentTypeName, TableRef resolvedTable) {
         String name = field.getName();
         GraphQLType type = field.getType();
@@ -447,14 +447,43 @@ class TypeBuilder {
             : name;
         if (field.hasAppliedDirective(DIR_REFERENCE)) {
             var path = ctx.parsePath(field, name, resolvedTable.tableName());
-            if (path.hasError()) return Optional.empty();
+            if (path.hasError()) return new InputFieldResolution.Unresolved(name, path.errorMessage());
             return svc.resolveColumnForReference(columnName, path.elements(), resolvedTable.tableName())
-                .map(col -> new InputField.ColumnReferenceField(
-                    parentTypeName, name, locationOf(field), typeName, nonNull, list, col, path.elements()));
+                .<InputFieldResolution>map(col -> new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
+                    parentTypeName, name, locationOf(field), typeName, nonNull, list, col, path.elements())))
+                .orElseGet(() -> new InputFieldResolution.Unresolved(name,
+                    "no column '" + columnName + "' reachable via @reference path"
+                    + candidateHint(columnName, ctx.catalog.columnSqlNamesOf(resolvedTable.tableName()))));
         }
-        return ctx.catalog.findColumn(resolvedTable.tableName(), columnName)
-            .map(e -> new InputField.ColumnField(parentTypeName, name, locationOf(field), typeName, nonNull, list,
+        String tableName = resolvedTable.tableName();
+        var colEntry = ctx.catalog.findColumn(tableName, columnName);
+        if (colEntry.isPresent()) {
+            var e = colEntry.get();
+            return new InputFieldResolution.Resolved(new InputField.ColumnField(
+                parentTypeName, name, locationOf(field), typeName, nonNull, list,
                 new ColumnRef(e.sqlName(), e.javaName(), e.columnClass())));
+        }
+        // Fallback: check for legacy platform-key accessors (getId/setId) on the jOOQ record class.
+        // All three conditions must hold: column name is "id", GraphQL type is ID, no @nodeId.
+        if ("id".equalsIgnoreCase(columnName)
+                && "ID".equals(typeName)
+                && !field.hasAppliedDirective(DIR_NODE_ID)) {
+            if (ctx.catalog.hasPlatformIdMethods(tableName)) {
+                return new InputFieldResolution.Resolved(new InputField.PlatformIdField(
+                    parentTypeName, name, locationOf(field), typeName, nonNull, list));
+            }
+            return new InputFieldResolution.Unresolved(name,
+                "field 'id' has no matching column and no platformId methods (getId/setId) found"
+                + " on record class — use @nodeId for Relay IDs");
+        }
+        return new InputFieldResolution.Unresolved(name,
+            "no column '" + columnName + "' found in table '" + tableName + "'"
+            + candidateHint(columnName, ctx.catalog.columnSqlNamesOf(tableName)));
+    }
+
+    private sealed interface InputFieldResolution {
+        record Resolved(InputField field) implements InputFieldResolution {}
+        record Unresolved(String fieldName, String reason) implements InputFieldResolution {}
     }
 
     private ErrorType.Handler parseErrorHandler(Map<String, Object> item) {

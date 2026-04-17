@@ -12,7 +12,7 @@ import java.util.List;
  * input types ({@link GraphitronType.InputType}) have no field-level classification yet.
  */
 public sealed interface InputField extends GraphitronField
-        permits InputField.ColumnField, InputField.ColumnReferenceField {
+        permits InputField.ColumnField, InputField.ColumnReferenceField, InputField.PlatformIdField {
 
     /**
      * A field in a {@code @table}-annotated input type, successfully resolved to a SQL column
@@ -56,5 +56,28 @@ public sealed interface InputField extends GraphitronField
         boolean list,
         ColumnRef column,
         List<JoinStep> joinPath
+    ) implements InputField {}
+
+    /**
+     * A field in a {@code @table}-annotated input type that represents a legacy composite
+     * platform key. The underlying jOOQ record class exposes {@code getId()} /
+     * {@code setId(String)} convenience methods added by a custom jOOQ code generator;
+     * the table itself has no {@code id} column.
+     *
+     * <p>Only classified for GraphQL {@code ID}-typed fields whose resolved column name is
+     * {@code "id"} and that have no {@code @nodeId} directive. Fields with {@code @nodeId}
+     * take the Relay NodeID path and never produce this variant.
+     *
+     * <p>No {@link ColumnRef} is carried: the field's only observable effect is a
+     * {@code record.setId(input)} call in the mutation input-binding generator (deferred until
+     * the mutation generator is implemented).
+     */
+    record PlatformIdField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        String typeName,
+        boolean nonNull,
+        boolean list
     ) implements InputField {}
 }

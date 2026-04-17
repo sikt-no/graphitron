@@ -75,6 +75,40 @@ public class JooqCatalog {
     }
 
     /**
+     * Returns the jOOQ record class for the table with the given SQL name, or empty when the
+     * table cannot be found or the catalog is unavailable. The returned class is whatever
+     * {@link org.jooq.Table#getRecordType()} returns for the matching table — typically the
+     * generated {@code *Record} class.
+     */
+    public Optional<Class<?>> findRecordClass(String tableSqlName) {
+        return findTable(tableSqlName).map(e -> e.table().getRecordType());
+    }
+
+    /**
+     * Returns {@code true} when the jOOQ record class for the table with the given SQL name
+     * exposes both {@code public String getId()} and {@code public void setId(String)} methods.
+     * These are emitted by the custom jOOQ code generator for legacy composite platform keys.
+     * Returns {@code false} when the catalog is unavailable, the table cannot be found, or
+     * either method is absent.
+     */
+    public boolean hasPlatformIdMethods(String tableSqlName) {
+        return findRecordClass(tableSqlName)
+            .map(JooqCatalog::recordHasPlatformIdMethods)
+            .orElse(false);
+    }
+
+    private static boolean recordHasPlatformIdMethods(Class<?> record) {
+        try {
+            var get = record.getMethod("getId");
+            var set = record.getMethod("setId", String.class);
+            return String.class.equals(get.getReturnType())
+                && void.class.equals(set.getReturnType());
+        } catch (NoSuchMethodException e) {
+            return false;
+        }
+    }
+
+    /**
      * Find a table by its jOOQ record class. Returns the table whose
      * {@link org.jooq.Table#getRecordType()} equals {@code recordClass}, or empty when no match
      * is found (e.g. the record comes from a different catalog).
