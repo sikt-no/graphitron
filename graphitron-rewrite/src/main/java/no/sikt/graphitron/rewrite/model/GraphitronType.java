@@ -152,10 +152,10 @@ public sealed interface GraphitronType
     ) implements TableBackedType {}
 
     /**
-     * An interface with no directives whose implementing types each have {@code @table}.
-     * Multi-table interface pattern.
-     *
-     * <p>{@code participants} holds one {@link ParticipantRef} per implementing type. Unbound participants (e.g. {@code @error} types) are recorded as {@link ParticipantRef.Unbound}.
+     * An interface with no directives. Participating types may be table-bound ({@link ParticipantRef.TableBound})
+     * or unbound ({@link ParticipantRef.Unbound}). Unbound participants include {@code @error} types and nesting
+     * types — object types with no {@code @table} whose fields map to columns on whichever parent table embeds them.
+     * Only implementing types that are {@link UnclassifiedType} (failed {@code @table} resolution) produce an error.
      */
     record InterfaceType(
         String name,

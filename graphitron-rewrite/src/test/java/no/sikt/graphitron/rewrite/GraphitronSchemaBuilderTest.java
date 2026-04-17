@@ -48,6 +48,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
+import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -991,6 +992,29 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> assertThat(schema.field("Film", "language")).isInstanceOf(InterfaceField.class)),
+
+        INTERFACE_WITH_NESTING_IMPLEMENTORS(
+            "interface whose implementing types are nesting types (no @table) → InterfaceType with Unbound participants, no error",
+            """
+            interface Datoperiode { fraDato: String tilDato: String }
+            type EmnerolleGyldighetsperiode implements Datoperiode {
+                fraDato: String @field(name: "DATO_FRA")
+                tilDato: String @field(name: "DATO_TIL")
+            }
+            type KlasserolleGyldighetsperiode implements Datoperiode {
+                fraDato: String @field(name: "DATO_FRA")
+                tilDato: String @field(name: "DATO_TIL")
+            }
+            type Film @table(name: "film") { title: String }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var it = (InterfaceType) schema.type("Datoperiode");
+                assertThat(it.participants())
+                    .extracting(p -> p.typeName())
+                    .containsExactlyInAnyOrder("EmnerolleGyldighetsperiode", "KlasserolleGyldighetsperiode");
+                assertThat(it.participants()).allMatch(p -> p instanceof ParticipantRef.Unbound);
+            }),
 
         UNION_FIELD(
             "field returning a union → UnionField",

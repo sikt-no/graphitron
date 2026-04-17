@@ -135,11 +135,24 @@ class TypeBuilder {
     }
 
     private GraphitronType enrichInterfaceType(InterfaceType type, Map<String, GraphitronType> types) {
-        var participants = buildParticipantList(implementorNames(type.name(), types));
-        if (participants.error() != null) {
-            return new UnclassifiedType(type.name(), type.location(), participants.error());
+        var result = new ArrayList<ParticipantRef>();
+        var errors = new ArrayList<String>();
+        for (var typeName : implementorNames(type.name(), types)) {
+            var gt = ctx.types.get(typeName);
+            if (gt instanceof TableBackedType tbt && !(gt instanceof TableInterfaceType)) {
+                String discriminatorValue = argString(ctx.schema.getObjectType(typeName), DIR_DISCRIMINATOR, ARG_VALUE).orElse(null);
+                result.add(new ParticipantRef.TableBound(typeName, tbt.table(), discriminatorValue));
+            } else if (gt instanceof UnclassifiedType) {
+                errors.add("implementing type '" + typeName + "' is not table-bound (missing @table directive)");
+            } else {
+                // gt is null (nesting type, no @table) or another recognized non-table type → Unbound
+                result.add(new ParticipantRef.Unbound(typeName));
+            }
         }
-        return new InterfaceType(type.name(), type.location(), participants.list());
+        if (!errors.isEmpty()) {
+            return new UnclassifiedType(type.name(), type.location(), String.join("; ", errors));
+        }
+        return new InterfaceType(type.name(), type.location(), List.copyOf(result));
     }
 
     private GraphitronType enrichUnionType(UnionType type, Map<String, GraphitronType> types) {
