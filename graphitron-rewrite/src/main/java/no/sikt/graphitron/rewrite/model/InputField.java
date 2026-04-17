@@ -60,25 +60,28 @@ public sealed interface InputField extends GraphitronField
 
     /**
      * A field in a {@code @table}-annotated input type that represents a legacy composite
-     * platform key. The underlying jOOQ record class exposes {@code getId()} /
-     * {@code setId(String)} convenience methods added by a custom jOOQ code generator;
-     * the table itself has no {@code id} column.
+     * platform key. The underlying jOOQ record class exposes {@code getXId()} /
+     * {@code setXId(String)} accessor methods (where {@code X} is derived from the resolved
+     * column name) added by a custom jOOQ code generator; the table has no corresponding column.
      *
-     * <p>Only classified for scalar GraphQL {@code ID}-typed fields whose resolved column name
-     * is {@code "id"} (case-insensitive) and that have no {@code @nodeId} directive. Fields with
-     * {@code @nodeId} take the Relay NodeID path and never produce this variant; list-typed
-     * fields ({@code [ID!]!}) are rejected by the classifier and do not reach this variant.
+     * <p>Only classified for scalar GraphQL {@code ID}-typed fields with no {@code @nodeId}
+     * directive, when no real column matches the resolved name but the record class exposes the
+     * expected accessor pair. Fields with {@code @nodeId} take the Relay NodeID path and never
+     * produce this variant; list-typed fields ({@code [ID!]!}) are rejected at the fallback
+     * boundary.
      *
-     * <p>No {@link ColumnRef} is carried: the field's only observable effect is a
-     * {@code record.setId(input)} call in the mutation input-binding generator (deferred until
-     * the mutation generator is implemented). A {@code list} field is intentionally omitted —
-     * the classifier guarantees scalar.
+     * <p>No {@link ColumnRef} is carried. {@code getterName} and {@code setterName} are
+     * pre-resolved by the classifier so the generator emits the correct call without
+     * re-deriving method names. A {@code list} field is intentionally omitted — the classifier
+     * guarantees scalar.
      */
     record PlatformIdField(
         String parentTypeName,
         String name,
         SourceLocation location,
         String typeName,
-        boolean nonNull
+        boolean nonNull,
+        String getterName,
+        String setterName
     ) implements InputField {}
 }

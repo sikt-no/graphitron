@@ -468,19 +468,22 @@ class TypeBuilder {
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
                 new ColumnRef(e.sqlName(), e.javaName(), e.columnClass())));
         }
-        // Fallback: check for legacy platform-key accessors (getId/setId) on the jOOQ record class.
-        // Conditions: column name is "id" (case-insensitive), scalar (non-list) ID type, no @nodeId.
-        if ("id".equalsIgnoreCase(columnName)
-                && "ID".equals(typeName)
+        // Fallback: check for legacy platform-key accessors on the jOOQ record class.
+        // Conditions: scalar (non-list) ID type, no @nodeId. The accessor name is derived
+        // from the column name — PERSON_ID → getPersonId/setPersonId, id → getId/setId.
+        if ("ID".equals(typeName)
                 && !list
                 && !field.hasAppliedDirective(DIR_NODE_ID)) {
-            if (ctx.catalog.hasPlatformIdMethods(tableName)) {
+            String accessorSuffix = JooqCatalog.sqlToAccessorSuffix(columnName);
+            String getterName = "get" + accessorSuffix;
+            String setterName = "set" + accessorSuffix;
+            if (ctx.catalog.hasPlatformIdAccessors(tableName, getterName, setterName)) {
                 return new InputFieldResolution.Resolved(new InputField.PlatformIdField(
-                    parentTypeName, name, locationOf(field), typeName, nonNull));
+                    parentTypeName, name, locationOf(field), typeName, nonNull, getterName, setterName));
             }
             return new InputFieldResolution.Unresolved(name, null,
-                "field 'id' has no matching column and no platformId methods (getId/setId) found"
-                + " on record class — use @nodeId for Relay IDs");
+                "field '" + name + "' has no matching column and no accessor methods ("
+                + getterName + "/" + setterName + ") found on record class");
         }
         return new InputFieldResolution.Unresolved(name, columnName,
             "no column '" + columnName + "' found in table '" + tableName + "'");

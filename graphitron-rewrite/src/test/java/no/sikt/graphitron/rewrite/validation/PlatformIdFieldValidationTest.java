@@ -16,11 +16,11 @@ class PlatformIdFieldValidationTest {
     enum Case implements ValidatorCase {
 
         NO_ERRORS("PlatformIdField with valid ID type — no validation errors",
-            new PlatformIdField("Mutation", "id", null, "ID", true),
+            new PlatformIdField("Mutation", "id", null, "ID", true, "getId", "setId"),
             List.of()),
 
         NULLABLE("PlatformIdField that is nullable — still no validation errors",
-            new PlatformIdField("Mutation", "id", null, "ID", false),
+            new PlatformIdField("Mutation", "id", null, "ID", false, "getId", "setId"),
             List.of());
 
         private final String description;

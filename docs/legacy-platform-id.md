@@ -1,14 +1,15 @@
 # Legacy PlatformId Inputs
 
-Design for classifying mutation input fields named `id: ID!` that resolve to a
-legacy platform key — a composite SQL key stored as a single string via custom
-jOOQ record methods (`getId` / `setId`) rather than a single `id` column.
+Design for classifying mutation input fields that resolve to a legacy platform
+key — a composite SQL key stored as a single string via custom jOOQ record
+methods (`getXId` / `setXId`) rather than a real SQL column.
 
-**Status:** Steps 1–5 implemented in `6bc2d95`, with review follow-ups applied
-(reject list-typed inputs in the fallback, drop redundant `list` field from
-`PlatformIdField`, dedupe candidate hint in aggregated error messages, direct
-reflection-helper unit coverage). Step 6 (mutation generator integration) and
-the end-to-end classification pipeline tests remain.
+**Status:** Steps 1–5 revised — detection conditions and `PlatformIdField`
+shape corrected after reviewing the legacy implementation. The column-name gate
+(`"id".equalsIgnoreCase`) was wrong; detection now derives the accessor name
+from the column name and checks for its existence on the record class.
+`PlatformIdField` now carries pre-resolved `getterName`/`setterName`. Step 6
+(mutation generator integration) and the classification pipeline tests remain.
 
 Priority: **low**. New schemas should use `@node` + `@nodeId` and this plan
 does not block any in-flight work.
@@ -31,14 +32,20 @@ encoded to a string at the application layer. A custom jOOQ code generator
 (`KjerneJooqGenerator`) emits record-class footers with matching accessors:
 
 ```java
-public String getId() { /* encode composite columns → platformId string */ }
+public String getId()        { /* encode composite columns → platformId string */ }
 public void   setId(String id) { /* decode string → composite columns */ }
 ```
 
-The legacy codegen (`LookupHelpers.getKeyFieldBlock`) handles this by falling
-back to the field's `MethodMapping` when an `id: ID!` field has no `@nodeId` —
-emitting `record.getId()` / `record.setId(input)` directly without consulting
-the column catalogue.
+The accessor names follow jOOQ's naming convention: `get<JavaName>()` /
+`set<JavaName>(String)`, where `JavaName` is the column name converted to Java
+style (`PERSON_ID` → `PersonId`, `ID` → `Id`). So a field mapped via
+`@field(name: "PERSON_ID")` has accessors `getPersonId()` / `setPersonId()`.
+
+The legacy codegen (`LookupHelpers.getKeyFieldBlock`) handles this pattern by
+checking `it.isID() && !isNodeIdField(it)` — **no column-name condition** — and
+emitting `record.get<FieldOverrideName>()` / `record.set<FieldOverrideName>()`
+directly, using the `@field(name: ...)` value (or the GraphQL field name) to
+derive the method name.
 
 The rewrite classifies input fields through `TypeBuilder.buildInputField`, which
 currently only succeeds when `catalog.findColumn(table, columnName)` returns a
@@ -61,58 +68,75 @@ clause alongside this addition), sibling to `ColumnField` and
 /**
  * A field in a {@code @table}-annotated input type that represents a legacy
  * composite platform key. The underlying jOOQ record class exposes
- * {@code getId()} / {@code setId(String)} convenience methods added by a
- * custom jOOQ code generator; the table itself has no {@code id} column.
+ * {@code getXId()} / {@code setXId(String)} accessor methods (where {@code X}
+ * is derived from the resolved column name) added by a custom jOOQ code
+ * generator; the table has no corresponding SQL column.
  *
- * <p>Only classified for scalar GraphQL {@code ID}-typed fields whose resolved
- * column name is {@code "id"} (case-insensitive) and that have no
- * {@code @nodeId} directive. Fields with {@code @nodeId} take the Relay NodeID
- * path and never produce this variant; list-typed fields ({@code [ID!]!}) are
- * rejected by the classifier and do not reach this variant.
+ * <p>Only classified for scalar GraphQL {@code ID}-typed fields with no
+ * {@code @nodeId} directive, when no real column matches the resolved name but
+ * the record class exposes the expected accessor pair. Fields with
+ * {@code @nodeId} take the Relay NodeID path and never produce this variant;
+ * list-typed fields ({@code [ID!]!}) are rejected at the fallback boundary.
+ *
+ * <p>No {@link ColumnRef} is carried. {@code getterName} and {@code setterName}
+ * are pre-resolved by the classifier so the generator emits the correct call
+ * without re-deriving method names.
  */
 record PlatformIdField(
     String parentTypeName,
     String name,
     SourceLocation location,
-    String typeName,        // always "ID" — enforced by classifier
-    boolean nonNull
+    String typeName,     // always "ID" — enforced by classifier
+    boolean nonNull,
+    String getterName,   // e.g. "getId", "getPersonId" — pre-resolved
+    String setterName    // e.g. "setId", "setPersonId"
 ) implements InputField {}
 ```
 
-No `ColumnRef` is carried. The field's only observable effect is a
-`record.setId(input)` call in the mutation input-binding generator, and
-`record.getId()` in read-back paths (when those are implemented). `list` is
-intentionally absent from the record: the classifier rejects non-scalar inputs
-at the fallback boundary, so carrying a flag that is always false would be
-redundant.
+No `ColumnRef` is carried. The field's only observable effect is
+`record.<setterName>(input.<getterName>())` in the mutation input-binding
+generator (deferred until the mutation generator is implemented). `list` is
+intentionally absent: the classifier rejects non-scalar inputs at the fallback
+boundary.
 
 ### Detection
 
 Detection runs inside `TypeBuilder.buildInputField`, as a **fallback** after
 `catalog.findColumn(table, columnName)` returns empty. The fallback is gated
-by four conditions — all four must hold:
+by three conditions — all three must hold:
 
-1. The resolved column name (the field's GraphQL name, or the `@field(name: ...)`
-   override if present) equals `"id"`, case-insensitive. `@field(name: "ID")`
-   — common in jOOQ-generated schemas where SQL identifiers are uppercase —
-   is therefore accepted; the match is on the logical column name, not on
-   casing.
-2. The field's GraphQL type (after unwrapping `NonNull`) has named type `ID`.
-3. The field is scalar — a `[ID!]!` list input is rejected. This preserves
-   the `getId()`/`setId(String)` accessor contract, which has no list form.
-4. The field has no `@nodeId` directive (`@nodeId` fields are handled by the
+1. The field's GraphQL type (after unwrapping `NonNull`) has named type `ID`.
+2. The field is scalar — a `[ID!]!` list input is rejected. Accessor methods
+   have no list form.
+3. The field has no `@nodeId` directive (`@nodeId` fields are handled by the
    Relay classification path, not here).
 
-When all four hold, `catalog.hasPlatformIdMethods(tableName)` is checked:
+When all three hold, the expected accessor names are derived from the resolved
+column name using `JooqCatalog.sqlToAccessorSuffix`:
 
-- If true → `PlatformIdField`.
+```java
+String suffix    = JooqCatalog.sqlToAccessorSuffix(columnName); // e.g. "Id", "PersonId"
+String getterName = "get" + suffix;   // e.g. "getId", "getPersonId"
+String setterName = "set" + suffix;   // e.g. "setId", "setPersonId"
+```
+
+`sqlToAccessorSuffix` handles both input forms:
+- **SQL-style** (`ALL_CAPS`, `UPPER_CASE_WITH_UNDERSCORES`): lowercases,
+  splits on `_`, capitalizes each word, joins — `PERSON_ID` → `PersonId`,
+  `ID` → `Id`.
+- **camelCase** (GraphQL field name or `@field(name: "camelCase")`): just
+  capitalizes the first letter — `id` → `Id`, `personId` → `PersonId`.
+
+The discriminant is `columnName.equals(columnName.toUpperCase())`: if the
+entire name is already uppercase (including all-caps single words like `ID`),
+apply the SQL conversion; otherwise just capitalize.
+
+`catalog.hasPlatformIdAccessors(tableName, getterName, setterName)` is then
+checked:
+
+- If true → `Resolved(PlatformIdField(..., getterName, setterName))`.
 - If false → `Unresolved` with the targeted error message (see "Error quality"
   below).
-
-The name condition (1) remains the critical gate: without it, any `ID`-typed
-field on a platformId table — regardless of its column name — could
-accidentally trigger this path. Only the field whose resolved name is `"id"`
-(case-insensitive) maps to the `getId`/`setId` pair.
 
 ### Reflection source — `TableRef` vs `JooqCatalog`
 
@@ -125,20 +149,39 @@ Expose the record class via `JooqCatalog` instead:
 
 ```java
 // on JooqCatalog
+
+/** Converts a resolved column name to the Java accessor suffix used by jOOQ. */
+static String sqlToAccessorSuffix(String columnName) {
+    if (columnName.equals(columnName.toUpperCase())) {
+        // SQL-style (ALL_CAPS / UPPER_CASE_WITH_UNDERSCORES): PERSON_ID → PersonId
+        StringBuilder sb = new StringBuilder();
+        for (String part : columnName.toLowerCase().split("_+")) {
+            if (!part.isEmpty()) {
+                sb.append(Character.toUpperCase(part.charAt(0)));
+                sb.append(part.substring(1));
+            }
+        }
+        return sb.toString();
+    }
+    // camelCase: id → Id, personId → PersonId
+    return Character.toUpperCase(columnName.charAt(0)) + columnName.substring(1);
+}
+
 public Optional<Class<?>> findRecordClass(String tableSqlName) {
     return findTable(tableSqlName).map(e -> e.table().getRecordType());
 }
 
-public boolean hasPlatformIdMethods(String tableSqlName) {
+public boolean hasPlatformIdAccessors(String tableSqlName, String getterName, String setterName) {
     return findRecordClass(tableSqlName)
-        .map(JooqCatalog::recordHasPlatformIdMethods)
+        .map(cls -> recordHasPlatformIdAccessors(cls, getterName, setterName))
         .orElse(false);
 }
 
-private static boolean recordHasPlatformIdMethods(Class<?> record) {
+/** Package-private for direct unit testing. */
+static boolean recordHasPlatformIdAccessors(Class<?> record, String getterName, String setterName) {
     try {
-        var get = record.getMethod("getId");
-        var set = record.getMethod("setId", String.class);
+        var get = record.getMethod(getterName);
+        var set = record.getMethod(setterName, String.class);
         return String.class.equals(get.getReturnType())
             && void.class.equals(set.getReturnType());
     } catch (NoSuchMethodException e) {
@@ -147,15 +190,14 @@ private static boolean recordHasPlatformIdMethods(Class<?> record) {
 }
 ```
 
-`hasPlatformIdMethods` keeps the call site in `TypeBuilder` a single-line
+`hasPlatformIdAccessors` keeps the call site in `TypeBuilder` a single-line
 check and isolates the reflection inside `JooqCatalog`, which is already the
 only class permitted to do jOOQ reflection (see "Classification belongs at the
 parse boundary" in [`rewrite-roadmap.md`](rewrite-roadmap.md)).
 
-The narrower `findRecordClass` method is kept as the base primitive in case
-future work needs the `Class<?>` itself (for example to reflect additional
-record accessors). It mirrors the existing `findTableByRecordClass` method,
-forming a pair.
+`findRecordClass` is kept as the base primitive for future work that may need
+the `Class<?>` directly. `sqlToAccessorSuffix` is package-private so it can be
+unit-tested independently of the catalog.
 
 ### Builder flow
 
@@ -185,17 +227,17 @@ Flow inside `buildInputField`:
    `Unresolved(name, columnName, "no column ... reachable via @reference path")`.
 2. Else resolve column via `catalog.findColumn(tableName, columnName)`. If
    found → `Resolved(ColumnField(...))`, unchanged.
-3. Else check the four detection conditions (column name = `"id"` ignoring
-   case, base type = `ID`, scalar, no `@nodeId`). If all hold and
-   `catalog.hasPlatformIdMethods(tableName)` is true →
-   `Resolved(PlatformIdField(...))`.
+3. Else check the three detection conditions (base type = `ID`, scalar, no
+   `@nodeId`). If all hold, derive accessor names from `columnName` and call
+   `catalog.hasPlatformIdAccessors(tableName, getterName, setterName)`. If
+   true → `Resolved(PlatformIdField(..., getterName, setterName))`.
 4. Else → `Unresolved(name, columnName, reason)`. The reason is constructed
    here without a candidate hint:
-   - Plain column miss: `"no column '<columnName>' found in table
-     '<tableName>'"`.
-   - `id`-typed field where `hasPlatformIdMethods` returned false:
-     `"field 'id' has no matching column and no platformId methods
-     (getId/setId) found on record class — use @nodeId for Relay IDs"` — with
+   - Plain column miss (conditions 1–3 fail): `"no column '<columnName>'
+     found in table '<tableName>'"`.
+   - `ID`-typed field where `hasPlatformIdAccessors` returned false:
+     `"field '<name>' has no matching column and no accessor methods
+     (<getterName>/<setterName>) found on record class"` — with
      `lookupColumn = null` so this case does not contribute to the hint.
 
 `buildTableInputType` collects per-field `Unresolved` entries and composes
@@ -227,7 +269,7 @@ input-binding section of that generator emits, for each input field:
 - `ColumnField`            → `record.set<ColumnJavaName>(input.<getter>())`
 - `ColumnReferenceField`   → build join-pathed WHERE predicate (read paths);
   write paths currently do not support `@reference` on inputs.
-- `PlatformIdField`        → `record.setId(input.getId())`
+- `PlatformIdField`        → `record.<setterName>(input.<getterName>())` using the pre-resolved names from the model
 
 Read-back (returning the newly written record through a query field) happens
 through ordinary column projection and does not touch `PlatformIdField`.
@@ -238,13 +280,13 @@ written, no further classification work is required.
 
 ### Error quality
 
-The targeted message `"field 'id' has no matching column and no platformId
-methods (getId/setId) found on record class — use @nodeId for Relay IDs"`
-steers users toward the forward path (`@nodeId`) while still identifying the
-legacy mechanism they might have expected. It is produced only when all three
-detection conditions hold but `hasPlatformIdMethods` returns false — column
-missing **and** record missing platformId methods. When platformId methods
-exist, classification succeeds silently — the legacy schema keeps working.
+The targeted message `"field '<name>' has no matching column and no accessor
+methods (<getter>/<setter>) found on record class"` names the exact methods
+that were checked, making it actionable. It is produced only when the three
+detection conditions hold but `hasPlatformIdAccessors` returns false — column
+missing **and** the expected accessor pair absent from the record class. When
+the accessors exist, classification succeeds silently — the legacy schema keeps
+working.
 
 For ordinary column misses (a detection condition fails), `candidateHint` is
 applied once at the `UnclassifiedType` level by `buildTableInputType`, keyed
@@ -257,10 +299,11 @@ checks in the builder.
 
 ### In scope
 
-- `id: ID!` (or `id: ID`) on `@table` input types, no `@nodeId`, no
-  `@reference`, no `@field(name: ...)` override pointing to something other
-  than `id`.
-- The record-level `getId()` / `setId(String)` pair only.
+- Any scalar `ID` (or `ID!`) field on a `@table` input type with no `@nodeId`
+  and no `@reference`, where the jOOQ record exposes a matching
+  `get<JavaName>()`/`set<JavaName>(String)` accessor pair.
+- Both plain field names (`id: ID!` → `getId`/`setId`) and `@field`-overridden
+  names (`personId: ID! @field(name: "PERSON_ID")` → `getPersonId`/`setPersonId`).
 
 ### Out of scope
 
@@ -286,12 +329,12 @@ checks in the builder.
 
 | Step | What | Status |
 |---|---|---|
-| 1 | Add `JooqCatalog.findRecordClass(String)` + `hasPlatformIdMethods(String)`. `recordHasPlatformIdMethods` is package-private for direct unit coverage. | ✅ `6bc2d95` (+ review follow-up) |
-| 2 | Add `InputField.PlatformIdField` variant (no `list` field — classifier guarantees scalar); update the `permits` clause on `InputField` | ✅ `6bc2d95` (+ review follow-up) |
-| 3 | Add private `InputFieldResolution` nested sealed type inside `TypeBuilder` with `(fieldName, lookupColumn, reason)`; change `buildInputField` to return it; update `buildTableInputType` to aggregate per-field reasons and emit one `candidateHint` per table | ✅ `6bc2d95` (+ review follow-up) |
-| 4 | Add platformId fallback branch (all four conditions — scalar, name, `ID`, no `@nodeId` — + `hasPlatformIdMethods` check) in `buildInputField` | ✅ `6bc2d95` (+ review follow-up) |
-| 5 | Add exhaustive-switch arm in `GraphitronSchemaValidator.validateField` | ✅ `6bc2d95` |
-| 6 | (Deferred — picked up with mutation generator) Emit `record.setId(input.getId())` for `PlatformIdField` in the input-binding section. Requires `InputColumnBinding` (defined in `argument-resolution.md`) to be a sum type that accommodates `PlatformIdField` bindings alongside column bindings — see "Interaction with existing work" below. | ⏳ Deferred |
+| 1 | Add `JooqCatalog.findRecordClass`, `hasPlatformIdAccessors(tableName, getter, setter)`, `recordHasPlatformIdAccessors` (package-private), and `sqlToAccessorSuffix` (package-private). | ⬆️ Revised |
+| 2 | Add `InputField.PlatformIdField` with `getterName`/`setterName` components; update `permits` clause. | ⬆️ Revised |
+| 3 | `InputFieldResolution` nested sealed type with `(fieldName, lookupColumn, reason)`; `buildInputField` returns it; `buildTableInputType` aggregates per-field reasons with one `candidateHint` per table. | ✅ unchanged |
+| 4 | Fallback branch: three conditions (scalar, `ID` type, no `@nodeId`) + accessor derivation via `sqlToAccessorSuffix` + `hasPlatformIdAccessors` check; construct `PlatformIdField` with getter/setter names. | ⬆️ Revised |
+| 5 | Exhaustive-switch arm in `GraphitronSchemaValidator.validateField`. | ✅ unchanged |
+| 6 | (Deferred — picked up with mutation generator) Emit `record.<setterName>(input.<getterName>())` using the pre-resolved names on `PlatformIdField`. Requires `InputColumnBinding` (defined in `argument-resolution.md`) to accommodate `PlatformIdField` bindings — see "Interaction with existing work" below. | ⏳ Deferred |
 
 Steps 1–5 are done. Step 6 happens naturally when someone implements the
 mutation generator (see [`rewrite-roadmap.md`](rewrite-roadmap.md),
@@ -303,36 +346,29 @@ mutation generator (see [`rewrite-roadmap.md`](rewrite-roadmap.md),
 
 ### Reflection helper (direct unit coverage)
 
-- **`JooqCatalogTest`** ✅ added in review follow-up. Exercises
-  `recordHasPlatformIdMethods` against `PlatformIdRecord` (positive) plus
-  synthetic negatives covering each failure mode: both accessors missing,
-  only the getter present, only the setter present, getter return not
-  `String`, setter parameter not `String`, setter return not `void`. This
-  replaces the end-to-end pipeline coverage for the reflection contract —
-  the pipeline tests below remain deferred.
+- **`JooqCatalogTest`** — update to use `recordHasPlatformIdAccessors(cls, getter, setter)`.
+  Add cases for `sqlToAccessorSuffix`: `"id"` → `"Id"`, `"personId"` → `"PersonId"`,
+  `"ID"` → `"Id"`, `"PERSON_ID"` → `"PersonId"`. Add a positive case with a
+  non-`id` accessor pair (e.g. `getPersonId`/`setPersonId`).
 
 ### Builder / classification
 
-These three pipeline tests were specified but **not yet added** (step 6 is the
-right time to add them alongside the fixture work — a `graphitron-rewrite` jOOQ
-catalog containing a platformId-shaped table does not exist yet):
+These pipeline tests are **not yet added** (step 6 is the right time, alongside
+fixture work):
 
-- **Pipeline test**: SDL with `input Foo @table(name: "bar") { id: ID! }`
-  against a jOOQ catalog whose `bar` record exposes `getId()`/`setId(String)`
-  classifies the field as `PlatformIdField` — asserted via the resolved
-  `GraphitronType.TableInputType.fields()` list.
-- **Pipeline test**: same SDL against a catalog whose record does **not**
-  expose those methods → `UnclassifiedType` with the exact targeted error
-  string.
-- **Pipeline test**: same SDL with `@nodeId` on the `id` field → reaches
-  the existing `@nodeId` classification path; `PlatformIdField` is not produced.
-
-A fourth pipeline test would be worth adding at the same time:
-
-- **Pipeline test**: SDL with `id: [ID!]!` on a `@table` input type whose
-  record exposes `getId`/`setId` → the list-type gate fires,
-  `PlatformIdField` is not produced, and the resulting `UnclassifiedType`
-  reason names the `id` field (covers the scalar guard added in review).
+- **Pipeline test**: `input Foo @table(name: "bar") { id: ID! }` against a jOOQ
+  catalog whose `bar` record exposes `getId()`/`setId(String)` → `PlatformIdField`
+  with `getterName = "getId"`, `setterName = "setId"`.
+- **Pipeline test**: same SDL against a catalog whose record does **not** expose
+  those methods → `UnclassifiedType` with the targeted error string.
+- **Pipeline test**: same SDL with `@nodeId` on the `id` field → existing `@nodeId`
+  path; `PlatformIdField` not produced.
+- **Pipeline test**: `personId: ID! @field(name: "PERSON_ID")` against a catalog
+  whose record exposes `getPersonId()`/`setPersonId(String)` → `PlatformIdField`
+  with `getterName = "getPersonId"`, `setterName = "setPersonId"` (covers
+  `@field` override + non-`id` accessor derivation).
+- **Pipeline test**: `id: [ID!]!` on a platformId record → list-type gate fires,
+  `PlatformIdField` not produced.
 
 ### Validator
 
