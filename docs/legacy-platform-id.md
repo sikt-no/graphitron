@@ -47,8 +47,9 @@ the required accessors.
 
 ### Classification
 
-Add a third variant to the `InputField` sealed hierarchy, sibling to
-`ColumnField` and `ColumnReferenceField`:
+Add a third variant to the `InputField` sealed interface (update the `permits`
+clause alongside this addition), sibling to `ColumnField` and
+`ColumnReferenceField`:
 
 ```java
 /**
@@ -57,10 +58,9 @@ Add a third variant to the `InputField` sealed hierarchy, sibling to
  * {@code getId()} / {@code setId(String)} convenience methods added by a
  * custom jOOQ code generator; the table itself has no {@code id} column.
  *
- * <p>Only classified for GraphQL {@code ID}-typed fields named {@code id}
- * (or with {@code @field(name: "id")}) that cannot be resolved to a real
- * column. Fields with {@code @nodeId} take the Relay NodeID path and never
- * produce this variant.
+ * <p>Only classified for GraphQL {@code ID}-typed fields whose resolved column
+ * name is {@code "id"} and that have no {@code @nodeId} directive. Fields with
+ * {@code @nodeId} take the Relay NodeID path and never produce this variant.
  */
 record PlatformIdField(
     String parentTypeName,
@@ -80,20 +80,25 @@ No `ColumnRef` is carried. The field's only observable effect is a
 
 Detection runs inside `TypeBuilder.buildInputField`, as a **fallback** after
 `catalog.findColumn(table, columnName)` returns empty. The fallback is gated
-by two schema-level conditions:
+by three conditions — all three must hold:
 
-1. The field's GraphQL type (after unwrapping `NonNull`/`List`) is the scalar
+1. The resolved column name (the field's GraphQL name, or the `@field(name: ...)`
+   override if present) equals `"id"`.
+2. The field's GraphQL type (after unwrapping `NonNull`/`List`) is the scalar
    `ID`.
-2. The field has no `@nodeId` directive (`@nodeId` fields are handled by the
+3. The field has no `@nodeId` directive (`@nodeId` fields are handled by the
    Relay classification path, not here).
 
-When both hold, reflect the jOOQ record class for:
+When all three hold, `catalog.hasPlatformIdMethods(tableName)` is checked:
 
-- `public String getId()` — zero parameters, returns `java.lang.String`.
-- `public void setId(String)` — one `String` parameter.
+- If true → `PlatformIdField`.
+- If false → `Unresolved` with the targeted error message (see "Error quality"
+  below).
 
-Both methods must exist. If either is missing, the field remains
-unclassified and the caller surfaces the specific error described below.
+The name condition (1) is critical: without it, any `ID`-typed field on a
+platformId table — regardless of its column name — could accidentally trigger
+this path. Only the field whose resolved name is literally `"id"` maps to the
+`getId`/`setId` pair.
 
 ### Reflection source — `TableRef` vs `JooqCatalog`
 
@@ -130,55 +135,61 @@ private static boolean recordHasPlatformIdMethods(Class<?> record) {
 
 `hasPlatformIdMethods` keeps the call site in `TypeBuilder` a single-line
 check and isolates the reflection inside `JooqCatalog`, which is already the
-only class permitted to do jOOQ reflection (see the "Classification belongs at
-the parse boundary" principle in [`rewrite-roadmap.md`](rewrite-roadmap.md)).
+only class permitted to do jOOQ reflection (see "Classification belongs at the
+parse boundary" in [`rewrite-roadmap.md`](rewrite-roadmap.md)).
 
 The narrower `findRecordClass` method is kept as the base primitive in case
 future work needs the `Class<?>` itself (for example to reflect additional
-record accessors). It mirrors the existing
-[`findTableByRecordClass`](../graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/JooqCatalog.java)
-method, forming a pair.
+record accessors). It mirrors the existing `findTableByRecordClass` method,
+forming a pair.
 
 ### Builder flow
 
-Change `buildInputField` to return a sum type so it can surface an actionable
-error when the fallback fails, rather than melting into a bare `Optional.empty()`
-whose meaning is derived only from the caller's loop state:
+Change `buildInputField` to return a resolution type so it can surface an
+actionable error when the fallback fails, rather than returning a bare
+`Optional.empty()` whose meaning is derived only from the caller's loop state.
+
+This is a **private static nested type inside `TypeBuilder`** — it is
+builder-internal and never reaches generators or validators:
 
 ```java
-sealed interface InputFieldResolution {
+// private, nested inside TypeBuilder
+private sealed interface InputFieldResolution {
     record Resolved(InputField field) implements InputFieldResolution {}
     record Unresolved(String fieldName, String reason) implements InputFieldResolution {}
 }
 ```
 
-Flow:
+Flow inside `buildInputField`:
 
 1. If `@reference` is set → resolve column via existing path
    (`ColumnReferenceField`), unchanged.
 2. Else resolve column via `catalog.findColumn(tableName, columnName)`. If
-   found → `ColumnField`, unchanged.
-3. Else, if the field is an `ID` scalar, named `id` (or overridden to `id`),
-   has no `@nodeId`, and `catalog.hasPlatformIdMethods(tableName)` is true →
-   `PlatformIdField`.
-4. Else → `Unresolved`. Reason string distinguishes:
-   - Plain column miss: `"field '<name>' has no matching column in table
-     '<table>'"` (with candidate hint appended by the caller).
-   - `id: ID!` with no platformId methods: `"field 'id' has no matching
-     column and no platformId methods (getId/setId) found on record class —
-     use @nodeId for Relay IDs"`.
+   found → `Resolved(ColumnField(...))`, unchanged.
+3. Else check the three detection conditions (column name = `"id"`, type = `ID`,
+   no `@nodeId`). If all hold and `catalog.hasPlatformIdMethods(tableName)` is
+   true → `Resolved(PlatformIdField(...))`.
+4. Else → `Unresolved`. The reason string is constructed here, not in the
+   caller, because `buildInputField` already holds the column name and the
+   catalog:
+   - Plain column miss: call `ctx.candidateHint(columnName,
+     catalog.listColumnNames(tableName))` and include the hint in the message —
+     the same pattern used in the 14 other existence checks across the builder.
+   - `id`-typed field where `hasPlatformIdMethods` returned false:
+     `"field 'id' has no matching column and no platformId methods
+     (getId/setId) found on record class — use @nodeId for Relay IDs"`.
 
-`buildTableInputType` is updated to preserve per-field `reason` strings when
-aggregating into `UnclassifiedType`, so the composite error message names
-each failure with its specific cause.
+`buildTableInputType` is updated to collect per-field `Unresolved` entries and
+aggregate their `reason` strings when constructing `UnclassifiedType`, so the
+composite error message names each failing field with its specific cause.
 
 ### Validator
 
 `GraphitronSchemaValidator.validateField` already switches on every
-`InputField` variant. Add one line to the switch:
+`InputField` variant. Add one arm to the exhaustive switch:
 
 ```java
-case no.sikt.graphitron.rewrite.model.InputField.PlatformIdField ignored -> {}
+case InputField.PlatformIdField ignored -> {}
 ```
 
 No structural checks are needed: reflection on the record class was the
@@ -207,10 +218,14 @@ written, no further classification work is required.
 The targeted message `"field 'id' has no matching column and no platformId
 methods (getId/setId) found on record class — use @nodeId for Relay IDs"`
 steers users toward the forward path (`@nodeId`) while still identifying the
-legacy mechanism they might have expected. It is produced only when both
-conditions fail: column missing **and** record missing platformId methods.
-When platformId methods exist, classification succeeds silently — the
-legacy schema keeps working.
+legacy mechanism they might have expected. It is produced only when all three
+detection conditions hold but `hasPlatformIdMethods` returns false — column
+missing **and** record missing platformId methods. When platformId methods
+exist, classification succeeds silently — the legacy schema keeps working.
+
+For ordinary column misses (detection condition 1 or 2 fails), the existing
+`candidateHint` message format applies, consistent with the 14 other jOOQ
+existence checks in the builder.
 
 ---
 
@@ -248,11 +263,11 @@ legacy schema keeps working.
 | Step | What | Depends on |
 |---|---|---|
 | 1 | Add `JooqCatalog.findRecordClass(String)` + `hasPlatformIdMethods(String)` | Nothing |
-| 2 | Add `InputField.PlatformIdField` variant to the sealed interface | Nothing |
-| 3 | Change `TypeBuilder.buildInputField` to return an `InputFieldResolution` sum; update `buildTableInputType` to carry per-field reasons | Step 2 |
-| 4 | Add platformId fallback branch in `buildInputField` using the new catalog method | Steps 1, 3 |
-| 5 | Add exhaustive-switch case in `GraphitronSchemaValidator.validateField` | Step 2 |
-| 6 | (Deferred — picked up with mutation generator) Emit `record.setId(input.getId())` for `PlatformIdField` in the input-binding section | Step 2 + mutation generator |
+| 2 | Add `InputField.PlatformIdField` variant; update the `permits` clause on `InputField` | Nothing |
+| 3 | Add private `InputFieldResolution` nested sealed type inside `TypeBuilder`; change `buildInputField` to return it; update `buildTableInputType` to aggregate per-field reasons using `candidateHint` where applicable | Step 2 |
+| 4 | Add platformId fallback branch (all three conditions + `hasPlatformIdMethods` check) in `buildInputField` | Steps 1, 3 |
+| 5 | Add exhaustive-switch arm in `GraphitronSchemaValidator.validateField` | Step 2 |
+| 6 | (Deferred — picked up with mutation generator) Emit `record.setId(input.getId())` for `PlatformIdField` in the input-binding section. Requires `InputColumnBinding` (defined in `argument-resolution.md`) to be a sum type that accommodates `PlatformIdField` bindings alongside column bindings — see "Interaction with existing work" below. | Step 2 + mutation generator + `InputColumnBinding` design |
 
 Steps 1–5 are the self-contained classification work. Step 6 happens
 naturally when someone implements the mutation generator (see
@@ -269,11 +284,10 @@ naturally when someone implements the mutation generator (see
   classifies the field as `PlatformIdField` — asserted via the resolved
   `GraphitronType.TableInputType.fields()` list.
 - **Pipeline test** (new): same SDL against a catalog whose record does **not**
-  expose those methods → `UnclassifiedType` with the exact failure-mode error
+  expose those methods → `UnclassifiedType` with the exact targeted error
   string.
-- **Pipeline test** (new): same SDL with `@nodeId` on the `id` field → should
-  reach the existing `@nodeId` classification path; `PlatformIdField` is not
-  produced.
+- **Pipeline test** (new): same SDL with `@nodeId` on the `id` field → reaches
+  the existing `@nodeId` classification path; `PlatformIdField` is not produced.
 
 ### Validator
 
@@ -294,7 +308,7 @@ platformId tables. Two options, in preference order:
    `KjerneJooqGenerator`). This is only worthwhile if mutation generation
    lands in the same iteration.
 
-The classification pipeline test (above) is sufficient to verify the feature
+The classification pipeline test above is sufficient to verify the feature
 in isolation; execution coverage is tied to mutation-generator readiness.
 
 ---
@@ -305,14 +319,23 @@ in isolation; execution coverage is tied to mutation-generator readiness.
   is distinct from input-field classification. This plan only touches
   `InputField` and does not alter how Relay IDs are decoded or how
   `@nodeId` directives are read.
+
 - **Argument resolution** ([argument-resolution.md](argument-resolution.md)).
   Argument classification (`ArgumentRef`) is orthogonal — `PlatformIdField`
-  exists on **input types**, not **arguments**. When a mutation receives a
-  `TableInputArg` (the argument-resolution variant for `@table` input types),
-  its `fieldBindings` carry an `InputColumnBinding` per resolved column; the
-  argument-resolution plan's `InputColumnBinding` stub should be widened
-  into a sum that accepts `PlatformIdField` as well as column-bound fields,
-  so the mutation generator can dispatch uniformly.
+  exists on **input types**, not **arguments**. However, `TableInputArg`
+  (the `ArgumentRef` variant for `@table` input-type arguments) carries
+  `List<InputColumnBinding> fieldBindings` — one binding per resolved input
+  field. `InputColumnBinding` does not yet exist (flagged as item 7 in the
+  argument-resolution review). When it is designed, it must be a **sum type**
+  with at minimum:
+  - A column-bound variant carrying `ColumnRef` (for `ColumnField` inputs)
+  - A platformId variant carrying no column reference (for `PlatformIdField`
+    inputs)
+  so that the mutation generator can dispatch uniformly across both. **The
+  argument-resolution plan owns the `InputColumnBinding` definition.** This
+  plan's step 6 cannot land until that definition exists and accommodates
+  `PlatformIdField`.
+
 - **`TableRef`.** Unchanged. The task description lists widening `TableRef`
   as one option; this plan rejects it in favour of `JooqCatalog` lookup so
   the record-class information stays contained at the reflection boundary.
