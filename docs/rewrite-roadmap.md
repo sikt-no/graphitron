@@ -85,7 +85,7 @@ The practical implication: when adding code to a generator, distinguish between 
 
 ### Active
 
-- **Paginated fields** — dynamic ordering cursors, backward pagination, execution test. See [paginated-fields.md](paginated-fields.md).
+- **Paginated fields** — document transform coexistence (builder fallback loses `defaultPageSize` when `@asConnection` is stripped). See [paginated-fields.md](paginated-fields.md).
 - **Argument resolution** — unified classification, `@condition` support, lookup VALUES generation. See [argument-resolution.md](argument-resolution.md).
 
 ### Stubs to complete

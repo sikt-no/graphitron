@@ -54,7 +54,7 @@ The `/docs` folder contains conceptual guides explaining Graphitron's design, ph
 
 ### Active Rewrite
 - **Rewrite Roadmap**: [/docs/rewrite-roadmap.md](/docs/rewrite-roadmap.md) - Remaining generator work, design principles, and known gaps
-- **Paginated Fields**: [/docs/paginated-fields.md](/docs/paginated-fields.md) - Remaining: dynamic ordering cursors, backward pagination, execution test
+- **Paginated Fields**: [/docs/paginated-fields.md](/docs/paginated-fields.md) - Remaining: document transform coexistence (builder fallback loses `defaultPageSize` when `@asConnection` is stripped)
 - **Argument Resolution**: [/docs/argument-resolution.md](/docs/argument-resolution.md) - Unified argument classification, @condition support, lookup VALUES generation
 
 
