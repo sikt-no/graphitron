@@ -89,27 +89,28 @@ From a cross-cutting review comparing the module against its own design
 principles. Work below is ordered by expected leverage: higher items change
 how every subsequent plan lands.
 
+> **Done since this review was written:** *Sealed-switch the generator
+> dispatch* (original P1 #1) landed in commit `3357928`.
+> `TypeFetcherGenerator.generateTypeSpec` is now an exhaustive sealed
+> `switch` over all 39+ leaf variants, with stubbed leaves routed through
+> `stub(f)` backed by the `NOT_IMPLEMENTED_REASONS` map. `ColumnField` on
+> a non-table-backed parent is rejected by `GraphitronSchemaValidator`.
+> `GeneratorCoverageTest` guards the map against stale entries. The
+> remaining priorities below are renumbered accordingly.
+
 **P1 — do first (structural, cheap, compounding):**
 
-1. **Sealed-switch the generator dispatch** with an explicit
-   `NotImplementedYet` branch. `TypeFetcherGenerator.generateTypeSpec` is
-   currently an `instanceof` chain terminating in
-   `buildStub(field.name())`, which emits a method that throws
-   `UnsupportedOperationException` at request time. Adding a new sealed
-   `permits` variant does not become a compile error, so the "sealed
-   hierarchies force exhaustive switches" principle is undermined exactly
-   where it matters most. Convert to a sealed `switch` expression; give
-   known-unimplemented variants a named branch so the set of gaps is a
-   declaration, not a fallback. Detailed plan:
-   [`plan-sealed-switch-generator-dispatch.md`](plan-sealed-switch-generator-dispatch.md).
-2. **Variant-coverage meta-test.** Iterate
+1. **Variant-coverage meta-test.** Iterate
    `ChildField.class.getPermittedSubclasses()` (and every sealed root in
    `model/`) and assert every permit has at least one classification test
    case and at least one generator branch (or a documented exception).
    This subsumes *docs-as-index step 5* below and generalises it to the
    whole taxonomy. Cheap to write; catches the `ObjectBased`-shaped gap
-   automatically next time.
-3. **Argument-resolution unification.** The `ArgumentRef` classification
+   automatically next time. The narrow `GeneratorCoverageTest` sanity
+   check shipped with the sealed-switch refactor is a starting point;
+   extend it from "map entries are sealed leaves" to "every leaf has a
+   classification test case".
+2. **Argument-resolution unification.** The `ArgumentRef` classification
    + projection design in [argument-resolution.md](argument-resolution.md)
    is blocking `@condition`-on-fields, `InputColumnBinding`, and every
    future argument category. `FieldBuilder` has grown to ~1350 LOC around
@@ -119,19 +120,21 @@ how every subsequent plan lands.
 
 **P2 — high value, depends on P1 or unblocks adoption:**
 
-4. **Validator asks "can this generate?"** After P1 lands, extend
-   `GraphitronSchemaValidator` to reject schemas whose fields are
-   classified into a `NotImplementedYet` generator branch, with a
-   targeted error naming the variant. Today a validated schema can still
-   crash at request time with `UnsupportedOperationException` — which
-   violates the "problems caught at build time are far cheaper" principle.
-5. **Legacy-vs-rewrite parity matrix.** Document which features each
+3. **Validator asks "can this generate?"** The sealed-switch dispatch is
+   in place; `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` exposes the
+   exact set of stubbed leaves. Extend `GraphitronSchemaValidator` to
+   consume that map and reject schemas whose fields would land in a
+   stubbed branch, with a targeted error naming the variant. Today a
+   validated schema can still crash at request time with
+   `UnsupportedOperationException` — which violates the "problems caught
+   at build time are far cheaper" principle.
+4. **Legacy-vs-rewrite parity matrix.** Document which features each
    generator supports (mutations, split queries, federation, connections,
    interfaces, unions, platformId, …). Without this, users cannot plan
    migration and contributors cannot see where the rewrite is behind.
    Lives naturally in a new `docs/parity-matrix.md` and should be linked
    from the top of this file once it exists.
-6. **Cross-plan ownership.** Two types are referenced by multiple plans
+5. **Cross-plan ownership.** Two types are referenced by multiple plans
    but owned by none:
    - `InputColumnBinding` — required by platformId step 6, owned by
      argument-resolution. Argument-resolution plan must commit a
@@ -143,7 +146,7 @@ how every subsequent plan lands.
 
 **P3 — medium, quality-of-life:**
 
-7. **Rebalance the test pyramid toward SDL→classified-model→emitted-code
+6. **Rebalance the test pyramid toward SDL→classified-model→emitted-code
    pipeline tests.** Per-variant structural validator tests (51 classes,
    mostly asserting "this variant produces no errors") dominate the
    current test surface; end-to-end pipeline coverage lives in a single
@@ -152,10 +155,10 @@ how every subsequent plan lands.
    go into the classification→emission chain keyed off the existing
    `graphitron-rewrite-test-fixtures` jOOQ catalog — that's the chain
    users experience.
-8. **Decompose `FieldBuilder`.** With argument-resolution unified (P1 #3),
+7. **Decompose `FieldBuilder`.** With argument-resolution unified (P1 #2),
    `FieldBuilder` can be split along the field taxonomy — one builder
    per `RootField` / `ChildField` family — rather than a monolith. Do
-   not attempt before P1 #3 lands; the coupling runs through the argument
+   not attempt before P1 #2 lands; the coupling runs through the argument
    passes.
 
 **Backlog — worth fixing but not urgent:**
@@ -205,7 +208,7 @@ Once the sealed type hierarchy is stable (Active work and Stubs completed), fini
 
 - **Step 3** (re-section) — rename `TypeClassificationCase` → `TableTypeCase`, rename `NonTableParentCase` → `ChildFieldOnRecordParentCase`, and decide Option A (inline rename + section markers) vs Option B (split into one file per doc section). Favour B if this pattern is permanent; A if still experimental.
 - **Step 4** (rewire doc) — add spec pointers after each classification table, shrink the *Generator Output* column to 3–5 words, drop SDL snippets that duplicate test cases, add a reading-guide header.
-- **Step 5** (meta-test) — add a `ClassificationCase` interface with a `Class<?> variant` field on each enum case, and a `everyClassificationVariantHasAtLeastOneCase` meta-test that collects those fields and asserts every non-allowlisted sealed-type permit is represented. This is strictly more reliable than description-string matching. **Folded under priority P1 #2** above — the meta-test should cover generator branches as well as test cases, and iterate every sealed root in `model/`, not just the two docs-as-index enums.
+- **Step 5** (meta-test) — add a `ClassificationCase` interface with a `Class<?> variant` field on each enum case, and a `everyClassificationVariantHasAtLeastOneCase` meta-test that collects those fields and asserts every non-allowlisted sealed-type permit is represented. This is strictly more reliable than description-string matching. **Folded under priority P1 #1** above — the meta-test should cover generator branches as well as test cases, and iterate every sealed root in `model/`, not just the two docs-as-index enums.
 
 Full plan: `docs/plan-docs-as-index-into-tests.md`.
 
@@ -246,19 +249,19 @@ Two options:
 - **Option A** — collapse `ObjectBased` into `RecordKeyed` if it always implies a jOOQ `TableRecord` parent in practice.
 - **Option B** — implement a distinct `selectManyByObjectKeys` / `selectOneByObjectKeys` path in `TypeFetcherGenerator`.
 
-Decision needed before implementing any `ObjectBased`-keyed service field. Tracked as a cross-plan ownership item under priority P2 #6 above: this roadmap owns the decision; plans that want to emit `ObjectBased` cannot land until it is made.
+Decision needed before implementing any `ObjectBased`-keyed service field. Tracked as a cross-plan ownership item under priority P2 #5 above: this roadmap owns the decision; plans that want to emit `ObjectBased` cannot land until it is made.
 
 ### Validator cannot detect generator stubs
 
 `GraphitronSchemaValidator` reports classification errors (`UnclassifiedType`, `UnclassifiedField`, structural-invariant failures) but has no visibility into which sealed-variant branches of `TypeFetcherGenerator` are implemented. A schema that validates successfully can still emit a Fetchers class whose methods throw `UnsupportedOperationException` at request time.
 
-Tied to priorities P1 #1 and P2 #4: once generator dispatch is a sealed switch with a `NotImplementedYet` branch, the validator can enumerate those branches and reject schemas that would land in them, turning a runtime failure into a build-time error. This closes the loop on the "problems caught at build time" principle from `graphitron-principles.md`.
+Tied to priority P2 #3: sealed-switch dispatch and `NOT_IMPLEMENTED_REASONS` now exist in `TypeFetcherGenerator` (completed under the original P1 #1); the validator needs a single new arm consuming `NOT_IMPLEMENTED_REASONS.keySet()` to reject schemas that would land in a stubbed branch, turning a runtime failure into a build-time error. This closes the loop on the "problems caught at build time" principle from `graphitron-principles.md`.
 
 ### Legacy-vs-rewrite parity is undocumented
 
 The rewrite is a clean reimplementation with no shared code paths, but no doc states which schema features work in each generator. Mutations are entirely stubbed in the rewrite; legacy supports them. Users cannot plan migration and contributors cannot see where the rewrite is behind.
 
-Tracked under priority P2 #5 above. Should live in a new `docs/parity-matrix.md` enumerating every directive and every field-variant family, per-generator, with a one-line status (✅ supported / ⏳ stubbed / ❌ no classifier). Linked from the top of this file once it exists.
+Tracked under priority P2 #4 above. Should live in a new `docs/parity-matrix.md` enumerating every directive and every field-variant family, per-generator, with a one-line status (✅ supported / ⏳ stubbed / ❌ no classifier). Linked from the top of this file once it exists.
 
 ---
 
