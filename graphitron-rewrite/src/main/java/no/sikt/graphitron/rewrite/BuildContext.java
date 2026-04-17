@@ -273,13 +273,21 @@ class BuildContext {
     // ===== Error-message helpers =====
 
     /**
-     * Builds a {@code "; available: X, Y, Z"} hint string for error messages, listing
+     * Builds a {@code "; did you mean: X, Y, Z"} hint string for error messages, listing
      * {@code candidates} sorted by Levenshtein distance from {@code attempt}.
      */
     static String candidateHint(String attempt, List<String> candidates) {
+        return candidateHint(attempt, candidates, "; did you mean: ");
+    }
+
+    /**
+     * Builds a hint string with a custom {@code prefix} for error messages, listing
+     * {@code candidates} sorted by Levenshtein distance from {@code attempt}.
+     */
+    static String candidateHint(String attempt, List<String> candidates, String prefix) {
         if (candidates.isEmpty()) return "";
         String lc = attempt.toLowerCase();
-        return "; did you mean: " + candidates.stream()
+        return prefix + candidates.stream()
             .sorted(Comparator.comparingInt(c -> levenshteinDistance(lc, c.toLowerCase())))
             .limit(5)
             .collect(Collectors.joining(", "));

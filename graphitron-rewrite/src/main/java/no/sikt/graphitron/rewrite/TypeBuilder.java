@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CLASS_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ORDER_BY;
@@ -348,21 +349,22 @@ class TypeBuilder {
      */
     GraphitronType buildTableInputType(String name, SourceLocation location,
             List<GraphQLInputObjectField> fields, TableRef tableRef) {
-        var errors = new ArrayList<String>();
+        var failingNames = new ArrayList<String>();
         var resolvedFields = new ArrayList<InputField>();
         for (var f : fields) {
             var field = buildInputField(f, name, tableRef);
             if (field.isEmpty()) {
-                String colName = f.hasAppliedDirective(DIR_FIELD)
-                    ? argString(f, DIR_FIELD, ARG_NAME).orElse(f.getName()) : f.getName();
-                errors.add("input field '" + f.getName() + "' column '" + colName + "' could not be resolved in the jOOQ table"
-                    + candidateHint(colName, ctx.catalog.columnSqlNamesOf(tableRef.tableName())));
+                failingNames.add(f.getName());
             } else {
                 resolvedFields.add(field.get());
             }
         }
-        if (!errors.isEmpty()) {
-            return new UnclassifiedType(name, location, String.join("; ", errors));
+        if (!failingNames.isEmpty()) {
+            String tableName = tableRef.tableName();
+            String fieldList = failingNames.stream().map(n -> "'" + n + "'").collect(Collectors.joining(", "));
+            String hint = candidateHint(failingNames.get(0), ctx.catalog.columnSqlNamesOf(tableName), ". Did you mean any of: ");
+            return new UnclassifiedType(name, location,
+                "mapped to table '" + tableName + "' — unresolvable fields: " + fieldList + hint);
         }
         return new TableInputType(name, location, tableRef, List.copyOf(resolvedFields));
     }
