@@ -5,7 +5,7 @@ so that the detailed truth table (every schema pattern → every variant) lives 
 spec, and the doc engages the reader by pointing into it. No deletion — the doc keeps its
 tables as a one-glance overview; each table row ends with a pointer to the test that asserts it.
 
-Scope: `GraphitronSchemaBuilderTest` (≈ 2 250 lines, ≈ 20 enums, ≈ 150 enum cases) and the
+Scope: `GraphitronSchemaBuilderTest` (≈ 2 250 lines, ≈ 25 enums, ≈ 150 enum cases) and the
 Classification tables in `docs/code-generation-triggers.md`. Out of scope: the per-variant
 `*ValidationTest` files — those test validation rules on already-classified fields, not
 schema → variant mapping.
@@ -44,18 +44,26 @@ style across cases, (c) stable anchors the doc can link to.
 | Child on `@record` | `RecordField` (target non-table) | `NonTableParentCase` |
 | Child on `@record` | `ServiceTableField` on `@record` parent | `NonTableParentCase` |
 
+Note: `RootFieldCase` has `SERVICE_QUERY_FIELD` and `SERVICE_MUTATION_FIELD` cases, but these
+cover the `@table`-returning service variants. The `ServiceRecord` variants (non-table return)
+are distinct sealed types (`QueryServiceRecordField`, `MutationServiceRecordField`) and have
+no explicit cases. Similarly, `NonTableParentCase` currently has only 3 cases covering
+`PropertyField` (×2) and `ServiceRecordField` — the four `RecordTableField`-family variants
+that can appear on a `@record` parent are absent.
+
+
 We cannot invite readers into the tests while rows silently lack a case.
 
 ### Organisation and naming issues
 
-- **`TypeClassificationCase`** (`GraphitronSchemaBuilderTest.java:1423`) is misnamed — it only
+- **`TypeClassificationCase`** (`GraphitronSchemaBuilderTest.java:1471`) is misnamed — it only
   covers `TableType`. `NodeType`, `ResultType`, `TableInterfaceType`, `InterfaceType`,
   `UnionType`, `ErrorType`, `InputType`, `TableInputType`, `UnclassifiedType` each have their
   own enums. Rename to `TableTypeCase`.
-- **`NonTableParentCase`** (`:975`) is vague — it's "child field on `@record` parent". Rename
+- **`NonTableParentCase`** (`:1003`) is vague — it's "child field on `@record` parent". Rename
   to `ChildFieldOnRecordParentCase` so its scope matches the doc's *Child Fields (on `@record`
   parent)* table.
-- **`InterfaceUnionFieldCase`** (`:926`) groups three variants in one enum. Fine for shared
+- **`InterfaceUnionFieldCase`** (`:954`) groups three variants in one enum. Fine for shared
   SDL boilerplate, but the 1:1 "doc row ↔ test case" mapping a reader tries to follow
   breaks. Either split into `TableInterfaceFieldCase` / `InterfaceFieldCase` /
   `UnionFieldCase`, or keep the single enum with case names that begin with the variant
@@ -170,28 +178,51 @@ Estimate: ~½ day.
 
 ### Step 5 — Keep drift out with a meta-test (test-only)
 
-Add one structural test that prevents the doc-as-index promise from silently rotting:
+Add one structural test that prevents the doc-as-index promise from silently rotting.
+
+Each enum case carries an explicit `Class<?> variant` field naming the sealed-type permit it
+exercises. The meta-test collects all covered variants from these fields and asserts that
+every non-allowlisted permit in `GraphitronField` and `GraphitronType` is represented:
 
 ```java
+// On each test-case enum:
+enum TableFieldCase implements ClassificationCase {
+    SINGLE_RETURN_TYPE("@table return type (default) → TableField (Single, empty joinPath)",
+                       TableField.class, "<sdl>"),
+    // …
+    ;
+    final String description;
+    final Class<?> variant;   // the sealed-type permit this case exercises
+    final String sdl;
+}
+
+// In the meta-test:
 @Test
 void everyClassificationVariantHasAtLeastOneCase() {
-    var variants = reflectPermits(GraphitronField.class) + reflectPermits(GraphitronType.class);
-    var covered = Arrays.stream(allEnumsInTestClass())
-        .flatMap(Enum::values)
-        .map(Object::toString)   // the description
+    var covered = allCases().stream()
+        .map(ClassificationCase::variant)
         .collect(toSet());
-    for (var variant : variants) {
-        assertThat(covered).anyMatch(d -> d.contains(variant.simpleName()))
-            .withFailMessage("No classification case mentions %s — add one, or add to an allowlist if it is deliberately unclassifiable", variant.simpleName());
+    var allowlist = Set.of(UnclassifiedField.class, /* deliberate exclusions */);
+    var required = permitsOf(GraphitronField.class, GraphitronType.class).stream()
+        .filter(v -> !allowlist.contains(v))
+        .collect(toList());
+    for (var variant : required) {
+        assertThat(covered)
+            .as("No classification case covers %s — add one or add it to the allowlist",
+                variant.getSimpleName())
+            .contains(variant);
     }
 }
 ```
 
-Catches "new sealed-hierarchy permit, no test case, silent doc gap" automatically. An
-allowlist handles intentional exclusions (`UnclassifiedField`, intermediate sealed
-interfaces).
+This is strictly more reliable than matching on description strings: description rewording
+never causes a false negative, and adding a new sealed permit without a test case is caught
+immediately. The `Class<?>` field also makes the enum self-documenting.
 
-Estimate: ~1–2 hours.
+This approach is the right call regardless of whether Step 3 goes Option A or B, so decide
+on it before writing any new cases in Step 1.
+
+Estimate: ~1–2 hours (interface + field + meta-test), plus ~½ day retrofitting existing cases.
 
 ---
 
@@ -199,14 +230,17 @@ Estimate: ~1–2 hours.
 
 Recommended order, assuming Step 3 Option B:
 
-1. **Step 1** (close gaps) — independent; lands alone and makes Step 4 possible.
-2. **Step 3** (re-section) — independent once Step 1 is in. Lands as pure refactor/rename.
-3. **Step 2** (normalise descriptions) — piggybacks on Step 3's file moves naturally.
-4. **Step 4** (rewire the doc) — waits on Step 3 so the pointers are line-stable.
-5. **Step 5** (meta-test) — lands last to lock the invariant.
+1. **Step 5 (interface + field shape only)** — define `ClassificationCase` and the `variant`
+   field contract before writing any new cases, so Step 1 uses the final shape from the start.
+2. **Step 1** (close gaps) — independent once the interface is in; lands alone and makes Step 4 possible.
+3. **Step 3** (re-section) — independent once Step 1 is in. Lands as pure refactor/rename.
+4. **Step 2** (normalise descriptions) — piggybacks on Step 3's file moves naturally.
+5. **Step 4** (rewire the doc) — waits on Step 3 so the pointers are line-stable.
+6. **Step 5 (meta-test body)** — lands last to lock the invariant, once all cases and files
+   are in their final locations.
 
 If Step 3 Option A instead, Step 2 runs before Step 3 (less churn) and the order becomes
-1 → 2 → 3 → 4 → 5.
+5-interface → 1 → 2 → 3 → 4 → 5-body.
 
 ---
 
@@ -230,7 +264,3 @@ If Step 3 Option A instead, Step 2 runs before Step 3 (less churn) and the order
 1. **Step 3 — Option A (rename only) or Option B (split file).** Which are we committing to?
 2. **Doc table *Generator Output* column** — shrink to 3–5 words (as proposed), or keep the
    current detail and lean on the pointer for the "what triggers what" side only?
-3. **Meta-test detection strategy** — matching `description.contains(variantName)` is
-   fragile against description rewording. Alternative: tag each case with the variant class
-   explicitly (extra enum field `Class<?> variant`) and assert on that instead. Probably
-   worth doing if we take Step 3 Option B.
