@@ -104,11 +104,16 @@ public class TypeFetcherGenerator {
      * {@code NOT_IMPLEMENTED_REASONS.keySet()} to produce a build-time error rather than a
      * runtime exception when a schema uses a variant that cannot yet be generated.
      *
-     * <p>Invariants (enforced by {@code GeneratorCoverageTest}):
+     * <p>Invariants:
      * <ul>
-     *   <li>Every key must be a concrete sealed leaf in the {@link GraphitronField} hierarchy.</li>
-     *   <li>Adding a case arm that calls {@link #stub} must also add the class here.</li>
-     *   <li>Removing the last {@code stub(f)} call for a class must remove its map entry.</li>
+     *   <li>Every key must be a concrete sealed leaf in the {@link GraphitronField} hierarchy.
+     *       Enforced by {@code GeneratorCoverageTest.notImplementedReasonsContainsOnlyConcreteSealedLeaves}.</li>
+     *   <li>Adding a case arm that calls {@link #stub} must also add the class here.
+     *       Enforced at generator-run time via {@link Objects#requireNonNull} in {@link #stub} —
+     *       fails the first time a schema triggers that variant.</li>
+     *   <li>Removing the last {@code stub(f)} call for a class should remove its map entry.
+     *       Not automatically enforced; an orphan entry is only caught if the sealed leaf itself
+     *       is deleted (then the leaf-set test above catches it).</li>
      * </ul>
      */
     public static final Map<Class<? extends GraphitronField>, String> NOT_IMPLEMENTED_REASONS =
