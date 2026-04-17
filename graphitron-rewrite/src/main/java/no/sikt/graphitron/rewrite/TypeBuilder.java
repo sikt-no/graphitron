@@ -363,8 +363,14 @@ class TypeBuilder {
             String reasons = failures.stream()
                 .map(u -> "'" + u.fieldName() + "': " + u.reason())
                 .collect(Collectors.joining("; "));
+            String hint = failures.stream()
+                .map(InputFieldResolution.Unresolved::lookupColumn)
+                .filter(c -> c != null)
+                .findFirst()
+                .map(c -> candidateHint(c, ctx.catalog.columnSqlNamesOf(tableRef.tableName())))
+                .orElse("");
             return new UnclassifiedType(name, location,
-                "mapped to table '" + tableRef.tableName() + "' — unresolvable fields: " + reasons);
+                "mapped to table '" + tableRef.tableName() + "' — unresolvable fields: " + reasons + hint);
         }
         return new TableInputType(name, location, tableRef, List.copyOf(resolvedFields));
     }
@@ -447,13 +453,12 @@ class TypeBuilder {
             : name;
         if (field.hasAppliedDirective(DIR_REFERENCE)) {
             var path = ctx.parsePath(field, name, resolvedTable.tableName());
-            if (path.hasError()) return new InputFieldResolution.Unresolved(name, path.errorMessage());
+            if (path.hasError()) return new InputFieldResolution.Unresolved(name, null, path.errorMessage());
             return svc.resolveColumnForReference(columnName, path.elements(), resolvedTable.tableName())
                 .<InputFieldResolution>map(col -> new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list, col, path.elements())))
-                .orElseGet(() -> new InputFieldResolution.Unresolved(name,
-                    "no column '" + columnName + "' reachable via @reference path"
-                    + candidateHint(columnName, ctx.catalog.columnSqlNamesOf(resolvedTable.tableName()))));
+                .orElseGet(() -> new InputFieldResolution.Unresolved(name, columnName,
+                    "no column '" + columnName + "' reachable via @reference path"));
         }
         String tableName = resolvedTable.tableName();
         var colEntry = ctx.catalog.findColumn(tableName, columnName);
@@ -464,26 +469,29 @@ class TypeBuilder {
                 new ColumnRef(e.sqlName(), e.javaName(), e.columnClass())));
         }
         // Fallback: check for legacy platform-key accessors (getId/setId) on the jOOQ record class.
-        // All three conditions must hold: column name is "id", GraphQL type is ID, no @nodeId.
+        // Conditions: column name is "id" (case-insensitive), scalar (non-list) ID type, no @nodeId.
         if ("id".equalsIgnoreCase(columnName)
                 && "ID".equals(typeName)
+                && !list
                 && !field.hasAppliedDirective(DIR_NODE_ID)) {
             if (ctx.catalog.hasPlatformIdMethods(tableName)) {
                 return new InputFieldResolution.Resolved(new InputField.PlatformIdField(
-                    parentTypeName, name, locationOf(field), typeName, nonNull, list));
+                    parentTypeName, name, locationOf(field), typeName, nonNull));
             }
-            return new InputFieldResolution.Unresolved(name,
+            return new InputFieldResolution.Unresolved(name, null,
                 "field 'id' has no matching column and no platformId methods (getId/setId) found"
                 + " on record class — use @nodeId for Relay IDs");
         }
-        return new InputFieldResolution.Unresolved(name,
-            "no column '" + columnName + "' found in table '" + tableName + "'"
-            + candidateHint(columnName, ctx.catalog.columnSqlNamesOf(tableName)));
+        return new InputFieldResolution.Unresolved(name, columnName,
+            "no column '" + columnName + "' found in table '" + tableName + "'");
     }
 
     private sealed interface InputFieldResolution {
         record Resolved(InputField field) implements InputFieldResolution {}
-        record Unresolved(String fieldName, String reason) implements InputFieldResolution {}
+        /** {@code lookupColumn} is the SQL column name attempted, or {@code null} when the failure
+         *  is not a column miss (e.g. no platformId methods). Used to emit a single candidate hint
+         *  per {@link TableInputType} rather than one per failing field. */
+        record Unresolved(String fieldName, String lookupColumn, String reason) implements InputFieldResolution {}
     }
 
     private ErrorType.Handler parseErrorHandler(Map<String, Object> item) {

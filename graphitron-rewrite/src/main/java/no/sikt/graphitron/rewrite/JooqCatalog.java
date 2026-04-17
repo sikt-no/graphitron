@@ -97,7 +97,8 @@ public class JooqCatalog {
             .orElse(false);
     }
 
-    private static boolean recordHasPlatformIdMethods(Class<?> record) {
+    /** Package-private for direct unit testing against synthetic record classes. */
+    static boolean recordHasPlatformIdMethods(Class<?> record) {
         try {
             var get = record.getMethod("getId");
             var set = record.getMethod("setId", String.class);

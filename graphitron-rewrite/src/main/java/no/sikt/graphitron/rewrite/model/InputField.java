@@ -64,20 +64,21 @@ public sealed interface InputField extends GraphitronField
      * {@code setId(String)} convenience methods added by a custom jOOQ code generator;
      * the table itself has no {@code id} column.
      *
-     * <p>Only classified for GraphQL {@code ID}-typed fields whose resolved column name is
-     * {@code "id"} and that have no {@code @nodeId} directive. Fields with {@code @nodeId}
-     * take the Relay NodeID path and never produce this variant.
+     * <p>Only classified for scalar GraphQL {@code ID}-typed fields whose resolved column name
+     * is {@code "id"} (case-insensitive) and that have no {@code @nodeId} directive. Fields with
+     * {@code @nodeId} take the Relay NodeID path and never produce this variant; list-typed
+     * fields ({@code [ID!]!}) are rejected by the classifier and do not reach this variant.
      *
      * <p>No {@link ColumnRef} is carried: the field's only observable effect is a
      * {@code record.setId(input)} call in the mutation input-binding generator (deferred until
-     * the mutation generator is implemented).
+     * the mutation generator is implemented). A {@code list} field is intentionally omitted —
+     * the classifier guarantees scalar.
      */
     record PlatformIdField(
         String parentTypeName,
         String name,
         SourceLocation location,
         String typeName,
-        boolean nonNull,
-        boolean list
+        boolean nonNull
     ) implements InputField {}
 }
