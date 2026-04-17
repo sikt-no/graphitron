@@ -17,6 +17,10 @@ import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
 import no.sikt.graphitron.rewrite.model.ChildField.LookupTableField;
+import no.sikt.graphitron.rewrite.model.ChildField.RecordField;
+import no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField;
+import no.sikt.graphitron.rewrite.model.ChildField.RecordTableField;
+import no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.SplitTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
@@ -479,11 +483,16 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== TableField =====
+    // ===== TableField / SplitTableField / SplitLookupTableField / LookupTableField =====
 
+    /**
+     * Child field on a {@code @table} parent returning a {@code @table}-mapped type. One case per
+     * variant the builder can produce from this shape. Covers the
+     * <em>Child Fields (on {@code @table} parent)</em> table in {@code code-generation-triggers.md}.
+     */
     enum TableFieldCase {
         SINGLE_RETURN_TYPE(
-            "object return type → Single cardinality, null condition, empty joinPath",
+            "@table return type (default) → TableField (Single cardinality, empty joinPath)",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") { language: Language }
@@ -497,7 +506,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LIST_RETURN_TYPE(
-            "list-wrapped object return type → List cardinality",
+            "list @table return type → TableField (List cardinality)",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") { actors: [Actor!]! }
@@ -507,7 +516,7 @@ class GraphitronSchemaBuilderTest {
                 .isInstanceOf(FieldWrapper.List.class)),
 
         CONNECTION_RETURN_TYPE(
-            "connection type detected via edges.node structure → Connection wrapper, element type resolved from node",
+            "edges.node connection structure → TableField (Connection, element type from node field)",
             """
             type Actor @table(name: "actor") { name: String }
             type ActorEdge { node: Actor cursor: String }
@@ -595,13 +604,24 @@ class GraphitronSchemaBuilderTest {
             }),
 
         SPLIT_QUERY(
-            "@splitQuery — field classified as SplitTableField",
+            "@splitQuery (no @lookupKey) on @table parent → SplitTableField",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") { actors: [Actor!]! @splitQuery }
             type Query { film: Film }
             """,
             schema -> assertThat(schema.field("Film", "actors")).isInstanceOf(SplitTableField.class)),
+
+        SPLIT_LOOKUP_TABLE_FIELD(
+            "@splitQuery + @lookupKey on @table parent → SplitLookupTableField",
+            """
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+                actor(actor_id: ID! @lookupKey): Actor @splitQuery
+            }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "actor")).isInstanceOf(SplitLookupTableField.class)),
 
         WITH_REFERENCE_PATH(
             "@reference(path:) populates the joinPath with one FkJoin",
@@ -630,7 +650,7 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Film", "city")).isInstanceOf(UnclassifiedField.class)),
 
         CONDITION_IS_ALWAYS_NULL(
-            "@condition support is deferred to P3; filters list is always empty even with @reference",
+            "@reference without @condition → TableField with empty filters (condition support deferred to P3)",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -725,7 +745,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         NO_DEFAULT_ORDER_PK_FALLBACK(
-            "list field with no @defaultOrder on PK table — PK columns auto-filled as default order",
+            "no @defaultOrder on PK table → TableField with PK columns auto-filled as Fixed order",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
@@ -998,8 +1018,13 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== Fields on non-table-mapped parents (ResultType / @record) =====
+    // ===== Fields on @record parents =====
 
+    /**
+     * Child field on a {@code @record} parent. One case per variant the builder can produce from
+     * this shape. Covers the <em>Child Fields (on {@code @record} parent)</em> table in
+     * {@code code-generation-triggers.md}.
+     */
     enum NonTableParentCase {
         PROPERTY_FIELD_ON_RESULT_TYPE(
             "@record (ResultType) parent — scalar field → PropertyField using field name as columnName",
@@ -1032,7 +1057,47 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { details: FilmDetails }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("FilmDetails", "rating")).isInstanceOf(ServiceRecordField.class));
+            schema -> assertThat(schema.field("FilmDetails", "rating")).isInstanceOf(ServiceRecordField.class)),
+
+        RECORD_TABLE_FIELD(
+            "@record parent + @table return type (no @lookupKey) → RecordTableField",
+            """
+            type Language @table(name: "language") { name: String }
+            type FilmDetails @record { language: Language }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("FilmDetails", "language")).isInstanceOf(RecordTableField.class)),
+
+        RECORD_LOOKUP_TABLE_FIELD(
+            "@record parent + @table return type + @lookupKey → RecordLookupTableField",
+            """
+            type Language @table(name: "language") { name: String }
+            type FilmDetails @record { language(language_id: ID! @lookupKey): Language }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("FilmDetails", "language")).isInstanceOf(RecordLookupTableField.class)),
+
+        RECORD_FIELD(
+            "@record parent + non-table object return type → RecordField",
+            """
+            type FilmStats @record { count: Int }
+            type FilmDetails @record { stats: FilmStats }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("FilmDetails", "stats")).isInstanceOf(RecordField.class)),
+
+        SERVICE_TABLE_FIELD_ON_RECORD_PARENT(
+            "@record parent + @service + @table return type → ServiceTableField",
+            """
+            type Language @table(name: "language") { name: String }
+            type FilmDetails @record { language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("FilmDetails", "language")).isInstanceOf(ServiceTableField.class));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -1619,8 +1684,13 @@ class GraphitronSchemaBuilderTest {
             .hasMessageContaining("@");
     }
 
-    // ===== P5: Root field classification =====
+    // ===== Root field classification =====
 
+    /**
+     * Root field classification. One case per {@code QueryField} / {@code MutationField} variant
+     * the builder can produce. Covers the <em>Query Fields</em> and <em>Mutation Fields</em>
+     * tables in {@code code-generation-triggers.md}.
+     */
     enum RootFieldCase {
 
         LOOKUP_QUERY_FIELD(
@@ -1831,7 +1901,7 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Query", "search")).isInstanceOf(QueryField.QueryUnionField.class)),
 
         SERVICE_QUERY_FIELD(
-            "@service on root query field → QueryServiceTableField with method reference resolved",
+            "@service on root query field, @table return type → QueryServiceTableField",
             """
             type Film @table(name: "film") { title: String }
             type Query {
@@ -1844,6 +1914,16 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.method().className()).isEqualTo("no.sikt.graphitron.rewrite.TestServiceStub");
                 assertThat(f.method().methodName()).isEqualTo("get");
             }),
+
+        QUERY_SERVICE_RECORD_FIELD(
+            "@service on root query field, non-table return type → QueryServiceRecordField",
+            """
+            type FilmDetails @record { title: String }
+            type Query {
+                filmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+            }
+            """,
+            schema -> assertThat(schema.field("Query", "filmDetails")).isInstanceOf(QueryField.QueryServiceRecordField.class)),
 
         INSERT_MUTATION_FIELD(
             "@mutation(typeName: INSERT) → MutationInsertTableField",
@@ -1882,7 +1962,7 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Mutation", "upsertFilm")).isInstanceOf(MutationField.MutationUpsertTableField.class)),
 
         SERVICE_MUTATION_FIELD(
-            "@service on mutation field → MutationServiceTableField",
+            "@service on mutation field, @table return type → MutationServiceTableField",
             """
             type Film @table(name: "film") { title: String }
             type Query { x: String }
@@ -1890,7 +1970,18 @@ class GraphitronSchemaBuilderTest {
                 externalMutation: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "run"})
             }
             """,
-            schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.MutationServiceTableField.class));
+            schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.MutationServiceTableField.class)),
+
+        MUTATION_SERVICE_RECORD_FIELD(
+            "@service on mutation field, non-table return type → MutationServiceRecordField",
+            """
+            type FilmDetails @record { title: String }
+            type Query { x: String }
+            type Mutation {
+                externalMutation: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "run"})
+            }
+            """,
+            schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.MutationServiceRecordField.class));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;

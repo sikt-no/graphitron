@@ -97,6 +97,16 @@ Generator bodies that currently throw `UnsupportedOperationException`, approxima
 3. `TypeFetcherGenerator` — `QueryTableInterfaceField`, `QueryInterfaceField`, `QueryUnionField` fetchers
 4. `TypeFetcherGenerator` — Mutation field bodies (all four DML variants: INSERT/UPDATE/DELETE/UPSERT)
 
+### Deferred: docs-as-index stabilization
+
+Once the sealed type hierarchy is stable (Active work and Stubs completed), finish wiring `code-generation-triggers.md` as a live index into the classification tests. Steps 1 and 2 of the plan are done — every doc table row has a test case, and case descriptions follow a uniform `trigger → VariantName` style. Remaining:
+
+- **Step 3** (re-section) — rename `TypeClassificationCase` → `TableTypeCase`, rename `NonTableParentCase` → `ChildFieldOnRecordParentCase`, and decide Option A (inline rename + section markers) vs Option B (split into one file per doc section). Favour B if this pattern is permanent; A if still experimental.
+- **Step 4** (rewire doc) — add spec pointers after each classification table, shrink the *Generator Output* column to 3–5 words, drop SDL snippets that duplicate test cases, add a reading-guide header.
+- **Step 5** (meta-test) — add a `ClassificationCase` interface with a `Class<?> variant` field on each enum case, and a `everyClassificationVariantHasAtLeastOneCase` meta-test that collects those fields and asserts every non-allowlisted sealed-type permit is represented. This is strictly more reliable than description-string matching.
+
+Full plan: `docs/plan-docs-as-index-into-tests.md`.
+
 ### G5 — Inline `TableField`
 
 `TableField` in table-mapped source context (no `@splitQuery`). Extends the SQL scope with an inline subselect — does not start a new scope or use a DataLoader. Introduces the static field method pattern (called from the parent type class during SELECT assembly).
