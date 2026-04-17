@@ -258,6 +258,28 @@ public class JooqCatalog {
     }
 
     /**
+     * Returns the names of {@code get*Id()} instance methods on the jOOQ table class (not the
+     * record class) that take no parameters and return an {@link org.jooq.SelectField}. These are
+     * emitted by the custom jOOQ code generator for tables with a legacy composite platform key and
+     * are the output-side counterpart to the record-level {@code getId}/{@code setId} accessors.
+     *
+     * <p>Intended for diagnostic hints in error messages — not for code generation.
+     * Returns an empty list when the table cannot be found or the catalog is unavailable.
+     */
+    public java.util.List<String> platformIdOutputMethodNames(String tableSqlName) {
+        return findTable(tableSqlName).map(te -> {
+            Class<?> tableClass = te.table().getClass();
+            return Arrays.stream(tableClass.getMethods())
+                .filter(m -> m.getParameterCount() == 0)
+                .filter(m -> org.jooq.SelectField.class.isAssignableFrom(m.getReturnType()))
+                .filter(m -> m.getName().startsWith("get") && m.getName().endsWith("Id"))
+                .map(java.lang.reflect.Method::getName)
+                .sorted()
+                .toList();
+        }).orElse(java.util.List.of());
+    }
+
+    /**
      * Returns all SQL column names for the given table, in the order they appear in the generated
      * jOOQ table class. Returns an empty list when the table cannot be found.
      */

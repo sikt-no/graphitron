@@ -1288,9 +1288,14 @@ class FieldBuilder {
 
         Optional<ColumnRef> column = svc.resolveColumn(columnName, tableType);
         if (column.isEmpty()) {
+            String tableSqlName = tableType.table().tableName();
+            var platformIdMethods = ctx.catalog.platformIdOutputMethodNames(tableSqlName);
+            String platformHint = platformIdMethods.isEmpty() ? ""
+                : candidateHint(columnName, platformIdMethods, "; platform-id methods on table class: ");
             return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                 "column '" + columnName + "' could not be resolved in the jOOQ table"
-                + candidateHint(columnName, ctx.catalog.columnSqlNamesOf(tableType.table().tableName())));
+                + candidateHint(columnName, ctx.catalog.columnSqlNamesOf(tableSqlName))
+                + platformHint);
         }
         return new ColumnField(parentTypeName, name, location, columnName, column.get(), javaNamePresent);
     }
