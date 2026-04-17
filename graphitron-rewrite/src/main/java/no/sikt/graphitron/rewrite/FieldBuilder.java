@@ -570,6 +570,157 @@ class FieldBuilder {
     }
 
     /**
+     * Classifies every GraphQL argument on the field into an {@link ArgumentRef} variant in one
+     * pass. Projection into {@link WhereFilter} / {@link OrderBySpec} / {@link PaginationSpec} /
+     * {@code LookupMapping} happens in dedicated projector methods (step 3+), not here.
+     *
+     * <p>The intent of this method is to localise the "what is this argument for" decision so
+     * multiple projections can read the same classification. See
+     * {@code docs/argument-resolution.md}.
+     *
+     * <p>Step 2 scope: structural classification only. {@code @condition} on arguments is still
+     * rejected by {@link #buildFilters}; this method emits {@link ArgumentRef.UnclassifiedArg}
+     * for such args with a "deferred to step 4" reason. Once step 4 lands, it will populate
+     * {@link ArgConditionRef} on the corresponding {@link ArgumentRef.ScalarArg.ColumnArg}
+     * (or input-type variant) instead.
+     *
+     * <p>Errors append to {@code errors} but never cause a {@code null} return — every arg maps
+     * to a variant. Variants like {@link ArgumentRef.ScalarArg.UnboundArg} and
+     * {@link ArgumentRef.UnclassifiedArg} carry a {@code reason} so step 10 can turn them into
+     * validation errors.
+     *
+     * <p>{@code rt} is the target {@link TableRef} used to resolve scalar column args; may be
+     * {@code null} when the field has no table context (in that case scalar args bind to
+     * {@link ArgumentRef.ScalarArg.UnboundArg}).
+     */
+    List<ArgumentRef> classifyArguments(GraphQLFieldDefinition fieldDef, TableRef rt, List<String> errors) {
+        var refs = new ArrayList<ArgumentRef>();
+        for (var arg : fieldDef.getArguments()) {
+            refs.add(classifyArgument(fieldDef, arg, rt, errors));
+        }
+        return List.copyOf(refs);
+    }
+
+    private ArgumentRef classifyArgument(GraphQLFieldDefinition fieldDef, GraphQLArgument arg,
+                                         TableRef rt, List<String> errors) {
+        String name = arg.getName();
+        GraphQLType type = arg.getType();
+        boolean nonNull = type instanceof GraphQLNonNull;
+        boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
+        String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
+
+        if (arg.hasAppliedDirective(DIR_ORDER_BY)) {
+            return classifyOrderByArg(arg, name, typeName, nonNull, list, errors);
+        }
+        if (isPaginationArg(name)) {
+            ArgumentRef.PaginationArgRef.Role role = switch (name) {
+                case "first"  -> ArgumentRef.PaginationArgRef.Role.FIRST;
+                case "last"   -> ArgumentRef.PaginationArgRef.Role.LAST;
+                case "after"  -> ArgumentRef.PaginationArgRef.Role.AFTER;
+                case "before" -> ArgumentRef.PaginationArgRef.Role.BEFORE;
+                default       -> throw new IllegalStateException("unreachable: isPaginationArg(" + name + ")");
+            };
+            return new ArgumentRef.PaginationArgRef(name, typeName, nonNull, list, role);
+        }
+        if (arg.hasAppliedDirective(DIR_CONDITION)) {
+            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                "@condition on arguments is not yet supported (deferred to argres step 4)");
+        }
+        if (ctx.types.containsKey(typeName)) {
+            var resolvedType = ctx.types.get(typeName);
+            if (resolvedType instanceof GraphitronType.TableInputType tit) {
+                // Step 2: emit structurally. fieldBindings populated in step 9.
+                return new ArgumentRef.InputTypeArg.TableInputArg(
+                    name, typeName, nonNull, list, tit.table(), List.of(), Optional.empty());
+            }
+            return new ArgumentRef.InputTypeArg.PlainInputArg(
+                name, typeName, nonNull, list, Optional.empty());
+        }
+
+        // Scalar arg: bind to column
+        String columnName = argString(arg, DIR_FIELD, ARG_NAME).orElse(name);
+        if (rt == null) {
+            return new ArgumentRef.ScalarArg.UnboundArg(
+                name, typeName, nonNull, list, columnName,
+                "column '" + columnName + "' could not be resolved (no table context)");
+        }
+        var col = ctx.catalog.findColumn(rt.tableName(), columnName);
+        if (col.isEmpty()) {
+            return new ArgumentRef.ScalarArg.UnboundArg(
+                name, typeName, nonNull, list, columnName,
+                "column '" + columnName + "' could not be resolved in table '" + rt.tableName() + "'"
+                    + candidateHint(columnName, ctx.catalog.columnSqlNamesOf(rt.tableName())));
+        }
+        var columnRef = new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass());
+        String enumClassName = validateEnumFilter(typeName, columnRef, errors);
+        if (enumClassName != null && enumClassName.isEmpty()) {
+            // Enum validation failed; error already appended. Emit UnclassifiedArg so step 10 can
+            // surface the structural failure (even though the enum-value-mismatch is already an
+            // error — keeping this consistent keeps the classify-never-returns-null invariant).
+            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                "enum filter validation failed for column '" + columnRef.sqlName() + "'");
+        }
+        CallSiteExtraction extraction;
+        if (enumClassName != null) {
+            extraction = new CallSiteExtraction.EnumValueOf(enumClassName);
+        } else if ("ID".equals(typeName)) {
+            extraction = new CallSiteExtraction.JooqConvert(columnRef.javaName());
+        } else {
+            var textEnumMapping = buildTextEnumMapping(typeName);
+            if (textEnumMapping != null) {
+                String mapFieldName = fieldDef.getName().toUpperCase() + "_" + name.toUpperCase() + "_MAP";
+                extraction = new CallSiteExtraction.TextMapLookup(mapFieldName, textEnumMapping);
+            } else {
+                extraction = new CallSiteExtraction.Direct();
+            }
+        }
+        return new ArgumentRef.ScalarArg.ColumnArg(
+            name, typeName, nonNull, list, columnRef, extraction,
+            Optional.empty(),  // argCondition populated in step 4
+            false              // suppressedByFieldOverride populated in step 4
+        );
+    }
+
+    private ArgumentRef classifyOrderByArg(GraphQLArgument arg, String name, String typeName,
+                                           boolean nonNull, boolean list, List<String> errors) {
+        var rawType = ctx.schema.getType(typeName);
+        if (!(rawType instanceof GraphQLInputObjectType inputType)) {
+            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                "@orderBy argument type '" + typeName + "' is not an input type");
+        }
+        String sortFieldName = null;
+        String directionFieldName = null;
+        for (var field : inputType.getFieldDefinitions()) {
+            var fieldType = GraphQLTypeUtil.unwrapNonNull(field.getType());
+            if (!(fieldType instanceof GraphQLEnumType enumType)) continue;
+            boolean isSortEnum = enumType.getValues().stream()
+                .anyMatch(v -> v.hasAppliedDirective("order") || v.hasAppliedDirective("index"));
+            if (isSortEnum) {
+                if (sortFieldName != null) {
+                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                        "@orderBy input type '" + typeName + "' must have exactly one sort enum field, but found multiple");
+                }
+                sortFieldName = field.getName();
+            } else {
+                if (directionFieldName != null) {
+                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                        "@orderBy input type '" + typeName + "' must have exactly one direction field, but found multiple");
+                }
+                directionFieldName = field.getName();
+            }
+        }
+        if (sortFieldName == null) {
+            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                "@orderBy input type '" + typeName + "' has no sort enum field (no enum values with @order)");
+        }
+        if (directionFieldName == null) {
+            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                "@orderBy input type '" + typeName + "' has no direction field");
+        }
+        return new ArgumentRef.OrderByArg(name, typeName, nonNull, list, sortFieldName, directionFieldName);
+    }
+
+    /**
      * Builds the {@link WhereFilter} list for a table-bound field from its GraphQL arguments.
      *
      * <p>Skips {@code @orderBy} args (handled by {@link #buildOrderBySpec}) and the four standard
