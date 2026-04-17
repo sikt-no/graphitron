@@ -205,7 +205,8 @@ class TypeFetcherGeneratorTest {
             callParams,
             bodyParams);
         return new QueryField.QueryLookupTableField("Query", name, null, returnType,
-            List.of(filter), new OrderBySpec.None(), null);
+            List.of(filter), new OrderBySpec.None(), null,
+            new no.sikt.graphitron.rewrite.model.LookupMapping(List.of(), FILM_TABLE));
     }
 
     private static BodyParam listKeyParam(String name, String javaName, String javaType) {

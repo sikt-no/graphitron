@@ -34,8 +34,9 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.TableBoundReturnType returnType,
         List<WhereFilter> filters,
         OrderBySpec orderBy,
-        PaginationSpec pagination
-    ) implements QueryField, SqlGeneratingField {
+        PaginationSpec pagination,
+        LookupMapping lookupMapping
+    ) implements QueryField, SqlGeneratingField, LookupField {
         /** The name of the generated synchronous lookup helper method. */
         public String lookupMethodName() {
             return "lookup" + Character.toUpperCase(name().charAt(0)) + name().substring(1);

@@ -150,8 +150,9 @@ public sealed interface ChildField extends GraphitronField
         List<JoinStep> joinPath,
         List<WhereFilter> filters,
         OrderBySpec orderBy,
-        PaginationSpec pagination
-    ) implements TableTargetField {}
+        PaginationSpec pagination,
+        LookupMapping lookupMapping
+    ) implements TableTargetField, LookupField {}
 
     record SplitLookupTableField(
         String parentTypeName,
@@ -162,8 +163,9 @@ public sealed interface ChildField extends GraphitronField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
-        BatchKey batchKey
-    ) implements TableTargetField, BatchKeyField {
+        BatchKey batchKey,
+        LookupMapping lookupMapping
+    ) implements TableTargetField, BatchKeyField, LookupField {
         @Override
         public String rowsMethodName() {
             return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
@@ -300,8 +302,9 @@ public sealed interface ChildField extends GraphitronField
         List<JoinStep> joinPath,
         List<WhereFilter> filters,
         OrderBySpec orderBy,
-        PaginationSpec pagination
-    ) implements TableTargetField {}
+        PaginationSpec pagination,
+        LookupMapping lookupMapping
+    ) implements TableTargetField, LookupField {}
 
     record RecordField(
         String parentTypeName,

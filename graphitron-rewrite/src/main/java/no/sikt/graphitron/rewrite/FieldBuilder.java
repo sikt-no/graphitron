@@ -53,6 +53,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.ParamSource;
@@ -238,11 +239,13 @@ class FieldBuilder {
             var parentBatchKey = new BatchKey.RowKeyed(parentTableType.table().primaryKeyColumns());
             if (hasSplitQuery && hasLookupKey) {
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField(
-                    parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), parentBatchKey);
+                    parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), parentBatchKey,
+                    emptyLookupMapping(returnType.table()));
             }
             if (!hasSplitQuery && hasLookupKey) {
                 return new no.sikt.graphitron.rewrite.model.ChildField.LookupTableField(
-                    parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
+                    parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                    emptyLookupMapping(returnType.table()));
             }
             if (hasSplitQuery) {
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
@@ -819,6 +822,17 @@ class FieldBuilder {
     }
 
     /**
+     * Placeholder {@link LookupMapping} used when constructing {@link LookupField} variants before
+     * {@code projectForLookup} (argres step 6) populates the columns. The empty-columns mapping
+     * carries the target table so downstream code can still reach {@code lookupMapping().targetTable()}.
+     * Generators currently still read lookup keys from {@code filters()}; step 8 flips them to
+     * use {@code lookupMapping()} directly.
+     */
+    private static LookupMapping emptyLookupMapping(TableRef targetTable) {
+        return new LookupMapping(List.of(), targetTable);
+    }
+
+    /**
      * Resolves the Java type that a {@link BodyParam} must carry given its extraction strategy
      * and target column. Extracted from the old {@code buildFilters} switch so projection can
      * derive {@link BodyParam#javaType} without re-classifying the argument.
@@ -1150,7 +1164,8 @@ class FieldBuilder {
             }
             var tfc = resolveTableFieldComponents(fieldDef, tb.table(), lookupTypeName);
             if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
-            return new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, tfc.filters(), tfc.orderBy(), tfc.pagination());
+            return new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                emptyLookupMapping(tb.table()));
         }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
@@ -1410,7 +1425,8 @@ class FieldBuilder {
                 var tfc = resolveTableFieldComponents(fieldDef, tb.table(), elementTypeName);
                 if (tfc.error() != null) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
                 if (hasLookupKeyAnywhere(fieldDef)) {
-                    yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
+                    yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                        emptyLookupMapping(tb.table()));
                 }
                 yield new RecordTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
             }

@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ChildField.LookupTableField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -18,22 +19,28 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class LookupTableFieldValidationTest {
 
+    private static final TableRef FILM_TABLE = new TableRef("film", "FILM", "Film", List.of());
+    private static final LookupMapping EMPTY_LOOKUP = new LookupMapping(List.of(), FILM_TABLE);
+
     private static ReturnTypeRef.TableBoundReturnType filmReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
     }
 
     enum Case implements ValidatorCase {
 
         VALID_SINGLE("single return — valid",
-            new LookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null),
+            new LookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null,
+                EMPTY_LOOKUP),
             List.of()),
 
         VALID_LIST("list return — valid",
-            new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), new OrderBySpec.None(), null),
+            new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), new OrderBySpec.None(), null,
+                EMPTY_LOOKUP),
             List.of()),
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field",
-            new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true)), List.of(), List.of(), new OrderBySpec.None(), null),
+            new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true)), List.of(), List.of(), new OrderBySpec.None(), null,
+                EMPTY_LOOKUP),
             List.of("Field 'Language.films': lookup fields must not return a connection"));
 
         private final String description;
