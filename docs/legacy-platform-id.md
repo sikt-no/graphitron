@@ -1,5 +1,9 @@
 # Legacy PlatformId — Remaining Work
 
+> **Status:** Items 1 and 2 are done. Item 3 (mutation generator binding) is
+> the only open task; it's blocked on `InputColumnBinding` in `argument-resolution.md`.
+
+
 Tables with a composite platform key have no real `id` SQL column. The custom
 `KjerneJooqGenerator` instead emits two sets of methods:
 
