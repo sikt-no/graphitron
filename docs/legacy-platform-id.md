@@ -378,7 +378,9 @@ in isolation; execution coverage is tied to mutation-generator readiness.
   so that the mutation generator can dispatch uniformly across both. **The
   argument-resolution plan owns the `InputColumnBinding` definition.** This
   plan's step 6 cannot land until that definition exists and accommodates
-  `PlatformIdField`.
+  `PlatformIdField`. Tracked in
+  [`rewrite-roadmap.md`](rewrite-roadmap.md#architecture-review-priorities-2026-04-17)
+  as cross-plan ownership item P2 #6.
 
 - **`TableRef`.** Unchanged. The task description lists widening `TableRef`
   as one option; this plan rejects it in favour of `JooqCatalog` lookup so
