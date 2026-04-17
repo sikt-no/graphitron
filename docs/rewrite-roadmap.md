@@ -100,7 +100,8 @@ how every subsequent plan lands.
    hierarchies force exhaustive switches" principle is undermined exactly
    where it matters most. Convert to a sealed `switch` expression; give
    known-unimplemented variants a named branch so the set of gaps is a
-   declaration, not a fallback.
+   declaration, not a fallback. Detailed plan:
+   [`plan-sealed-switch-generator-dispatch.md`](plan-sealed-switch-generator-dispatch.md).
 2. **Variant-coverage meta-test.** Iterate
    `ChildField.class.getPermittedSubclasses()` (and every sealed root in
    `model/`) and assert every permit has at least one classification test
