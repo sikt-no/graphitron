@@ -1648,6 +1648,82 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    // ===== Fields on @error parents =====
+
+    /**
+     * Child fields on an {@code @error} type. Fields are expected to be scalar or enum —
+     * they back a POJO exposed via graphql-java's default {@code PropertyDataFetcher}.
+     */
+    enum ErrorFieldCase {
+        SCALAR_FIELD(
+            "@error parent — scalar field → PropertyField using field name as columnName",
+            """
+            type MyError @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var f = (PropertyField) schema.field("MyError", "message");
+                assertThat(f.columnName()).isEqualTo("message");
+            }),
+
+        LIST_OF_SCALARS_FIELD(
+            "@error parent — list-of-scalars field (Error.path pattern) → PropertyField",
+            """
+            interface Error { path: [String!]!, message: String! }
+            type MyError implements Error @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                assertThat(schema.field("MyError", "path")).isInstanceOf(PropertyField.class);
+                assertThat(schema.field("MyError", "message")).isInstanceOf(PropertyField.class);
+            }),
+
+        ENUM_FIELD(
+            "@error parent — enum field → PropertyField",
+            """
+            enum Severity { LOW HIGH }
+            type MyError @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
+                severity: Severity!
+            }
+            type Query { x: String }
+            """,
+            schema -> assertThat(schema.field("MyError", "severity")).isInstanceOf(PropertyField.class)),
+
+        OBJECT_FIELD_REJECTED(
+            "@error parent — object return type → UnclassifiedField with reason",
+            """
+            type Detail { info: String }
+            type MyError @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
+                detail: Detail
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                assertThat(schema.field("MyError", "detail")).isInstanceOf(UnclassifiedField.class);
+                var uf = (UnclassifiedField) schema.field("MyError", "detail");
+                assertThat(uf.reason()).contains("scalar or enum");
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        ErrorFieldCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(ErrorFieldCase.class)
+    void errorFieldClassification(ErrorFieldCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
     // ===== hasLookupKeyAnywhere() depth guard =====
 
     /**

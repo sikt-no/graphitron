@@ -44,6 +44,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
@@ -830,9 +831,22 @@ class FieldBuilder {
         if (parentType instanceof ResultType resultType) {
             return classifyChildFieldOnResultType(fieldDef, parentTypeName);
         }
+        if (parentType instanceof ErrorType) {
+            return classifyChildFieldOnErrorType(fieldDef, parentTypeName);
+        }
 
         return new UnclassifiedField(parentTypeName, name, location, fieldDef,
             "parent type is unclassified");
+    }
+
+    private GraphitronField classifyChildFieldOnErrorType(GraphQLFieldDefinition fieldDef, String parentTypeName) {
+        String name = fieldDef.getName();
+        SourceLocation location = locationOf(fieldDef);
+        if (isScalarOrEnum(fieldDef)) {
+            return new PropertyField(parentTypeName, name, location, name);
+        }
+        return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+            "fields on @error types must be scalar or enum");
     }
 
     // ===== Root field classification (P5) =====
