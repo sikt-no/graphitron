@@ -122,7 +122,7 @@ return new UnclassifiedField(parentTypeName, name, location, fieldDef,
 
 The qualified name (`BrukernavnErIkkeUnikt.fieldName`) in the outer `ValidationError` message already identifies the parent type; the body just needs to name the cause.
 
-### Drop "could not be classified" from field error messages
+### Drop "could not be classified" from field error messages ✅
 
 Field error messages prepend `"could not be classified — "` before the specific reason. For self-explanatory errors this preamble is redundant noise — the specific reason already states the problem:
 
@@ -156,7 +156,7 @@ Each existing `reason()` string is already a self-contained description:
 
 ---
 
-## Named References — `name:` Form of `ExternalCodeReference`
+## Named References — `name:` Form of `ExternalCodeReference` ✅
 
 **Observed:** `service method could not be resolved — service reference is incomplete`
 
@@ -296,8 +296,8 @@ This is low priority since it only affects graphs that predate the `@nodeId` dir
 | # | Item | Effort | Blocks |
 |---|------|--------|--------|
 | ~~EQ~~ | ~~Error message quality (cap candidates, cascade message)~~ | ~~Trivial~~ | ✅ Done |
-| EQ2 | Drop "could not be classified" preamble from field/type errors | Trivial | Cleaner SIS build output |
-| NR | Named reference resolution | Medium | Named @service + @condition (depends on config answer) |
+| ~~EQ2~~ | ~~Drop "could not be classified" preamble from field/type errors~~ | ~~Trivial~~ | ✅ Done |
+| ~~NR~~ | ~~Named reference resolution~~ | ~~Medium~~ | ✅ Done |
 | C1 | @condition in reference paths (P3) | Large | All condition joins in SIS |
 | LK | @lookupKey list input (composite) | Medium | Covered by argument-resolution plan |
 | Misc | Filter inputs, @condition on args, FK issues | Small–Medium | Covered individually |

@@ -67,6 +67,9 @@ import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -126,6 +129,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
  */
 class FieldBuilder {
 
+    private static final Logger LOG = LoggerFactory.getLogger(FieldBuilder.class);
+
     private final BuildContext ctx;
     private final ServiceCatalog svc;
 
@@ -167,6 +172,9 @@ class FieldBuilder {
         String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
         ReturnTypeRef returnType = ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef));
         ExternalRef serviceRef = parseExternalRef(fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
+        if (serviceRef != null && serviceRef.lookupError() != null) {
+            return new ServiceResolution(null, null, "service method could not be resolved — " + serviceRef.lookupError());
+        }
         List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
         Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
         var result = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(), argNames, new java.util.HashSet<>(contextArgs), parentPkColumns);
@@ -897,6 +905,10 @@ class FieldBuilder {
                     "@tableMethod requires a @table-annotated return type");
             }
             var qtmRef = parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
+            if (qtmRef != null && qtmRef.lookupError() != null) {
+                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    "table method could not be resolved — " + qtmRef.lookupError());
+            }
             Set<String> qtmArgNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
             List<String> qtmCtxArgs = parseContextArguments(fieldDef, DIR_TABLE_METHOD);
             var qtmResult = svc.reflectTableMethod(
@@ -1202,6 +1214,10 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, tableMethodPath.errorMessage());
             }
             var tmRef = parseExternalRef(fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
+            if (tmRef != null && tmRef.lookupError() != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    "table method could not be resolved — " + tmRef.lookupError());
+            }
             Set<String> tmArgNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
             List<String> tmCtxArgs = parseContextArguments(fieldDef, DIR_TABLE_METHOD);
             var tmResult = svc.reflectTableMethod(
@@ -1290,6 +1306,11 @@ class FieldBuilder {
      * given directive on {@code fieldDef} and returns a builder-private {@code ExternalRef} holding
      * the {@code className} and {@code method} strings. Returns {@code null} when the directive or
      * argument is absent.
+     *
+     * <p>When the reference uses the deprecated {@code name} form instead of {@code className},
+     * the name is looked up in {@link RewriteConfig#namedReferences()}. A deprecation warning is
+     * logged per field. If the name is not in the map, the returned {@code ExternalRef} carries a
+     * non-null {@link ExternalRef#lookupError()} and the {@code className} is {@code null}.
      */
     private ExternalRef parseExternalRef(GraphQLFieldDefinition fieldDef, String directiveName, String argName) {
         var dir = fieldDef.getAppliedDirective(directiveName);
@@ -1299,7 +1320,19 @@ class FieldBuilder {
         Map<String, Object> ref = asMap(arg.getValue());
         String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
         String methodName = Optional.ofNullable(ref.get(ARG_METHOD)).map(Object::toString).orElse(null);
-        return new ExternalRef(className, methodName);
+        if (className == null) {
+            String name = Optional.ofNullable(ref.get(ARG_NAME)).map(Object::toString).orElse(null);
+            if (name != null) {
+                LOG.warn("ExternalCodeReference 'name' is deprecated on field '{}'; use 'className' instead", fieldDef.getName());
+                String resolved = RewriteConfig.namedReferences().get(name);
+                if (resolved != null) {
+                    className = resolved;
+                } else {
+                    return new ExternalRef(null, methodName, "named reference '" + name + "' not found in namedReferences config");
+                }
+            }
+        }
+        return new ExternalRef(className, methodName, null);
     }
 
     /**
@@ -1313,5 +1346,5 @@ class FieldBuilder {
 
     // ===== Inner records =====
 
-    record ExternalRef(String className, String methodName) {}
+    record ExternalRef(String className, String methodName, String lookupError) {}
 }

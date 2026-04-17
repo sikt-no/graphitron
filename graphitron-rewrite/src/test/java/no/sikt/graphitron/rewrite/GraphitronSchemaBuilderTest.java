@@ -65,7 +65,7 @@ class GraphitronSchemaBuilderTest {
 
     @BeforeEach
     void setup() {
-        RewriteConfig.setProperties(java.util.Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE);
+        RewriteConfig.setProperties(java.util.Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE, java.util.Map.of());
     }
 
     @AfterEach

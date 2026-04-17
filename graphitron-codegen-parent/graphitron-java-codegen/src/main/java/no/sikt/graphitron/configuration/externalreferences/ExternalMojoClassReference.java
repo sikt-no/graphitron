@@ -16,6 +16,10 @@ public class ExternalMojoClassReference implements ExternalReference {
         return name;
     }
 
+    public String fullyQualifiedClassName() {
+        return fullyQualifiedClassName;
+    }
+
     @Override
     public Class<?> classReference() {
         try {

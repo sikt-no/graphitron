@@ -2,6 +2,7 @@ package no.sikt.graphitron.common.configuration;
 
 import no.sikt.graphitron.rewrite.RewriteConfig;
 
+import java.util.Map;
 import java.util.Set;
 
 public class TestConfiguration {
@@ -14,7 +15,8 @@ public class TestConfiguration {
                 Set.of(),
                 "",
                 DEFAULT_OUTPUT_PACKAGE,
-                DEFAULT_JOOQ_PACKAGE
+                DEFAULT_JOOQ_PACKAGE,
+                Map.of()
         );
     }
 }

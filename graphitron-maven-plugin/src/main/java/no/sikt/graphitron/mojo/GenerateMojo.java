@@ -19,6 +19,7 @@ import org.apache.maven.plugins.annotations.Parameter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -181,11 +182,19 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
             GraphQLGenerator.generate();
         }
         if (enableRewrite) {
+            var refs = getExternalReferences();
+            Map<String, String> namedRefs = refs == null ? Map.of() : refs.stream()
+                .filter(r -> r.name() != null && r instanceof ExternalMojoClassReference)
+                .collect(Collectors.toMap(
+                    r -> r.name(),
+                    r -> ((ExternalMojoClassReference) r).fullyQualifiedClassName()
+                ));
             RewriteConfig.setProperties(
                 GeneratorConfig.generatorSchemaFiles(),
                 GeneratorConfig.outputDirectory(),
                 GeneratorConfig.outputPackage(),
-                GeneratorConfig.getGeneratedJooqPackage()
+                GeneratorConfig.getGeneratedJooqPackage(),
+                namedRefs
             );
             GraphQLRewriteGenerator.generate();
         }

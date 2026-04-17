@@ -427,14 +427,14 @@ public class GraphitronSchemaValidator {
     private void validateNotGeneratedField(no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField field, List<ValidationError> errors) {}
     private void validateUnclassifiedType(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType type, List<ValidationError> errors) {
         errors.add(new ValidationError(
-            "Type '" + type.name() + "': could not be classified — " + type.reason(),
+            "Type '" + type.name() + "': " + type.reason(),
             type.location()
         ));
     }
 
     private void validateUnclassifiedField(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField field, List<ValidationError> errors) {
         errors.add(new ValidationError(
-            "Field '" + field.qualifiedName() + "': could not be classified — " + field.reason(),
+            "Field '" + field.qualifiedName() + "': " + field.reason(),
             field.location()
         ));
     }

@@ -17,11 +17,11 @@ class UnclassifiedTypeValidationTest {
 
         CONFLICTING_DIRECTIVES("conflicting @table and @record directives",
             new UnclassifiedType("Film", null, "conflicting directives @table and @record"),
-            List.of("Type 'Film': could not be classified — conflicting directives @table and @record")),
+            List.of("Type 'Film': conflicting directives @table and @record")),
 
         UNKNOWN_TABLE("@table name cannot be resolved in the jOOQ catalog",
             new UnclassifiedType("Actor", null, "table 'unknown_table' not found in jOOQ catalog"),
-            List.of("Type 'Actor': could not be classified — table 'unknown_table' not found in jOOQ catalog"));
+            List.of("Type 'Actor': table 'unknown_table' not found in jOOQ catalog"));
 
         private final String description;
         private final GraphitronType type;

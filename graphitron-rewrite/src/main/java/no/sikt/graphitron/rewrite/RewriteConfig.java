@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -16,6 +17,7 @@ public class RewriteConfig {
     private static String outputDirectory;
     private static String outputPackage;
     private static String generatedJooqPackage;
+    private static Map<String, String> namedReferences;
 
     private RewriteConfig() {}
 
@@ -23,12 +25,14 @@ public class RewriteConfig {
             Set<String> schemaFiles,
             String outputDir,
             String outputPkg,
-            String jooqPkg
+            String jooqPkg,
+            Map<String, String> namedRefs
     ) {
         generatorSchemaFiles = schemaFiles;
         outputDirectory = outputDir;
         outputPackage = outputPkg;
         generatedJooqPackage = jooqPkg;
+        namedReferences = namedRefs != null ? Map.copyOf(namedRefs) : Map.of();
     }
 
     public static Set<String> generatorSchemaFiles() {
@@ -47,11 +51,16 @@ public class RewriteConfig {
         return generatedJooqPackage;
     }
 
+    public static Map<String, String> namedReferences() {
+        return namedReferences != null ? namedReferences : Map.of();
+    }
+
     /** Resets all fields to {@code null}. Intended for test teardown. */
     public static void clear() {
         generatorSchemaFiles = null;
         outputDirectory = null;
         outputPackage = null;
         generatedJooqPackage = null;
+        namedReferences = null;
     }
 }

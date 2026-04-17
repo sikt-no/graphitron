@@ -17,7 +17,7 @@ class UnclassifiedFieldValidationTest {
 
         UNCLASSIFIED("field with no matching classification rule",
             new UnclassifiedField("Query", "unknownField", null, null, "no matching classification rule"),
-            List.of("Field 'Query.unknownField': could not be classified — no matching classification rule"));
+            List.of("Field 'Query.unknownField': no matching classification rule"));
 
         private final String description;
         private final GraphitronField field;
