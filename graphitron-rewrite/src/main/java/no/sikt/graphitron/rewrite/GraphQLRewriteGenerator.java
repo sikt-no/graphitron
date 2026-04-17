@@ -55,8 +55,9 @@ public class GraphQLRewriteGenerator {
         var fetcherClasses = TypeFetcherGenerator.generate(schema);
         var fetcherClassNames = fetcherClasses.stream().map(TypeSpec::name).toList();
 
-        // Collect connection wiring info from schema
-        var connectionWiringsSet = new java.util.LinkedHashSet<GraphitronWiringClassGenerator.ConnectionWiring>();
+        // Collect one wiring entry per distinct Connection type referenced by any field.
+        // Multiple fields may return the same Connection type; TypeRuntimeWiring is per-type.
+        var connectionTypeMap = new java.util.LinkedHashMap<String, String>();
         schema.fields().forEach((coords, field) -> {
             if (field instanceof SqlGeneratingField sgf
                     && sgf.returnType().wrapper() instanceof FieldWrapper.Connection conn) {
@@ -65,11 +66,12 @@ public class GraphQLRewriteGenerator {
                 String connName = conn.connectionName() != null
                     ? conn.connectionName()
                     : parentType + capitalize(fieldName) + "Connection";
-                String edgeName = connName.replace("Connection", "Edge");
-                connectionWiringsSet.add(new GraphitronWiringClassGenerator.ConnectionWiring(connName, edgeName));
+                connectionTypeMap.putIfAbsent(connName, connName.replace("Connection", "Edge"));
             }
         });
-        var connectionWirings = new ArrayList<>(connectionWiringsSet);
+        var connectionWirings = connectionTypeMap.entrySet().stream()
+            .map(e -> new GraphitronWiringClassGenerator.ConnectionWiring(e.getKey(), e.getValue()))
+            .toList();
 
         write(GraphitronValuesClassGenerator.generate(),          "rewrite");
         write(ColumnFetcherClassGenerator.generate(),             "rewrite");
