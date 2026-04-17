@@ -45,15 +45,22 @@ uses `postgres`/`postgres` credentials.
 Run these commands in order from the repository root:
 
 ```bash
-# 1. Build test fixtures against native Postgres (skips TestContainers)
+# 1. Build graphitron-common, graphitron-javapoet, and graphitron-rewrite-test-fixtures.
+#    -am (also-make) builds all upstream dependencies automatically.
+#    -Plocal-db switches jooq codegen in test-fixtures from TestContainers to native Postgres.
 mvn install -pl :graphitron-rewrite-test-fixtures -am -Plocal-db
 
-# 2. Build graphitron-java-codegen and graphitron-maven-plugin
-#    (skip Docker-dependent jooq codegen and test compilation)
+# 2. Build graphitron-common, graphitron-javapoet, graphitron-java-codegen,
+#    graphitron-schema-transform, graphitron-rewrite, and graphitron-maven-plugin.
+#    Again, -am pulls in all upstream dependencies automatically.
+#    -Djooq.codegen.skip=true skips the Docker-backed jOOQ test-source generation in
+#    graphitron-java-codegen. -Dmaven.test.skip=true skips test compilation and execution
+#    for all modules (required because test sources in graphitron-java-codegen reference
+#    jOOQ classes that were not generated in step 1).
 mvn install -pl :graphitron-java-codegen,:graphitron-maven-plugin -am \
   -Djooq.codegen.skip=true -Dmaven.test.skip=true
 
-# 3. Unit and structural tests (no DB needed)
+# 3. Unit and structural tests for graphitron-rewrite (no DB needed)
 mvn test -pl :graphitron-rewrite
 
 # 4. Compilation test — generated code compiles against real jOOQ classes
