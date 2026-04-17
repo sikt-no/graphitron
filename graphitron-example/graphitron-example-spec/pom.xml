@@ -53,6 +53,13 @@
                 <groupId>no.sikt</groupId>
                 <artifactId>graphitron-maven-plugin</artifactId>
                 <version>${revision}${changelist}</version>
+                <configuration>
+                    <externalReferenceImports>
+                        <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
+                        <externalReferenceImport>no.sikt.graphitron.example.service.CustomerExternalFields</externalReferenceImport>
+                        <externalReferenceImport>no.sikt.graphitron.example.service.CustomerWithExternalFields</externalReferenceImport>
+                    </externalReferenceImports>
+                </configuration>
                 <executions>
                     <execution>
                         <id>generate</id>
@@ -77,11 +84,6 @@
                                 <enabled>true</enabled>
                                 <schemaErrorType>InvalidInput</schemaErrorType>
                             </recordValidation>
-                            <externalReferenceImports>
-                                <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
-                                <externalReferenceImport>no.sikt.graphitron.example.service.CustomerExternalFields</externalReferenceImport>
-                                <externalReferenceImport>no.sikt.graphitron.example.service.CustomerWithExternalFields</externalReferenceImport>
-                            </externalReferenceImports>
                             <makeNodeStrategy>true</makeNodeStrategy>
                             <generateUpsertAsStore>true</generateUpsertAsStore>
                             <scalars>
