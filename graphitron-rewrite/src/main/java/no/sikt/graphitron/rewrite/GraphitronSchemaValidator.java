@@ -112,6 +112,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.InputField.ColumnField f            -> validateInputColumnField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField f  -> validateInputColumnReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.PlatformIdField f       -> validateInputPlatformIdField(f, errors);
+            case no.sikt.graphitron.rewrite.model.InputField.NestingField f          -> validateInputNestingField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField f -> validateNotGeneratedField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f -> validateUnclassifiedField(f, errors);
         }
@@ -437,6 +438,9 @@ public class GraphitronSchemaValidator {
     }
     private void validateInputPlatformIdField(no.sikt.graphitron.rewrite.model.InputField.PlatformIdField field, List<ValidationError> errors) {
         // platformId method presence is guaranteed by the builder (unresolved → UnclassifiedType). Nothing to validate here.
+    }
+    private void validateInputNestingField(no.sikt.graphitron.rewrite.model.InputField.NestingField field, List<ValidationError> errors) {
+        // Nested field columns are resolved at classification time; no additional structural checks needed.
     }
     private void validateNotGeneratedField(no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField field, List<ValidationError> errors) {}
     private void validateUnclassifiedType(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType type, List<ValidationError> errors) {

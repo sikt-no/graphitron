@@ -12,7 +12,8 @@ import java.util.List;
  * input types ({@link GraphitronType.InputType}) have no field-level classification yet.
  */
 public sealed interface InputField extends GraphitronField
-        permits InputField.ColumnField, InputField.ColumnReferenceField, InputField.PlatformIdField {
+        permits InputField.ColumnField, InputField.ColumnReferenceField,
+                InputField.PlatformIdField, InputField.NestingField {
 
     /**
      * A field in a {@code @table}-annotated input type, successfully resolved to a SQL column
@@ -75,6 +76,28 @@ public sealed interface InputField extends GraphitronField
      * re-deriving method names. A {@code list} field is intentionally omitted — the classifier
      * guarantees scalar.
      */
+    /**
+     * A field in a {@code @table}-annotated input type whose GraphQL type is itself an input
+     * object type with no {@code @table} directive — i.e., a plain grouping type whose fields all
+     * map to columns on the <em>parent</em> table rather than a separate SQL table.
+     *
+     * <p>This is the input-side parallel of {@link no.sikt.graphitron.rewrite.model.ChildField.NestingField}
+     * on the output side: both inherit the parent's table context unchanged. The nested fields are
+     * resolved at classification time against the same {@link TableRef} as the parent.
+     *
+     * <p>The mutation generator navigates {@code input.get<Name>().get<Field>()} to reach the
+     * nested values. No join or separate table binding is involved.
+     */
+    record NestingField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        String typeName,
+        boolean nonNull,
+        boolean list,
+        List<InputField> fields
+    ) implements InputField {}
+
     record PlatformIdField(
         String parentTypeName,
         String name,

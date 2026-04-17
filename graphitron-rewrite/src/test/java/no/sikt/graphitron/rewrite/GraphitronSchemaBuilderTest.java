@@ -1514,6 +1514,43 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             """,
             schema -> assertThat(schema.type("FilmInput"))
+                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class)),
+
+        NESTED_INPUT_FIELD(
+            "nested plain input type (no @table) → NestingField with inline ColumnFields",
+            """
+            input TitleInput { title: String @field(name: "title") }
+            input FilmInput @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              details: TitleInput!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("FilmInput");
+                assertThat(it.inputFields()).hasSize(2);
+                var nf = (no.sikt.graphitron.rewrite.model.InputField.NestingField) it.inputFields().stream()
+                    .filter(f -> f instanceof no.sikt.graphitron.rewrite.model.InputField.NestingField)
+                    .findFirst().orElseThrow();
+                assertThat(nf.name()).isEqualTo("details");
+                assertThat(nf.typeName()).isEqualTo("TitleInput");
+                assertThat(nf.nonNull()).isTrue();
+                assertThat(nf.fields()).hasSize(1);
+                var inner = (no.sikt.graphitron.rewrite.model.InputField.ColumnField) nf.fields().get(0);
+                assertThat(inner.column().javaName()).isEqualTo("TITLE");
+            }),
+
+        NESTED_INPUT_FIELD_UNKNOWN_COLUMN(
+            "nested plain input type with unresolvable column → UnclassifiedType on parent",
+            """
+            input BadInput { noSuch: String @field(name: "no_such_column") }
+            input FilmInput @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              details: BadInput!
+            }
+            type Query { x: String }
+            """,
+            schema -> assertThat(schema.type("FilmInput"))
                 .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class));
 
         final String sdl;
