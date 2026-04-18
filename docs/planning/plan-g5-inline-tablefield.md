@@ -1,6 +1,6 @@
 # G5 — Inline `TableField` emission
 
-> **Status:** Approved
+> **Status:** In Progress
 >
 > Classification complete; emission stub throws `UnsupportedOperationException` for every `ChildField.TableField`. Prerequisite for argres Phase 2a (the lookup variant layers VALUES+JOIN onto this inline-subquery shape).
 
