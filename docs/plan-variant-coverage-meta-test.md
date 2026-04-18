@@ -402,6 +402,15 @@ sealed leaf of `GraphitronField` lands in exactly one of three sets:
 implemented, stubbed, or not-dispatched. This is a straightforward
 extension of the existing machinery and delivers immediate value.
 
+### Dependencies
+
+`NOT_DISPATCHED_LEAVES` below references `InputField.NestingField`.
+That permit is present on `claude/graphitron-rewrite` (added in the
+commit range that introduced the input-side nesting taxonomy) — Phase
+1 must be implemented on top of that branch or a descendant. If a
+future branch rewinds past the addition, Phase 1's sibling set will
+fail to compile.
+
 ### Changes Required
 
 #### 1. `TypeFetcherGenerator` — add sibling sets
@@ -440,8 +449,12 @@ static final Set<Class<? extends GraphitronField>> NOT_DISPATCHED_LEAVES = Set.o
 **Changes:** Add a second `@Test` asserting that
 `IMPLEMENTED_LEAVES`, `NOT_IMPLEMENTED_REASONS.keySet()`, and
 `NOT_DISPATCHED_LEAVES` are pairwise disjoint and jointly cover
-`sealedLeaves(GraphitronField.class)`. Factor `sealedLeaves` out to a
-package-visible utility so phase 2 can reuse it.
+`sealedLeaves(GraphitronField.class)`. Promote `sealedLeaves` from
+`private static` to `public static` on `GeneratorCoverageTest` so
+Phase 2's `VariantCoverageTest` (in the parent package
+`no.sikt.graphitron.rewrite`) can reuse it. The simpler alternative
+— extracting to a `SealedLeafUtils` helper in a shared package — is
+only warranted if a third caller arrives.
 
 ```java
 @Test
@@ -551,16 +564,30 @@ enum TableFieldCase implements ClassificationCase {
 }
 ```
 
-**Retrofit approach** — two passes:
+**Retrofit approach** — three passes:
 
-1. **Mechanical pass.** A local script extracts the `→ VariantName` suffix
+1. **`GraphitronType` audit (do first).** The meta-test also asserts
+   coverage of the 15 `GraphitronType` leaves, but the existing enums
+   target `GraphitronField` classification. Before the retrofit, walk
+   `sealedLeaves(GraphitronType.class)` and list which leaves have **no**
+   classification case anywhere. Decide per gap: write a new case, or
+   justify an allowlist entry. This must happen before the meta-test
+   is switched on, or it fails on first run citing type leaves that
+   were never in scope for the 26 existing enums.
+2. **Mechanical pass.** A local script extracts the `→ VariantName` suffix
    from each description, resolves it to a fully-qualified class by
    searching `model/`, and emits the `Set.of(...)` argument. Run this
    once; review the diff.
-2. **Manual pass.** Audit the enums that classify type trees (`TableInputTypeCase`,
+3. **Manual pass.** Audit the enums that classify type trees (`TableInputTypeCase`,
    `ResultTypeCase`, `ErrorTypeCase`, `RootFieldCase`) — many of these
    cases legitimately cover multiple variants. Expand their `variants()`
    sets based on what their assertion lambda actually checks.
+   Cases that produce an `InputField.NestingField` (or `ChildField.NestingField`)
+   are recursive: the nested fields classify into their own
+   `InputField`/`ChildField` leaves, and the assertion lambda frequently
+   verifies all of them. Those cases should declare every transitively
+   covered leaf in `variants()`, not only `NestingField.class` — otherwise
+   the nested leaves look uncovered.
 
 A few cases test **error** paths (ill-formed schemas that should fail
 classification). Those still cover a variant — `UnclassifiedField` or
@@ -720,8 +747,17 @@ description. Don't commit them as tests (they'd pollute the suite).
 
 - **Phase 1 first** (1 PR, ~60 LOC). Low-risk, ships immediately, locks
   the pattern.
-- **Phase 2 next** (1 PR, retrofit + new test). Can proceed as soon as
-  phase 1 lands. Independent of argument-resolution work.
+- **P2 #3 (validator consumes `NOT_IMPLEMENTED_REASONS.keySet()`) should
+  follow Phase 1 closely**, not Phase 2. Phase 1 turns the map into a
+  three-way partition; P2 #3 is the single-arm validator change that
+  makes that partition protect users at build time instead of request
+  time. Today a schema using an unimplemented variant passes validation
+  and crashes at request time with `UnsupportedOperationException`.
+  Landing P2 #3 right after Phase 1 captures most of Phase 1's practical
+  value without waiting on the Phase 2 retrofit. P2 #3 itself warrants
+  a standalone plan before implementation.
+- **Phase 2 next** (1 PR, retrofit + new test). Can proceed in parallel
+  with or after P2 #3. Independent of argument-resolution work.
 - **Phase 3 deferred.** Separate plan when narrow-component coverage
   becomes concrete demand (e.g., the `BatchKey.ObjectBased` decision
   from `docs/rewrite-roadmap.md` P2 #5).
