@@ -13,6 +13,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import java.util.List;
 import java.util.Optional;
 
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -25,11 +26,11 @@ class QueryServiceTableFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID("service query field with resolved method — no errors",
+        STUBBED("service query field with resolved method — not yet implemented, produces stubbed-variant error",
             new QueryServiceTableField("Query", "externalFilm", null,
                 FILM_RETURN,
                 new MethodRef.Basic("com.example.Service", "method", "void", List.of())),
-            List.of());
+            List.of(stubbedError("Query.externalFilm", QueryServiceTableField.class)));
 
         private final String description;
         private final GraphitronField field;

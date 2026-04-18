@@ -13,6 +13,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -20,22 +21,22 @@ class TableMethodFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
+        NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time (stubbed)",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)),
                 List.of(), new MethodRef.Basic("com.example.TableMethods", "filteredActors", "org.jooq.Table", List.of())),
-            List.of()),
+            List.of(stubbedError("Film.filteredActors", TableMethodField.class))),
 
-        WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
+        WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey (stubbed)",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new JoinStep.FkJoin("film_actor_film_id_fkey", "", new TableRef("film_actor", "", "", List.of()), null, "")),
                 new MethodRef.Basic("com.example.TableMethods", "filteredActors", "org.jooq.Table", List.of())),
-            List.of()),
+            List.of(stubbedError("Film.filteredActors", TableMethodField.class))),
 
-        WITH_CONDITION_ONLY("condition method only — no FK",
+        WITH_CONDITION_ONLY("condition method only — no FK (stubbed)",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), "")),
                 new MethodRef.Basic("com.example.TableMethods", "filteredActors", "org.jooq.Table", List.of())),
-            List.of());
+            List.of(stubbedError("Film.filteredActors", TableMethodField.class)));
 
         private final String description;
         private final GraphitronField field;

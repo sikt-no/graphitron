@@ -12,6 +12,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import java.util.List;
 import java.util.Optional;
 
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -19,9 +20,9 @@ class NestingFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID("nesting field — always valid",
+        STUBBED("nesting field — not yet implemented, produces stubbed-variant error",
             new NestingField("Film", "nested", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true))),
-            List.of());
+            List.of(stubbedError("Film.nested", NestingField.class)));
 
         private final String description;
         private final GraphitronField field;

@@ -10,6 +10,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,17 +18,17 @@ class RecordFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        IMPLICIT_COLUMN("no @field — column name defaults to GraphQL field name; always valid",
+        IMPLICIT_COLUMN("no @field — column name defaults to GraphQL field name (stubbed)",
             new RecordField("Language", "name", null,
                 new ReturnTypeRef.ScalarReturnType("String", new FieldWrapper.Single(true)),
                 "name"),
-            List.of()),
+            List.of(stubbedError("Language.name", RecordField.class))),
 
-        EXPLICIT_COLUMN("@field(name:) overrides column name; always valid",
+        EXPLICIT_COLUMN("@field(name:) overrides column name (stubbed)",
             new RecordField("Language", "displayName", null,
                 new ReturnTypeRef.ScalarReturnType("String", new FieldWrapper.Single(true)),
                 "display_name"),
-            List.of());
+            List.of(stubbedError("Language.displayName", RecordField.class)));
 
         private final String description;
         private final GraphitronField field;

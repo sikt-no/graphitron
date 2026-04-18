@@ -10,6 +10,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,9 +18,9 @@ class MutationUpsertTableFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID("upsert mutation field — always valid",
+        STUBBED("upsert mutation field — not yet implemented, produces stubbed-variant error",
             new MutationUpsertTableField("Mutation", "upsertFilm", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true))),
-            List.of());
+            List.of(stubbedError("Mutation.upsertFilm", MutationUpsertTableField.class)));
 
         private final String description;
         private final GraphitronField field;

@@ -16,6 +16,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import java.util.List;
 import java.util.Optional;
 
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -27,31 +28,31 @@ class RecordTableFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
+        NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time (stubbed)",
             new RecordTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null),
-            List.of()),
+            List.of(stubbedError("Language.film", RecordTableField.class))),
 
-        WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
+        WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey (stubbed)",
             new RecordTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.FkJoin("language_film_id_fkey", "", new TableRef("film", "", "", List.of()), null, "")),
                 List.of(), new OrderBySpec.None(), null),
-            List.of()),
+            List.of(stubbedError("Language.film", RecordTableField.class))),
 
-        WITH_CONDITION_ONLY("condition-only join step — no FK",
+        WITH_CONDITION_ONLY("condition-only join step — no FK (stubbed)",
             new RecordTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()), "")),
                 List.of(), new OrderBySpec.None(), null),
-            List.of()),
+            List.of(stubbedError("Language.film", RecordTableField.class))),
 
-        FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause; no errors",
+        FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause (stubbed)",
             new RecordTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(),
                 List.of(new ConditionFilter("com.example.Conditions", "filmCondition", List.of())),
                 new OrderBySpec.None(), null),
-            List.of()),
+            List.of(stubbedError("Language.films", RecordTableField.class))),
 
-        VALID_LIST("list return — valid",
+        STUBBED_LIST("list return — not yet implemented, produces stubbed-variant error",
             new RecordTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), new OrderBySpec.None(), null),
-            List.of());
+            List.of(stubbedError("Language.films", RecordTableField.class)));
 
         private final String description;
         private final GraphitronField field;

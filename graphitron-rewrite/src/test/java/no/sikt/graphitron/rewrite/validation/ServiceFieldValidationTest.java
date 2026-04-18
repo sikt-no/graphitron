@@ -20,6 +20,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import java.util.List;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.schema;
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -31,16 +32,16 @@ class ServiceFieldValidationTest {
 
     enum RecordCase implements ValidatorCase {
 
-        NO_PATH("no @reference — no lift condition; valid for non-table return",
+        NO_PATH("no @reference — no lift condition (stubbed — ServiceRecordField not yet implemented)",
             new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(), RESOLVED_METHOD),
-            List.of()),
+            List.of(stubbedError("Film.externalChild", ServiceRecordField.class))),
 
-        WITH_LIFT_CONDITION("lift condition with a resolved method",
+        WITH_LIFT_CONDITION("lift condition with a resolved method (stubbed — ServiceRecordField not yet implemented)",
             new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(
                 new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "liftCondition", "org.jooq.Condition",
                     List.of(new MethodRef.Param.Typed("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))), "")),
                 RESOLVED_METHOD),
-            List.of());
+            List.of(stubbedError("Film.externalChild", ServiceRecordField.class)));
 
         private final String description;
         private final GraphitronField field;

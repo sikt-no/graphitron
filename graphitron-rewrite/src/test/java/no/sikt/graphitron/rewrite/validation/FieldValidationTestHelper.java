@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.GraphitronSchemaValidator;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
@@ -57,5 +58,22 @@ public final class FieldValidationTestHelper {
      */
     public static List<ValidationError> validate(GraphitronField field) {
         return validate(schema(new RootType(field.parentTypeName(), null), field.name(), field));
+    }
+
+    /**
+     * Returns the expected "not yet implemented" error message that
+     * {@code GraphitronSchemaValidator.validateVariantIsImplemented} produces for a stubbed
+     * variant. Reads from {@link TypeFetcherGenerator#NOT_IMPLEMENTED_REASONS} so the test
+     * stays in lock-step with production — updating the reason string in one place updates
+     * both sides.
+     *
+     * <p>Use in a per-variant test's expected-error list where that variant is stubbed:
+     * <pre>
+     * List.of(stubbedError("Mutation.createFilm", MutationInsertTableField.class))
+     * </pre>
+     */
+    public static String stubbedError(String qualifiedName, Class<? extends GraphitronField> variant) {
+        return "Field '" + qualifiedName + "': "
+            + TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.get(variant);
     }
 }

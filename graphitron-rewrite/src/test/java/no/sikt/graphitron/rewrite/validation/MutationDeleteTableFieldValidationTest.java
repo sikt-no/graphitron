@@ -10,6 +10,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,9 +18,9 @@ class MutationDeleteTableFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID("delete mutation field — always valid",
+        STUBBED("delete mutation field — not yet implemented, produces stubbed-variant error",
             new MutationDeleteTableField("Mutation", "deleteFilm", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true))),
-            List.of());
+            List.of(stubbedError("Mutation.deleteFilm", MutationDeleteTableField.class)));
 
         private final String description;
         private final GraphitronField field;

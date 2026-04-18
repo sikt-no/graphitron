@@ -8,6 +8,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -15,9 +16,10 @@ class MultitableReferenceFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        UNSUPPORTED("@multitableReference is not supported in record-based output — always an error",
+        UNSUPPORTED("@multitableReference is not supported in record-based output — always an error (and stubbed)",
             new MultitableReferenceField("Film", "languages", null),
-            List.of("Field 'Film.languages': @multitableReference is not supported in record-based output"));
+            List.of("Field 'Film.languages': @multitableReference is not supported in record-based output",
+                stubbedError("Film.languages", MultitableReferenceField.class)));
 
         private final String description;
         private final GraphitronField field;

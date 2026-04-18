@@ -13,6 +13,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import java.util.List;
 import java.util.Optional;
 
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -20,9 +21,9 @@ class QueryTableInterfaceFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID("single cardinality — valid",
+        STUBBED("single cardinality — not yet implemented, produces stubbed-variant error",
             new QueryTableInterfaceField("Query", "statuses", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)), List.of(), new OrderBySpec.None(), null),
-            List.of());
+            List.of(stubbedError("Query.statuses", QueryTableInterfaceField.class)));
 
         private final String description;
         private final GraphitronField field;

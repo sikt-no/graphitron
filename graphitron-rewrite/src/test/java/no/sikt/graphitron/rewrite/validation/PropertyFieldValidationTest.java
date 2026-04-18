@@ -8,6 +8,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -15,13 +16,13 @@ class PropertyFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        IMPLICIT_COLUMN("no @field — property name defaults to the GraphQL field name",
+        IMPLICIT_COLUMN("no @field — property name defaults to the GraphQL field name (stubbed)",
             new PropertyField("Film", "titleProp", null, "titleProp"),
-            List.of()),
+            List.of(stubbedError("Film.titleProp", PropertyField.class))),
 
-        EXPLICIT_COLUMN("@field(name:) overrides the property name",
+        EXPLICIT_COLUMN("@field(name:) overrides the property name (stubbed)",
             new PropertyField("Film", "titleProp", null, "title"),
-            List.of());
+            List.of(stubbedError("Film.titleProp", PropertyField.class)));
 
         private final String description;
         private final GraphitronField field;

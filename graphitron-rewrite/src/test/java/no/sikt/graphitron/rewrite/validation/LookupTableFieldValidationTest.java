@@ -14,6 +14,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import java.util.List;
 import java.util.Optional;
 
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,20 +29,21 @@ class LookupTableFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID_SINGLE("single return — valid",
+        STUBBED_SINGLE("single return — not yet implemented, produces stubbed-variant error",
             new LookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null,
                 EMPTY_LOOKUP),
-            List.of()),
+            List.of(stubbedError("Language.film", LookupTableField.class))),
 
-        VALID_LIST("list return — valid",
+        STUBBED_LIST("list return — not yet implemented, produces stubbed-variant error",
             new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), new OrderBySpec.None(), null,
                 EMPTY_LOOKUP),
-            List.of()),
+            List.of(stubbedError("Language.films", LookupTableField.class))),
 
-        CONNECTION_BLOCKED("connection return — not valid on lookup field",
+        CONNECTION_BLOCKED("connection return — not valid on lookup field (and stubbed)",
             new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true)), List.of(), List.of(), new OrderBySpec.None(), null,
                 EMPTY_LOOKUP),
-            List.of("Field 'Language.films': lookup fields must not return a connection"));
+            List.of("Field 'Language.films': lookup fields must not return a connection",
+                stubbedError("Language.films", LookupTableField.class)));
 
         private final String description;
         private final GraphitronField field;

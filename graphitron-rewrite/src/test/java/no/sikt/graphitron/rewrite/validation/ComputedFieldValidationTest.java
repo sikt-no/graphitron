@@ -12,6 +12,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -19,14 +20,14 @@ class ComputedFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        NO_PATH("no @reference — no lift condition; valid when return type is not table-mapped",
+        NO_PATH("no @reference — no lift condition; valid when return type is not table-mapped (stubbed)",
             new ComputedField("Film", "fullTitle", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of()),
-            List.of()),
+            List.of(stubbedError("Film.fullTitle", ComputedField.class))),
 
-        WITH_LIFT_CONDITION("lift condition with a resolved method",
+        WITH_LIFT_CONDITION("lift condition with a resolved method (stubbed)",
             new ComputedField("Film", "fullTitle", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "liftCondition", "org.jooq.Condition", List.of()), ""))),
-            List.of());
+            List.of(stubbedError("Film.fullTitle", ComputedField.class)));
 
         private final String description;
         private final GraphitronField field;

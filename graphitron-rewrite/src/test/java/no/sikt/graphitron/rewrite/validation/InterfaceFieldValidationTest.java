@@ -10,6 +10,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,9 +18,9 @@ class InterfaceFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID("single cardinality — valid",
+        STUBBED("single cardinality — not yet implemented, produces stubbed-variant error",
             new InterfaceField("Film", "person", null, new ReturnTypeRef.PolymorphicReturnType("Film", new FieldWrapper.Single(true))),
-            List.of());
+            List.of(stubbedError("Film.person", InterfaceField.class)));
 
         private final String description;
         private final GraphitronField field;

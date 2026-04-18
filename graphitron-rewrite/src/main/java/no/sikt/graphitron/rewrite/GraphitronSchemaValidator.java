@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
@@ -117,6 +118,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f -> validateUnclassifiedField(f, errors);
         }
         validatePaginationRequiresOrdering(field, errors);
+        validateVariantIsImplemented(field, errors);
     }
 
     /**
@@ -131,6 +133,29 @@ public class GraphitronSchemaValidator {
             errors.add(new ValidationError(
                 "Field '" + field.qualifiedName() + "': paginated fields must have ordering "
                     + "(add @defaultOrder or @orderBy)",
+                field.location()
+            ));
+        }
+    }
+
+    /**
+     * Cross-cutting check: reject schemas whose classification lands on a variant that the
+     * {@link TypeFetcherGenerator} hasn't implemented yet. Without this check the build
+     * succeeds and the generated stub throws {@link UnsupportedOperationException} at the
+     * first request hitting the variant; the principle in {@code graphitron-principles.md}
+     * is that problems caught at build time are cheaper, so we surface it here.
+     *
+     * <p>The {@link TypeFetcherGenerator#NOT_IMPLEMENTED_REASONS} map is the single source of
+     * truth for "stubbed" status. Variants in {@code IMPLEMENTED_LEAVES} or
+     * {@code NOT_DISPATCHED_LEAVES} return {@code null} from this lookup and are correctly
+     * ignored — an invariant enforced by
+     * {@code GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus}.
+     */
+    private void validateVariantIsImplemented(GraphitronField field, List<ValidationError> errors) {
+        String reason = TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.get(field.getClass());
+        if (reason != null) {
+            errors.add(new ValidationError(
+                "Field '" + field.qualifiedName() + "': " + reason,
                 field.location()
             ));
         }

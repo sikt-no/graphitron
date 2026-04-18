@@ -20,12 +20,15 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Validates filter entries on SQL-generating fields. All cases produce no errors
- * because the validator does not currently inspect filter contents.
+ * Validates filter entries on SQL-generating fields. The validator does not currently inspect
+ * filter contents, so each case produces no filter-specific errors. The fixture uses
+ * {@link TableField}, which is itself stubbed, so every case also surfaces the
+ * stubbed-variant error — that's orthogonal to what this test is asserting.
  */
 class ArgumentValidationTest {
 
@@ -40,25 +43,25 @@ class ArgumentValidationTest {
 
     enum Case implements ValidatorCase {
 
-        NO_FILTERS("no filters — no errors",
+        NO_FILTERS("no filters (stubbed)",
             tableField(List.of()),
-            List.of()),
+            List.of(stubbedError("Film.actors", TableField.class))),
 
-        WITH_COLUMN_FILTER("GeneratedConditionFilter scalar — no errors",
+        WITH_COLUMN_FILTER("GeneratedConditionFilter scalar (stubbed)",
             tableField(List.of(new GeneratedConditionFilter("TestConditions", "actorsCondition",
                 new TableRef("film", "FILM", "Film", List.of()),
                 List.of(new CallParam("id", new CallSiteExtraction.Direct(), false, "java.lang.Integer")),
                 List.of(new BodyParam("id", new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
                     "java.lang.Integer", false, false, new CallSiteExtraction.Direct()))))),
-            List.of()),
+            List.of(stubbedError("Film.actors", TableField.class))),
 
-        WITH_INPUT_FILTER("table-bound input type arg — skipped (empty filters), no errors",
+        WITH_INPUT_FILTER("table-bound input type arg — skipped (empty filters) (stubbed)",
             tableField(List.of()),
-            List.of()),
+            List.of(stubbedError("Film.actors", TableField.class))),
 
-        WITH_CONDITION_FILTER("ConditionFilter — no errors",
+        WITH_CONDITION_FILTER("ConditionFilter (stubbed)",
             tableField(List.of(new ConditionFilter("com.example.Conditions", "cond", List.of()))),
-            List.of());
+            List.of(stubbedError("Film.actors", TableField.class)));
 
         private final String description;
         private final GraphitronField field;
