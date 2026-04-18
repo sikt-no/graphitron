@@ -185,6 +185,24 @@ how every subsequent plan lands.
   boundary: what belongs in a `GraphitronContext` method vs a jOOQ
   `ExecuteListener` vs a schema directive. Relevant to the 30-year
   maintainability goal from `graphitron-principles.md`.
+- **Drop `graphitron-common` build dependency from `graphitron-rewrite`.**
+  Only one production import (`SchemaReadingHelper.getTypeDefinitionRegistry`
+  at `GraphQLRewriteGenerator.java:24`) and one test-classpath resource
+  (`directives.graphqls`). Everything else attributed to `graphitron-common`
+  — `GraphitronContext`, `NodeIdStrategy`, and related types — is referenced
+  only as JavaPoet `ClassName.get(...)` strings emitted into generated
+  code; the generator never imports or instantiates them. Replacing the
+  helper with an inline `MultiSourceReader` + `SchemaParser.parse(Reader)`
+  call that injects `directives.graphqls` from the module's own classpath
+  would let the rewrite drop the dependency. Open questions: where the
+  directives resource physically lives (own copy in `graphitron-rewrite`
+  vs cross-module `<resource>` path vs extracting from the common jar),
+  and whether the classpath-first fallback currently in `SchemaReadingHelper`
+  is needed at Maven-plugin build time (likely not — runtime classpath
+  scenarios are served by `graphitron-schema-transform`, which correctly
+  keeps the dependency). Note that dropping the *build* dependency does
+  not drop the *runtime* dependency of emitted code — consumers still
+  need `graphitron-common` on their classpath.
 
 ---
 
