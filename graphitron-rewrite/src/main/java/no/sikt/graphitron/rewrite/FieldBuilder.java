@@ -257,6 +257,10 @@ class FieldBuilder {
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), parentBatchKey);
             }
+            if (returnType.wrapper() instanceof FieldWrapper.Connection) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    "@asConnection on inline (non-@splitQuery) TableField is not supported; add @splitQuery for batched connection semantics");
+            }
             return new TableField(parentTypeName, name, location,
                 returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
         }

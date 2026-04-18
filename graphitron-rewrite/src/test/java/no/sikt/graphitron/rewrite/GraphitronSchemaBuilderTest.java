@@ -518,8 +518,8 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(((TableField) schema.field("Film", "actors")).returnType().wrapper())
                 .isInstanceOf(FieldWrapper.List.class)),
 
-        CONNECTION_RETURN_TYPE(
-            "edges.node connection structure → TableField (Connection, element type from node field)",
+        CONNECTION_STRUCTURE_REJECTED(
+            "edges.node connection structure on inline TableField → UnclassifiedField (requires @splitQuery)",
             """
             type Actor @table(name: "actor") { name: String }
             type ActorEdge { node: Actor cursor: String }
@@ -528,65 +528,62 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var tf = (TableField) schema.field("Film", "actors");
-                assertThat(tf.returnType().wrapper()).isInstanceOf(FieldWrapper.Connection.class);
-                assertThat(tf.returnType()).isInstanceOf(no.sikt.graphitron.rewrite.model.ReturnTypeRef.TableBoundReturnType.class);
-                assertThat(tf.returnType().returnTypeName()).isEqualTo("Actor");
+                var f = schema.field("Film", "actors");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("@asConnection on inline (non-@splitQuery) TableField is not supported")
+                    .contains("@splitQuery");
             }),
 
-        AS_CONNECTION_DIRECTIVE(
-            "@asConnection on a list field → Connection wrapper with element type from list item",
+        AS_CONNECTION_REJECTED_NO_SPLIT(
+            "@asConnection without @splitQuery on inline TableField → UnclassifiedField",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") { actors: [Actor!]! @asConnection @defaultOrder(primaryKey: true) }
             type Query { film: Film }
             """,
             schema -> {
-                var tf = (TableField) schema.field("Film", "actors");
-                assertThat(tf.returnType().wrapper()).isInstanceOf(FieldWrapper.Connection.class);
-                assertThat(tf.returnType().returnTypeName()).isEqualTo("Actor");
-                var conn = (FieldWrapper.Connection) tf.returnType().wrapper();
-                assertThat(conn.connectionNullable()).isFalse();
-                assertThat(conn.itemNullable()).isFalse();
-                assertThat(conn.defaultPageSize()).isEqualTo(100);
-                assertThat(conn.connectionName()).isNull();
+                var f = schema.field("Film", "actors");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("@asConnection on inline (non-@splitQuery) TableField is not supported");
             }),
 
-        AS_CONNECTION_CUSTOM_PAGE_SIZE(
-            "@asConnection(defaultFirstValue: 50) → Connection with custom page size",
+        AS_CONNECTION_SPLIT_CUSTOM_PAGE_SIZE(
+            "@asConnection(defaultFirstValue: 50) @splitQuery → SplitTableField with custom page size",
             """
             type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") { actors: [Actor!]! @asConnection(defaultFirstValue: 50) @defaultOrder(primaryKey: true) }
+            type Film @table(name: "film") { actors: [Actor!]! @asConnection(defaultFirstValue: 50) @splitQuery @defaultOrder(primaryKey: true) }
             type Query { film: Film }
             """,
             schema -> {
-                var tf = (TableField) schema.field("Film", "actors");
+                var tf = (SplitTableField) schema.field("Film", "actors");
                 var conn = (FieldWrapper.Connection) tf.returnType().wrapper();
                 assertThat(conn.defaultPageSize()).isEqualTo(50);
             }),
 
-        AS_CONNECTION_CUSTOM_NAME(
-            "@asConnection(connectionName: \"MovieActorsConnection\") → Connection with custom name",
+        AS_CONNECTION_SPLIT_CUSTOM_NAME(
+            "@asConnection(connectionName: \"MovieActorsConnection\") @splitQuery → SplitTableField with custom name",
             """
             type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") { actors: [Actor!]! @asConnection(connectionName: "MovieActorsConnection") @defaultOrder(primaryKey: true) }
+            type Film @table(name: "film") { actors: [Actor!]! @asConnection(connectionName: "MovieActorsConnection") @splitQuery @defaultOrder(primaryKey: true) }
             type Query { film: Film }
             """,
             schema -> {
-                var tf = (TableField) schema.field("Film", "actors");
+                var tf = (SplitTableField) schema.field("Film", "actors");
                 var conn = (FieldWrapper.Connection) tf.returnType().wrapper();
                 assertThat(conn.connectionName()).isEqualTo("MovieActorsConnection");
             }),
 
-        AS_CONNECTION_SYNTHESIZES_PAGINATION(
-            "@asConnection synthesizes PaginationSpec when no explicit pagination args",
+        AS_CONNECTION_SPLIT_SYNTHESIZES_PAGINATION(
+            "@asConnection @splitQuery synthesizes PaginationSpec when no explicit pagination args",
             """
             type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") { actors: [Actor!]! @asConnection @defaultOrder(primaryKey: true) }
+            type Film @table(name: "film") { actors: [Actor!]! @asConnection @splitQuery @defaultOrder(primaryKey: true) }
             type Query { film: Film }
             """,
             schema -> {
-                var tf = (TableField) schema.field("Film", "actors");
+                var tf = (SplitTableField) schema.field("Film", "actors");
                 assertThat(tf.pagination()).isNotNull();
                 assertThat(tf.pagination().first()).isNotNull();
                 assertThat(tf.pagination().first().name()).isEqualTo("first");
@@ -594,15 +591,15 @@ class GraphitronSchemaBuilderTest {
                 assertThat(tf.pagination().after().name()).isEqualTo("after");
             }),
 
-        AS_CONNECTION_ORDERING_DETECTED(
-            "@asConnection field is treated as list for ordering detection",
+        AS_CONNECTION_SPLIT_ORDERING_DETECTED(
+            "@asConnection @splitQuery field is treated as list for ordering detection",
             """
             type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") { actors: [Actor!]! @asConnection @defaultOrder(primaryKey: true) }
+            type Film @table(name: "film") { actors: [Actor!]! @asConnection @splitQuery @defaultOrder(primaryKey: true) }
             type Query { film: Film }
             """,
             schema -> {
-                var tf = (TableField) schema.field("Film", "actors");
+                var tf = (SplitTableField) schema.field("Film", "actors");
                 assertThat(tf.orderBy()).isInstanceOf(OrderBySpec.Fixed.class);
             }),
 
@@ -730,18 +727,18 @@ class GraphitronSchemaBuilderTest {
             }),
 
         CONNECTION_WITH_DEFAULT_ORDER_INDEX(
-            "@defaultOrder(index:) on a connection field resolves to Fixed order",
+            "@defaultOrder(index:) on a connection field with @splitQuery resolves to Fixed order",
             """
             type Actor @table(name: "actor") { name: String }
             type ActorEdge { node: Actor cursor: String }
             type ActorConnection { edges: [ActorEdge] }
             type Film @table(name: "film") {
-                actors: ActorConnection @defaultOrder(index: "idx_actor_last_name")
+                actors: ActorConnection @splitQuery @defaultOrder(index: "idx_actor_last_name")
             }
             type Query { film: Film }
             """,
             schema -> {
-                var order = (OrderBySpec.Fixed) ((TableField) schema.field("Film", "actors")).orderBy();
+                var order = (OrderBySpec.Fixed) ((SplitTableField) schema.field("Film", "actors")).orderBy();
                 assertThat(order).isNotNull();
                 assertThat(order.columns()).hasSize(1);
                 assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
