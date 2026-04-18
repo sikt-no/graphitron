@@ -1489,6 +1489,23 @@ class GraphitronSchemaBuilderTest {
                     .contains("argument 'tytle'")
                     .contains("could not be resolved in table 'film'")
                     .contains("did you mean");
+            }),
+
+        LOOKUP_KEY_ON_INPUT_FIELD_ONLY_REJECTED(
+            "@lookupKey on an input-type field (not a direct scalar arg) — classify-time error, composite-key support deferred to Phase 3",
+            """
+            input FilmKey { filmId: Int @lookupKey }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+                filmByKey(key: FilmKey): [Film!]!
+            }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) schema.field("Query", "filmByKey");
+                assertThat(f.reason())
+                    .contains("@lookupKey is declared")
+                    .contains("no scalar argument resolved to a lookup column")
+                    .contains("composite-key input types");
             });
 
         final String sdl;
@@ -2032,13 +2049,18 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LOOKUP_NESTED_IN_INPUT(
-            "@lookupKey nested in input type → field still classified as QueryLookupTableField",
+            "@lookupKey nested in input type with no direct scalar key → UnclassifiedField (composite-key support deferred to Phase 3)",
             """
             input FilmKey { id: ID @lookupKey }
             type Film @table(name: "film") { title: String }
             type Query { filmByKey(key: [FilmKey]): [Film!]! }
             """,
-            schema -> assertThat(schema.field("Query", "filmByKey")).isInstanceOf(QueryField.QueryLookupTableField.class)),
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Query", "filmByKey");
+                assertThat(f.reason())
+                    .contains("@lookupKey is declared")
+                    .contains("no scalar argument resolved to a lookup column");
+            }),
 
         LOOKUP_FIELD_COLUMN_ARG(
             "lookup field list arg whose column exists → ColumnFilter with resolved jOOQ field",
@@ -2071,28 +2093,33 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LOOKUP_FIELD_TABLE_INPUT_TYPE_ARG(
-            "lookup field with explicit @table input type arg → filters empty (input types deferred)",
+            "lookup field whose @lookupKey arg is an @table input type → UnclassifiedField (composite-key support deferred to Phase 3)",
             """
             input FilmKey @table(name: "film") { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
             type Query { filmByKey(key: [FilmKey] @lookupKey): [Film!]! }
             """,
             schema -> {
-                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmByKey");
-                assertThat(f.filters()).isEmpty();
+                var f = (UnclassifiedField) schema.field("Query", "filmByKey");
+                assertThat(f.reason())
+                    .contains("@lookupKey is declared")
+                    .contains("no scalar argument resolved to a lookup column");
             }),
 
         LOOKUP_FIELD_IMPLICIT_TABLE_INPUT_TYPE_ARG(
-            "lookup field with plain input type arg (no @table) → filters empty, type promoted to TableInputType",
+            "lookup field whose @lookupKey arg is a plain input type (promoted to TableInputType) → UnclassifiedField (composite-key support deferred to Phase 3)",
             """
             input FilmKey { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
             type Query { filmByKey(key: [FilmKey] @lookupKey): [Film!]! }
             """,
             schema -> {
-                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmByKey");
-                assertThat(f.filters()).isEmpty();
-                // The type was promoted to TableInputType in types map
+                var f = (UnclassifiedField) schema.field("Query", "filmByKey");
+                assertThat(f.reason())
+                    .contains("@lookupKey is declared")
+                    .contains("no scalar argument resolved to a lookup column");
+                // The type was still promoted to TableInputType in types map (classification
+                // of the input type happens independently of field classification).
                 assertThat(schema.type("FilmKey"))
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType.class);
             }),

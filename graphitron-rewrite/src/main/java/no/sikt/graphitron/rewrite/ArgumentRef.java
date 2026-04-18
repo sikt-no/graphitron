@@ -48,6 +48,8 @@ sealed interface ArgumentRef {
          * Scalar arg resolved to a jOOQ column. {@code argCondition} and
          * {@code suppressedByFieldOverride} drive the four-state projection table; see
          * {@code docs/argument-resolution.md#condition-on-field-and-argument-definitions}.
+         * {@code isLookupKey} reflects the presence of {@code @lookupKey} at classify time
+         * so projections (notably {@code projectForLookup}) never re-read the SDL directive.
          */
         record ColumnArg(
             String name,
@@ -57,7 +59,8 @@ sealed interface ArgumentRef {
             ColumnRef column,
             CallSiteExtraction extraction,
             Optional<ArgConditionRef> argCondition,
-            boolean suppressedByFieldOverride
+            boolean suppressedByFieldOverride,
+            boolean isLookupKey
         ) implements ScalarArg {}
 
         /**

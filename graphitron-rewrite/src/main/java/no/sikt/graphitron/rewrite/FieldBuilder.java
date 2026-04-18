@@ -595,9 +595,9 @@ class FieldBuilder {
      * {@link ArgumentRef.UnclassifiedArg} carry a {@code reason} so step 10 can turn them into
      * validation errors.
      *
-     * <p>{@code rt} is the target {@link TableRef} used to resolve scalar column args; may be
-     * {@code null} when the field has no table context (in that case scalar args bind to
-     * {@link ArgumentRef.ScalarArg.UnboundArg}).
+     * <p>{@code rt} is the target {@link TableRef} used to resolve scalar column args; every
+     * current caller passes the field's resolved table, so this method does not accept
+     * {@code null}.
      */
     List<ArgumentRef> classifyArguments(GraphQLFieldDefinition fieldDef, TableRef rt, List<String> errors) {
         var fieldCondition = readConditionDirective(fieldDef);
@@ -646,11 +646,6 @@ class FieldBuilder {
 
         // Scalar arg: bind to column
         String columnName = argString(arg, DIR_FIELD, ARG_NAME).orElse(name);
-        if (rt == null) {
-            return new ArgumentRef.ScalarArg.UnboundArg(
-                name, typeName, nonNull, list, columnName,
-                "column '" + columnName + "' could not be resolved (no table context)");
-        }
         var col = ctx.catalog.findColumn(rt.tableName(), columnName);
         if (col.isEmpty()) {
             return new ArgumentRef.ScalarArg.UnboundArg(
@@ -681,8 +676,9 @@ class FieldBuilder {
                 extraction = new CallSiteExtraction.Direct();
             }
         }
+        boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
         return new ArgumentRef.ScalarArg.ColumnArg(
-            name, typeName, nonNull, list, columnRef, extraction, argCondition, fieldOverride);
+            name, typeName, nonNull, list, columnRef, extraction, argCondition, fieldOverride, isLookupKey);
     }
 
     /**
@@ -824,22 +820,36 @@ class FieldBuilder {
                 : "could not resolve @defaultOrder columns in table '" + rt.tableName() + "'";
             return TableFieldComponents.error(msg);
         }
-        var lookupMapping = projectForLookup(refs, fieldDef, rt);
+        var lookupMapping = projectForLookup(refs, rt);
+        // LookupField invariant: if the field will classify as a lookup variant (signalled by
+        // @lookupKey appearing anywhere on its arguments), the mapping must have at least one
+        // column. Today only scalar @lookupKey args contribute columns; @lookupKey on input-type
+        // fields trips the gate without producing any column (composite-key support is Phase 5).
+        // Surface the gap as a classify-time error rather than letting the generator fail later.
+        if (hasLookupKeyAnywhere(fieldDef) && lookupMapping.columns().isEmpty()) {
+            return TableFieldComponents.error(
+                "@lookupKey is declared but no scalar argument resolved to a lookup column — "
+                + "composite-key input types with @lookupKey on their fields are not yet supported");
+        }
         return new TableFieldComponents(filters, orderBy, projectPaginationSpec(refs, fieldDef), null, lookupMapping);
     }
 
     /**
      * Projects {@code @lookupKey}-bearing scalar arguments into a {@link LookupMapping} for the
-     * target table. Non-lookup fields simply receive an empty-columns mapping (the field will
-     * still validate and generate correctly via {@link GeneratedConditionFilter} or the standard
-     * filter path). {@link LookupField} variants read {@code lookupMapping()} in step 8.
+     * target table. Reads only from {@link ArgumentRef.ScalarArg.ColumnArg#isLookupKey()} — the
+     * classifier is the single source of truth; this projection does not re-read the SDL.
+     *
+     * <p>Non-lookup fields receive an empty-columns mapping (the field will still validate and
+     * generate correctly via {@link GeneratedConditionFilter} or the standard filter path).
+     * {@link no.sikt.graphitron.rewrite.model.LookupField} variants must have at least one
+     * column; that invariant is enforced by {@link #projectForFilter} before the field is
+     * constructed as a {@code LookupField} variant.
      */
-    private LookupMapping projectForLookup(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef, TableRef targetTable) {
+    private LookupMapping projectForLookup(List<ArgumentRef> refs, TableRef targetTable) {
         var columns = new ArrayList<LookupMapping.LookupColumn>();
         for (var ref : refs) {
             if (!(ref instanceof ArgumentRef.ScalarArg.ColumnArg ca)) continue;
-            var arg = fieldDef.getArgument(ca.name());
-            if (arg == null || !arg.hasAppliedDirective(DIR_LOOKUP_KEY)) continue;
+            if (!ca.isLookupKey()) continue;
             columns.add(new LookupMapping.LookupColumn(ca.name(), ca.column(), ca.extraction(), ca.list()));
         }
         return new LookupMapping(List.copyOf(columns), targetTable);
