@@ -97,7 +97,7 @@ Unified `ArgumentRef` classification + projection in the builder; gates `@condit
 
 `GraphitronSchemaValidator` rejects schemas whose classification lands on a `NOT_IMPLEMENTED_REASONS` variant; `ValidateMojo` fails the build on rewrite validation errors by default. Implemented; awaiting independent review.
 
-### G5 — Inline `TableField` emission **[Draft]** — [plan-g5-inline-tablefield.md](plan-g5-inline-tablefield.md)
+### G5 — Inline `TableField` emission **[Approved]** — [plan-g5-inline-tablefield.md](plan-g5-inline-tablefield.md)
 
 Emission stub throws `UnsupportedOperationException` for every `ChildField.TableField`. Classification complete; emission lives in `TypeClassGenerator.$fields` as a correlated subquery, not in `TypeFetcherGenerator`. Gating prerequisite for argres Phase 2a (the lookup variant layers VALUES+JOIN onto this shape). Execution-test prerequisite: document the lookup-condition method signature (classification-vocabulary item 5).
 
