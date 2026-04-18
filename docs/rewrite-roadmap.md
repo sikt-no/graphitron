@@ -111,14 +111,14 @@ how every subsequent plan lands.
    extend it from "map entries are sealed leaves" to "every leaf has a
    classification test case". Phase 1 (generator-branch partition)
    shipped; Phase 2 (classification-case coverage) is next. Detailed
-   plan: [plan-variant-coverage-meta-test.md](plan-variant-coverage-meta-test.md).
+   plan: [plan-variant-coverage-meta-test.md](plan-variant-coverage-meta-test.md). **[Approved]**
 2. **Argument-resolution unification.** The `ArgumentRef` classification
    + projection design in [argument-resolution.md](argument-resolution.md)
    is blocking `@condition`-on-fields, `InputColumnBinding`, and every
    future argument category. `FieldBuilder` has grown to ~1350 LOC around
    the three-pass argument model; landing the unified classification is a
    prerequisite for the next six planned features and a prerequisite for
-   decomposing `FieldBuilder`.
+   decomposing `FieldBuilder`. **[Approved]**
 
 **P2 — high value, depends on P1 or unblocks adoption:**
 
@@ -130,13 +130,13 @@ how every subsequent plan lands.
    validated schema can still crash at request time with
    `UnsupportedOperationException` — which violates the "problems caught
    at build time are far cheaper" principle. Detailed plan:
-   [plan-stubbed-variant-validator.md](plan-stubbed-variant-validator.md).
+   [plan-stubbed-variant-validator.md](plan-stubbed-variant-validator.md). **[Pending Review]**
 4. **Legacy-vs-rewrite parity matrix.** Document which features each
    generator supports (mutations, split queries, federation, connections,
    interfaces, unions, platformId, …). Without this, users cannot plan
    migration and contributors cannot see where the rewrite is behind.
    Lives naturally in a new `docs/parity-matrix.md` and should be linked
-   from the top of this file once it exists.
+   from the top of this file once it exists. **[Unplanned]**
 5. **Cross-plan ownership.** Two types are referenced by multiple plans
    but owned by none:
    - `InputColumnBinding` — required by platformId step 6 and
@@ -147,6 +147,7 @@ how every subsequent plan lands.
      generator path. Decision (collapse into `RecordKeyed` vs implement a
      distinct `selectManyByObjectKeys`) should land before the next
      `ObjectBased`-emitting classifier path is added.
+   **[Unplanned]** (InputColumnBinding tracked under P1 #2; ObjectBased awaiting its own draft plan.)
 
 **P3 — medium, quality-of-life:**
 
@@ -158,12 +159,12 @@ how every subsequent plan lands.
    tests" to "step N when the fixture lands". New test investment should
    go into the classification→emission chain keyed off the existing
    `graphitron-rewrite-test-fixtures` jOOQ catalog — that's the chain
-   users experience.
+   users experience. **[Unplanned]**
 7. **Decompose `FieldBuilder`.** With argument-resolution unified (P1 #2),
    `FieldBuilder` can be split along the field taxonomy — one builder
    per `RootField` / `ChildField` family — rather than a monolith. Do
    not attempt before P1 #2 lands; the coupling runs through the argument
-   passes.
+   passes. **[Unplanned]** (blocked on P1 #2.)
 
 **Backlog — worth fixing but not urgent:**
 

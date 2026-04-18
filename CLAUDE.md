@@ -106,6 +106,12 @@ mvn clean install -Pquick
 - **GraphQL schemas**: `*.graphqls` files
 - **Directives**: `graphitron-common/src/main/resources/directives.graphqls`
 
+## Development Workflow
+
+Every change moves Unplanned → Draft → Approved → In Progress → Pending Review → Done, tracked per item in `docs/rewrite-roadmap.md` with inline `[Status]` markers. Plans live at `docs/plan-<slug>.md` and carry a `> **Status:** ...` front-matter that mirrors the roadmap. Reviewer must be a different party than the author (for Draft → Approved) and the implementer (for Pending Review → Done). Any session can add `[Unplanned]` items to the roadmap.
+
+Full spec — state table, file conventions, canonical path: [docs/workflow.md](docs/workflow.md). Read it once; it's short.
+
 ## Git Workflow
 
 Trunk-based development against `claude/graphitron-rewrite`.
