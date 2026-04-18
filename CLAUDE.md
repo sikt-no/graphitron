@@ -106,6 +106,37 @@ mvn clean install -Pquick
 - **GraphQL schemas**: `*.graphqls` files
 - **Directives**: `graphitron-common/src/main/resources/directives.graphqls`
 
+## Git Workflow
+
+Trunk-based development against `claude/graphitron-rewrite`.
+
+**Always sync with trunk before starting any work:**
+```bash
+git fetch origin claude/graphitron-rewrite
+git rebase origin/claude/graphitron-rewrite
+```
+
+**Trunk (`claude/graphitron-rewrite`):**
+- Never force-push. Fast-forward only.
+- Push your branch's commits to trunk via a refspec fast-forward:
+  ```bash
+  git push origin <your-branch>:claude/graphitron-rewrite
+  ```
+- This only works cleanly if your branch is rebased on top of trunk.
+
+**Your own feature/review branch:**
+- Rebase on trunk frequently.
+- Force-push your own branch freely after rebasing:
+  ```bash
+  git push --force-with-lease origin <your-branch>
+  ```
+
+**Typical session flow:**
+1. Sync: `git fetch origin claude/graphitron-rewrite && git rebase origin/claude/graphitron-rewrite`
+2. Do work, commit to your branch.
+3. Fast-forward trunk: `git push origin <your-branch>:claude/graphitron-rewrite`
+4. Sync your branch to match: `git fetch origin claude/graphitron-rewrite && git rebase origin/claude/graphitron-rewrite && git push --force-with-lease origin <your-branch>`
+
 ## Development Guidelines
 1. **Always check existing code patterns** in neighboring files before writing new code
 2. **Check pom.xml** before adding any dependencies - use what's already available
