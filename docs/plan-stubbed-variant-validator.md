@@ -1,11 +1,14 @@
 # Stubbed-Variant Validator Plan (P2 #3)
 
-> **Status:** Draft. One design decision with real consequences (retrofit
-> shape of 33 per-variant test classes), three smaller decisions with
-> recommended directions. Depends on variant-coverage Phase 1 (shipped
-> at `15f9f61`) — this plan consumes the `NOT_IMPLEMENTED_REASONS` map
-> now guaranteed to be an exhaustive, leaf-keyed record of stubbed
-> variants.
+> **Status:** Draft. Two design decisions with real consequences
+> (retrofit shape of 33 per-variant test classes; mojo severity
+> flip), three smaller decisions with recommended directions.
+> Depends on variant-coverage Phase 1 (shipped at `15f9f61`) — this
+> plan consumes the `NOT_IMPLEMENTED_REASONS` map now guaranteed to
+> be an exhaustive, leaf-keyed record of stubbed variants. The mojo
+> severity flip (Decision E, default `true`) is a **breaking change
+> for consumers** currently ignoring rewrite warnings; mitigated by
+> a single-flag escape hatch.
 
 ## Overview
 
@@ -45,7 +48,7 @@ established in Phase 1 of the variant-coverage plan.
   Deliberately non-blocking during the legacy→rewrite migration — the
   legacy pipeline is still the build-failing path.
 - **Per-variant validation tests** (`graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/validation/*ValidationTest.java`).
-  51 test classes; each parameterised enum-driven via the
+  53 test classes; each parameterised enum-driven via the
   `ValidatorCase` interface. Every stubbed variant has at least one
   case asserting `List.of()` expected errors (`"…always valid"`,
   `"…implicit column"`, etc.). Those cases become inaccurate the
@@ -54,14 +57,6 @@ established in Phase 1 of the variant-coverage plan.
 
 ## What We're NOT Doing
 
-- **Not flipping `ValidateMojo`'s warn→error severity.** Today all
-  rewrite-path errors surface as warnings (the legacy pipeline
-  block-fails first). Promoting the stubbed-variant error to
-  block-fail would require a per-error severity channel on
-  `ValidationError`, or a full migration flip — both out of scope.
-  When the rewrite becomes the canonical pipeline, *all* rewrite
-  errors should block the build (this one included); no special
-  casing.
 - **Not changing the stub body in `TypeFetcherGenerator.stub(f)`.**
   The runtime `UnsupportedOperationException` remains as a
   defense-in-depth backstop. A build that skipped validation (direct
@@ -79,10 +74,17 @@ established in Phase 1 of the variant-coverage plan.
   already builds a fixture for its variant. Adding a centralised
   `StubbedVariantCheckTest` would duplicate fixtures and obscure
   which variants are stubbed. See Decision B.
+- **Not changing `ValidateMojo`'s debug-swallow of pipeline
+  exceptions** (the `catch` around `GraphitronSchemaBuilder.build(...)`
+  that surfaces schema-build crashes as `getLog().debug(...)`). Those
+  are pipeline failures rather than validation errors; routing them
+  through the same severity switch as `ValidationError` is a separate
+  concern tracked as a follow-up. Decision E only applies to
+  `ValidationError` surfacing.
 
 ---
 
-## Four Design Decisions
+## Five Design Decisions
 
 ### Decision A: Where the check lives
 
@@ -243,6 +245,90 @@ stubbed in the generator*. Contributors see both; no loss.
 **Recommendation: Option 1** (both errors emitted; test assertions
 gain an extra expected entry where applicable).
 
+### Decision E: Mojo severity — warn vs. fail on rewrite `ValidationError`
+
+Currently `ValidateMojo` surfaces every `ValidationError` from the
+rewrite validator as `getLog().warn(...)` (lines 48-56 and 58). The
+plan's check would otherwise ship as another warning — actionable
+information routed to a severity tier users reasonably ignore.
+
+The rewrite validator catches schema shapes the legacy pipeline
+misses (missing-table requirements, non-table-backed `ColumnField`,
+and — with this plan — stubbed variants). Treating its findings as
+advisory is a policy holdover from the pre-rewrite era. The rewrite
+is now strict enough to be authoritative.
+
+**Option 1 — `failOnRewriteValidationError` mojo parameter, default `true`.** *(recommended)*
+
+```java
+@Parameter(property = "graphitron.failOnRewriteValidationError", defaultValue = "true")
+private boolean failOnRewriteValidationError;
+
+// in execute(), after the warn-logging loop:
+if (!errors.isEmpty() && failOnRewriteValidationError) {
+    throw new MojoExecutionException(
+        "Rewrite validation found " + errors.size() + " error(s). "
+        + "Set -Dgraphitron.failOnRewriteValidationError=false to downgrade to warnings "
+        + "(temporary escape hatch for in-progress migrations).");
+}
+```
+
+Every error still logs via `getLog().warn(...)` first so the user
+sees all of them, not just the first — then the build fails once
+with an aggregate message.
+
+- **Pros:** default behaviour matches how the rewrite is intended to
+  be used from day one. "We are better than legacy" — consumers who
+  have been silently accumulating rewrite warnings now get a clear
+  fail-closed signal with a single-flag escape hatch. One `@Parameter`;
+  no per-error channel needed. When the legacy pipeline retires the
+  flag becomes redundant and can be removed (or kept as a no-op
+  deprecation).
+- **Cons:** **behavioural change for existing consumers.** Projects
+  currently relying on the warning-only rewrite path will fail their
+  next Graphitron upgrade unless they either fix the validation
+  error or set the flag to `false`. Mitigation: aggregate error
+  message explicitly documents the flag.
+- **Scope:** applies to `ValidationError` surfacing only — the
+  `catch (Exception e) { getLog().debug(...) }` swallowing pipeline
+  crashes stays out of scope (see "What We're NOT Doing").
+
+**Option 2 — Scope the flip to stubbed-variant errors only.**
+
+- **Pros:** narrower blast radius; only this plan's new error is
+  authoritative.
+- **Cons:** requires a per-error severity channel on
+  `ValidationError` (the shape change this plan's original exclusion
+  list correctly called out). Creates two tiers of rewrite error
+  without principle — "stubbed" is not more authoritative than
+  "missing-table requires annotation". The rewrite pipeline either is
+  authoritative or it isn't; splitting the line creates its own
+  confusion.
+- **Rejected.**
+
+**Option 3 — Keep `defaultValue = "false"`, let consumers opt in.**
+
+- **Pros:** zero behaviour change for existing consumers.
+- **Cons:** opt-in strictness rarely gets adopted; the error stays
+  latent for the builds that most need it. Also inverts the
+  "principles say fail at build time" framing from
+  `docs/graphitron-principles.md`.
+- **Rejected.**
+
+**Option 4 — Per-project `<failOnRewriteValidationError>false</>` in `<configuration>`, but no system property.**
+
+- **Pros:** forces deliberate override via pom, not a command-line
+  flag.
+- **Cons:** a CI-level override (system property) is the standard
+  Maven escape hatch; excluding it forces pom edits for what should
+  be a one-off bypass.
+- **Rejected** — Option 1's `@Parameter(property=...)` supports both
+  pom config and `-Dgraphitron.failOnRewriteValidationError=false`
+  at once; no tradeoff.
+
+**Recommendation: Option 1.** Default `true`; system property escape
+hatch; flag retires when legacy retires.
+
 ---
 
 ## Chosen Approach Summary
@@ -253,6 +339,7 @@ gain an extra expected entry where applicable).
 | B | Test shape | Retrofit each stubbed variant's test class; share `stubbedError(...)` helper |
 | C | Message shape | `"Field '<qn>': " + NOT_IMPLEMENTED_REASONS.get(cls)` |
 | D | Interaction with other errors | Both errors emitted; no short-circuit |
+| E | Mojo severity | `failOnRewriteValidationError` mojo parameter, `defaultValue = "true"` |
 
 ## Implementation Approach
 
@@ -336,6 +423,35 @@ cover both `ChildField.ColumnReferenceField` and
 `InputField.ColumnReferenceField`). Confirm the mapping during
 retrofit; expect 33 code-path touches, not necessarily 33 classes.
 
+### 4. `ValidateMojo` severity flip
+
+**File:** `graphitron-maven-plugin/src/main/java/no/sikt/graphitron/mojo/ValidateMojo.java`
+
+Add the `@Parameter`-annotated field and the aggregate-fail branch
+per Decision E. Keep the existing `getLog().warn(...)` loop — users
+should still see each individual error before the build fails. The
+change to the summary line switches from "treated as warnings during
+migration" wording to a neutral count message; when the flag is
+`false` the message should note the override for easier debugging
+of why a CI pipeline that was failing now isn't.
+
+~10 LOC: one field declaration, one branch around the existing
+summary line. The `@Parameter(property = "...")` form supports both
+pom `<configuration>` and `-D` system-property override.
+
+**Error-message contract.** The `MojoExecutionException` message
+must mention `graphitron.failOnRewriteValidationError=false` so a
+consumer whose build fails unexpectedly has the escape hatch in the
+error itself, not buried in changelog.
+
+**Integration tests.** The `it/` directory (Maven invoker tests) if
+present should gain one project that exercises each branch:
+validation-error + `failOn...=true` asserts the build fails;
+validation-error + `failOn...=false` asserts the build passes with
+warnings. If `it/` tests don't exist for the mojo, skip — the
+production change is mechanical and the rewrite validator tests
+already exercise the `ValidationError` path.
+
 ## Testing Strategy
 
 ### Existing tests (retrofit — done as part of §3)
@@ -387,32 +503,46 @@ end-to-end behaviour in addition to the per-variant coverage.
 - Retrofitting the 33 stubbed-variant tests is mechanical but
   touches many files. Keep the PR reviewable by splitting the
   production commit from the test-retrofit commit.
+- **Breaking change for consumers** currently tolerating rewrite
+  warnings: their next Graphitron upgrade starts failing builds on
+  schemas where the rewrite validator finds any error (not just the
+  stubbed-variant ones — Decision E flips severity for every
+  `ValidationError` from the rewrite pipeline). Escape hatch is one
+  system property (`-Dgraphitron.failOnRewriteValidationError=false`).
+  Call this out in the release notes for the version shipping this
+  plan.
 
 ### What this plan does not address
-- **Mojo severity flip.** Errors remain warnings in `ValidateMojo`
-  until the legacy pipeline is retired. This plan's value lands at
-  that flip; until then it's latent-but-ready. Track under
-  `rewrite-roadmap.md` as a separate follow-up when the rewrite
-  canonicalisation plan is scoped.
 - **Stale reason strings.** A reason string in
   `NOT_IMPLEMENTED_REASONS` that has drifted from its stub's true
   limitation is invisible to both the variant-coverage and this
   plan's tests. Reason-string audit is a separate documentation
   concern.
+- **Pipeline-exception severity.** `ValidateMojo` still swallows
+  `GraphitronSchemaBuilder.build(...)` crashes as `getLog().debug(...)`.
+  A crash during schema build (not a classified `ValidationError`)
+  still doesn't fail the build. Natural follow-up once the
+  stubbed-variant flip has settled. Tracked alongside the mojo in
+  the roadmap.
 
 ## Sequencing
 
 - **This plan is a single PR.** Production change: ~15 LOC on the
-  validator plus ~5 LOC on the test helper. Test retrofit: ~33 file
-  edits, each small.
+  validator + ~5 LOC on the test helper + ~10 LOC on the mojo flip
+  (Decision E). Test retrofit: ~33 file edits, each small.
 - **Blocks on:** variant-coverage Phase 1 (shipped).
-- **Blocks:** nothing hard. The mojo severity flip is a natural
-  downstream consumer but is not gated by this plan landing first;
-  can coexist with a warning-only rewrite pipeline.
+- **Blocks:** nothing hard. The `ValidateMojo` severity flip now
+  lands *with* this plan rather than waiting on legacy retirement
+  (Decision E); downstream work that depended on "rewrite errors
+  fail the build" unblocks immediately.
 - **Concurrent with:** argument-resolution work (no file overlap —
   that work churns the builder and `GraphitronSchemaBuilderTest`
-  enums; this plan touches the validator and the `validation/` test
-  classes).
+  enums; this plan touches the validator, the `validation/` test
+  classes, and the mojo).
+- **Release coordination:** the breaking-change call-out in
+  Consequences should be reflected in the plugin's release notes
+  for the version shipping this PR, including the one-flag escape
+  hatch.
 
 ## References
 
