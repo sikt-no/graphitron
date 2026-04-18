@@ -214,8 +214,8 @@ Structural properties (method names, param types, presence/absence) are the righ
 
 ## Cross-plan Ownership
 
-- **`InputColumnBinding`** — canonical definition in this plan, consumed by both this plan (Phase 3) and `legacy-platform-id.md` (step 6). Roadmap P2 #5 tracks the shared-type agreement.
-- **Variant-coverage meta-test** — the roadmap's P1 #1 meta-test (every sealed-root permit has a classification case and a generator branch) is extended *in Phase 1* to assert every `LookupField` permit has an emission arm in `TypeFetcherGenerator`. Phase 2 adds assertions for the child-field permits as they come online.
+- **`InputColumnBinding`** — canonical definition in this plan, consumed by both this plan (Phase 3) and `legacy-platform-id.md` (item 3). Implementation lands with this plan.
+- **Variant-coverage meta-test** — the meta-test (every sealed-root permit has a classification case and a generator branch — see `plan-variant-coverage-meta-test.md`) is extended *in Phase 1* to assert every `LookupField` permit has an emission arm in `TypeFetcherGenerator`. Phase 2 adds assertions for the child-field permits as they come online.
 
 ## History
 

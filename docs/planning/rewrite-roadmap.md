@@ -117,6 +117,10 @@ Classifier fails on `@table` + `@record` combined on an input type — legacy to
 
 Steps 1-2 shipped on `claude/review-docs-plan-adYJW`. Step 5 superseded by `plan-variant-coverage-meta-test.md`. Steps 3-4 (re-section renames + doc rewire) deferred until the sealed hierarchy stabilises; picking them up mid-churn means constant rework.
 
+### Legacy platformId **[Approved]** — [legacy-platform-id.md](legacy-platform-id.md)
+
+Classify `id: ID!` fields that bind to composite platform keys emitted by `KjerneJooqGenerator` (`get*Id()` / `set*Id()` accessors, no real SQL column). Items 1-2 shipped (output field classification via `ChildField.PlatformIdField`; input field path via `InputField.PlatformIdField`). Item 3 (mutation generator binding via `InputColumnBinding`) remains, blocked on argument-resolution Phase 2 which owns that type.
+
 ## Backlog
 
 Unplanned items. Pick one, draft a plan, then move to Active.
@@ -140,7 +144,6 @@ Enumerated by `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`; the stubbed-varian
 **Miscellaneous:**
 
 - **Paginated-fields transform coexistence** **[Unplanned]** — builder fallback loses `defaultPageSize` when `@asConnection` is stripped. See [../paginated-fields.md](../paginated-fields.md).
-- **Legacy platformId item 3 (mutation generator binding)** **[Unplanned]** — blocked on `InputColumnBinding` (argument-resolution). See [../legacy-platform-id.md](../legacy-platform-id.md).
 - **Java-17 output ratchet** **[Unplanned]** — `-source 17 -target 17 -Werror` on `graphitron-rewrite-test-spec` so Java 21 syntax emitted into generated files fails here, not in consumers' builds.
 - **Cursor format stability** **[Unplanned]** — `paginated-fields.md` uses jOOQ's internal `org.jooq.tools.json.JSONValue`. Document the risk and a replacement path if jOOQ removes it.
 - **Selection parser audit** **[Unplanned]** — `selection/` hand-rolls ~500 LOC that graphql-java already parses. Audit whether the runtime path really needs re-parsing.

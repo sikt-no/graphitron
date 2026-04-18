@@ -1,7 +1,8 @@
-# Legacy PlatformId — Remaining Work
+# Legacy PlatformId
 
-> **Status:** Items 1 and 2 are done. Item 3 (mutation generator binding) is
-> the only open task; it's blocked on `InputColumnBinding` in `planning/argument-resolution.md`.
+> **Status:** Approved
+>
+> Items 1 and 2 shipped (output field classification + input field path). Item 3 (mutation generator binding) remains, blocked on `InputColumnBinding` from `argument-resolution.md`.
 
 
 Tables with a composite platform key have no real `id` SQL column. The custom
@@ -102,7 +103,7 @@ before or alongside the output-field work.
 
 ## 3 — Mutation generator binding (deferred)
 
-Blocked on `InputColumnBinding` (see `planning/argument-resolution.md`, item 7).
+Blocked on `InputColumnBinding` (see `argument-resolution.md`, item 7).
 When that sum type is designed it must include a platform-id variant carrying
 no `ColumnRef`, so the mutation generator can dispatch:
 
