@@ -30,8 +30,8 @@ Two reverse transitions are legal:
 | From | To | Trigger | Required outputs |
 |------|----|---------|------------------|
 | Unplanned | Draft | Someone picks the item | New `docs/planning/plan-<slug>.md` with `> **Status:** Draft`; roadmap item gains `[Draft]` marker + link to plan; commit + push |
-| Draft | Draft | Reviewer requests iteration | Plan updated in place; push; roadmap unchanged |
-| Draft | Approved | Reviewer (≠ author) signs off | Plan front-matter changes to `> **Status:** Approved`; roadmap marker changes to `[Approved]`; commit + push |
+| Draft | Draft | Reviewer requests iteration | Plan updated in place (by whoever has context — reviewer or author); push; roadmap unchanged |
+| Draft | Approved | Reviewer (≠ most recent Draft committer) signs off | Plan front-matter changes to `> **Status:** Approved`; roadmap marker changes to `[Approved]`; commit + push |
 | Approved | In Progress | Implementer starts work | Roadmap marker changes to `[In Progress]` (plan status unchanged); push |
 | In Progress | Pending Review | Implementation commits landed | Plan updated: remove what shipped, keep what remains or was discovered; plan status becomes `> **Status:** Pending Review`; roadmap marker becomes `[Pending Review]`; implementation commits + plan update in the same branch; push |
 | Pending Review | Approved | Reviewer (≠ implementer) requests more work | Plan updated to capture the remaining work; status back to `Approved`; roadmap back to `[Approved]`; push |
@@ -40,7 +40,7 @@ Two reverse transitions are legal:
 ## Reviewer independence
 
 - **Draft → Approved** must be signed off by someone other than the
-  plan's author.
+  most recent Draft committer.
 - **Pending Review → Done** must be signed off by someone other than
   the implementer. (The implementer may also have been the plan's
   author; that's fine. What matters is that the reviewer is a third
@@ -50,6 +50,21 @@ In Claude Code sessions, the human user is the usual reviewer. An
 independent Claude session (a fresh agent with no prior context on the
 work) can also review — it has no shared context and must evaluate on
 the artifact alone.
+
+### Authorship during iteration
+
+"Author" in the transitions table means the most recent committer of
+the plan file in Draft state, not a fixed identity. During Draft →
+Draft iteration either the original author or the reviewer may commit
+the revision — whichever has the context. When a reviewer identifies
+concrete changes and has the plan loaded, committing the revision
+directly is the faster path; handing back a feedback list is also
+valid but slower.
+
+The approval-integrity rule then becomes: the Draft → Approved sign-off
+must come from someone other than whoever wrote the most recent Draft
+commit. Iteration rotates the "author" identity; the next approver
+must be a third party to that revision.
 
 ## Plan file conventions
 
