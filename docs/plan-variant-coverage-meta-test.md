@@ -34,11 +34,11 @@ canonical example).
 - **`TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`**
   (`graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java:119-191`).
   `Map<Class<? extends GraphitronField>, String>` with 33 entries across
-  `QueryField` (6) / `MutationField` (6) / `ChildField` (21). Consumed by
-  `stub(f)` (line 914) which throws `UnsupportedOperationException` with
+  `QueryField` (8) / `MutationField` (6) / `ChildField` (19). Consumed by
+  `stub(f)` (line 916) which throws `UnsupportedOperationException` with
   the map-registered reason.
 - **Sealed `switch` in `TypeFetcherGenerator.generateTypeSpec`**
-  (lines 210-286). Exhaustive over `GraphitronField`; six real arms, ~33
+  (lines 210-285). Exhaustive over `GraphitronField`; six real arms, ~33
   stub arms, three defensive "cannot occur here" arms
   (`InputField`/`NotGeneratedField`/`UnclassifiedField`).
 - **26 parameterised classification enums** in
@@ -755,6 +755,6 @@ description. Don't commit them as tests (they'd pollute the suite).
 - `docs/plan-docs-as-index-into-tests.md` — step 5 sketches the `ClassificationCase` interface; this plan supersedes that step.
 - `docs/plan-classification-vocabulary-followups.md` — related vocabulary work; not a dependency.
 - `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/generators/GeneratorCoverageTest.java` — current narrow coverage test.
-- `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java:119-286` — `NOT_IMPLEMENTED_REASONS` map and the sealed switch it guards.
+- `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java:119-285` — `NOT_IMPLEMENTED_REASONS` map and the sealed switch it guards.
 - `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java` — 26 classification enums targeted by phase 2.
 
