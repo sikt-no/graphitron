@@ -264,7 +264,7 @@ type" split. None is a release blocker; they can land independently.
 
 Full plan: [`docs/plan-classification-vocabulary-followups.md`](plan-classification-vocabulary-followups.md).
 
-### G5 — Inline `TableField`
+### G5 — Inline `TableField` **[Draft]**
 
 `TableField` in table-mapped source context (no `@splitQuery`). Extends the SQL scope with an inline subselect — does not start a new scope or use a DataLoader. Introduces the static field method pattern (called from the parent type class during SELECT assembly).
 
