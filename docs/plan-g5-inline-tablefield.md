@@ -1,7 +1,8 @@
 # G5 — Inline `TableField` emission
 
-**Status:** Not started. Generator stub today throws `UnsupportedOperationException` for every `ChildField.TableField`. Field classification is complete; emission is missing.
-**Last updated:** 2026-04-18 — plan drafted.
+> **Status:** Draft
+>
+> Classification complete; emission stub throws `UnsupportedOperationException` for every `ChildField.TableField`. Prerequisite for argres Phase 2a (the lookup variant layers VALUES+JOIN onto this inline-subquery shape).
 
 `ChildField.TableField` is a table-mapped child field that projects a nested record (or list of records) into the parent's SELECT via a correlated sub-SELECT. It is *not* a DataLoader path — it stays inline, a single round-trip for the parent and its nested reads.
 

@@ -1,23 +1,12 @@
 # Plan — Docs as an Index into the Classification Tests
 
-Goal: position `code-generation-triggers.md` as a **map** into the existing classification tests,
-so that the detailed truth table (every schema pattern → every variant) lives as executable
-spec, and the doc engages the reader by pointing into it. No deletion — the doc keeps its
-tables as a one-glance overview; each table row ends with a pointer to the test that asserts it.
+> **Status:** Approved
+>
+> Steps 1-2 shipped on `claude/review-docs-plan-adYJW`. Step 5 is superseded by `plan-variant-coverage-meta-test.md`. Steps 3-4 remain, deferred until the sealed hierarchy stabilises (Active work and Stubs still in motion).
 
-Scope: `GraphitronSchemaBuilderTest` (≈ 2 250 lines, ≈ 25 enums, ≈ 150 enum cases) and the
-Classification tables in `docs/code-generation-triggers.md`. Out of scope: the per-variant
-`*ValidationTest` files — those test validation rules on already-classified fields, not
-schema → variant mapping.
+Goal: position `code-generation-triggers.md` as a **map** into the existing classification tests, so that the detailed truth table (every schema pattern → every variant) lives as executable spec, and the doc engages the reader by pointing into it. No deletion — the doc keeps its tables as a one-glance overview; each table row ends with a pointer to the test that asserts it.
 
----
-
-## Status
-
-**Steps 1 and 2 are done** (committed on `claude/review-docs-plan-adYJW`). Steps 3–5 are
-deferred until the sealed type hierarchy has stabilised — doing them while Active work and
-Stubs are still in progress would mean constant rework as new variants are added. See the
-[rewrite-roadmap](rewrite-roadmap.md) for the pickup trigger.
+Scope: `GraphitronSchemaBuilderTest` (≈ 2 250 lines, ≈ 25 enums, ≈ 150 enum cases) and the Classification tables in `docs/code-generation-triggers.md`. Out of scope: the per-variant `*ValidationTest` files — those test validation rules on already-classified fields, not schema → variant mapping.
 
 ---
 

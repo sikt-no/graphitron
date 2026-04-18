@@ -1,12 +1,8 @@
 # Variant-Coverage Meta-Test Plan
 
-> **Status:** Approved — Phase 1 shipped at `15f9f61e`; Phase 2
-> (classification-case coverage) pending implementation; Phase 3
-> (narrow-component coverage) deferred. Phase 2 should wait for
-> argument-resolution Phase 2 to land — both touch the 26 enums in
-> `GraphitronSchemaBuilderTest`. Per the roadmap (`rewrite-roadmap.md`
-> P1 #1), this subsumes `plan-docs-as-index-into-tests.md` step 5 and
-> extends it from one generator map to the full sealed taxonomy.
+> **Status:** Approved
+>
+> Phase 1 shipped at `15f9f61e`; Phase 2 (classification-case coverage) pending; Phase 3 (narrow-component coverage) deferred. Phase 2 should wait for argument-resolution Phase 2 — both churn the 26 enums in `GraphitronSchemaBuilderTest`. Subsumes `plan-docs-as-index-into-tests.md` step 5.
 
 ## Overview
 

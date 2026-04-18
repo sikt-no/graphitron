@@ -1,7 +1,8 @@
 # Argument Resolution
 
-**Status:** Foundation landed — classification + projection complete; generator-side migration remains.
-**Last updated:** 2026-04-18 after Phase 1 design tightening (blast-radius spike + emitter shape).
+> **Status:** Approved
+>
+> Foundation (classification + projection) landed on `claude/graphitron-rewrite`. Phase 2 (generator-side migration: inline `TableField`, lookup VALUES+JOIN, composite-key input bindings) is the remaining work and gates six downstream features.
 
 Plan for unified argument classification in the builder, `@condition` directive support, and lookup-field generation. The foundation (builder-side) is in; the generator-side refactor is the substantial work ahead and is the focus of this plan going forward.
 

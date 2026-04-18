@@ -1,17 +1,12 @@
 # Plan — Classification Vocabulary Follow-ups
 
-Doc and generator-behaviour cleanups surfaced while rewriting
-[code-generation-triggers.md](code-generation-triggers.md). Each item corrects a place where the
-doc or the code still treats `@lookupKey` as scope-defining, mis-states the `@condition` rule,
-or is missing the new **source context vs. target type** split.
+> **Status:** Draft
+>
+> Five independent doc/generator-behaviour cleanups surfaced during the `code-generation-triggers.md` rewrite; none picked up yet. Any of them can land independently; none is a release blocker.
 
-None of these is a release blocker; they can land independently and in any order. Items
-are prioritised rough-to-low effort.
+Each item below corrects a place where the doc or the code still treats `@lookupKey` as scope-defining, mis-states the `@condition` rule, or is missing the new **source context vs. target type** split. Items are prioritised rough-to-low effort.
 
-**Claim verification (2026-04-17)**: all item claims below were re-verified against the branch
-after the sealed-switch work landed. Source line numbers in the original draft had drifted ~20–30
-lines; this rewrite uses identifier-level references instead so the items don't go stale with
-every refactor.
+**Claim verification (2026-04-17)**: all item claims below were re-verified against the branch after the sealed-switch work landed. Source line numbers in the original draft had drifted ~20–30 lines; this rewrite uses identifier-level references instead so the items don't go stale with every refactor.
 
 ---
 

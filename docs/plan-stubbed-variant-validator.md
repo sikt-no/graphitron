@@ -1,9 +1,8 @@
 # Stubbed-Variant Validator Plan (P2 #3)
 
-> **Status:** Pending Review. Implemented at commits `9ba498bc` (core
-> validator + test retrofit) and `7cf568f4` (ValidateMojo severity
-> flip + pipeline regression test), landed on
-> `claude/graphitron-rewrite`.
+> **Status:** Pending Review
+>
+> Implemented at `9ba498bc` (core validator + test retrofit) and `7cf568f4` (ValidateMojo severity flip + pipeline regression) on `claude/graphitron-rewrite`.
 
 ## What shipped
 

@@ -1,7 +1,10 @@
 # Bug: `@table` + `@record` Input Types Fail Validation in Rewrite
 
-**Status:** Plan ready  
-**Affects:** Rewrite classifier/validator — does not affect the legacy code generator
+> **Status:** Draft
+>
+> Classifier fails on `@table` + `@record` combined on an input type — legacy tolerates this. Fix treats `@record` as authoritative and logs a warning naming `@table` as shadowed; introduces a builder warnings channel reusable by classification-vocabulary item 2.
+
+Affects: rewrite classifier/validator — does not affect the legacy code generator.
 
 ## Problem
 

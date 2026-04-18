@@ -1,5 +1,9 @@
 # `IdReferenceField` — Input Filter Field via `has*` Join Plan
 
+> **Status:** Draft
+>
+> Classify the `[ID!] @reference(path: ...)` filter pattern (KjerneJooqGenerator's `has*` accessor emits). Currently mis-classified as `UnclassifiedType` because the rewrite treats `@field(name:)` as a column name, not a method-accessor suffix. Code generation is a follow-up.
+
 ## Overview
 
 Add support for the `[ID!] @reference(path: ...)` filter input pattern. These fields
