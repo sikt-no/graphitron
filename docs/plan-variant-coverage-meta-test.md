@@ -741,8 +741,8 @@ description. Don't commit them as tests (they'd pollute the suite).
   Today a schema using an unimplemented variant passes validation and
   crashes at request time with `UnsupportedOperationException`.
   Landing P2 #3 now captures most of Phase 1's practical value without
-  waiting on the Phase 2 retrofit. P2 #3 itself warrants a standalone
-  plan before implementation.
+  waiting on the Phase 2 retrofit. Standalone plan:
+  [`plan-stubbed-variant-validator.md`](plan-stubbed-variant-validator.md).
 - **Phase 2 next** (1 PR, retrofit + new test). Can proceed in parallel
   with or after P2 #3. Independent of argument-resolution work, but
   should wait until argument-resolution Phase 2 lands — both churn the
