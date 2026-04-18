@@ -11,7 +11,7 @@ This plan specifies the emission shape, the locus of change (`TypeClassGenerator
 ## Current State
 
 - **Builder.** Every `@reference(path: […])` on a table-mapped field produces `ChildField.TableField` with resolved components: `joinPath: List<JoinStep>` (either `FkJoin` or `ConditionJoin` — both fully resolved, including FK Java constants and condition method refs), `filters: List<WhereFilter>`, `orderBy: OrderBySpec`, `pagination: PaginationSpec`. Builder coverage is extensive — `GraphitronSchemaBuilderTest` exercises every directive combination.
-- **Generator.** `TypeFetcherGenerator.generateTypeSpec` dispatches `ChildField.TableField` to `stub(f)` (which throws at runtime). `TypeClassGenerator.$fields` has no arm — nested fields hit the `default -> { }` no-op and project nothing. In the variant-coverage partition: `TableField` sits in `NOT_IMPLEMENTED_REASONS` today.
+- **Generator.** `TypeFetcherGenerator.generateTypeSpec` dispatches `ChildField.TableField` to `stub(f)` (which throws at runtime). `TypeClassGenerator.$fields` has no arm — nested fields hit the `default -> { }` no-op and project nothing. In the variant-coverage partition: `TableField` sits in `NOT_IMPLEMENTED_REASONS` today. Its sibling `ChildField.LookupTableField` (inline-subquery emission layered with VALUES+JOIN by argres Phase 2a) also sits in `NOT_IMPLEMENTED_REASONS`; **G5 only migrates `TableField`**. `LookupTableField` stays stubbed until Phase 2a lands and moves it to `PROJECTED_LEAVES` as part of that work. The four-set partition is designed to grow incrementally, one variant at a time.
 - **Test coverage.** Zero execution coverage. `graphitron-rewrite-test-spec` has no inline `TableField` in its schema; classification tests cover the builder but no query runs end-to-end.
 
 ## Design
@@ -64,8 +64,8 @@ The two shapes share everything except the outer wrap. `InlineTableFieldEmitter.
 
 `joinPath` is an ordered list. Each step is one hop navigating towards the target; the chain is emitted inside the correlated subquery starting from the deepest target (FROM clause) and joining back towards the parent.
 
-- **`FkJoin`**: `.join(alias).onKey(Keys.FK_JAVA_CONSTANT)`. If `whereFilter` is non-null, AND an extra `whereFilter.method(srcAlias, targetAlias)` onto the enclosing WHERE (per `JoinStep` javadoc — ON clause is untouched, WHERE clause is augmented).
-- **`ConditionJoin`**: `.join(alias).on(condition.method(srcAlias, targetAlias))`. The method returns a jOOQ `Condition`.
+- **`FkJoin`**: `.join(alias).onKey(Keys.FK_JAVA_CONSTANT)`. If `whereFilter()` (the `MethodRef`) is non-null, AND an extra `<className>.<methodName>(srcAlias, targetAlias)` invocation onto the enclosing WHERE (per `JoinStep` javadoc — ON clause is untouched, WHERE clause is augmented).
+- **`ConditionJoin`**: `.join(alias).on(<className>.<methodName>(srcAlias, targetAlias))`, where class/method come from `step.condition()` (a `MethodRef`). The method returns a jOOQ `Condition`.
 
 INNER JOIN is correct inside the subquery because we want rows that participate in the full join chain; the subquery's null/empty return when the chain produces no rows is the desired outer behaviour (correlated subqueries are re-evaluated per outer row and yield null/empty independently of the outer's row existence). G6 (flat batch) requires LEFT JOIN instead — out of scope here.
 
@@ -102,7 +102,7 @@ if (first.sourceTable().equals(parentTable)) {
 }
 ```
 
-Composite FKs AND all column pairs. Single-column FKs are the common case; the zip supports both uniformly.
+Composite FKs AND all column pairs. Single-column FKs are the common case; the zip supports both uniformly. `JoinPathEmitter` asserts `sourceColumns.size() == targetColumns.size()` as a precondition — jOOQ's `ForeignKey` guarantees equal arity, but a mismatched builder-side resolution should fail loudly rather than emit silently broken SQL.
 
 ### Alias generation
 
@@ -120,6 +120,8 @@ Actor.$fields(sf.getSelectionSet(), a0, env)
 
 The recursion terminates at `ColumnField` / `PlatformIdField` leaves (already emitted). For nested `TableField`, the recursion re-enters this same emission path with a deeper selection set. There is no depth limit at generation time; schema-enforced depth limits are enforced at query time by GraphQL-Java.
 
+**Alias threading.** The correlation predicate inside each nested subquery references the *immediately enclosing* `$fields` call's `table` parameter, not the outermost one. The emitter must read the parent alias from the `InlineTableFieldEmitter.buildFieldExpression(..., String parentAlias)` argument threaded through each level — never hardcode `"table"` in the correlation WHERE. A depth-2 subquery's correlation targets the depth-1 alias (`a0`), not the root `table` parameter. This falls out naturally from passing `parentAlias` explicitly, but the invariant is worth stating so a future refactor does not lose the thread.
+
 ### Emitter extraction rationale
 
 The rewrite's existing pattern is dispatch via sealed switches on generators (`TypeFetcherGenerator`, `TypeClassGenerator`), with helpers living as static methods on those generators. G5 introduces two separately-named `*Emitter` classes in `generators/` because:
@@ -134,7 +136,7 @@ These two emitters are a deliberate new convention. Future single-consumer emiss
 `InlineTableFieldEmitter` assumes the following builder-level invariants. Anything violating these is a classifier bug and must surface as `UnclassifiedField` before reaching the emitter:
 
 - `TableField.joinPath()` is non-empty (a zero-step path is meaningless — the field must navigate to at least its direct target).
-- Every `JoinStep.ConditionJoin.method()` is fully resolved (classifier-time reflection succeeded; `MethodRef` is populated).
+- Every `JoinStep.ConditionJoin.condition()` is fully resolved (classifier-time reflection succeeded; `MethodRef` is populated).
 - `TableField.returnType().wrapper()` is `FieldWrapper.Single` or `FieldWrapper.List` — **not `Connection`** (see Open Decision 3 below; `@asConnection` on inline `TableField` must be rejected at classify time).
 - `TableField.pagination()` is either `PaginationSpec.None` or a spec that projects to a `.limit(n)` only (no cursor decode).
 
@@ -192,15 +194,17 @@ Schema fixtures and end-to-end tests land together because either half alone is 
 - Condition join: a field using `ConditionJoin` (reusing an existing `@condition` helper).
 - Self-referential recursion: `Category.parent: Category` and `Category.children: [Category!]!`, both via the new FK.
 
-**`graphitron-rewrite-test/graphitron-rewrite-test-spec/src/main/resources/db/init.sql`.** Stock sakila has no self-referential FK, so the self-referential case requires an `init.sql` delta:
+**`graphitron-rewrite-test/graphitron-rewrite-test-fixtures/src/main/resources/init.sql`.** The fixture module owns the shared schema + seed data consumed by test-spec. Stock sakila has no self-referential FK, so the self-referential case requires an `init.sql` delta:
 
 - `ALTER TABLE category ADD COLUMN parent_category_id int REFERENCES category(category_id);`
 - Seed parent/child rows sufficient to exercise depth-2 recursion, plus INSERTs for any other nested rows the new fields require. List the exact additions in the commit message.
 
 **Execution tests (`GraphQLQueryTest`).** `mvn test -pl :graphitron-rewrite-test-spec -Plocal-db`.
 
-- One query per schema case above.
+- One query per schema case above, **with one exception**.
 - Depth-2 recursion: `{ categories { name parent { name parent { name } } } }` — verifies Resolved Decision 5's "recursion terminates on client selection depth" invariant holds end-to-end, not just in prose.
+
+**Condition-join execution test deferred.** The `ConditionJoin` test case is specified in the schema fixtures (so the classifier path is exercised) but its execution test is deferred to classification-vocabulary item 5. Item 5 documents the `@condition` method signature for both inline and lookup paths and adds a shared execution test; until that lands, G5's `ConditionJoin` execution assertion would duplicate work item 5 owns. C4 emits the schema fixture, lets the classifier build the `ConditionJoin` step, and verifies compilation — but skips runtime query-result assertion for that specific case. This keeps G5 off item 5's critical path.
 
 ### Resolved decisions
 
@@ -251,3 +255,4 @@ Per CLAUDE.md: structural assertions for unit tests, behaviour-level assertions 
 - 2026-04-18 — second reviewer iteration: corrected the single-record wrapping idiom (now `DSL.row(...)` scalar subselect, not `multiset + convertFrom`; the previously-posited `DSL.field(select.asField())` alternative was wrong — it requires single-column projection) and resolved Decision 1; fixed the partition-migration statement in Emission locus (was "stays in `NOT_DISPATCHED_LEAVES`", now correctly "moves to new `PROJECTED_LEAVES` set"); unified the Projection recursion example to `sf.getSelectionSet()`; pinned the `ArgCallEmitter` extraction as a behavior-preserving refactor; annotated the classifier-rejection blast radius (zero known call-sites in example + test schemas); called out the `init.sql` schema delta required for the self-referential test case. All five open decisions now resolved.
 - 2026-04-18 — third reviewer iteration: restructured 11 deliverables into 4 commits with distinct failure modes (classifier rejection / `ArgCallEmitter` refactor / emission + structural tests / schema + execution tests); merged the dead-intermediate states (`JoinPathEmitter` alone, `$fields` switch arm alone, partition migration alone) into C3; aligned the execution-test recursion example with the `Category.parent` / `Category.children` self-FK fixture (was previously `film.sequels.sequels`, mismatching the init.sql delta in the same deliverable).
 - 2026-04-18 — fourth reviewer iteration: resolved three implementation hazards the third draft left for C3. (a) Read-back path clarified — jOOQ's default mapping handles `Result<Record>` / `RowN` unwrap; no custom converter needed (runtime wiring consumes them like any other selection-projected value). (b) FK-direction pinned — `FkJoin` gains `sourceTable`, `sourceColumns`, `targetColumns` fields (builder resolves from the jOOQ `ForeignKey`); `JoinPathEmitter.correlationWhere` branches on whether source table equals the parent, flipping the equality shape. Composite FKs AND the paired columns. (c) Alias generation convention nailed — deterministic from `TableRef.javaName()` + hop index, with a two-char fallback on collision; parent alias stays `"table"`. Nits folded: `PROJECTED_IN_TYPE_CLASS` → `PROJECTED_LEAVES` (uniform with siblings); INNER-JOIN justification reworded (outer-row preservation is about correlated-subquery evaluation, not inner-join semantics); added a "Known runtime pitfalls" section noting the `Language!` + optional-FK response-construction failure path.
+- 2026-04-18 — fifth reviewer iteration (factual corrections + partition scope): (a) corrected `ConditionJoin.method()` → `.condition()` in the builder-invariant section and rewrote lines 67-68 to disambiguate `MethodRef` access vs. invocation (class/method come from `step.condition()`; emission writes `<className>.<methodName>(srcAlias, targetAlias)`). (b) corrected the C4 `init.sql` path from `graphitron-rewrite-test-spec/src/main/resources/db/init.sql` to `graphitron-rewrite-test-fixtures/src/main/resources/init.sql` (fixtures module owns the shared schema + seed consumed by test-spec). (c) pinned the partition scope: G5 migrates *only* `TableField` to `PROJECTED_LEAVES`; `LookupTableField` stays in `NOT_IMPLEMENTED_REASONS` until argres Phase 2a, which ships its own one-variant migration. The four-set partition grows one variant at a time. (d) resolved the item-5 gating ambiguity for the `ConditionJoin` execution test: C4 ships the `ConditionJoin` schema fixture (exercises the classifier) but defers the runtime query-result assertion to classification-vocabulary item 5, which owns the shared `@condition` exec-test pattern. G5 stays off item 5's critical path. (e) added a `JoinPathEmitter` precondition `sourceColumns.size() == targetColumns.size()` (jOOQ guarantees this; fail loudly on builder-side violation). (f) made the parent-alias threading invariant explicit in Projection recursion — the correlation predicate reads the immediately enclosing `$fields`' `table` parameter, never hardcodes `"table"` in nested subqueries.
