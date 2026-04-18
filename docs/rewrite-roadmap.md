@@ -109,7 +109,9 @@ how every subsequent plan lands.
    automatically next time. The narrow `GeneratorCoverageTest` sanity
    check shipped with the sealed-switch refactor is a starting point;
    extend it from "map entries are sealed leaves" to "every leaf has a
-   classification test case".
+   classification test case". Phase 1 (generator-branch partition)
+   shipped; Phase 2 (classification-case coverage) is next. Detailed
+   plan: [plan-variant-coverage-meta-test.md](plan-variant-coverage-meta-test.md).
 2. **Argument-resolution unification.** The `ArgumentRef` classification
    + projection design in [argument-resolution.md](argument-resolution.md)
    is blocking `@condition`-on-fields, `InputColumnBinding`, and every
@@ -127,7 +129,8 @@ how every subsequent plan lands.
    stubbed branch, with a targeted error naming the variant. Today a
    validated schema can still crash at request time with
    `UnsupportedOperationException` — which violates the "problems caught
-   at build time are far cheaper" principle.
+   at build time are far cheaper" principle. Detailed plan:
+   [plan-stubbed-variant-validator.md](plan-stubbed-variant-validator.md).
 4. **Legacy-vs-rewrite parity matrix.** Document which features each
    generator supports (mutations, split queries, federation, connections,
    interfaces, unions, platformId, …). Without this, users cannot plan
@@ -211,11 +214,12 @@ how every subsequent plan lands.
 - **Drop `graphitron-common` runtime dependency** — inline `MultiSourceReader`-based schema
   loading into `GraphQLRewriteGenerator`, auto-inject `directives.graphqls` so users need
   not declare it, and remove the `graphitron-common` `<dependency>` from the rewrite pom.
-  See [plan-drop-common-dependency.md](plan-drop-common-dependency.md).
+  Folded into the backlog above as a hygiene item; no standalone plan document.
 - **Paginated fields** — document transform coexistence (builder fallback loses `defaultPageSize` when `@asConnection` is stripped). See [paginated-fields.md](paginated-fields.md).
 - **Argument resolution** — unified classification, `@condition` support, lookup VALUES generation. See [argument-resolution.md](argument-resolution.md).
 - **Legacy platformId** (low priority) — classify `id: ID!` input fields that bind to composite platform keys via record-level `getId`/`setId`. See [legacy-platform-id.md](legacy-platform-id.md).
 - **`@table` + `@record` on inputs** — classifier fails on a combination that legacy tolerates. Fix: treat `@record` as authoritative, log a warning naming `@table` as shadowed. Plan introduces a shared warnings channel also consumed by classification-vocabulary item 2. See [bug-record-input-table-validation.md](bug-record-input-table-validation.md).
+- **`IdReferenceField` input filter variant** — `[ID!] @reference(path: ...)` filter inputs currently mis-classify as `UnclassifiedType` because the `@field(name:)` value is a method-accessor suffix (e.g. `hasTerminIds`), not a column. Add a new `InputField.IdReferenceField` permit classified via directive detection. See [plan-id-reference-input-field.md](plan-id-reference-input-field.md).
 
 ### Stubs to complete
 
