@@ -20,7 +20,7 @@ This plan specifies the emission shape, the locus of change (`TypeClassGenerator
 
 Inline `TableField` emission lives in **`TypeClassGenerator.$fields`**, not `TypeFetcherGenerator`. The parent type's `$fields(sel, table, env)` method returns `List<Field<?>>` — one jOOQ `Field` per projected GraphQL field. A nested `TableField` becomes one entry in that list: a correlated sub-SELECT wrapped to produce a structured value (nested record or list-of-records).
 
-`TypeFetcherGenerator`'s arm moves to a new fourth set `PROJECTED_IN_TYPE_CLASS` after G5 — no fetcher method is generated. The meta-test partition grows from three sets to four (landed in C3; see Resolved decision 4).
+`TypeFetcherGenerator`'s arm moves to a new fourth set `PROJECTED_LEAVES` after G5 — no fetcher method is generated. The meta-test partition grows from three sets to four (landed in C3; see Resolved decision 4).
 
 ### Shape
 
@@ -58,6 +58,8 @@ case "language" -> fields.add(
 
 The two shapes share everything except the outer wrap. `InlineTableFieldEmitter.buildFieldExpression` branches on `TableField.returnType().wrapper()` at the top; the shared select/join/filter/where/orderBy/limit composition lives in one place. No spike is needed — both shapes are well-trodden jOOQ 3.19 ground.
 
+**Read-back.** Runtime wiring handles the client-side unwrap — jOOQ's default mapping produces `Result<Record>` for the multiset field and `Record` (or nested jOOQ records) for the `RowN` field, which the registered field DataFetchers consume the same way as any other selection-projected value. No custom converter is needed in emitted code.
+
 ### Join path emission
 
 `joinPath` is an ordered list. Each step is one hop navigating towards the target; the chain is emitted inside the correlated subquery starting from the deepest target (FROM clause) and joining back towards the parent.
@@ -65,9 +67,48 @@ The two shapes share everything except the outer wrap. `InlineTableFieldEmitter.
 - **`FkJoin`**: `.join(alias).onKey(Keys.FK_JAVA_CONSTANT)`. If `whereFilter` is non-null, AND an extra `whereFilter.method(srcAlias, targetAlias)` onto the enclosing WHERE (per `JoinStep` javadoc — ON clause is untouched, WHERE clause is augmented).
 - **`ConditionJoin`**: `.join(alias).on(condition.method(srcAlias, targetAlias))`. The method returns a jOOQ `Condition`.
 
-Per `JoinStep` javadoc, correlated subqueries preserve outer rows regardless of inner match, so INNER JOIN is safe and preferred inside the subquery. G6 (flat batch) requires LEFT JOIN instead — out of scope here.
+INNER JOIN is correct inside the subquery because we want rows that participate in the full join chain; the subquery's null/empty return when the chain produces no rows is the desired outer behaviour (correlated subqueries are re-evaluated per outer row and yield null/empty independently of the outer's row existence). G6 (flat batch) requires LEFT JOIN instead — out of scope here.
 
-The **last-step correlation to the parent** uses the parent alias (`table` parameter) directly in the WHERE clause: `.where(a_first.parent_fk_col.eq(table.parent_pk_col))`. The exact WHERE shape follows from the first `JoinStep`'s resolved FK or condition — extracted by the emitter from the first step.
+The **first-step correlation to the parent** uses the parent alias (`table` parameter) directly in the WHERE clause. Direction depends on which side holds the FK column — child-owned (`film.language_id → language.language_id`) vs reverse (`rental.customer_id → customer.customer_id`) — so the builder must surface enough metadata for the emitter to branch.
+
+**`FkJoin` enrichment (prep for C3).** Extend the record with resolved source/target column refs:
+
+```java
+record FkJoin(
+    String fkName,
+    String fkJavaConstant,
+    TableRef sourceTable,      // NEW — table holding the FK columns
+    List<ColumnRef> sourceColumns,  // NEW — FK columns in the source table
+    TableRef targetTable,      // existing — table the FK points to
+    List<ColumnRef> targetColumns,  // NEW — referenced PK columns in the target
+    MethodRef whereFilter,
+    String alias
+) implements JoinStep {}
+```
+
+The builder already holds the jOOQ `ForeignKey` when it constructs `FkJoin`; pulling `fk.getTable()` / `fk.getFields()` / `fk.getKey().getTable()` / `fk.getKey().getFields()` costs one method per side. No classifier rule changes.
+
+**Emitter correlation logic** (`JoinPathEmitter.correlationWhere(FkJoin first, String parentAlias, TableRef parentTable)`):
+
+```java
+if (first.sourceTable().equals(parentTable)) {
+    // FK in parent (e.g. film.language_id → language.language_id):
+    //   correlation is inner.targetCol = parent.sourceCol, matched by position
+    return zipAnd(first.alias(), first.targetColumns(), parentAlias, first.sourceColumns());
+} else {
+    // FK in inner (e.g. rental.customer_id → customer.customer_id):
+    //   correlation is inner.sourceCol = parent.targetCol
+    return zipAnd(first.alias(), first.sourceColumns(), parentAlias, first.targetColumns());
+}
+```
+
+Composite FKs AND all column pairs. Single-column FKs are the common case; the zip supports both uniformly.
+
+### Alias generation
+
+`JoinPathEmitter` generates per-hop aliases deterministically from each hop's target-table `javaName()`: lowercase the initial letter + hop index starting at 0 (`Language` → `l0`, `Actor` → `a0`, `FilmActor` → `f0`). When two hops in the same chain share an initial, the second uses the first two lowercased characters (`fi0` for a `Film`/`FilmActor` collision). The parent alias is always `"table"` (the existing `$fields(sel, table, env)` parameter name).
+
+Each correlated subquery is its own jOOQ scope, so aliases do not need to be unique across sibling `TableField` subqueries on the same parent — only within a single joinPath. Self-referential joins (`Category.parent: Category`) work because the inner alias (`c0`) is distinct from the outer `table` parameter. The emitter writes aliases into `FkJoin.alias()` before C3 lands (builder presently leaves it empty in some paths); alternatively, `JoinPathEmitter` assigns them on the fly from the `javaName()` + index and ignores the field's stored alias. Decide at C3 implementation time based on whether other consumers of `FkJoin.alias()` exist.
 
 ### Projection recursion
 
@@ -128,9 +169,9 @@ One atomic change: two emitter classes, the `$fields` switch arm, partition migr
 
 **`TypeClassGenerator.$fields`.** Add `case ChildField.TableField tf -> fields.add(InlineTableFieldEmitter.buildFieldExpression(tf, "table"));` to the field-name switch. Column / PlatformId arms unchanged.
 
-**`TypeFetcherGenerator`.** Remove `ChildField.TableField` from `NOT_IMPLEMENTED_REASONS` and from the dispatch switch. Introduce `PROJECTED_IN_TYPE_CLASS` — `TableField` is its first member. Javadoc cross-links the new set to the existing three.
+**`TypeFetcherGenerator`.** Remove `ChildField.TableField` from `NOT_IMPLEMENTED_REASONS` and from the dispatch switch. Introduce `PROJECTED_LEAVES` — `TableField` is its first member. Javadoc cross-links the new set to the existing three.
 
-**Meta-test.** Extend `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` to include `PROJECTED_IN_TYPE_CLASS` in the four-way disjoint/cover assertion (one-line union extension + the new pairwise-disjoint case).
+**Meta-test.** Extend `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` to include `PROJECTED_LEAVES` in the four-way disjoint/cover assertion (one-line union extension + the new pairwise-disjoint case).
 
 **Structural tests (same commit).**
 
@@ -169,12 +210,16 @@ Resolutions committed during the Draft iteration. Carried here (rather than dele
 
 2. **`@condition` / filters on the subquery.** Factor `buildCallArgs` / `buildArgExtraction` out of `TypeFetcherGenerator` into a new `generators/ArgCallEmitter` class with public static methods. `InlineTableFieldEmitter` calls the extracted helpers directly. See C2.
 3. **Pagination in correlated subqueries.** `.limit(n)` works; Relay connection pagination (cursor decode + direction switch) is out of scope. `@asConnection` on inline `TableField` becomes an `UnclassifiedField` classifier error (C1) — the error message points users at `@splitQuery`, which G6 wires up for batched connection semantics. Before G5 the classifier silently built a `TableField` with `FieldWrapper.Connection`; G5 explicitly rejects that shape rather than letting the emitter improvise a broken one.
-4. **Meta-test partition expansion.** Committed to option (a): add a fourth disjoint set `PROJECTED_IN_TYPE_CLASS` on `TypeFetcherGenerator`. The meta-test's `everyGraphitronFieldLeafHasAKnownDispatchStatus` absorbs the new set in a one-line extension (add the set to the union; add the two pairwise-disjoint cases against it). This is a compatible extension of the variant-coverage plan's Phase 1 partition — the contract "every leaf in exactly one set" is preserved, only the number of sets grows. No re-approval cycle on the variant-coverage plan; G5's C3 lands both the new set and the test update in one commit.
+4. **Meta-test partition expansion.** Committed to option (a): add a fourth disjoint set `PROJECTED_LEAVES` on `TypeFetcherGenerator`. The meta-test's `everyGraphitronFieldLeafHasAKnownDispatchStatus` absorbs the new set in a one-line extension (add the set to the union; add the two pairwise-disjoint cases against it). This is a compatible extension of the variant-coverage plan's Phase 1 partition — the contract "every leaf in exactly one set" is preserved, only the number of sets grows. No re-approval cycle on the variant-coverage plan; G5's C3 lands both the new set and the test update in one commit.
 5. **Self-referential / recursive types.** `Category → parent: Category` / `Category → children: [Category!]!` is legal GraphQL. The recursive `$fields` call terminates because the selection set at depth-N cannot include the same field at depth-(N+1) unless the client requests it; depth is bounded by the client's query. No generator-time infinite loop; no depth limit imposed by Graphitron. C4 adds the self-referential fixture and the depth-2 execution query that verifies the invariant runtime-side.
 
 ### Open decisions
 
 None remaining. All five original open decisions are resolved — implementation can proceed without further design spikes.
+
+### Known runtime pitfalls
+
+- **Non-null return with optional FK.** An SDL `language: Language!` over an optional `film.language_id` FK classifies and generates cleanly, then fails at response-construction time when the correlated subquery returns no row (the inner `Field<RowN>` is null). The validator does not forbid this combination; the mismatch is detected by GraphQL-Java at runtime. Schema authors are responsible for marking FK-optional fields nullable.
 
 ### Non-goals
 
@@ -203,5 +248,6 @@ Per CLAUDE.md: structural assertions for unit tests, behaviour-level assertions 
 
 - 2026-04-18 — plan drafted after argres Phase 1 reconnaissance flagged G5 as a prerequisite. Status: not started. Five open decisions pinned.
 - 2026-04-18 — reviewer iteration: resolved Decision 4 (partition expansion) and Decision 3 (@asConnection classifier behavior); corrected SelectionSet API in the proposed emission shape; committed the emitter-extraction rationale; added builder-invariant assumptions, recursive-type test coverage, pipeline test, and execution profile/seed details to deliverables.
-- 2026-04-18 — second reviewer iteration: corrected the single-record wrapping idiom (now `DSL.row(...)` scalar subselect, not `multiset + convertFrom`; the previously-posited `DSL.field(select.asField())` alternative was wrong — it requires single-column projection) and resolved Decision 1; fixed the partition-migration statement in Emission locus (was "stays in `NOT_DISPATCHED_LEAVES`", now correctly "moves to new `PROJECTED_IN_TYPE_CLASS` set"); unified the Projection recursion example to `sf.getSelectionSet()`; pinned the `ArgCallEmitter` extraction as a behavior-preserving refactor; annotated the classifier-rejection blast radius (zero known call-sites in example + test schemas); called out the `init.sql` schema delta required for the self-referential test case. All five open decisions now resolved.
+- 2026-04-18 — second reviewer iteration: corrected the single-record wrapping idiom (now `DSL.row(...)` scalar subselect, not `multiset + convertFrom`; the previously-posited `DSL.field(select.asField())` alternative was wrong — it requires single-column projection) and resolved Decision 1; fixed the partition-migration statement in Emission locus (was "stays in `NOT_DISPATCHED_LEAVES`", now correctly "moves to new `PROJECTED_LEAVES` set"); unified the Projection recursion example to `sf.getSelectionSet()`; pinned the `ArgCallEmitter` extraction as a behavior-preserving refactor; annotated the classifier-rejection blast radius (zero known call-sites in example + test schemas); called out the `init.sql` schema delta required for the self-referential test case. All five open decisions now resolved.
 - 2026-04-18 — third reviewer iteration: restructured 11 deliverables into 4 commits with distinct failure modes (classifier rejection / `ArgCallEmitter` refactor / emission + structural tests / schema + execution tests); merged the dead-intermediate states (`JoinPathEmitter` alone, `$fields` switch arm alone, partition migration alone) into C3; aligned the execution-test recursion example with the `Category.parent` / `Category.children` self-FK fixture (was previously `film.sequels.sequels`, mismatching the init.sql delta in the same deliverable).
+- 2026-04-18 — fourth reviewer iteration: resolved three implementation hazards the third draft left for C3. (a) Read-back path clarified — jOOQ's default mapping handles `Result<Record>` / `RowN` unwrap; no custom converter needed (runtime wiring consumes them like any other selection-projected value). (b) FK-direction pinned — `FkJoin` gains `sourceTable`, `sourceColumns`, `targetColumns` fields (builder resolves from the jOOQ `ForeignKey`); `JoinPathEmitter.correlationWhere` branches on whether source table equals the parent, flipping the equality shape. Composite FKs AND the paired columns. (c) Alias generation convention nailed — deterministic from `TableRef.javaName()` + hop index, with a two-char fallback on collision; parent alias stays `"table"`. Nits folded: `PROJECTED_IN_TYPE_CLASS` → `PROJECTED_LEAVES` (uniform with siblings); INNER-JOIN justification reworded (outer-row preservation is about correlated-subquery evaluation, not inner-join semantics); added a "Known runtime pitfalls" section noting the `Language!` + optional-FK response-construction failure path.
