@@ -146,9 +146,9 @@ Classifier fails on `@table` + `@record` combined on an input type — legacy to
 
 Steps 1-2 shipped on `claude/review-docs-plan-adYJW`. Step 5 superseded by `plan-variant-coverage-meta-test.md`. Steps 3-4 (re-section renames + doc rewire) deferred until the sealed hierarchy stabilises; picking them up mid-churn means constant rework.
 
-### Legacy platformId **[Draft]** — [legacy-platform-id.md](legacy-platform-id.md)
+### Platform-id as synthesized NodeId **[Draft]** — [legacy-platform-id.md](legacy-platform-id.md)
 
-Classify `id: ID!` fields that bind to composite platform keys emitted by `KjerneJooqGenerator` (`get*Id()` / `set*Id()` accessors, no real SQL column). Items 1-2 shipped: output and input classification, dispatch registration, and end-to-end pipeline tests backed by a synthetic `platformidfixture` jOOQ catalog that adds platform-id accessors to a hand-written table/record pair. Item 3 (mutation generator binding via `InputColumnBinding`) is blocked on argres Phase 3 (`TableInputArg.fieldBindings` population). Item 4 (argument/filter condition emission via `table.hasId`/`hasIds`) was added 2026-04-18 after a review surfaced the gap; it is independently schedulable and drives a `LookupMapping` sum-type refactor.
+Pivot from treating platform-id as a separate sum-type variant (`PlatformIdField`) to synthesizing `NodeType` classification from `__ID_TYPE_ID` + `__ID_KEY_COLUMNS` constants emitted by a coordinated KjerneJooqGenerator release. All downstream paths (projection, filter, mutation binding) flow through the existing `@nodeId` generator machinery — `NodeIdStrategy.createId` / `hasId` / `hasIds` / `setId`. Unifies what would have been two parallel classification-and-emission paths into one; deletes `InputField.PlatformIdField` / `ChildField.PlatformIdField` after migration. Co-lands the `ChildField.NodeIdField` emission currently stubbed in `NOT_IMPLEMENTED_REASONS`. Mutation binding still blocked on argres Phase 3 for `InputColumnBinding` population. Supersedes the previous four-item plan (prior Items 1-2 shipped as the parallel-variant approach and will be undone in the final commit of this plan).
 
 ## Backlog
 
