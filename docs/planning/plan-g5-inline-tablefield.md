@@ -20,13 +20,13 @@ This plan specifies the emission shape, the locus of change (`TypeClassGenerator
 
 Inline `TableField` emission lives in **`TypeClassGenerator.$fields`**, not `TypeFetcherGenerator`. The parent type's `$fields(sel, table, env)` method returns `List<Field<?>>` — one jOOQ `Field` per projected GraphQL field. A nested `TableField` becomes one entry in that list: a correlated sub-SELECT wrapped to produce a structured value (nested record or list-of-records).
 
-`TypeFetcherGenerator`'s arm stays in `NOT_DISPATCHED_LEAVES` after G5 — no fetcher method is generated. That's a partition migration, documented below (Open decision 4).
+`TypeFetcherGenerator`'s arm moves to a new fourth set `PROJECTED_IN_TYPE_CLASS` after G5 — no fetcher method is generated. The meta-test partition grows from three sets to four (see deliverable 6).
 
 ### Shape
 
-Two return-type variants. Both use the same correlated-subquery core; they differ in the wrapping that produces a scalar `Field` value.
+Two emission shapes, chosen by the GraphQL return cardinality. Both share the correlated-subquery core (select + from + joins + where + orderBy + limit); only the outermost wrapping differs.
 
-**List return** (`[Film!]!`, `[Actor]`, …):
+**List return** (`[Film!]!`, `[Actor]`, …) — `DSL.multiset`:
 
 ```java
 case "actors" -> fields.add(
@@ -40,17 +40,23 @@ case "actors" -> fields.add(
 );
 ```
 
-`sf` is the `SelectedField` pulled from the existing `sel.getFieldsGroupedByResultKey()` loop in `$fields` (see `TypeClassGenerator.java:120-122` for the current shape). `sf.getSelectionSet()` yields the nested `DataFetchingFieldSelectionSet` for the child field — no `getSelectionSetOf(String)` accessor is needed.
+`DSL.multiset(Select)` returns `Field<Result<R>>` — a nested result set rendered as a JSON array (PG) or dialect-specific nested value. `sf` is the `SelectedField` from the enclosing `sel.getFieldsGroupedByResultKey()` loop in `$fields` (see `TypeClassGenerator.java:120-122`); `sf.getSelectionSet()` yields the nested `DataFetchingFieldSelectionSet` for the child field. The `<fieldName>Target` alias (`a0` above) is the deepest alias in the `joinPath`; additional hops become chained `.join(...)` calls before the `.where(...)`.
 
-`DSL.multiset(Select)` returns `Field<Result<R>>` — a nested result set that jOOQ renders as a JSON array (PG) or equivalent dialect-specific nested value. The `<fieldName>Target` alias (`a0` above) is the deepest alias in the `joinPath`; additional hops become chained `.join(...)` calls before the `.where(...)`.
+**Single return** (`Film`, `Actor!`) — scalar subselect with `DSL.row`:
 
-**Single return** (`Film`, `Actor!`):
+```java
+case "language" -> fields.add(
+    DSL.field(
+        DSL.select(DSL.row(Language.$fields(sf.getSelectionSet(), l0, env)))
+            .from(l0)
+            .where(<joinPath correlation against parent `table`>)
+    ).as("language")
+);
+```
 
-The jOOQ 3.19 idiomatic shape for a correlated single record with multi-column projection is **multiset + mapping**: wrap in multiset as above, then `.convertFrom(r -> r.isEmpty() ? null : r.get(0))` on the outer field so the caller sees a single record, not a 1-element result. Alternative: scalar subquery with `DSL.field(select.asField())` — but that requires the inner SELECT to project exactly one field, which breaks recursive `$fields` projection.
+`DSL.row(fields...)` wraps a multi-column projection into a `RowN` value; wrapping the select in `DSL.field(...)` turns it into a scalar subselect returning `Field<RowN>`. This is the idiomatic jOOQ 3.19 single-record shape and supports arbitrary multi-column projection — unlike `DSL.field(select.asField())`, which requires a single-field projection and is therefore *not* the right alternative.
 
-**Decision deferred to implementation-time spike.** Two candidate shapes have different dialect-portability trade-offs; confirm against real PG rendering before locking in. Both produce the same end-user semantic.
-
-**Divergence risk.** If the PG-rendering spike rejects `multiset + convertFrom` for single-record wrapping, the alternative (scalar subquery with `DSL.field(select.asField())`) is structurally incompatible with the list emitter — the scalar form requires a single-field projection, which breaks recursive `$fields`. In that case `InlineTableFieldEmitter.buildFieldExpression` forks into two distinct emitters (list vs. single) sharing only `JoinPathEmitter`. Deliverable 2 then becomes two commits instead of one. Evaluate at spike time; stay with single unified emitter unless PG forces the split.
+The two shapes share everything except the outer wrap. `InlineTableFieldEmitter.buildFieldExpression` branches on `TableField.returnType().wrapper()` at the top; the shared select/join/filter/where/orderBy/limit composition lives in one place. No spike is needed — both shapes are well-trodden jOOQ 3.19 ground.
 
 ### Join path emission
 
@@ -68,7 +74,7 @@ The **last-step correlation to the parent** uses the parent alias (`table` param
 `$fields` recursively invokes the target type's own `$fields` method to project only the GraphQL-selected columns at each nested level:
 
 ```java
-Actor.$fields(sel.getSelectionSetOf("actors"), a0, env)
+Actor.$fields(sf.getSelectionSet(), a0, env)
 ```
 
 The recursion terminates at `ColumnField` / `PlatformIdField` leaves (already emitted). For nested `TableField`, the recursion re-enters this same emission path with a deeper selection set. There is no depth limit at generation time; schema-enforced depth limits are enforced at query time by GraphQL-Java.
@@ -97,18 +103,18 @@ The emitter may rely on these and emit without defensive checks. The validator c
 
 Ordered; each is a reviewable commit. Intermediate states may compile but fail execution tests — that's fine, execution tests land with the final commit.
 
-1. **Classifier change: reject `@asConnection` on inline `TableField`.** In `FieldBuilder` — the path that constructs `TableField` at `FieldBuilder.java:260` currently accepts any `FieldWrapper` (including `Connection`). Return `UnclassifiedField` with an explanatory error ("`@asConnection` on inline (non-`@splitQuery`) TableField is not supported; add `@splitQuery` for batched connection semantics") when the resolved wrapper is `FieldWrapper.Connection`. New classification case in `GraphitronSchemaBuilderTest.TableFieldCase` asserting the rejection. This deliverable lands first so the emitter can safely assume the builder invariant.
+1. **Classifier change: reject `@asConnection` on inline `TableField`.** In `FieldBuilder` — the path that constructs `TableField` at `FieldBuilder.java:260` currently accepts any `FieldWrapper` (including `Connection`). Return `UnclassifiedField` with an explanatory error ("`@asConnection` on inline (non-`@splitQuery`) TableField is not supported; add `@splitQuery` for batched connection semantics") when the resolved wrapper is `FieldWrapper.Connection`. New classification case in `GraphitronSchemaBuilderTest.TableFieldCase` asserting the rejection. This deliverable lands first so the emitter can safely assume the builder invariant. Blast radius: across `graphitron-example-spec/schema.graphqls` and internal test schemas, every nested `@asConnection` on a table-to-table reference path also carries `@splitQuery` (classified as `SplitTableField`, not `TableField`) — the new validator error fires on zero known call-sites.
 2. **`JoinPathEmitter` (new class, `generators/`).** Pure function: `emit(List<JoinStep>, String srcAlias, String tgtAlias) -> CodeBlock`. Produces the `.join(..).onKey(..)` or `.join(..).on(..)` chain. Handles `FkJoin` + `ConditionJoin` uniformly. No correlation WHERE — that is the caller's job.
-3. **`InlineTableFieldEmitter` (new class, `generators/`).** Top-level emitter: `buildFieldExpression(TableField, String parentAlias) -> CodeBlock`. Returns the full jOOQ `Field` expression (multiset + select + from + joins + where + orderby + limit) to be placed into `$fields`' returned list. Branches on list-vs-single return type. May fork into two classes if the single-record spike forces divergence (see Shape section).
-4. **Factor out arg-call helpers.** Promote `buildCallArgs` / `buildArgExtraction` from `TypeFetcherGenerator` to a new `generators/ArgCallEmitter` class (public static methods). `TypeFetcherGenerator` calls migrate to the new home; `InlineTableFieldEmitter` consumes the same helpers for `@condition` filter emission. Resolves Open Decision 2.
+3. **`InlineTableFieldEmitter` (new class, `generators/`).** Top-level emitter: `buildFieldExpression(TableField, String parentAlias) -> CodeBlock`. Returns the full jOOQ `Field` expression (outer wrap + select + from + joins + where + orderby + limit) to be placed into `$fields`' returned list. Branches on `TableField.returnType().wrapper()` at the top — `DSL.multiset(...)` for list return, `DSL.field(DSL.select(DSL.row(...))...)` for single return — with the shared composition beneath (see Shape section).
+4. **Factor out arg-call helpers.** Promote `buildCallArgs` / `buildArgExtraction` from `TypeFetcherGenerator` to a new `generators/ArgCallEmitter` class (public static methods). `TypeFetcherGenerator` calls migrate to the new home; `InlineTableFieldEmitter` consumes the same helpers for `@condition` filter emission. Resolves Open Decision 2. Pure refactor — signatures unchanged, all existing callers migrated in the same commit, full test suite green with no other changes in the diff. Clean bisect point if fetcher emission regresses later.
 5. **`TypeClassGenerator.$fields` switch arm.** Adds `case ChildField.TableField tf -> fields.add(InlineTableFieldEmitter.buildFieldExpression(tf, "table"));` to the existing field-name switch. Preserves the Column/PlatformId arms untouched. First commit after which the compilation test (deliverable 9) can pass.
-6. **`TypeFetcherGenerator` dispatch + partition expansion.** Remove `ChildField.TableField` from `NOT_IMPLEMENTED_REASONS` and the dispatch switch. Add a new `PROJECTED_IN_TYPE_CLASS` set on `TypeFetcherGenerator` — `TableField` is its first member. Update `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` to include `PROJECTED_IN_TYPE_CLASS` in the four-way disjoint/cover assertion. Javadoc cross-link the new set to the existing three. See Open Decision 4.
+6. **`TypeFetcherGenerator` dispatch + partition expansion.** Remove `ChildField.TableField` from `NOT_IMPLEMENTED_REASONS` and the dispatch switch. Add a new `PROJECTED_IN_TYPE_CLASS` set on `TypeFetcherGenerator` — `TableField` is its first member. Update `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` to include `PROJECTED_IN_TYPE_CLASS` in the four-way disjoint/cover assertion. Javadoc cross-link the new set to the existing three. See Resolved Decision 4.
 7. **Test schema additions.** Add to `graphitron-rewrite-test/graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls`:
    - Single-hop FK join: `Film.language: Language`.
    - Multi-hop FK join: `Film.languageOriginalCountry: Country` (via `language` → `country`).
    - List with ordering and `.limit`: `City.customers: [Customer!]!` with `@orderBy` and pagination args producing `.limit`.
    - Condition join: a field using `ConditionJoin` (reusing an existing `@condition` helper).
-   - Self-referential recursion: `Film.sequels: [Film!]!` (exercised at depth 2 in execution tests — confirms Open Decision 5's recursion termination invariant in practice, not just in prose).
+   - Self-referential recursion: stock sakila has no self-referential FK, so this case requires an `init.sql` schema delta. Cheapest addition: `ALTER TABLE category ADD COLUMN parent_category_id int REFERENCES category(category_id);` plus a GraphQL field like `Category.parent: Category @reference(path: [{key: "CATEGORY__CATEGORY_PARENT_CATEGORY_ID_FKEY"}])` or `Category.children: [Category!]!` via the same FK. Exercised at depth 2 in execution tests — confirms Resolved Decision 5's recursion termination invariant in practice, not just in prose.
    - Update `graphitron-rewrite-test/graphitron-rewrite-test-spec/src/main/resources/db/init.sql` to seed reachable nested rows (list the exact INSERT additions in the commit message).
 8. **Pipeline test.** New `TableFieldPipelineTest` in `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/` — SDL → classified schema → generated `TypeSpec`. Asserts structural shape (switch arm for each nested field, `$fields` signature unchanged, no fetcher method emitted for `TableField`). Parallel to the existing `StubbedVariantPipelineTest`.
 9. **Unit tests (`TypeClassGeneratorTest`).** Structural: `$fields` contains a switch arm per GraphQL field name. No body-substring assertions.
@@ -119,6 +125,8 @@ Ordered; each is a reviewable commit. Intermediate states may compile but fail e
 
 Resolutions committed during the Draft iteration. Carried here (rather than deleted) so implementers can see the reasoning.
 
+1. **Single-record wrapping.** The natural SQL-level fork is the right answer: `DSL.row(...)` scalar subselect for single return, `DSL.multiset` for list return. Both share join/filter/where/orderBy/limit emission (via `JoinPathEmitter` and `ArgCallEmitter`); only the outermost wrap differs. No spike needed — both shapes are idiomatic jOOQ 3.19 and support arbitrary multi-column projection. Earlier drafts posited a `multiset + convertFrom` vs. `DSL.field(select.asField())` fork; the scalar-subselect alternative was the wrong one (`select.asField()` requires a single-column projection, so it can't wrap a multi-column record), and `DSL.row` is the correct idiom for the single-record case. See Shape section for the concrete emitter shapes.
+
 2. **`@condition` / filters on the subquery.** Factor `buildCallArgs` / `buildArgExtraction` out of `TypeFetcherGenerator` into a new `generators/ArgCallEmitter` class with public static methods. `InlineTableFieldEmitter` calls the extracted helpers directly. See deliverable 4.
 3. **Pagination in correlated subqueries.** `.limit(n)` works; Relay connection pagination (cursor decode + direction switch) is out of scope. `@asConnection` on inline `TableField` becomes an `UnclassifiedField` classifier error (deliverable 1) — the error message points users at `@splitQuery`, which G6 wires up for batched connection semantics. Before G5 the classifier silently built a `TableField` with `FieldWrapper.Connection`; G5 explicitly rejects that shape rather than letting the emitter improvise a broken one.
 4. **Meta-test partition expansion.** Committed to option (a): add a fourth disjoint set `PROJECTED_IN_TYPE_CLASS` on `TypeFetcherGenerator`. The meta-test's `everyGraphitronFieldLeafHasAKnownDispatchStatus` absorbs the new set in a one-line extension (add the set to the union; add the two pairwise-disjoint cases against it). This is a compatible extension of the variant-coverage plan's Phase 1 partition — the contract "every leaf in exactly one set" is preserved, only the number of sets grows. No re-approval cycle on the variant-coverage plan; G5's deliverable 6 lands both the new set and the test update in one commit.
@@ -126,9 +134,7 @@ Resolutions committed during the Draft iteration. Carried here (rather than dele
 
 ### Open decisions
 
-One remaining, to be resolved during implementation:
-
-1. **Single-record wrapping (gates deliverable 3).** `multiset + convertFrom` vs a different jOOQ idiom. Spike: render both against PG via `DSL.renderInlined(...)`, compare generated SQL. Pick the one closer to legacy's shape for consistency. If the multiset form is rejected, deliverable 3 forks into list and single-record emitters per the Divergence risk note in Shape.
+None remaining. All five original open decisions are resolved — implementation can proceed without further design spikes.
 
 ### Non-goals
 
@@ -157,3 +163,4 @@ Per CLAUDE.md: structural assertions for unit tests, behaviour-level assertions 
 
 - 2026-04-18 — plan drafted after argres Phase 1 reconnaissance flagged G5 as a prerequisite. Status: not started. Five open decisions pinned.
 - 2026-04-18 — reviewer iteration: resolved Decision 4 (partition expansion) and Decision 3 (@asConnection classifier behavior); corrected SelectionSet API in the proposed emission shape; committed the emitter-extraction rationale; added builder-invariant assumptions, recursive-type test coverage, pipeline test, and execution profile/seed details to deliverables.
+- 2026-04-18 — second reviewer iteration: corrected the single-record wrapping idiom (now `DSL.row(...)` scalar subselect, not `multiset + convertFrom`; the previously-posited `DSL.field(select.asField())` alternative was wrong — it requires single-column projection) and resolved Decision 1; fixed the partition-migration statement in Emission locus (was "stays in `NOT_DISPATCHED_LEAVES`", now correctly "moves to new `PROJECTED_IN_TYPE_CLASS` set"); unified the Projection recursion example to `sf.getSelectionSet()`; pinned deliverable 4 as a behavior-preserving refactor; annotated deliverable 1's blast radius (zero known call-sites in example + test schemas); called out the `init.sql` schema delta required for the self-referential test case. All five open decisions now resolved.
