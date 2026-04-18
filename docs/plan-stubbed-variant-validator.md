@@ -6,9 +6,11 @@
 > Depends on variant-coverage Phase 1 (shipped at `15f9f61`) — this
 > plan consumes the `NOT_IMPLEMENTED_REASONS` map now guaranteed to
 > be an exhaustive, leaf-keyed record of stubbed variants. The mojo
-> severity flip (Decision E, default `true`) is a **breaking change
-> for consumers** currently ignoring rewrite warnings; mitigated by
-> a single-flag escape hatch.
+> severity flip (Decision E, default `true`) would be a breaking
+> change for external consumers ignoring rewrite warnings; this is
+> currently theoretical (no external consumers yet) but the
+> single-flag escape hatch is shipped from day one for when they
+> arrive.
 
 ## Overview
 
@@ -118,6 +120,15 @@ private void validateVariantIsImplemented(GraphitronField field, List<Validation
   (the validator is consumed by the generator setup, not the other
   way round). Acceptable: the map already exists, carries the
   intended reason strings, and has no other natural home.
+
+> **Invariant dependency.** The "lookup returns null for non-stubbed
+> leaves" reasoning is correct only because variant-coverage Phase 1's
+> `everyGraphitronFieldLeafHasAKnownDispatchStatus` test enforces the
+> three-way partition. If that test is disabled or weakened, the new
+> check could silently miss leaves (a leaf that's neither implemented
+> nor stubbed nor not-dispatched would slip through validation and
+> still throw at request time). Don't relax Phase 1 without restoring
+> the invariant elsewhere.
 
 **Option 2 — Inline the check inside each stubbed variant's `validate*` method.**
 
@@ -264,34 +275,87 @@ is now strict enough to be authoritative.
 @Parameter(property = "graphitron.failOnRewriteValidationError", defaultValue = "true")
 private boolean failOnRewriteValidationError;
 
-// in execute(), after the warn-logging loop:
-if (!errors.isEmpty() && failOnRewriteValidationError) {
+// in execute() — restructured from today's flow:
+List<ValidationError> rewriteErrors = List.of();              // hoist OUTSIDE the try
+try {
+    var registry = getTypeDefinitionRegistry(GeneratorConfig.generatorSchemaFiles());
+    var graphitronSchema = GraphitronSchemaBuilder.build(registry);
+    rewriteErrors = new GraphitronSchemaValidator().validate(graphitronSchema);
+    for (var error : rewriteErrors) {                          // existing warn loop
+        var loc = error.location();
+        if (loc != null) {
+            getLog().warn(loc.getSourceName() + ":" + loc.getLine() + ":" + loc.getColumn()
+                + ": " + error.message());
+        } else {
+            getLog().warn(error.message());
+        }
+    }
+} catch (Exception e) {
+    getLog().debug("New pipeline validation skipped: " + e.getMessage());
+}
+
+// Existing legacy-failure check stays first — preserves today's priority.
+if (legacyFailure != null) {
+    ValidationHandler.logWarnings();
+    throw new MojoExecutionException("\n" + legacyFailure.getMessage(), legacyFailure);
+}
+
+// New: rewrite-error fail branch — OUTSIDE the catch so the throw escapes.
+if (!rewriteErrors.isEmpty() && failOnRewriteValidationError) {
+    var body = rewriteErrors.stream()
+        .map(e -> {
+            var loc = e.location();
+            return loc != null
+                ? "  " + loc.getSourceName() + ":" + loc.getLine() + ":" + loc.getColumn() + ": " + e.message()
+                : "  " + e.message();
+        })
+        .collect(Collectors.joining("\n"));
     throw new MojoExecutionException(
-        "Rewrite validation found " + errors.size() + " error(s). "
-        + "Set -Dgraphitron.failOnRewriteValidationError=false to downgrade to warnings "
-        + "(temporary escape hatch for in-progress migrations).");
+        "\nRewrite validation found " + rewriteErrors.size() + " error(s):\n" + body
+        + "\n\nSet -Dgraphitron.failOnRewriteValidationError=false to downgrade to warnings "
+        + "(temporary escape hatch — note this re-opens the runtime "
+        + "UnsupportedOperationException window this check exists to close).");
 }
 ```
 
-Every error still logs via `getLog().warn(...)` first so the user
-sees all of them, not just the first — then the build fails once
-with an aggregate message.
+Three structural points the snippet has to get right and that
+implementations should mirror:
+
+1. **`rewriteErrors` hoisted outside the try.** Today's wrapper is
+   `try { … } catch (Exception e) { getLog().debug(…) }` — a
+   `MojoExecutionException` thrown inside it is swallowed and demoted
+   to debug. Hoist the variable; throw outside the catch.
+2. **Legacy-failure check stays first.** When both pipelines fail,
+   the user sees the legacy error (preserves today's priority order
+   and avoids surfacing a rewrite error for what is fundamentally a
+   legacy-pipeline failure).
+3. **Aggregate the errors into the exception body.** Maven users
+   read `[ERROR]` output; spreading the errors across `[WARN]` lines
+   above and only counting them at `[ERROR]` time forces grep-back.
+   The warn loop stays for IDE / log-stream consumers; the exception
+   message duplicates the list for the failure summary.
 
 - **Pros:** default behaviour matches how the rewrite is intended to
-  be used from day one. "We are better than legacy" — consumers who
-  have been silently accumulating rewrite warnings now get a clear
-  fail-closed signal with a single-flag escape hatch. One `@Parameter`;
-  no per-error channel needed. When the legacy pipeline retires the
+  be used from day one. "We are better than legacy" — fail-closed
+  signal with a single-flag escape hatch. One `@Parameter`; no
+  per-error channel needed. When the legacy pipeline retires the
   flag becomes redundant and can be removed (or kept as a no-op
   deprecation).
-- **Cons:** **behavioural change for existing consumers.** Projects
-  currently relying on the warning-only rewrite path will fail their
-  next Graphitron upgrade unless they either fix the validation
-  error or set the flag to `false`. Mitigation: aggregate error
-  message explicitly documents the flag.
+- **Cons:** behavioural change for existing consumers — currently
+  theoretical (no external consumers as of this plan landing; the
+  in-tree `graphitron-example/` project is the canary). Once
+  external consumers exist, projects currently relying on the
+  warning-only rewrite path will fail their next Graphitron upgrade
+  unless they either fix the validation error or set the flag to
+  `false`. Mitigation: aggregate error message documents the flag.
 - **Scope:** applies to `ValidationError` surfacing only — the
   `catch (Exception e) { getLog().debug(...) }` swallowing pipeline
   crashes stays out of scope (see "What We're NOT Doing").
+- **Cost of the escape hatch.** Setting `failOnRewriteValidationError=false`
+  re-opens exactly the runtime-`UnsupportedOperationException` window
+  this plan exists to close: the build passes, the generator emits a
+  stub, and the first request hitting that variant throws. Acceptable
+  for in-progress migrations only; not a long-term setting.
 
 **Option 2 — Scope the flip to stubbed-variant errors only.**
 
@@ -418,39 +482,62 @@ Variants to touch (from `NOT_IMPLEMENTED_REASONS`, same ordering):
   `MultitableReferenceFieldValidationTest`.
 
 Audit note: a few of these class names don't map one-to-one with
-the stubbed leaf (e.g., `ColumnReferenceFieldValidationTest` might
-cover both `ChildField.ColumnReferenceField` and
-`InputField.ColumnReferenceField`). Confirm the mapping during
-retrofit; expect 33 code-path touches, not necessarily 33 classes.
+the stubbed leaf. The pattern to apply when a class houses cases
+for both partitions:
+
+- `ChildField.ColumnReferenceField` (stubbed — in `NOT_IMPLEMENTED_REASONS`)
+  → its case becomes `STUBBED`, expected list grows by `stubbedError(...)`.
+- `InputField.ColumnReferenceField` (not dispatched — in
+  `NOT_DISPATCHED_LEAVES`) → its case stays `VALID`, expected list
+  unchanged. The `NOT_IMPLEMENTED_REASONS.get(InputField.ColumnReferenceField.class)`
+  returns `null`, so the new check correctly emits no error for it.
+
+Net: expect 33 code-path touches, not necessarily 33 classes touched
+and not all cases in a touched class.
 
 ### 4. `ValidateMojo` severity flip
 
 **File:** `graphitron-maven-plugin/src/main/java/no/sikt/graphitron/mojo/ValidateMojo.java`
 
-Add the `@Parameter`-annotated field and the aggregate-fail branch
-per Decision E. Keep the existing `getLog().warn(...)` loop — users
-should still see each individual error before the build fails. The
-change to the summary line switches from "treated as warnings during
-migration" wording to a neutral count message; when the flag is
-`false` the message should note the override for easier debugging
-of why a CI pipeline that was failing now isn't.
+Apply the restructured flow shown in Decision E. Three concrete
+edits, in order:
 
-~10 LOC: one field declaration, one branch around the existing
-summary line. The `@Parameter(property = "...")` form supports both
-pom `<configuration>` and `-D` system-property override.
+1. Add the `@Parameter`-annotated `failOnRewriteValidationError`
+   field (default `"true"`).
+2. Hoist `var errors` to a `List<ValidationError> rewriteErrors`
+   declared **outside** the existing `try { … } catch (Exception e) { debug(…) }`
+   block so a thrown `MojoExecutionException` can escape. Drop the
+   existing `getLog().warn("New pipeline found N issue(s) — treated as warnings during migration")`
+   line — it's wrong post-flip.
+3. After the existing `if (legacyFailure != null) { … throw }` block,
+   add the new branch:
+   `if (!rewriteErrors.isEmpty() && failOnRewriteValidationError) { … throw }`
+   with the aggregate error-list message body shown in Decision E.
+
+~25 LOC net (one field, one variable hoist, one summary-line
+deletion, one new aggregate-message throw). The `@Parameter(property = "...")`
+form supports both pom `<configuration>` and
+`-Dgraphitron.failOnRewriteValidationError=false` at once.
 
 **Error-message contract.** The `MojoExecutionException` message
-must mention `graphitron.failOnRewriteValidationError=false` so a
-consumer whose build fails unexpectedly has the escape hatch in the
-error itself, not buried in changelog.
+must (a) include the count, (b) include each individual error with
+location prefix matching the warn-loop format (`source:line:column: msg`),
+(c) mention `graphitron.failOnRewriteValidationError=false` as the
+escape hatch, and (d) note that the escape hatch re-opens the
+runtime-UOE window. Items (a)-(c) are the failure-summary basics;
+(d) prevents the flag from being treated as a blanket
+"make-it-stop" without informed consent.
 
 **Integration tests.** The `it/` directory (Maven invoker tests) if
 present should gain one project that exercises each branch:
-validation-error + `failOn...=true` asserts the build fails;
+validation-error + `failOn...=true` asserts the build fails with
+the count and aggregate body in the failure message;
 validation-error + `failOn...=false` asserts the build passes with
 warnings. If `it/` tests don't exist for the mojo, skip — the
 production change is mechanical and the rewrite validator tests
-already exercise the `ValidationError` path.
+already exercise the `ValidationError` path. (As of this plan, no
+`it/` tests exist for `graphitron-maven-plugin`; treat this as an
+optional follow-up rather than a blocker.)
 
 ## Testing Strategy
 
@@ -503,14 +590,17 @@ end-to-end behaviour in addition to the per-variant coverage.
 - Retrofitting the 33 stubbed-variant tests is mechanical but
   touches many files. Keep the PR reviewable by splitting the
   production commit from the test-retrofit commit.
-- **Breaking change for consumers** currently tolerating rewrite
-  warnings: their next Graphitron upgrade starts failing builds on
-  schemas where the rewrite validator finds any error (not just the
-  stubbed-variant ones — Decision E flips severity for every
-  `ValidationError` from the rewrite pipeline). Escape hatch is one
-  system property (`-Dgraphitron.failOnRewriteValidationError=false`).
-  Call this out in the release notes for the version shipping this
-  plan.
+- **Latent breaking change.** Decision E flips severity for every
+  `ValidationError` from the rewrite pipeline (not just the
+  stubbed-variant ones). No external consumers exist as of this plan
+  landing, so the change is theoretical today; the in-tree
+  `graphitron-example/` project is the only canary and is owned by
+  this repo. Once external consumers arrive, projects relying on the
+  warning-only rewrite path will fail their next Graphitron upgrade
+  unless they fix the validation error or set
+  `-Dgraphitron.failOnRewriteValidationError=false`. Add the flag
+  and its cost (re-opens the runtime-UOE window) to release notes
+  for the first version with external consumers.
 
 ### What this plan does not address
 - **Stale reason strings.** A reason string in
@@ -539,10 +629,11 @@ end-to-end behaviour in addition to the per-variant coverage.
   that work churns the builder and `GraphitronSchemaBuilderTest`
   enums; this plan touches the validator, the `validation/` test
   classes, and the mojo).
-- **Release coordination:** the breaking-change call-out in
-  Consequences should be reflected in the plugin's release notes
-  for the version shipping this PR, including the one-flag escape
-  hatch.
+- **Release coordination:** no external consumers as of plan landing,
+  so no immediate notes work required. Track for the first
+  external-consumer release: document the flag, its cost (re-opens
+  runtime-UOE window), and the recommended action (fix the schema
+  rather than set the flag).
 
 ## References
 
