@@ -1465,6 +1465,30 @@ class GraphitronSchemaBuilderTest {
                         && t.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Context)
                     .extracting(p -> ((no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed) p).name())
                     .containsExactly("tenantId");
+            }),
+
+        // ===== UnboundArg / UnclassifiedArg error surfacing (argres step 10) =====
+        // classifyArguments emits UnboundArg when a scalar arg can't resolve to a column and
+        // UnclassifiedArg for other structural failures. projectFilters promotes both into
+        // per-argument errors with the "argument 'X': <reason>" format; the owning field becomes
+        // UnclassifiedField. These tests lock the contract in place.
+
+        UNBOUND_ARG_COLUMN_NOT_IN_TABLE(
+            "scalar arg bound to a non-existent column — UnclassifiedField with candidate hint in the reason",
+            """
+            type Film @table(name: "film") {
+                filmId: Int! @field(name: "film_id")
+            }
+            type Query {
+                films(tytle: String @field(name: "tytle")): [Film!]!
+            }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) schema.field("Query", "films");
+                assertThat(f.reason())
+                    .contains("argument 'tytle'")
+                    .contains("could not be resolved in table 'film'")
+                    .contains("did you mean");
             });
 
         final String sdl;
