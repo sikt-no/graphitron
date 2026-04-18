@@ -15,7 +15,7 @@ documented allowlist entry with a reason.
 This closes a recurring class of bug: a new sealed leaf is added to the
 model but nobody writes a test case for it, or no generator dispatches on
 it, and the gap is only noticed when a schema hits the missing path at
-build or request time (the `ObjectBased` gap called out under `docs/rewrite-roadmap.md` P2 #5 is the
+build or request time (the `ObjectBased` gap called out under `rewrite-roadmap.md` P2 #5 is the
 canonical example).
 
 ## Current State
@@ -746,7 +746,7 @@ description. Don't commit them as tests (they'd pollute the suite).
   guarantees conflicts.
 - **Phase 3 deferred.** Separate plan when narrow-component coverage
   becomes concrete demand (e.g., the `BatchKey.ObjectBased` decision
-  from `docs/rewrite-roadmap.md` P2 #5).
+  from `rewrite-roadmap.md` P2 #5).
 
 ## Consequences
 
@@ -773,9 +773,9 @@ description. Don't commit them as tests (they'd pollute the suite).
 
 ## References
 
-- `docs/rewrite-roadmap.md` — P1 #1 (this plan), P2 #3 (validator consuming the map), P2 #5 (cross-plan ownership).
-- `docs/plan-docs-as-index-into-tests.md` — step 5 sketches the `ClassificationCase` interface; this plan supersedes that step.
-- `docs/plan-classification-vocabulary-followups.md` — related vocabulary work; not a dependency.
+- `rewrite-roadmap.md` — P1 #1 (this plan), P2 #3 (validator consuming the map), P2 #5 (cross-plan ownership).
+- `plan-docs-as-index-into-tests.md` — step 5 sketches the `ClassificationCase` interface; this plan supersedes that step.
+- `plan-classification-vocabulary-followups.md` — related vocabulary work; not a dependency.
 - `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/generators/GeneratorCoverageTest.java` — Phase 1 landed the partition test here.
 - `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java` — `IMPLEMENTED_LEAVES`, `NOT_IMPLEMENTED_REASONS`, `NOT_DISPATCHED_LEAVES`, and the sealed switch they guard.
 - `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java` — 26 classification enums targeted by phase 2.

@@ -38,7 +38,7 @@ Do NOT write code-string assertions that check generated method bodies (e.g. `as
 
 ## Development Workflow
 
-Every change moves Unplanned → Draft → Approved → In Progress → Pending Review → Done, tracked per item in `docs/rewrite-roadmap.md` with inline `[Status]` markers. Plans live at `docs/plan-<slug>.md` and carry a `> **Status:** ...` front-matter that mirrors the roadmap. Reviewer must be a different party than the author (for Draft → Approved) and the implementer (for Pending Review → Done). Any session can add `[Unplanned]` items to the roadmap.
+Every change moves Unplanned → Draft → Approved → In Progress → Pending Review → Done, tracked per item in `docs/planning/rewrite-roadmap.md` with inline `[Status]` markers. Plans live at `docs/planning/plan-<slug>.md` and carry a `> **Status:** ...` front-matter that mirrors the roadmap. Reviewer must be a different party than the author (for Draft → Approved) and the implementer (for Pending Review → Done). Any session can add `[Unplanned]` items to the roadmap.
 
 Full spec — state table, file conventions, canonical path: [`docs/workflow.md`](docs/workflow.md). Read it once; it's short.
 

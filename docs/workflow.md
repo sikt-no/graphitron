@@ -7,7 +7,7 @@ and what "publish" means.
 ## States
 
 Every unit of work sits in exactly one state at a time. The roadmap
-(`rewrite-roadmap.md`) is the single ledger that tracks state per item.
+(`planning/rewrite-roadmap.md`) is the single ledger that tracks state per item.
 
 ```
 Unplanned → Draft → Approved → In Progress → Pending Review → Done
@@ -29,7 +29,7 @@ Two reverse transitions are legal:
 
 | From | To | Trigger | Required outputs |
 |------|----|---------|------------------|
-| Unplanned | Draft | Someone picks the item | New `docs/plan-<slug>.md` with `> **Status:** Draft`; roadmap item gains `[Draft]` marker + link to plan; commit + push |
+| Unplanned | Draft | Someone picks the item | New `docs/planning/plan-<slug>.md` with `> **Status:** Draft`; roadmap item gains `[Draft]` marker + link to plan; commit + push |
 | Draft | Draft | Reviewer requests iteration | Plan updated in place; push; roadmap unchanged |
 | Draft | Approved | Reviewer (≠ author) signs off | Plan front-matter changes to `> **Status:** Approved`; roadmap marker changes to `[Approved]`; commit + push |
 | Approved | In Progress | Implementer starts work | Roadmap marker changes to `[In Progress]` (plan status unchanged); push |
@@ -53,7 +53,7 @@ the artifact alone.
 
 ## Plan file conventions
 
-- Location: `docs/plan-<slug>.md`. Slug describes the work, not the
+- Location: `docs/planning/plan-<slug>.md`. Slug describes the work, not the
   phase (`plan-variant-coverage-meta-test.md`, not `plan-phase-2.md`).
 - First non-heading line is the status front-matter, verbatim:
   `> **Status:** Draft | Approved | Pending Review`
@@ -102,7 +102,7 @@ Taking a feature from idea to Done, minimum three commits by at least
 two parties:
 
 1. **Author** picks an `[Unplanned]` roadmap item, drafts
-   `docs/plan-foo.md`, sets roadmap to `[Draft]`. One commit.
+   `docs/planning/plan-foo.md`, sets roadmap to `[Draft]`. One commit.
 2. **Reviewer (not the author)** reads the plan, either suggests
    iterations (back to Draft) or approves (status → Approved in both
    plan and roadmap). One commit when approving.

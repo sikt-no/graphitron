@@ -29,11 +29,11 @@ You're implementing generators, adding field variants, or fixing bugs in the rew
 
 4. **[Code Generation Triggers](code-generation-triggers.md)** — The full classification taxonomy: schema patterns → sealed variants → generated output. This is the reference for what the code does.
 5. **[Rewrite Model](rewrite-model.md)** — Visual Mermaid diagrams of the sealed type hierarchy: field variants, type variants, and support/composition types. Includes notes on structural redundancy and potential cleanup.
-6. **[Rewrite Roadmap](rewrite-roadmap.md)** — Design principles for the rewrite, remaining generator work, and known gaps.
+6. **[Rewrite Roadmap](planning/rewrite-roadmap.md)** — Design principles for the rewrite, remaining generator work, and known gaps. Full set of in-flight plans lives under [planning/](planning/).
 
 Active implementation plans (read when you're working on the specific feature):
 - **[Paginated Fields](paginated-fields.md)** — Dynamic ordering cursors, backward pagination, known bugs.
-- **[Argument Resolution](argument-resolution.md)** — Unified argument classification, @condition support, lookup VALUES generation.
+- **[Argument Resolution](planning/argument-resolution.md)** — Unified argument classification, @condition support, lookup VALUES generation.
 - **[Legacy PlatformId](legacy-platform-id.md)** — Classifying legacy `id: ID!` mutation input fields that bind to composite platform keys via record-level `getId`/`setId`.
 
 ---
@@ -51,9 +51,9 @@ Active implementation plans (read when you're working on the specific feature):
 | [Example README](/graphitron-example/README.md) | Schema authors | Working Sakila example |
 | [Code Generation Triggers](code-generation-triggers.md) | Contributors | Schema → classification → generated code |
 | [Rewrite Model](rewrite-model.md) | Contributors | Sealed type hierarchy diagrams and cleanup notes |
-| [Rewrite Roadmap](rewrite-roadmap.md) | Contributors | Design principles, remaining work, known gaps |
+| [Rewrite Roadmap](planning/rewrite-roadmap.md) | Contributors | Design principles, remaining work, known gaps |
 | [Paginated Fields](paginated-fields.md) | Contributors | Pagination implementation plan |
-| [Argument Resolution](argument-resolution.md) | Contributors | Argument classification, @condition, lookup generation |
+| [Argument Resolution](planning/argument-resolution.md) | Contributors | Argument classification, @condition, lookup generation |
 | [Legacy PlatformId](legacy-platform-id.md) | Contributors | Legacy `id: ID!` input classification via record `getId`/`setId` |
 
 ## Other Documentation

@@ -16,7 +16,7 @@ The G6 **Split/Lookup field categories** table in
 [rewrite-roadmap.md](rewrite-roadmap.md#g6--splitlookup-field-categories) still lists
 `@condition` as *Blocked* on three of the four lookup variants (`LookupQueryField`,
 table-mapped `LookupTableField`, result-mapped `LookupTableField`). The rewritten
-[code-generation-triggers.md](code-generation-triggers.md) now states the opposite:
+[code-generation-triggers.md](../code-generation-triggers.md) now states the opposite:
 
 > `@condition` on lookup fields is allowed. The condition method, however, must preserve the
 > N × M positional contract…
@@ -24,7 +24,7 @@ table-mapped `LookupTableField`, result-mapped `LookupTableField`). The rewritte
 **Change.** Replace "Blocked (lookup invariant)" / "Blocked" in the `@condition` column with
 "Allowed — must preserve N × M contract" (or equivalent) on all three lookup rows. Add a short
 pointer under the table to the authoritative statement in
-[Derived tables](code-generation-triggers.md#derived-tables).
+[Derived tables](../code-generation-triggers.md#derived-tables).
 
 **Code check (no change expected).** `FieldBuilder.buildFilters` rejects `@condition` only on
 *arguments*, never on field definitions, and no classifier pairs `@lookupKey` + `@condition` as
@@ -38,7 +38,7 @@ mutually exclusive. The doc is the only place that's wrong.
 parent the directive is silently ignored because the record handoff already opens a new
 DataLoader-backed scope — the split is redundant.
 
-[code-generation-triggers.md](code-generation-triggers.md) already states this should be a
+[code-generation-triggers.md](../code-generation-triggers.md) already states this should be a
 **warning** (not an error) — the doc is ahead of the code.
 
 Silent acceptance is a trap: a developer adding `@splitQuery` to "make batching kick in" has
@@ -70,18 +70,18 @@ should be designed once to serve all three callers, whichever lands first.
 
 Systematic audit — one pass per file:
 
-- **`docs/rewrite-roadmap.md`** — item 1 above covers it.
-- **`docs/rewrite-model.md`** — the phrase `"does not navigate to a new table scope"` (in the
+- **`rewrite-roadmap.md`** — item 1 above covers it.
+- **`../rewrite-model.md`** — the phrase `"does not navigate to a new table scope"` (in the
   `TableTargetField interface vs. NestingField` subsection) is correct. No other
   lookup-in-scope claims present. No change.
-- **`docs/argument-resolution.md`** — discusses lookup mapping and `@condition` separately.
+- **`argument-resolution.md`** — discusses lookup mapping and `@condition` separately.
   Spot-check that wording never implies `@condition` is blocked on lookup fields.
 - **`graphitron-codegen-parent/graphitron-java-codegen/README.md`** — primary directive
   reference, ~1500 lines, 32 mentions of `@condition`/`@lookupKey`. Grep for `lookupKey` +
   nearby `condition`/`scope` language; reconcile with the rewritten vocabulary.
 
 For each finding, decide per-case: rewrite in place vs. cross-link to
-[code-generation-triggers.md#classification-vocabulary](code-generation-triggers.md#classification-vocabulary).
+[code-generation-triggers.md#classification-vocabulary](../code-generation-triggers.md#classification-vocabulary).
 Prefer cross-links — one authoritative source is easier to keep correct.
 
 ---
@@ -124,7 +124,7 @@ Questions to answer:
 **Action.** Before wiring lookup execution tests (see
 [rewrite-roadmap.md G5/G6](rewrite-roadmap.md#g5--inline-tablefield)), nail down the signature,
 document it in
-[graphitron-java-codegen README](../graphitron-codegen-parent/graphitron-java-codegen/README.md)
+[graphitron-java-codegen README](../../graphitron-codegen-parent/graphitron-java-codegen/README.md)
 alongside `@condition`, and add an execution test in `graphitron-rewrite-test-spec` that
 verifies the N × M contract holds end-to-end.
 

@@ -144,7 +144,7 @@ dispatch before `@record` got a chance.
 ### Step 4 — Docs
 
 - Add a note to
-  [`code-generation-triggers.md`](code-generation-triggers.md) under the input-type section:
+  [`code-generation-triggers.md`](../code-generation-triggers.md) under the input-type section:
   "On input types, `@record` dominates `@table`. If both are present, `@table` is ignored and
   the input classifies as if only `@record` were declared; a build warning is emitted."
 - Link this file from the roadmap's Active section so the fix is tracked.
