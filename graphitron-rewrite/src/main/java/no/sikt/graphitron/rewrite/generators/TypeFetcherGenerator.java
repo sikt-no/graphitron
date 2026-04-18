@@ -105,6 +105,7 @@ public class TypeFetcherGenerator {
      */
     public static final Set<Class<? extends GraphitronField>> IMPLEMENTED_LEAVES = Set.of(
         ChildField.ColumnField.class,
+        ChildField.PlatformIdField.class,
         QueryField.QueryLookupTableField.class,
         QueryField.QueryTableField.class,
         ChildField.ServiceTableField.class,
@@ -194,8 +195,6 @@ public class TypeFetcherGenerator {
             Map.entry(ChildField.RecordLookupTableField.class,
                 "RecordLookupTableField not yet implemented — see rewrite-roadmap.md"),
             // ChildField stubs — remaining direct permits
-            Map.entry(ChildField.PlatformIdField.class,
-                "PlatformIdField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(ChildField.ColumnReferenceField.class,
                 "ColumnReferenceField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(ChildField.NodeIdField.class,
@@ -294,7 +293,10 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationUpsertTableField f  -> builder.addMethod(stub(f));
                 case MutationField.MutationServiceTableField f -> builder.addMethod(stub(f));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(stub(f));
-                case ChildField.PlatformIdField f               -> builder.addMethod(stub(f));
+                case ChildField.PlatformIdField pf -> {
+                    // Projected by TypeClassGenerator.$fields via table.<getterName>() —
+                    // no per-field fetcher method needed here.
+                }
                 case ChildField.ColumnReferenceField f          -> builder.addMethod(stub(f));
                 case ChildField.NodeIdField f                   -> builder.addMethod(stub(f));
                 case ChildField.NodeIdReferenceField f          -> builder.addMethod(stub(f));

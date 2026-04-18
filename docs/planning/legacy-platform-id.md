@@ -2,7 +2,7 @@
 
 > **Status:** Approved
 >
-> Items 1 and 2 shipped (output field classification + input field path). Item 3 (mutation generator binding) remains, blocked on `InputColumnBinding` from `argument-resolution.md`.
+> Input field path + Item 1 (output classification + `$fields` emission + dispatch registration) shipped. Item 2 (pipeline tests) and Item 3 (mutation generator binding) remain; Item 3 is blocked on `InputColumnBinding` from `argument-resolution.md`.
 
 
 Tables with a composite platform key have no real `id` SQL column. The custom
@@ -14,72 +14,48 @@ Tables with a composite platform key have no real `id` SQL column. The custom
   Used in SELECT projection to build the computed ID expression.
 
 The input-field classification path (`TypeBuilder` → `InputField.PlatformIdField`)
-is fully implemented. The output-field classification path and the mutation
-generator binding are still open.
+is fully implemented. The output-field classification path also landed
+(see Item 1 below); pipeline tests and the mutation generator binding
+are still open.
 
 ---
 
-## 1 — Output field classification (blocking)
+## 1 — Output field classification — SHIPPED
 
-`FieldBuilder` currently fails with "column 'id' could not be resolved in the
-jOOQ table" for any `id: ID!` field on a `@table` output type whose table uses
-the platform-id pattern. The error now includes a diagnostic hint listing
-`get*Id()` table-class methods (added in the last commit) so the problem is
-visible, but the field is still `UnclassifiedField`.
+Shipped pieces:
 
-### What to add
-
-**`ChildField.PlatformIdField`** — new variant in the `ChildField` sealed
-interface (update the `permits` clause):
-
-```java
-record PlatformIdField(
-    String parentTypeName,
-    String name,
-    SourceLocation location,
-    String getterName    // e.g. "getId" — the table-class method returning SelectField<String>
-) implements ChildField {}
-```
-
-No `ColumnRef` needed. The generator calls `table.<getterName>()` in the
-SELECT; the record-class getter `record.<getterName>()` is used for read-back.
-Both have the same name.
-
-**`FieldBuilder` fallback** — after `svc.resolveColumn(columnName, tableType)`
-returns empty and before the `UnclassifiedField` return, add a check parallel
-to the input-field path:
-
-Detection conditions (all must hold):
-1. Scalar `ID` type (after unwrapping NonNull).
-2. Not a list.
-3. No `@nodeId` directive (those are already handled by `NodeIdField`).
-
-Derive method name: `"get" + JooqCatalog.sqlToAccessorSuffix(columnName)`.
-
-Check on the **table class** (not the record class) using
-`JooqCatalog.platformIdOutputMethodNames(tableSqlName)`. If the derived name is
-present → `ChildField.PlatformIdField(..., getterName)`. If absent → keep
-current `UnclassifiedField` with the diagnostic hint.
-
-**Validator** — add an arm to the exhaustive switch in
-`GraphitronSchemaValidator.validateField` for `ChildField.PlatformIdField`.
-No structural checks needed; detection already confirmed the method exists.
-
-### Generator
-
-The type-class generator must include `table.<getterName>()` in the SELECT
-field list for a `PlatformIdField`, rather than a column reference. The
-read-back path (mapping the result row back to a GraphQL value) reads
-`record.<getterName>()` — the record-class getter with the same name. No
-separate treatment needed there because `getterName` is the same method name
-on both the table class and the record class.
+- **`ChildField.PlatformIdField`** record (`model/ChildField.java`) —
+  `(parentTypeName, name, location, getterName)`. Matches the design;
+  no `ColumnRef` needed.
+- **`FieldBuilder` fallback** (~line 1599) — after column resolution
+  fails, checks `platformIdMethods` and returns `PlatformIdField(..., getterName)`
+  when the derived `"get" + JooqCatalog.sqlToAccessorSuffix(columnName)`
+  matches a table-class method; otherwise keeps `UnclassifiedField`
+  with the diagnostic hint. Detection gates: scalar `ID`, not a list,
+  no `@nodeId`.
+- **Validator** (`GraphitronSchemaValidator.validateChildPlatformIdField`)
+  — no-op arm; detection already confirmed the method exists.
+- **Generator — `$fields` emission** (`TypeClassGenerator`) — emits
+  `fields.add(table.<getterName>())` in the SELECT field list for each
+  `PlatformIdField` on a type. Read-back uses `record.<getterName>()`;
+  same method name on both classes so no separate treatment.
+- **Dispatch registration** (`TypeFetcherGenerator`) — `ChildField.PlatformIdField`
+  is in `IMPLEMENTED_LEAVES` with a no-op switch arm (the same pattern
+  as `ChildField.ColumnField`: handled elsewhere, no per-field fetcher
+  method generated). Fixed on 2026-04-18 — previously the variant was
+  in `NOT_IMPLEMENTED_REASONS` with `stub(f)`, which caused the P2 #3
+  stubbed-variant validator to incorrectly reject valid schemas using
+  platform-id output fields.
 
 ---
 
-## 2 — Pipeline tests (input and output)
+## 2 — Pipeline tests (input and output) — OPEN
 
-The classification pipeline tests were intentionally deferred but should land
-before or alongside the output-field work.
+The classification pipeline tests were intentionally deferred; still
+not written. Unit tests for the validator exist
+(`PlatformIdFieldValidationTest`, `ChildPlatformIdFieldValidationTest`),
+but `GraphitronSchemaBuilderTest` has zero `PlatformId` cases — the
+schema → classified-variant path is untested end-to-end.
 
 **Input side** (table `bar`, record exposes `getId()`/`setId(String)`):
 

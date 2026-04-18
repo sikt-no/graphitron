@@ -8,7 +8,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -16,13 +15,13 @@ class ChildPlatformIdFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        SIMPLE_ID("id field with getId getter (stubbed)",
+        SIMPLE_ID("id field with getId getter — no validation errors",
             new PlatformIdField("Phdreglement", "id", null, "getId"),
-            List.of(stubbedError("Phdreglement.id", PlatformIdField.class))),
+            List.of()),
 
-        NON_ID_GETTER("personId field with getPersonId getter (stubbed)",
+        NON_ID_GETTER("personId field with getPersonId getter — no validation errors",
             new PlatformIdField("Foo", "personId", null, "getPersonId"),
-            List.of(stubbedError("Foo.personId", PlatformIdField.class)));
+            List.of());
 
         private final String description;
         private final GraphitronField field;
