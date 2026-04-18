@@ -84,6 +84,17 @@ class GeneratorUtils {
     // Common code-block fragments
     // -----------------------------------------------------------------------
 
+    /** Converts a snake_case GraphQL argument name to lowerCamelCase for use as a Java local variable. */
+    static String toCamelCase(String snakeName) {
+        var parts = snakeName.split("_");
+        var sb = new StringBuilder(parts[0]);
+        for (int i = 1; i < parts.length; i++) {
+            sb.append(Character.toUpperCase(parts[i].charAt(0)));
+            sb.append(parts[i], 1, parts[i].length());
+        }
+        return sb.toString();
+    }
+
     /**
      * Returns a {@link CodeBlock} that declares a local {@code table} variable from the
      * jOOQ {@code Tables} constants class:

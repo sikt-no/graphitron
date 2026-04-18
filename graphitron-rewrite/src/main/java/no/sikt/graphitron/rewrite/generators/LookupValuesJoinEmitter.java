@@ -18,6 +18,7 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.ENV;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.LIST;
+import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
 
 /**
  * Emits the VALUES + JOIN lookup select for a {@link LookupField}, driven by its
@@ -233,13 +234,4 @@ final class LookupValuesJoinEmitter {
         return col.list() ? camel + "Keys" : camel;
     }
 
-    private static String toCamelCase(String snakeName) {
-        var parts = snakeName.split("_");
-        var sb = new StringBuilder(parts[0]);
-        for (int i = 1; i < parts.length; i++) {
-            sb.append(Character.toUpperCase(parts[i].charAt(0)));
-            sb.append(parts[i], 1, parts[i].length());
-        }
-        return sb.toString();
-    }
 }

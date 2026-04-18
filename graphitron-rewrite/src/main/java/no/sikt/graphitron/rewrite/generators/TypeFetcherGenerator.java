@@ -440,7 +440,7 @@ public class TypeFetcherGenerator {
                         LIST, String.class, toCamelCase(param.name()) + "Keys", param.name());
                 }
             }
-            var callArgs = buildCallArgs(filter.callParams(), filter.className());
+            var callArgs = ArgCallEmitter.buildCallArgs(filter.callParams(), filter.className());
             code.addStatement("condition = condition.and($T.$L($L))",
                 ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
         }
@@ -608,45 +608,6 @@ public class TypeFetcherGenerator {
             }
         }
         return code.build();
-    }
-
-    /**
-     * Builds the argument list for one condition method call: {@code table} first, then one arg
-     * per {@link CallParam}. The {@code conditionsClassName} is used by
-     * {@link CallSiteExtraction.TextMapLookup} to reference a static map field on the class.
-     */
-    private static CodeBlock buildCallArgs(List<CallParam> params, String conditionsClassName) {
-        var args = CodeBlock.builder();
-        args.add("table");
-        for (var param : params) {
-            args.add(", $L", buildArgExtraction(param, conditionsClassName));
-        }
-        return args.build();
-    }
-
-    private static CodeBlock buildArgExtraction(CallParam param, String conditionsClassName) {
-        return switch (param.extraction()) {
-            case CallSiteExtraction.Direct ignored ->
-                CodeBlock.of("env.getArgument($S)", param.name());
-            case CallSiteExtraction.EnumValueOf ev -> {
-                var enumClass = ClassName.bestGuess(ev.enumClassName());
-                yield CodeBlock.of(
-                    "env.getArgument($S) != null ? $T.valueOf(env.<$T>getArgument($S)) : null",
-                    param.name(), enumClass, String.class, param.name());
-            }
-            case CallSiteExtraction.TextMapLookup tl ->
-                CodeBlock.of(
-                    "env.getArgument($S) != null ? $T.$L.get(env.<$T>getArgument($S)) : null",
-                    param.name(), ClassName.bestGuess(conditionsClassName), tl.mapFieldName(),
-                    String.class, param.name());
-            case CallSiteExtraction.ContextArg ignored ->
-                CodeBlock.of("graphitronContext(env).getContextArgument(env, $S)", param.name());
-            case CallSiteExtraction.JooqConvert jc -> param.list()
-                ? CodeBlock.of("$L.stream().map(table.$L.getDataType()::convert).toList()",
-                    toCamelCase(param.name()) + "Keys", jc.columnJavaName())
-                : CodeBlock.of("table.$L.getDataType().convert((String) env.getArgument($S))",
-                    jc.columnJavaName(), param.name());
-        };
     }
 
     /**
@@ -928,7 +889,7 @@ public class TypeFetcherGenerator {
                         LIST, String.class, toCamelCase(param.name()) + "Keys", param.name());
                 }
             }
-            var callArgs = buildCallArgs(filter.callParams(), filter.className());
+            var callArgs = ArgCallEmitter.buildCallArgs(filter.callParams(), filter.className());
             builder.addStatement("condition = condition.and($T.$L($L))",
                 ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
         }
@@ -1119,14 +1080,4 @@ public class TypeFetcherGenerator {
             .build();
     }
 
-    /** Converts a snake_case GraphQL argument name to lowerCamelCase for use as a Java local variable. */
-    private static String toCamelCase(String snakeName) {
-        var parts = snakeName.split("_");
-        var sb = new StringBuilder(parts[0]);
-        for (int i = 1; i < parts.length; i++) {
-            sb.append(Character.toUpperCase(parts[i].charAt(0)));
-            sb.append(parts[i], 1, parts[i].length());
-        }
-        return sb.toString();
-    }
 }
