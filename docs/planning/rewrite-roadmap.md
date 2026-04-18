@@ -119,7 +119,7 @@ Steps 1-2 shipped on `claude/review-docs-plan-adYJW`. Step 5 superseded by `plan
 
 ### Legacy platformId **[Approved]** — [legacy-platform-id.md](legacy-platform-id.md)
 
-Classify `id: ID!` fields that bind to composite platform keys emitted by `KjerneJooqGenerator` (`get*Id()` / `set*Id()` accessors, no real SQL column). Item 1 shipped (output field classification via `ChildField.PlatformIdField` + `$fields` emission + dispatch registration; input field path via `InputField.PlatformIdField`). Item 2 (pipeline tests) is blocked on a test-fixture gap — the sakila test catalog has no platform-id-shaped table, so positive-case SDL→classification assertions cannot run end-to-end. Item 3 (mutation generator binding via `InputColumnBinding`) is blocked on argres Phase 3 (`TableInputArg.fieldBindings` population).
+Classify `id: ID!` fields that bind to composite platform keys emitted by `KjerneJooqGenerator` (`get*Id()` / `set*Id()` accessors, no real SQL column). Items 1-2 shipped: output and input classification, dispatch registration, and end-to-end pipeline tests backed by a synthetic `platformidfixture` jOOQ catalog that adds platform-id accessors to a hand-written table/record pair. Item 3 (mutation generator binding via `InputColumnBinding`) is blocked on argres Phase 3 (`TableInputArg.fieldBindings` population).
 
 ## Backlog
 
