@@ -99,16 +99,29 @@ Both iterate the same `filters()` list. Removing lookup keys from `filters()` (a
 
 ### Phase 2 — Child-field lookup generators (G5/G6)
 
-**Goal.** Extend the emission path to `LookupTableField` (inline correlated subquery, table-mapped parent), `SplitLookupTableField` (DataLoader-backed, table-mapped parent), and `RecordLookupTableField` (DataLoader-backed, result-mapped parent). All three are stubs today; each throws `UnsupportedOperationException`.
+**Goal.** Extend the emission path to `LookupTableField` (inline correlated subquery, table-mapped parent), `SplitLookupTableField` (DataLoader-backed, table-mapped parent), and `RecordLookupTableField` (result-mapped parent). All three are stubs today; each throws `UnsupportedOperationException`.
 
-**Why this phase depends on 1.** Child-field lookup emission reuses the same VALUES + JOIN shape. Once Phase 1 is complete, Phase 2 is primarily about wiring `LookupValuesJoinEmitter` into the three new dispatch arms of `TypeFetcherGenerator`, not about rewriting SQL.
+**Prerequisites surfaced after Phase 1 landed (2026-04-18).** The first draft of this section framed Phase 2 as "primarily wiring `LookupValuesJoinEmitter` into three new dispatch arms of `TypeFetcherGenerator`." Reconnaissance after Phase 1 shows that's incomplete:
 
-**Sub-items.**
+1. **G5 is a gating prerequisite for 2a.** Plain `ChildField.TableField` (inline subquery without `@lookupKey`) has no emission today — it's also a stub (roadmap "Stubs to complete" #1, G5). Phase 2a's "inline correlated subquery with a VALUES+JOIN keyset" layers lookup-key correlation onto the inline-subquery shape that G5 is supposed to establish. Absent G5, Phase 2a has to invent both the inline-subquery pattern and the lookup-key layer simultaneously. Order as G5 → Phase 2a.
 
-- **2a.** `LookupTableField` — inline correlated subquery form. Join path (`joinPath`) already resolved by the builder; the emitter writes `select(...) from values join target on … where target joined to parent via joinPath`.
-- **2b.** `SplitLookupTableField` and `RecordLookupTableField` — DataLoader rows methods. Generator dispatches per `BatchKey` variant (`RowKeyed` / `RecordKeyed`) when building the key extractor.
+2. **Inline emission lives in `TypeClassGenerator.$fields`, not `TypeFetcherGenerator`.** Today `$fields(sel, table, env)` only projects `ColumnField` and `PlatformIdField`. Inline child `TableField` / `LookupTableField` must be embedded as sub-SELECT expressions *inside* `$fields`, not as separate fetcher methods. The emitter's role in Phase 2a is therefore narrower than its fetcher-side role in Phase 1 — it produces a `CodeBlock` that slots into `$fields`' projected-expression list, with the parent-row correlation already built by whatever G5 establishes.
 
-**Cross-reference.** Roadmap G5/G6 track this phase as stub completion. Once Phase 1 lands, G5/G6 reopens from the emission side, not the classification side.
+3. **`RecordLookupTableField` has no `BatchKey` field.** This section originally grouped it with `SplitLookupTableField` as "DataLoader-backed rows methods, dispatches per `BatchKey` variant." The sealed hierarchy today carries `BatchKey` on `SplitLookupTableField` but not on `RecordLookupTableField`. Three possibilities to resolve before 2b/2c begins:
+   - (a) the model needs a `BatchKey` field added to `RecordLookupTableField`,
+   - (b) result-mapped batching uses a different mechanism (e.g. derived from the parent's result shape at dispatch time),
+   - (c) `RecordLookupTableField` is actually synchronous in practice and doesn't belong to the DataLoader category.
+   Pick one and codify it in the sealed hierarchy / emission arm before landing `RecordLookupTableField` emission.
+
+4. **Test-spec schema has zero child-lookup fields.** `graphitron-rewrite-test-spec`'s `schema.graphqls` exercises only `@lookupKey` on root queries (`filmById`, `languageByKey`, `customerById`). Phase 2 execution tests require new child-lookup fields (e.g. `Film.actor(actor_id: ID! @lookupKey): Actor`) plus likely init.sql additions to populate the Sakila subset with FK-resolvable rows.
+
+**Revised sub-items.**
+
+- **2a.** `LookupTableField` — inline correlated subquery. Requires G5 first. The emitter slots a VALUES+JOIN derived-table select into `$fields` as one projected expression, correlated to the parent row via `joinPath`.
+- **2b.** `SplitLookupTableField` — DataLoader rows method, table-mapped parent. Keys come from `BatchKey.RowKeyed` / `RecordKeyed` extracted from the parent batch, combined with the `@lookupKey` VALUES+JOIN as the derived-target side. Cross-product in SQL; rows method returns grouped results by parent-key position.
+- **2c.** `RecordLookupTableField` — only after the `BatchKey` question above is resolved.
+
+**Cross-reference.** Roadmap G5/G6 track these stubs. G5 is now an explicit prerequisite rather than a parallel track; `rewrite-roadmap.md` notes the dependency.
 
 ### Phase 3 — Composite keys via `TableInputArg` + `InputColumnBinding`
 
@@ -210,3 +223,5 @@ Structural properties (method names, param types, presence/absence) are the righ
 - 2026-04-18 — plan rewritten to reflect foundation status and reframe remaining work as a six-phase generator migration. Steps 7–9 of the old plan absorbed into phases with explicit sub-items and decision points.
 - 2026-04-18 — post-review tightening. Two foundation fixes landed: `ColumnArg.isLookupKey` lifts `@lookupKey` into the classifier (projection no longer re-reads SDL); `projectForFilter` rejects fields that trip the lookup gate but produce an empty `LookupMapping`, closing the input-field-`@lookupKey` gap until Phase 3. Plan collapsed from six phases to four: the disposable `LookupConditionEmitter` interstitial is gone; Phase 1 lands VALUES + JOIN directly. Phase 3 composite-key work is a single atomic change (binding population + `sourcePath` + projection + emitter). Phase 4 gains a required override-propagation test matrix. Test strategy rewritten to execution-level assertions only — no `CodeBlock`-substring or snapshot-of-emitted-SQL tests.
 - 2026-04-18 (late) — Phase 1 design tightening. Blast-radius spike: zero external consumers — single-site change, no parallel deprecation path. Emitter shape: extracted `<fieldName>InputRows(env, table) -> Row[]` helper + thin fetcher body (pure helper is unit-testable; fetcher is composition). Join: USING (VALUES labels emitted to match target column names). Bind: `DSL.val(value, dataType)` — typed `Param<T>` invokes the column's Converter internally, plain JDBC bind, no SQL-level CAST. No extraction restriction on `@lookupKey`. Alias scheme `<fieldName>Input`. Uniform emission for n=1. Decision table extended with seven Phase-1 resolutions.
+- 2026-04-18 (later) — Phase 1 landed. `FieldBuilder.projectFilters` now excludes `isLookupKey` from bodyParams; `LookupValuesJoinEmitter` emits `<fieldName>InputRows(env, table) -> RowN[]` + thin fetcher with USING-join; `TypeConditionsGenerator` skips `LookupField`; validator reads `lookupMapping().columns()` for cardinality. 446 unit tests + 35 execution tests green; `filmById_preservesInputOrder` test proves ordered VALUES+JOIN.
+- 2026-04-18 (later still) — Phase 2 scope clarified post-reconnaissance. Four prerequisites added: G5 (plain inline `TableField` subquery) gates Phase 2a; inline emission lives in `TypeClassGenerator.$fields`, not `TypeFetcherGenerator`; `RecordLookupTableField` has no `BatchKey` in the sealed hierarchy and the model question must be resolved before 2c; test-spec schema needs child-lookup fields + Sakila seed additions. Sub-items re-split: 2a (LookupTableField, requires G5), 2b (SplitLookupTableField), 2c (RecordLookupTableField, blocked on model decision).

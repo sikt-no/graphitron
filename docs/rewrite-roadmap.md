@@ -265,6 +265,10 @@ Full plan: [`docs/plan-classification-vocabulary-followups.md`](plan-classificat
 
 Join paths (`TableField.joinPath()`) may contain both `FkJoin` and `ConditionJoin` steps. The builder fully resolves both (condition-join `MethodRef` reflection is implemented). The generator must handle both: `FkJoin` emits a standard FK-driven JOIN; `ConditionJoin` emits a join whose ON clause is the result of calling `condition.method(srcAlias, tgtAlias)`.
 
+Inline emission lives in `TypeClassGenerator.$fields`, not `TypeFetcherGenerator`. Today `$fields(sel, table, env)` only projects `ColumnField` and `PlatformIdField`; G5 is what first introduces child-table projection as a sub-SELECT expression embedded in the parent's `$fields` list.
+
+**Downstream dependency.** G5 is a gating prerequisite for [argres Phase 2a (`LookupTableField`)](argument-resolution.md#phase-2--child-field-lookup-generators-g5g6) — the lookup variant layers a VALUES+JOIN keyset onto the inline-subquery shape G5 establishes. Land G5 before attempting argres Phase 2a.
+
 Execution-test prerequisite: document the lookup-condition method signature (see
 [classification-vocabulary-followups item 5](plan-classification-vocabulary-followups.md#5-document-the-lookup-condition-method-signature-prerequisite-for-g5g6-execution-tests)).
 
@@ -274,10 +278,12 @@ G6 covers four categories of DataLoader-backed field. Before implementing any ca
 
 | Category | DataLoader | Derived tables | `@condition` / non-`@lookupKey` args | Pagination |
 |---|---|---|---|---|
-| **`LookupQueryField`** (root lookup) | No — synchronous | Derived target only | Blocked (lookup invariant) | Never — result count = M exactly |
+| **`LookupQueryField`** (root lookup) — now live via argres Phase 1 | No — synchronous | Derived target only | Blocked (lookup invariant) | Never — result count = M exactly |
 | **Table-mapped `LookupTableField`** (`@splitQuery` + `@lookupKey`, table-mapped parent) | No — correlated subquery | Derived target + correlated parent join | Blocked | Never |
 | **Result-mapped `TableField`** (`@splitQuery`, no `@lookupKey`) | Yes | Derived source only | Allowed | Allowed |
-| **Result-mapped `LookupTableField`** (`@splitQuery` + `@lookupKey`, result-mapped parent) | Yes | Both | Blocked | Never — result count = N × M |
+| **Result-mapped `LookupTableField`** (`@splitQuery` + `@lookupKey`, result-mapped parent) — aspirational row | Yes | Both | Blocked | Never — result count = N × M |
+
+**Gap in the last row.** The sealed record `ChildField.RecordLookupTableField` today has no `BatchKey` field (unlike `SplitLookupTableField`), so the table's "DataLoader: Yes" entry is aspirational. Before implementing this category, resolve: (a) add `BatchKey` to `RecordLookupTableField`, (b) batch via a different mechanism derived from the parent result, or (c) declare `RecordLookupTableField` synchronous and move this row out of the DataLoader table. See [argres Phase 2c](argument-resolution.md#phase-2--child-field-lookup-generators-g5g6).
 
 ---
 
