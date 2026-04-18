@@ -273,6 +273,8 @@ Inline emission lives in `TypeClassGenerator.$fields`, not `TypeFetcherGenerator
 
 **Downstream dependency.** G5 is a gating prerequisite for [argres Phase 2a (`LookupTableField`)](argument-resolution.md#phase-2--child-field-lookup-generators-g5g6) — the lookup variant layers a VALUES+JOIN keyset onto the inline-subquery shape G5 establishes. Land G5 before attempting argres Phase 2a.
 
+Full plan: [`docs/plan-g5-inline-tablefield.md`](plan-g5-inline-tablefield.md).
+
 Execution-test prerequisite: document the lookup-condition method signature (see
 [classification-vocabulary-followups item 5](plan-classification-vocabulary-followups.md#5-document-the-lookup-condition-method-signature-prerequisite-for-g5g6-execution-tests)).
 
