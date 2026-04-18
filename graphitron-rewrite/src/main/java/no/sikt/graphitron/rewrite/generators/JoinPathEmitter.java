@@ -80,19 +80,24 @@ public final class JoinPathEmitter {
      * {@code first.alias().<targetCol> = parent.<sourceCol>} (matched by position); otherwise
      * {@code first.alias().<sourceCol> = parent.<targetCol>}.
      *
+     * <p>The {@code parentHoldsFk} flag is supplied by the caller from the field's cardinality:
+     * {@code Single} cardinality means the parent row has at most one matching target — i.e. the
+     * parent holds the FK. {@code List} cardinality means the parent is the PK side and many
+     * target rows may hold the FK pointing back. Cardinality is the reliable signal even for
+     * self-referential FKs where source and target tables are identical (both {@code parent} and
+     * {@code children} fields navigate the same FK, in opposite directions).
+     *
      * <p>Composite FKs AND the paired columns. Single-column FKs are the common case; the zip
      * supports both uniformly. Precondition: {@code sourceColumns.size() == targetColumns.size()}
      * (jOOQ guarantees equal arity; a mismatch is a builder bug and must fail loudly).
      */
     public static CodeBlock emitCorrelationWhere(JoinStep.FkJoin first, String firstAlias,
-            String parentAlias, TableRef parentTable) {
+            String parentAlias, boolean parentHoldsFk) {
         if (first.sourceColumns().size() != first.targetColumns().size()) {
             throw new IllegalStateException(
                 "FkJoin '" + first.fkName() + "': sourceColumns/targetColumns arity mismatch ("
                 + first.sourceColumns().size() + " vs " + first.targetColumns().size() + ")");
         }
-        boolean parentHoldsFk = first.sourceTable() != null
-            && parentTable.tableName().equalsIgnoreCase(first.sourceTable().tableName());
         List<ColumnRef> innerCols = parentHoldsFk ? first.targetColumns() : first.sourceColumns();
         List<ColumnRef> parentCols = parentHoldsFk ? first.sourceColumns() : first.targetColumns();
         if (innerCols.isEmpty() || parentCols.isEmpty()) {

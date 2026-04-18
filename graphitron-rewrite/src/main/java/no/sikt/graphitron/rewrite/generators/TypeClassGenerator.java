@@ -139,7 +139,7 @@ public class TypeClassGenerator {
         }
         for (var tf : tableFields) {
             builder.addCode("        case $S -> {\n", tf.name());
-            builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableRef, "table"));
+            builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, "table"));
             builder.addCode("        }\n");
         }
         builder.addCode("        default -> { } // unhandled fields\n");

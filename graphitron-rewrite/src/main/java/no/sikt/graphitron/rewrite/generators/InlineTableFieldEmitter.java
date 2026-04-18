@@ -35,12 +35,11 @@ public final class InlineTableFieldEmitter {
      * {@code case "name" ->} prefix — the caller composes that.
      *
      * @param tf           the table field to emit
-     * @param parentTable  the parent type's {@link TableRef} (used for FK-direction branching)
      * @param parentAlias  the local variable name for the parent alias in the generated code
      *                     (currently always {@code "table"} — {@link TypeClassGenerator}'s
      *                     {@code $fields} signature parameter)
      */
-    public static CodeBlock buildSwitchArmBody(ChildField.TableField tf, TableRef parentTable, String parentAlias) {
+    public static CodeBlock buildSwitchArmBody(ChildField.TableField tf, String parentAlias) {
         if (JoinPathEmitter.hasConditionJoin(tf.joinPath())) {
             return CodeBlock.builder()
                 .addStatement("throw new $T($S)",
@@ -49,10 +48,10 @@ public final class InlineTableFieldEmitter {
                     + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables")
                 .build();
         }
-        return buildFkOnlyArm(tf, parentTable, parentAlias);
+        return buildFkOnlyArm(tf, parentAlias);
     }
 
-    private static CodeBlock buildFkOnlyArm(ChildField.TableField tf, TableRef parentTable, String parentAlias) {
+    private static CodeBlock buildFkOnlyArm(ChildField.TableField tf, String parentAlias) {
         List<JoinStep> path = tf.joinPath();
         TableRef terminalTable = tf.returnType().table();
         List<String> aliases = JoinPathEmitter.generateAliases(path, terminalTable);
@@ -65,27 +64,29 @@ public final class InlineTableFieldEmitter {
 
         var code = CodeBlock.builder();
 
-        // Declare aliased jOOQ tables for each hop.
+        // Declare aliased jOOQ tables for each hop. Alias strings are prefixed with the parent
+        // alias's runtime name (via the jOOQ parent table's {@code getName()}) so recursive /
+        // self-referential subselects never shadow each other's aliases. For the base (outermost)
+        // call, parent.getName() is the raw table name; each nested call accumulates the prefix,
+        // giving globally unique aliases at every depth.
         for (int i = 0; i < path.size(); i++) {
             JoinStep.FkJoin fk = (JoinStep.FkJoin) path.get(i);
             ClassName jooqTableClass = ClassName.get(
                 RewriteConfig.getGeneratedJooqPackage() + ".tables",
                 fk.targetTable().javaClassName());
-            code.addStatement("$T $L = $T.$L.as($S)",
-                jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(), aliases.get(i));
+            code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
+                jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(),
+                parentAlias, "_" + aliases.get(i));
         }
 
         // Assemble the inner SELECT.
-        CodeBlock innerSelect = buildInnerSelect(tf, path, aliases, terminalAlias, typeClass, keysClass, parentAlias, parentTable);
+        CodeBlock innerSelect = buildInnerSelect(tf, path, aliases, terminalAlias, typeClass, keysClass, parentAlias);
 
-        // Wrap by cardinality.
-        FieldWrapper wrapper = tf.returnType().wrapper();
-        if (wrapper instanceof FieldWrapper.List) {
-            code.addStatement("fields.add($T.multiset($L).as($S))", DSL, innerSelect, tf.name());
-        } else {
-            // Single — DSL.field(DSL.select(DSL.row(...))).as("name")
-            code.addStatement("fields.add($T.field($L).as($S))", DSL, innerSelect, tf.name());
-        }
+        // Both cardinalities use DSL.multiset(...) uniformly. The single-cardinality path adds
+        // .limit(1) to the inner SELECT (inside buildInnerSelect) and the registered DataFetcher
+        // unwraps the Result to its first record (or null). Using DSL.multiset over DSL.row avoids
+        // jOOQ's alias-reference-flattening behavior on nested aliased fields inside RowN values.
+        code.addStatement("fields.add($T.multiset($L).as($S))", DSL, innerSelect, tf.name());
         return code.build();
     }
 
@@ -97,18 +98,13 @@ public final class InlineTableFieldEmitter {
      */
     private static CodeBlock buildInnerSelect(ChildField.TableField tf, List<JoinStep> path,
             List<String> aliases, String terminalAlias, ClassName typeClass, ClassName keysClass,
-            String parentAlias, TableRef parentTable) {
+            String parentAlias) {
         boolean singleCardinality = tf.returnType().wrapper() instanceof FieldWrapper.Single;
 
         var sel = CodeBlock.builder();
-        // SELECT projection: either DSL.row($fields(...)) for single, or $fields(...) unwrapped for multiset.
-        if (singleCardinality) {
-            sel.add("$T.select($T.row($T.$$fields(sf.getSelectionSet(), $L, env)))",
-                DSL, DSL, typeClass, terminalAlias);
-        } else {
-            sel.add("$T.select($T.$$fields(sf.getSelectionSet(), $L, env))",
-                DSL, typeClass, terminalAlias);
-        }
+        // SELECT projection: always unwrapped $fields(...) fed into DSL.multiset at the outer wrap.
+        sel.add("$T.select($T.$$fields(sf.getSelectionSet(), $L, env))",
+            DSL, typeClass, terminalAlias);
 
         // FROM: terminal hop's aliased table.
         sel.add("\n        .from($L)", terminalAlias);
@@ -125,7 +121,11 @@ public final class InlineTableFieldEmitter {
         // WHERE: step 0's correlation against parent, then whereFilter methods, then user filters.
         JoinStep.FkJoin first = (JoinStep.FkJoin) path.get(0);
         String firstAlias = aliases.get(0);
-        CodeBlock correlation = JoinPathEmitter.emitCorrelationWhere(first, firstAlias, parentAlias, parentTable);
+        // Cardinality is the reliable FK-direction signal (works for self-refs where source and
+        // target tables are identical): Single → parent holds the FK (max-one target per row);
+        // List → parent is the PK side (many targets point back).
+        boolean parentHoldsFk = singleCardinality;
+        CodeBlock correlation = JoinPathEmitter.emitCorrelationWhere(first, firstAlias, parentAlias, parentHoldsFk);
         var where = CodeBlock.builder().add("$L", correlation);
         for (JoinStep step : path) {
             if (step instanceof JoinStep.FkJoin fk && fk.whereFilter() != null) {
@@ -152,8 +152,11 @@ public final class InlineTableFieldEmitter {
             sel.add("\n        .orderBy($L)", orderParts.build());
         }
 
-        // LIMIT (from pagination.first — treated as optional runtime arg).
-        if (tf.pagination() != null && tf.pagination().first() != null) {
+        // LIMIT: single cardinality always caps at 1 (single-record unwrap). Otherwise honour
+        // pagination.first as an optional runtime argument.
+        if (singleCardinality) {
+            sel.add("\n        .limit(1)");
+        } else if (tf.pagination() != null && tf.pagination().first() != null) {
             sel.add("\n        .limit(env.getArgument($S) == null ? $T.MAX_VALUE : ($T) env.getArgument($S))",
                 tf.pagination().first().name(),
                 Integer.class, Integer.class, tf.pagination().first().name());

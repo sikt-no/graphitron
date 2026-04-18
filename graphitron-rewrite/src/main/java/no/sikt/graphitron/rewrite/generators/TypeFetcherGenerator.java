@@ -1065,9 +1065,18 @@ public class TypeFetcherGenerator {
                 field.name(), columnFetcherClass, tablesClass,
                 parentTable.javaFieldName(), cf.column().javaName());
         }
-        if (field instanceof ChildField.TableField) {
-            // Inline projection: the parent's record already carries this field as a named column
-            // (aliased multiset / RowN). Read it by name from the parent Record — no fetcher method.
+        if (field instanceof ChildField.TableField tf) {
+            // Inline projection: the parent's record carries this field as an aliased multiset
+            // (Result<Record>). For list cardinality graphql-java iterates the Result directly.
+            // For single cardinality, unwrap to the first row (or null).
+            boolean single = tf.returnType().wrapper() instanceof FieldWrapper.Single;
+            if (single) {
+                var recordClass = ClassName.get("org.jooq", "Record");
+                var resultClass = ClassName.get("org.jooq", "Result");
+                return CodeBlock.of(
+                    "\n.dataFetcher($S, env -> { $T r = (($T) env.getSource()).get($S, $T.class); return r == null || r.isEmpty() ? null : r.get(0); })",
+                    field.name(), resultClass, recordClass, field.name(), resultClass);
+            }
             var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
                 ColumnFetcherClassGenerator.CLASS_NAME);
             return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.field($S)))",
