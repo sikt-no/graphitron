@@ -1,287 +1,198 @@
 # Argument Resolution
 
-Plan for unified argument classification in the builder, `@condition` directive support, and lookup field generation with the VALUES derived table pattern.
+**Status:** Foundation landed — classification + projection complete; generator-side migration remains.
+**Last updated:** 2026-04-18 after commits `441b8f9 … 01d1c91`.
 
-## Problem
+Plan for unified argument classification in the builder, `@condition` directive support, and lookup-field generation. The foundation (builder-side) is in; the generator-side refactor is the substantial work ahead and is the focus of this plan going forward.
 
-Arguments are currently processed in **three independent passes** that each iterate all arguments:
+## Current State
 
-1. `buildFilters()` — skips `@orderBy`, pagination args, `@condition`, and input-type args; classifies the rest into `BodyParam`/`CallParam` on a `GeneratedConditionFilter`
-2. `buildOrderBySpec()` — scans for `@orderBy` directive
-3. `buildPaginationSpec()` — scans for `first`/`last`/`after`/`before` by hardcoded name
+What's live on `claude/graphitron-rewrite` today:
 
-Coordination between the three is implicit: `buildFilters()` skips pagination args using the same `isPaginationArg()` check that `buildPaginationSpec()` uses. Input-type arguments are silently dropped (TODO). Field-level and argument-level `@condition` are unimplemented — the latter currently raises a hard error.
+- **Single-pass classification** (`FieldBuilder.classifyArguments`) produces `List<ArgumentRef>` — a builder-internal sealed hierarchy capturing every GraphQL argument's role (`ColumnArg`, `UnboundArg`, `TableInputArg`, `PlainInputArg`, `OrderByArg`, `PaginationArgRef`, `UnclassifiedArg`).
+- **Projection helpers** (`projectFilters`, `projectOrderBySpec`, `projectPaginationSpec`, `projectForLookup`) turn the refs into generation-ready model values. The three legacy passes (`buildFilters` / `buildOrderBySpec` / `buildPaginationSpec`) are gone.
+- **`@condition` on both `FIELD_DEFINITION` and `ARGUMENT_DEFINITION`** is supported. The four-state projection table (field-override × per-arg-override) is codified in `projectFilters`. `contextArguments` flow through `ServiceCatalog.reflectTableMethod` into trailing `ParamSource.Context` parameters on the emitted `ConditionFilter`.
+- **`LookupField` capability interface** over the four lookup variants (`QueryLookupTableField`, `LookupTableField`, `SplitLookupTableField`, `RecordLookupTableField`), each carrying a non-`Optional` `LookupMapping lookupMapping()`. Populated at classify-time by `projectForLookup`.
+- **`InputColumnBinding`** (cross-plan type shared with legacy-platform-id) is defined in `model/`; `TableInputArg.fieldBindings` is its consumer.
+- **`UnboundArg` / `UnclassifiedArg` surface as field-level errors** via `projectFilters`, preserving the legacy `"argument 'X': <reason>"` format plus a Levenshtein candidate hint for column misses.
 
-## Design
+What the generator does *not* yet do:
 
-### `ArgumentRef` — builder-internal classification
-
-A single `classifyArguments()` method replaces all three passes. It classifies every argument once into an `ArgumentRef` variant, then projects into generation-ready abstractions. `ArgumentRef` never appears on field records. Generators never see it.
-
-```
-GraphQL arguments → classifyArguments() → List<ArgumentRef>  (builder-internal)
-                                              ↓
-                              project into generation-ready views:
-                                → GeneratedConditionFilter  (column-bound filter args)
-                                → LookupMapping             (lookup args → VALUES table)
-                                → OrderBySpec               (@orderBy args)
-                                → PaginationSpec             (pagination args)
-```
-
-### `ArgumentRef` variants
-
-```java
-sealed interface ArgumentRef {
-    String name();
-    String typeName();
-    boolean nonNull();
-    boolean list();
-}
-
-sealed interface ScalarArg extends ArgumentRef {
-    record ColumnArg(
-        ..., ColumnRef column, CallSiteExtraction extraction,
-        Optional<ArgConditionRef> argCondition,        // @condition on THIS argument
-        boolean suppressedByFieldOverride              // field-level @condition(override: true)
-    ) {}
-    record UnboundArg(..., String attemptedColumnName, String reason) {}
-}
-
-sealed interface InputTypeArg extends ArgumentRef {
-    record TableInputArg(
-        ..., TableRef inputTable, List<InputColumnBinding> fieldBindings,
-        Optional<ArgConditionRef> argCondition
-    ) {}
-    record PlainInputArg(..., Optional<ArgConditionRef> argCondition) {}
-}
-
-record OrderByArg(..., String sortFieldName, String directionFieldName) {}
-record PaginationArgRef(..., PaginationRole role) {}  // "Ref" suffix avoids collision with PaginationSpec.PaginationArg
-record UnclassifiedArg(..., String reason) {}
-
-record ArgConditionRef(ConditionFilter filter, boolean override) {}
-```
-
-`ColumnArg.argCondition` carries a per-argument `@condition` directive (method + `override` flag). `suppressedByFieldOverride` is set when the field itself has `@condition(override: true)` — in that case the field's condition method replaces every auto-generated column predicate.
-
-`TableInputArg` carries the resolved input table and its field→column bindings, giving the lookup generator what it needs for composite key VALUES construction. It also carries an optional arg-level `@condition` (the legacy "condition on the whole input record" case).
-
-### Dispatch rule: project separately from classify (Option C)
-
-`classifyArguments()` returns `List<ArgumentRef>` only — it does not know about field variants. Two projection helpers run afterward, each in its own call site:
-
-- `projectForFilter(refs) → (List<WhereFilter>, OrderBySpec, PaginationSpec)` for non-lookup fields.
-- `projectForLookup(refs) → (LookupMapping, OrderBySpec, PaginationSpec)` for lookup fields.
-
-This avoids pushing the child-field-sequencing problem (`hasLookupKeyAnywhere()` runs after `resolveTableFieldComponents()` in `classifyObjectReturnChildField`) into `classifyArguments`. The caller already knows which path it's on when it calls the right projector.
-
-### `LookupField` capability interface
-
-Per the roadmap's "capability interfaces over dispatch chains" principle, `LookupMapping` is surfaced through a capability:
-
-```java
-sealed interface LookupField permits
-    QueryField.QueryLookupTableField,
-    ChildField.LookupTableField,
-    ChildField.SplitLookupTableField,
-    ChildField.RecordLookupTableField {
-    LookupMapping lookupMapping();
-}
-```
-
-The field record keeps `lookupMapping` as a narrow component (not `Optional<>` — these variants always have one). `TypeFetcherGenerator`'s single `instanceof LookupField lf` arm routes to the VALUES+JOIN emitter. Parallels `SqlGeneratingField`, `MethodBackedField`, `BatchKeyField`.
-
-On lookup fields, `filters()` stops carrying the lookup args (they move to `LookupMapping`); it retains only non-lookup filters such as field-level `@condition` predicates. Step 8 updates the generator to read `LookupField.lookupMapping()` instead of iterating `filters()` for key args.
-
-### `LookupMapping`
-
-```java
-record LookupMapping(
-    List<LookupColumn> columns,
-    TableRef targetTable
-) {
-    record LookupColumn(
-        String argName,
-        ColumnRef targetColumn,         // JOIN condition: input.col = target.col
-        CallSiteExtraction extraction,  // how to extract the argument value
-        boolean list                    // list → multiple VALUES rows; scalar → broadcast
-    ) {}
-}
-```
-
-The generator builds `VALUES(idx, col1, col2, ...)`, the JOIN condition (`input.col1 = target.col1 AND ...`), and `ORDER BY input.idx`.
-
-### `@condition` on field and argument definitions
-
-Read during classification. The directive is legal on `FIELD_DEFINITION`, `ARGUMENT_DEFINITION`, and `INPUT_FIELD_DEFINITION` (directives.graphqls); this plan covers the first two. `INPUT_FIELD_DEFINITION` (inside input types) is deferred to a follow-up under input-type classification.
-
-**Field-level `@condition`:**
-1. Check `fieldDef.hasAppliedDirective(DIR_CONDITION)` and read `override` + `contextArguments`.
-2. If `override: true`, set `suppressedByFieldOverride` on every `ColumnArg` during classification.
-3. Reflect the method via `ServiceCatalog.reflectTableMethod()`, passing `contextArguments` so they're resolved into trailing `ParamSource.ContextArg` entries (same path used by `@service` / `@tableMethod`).
-4. Construct `ConditionFilter(className, methodName, params)` and append to the field's `filters()` list.
-
-**Argument-level `@condition`:**
-1. During `classifyArguments`, check `arg.hasAppliedDirective(DIR_CONDITION)` and read `override` + `contextArguments`.
-2. Reflect the method with signature `(TABLE, argValue, ...contextArgs)` → `Condition`.
-3. Record `ArgConditionRef(filter, override)` on the emitted `ColumnArg` / `TableInputArg` / `PlainInputArg`.
-
-**Projection semantics** (per legacy README:558–643):
-
-| State | Predicate emitted for the arg |
-|---|---|
-| `suppressedByFieldOverride = true` | none (field's own `ConditionFilter` replaces everything) |
-| no `argCondition` | auto-predicate only (`.eq(col, val)` / `.in(col, list)`) |
-| `argCondition` present, `override = false` | auto-predicate AND arg method |
-| `argCondition` present, `override = true` | arg method only |
-
-Field-level override dominates: when set, per-arg `override` is irrelevant. When field-level is non-override but one arg has `override: true`, only that arg's auto-predicate is suppressed; other args keep theirs; field method appends at the end.
-
-**Shared prerequisite already landed:** commit `a5f56eb` added `TypeBuilder.isUsedWithOverrideCondition`, which detects both `FIELD_DEFINITION` and `ARGUMENT_DEFINITION` overrides for input-type classification. Step 4 reuses this scan for the "does this input need override treatment?" question; it does not reimplement override detection.
-
-## Implementation order
-
-| Step | What | Depends on |
-|---|---|---|
-| 0 | ✅ **Done.** Existing test-spec already exercises `@orderBy` (`filmsOrderedConnection.order`) and pagination (`first/last/after/before`) end-to-end. Added one `rating: MpaaRating @field(name:"RATING")` arg to `filmsOrderedConnection` plus a `filmsOrderedConnection_filterPlusOrderPlusPagination_combinesAllThree` test so *all three* passes are exercised on a single field — without this, a refactor that broke cross-pass interaction would slip through single-pass tests. `@asConnection` directive-driven wrapper is not exercised end-to-end because the schema transform strips it before generation; covered by rewrite unit tests instead. | Nothing |
-| 1 | Define `ArgumentRef` + `ArgConditionRef` sealed hierarchy (builder-internal) | Nothing |
-| 2 | Extract `classifyArguments()` replacing all three passes (`buildFilters`, `buildOrderBySpec`, `buildPaginationSpec`). Returns `List<ArgumentRef>` only — no projection coupling. | Step 1 |
-| 3 | `projectForFilter(refs)` → `(List<WhereFilter>, OrderBySpec, PaginationSpec)` for non-lookup fields | Step 2 |
-| 4 | Read field-level and arg-level `@condition` (with `contextArguments`) during classification; populate `ArgConditionRef` + `suppressedByFieldOverride` per the projection-semantics table above | Steps 2-3 |
-| 5 | Define `LookupMapping` + `LookupColumn` in the model; introduce `LookupField` capability interface | Step 1 |
-| 6 | `projectForLookup(refs)` → `LookupMapping`; populate on all four `LookupField` variants | Steps 2, 5 |
-| 7 | VALUES + JOIN builder in `GeneratorUtils` | Step 5 |
-| 8 | Replace condition-based lookup in `TypeFetcherGenerator.buildQueryLookupRowsMethod` with `LookupField.lookupMapping()` + VALUES + JOIN. `filters()` on lookup fields no longer carries lookup args. | Steps 6-7 |
-| 9 | Handle `TableInputArg` in lookup mapping (composite keys via `InputColumnBinding`) | Steps 6-8 |
-| 10 | Validation: `UnboundArg` → error, `UnclassifiedArg` → error | Step 2 |
-
-Steps 1-3 unify the three passes. Step 4 unblocks both field-level and arg-level `@condition`. Steps 5-9 implement lookup generation.
-
-## Test strategy
-
-- **Builder tests:** SDL with each argument pattern → correct projection into `filters()` / `orderBy()` / `pagination()`. Existing `GraphitronSchemaBuilderTest.ArgumentParsingCase` rows continue to pass; their internal assertions on `GeneratedConditionFilter` structure move to reading the projected output rather than the intermediate `ArgumentRef` list.
-- **`@condition` tests — FIELD_DEFINITION:** additive (no `override`) → auto-predicate AND method; `override: true` → method replaces all auto-predicates.
-- **`@condition` tests — ARGUMENT_DEFINITION:** additive → auto-predicate AND per-arg method; `override: true` → that arg's auto-predicate replaced, others retained; combined with field-level override → field method only (per-arg override becomes irrelevant).
-- **`@condition` `contextArguments`:** method reflected with trailing `ParamSource.ContextArg` entries; pipeline test verifies they appear in `ConditionFilter.params()`.
-- **Lookup mapping tests:** lookup field with scalar + input-type args → correct `LookupMapping` columns and target table via `LookupField.lookupMapping()`.
-- **Lookup execution test:** scalar key, composite key, verify result ordering matches input (new — existing `GraphQLQueryTest` uses `containsExactlyInAnyOrder` and must be upgraded to `containsExactly`).
-- **Validation:** `UnboundArg` → error with candidate hint; `UnclassifiedArg` → error with reason.
-
-## Out of scope
-
-- **`@condition` on `INPUT_FIELD_DEFINITION`** — conditions on fields inside input types (per legacy README:645–674). Requires input-type classification work orthogonal to argument classification. Track as a follow-up once `InputField` variants stabilise.
-- **`PlainInputArg` projection** — non-table input-type args without `@condition` are silently skipped, preserving current behavior. `PlainInputArg` with `@condition` is handled via `argCondition`; without `@condition`, no predicate is emitted and no error is raised. Documented so future work can revisit.
-- **Child-level lookup fields** — same VALUES pattern in subquery or DataLoader context. The VALUES builder (step 7) is reusable; integration is roadmap G6 work.
-- **Mutations** — input-type arguments for DML use different mapping. Separate concern.
-
-## Cross-plan ownership
-
-`InputColumnBinding` is referenced by this plan (step 9) and by the **legacy platform-id** plan (step 6 maps composite platform-key inputs to record-level `getId`/`setId` columns). Both require the same shape: input-field name → target `ColumnRef` + extraction strategy. This plan commits the canonical definition; platform-id reuses it. Tracked in the roadmap under P2 #5 (cross-plan ownership).
-
-```java
-record InputColumnBinding(
-    String inputFieldName,      // field name on the GraphQL input type
-    ColumnRef targetColumn,     // resolved column on the target table
-    CallSiteExtraction extraction
-)
-```
-
-`LookupColumn` (used inside `LookupMapping`) is deliberately kept distinct: it binds a scalar *argument name* to a column, while `InputColumnBinding` binds an *input-field name* inside a `TableInputArg`. Same shape, different semantic role — collapsing them would hide the distinction between "lookup key came from a top-level arg" and "lookup key came from a field on a composite input record".
+- Lookup fetchers still read the `GeneratedConditionFilter` entries from `filters()` and delegate to a generated `<Type>Conditions` method (which does the `.in()`/`.eq()` emission).
+- `LookupMapping.columns()` is populated but not read by any generator.
+- `TableInputArg.fieldBindings` is always empty — composite-key input types have no generator path yet.
+- No VALUES + JOIN emission; legacy IN/EQ semantics still govern lookup SQL.
 
 ---
 
-## Decisions: execution readiness
+## Design Principles (unchanged — retained for reference)
 
-Reviewed 2026-04-15, re-verified 2026-04-17, resolutions committed 2026-04-17. The first-pass
-findings (three-pass scope, dispatch rule, TableInputArg components, PaginationArgRef naming,
-override timing) were incorporated into the design above. The eight deeper issues that emerged
-from verifying the plan against the actual code paths, generator behavior, test infrastructure,
-and the old codegen's documented semantics have each been resolved — see the summary table at
-the end of this section.
+### Classification + projection, separated
 
-References below are identifier-level rather than line-number-level: line numbers in
-`FieldBuilder` shift on nearly every PR (file is 1379 LOC as of this re-verification), so
-citing methods and directive constants instead keeps the review durable.
+`classifyArguments` is a one-pass structural classifier. It produces `List<ArgumentRef>` and never decides what the output shape will be. Projection helpers read the refs and decide per concern (filter, orderBy, pagination, lookup). Each projection is exhaustive over the refs; adding a new `ArgumentRef` variant forces every projection to account for it at compile time.
 
-### 1. `@condition` on arguments and input fields is unaddressed
+This survives the rewrite because the classify/project split is inherently decoupled — classification can evolve (new variants, new directive readings) without cascading through the projection call sites.
 
-The directive schema (`directives.graphqls`, `directive @condition`) declares `@condition` valid
-on `FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION`. The plan covers only
-`FIELD_DEFINITION` (step 4). The old codegen README
-(`graphitron-java-codegen/README.md`, "Conditions" section) documents all three locations with
-distinct semantics:
+### Capability interfaces over dispatch chains
 
-- **On FIELD_DEFINITION:** adds a condition method call receiving all argument values; `override: true` suppresses all auto-generated conditions for the field.
-- **On ARGUMENT_DEFINITION:** adds a condition method call receiving that argument's value; `override: true` suppresses only that argument's auto-generated condition.
-- **On INPUT_FIELD_DEFINITION:** same per-field scoping, but inside nested input types.
+`LookupField` joins `SqlGeneratingField`, `MethodBackedField`, `BatchKeyField` as a cross-cutting capability. Generators dispatch on capability, not on per-variant `instanceof` — one arm, one emission path, one stub-vs-real decision site.
 
-The plan originally flagged a blanket `suppressedByOverride` flag on `ColumnArg`, which cannot express per-argument override. `buildFilters()` currently rejects `@condition` on arguments outright (early arm in `FieldBuilder.buildFilters`).
+### Narrow component types
 
-**Resolution:** Support `@condition` on `ARGUMENT_DEFINITION` in step 4 alongside `FIELD_DEFINITION`. The `ColumnArg` shape above introduces `argCondition: Optional<ArgConditionRef>` for per-arg state and `suppressedByFieldOverride` for field-level override. The four-state projection table in the "`@condition` on field and argument definitions" section codifies the legacy semantics. The current error arm in `FieldBuilder.buildFilters` is removed as part of step 4. `INPUT_FIELD_DEFINITION` remains deferred (see Out of scope).
+`LookupField.lookupMapping()` returns a plain `LookupMapping` (not `Optional<>`) because the four permitting variants always have one. The type signature encodes the invariant instead of relying on runtime null-guards.
 
-**Shared prerequisite:** commit `a5f56eb` added `TypeBuilder.isUsedWithOverrideCondition`, which scans both argument-level and field-level `@condition(override: true)`. Step 4 reuses it for input-type classification rather than reimplementing override detection inside `classifyArguments`.
+### Builder-internal hierarchies are ephemeral
 
-### 2. `@condition` contextArguments parameter is unmentioned
+`ArgumentRef` never appears on field records or reaches generators. It's a builder decomposition tool, not a model type. Generators see the projected outputs — `WhereFilter` list, `OrderBySpec`, `PaginationSpec`, `LookupMapping` — not the raw classification.
 
-The directive has `contextArguments: [String!]` — context values injected as trailing method parameters. The old codegen documents this (`graphitron-java-codegen/README.md`, "Conditions / contextArguments" section). The `@service` / `@tableMethod` reflection path already handles this pattern.
+---
 
-**Resolution:** Support `contextArguments` in step 4 for both field-level and arg-level `@condition`. The builder reads `arg.getValue(ARG_CONTEXT_ARGUMENTS)` and forwards the list to `ServiceCatalog.reflectTableMethod()`; the reflector resolves them into trailing `ParamSource.ContextArg` entries on the produced `ConditionFilter`.
+## Remaining Work: The Generator-Side Migration
 
-### 3. Child field sequencing: lookup unknown at classification time
+The builder now says everything the generator needs in order to emit lookup SQL correctly. The generator, however, still takes the legacy path — reading `filters()` and delegating to a separately-generated `<Type>Conditions` class. Completing the migration is foundational: it decouples lookup-key emission from the generic filter path, unlocks VALUES + JOIN semantics, and makes composite-key lookup tractable.
 
-The plan's original dispatch rule assumed "the builder knows the field classification before projecting." This holds for query fields (`classifyQueryField` checks `hasLookupKeyAnywhere()` before `resolveTableFieldComponents()`) but not for child fields (`classifyObjectReturnChildField` runs components first, lookup check after).
+Below is the problem shape, then a phased plan. The phases are sized deliberately small so each commit is tractable and every intermediate state is shippable.
 
-**Resolution: Option C.** `classifyArguments()` returns `List<ArgumentRef>` only; projection is a separate step. Callers invoke `projectForLookup` or `projectForFilter` based on the field variant they're building, which they know at projection time regardless of sequencing. No reordering of existing call sites is required. This also aligns with the roadmap's "builder-internal sealed hierarchies for multi-target classification" principle — classification is a one-shot step, projection is multiple independent switches.
+### The coupling between lookup and `TypeConditionsGenerator`
 
-### 4. Current lookup generators use GeneratedConditionFilter, not LookupMapping
+Today, a `QueryLookupTableField.filters()` contains a `GeneratedConditionFilter` whose `bodyParams()` are the lookup-key arguments. Two generators consume it:
 
-`TypeFetcherGenerator.buildQueryLookupRowsMethod` iterates `field.filters()`, casts to `GeneratedConditionFilter`, and uses `gcf.bodyParams()` for local variable declarations and `gcf.callParams()` for the condition call. The condition method body (in `TypeConditionsGenerator`) generates `.in()` for list params and `.eq()` for scalar params — each key dimension independently.
+1. **`TypeFetcherGenerator.buildQueryLookupRowsMethod`** — emits `condition = condition.and(FilmConditions.filmByIdCondition(table, filmIdKeys…))`.
+2. **`TypeConditionsGenerator.generateConditionsClass`** — emits the method body: `return noCondition().and(table.FILM_ID.in(filmIdKeys))`.
 
-The plan replaces this with VALUES+JOIN. This is more than a refactoring — it's a semantic change:
+Both iterate the same `filters()` list. Removing lookup keys from `filters()` (a requirement for step 6's `LookupMapping` to become authoritative) therefore also removes them from `TypeConditionsGenerator`'s input — the fetcher must either inline the condition or call a new emitter. The two generators must move together.
 
-- **Current behavior:** `(customer_id IN (1,2,4)) AND (store_id = 1)` — returns all rows matching ANY customer_id AND the store_id. Composite keys are treated as independent dimensions.
-- **VALUES behavior:** `VALUES (1,1), (2,1), (4,1) AS input(customer_id, store_id) JOIN customer ON ...` — returns rows matching specific (customer_id, store_id) tuples. Keys are correlated.
+### Phase 1 — Extract a lookup-emission helper, keep semantics identical
 
-For single-key lookups, the results are identical. For composite keys with one scalar key broadcast across a list key, the results are also identical. But the VALUES approach additionally preserves input ordering (via `ORDER BY input.idx`) and enables true correlated tuple matching if multiple list keys are ever needed.
+**Goal.** Introduce `LookupConditionEmitter` (new class in `generators/`) that takes a `LookupMapping` and produces a `CodeBlock` emitting the same IN/EQ condition the fetcher produces today. No generator change yet; no behaviour change.
 
-**Resolution:** Document this semantic change explicitly (this section serves as the record). Step 8 includes the migration: `QueryLookupTableField.filters()` stops carrying lookup args (moved to `LookupMapping`); it retains only non-lookup filters (e.g. field-level `@condition` predicates). Execution-test upgrade: replace `containsExactlyInAnyOrder` with `containsExactly` to lock ordering semantics — added to the Test strategy above.
+**Shape.**
 
-### 5. Where does LookupMapping live on the model?
+```java
+final class LookupConditionEmitter {
+    /** Emits a WhereFilter-equivalent condition directly from a LookupMapping.
+     *  Assumes `env` and `table` are in scope. Produces: variable declarations for
+     *  list keys (so jOOQ `convert` overloads disambiguate), then AND-chained
+     *  `.in()` / `.eq()` calls. */
+    static CodeBlock emitCondition(LookupMapping mapping, String conditionVar);
+}
+```
 
-The plan originally defined `LookupMapping` as a generation-ready projection (like `GeneratedConditionFilter`) but never said which field record component carries it.
+The emitter duplicates the logic currently inside `FilmConditions.filmByIdCondition` — but rendered inline, driven by `LookupMapping`, not by `GeneratedConditionFilter`.
 
-**Resolution: `LookupField` capability interface.** See the "`LookupField` capability interface" subsection under Design. Per the roadmap's "capability interfaces over dispatch chains" principle, the four lookup variants (`QueryLookupTableField`, `LookupTableField`, `SplitLookupTableField`, `RecordLookupTableField`) implement `LookupField` with a `lookupMapping()` accessor. `TypeFetcherGenerator` routes on the capability rather than via per-variant `instanceof` checks. The record component itself is declared on each variant directly (narrow-component-types principle — these variants always have a `LookupMapping`, so no `Optional<>`).
+**Why first.** A pure-function emitter is easy to unit test (given a `LookupMapping`, assert the emitted `CodeBlock` contains expected fragments). Once it exists, Phase 2 swaps the caller over without any semantic surprise.
 
-### 6. PlainInputArg has no projection target
+**Deliverable.** New file + unit tests. No change to `TypeFetcherGenerator` or `TypeConditionsGenerator` yet. Fetcher output identical.
 
-`PlainInputArg` (non-table input type) appeared in the variant list with no projection target. Currently in `FieldBuilder.buildFilters`, non-table input types are silently skipped.
+### Phase 2 — Switch the fetcher to read `LookupField.lookupMapping()`
 
-**Resolution:** `PlainInputArg` is silently ignored when it has no `@condition` — preserves current behavior, documented under Out of scope. `PlainInputArg` with `@condition` projects to a `ConditionFilter` via its `argCondition` (legacy semantics from README:653 — `@condition` on an input-typed argument receives the whole input record). Full support for auto-classifying non-table input-type arguments remains a future deliverable.
+**Goal.** `TypeFetcherGenerator.buildQueryLookupRowsMethod` (and its child-field siblings once they come online) stops iterating `filters()` for lookup keys and instead calls `LookupConditionEmitter.emitCondition(field.lookupMapping(), "condition")`.
 
-### 7. InputColumnBinding doesn't exist
+**Builder-side coordinating change.** `projectFilters` stops emitting `GeneratedConditionFilter` entries for arguments that have `@lookupKey` (they're now represented only by `LookupMapping`). `LookupField.filters()` now contains *only* non-key filters (field-level `@condition`, per-arg `@condition`). Non-lookup fields are unchanged.
 
-**Resolution:** Defined in the "Cross-plan ownership" section above. Shape mirrors `LookupColumn` but is deliberately kept distinct to preserve the semantic difference between "lookup key came from a top-level arg" and "lookup key came from a field inside a composite input record". Shared with the legacy platform-id plan step 6 — tracked in the roadmap under P2 #5.
+**`TypeConditionsGenerator` coordinating change.** It no longer emits a method for a lookup field — `extractGeneratedConditionFilter` returns `Optional.empty()` for them because `filters()` no longer contains a `GeneratedConditionFilter` for the key args. The existing filter-by-field-type logic in `TypeConditionsGenerator` may need an explicit "skip `LookupField`" arm to make the invariant visible.
 
-### 8. Test infrastructure gaps
+**Verification.** Execution tests in `graphitron-rewrite-test-spec` must pass unchanged. The `<Type>Conditions` class no longer has a method for lookup fields — confirm via `GeneratedSourcesSmokeTest`.
 
-The original plan claimed "existing tests pass unchanged" without accounting for:
+**Risk.** This is the one commit where generated output actually changes. Existing tests catch regressions, but the Conditions-class removal might surprise downstream consumers that `import static`-ed the now-gone methods. Grep the example server and approval tests before merging.
 
-- **`GraphitronSchemaBuilderTest.ArgumentParsingCase`** asserts on `GeneratedConditionFilter` structure from `buildFilters()`. Once `classifyArguments` + `projectForFilter` replace `buildFilters`, these cases assert on the projected output. They won't break silently — they'll fail to compile, which is the signal we want.
-- **No `@condition` pipeline tests exist** (documented by `CONDITION_IS_ALWAYS_NULL` in `GraphitronSchemaBuilderTest`). Step 4 adds them.
-- **No lookup ordering test exists** — existing `GraphQLQueryTest` uses `containsExactlyInAnyOrder`.
-- **`graphitron-rewrite-test-spec` has no `@orderBy` or `@asConnection` fields**, so steps 1-3 regressions in those passes would only be caught by the (sparser) pipeline tests.
+### Phase 3 — VALUES + JOIN emission
 
-**Resolution:** Step 0 adds `@orderBy` and `@asConnection` to the test-spec schema *before* step 2. Test strategy above lists the `@condition` and lookup-ordering coverage as explicit new tests. `ArgumentParsingCase` migrations are expected to fall out of step 3.
+**Goal.** Replace the IN/EQ condition with a `VALUES(idx, col1, col2, …) AS input JOIN target ON …` derived-table query. Preserves input ordering and enables true tuple correlation for multi-list-key lookups.
 
-### Summary: decisions resolved
+**Scope.** This is a semantic change, not a refactor. Each phase sub-item is independent and shippable:
 
-| # | Decision | Resolution |
+- **3a.** `LookupValuesJoinEmitter` — new emitter that takes a `LookupMapping` and emits a `CodeBlock` producing the VALUES+JOIN select. Unit-testable in isolation (no generator change).
+- **3b.** Switch the fetcher to call `LookupValuesJoinEmitter` instead of `LookupConditionEmitter` for single-list-key or list-with-broadcast-scalars cases.
+- **3c.** Upgrade the execution test assertion from `containsExactlyInAnyOrder` to `containsExactly` and add a test that proves input ordering is preserved (e.g. request `[3, 1, 2]`, expect films returned in that order).
+- **3d.** Multi-list-key tuple correlation — when multiple `@lookupKey` args are lists, treat them as correlated (zipped by index) rather than cartesian. Requires deciding whether lengths must match or whether padding/truncation applies. Defer until a real schema needs it; single-list is the common case.
+
+**Architectural decision (answer before 3a).** Does `LookupConditionEmitter` (Phase 1) survive, or does `LookupValuesJoinEmitter` supersede it entirely? Likely the former stays for fields where the target database can't do VALUES efficiently — but that's a theoretical concern; postgres and mysql both handle it fine. Recommend superseding, keeping `LookupConditionEmitter` only if a concrete DB compatibility need surfaces.
+
+**Risk.** JavaPoet does not have first-class support for jOOQ's typed `RowN<…>` generics. The emitter will likely use raw `Row` arrays with a `@SuppressWarnings("rawtypes")` comment on the generated code. Acceptable — jOOQ docs recommend the raw-type approach for dynamic VALUES construction.
+
+### Phase 4 — Child-field lookup generators (G5/G6)
+
+**Goal.** Extend the emission path to `LookupTableField` (inline correlated subquery, table-mapped parent), `SplitLookupTableField` (DataLoader-backed, table-mapped parent), and `RecordLookupTableField` (DataLoader-backed, result-mapped parent). All three are stubs today; each throws `UnsupportedOperationException`.
+
+**Why this phase depends on 1–3.** Child-field lookup emission reuses the same VALUES + JOIN shape. If Phase 3 is complete, Phase 4 is primarily about wiring the emitter into the three new dispatch arms of `TypeFetcherGenerator`, not about rewriting SQL.
+
+**Sub-items.**
+
+- **4a.** `LookupTableField` — inline correlated subquery form. Join path (`joinPath`) already resolved by the builder; the emitter writes `select(...) from values join target on … where target joined to parent via joinPath`.
+- **4b.** `SplitLookupTableField` and `RecordLookupTableField` — DataLoader rows methods. Generator dispatches per `BatchKey` variant (`RowKeyed` / `RecordKeyed`) when building the key extractor.
+
+**Cross-reference.** Roadmap G5/G6 track this phase as stub completion. Once Phases 1-3 land, G5/G6 reopens from the emission side, not the classification side.
+
+### Phase 5 — Composite keys via `TableInputArg` + `InputColumnBinding`
+
+**Goal.** Populate `TableInputArg.fieldBindings` with real `InputColumnBinding` entries so the lookup emitter can treat an input-typed argument as a source of multiple key columns.
+
+**Today.** `TableInputArg.fieldBindings` is always `List.of()`. The builder knows the input type's `TableRef` but doesn't walk the type's fields to resolve bindings.
+
+**Change.**
+
+- **5a.** In `FieldBuilder.classifyArgument`, for a `TableInputArg`, walk the input type's fields and build `InputColumnBinding(fieldName, columnRef, extraction)` for each field that resolves to a column on `inputTable`. Fields without a matching column produce a classify-time error (or a per-field `UnboundBinding` variant if we want partial tolerance — defer that decision).
+- **5b.** Extend `projectForLookup` to walk `TableInputArg.fieldBindings` and add `LookupColumn` entries to the `LookupMapping`. Each binding becomes one key column; the argument name is the input-type arg name plus the input field name (or we introduce a `LookupColumn.sourcePath` to disambiguate).
+- **5c.** Extend `LookupValuesJoinEmitter` (Phase 3a) to read the composite-key case: for an input-typed arg, extract its value once at the fetcher, then read each bound field for row construction.
+
+**Architectural decision (answer before 5a).** Does `TableInputArg.fieldBindings` stay builder-internal (populated and read only within `FieldBuilder`) or become a model component on some field variant? The cross-plan ownership note in this document commits `InputColumnBinding` as a model type, so the bindings *can* surface on model records. But `TableInputArg` is builder-internal. Recommend: the bindings flow through `LookupMapping.columns()` unchanged — one `LookupColumn` per input field. Generators never see `TableInputArg` or `InputColumnBinding` directly.
+
+### Phase 6 — `@condition` on `INPUT_FIELD_DEFINITION`
+
+**Goal.** Support `@condition` on fields *inside* input types (the third legal position per `directives.graphqls`; currently deferred).
+
+**Scope.** This is an input-type-classification concern, not an argument-classification one. The GraphQL spec permits `@condition` on `INPUT_FIELD_DEFINITION`, and legacy README §645–674 documents the semantics: each input-type field with `@condition` contributes its own predicate, scoped to that field. Nested input types can each carry their own conditions.
+
+**Sub-items.**
+
+- **6a.** Extend `InputField` to carry an optional `ArgConditionRef` — the per-input-field `@condition` directive, reflected at type-build time.
+- **6b.** When an input-type arg is used at a call site, its per-field conditions become additional `ConditionFilter` entries in the lookup emitter's output.
+- **6c.** Override propagation: an outer-level `@condition(override: true)` on the arg suppresses inner fields' auto-predicates but not their explicit `@condition` methods (per legacy semantics).
+
+**Defer until.** Phases 1-5 are complete. Input-field conditions only bite once composite-key inputs are actually wired through the generator, which is Phase 5. Until then, the rewrite pipeline never reaches the code path that would consume them.
+
+## Architectural Decisions Pending
+
+These should be answered before the corresponding phase begins:
+
+| Phase | Decision | Lean |
 |---|---|---|
-| 1 | `@condition` on ARGUMENT_DEFINITION | **Support** (in step 4). `INPUT_FIELD_DEFINITION` remains deferred. |
-| 2 | `@condition` contextArguments | Support; reuse `ServiceCatalog.reflectTableMethod` contextArguments path. |
-| 3 | Child field sequencing | **Option C** — classification and projection are separate steps. |
-| 4 | VALUES vs IN semantic difference | Documented in §4; execution test upgrades to `containsExactly`. |
-| 5 | Where `LookupMapping` lives | **`LookupField` capability interface** on the four lookup variants. |
-| 6 | `PlainInputArg` fate | Silent skip without `@condition`; project to `ConditionFilter` when `argCondition` is present. |
-| 7 | `InputColumnBinding` shape | Defined above; shared with legacy platform-id plan (roadmap P2 #5). |
-| 8 | `@orderBy`/`@asConnection` test-spec coverage | **Step 0 — done.** `@orderBy` and pagination were already covered; added a combined filter+orderBy+pagination test. `@asConnection` end-to-end coverage is blocked by the transform (covered via unit tests only). |
+| 1 | Does `LookupConditionEmitter` live in `generators/` or a new `generators/lookup/` subpackage? | Subpackage once two emitters coexist — pre-empt a one-file rename in Phase 3. |
+| 2 | Should `TypeConditionsGenerator` get an explicit `skip LookupField` arm, or is "no `GeneratedConditionFilter` → no method" sufficient? | Explicit arm — self-documents the decoupling. |
+| 3a | `LookupValuesJoinEmitter` raw-`Row` arrays vs. typed `RowN`? | Raw arrays — jOOQ's idiomatic form for dynamic VALUES. Suppression scoped to emitted code, not generator code. |
+| 3d | Multi-list-key correlation: zipped, cartesian, or error? | Zipped (tuple correlation) with length-mismatch as a classify-time or runtime error. Matches the N × M contract. Defer concrete decision until a schema demands it. |
+| 5a | Partial-binding tolerance: error on an unmatched input field, or record as `UnboundBinding`? | Error at classify time. Matches the strictness of the scalar-arg column-resolution path (which already produces `UnboundArg` → field error). |
+| 5b | Composite-key `LookupColumn.argName` disambiguation: `argName + "." + fieldName`, or introduce a `sourcePath` field? | `sourcePath` record — explicit hierarchy survives future nesting (e.g. an input type embedding another input type). |
+
+## Phase-Aware Test Strategy
+
+Each phase has a natural test surface. Rough taxonomy:
+
+- **Phase 1** — unit tests on `LookupConditionEmitter` (given a `LookupMapping`, assert emitted `CodeBlock` substrings). Fast, targeted, no full-build dependency.
+- **Phase 2** — pipeline tests verifying `LookupField.filters()` no longer contains lookup args + execution tests verifying behaviour is preserved. `GeneratedSourcesSmokeTest` confirms the `<Type>Conditions` class shrinks by the expected methods.
+- **Phase 3a** — unit tests on `LookupValuesJoinEmitter`. Snapshot tests of emitted SQL shape are acceptable here — the emitter is one function, and a snapshot test locks the shape without asserting brittle line-by-line content.
+- **Phase 3b/3c** — execution tests with ordered assertions (`containsExactly`), exercising the scalar-broadcast and single-list-key shapes end-to-end.
+- **Phase 4** — extend pipeline + execution coverage to child-field lookups; reuse the emitter unit tests.
+- **Phase 5** — execution test for a composite-key input (e.g. a lookup whose single arg is an `@table` input with two scalar fields, both serving as keys).
+- **Phase 6** — pipeline + execution coverage for `@condition` on input-type fields; reuse the nested-input examples from legacy README §645–674.
+
+The generation-thinking principle applies throughout: **do not assert on emitted method bodies**. Structural properties (method names, param types, presence/absence) are the right signal for builder and classifier tests. End-to-end behaviour is the right signal for emitter tests.
+
+## Out of Scope
+
+- **Mutations.** Input-type arguments for DML use a different mapping (create/update records, not lookup keys). The argument-resolution pipeline here is read-only. Mutations get their own plan.
+- **Non-`@table` input types with columns.** The "implicit-table" heuristic in legacy that tries to infer a target table from the input's field names is not reproduced. Inputs must carry `@table` to bind to one.
+- **Renaming `LookupTableField` / `SplitLookupTableField` etc.** The sealed-type names already describe the lookup variants accurately. No rename is implied by any decision in this plan.
+- **Cursor-format stability** for paginated lookups. `paginated-fields.md` owns that concern; this plan doesn't touch it.
+
+## Cross-plan Ownership
+
+- **`InputColumnBinding`** — canonical definition in this plan, consumed by both this plan (Phase 5) and `legacy-platform-id.md` (step 6). Roadmap P2 #5 tracks the shared-type agreement.
+- **Variant coverage meta-test** — the roadmap's P1 #1 meta-test (every sealed-root permit has a classification case and a generator branch) should be extended to include `LookupField` permits as they gain emission arms across Phases 2 and 4.
+
+## History
+
+- 2026-04-17 — original plan drafted (classify/project design, four-state `@condition` semantics).
+- 2026-04-17 — 2026-04-18: steps 0, 1, 2, 3, 4, 5, 6, 10 landed (foundation complete).
+- 2026-04-18 — plan rewritten to reflect foundation status and reframe remaining work as a six-phase generator migration. Steps 7-9 of the old plan are absorbed into Phases 1-5 with explicit sub-items and decision points.
