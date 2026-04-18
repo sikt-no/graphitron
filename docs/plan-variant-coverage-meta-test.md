@@ -1,8 +1,11 @@
 # Variant-Coverage Meta-Test Plan
 
-> **Status:** Draft. Five design decisions ship with recommended directions and
-> alternatives. Per the roadmap (`docs/rewrite-roadmap.md` P1 #1), this
-> subsumes `plan-docs-as-index-into-tests.md` step 5 and extends it from one
+> **Status:** Phase 1 shipped. Phase 2 (classification-case coverage)
+> is next; P2 #3 (build-time validator consuming
+> `NOT_IMPLEMENTED_REASONS.keySet()`) should land between them.
+> Phase 3 (narrow-component coverage) remains deferred. Per the roadmap
+> (`docs/rewrite-roadmap.md` P1 #1), this subsumes
+> `plan-docs-as-index-into-tests.md` step 5 and extends it from one
 > generator map to the full sealed taxonomy.
 
 ## Overview
@@ -23,23 +26,38 @@ canonical example).
 
 ### What's already in place
 
-- **`GeneratorCoverageTest`** (`graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/generators/GeneratorCoverageTest.java:18-47`).
-  A single-assertion JUnit 5 test that walks six sealed roots
-  (`GraphitronField`, `RootField`, `QueryField`, `MutationField`,
-  `ChildField`, `InputField`) via a recursive `sealedLeaves(Class<?>)`
-  helper (lines 25-31) and asserts that every key in
-  `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` is a legitimate sealed
-  leaf. Guards the map against stale entries; does **not** check that
-  every leaf has coverage.
-- **`TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`**
-  (`graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java:119-191`).
-  `Map<Class<? extends GraphitronField>, String>` with 33 entries across
-  `QueryField` (8) / `MutationField` (6) / `ChildField` (19). Consumed by
-  `stub(f)` (line 916) which throws `UnsupportedOperationException` with
-  the map-registered reason.
-- **Sealed `switch` in `TypeFetcherGenerator.generateTypeSpec`**
-  (lines 210-285). Exhaustive over `GraphitronField`; six real arms, ~33
-  stub arms, three defensive "cannot occur here" arms
+- **`GeneratorCoverageTest`** (`graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/generators/GeneratorCoverageTest.java`).
+  Two JUnit 5 tests (Phase 1 added the second one):
+  1. `notImplementedReasonsContainsOnlyConcreteSealedLeaves` — walks
+     six sealed roots (`GraphitronField`, `RootField`, `QueryField`,
+     `MutationField`, `ChildField`, `InputField`) via the shared
+     `sealedLeaves(Class<?>)` helper and asserts every key in
+     `NOT_IMPLEMENTED_REASONS` is a legitimate leaf.
+  2. `everyGraphitronFieldLeafHasAKnownDispatchStatus` (Phase 1) —
+     asserts `IMPLEMENTED_LEAVES`, `NOT_IMPLEMENTED_REASONS.keySet()`,
+     and `NOT_DISPATCHED_LEAVES` are pairwise disjoint, cover the full
+     `sealedLeaves(GraphitronField.class)`, and don't contain
+     non-leaves.
+  `sealedLeaves` is now `public static` so Phase 2's
+  `VariantCoverageTest` (in the parent package) can reuse it.
+- **`TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`** and siblings
+  (`graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java`).
+  Three-way partition of every `GraphitronField` leaf:
+  - `IMPLEMENTED_LEAVES` (6) — `ChildField.ColumnField`,
+    `QueryField.QueryLookupTableField`, `QueryField.QueryTableField`,
+    `ChildField.ServiceTableField`, `ChildField.SplitTableField`,
+    `ChildField.SplitLookupTableField`.
+  - `NOT_IMPLEMENTED_REASONS.keySet()` (33) — `QueryField` (8) /
+    `MutationField` (6) / `ChildField` (19). Consumed by `stub(f)`
+    which throws `UnsupportedOperationException` with the registered
+    reason.
+  - `NOT_DISPATCHED_LEAVES` (6) — `GraphitronField.NotGeneratedField`,
+    `GraphitronField.UnclassifiedField`, and the four `InputField`
+    leaves (filtered before the fetcher switch).
+  Partition is enforced by the new test above.
+- **Sealed `switch` in `TypeFetcherGenerator.generateTypeSpec`**.
+  Exhaustive over `GraphitronField`; six real arms, ~33 stub arms,
+  three defensive "cannot occur here" arms
   (`InputField`/`NotGeneratedField`/`UnclassifiedField`).
 - **26 parameterised classification enums** in
   `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java`
@@ -393,103 +411,68 @@ Three phases. Each is independently shippable; phase 2 has the real cost
 
 ---
 
-## Phase 1: Generator-branch coverage
+## Phase 1: Generator-branch coverage — SHIPPED
 
-### Overview
+Two sibling sets (`IMPLEMENTED_LEAVES`, `NOT_DISPATCHED_LEAVES`) were
+added to `TypeFetcherGenerator` alongside the pre-existing
+`NOT_IMPLEMENTED_REASONS`. `GeneratorCoverageTest` gained the partition
+test `everyGraphitronFieldLeafHasAKnownDispatchStatus` and
+`sealedLeaves` was promoted to `public static`.
 
-Extend `GeneratorCoverageTest` (or add a sibling) to assert that every
-sealed leaf of `GraphitronField` lands in exactly one of three sets:
-implemented, stubbed, or not-dispatched. This is a straightforward
-extension of the existing machinery and delivers immediate value.
+Result: every `GraphitronField` leaf (45 total — 6 + 33 + 6) must be
+declared in exactly one of the three sets. Adding a new leaf or
+orphaning an entry fails the test with the offending class name.
 
-### Dependencies
+### What shipped
 
-`NOT_DISPATCHED_LEAVES` below references `InputField.NestingField`.
-That permit is present on `claude/graphitron-rewrite` (added in the
-commit range that introduced the input-side nesting taxonomy) — Phase
-1 must be implemented on top of that branch or a descendant. If a
-future branch rewinds past the addition, Phase 1's sibling set will
-fail to compile.
+- `TypeFetcherGenerator.IMPLEMENTED_LEAVES` (6 entries).
+- `TypeFetcherGenerator.NOT_DISPATCHED_LEAVES` (6 entries — two
+  `GraphitronField` direct permits plus all four `InputField` leaves).
+- Updated Javadoc on `NOT_IMPLEMENTED_REASONS` cross-references the
+  two sibling sets so reviewers see the triangle from any entry point.
+- `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`
+  checks all four invariants (three pairwise disjoint + exhaustive
+  cover) and also rejects stale entries (classes in the sets that are
+  no longer sealed leaves).
+- `GeneratorCoverageTest.sealedLeaves` promoted to `public static`.
 
-### Changes Required
+### Learnings to carry into Phase 2
 
-#### 1. `TypeFetcherGenerator` — add sibling sets
-
-**File:** `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java`
-
-**Changes:** Directly above the existing `NOT_IMPLEMENTED_REASONS` map
-(line 119), add two sibling sets that declare the complete dispatch
-status of every `GraphitronField` leaf. Keep `NOT_IMPLEMENTED_REASONS`
-unchanged — it carries reason strings that the other two sets don't need.
-
-```java
-/** Leaves with real arm in {@link #generateTypeSpec}'s switch. */
-static final Set<Class<? extends GraphitronField>> IMPLEMENTED_LEAVES = Set.of(
-    ChildField.ColumnField.class,
-    QueryField.QueryLookupTableField.class,
-    QueryField.QueryTableField.class,
-    ChildField.ServiceTableField.class,
-    ChildField.SplitTableField.class,
-    ChildField.SplitLookupTableField.class);
-
-/** Leaves never reachable by the fetcher switch (filtered by {@link #generateForType}). */
-static final Set<Class<? extends GraphitronField>> NOT_DISPATCHED_LEAVES = Set.of(
-    GraphitronField.NotGeneratedField.class,
-    GraphitronField.UnclassifiedField.class,
-    InputField.ColumnField.class,
-    InputField.ColumnReferenceField.class,
-    InputField.PlatformIdField.class,
-    InputField.NestingField.class);
-```
-
-#### 2. `GeneratorCoverageTest` — add partition assertion
-
-**File:** `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/generators/GeneratorCoverageTest.java`
-
-**Changes:** Add a second `@Test` asserting that
-`IMPLEMENTED_LEAVES`, `NOT_IMPLEMENTED_REASONS.keySet()`, and
-`NOT_DISPATCHED_LEAVES` are pairwise disjoint and jointly cover
-`sealedLeaves(GraphitronField.class)`. Promote `sealedLeaves` from
-`private static` to `public static` on `GeneratorCoverageTest` so
-Phase 2's `VariantCoverageTest` (in the parent package
-`no.sikt.graphitron.rewrite`) can reuse it. The simpler alternative
-— extracting to a `SealedLeafUtils` helper in a shared package — is
-only warranted if a third caller arrives.
-
-```java
-@Test
-void everyGraphitronFieldLeafHasAKnownDispatchStatus() {
-    var leaves = sealedLeaves(GraphitronField.class);
-    var implemented = TypeFetcherGenerator.IMPLEMENTED_LEAVES;
-    var stubbed = TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.keySet();
-    var notDispatched = TypeFetcherGenerator.NOT_DISPATCHED_LEAVES;
-
-    assertThat(intersection(implemented, stubbed)).as("implemented ∩ stubbed").isEmpty();
-    assertThat(intersection(implemented, notDispatched)).as("implemented ∩ notDispatched").isEmpty();
-    assertThat(intersection(stubbed, notDispatched)).as("stubbed ∩ notDispatched").isEmpty();
-
-    var union = new HashSet<Class<?>>();
-    union.addAll(implemented); union.addAll(stubbed); union.addAll(notDispatched);
-    assertThat(union).as("every GraphitronField leaf must have a declared status").isEqualTo(leaves);
-}
-```
-
-### Success Criteria
-
-#### Automated
-
-- [ ] `mvn test -pl :graphitron-rewrite -Dtest=GeneratorCoverageTest` passes.
-- [ ] Deleting any entry from `NOT_IMPLEMENTED_REASONS` (without moving it to
-  `IMPLEMENTED_LEAVES`) makes the test fail with a clear message naming
-  the missing leaf.
-- [ ] Adding a new sealed leaf to `ChildField` (locally, via a scratch
-  edit) without updating any set makes the test fail.
-
-#### Manual
-
-- [ ] Read the failing-test message for the two scenarios above. Message
-  must name the offending class by simple name and say which set it is
-  missing from. No opaque "set mismatch" errors.
+1. **Fourth invariant worth keeping: "no stale declarations."** The
+   original plan asked for *pairwise disjoint* + *exhaustive cover*.
+   That leaves a gap: if a sealed leaf is deleted but its entry
+   remains in one of the sets, only the first
+   (`notImplementedReasonsContainsOnlyConcreteSealedLeaves`) test
+   catches it — and only for `NOT_IMPLEMENTED_REASONS`. The new test
+   adds a stale-classes check for all three sets, closing that gap.
+   Phase 2's meta-test should do the same for `variants()` sets on
+   classification cases (an enum case declaring a variant class that's
+   no longer a leaf should fail).
+2. **`simpleNames()` helper pays for itself.** AssertJ renders
+   `Class<?>` objects as `class no.sikt.graphitron.rewrite.model.ChildField$ColumnField`
+   — not useful in a failure banner. Mapping to
+   `Class::getSimpleName` before asserting produces
+   `["ColumnField"]`, which is both readable and the minimum
+   information a contributor needs to locate the offending leaf.
+   Phase 2 should do the same.
+3. **Javadoc cross-links are load-bearing.** A reviewer reading a PR
+   that moves one entry from `NOT_IMPLEMENTED_REASONS` to
+   `IMPLEMENTED_LEAVES` benefits from the invariant being documented
+   on each set. The Javadoc block on `NOT_IMPLEMENTED_REASONS` now
+   names both siblings and the test; mirror this when adding
+   `variants()` in Phase 2.
+4. **Cost was ~105 LOC, not the ~60 estimated.** Breakdown: +49 LOC
+   on `TypeFetcherGenerator` (two sets, one Javadoc block expanded,
+   one new Javadoc block), +56 LOC on the test (new test method plus
+   two small helpers). Still cheap. The delta from the estimate is
+   mostly the fourth-invariant check and the `simpleNames` helper —
+   both keepers.
+5. **Negative-test verification worked as specified.** Two failure
+   scenarios reproduced the expected messages: removing
+   `ChildField.ColumnField` from `IMPLEMENTED_LEAVES` failed with
+   `["ColumnField"]` on the "every leaf must be declared" arm;
+   duplicating an entry into two sets failed with `["TableField"]`
+   on the disjoint arm. Both actionable.
 
 ---
 
@@ -714,10 +697,14 @@ This can share the `sealedLeaves` helper and the allowlist mechanism.
 
 ## Testing Strategy
 
-### Unit tests (phase 1)
+### Unit tests (phase 1) — done
 
-- Phase 1 *is* a unit test. The production change is six lines added
-  to two sets in `TypeFetcherGenerator`; the test change exercises them.
+- Phase 1 *is* a unit test. Production change: two sets on
+  `TypeFetcherGenerator`; test change exercises them via the new
+  `everyGraphitronFieldLeafHasAKnownDispatchStatus` method. Two
+  failure scenarios were reproduced manually (missing leaf, duplicate
+  leaf); both produced class-name-only failure messages via the
+  `simpleNames()` helper.
 
 ### Meta-test behaviour verification (phase 2)
 
@@ -745,19 +732,22 @@ description. Don't commit them as tests (they'd pollute the suite).
 
 ## Sequencing
 
-- **Phase 1 first** (1 PR, ~60 LOC). Low-risk, ships immediately, locks
-  the pattern.
-- **P2 #3 (validator consumes `NOT_IMPLEMENTED_REASONS.keySet()`) should
-  follow Phase 1 closely**, not Phase 2. Phase 1 turns the map into a
-  three-way partition; P2 #3 is the single-arm validator change that
-  makes that partition protect users at build time instead of request
-  time. Today a schema using an unimplemented variant passes validation
-  and crashes at request time with `UnsupportedOperationException`.
-  Landing P2 #3 right after Phase 1 captures most of Phase 1's practical
-  value without waiting on the Phase 2 retrofit. P2 #3 itself warrants
-  a standalone plan before implementation.
+- **Phase 1 shipped** (~105 LOC: +49 production, +56 test). Locks the
+  three-way-partition pattern; all 447 tests in the module still pass.
+- **P2 #3 (validator consumes `NOT_IMPLEMENTED_REASONS.keySet()`) is
+  next**, before Phase 2. Phase 1 turned the map into a three-way
+  partition; P2 #3 is the single-arm validator change that makes that
+  partition protect users at build time instead of request time.
+  Today a schema using an unimplemented variant passes validation and
+  crashes at request time with `UnsupportedOperationException`.
+  Landing P2 #3 now captures most of Phase 1's practical value without
+  waiting on the Phase 2 retrofit. P2 #3 itself warrants a standalone
+  plan before implementation.
 - **Phase 2 next** (1 PR, retrofit + new test). Can proceed in parallel
-  with or after P2 #3. Independent of argument-resolution work.
+  with or after P2 #3. Independent of argument-resolution work, but
+  should wait until argument-resolution Phase 2 lands — both churn the
+  same 26 enums in `GraphitronSchemaBuilderTest` and concurrent work
+  guarantees conflicts.
 - **Phase 3 deferred.** Separate plan when narrow-component coverage
   becomes concrete demand (e.g., the `BatchKey.ObjectBased` decision
   from `docs/rewrite-roadmap.md` P2 #5).
@@ -790,7 +780,7 @@ description. Don't commit them as tests (they'd pollute the suite).
 - `docs/rewrite-roadmap.md` — P1 #1 (this plan), P2 #3 (validator consuming the map), P2 #5 (cross-plan ownership).
 - `docs/plan-docs-as-index-into-tests.md` — step 5 sketches the `ClassificationCase` interface; this plan supersedes that step.
 - `docs/plan-classification-vocabulary-followups.md` — related vocabulary work; not a dependency.
-- `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/generators/GeneratorCoverageTest.java` — current narrow coverage test.
-- `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java:119-285` — `NOT_IMPLEMENTED_REASONS` map and the sealed switch it guards.
+- `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/generators/GeneratorCoverageTest.java` — Phase 1 landed the partition test here.
+- `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java` — `IMPLEMENTED_LEAVES`, `NOT_IMPLEMENTED_REASONS`, `NOT_DISPATCHED_LEAVES`, and the sealed switch they guard.
 - `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java` — 26 classification enums targeted by phase 2.
 

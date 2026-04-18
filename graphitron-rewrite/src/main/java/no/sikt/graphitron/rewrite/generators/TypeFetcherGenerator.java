@@ -97,6 +97,38 @@ public class TypeFetcherGenerator {
         ParameterizedTypeName.get(SORT_FIELD, WildcardTypeName.subtypeOf(Object.class)));
 
     /**
+     * Leaves with a real arm in {@link #generateTypeSpec}'s switch (no {@code stub(f)} call).
+     * Together with {@link #NOT_IMPLEMENTED_REASONS}{@code .keySet()} and {@link #NOT_DISPATCHED_LEAVES}
+     * this forms an exhaustive, disjoint partition of every sealed leaf of {@link GraphitronField};
+     * enforced by {@code GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus}.
+     * Moving an entry from {@link #NOT_IMPLEMENTED_REASONS} to this set is the expected review signal
+     * when a stub becomes a real implementation.
+     */
+    public static final Set<Class<? extends GraphitronField>> IMPLEMENTED_LEAVES = Set.of(
+        ChildField.ColumnField.class,
+        QueryField.QueryLookupTableField.class,
+        QueryField.QueryTableField.class,
+        ChildField.ServiceTableField.class,
+        ChildField.SplitTableField.class,
+        ChildField.SplitLookupTableField.class);
+
+    /**
+     * Leaves that can never reach the fetcher switch at runtime: {@link InputField} leaves are
+     * only attached to input-object types (which {@link #generate} doesn't process), and
+     * {@link GraphitronField.NotGeneratedField}/{@link GraphitronField.UnclassifiedField} are
+     * filtered out inside {@link #generateForType} before dispatch. The switch still has
+     * "cannot occur" arms for these (so the compiler sees the switch as exhaustive) but those
+     * arms throw {@link AssertionError} rather than emitting code.
+     */
+    public static final Set<Class<? extends GraphitronField>> NOT_DISPATCHED_LEAVES = Set.of(
+        GraphitronField.NotGeneratedField.class,
+        GraphitronField.UnclassifiedField.class,
+        InputField.ColumnField.class,
+        InputField.ColumnReferenceField.class,
+        InputField.PlatformIdField.class,
+        InputField.NestingField.class);
+
+    /**
      * Maps each unimplemented field variant class to the reason string that the generated stub
      * includes in its {@link UnsupportedOperationException} message.
      *
@@ -108,12 +140,15 @@ public class TypeFetcherGenerator {
      * <ul>
      *   <li>Every key must be a concrete sealed leaf in the {@link GraphitronField} hierarchy.
      *       Enforced by {@code GeneratorCoverageTest.notImplementedReasonsContainsOnlyConcreteSealedLeaves}.</li>
+     *   <li>Together with {@link #IMPLEMENTED_LEAVES} and {@link #NOT_DISPATCHED_LEAVES} this forms
+     *       a disjoint partition of every {@link GraphitronField} leaf.
+     *       Enforced by {@code GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus}.</li>
      *   <li>Adding a case arm that calls {@link #stub} must also add the class here.
      *       Enforced at generator-run time via {@link Objects#requireNonNull} in {@link #stub} —
      *       fails the first time a schema triggers that variant.</li>
-     *   <li>Removing the last {@code stub(f)} call for a class should remove its map entry.
-     *       Not automatically enforced; an orphan entry is only caught if the sealed leaf itself
-     *       is deleted (then the leaf-set test above catches it).</li>
+     *   <li>Removing the last {@code stub(f)} call for a class should remove its map entry (and
+     *       typically move it to {@link #IMPLEMENTED_LEAVES} instead).
+     *       The partition test catches an orphan entry as soon as any other set references it.</li>
      * </ul>
      */
     public static final Map<Class<? extends GraphitronField>, String> NOT_IMPLEMENTED_REASONS =
