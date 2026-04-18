@@ -117,9 +117,9 @@ Classifier fails on `@table` + `@record` combined on an input type — legacy to
 
 Steps 1-2 shipped on `claude/review-docs-plan-adYJW`. Step 5 superseded by `plan-variant-coverage-meta-test.md`. Steps 3-4 (re-section renames + doc rewire) deferred until the sealed hierarchy stabilises; picking them up mid-churn means constant rework.
 
-### Legacy platformId **[Approved]** — [legacy-platform-id.md](legacy-platform-id.md)
+### Legacy platformId **[Draft]** — [legacy-platform-id.md](legacy-platform-id.md)
 
-Classify `id: ID!` fields that bind to composite platform keys emitted by `KjerneJooqGenerator` (`get*Id()` / `set*Id()` accessors, no real SQL column). Items 1-2 shipped: output and input classification, dispatch registration, and end-to-end pipeline tests backed by a synthetic `platformidfixture` jOOQ catalog that adds platform-id accessors to a hand-written table/record pair. Item 3 (mutation generator binding via `InputColumnBinding`) is blocked on argres Phase 3 (`TableInputArg.fieldBindings` population).
+Classify `id: ID!` fields that bind to composite platform keys emitted by `KjerneJooqGenerator` (`get*Id()` / `set*Id()` accessors, no real SQL column). Items 1-2 shipped: output and input classification, dispatch registration, and end-to-end pipeline tests backed by a synthetic `platformidfixture` jOOQ catalog that adds platform-id accessors to a hand-written table/record pair. Item 3 (mutation generator binding via `InputColumnBinding`) is blocked on argres Phase 3 (`TableInputArg.fieldBindings` population). Item 4 (argument/filter condition emission via `table.hasId`/`hasIds`) was added 2026-04-18 after a review surfaced the gap; it is independently schedulable and drives a `LookupMapping` sum-type refactor.
 
 ## Backlog
 
