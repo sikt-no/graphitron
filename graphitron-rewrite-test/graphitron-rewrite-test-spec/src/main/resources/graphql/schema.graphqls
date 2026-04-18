@@ -8,6 +8,8 @@ type Query {
     filmById(film_id: [ID] @lookupKey): [Film!]!
     languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language!]!
     customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
+    storeById(store_id: [Int] @lookupKey @field(name: "store_id")): [Store!]!
+    categoryById(category_id: [Int] @lookupKey @field(name: "category_id")): [Category!]!
     filmsConnection(
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
@@ -24,6 +26,40 @@ type Customer @table(name: "customer") {
     lastName:   String!  @field(name: "LAST_NAME")
     email:      String   @field(name: "EMAIL")
     activebool: Boolean! @field(name: "ACTIVEBOOL")
+    # G5: single-hop inline TableField — customer.address_id → address.address_id
+    address:       Address @reference(path: [{key: "customer_address_id_fkey"}])
+    # G5: multi-hop inline TableField — customer → store → address (2 hops)
+    storeAddress:  Address @reference(path: [
+        {key: "customer_store_id_fkey"},
+        {key: "store_address_id_fkey"}
+    ])
+}
+
+type Address @table(name: "address") {
+    addressId:  Int!     @field(name: "ADDRESS_ID")
+    address:    String!  @field(name: "ADDRESS")
+    district:   String!  @field(name: "DISTRICT")
+}
+
+type Store @table(name: "store") {
+    storeId:    Int!     @field(name: "STORE_ID")
+    # G5: single-hop inline TableField list — customer.store_id → store.store_id
+    customers:  [Customer!]! @reference(path: [{key: "customer_store_id_fkey"}]) @defaultOrder(primaryKey: true)
+}
+
+type Category @table(name: "category") {
+    categoryId:  Int!     @field(name: "CATEGORY_ID")
+    name:        String!  @field(name: "NAME")
+    # G5: self-referential inline TableField (single) — category.parent_category_id → category.category_id
+    parent:      Category @reference(path: [{key: "category_parent_category_id_fkey"}])
+    # G5: self-referential inline TableField (list) — reverse of the same FK
+    children:    [Category!]! @reference(path: [{key: "category_parent_category_id_fkey"}]) @defaultOrder(primaryKey: true)
+    # G5 ConditionJoin fixture — classification-only. C3's emitter emits a runtime-throwing stub
+    # for ConditionJoin paths; runtime behaviour lands with classification-vocabulary item 5.
+    similar:     Category @reference(path: [{condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.CategoryConditions",
+        method:    "sameNamePrefix"
+    }}])
 }
 
 type Film @table(name: "film") {

@@ -119,9 +119,10 @@ CREATE TABLE film_actor (
 );
 
 CREATE TABLE category (
-    category_id  serial      PRIMARY KEY,
-    name         varchar(25) NOT NULL,
-    last_update  timestamp   NOT NULL DEFAULT now()
+    category_id         serial      PRIMARY KEY,
+    name                varchar(25) NOT NULL,
+    parent_category_id  int         REFERENCES category(category_id),
+    last_update         timestamp   NOT NULL DEFAULT now()
 );
 
 CREATE TABLE film_category (
@@ -219,7 +220,18 @@ INSERT INTO film (title, description, release_year, language_id, rental_rate, ra
     ('AFFAIR PREJUDICE', 'A Classic Romance',    2006, 1, 2.99, 'G',     'G',    117),
     ('AGENT TRUMAN',     'An Action Adventure',  2006, 1, 2.99, 'PG',    'PG',   169);
 
-INSERT INTO category (name) VALUES ('Action'), ('Animation'), ('Comedy'), ('Drama');
+-- Self-referential category hierarchy for G5 depth-2 recursion tests:
+--   Genre          (id=1)
+--   ├── Action     (id=2, parent=1)
+--   │   └── Thriller (id=5, parent=2)  -- depth-2 leaf
+--   ├── Animation  (id=3, parent=1)
+--   └── Comedy     (id=4, parent=1)
+INSERT INTO category (name, parent_category_id) VALUES
+    ('Genre',     NULL),
+    ('Action',    1),
+    ('Animation', 1),
+    ('Comedy',    1),
+    ('Thriller',  2);
 
 INSERT INTO film_category (film_id, category_id) VALUES
     (1, 4), (2, 1), (3, 3), (4, 4), (5, 1);

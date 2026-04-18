@@ -131,6 +131,38 @@ verifies the N × M contract holds end-to-end.
 This item is the real blocker — it gates G5 and G6 execution tests. Items 1–4 are doc
 cleanups; item 5 changes what "done" means for those generator stubs.
 
+### Findings from G5 C4 (2026-04-18)
+
+Empirical data from attempting ConditionJoin inline emission during G5 C3/C4:
+
+- **ConditionJoin lacks a resolved target table.** The record is
+  `ConditionJoin(MethodRef condition, String alias)` — no `TableRef` for the "table this hop
+  navigates to". G5's `JoinPathEmitter` cannot generate a `.as(<alias>)` / `.from(targetAlias)`
+  without it. C3's emitter works around this by detecting `JoinPathEmitter.hasConditionJoin(path)`
+  and emitting a `throw new UnsupportedOperationException(…)` stub for the arm. Generated code
+  compiles; runtime throws only if the field is selected.
+- **Schema fixture landed in C4.** `Category.similar` in
+  `graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls` uses
+  `@reference(path: [{condition: {className: "…CategoryConditions", method: "sameNamePrefix"}}])`.
+  The classifier builds a `TableField` with `joinPath = [ConditionJoin]` successfully; generated
+  code compiles; runtime throw is in place. Item 5 can use this fixture as the ready-made
+  target for the "add execution test" work.
+- **Proposed ConditionJoin enrichment.** Item 5's design should likely mirror G5's C3a enrichment
+  of `FkJoin`: add `TableRef targetTable` to `ConditionJoin` (resolved by the builder via the
+  `@reference` directive's enclosing type context, since the target is what the field's return
+  type declares). Optionally also resolve `sourceTable` for symmetry with `FkJoin`. Once the
+  target is known, the C3 emitter's conditional `if (hasConditionJoin) throw …` branch collapses
+  into a uniform `.join(targetTable.as(alias)).on(<ClassName>.<method>(srcAlias, targetAlias))`.
+- **Emitter shape for condition-on the JOIN.** For a ConditionJoin as the FIRST step (single-hop
+  inline), the emission pattern is:
+  `.from(targetAlias).where(<ClassName>.<method>(parentAlias, targetAlias))`. For it as a
+  later step, `.join(targetAlias).on(<ClassName>.<method>(prevAlias, targetAlias))`. Two-arg
+  call emission already exists as `JoinPathEmitter.emitTwoArgMethodCall`.
+
+Execution-test design: reuse the `Category.similar` fixture. Seed data-driven condition (e.g.
+`sameNamePrefix` matches categories whose names share the first letter). Assert runtime shape
+for the N × M contract.
+
 ---
 
 ## Out of scope

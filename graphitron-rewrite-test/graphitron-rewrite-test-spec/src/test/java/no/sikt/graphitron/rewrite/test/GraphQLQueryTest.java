@@ -444,4 +444,105 @@ class GraphQLQueryTest {
         assertThat(nodes2).extracting(n -> n.get("title"))
             .containsExactly("ADAPTATION HOLES", "AFFAIR PREJUDICE");
     }
+
+    // ===== G5 inline TableField — single-hop FK =====
+
+    @Test
+    void inlineTableField_singleHopFk_returnsNestedRecord() {
+        // Customer 1 is in store 1, with address_id=1 → '47 MySakila Drive'
+        Map<String, Object> data = execute(
+            "{ customerById(customer_id: [\"1\"], store_id: \"1\") { customerId address { addressId address } } }");
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customerById");
+        assertThat(customers).hasSize(1);
+        var address = (Map<String, Object>) customers.get(0).get("address");
+        assertThat(address).isNotNull();
+        assertThat(address.get("addressId")).isEqualTo(1);
+        assertThat(address.get("address")).isEqualTo("47 MySakila Drive");
+    }
+
+    // ===== G5 inline TableField — multi-hop FK =====
+
+    @Test
+    void inlineTableField_multiHopFk_walksTwoFkHops() {
+        // customer 1, store 1, address 1 '47 MySakila Drive'; customer 2, store 1, address 2.
+        Map<String, Object> data = execute(
+            "{ customerById(customer_id: [\"1\", \"2\"], store_id: \"1\") { customerId storeAddress { address } } }");
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customerById");
+        assertThat(customers).hasSize(2);
+
+        var customer1 = customers.stream().filter(c -> ((Integer) c.get("customerId")) == 1).findFirst().orElseThrow();
+        assertThat(((Map<String, Object>) customer1.get("storeAddress")).get("address"))
+            .isEqualTo("47 MySakila Drive");
+    }
+
+    // ===== G5 inline TableField — single-hop FK, list cardinality =====
+
+    @Test
+    void inlineTableField_listCardinality_returnsAllChildren() {
+        // Store 1 holds customers 1, 2, 4. Store 2 holds 3, 5. Order by customer_id (PK).
+        Map<String, Object> data = execute(
+            "{ storeById(store_id: [1]) { storeId customers { customerId firstName } } }");
+        List<Map<String, Object>> stores = (List<Map<String, Object>>) data.get("storeById");
+        assertThat(stores).hasSize(1);
+
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) stores.get(0).get("customers");
+        assertThat(customers).extracting(c -> c.get("customerId"))
+            .containsExactly(1, 2, 4);
+    }
+
+    // ===== G5 inline TableField — self-referential recursion =====
+
+    @Test
+    void inlineTableField_selfRef_depth2_recursionTerminatesOnSelectionSet() {
+        // Category tree:
+        //   Genre (id=1)
+        //   └── Action (id=2)
+        //       └── Thriller (id=5)
+        // Depth-2 query: start at Thriller, walk parent → parent. Verifies Plan Decision 5's
+        // "recursion terminates on client selection depth" invariant end-to-end.
+        Map<String, Object> data = execute(
+            "{ categoryById(category_id: [5]) { name parent { name parent { name } } } }");
+        List<Map<String, Object>> cats = (List<Map<String, Object>>) data.get("categoryById");
+        assertThat(cats).hasSize(1);
+        assertThat(cats.get(0).get("name")).isEqualTo("Thriller");
+
+        var parent = (Map<String, Object>) cats.get(0).get("parent");
+        assertThat(parent.get("name")).isEqualTo("Action");
+
+        var grandparent = (Map<String, Object>) parent.get("parent");
+        assertThat(grandparent.get("name")).isEqualTo("Genre");
+    }
+
+    @Test
+    void inlineTableField_selfRef_listCardinality_returnsChildren() {
+        // Genre (id=1) has children: Action, Animation, Comedy (ids 2, 3, 4).
+        Map<String, Object> data = execute(
+            "{ categoryById(category_id: [1]) { name children { name } } }");
+        List<Map<String, Object>> cats = (List<Map<String, Object>>) data.get("categoryById");
+        assertThat(cats).hasSize(1);
+        assertThat(cats.get(0).get("name")).isEqualTo("Genre");
+
+        List<Map<String, Object>> children = (List<Map<String, Object>>) cats.get(0).get("children");
+        assertThat(children).extracting(c -> c.get("name"))
+            .containsExactly("Action", "Animation", "Comedy");
+    }
+
+    @Test
+    void inlineTableField_selfRef_nonRootCategory_hasNoChildren() {
+        // Thriller (id=5) is a leaf — children list is empty.
+        Map<String, Object> data = execute(
+            "{ categoryById(category_id: [5]) { name children { name } } }");
+        List<Map<String, Object>> cats = (List<Map<String, Object>>) data.get("categoryById");
+        List<Map<String, Object>> children = (List<Map<String, Object>>) cats.get(0).get("children");
+        assertThat(children).isEmpty();
+    }
+
+    @Test
+    void inlineTableField_selfRef_optionalParent_nullable() {
+        // Genre (id=1) has no parent — parent is null.
+        Map<String, Object> data = execute(
+            "{ categoryById(category_id: [1]) { name parent { name } } }");
+        List<Map<String, Object>> cats = (List<Map<String, Object>>) data.get("categoryById");
+        assertThat(cats.get(0).get("parent")).isNull();
+    }
 }
