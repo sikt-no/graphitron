@@ -1,7 +1,7 @@
 # Argument Resolution
 
 **Status:** Foundation landed — classification + projection complete; generator-side migration remains.
-**Last updated:** 2026-04-18 after foundation tightening (post-review).
+**Last updated:** 2026-04-18 after Phase 1 design tightening (blast-radius spike + emitter shape).
 
 Plan for unified argument classification in the builder, `@condition` directive support, and lookup-field generation. The foundation (builder-side) is in; the generator-side refactor is the substantial work ahead and is the focus of this plan going forward.
 
@@ -72,10 +72,19 @@ Both iterate the same `filters()` list. Removing lookup keys from `filters()` (a
 
 **Component deliverables (single logical change, can split across commits if helpful).**
 
-1. **`LookupValuesJoinEmitter`** — new class in `generators/lookup/`. Takes a `LookupMapping` and produces a `CodeBlock` emitting the VALUES+JOIN select. Uses jOOQ raw `Row` arrays (typed `RowN<…>` has no clean JavaPoet mapping; jOOQ docs recommend raw types for dynamic VALUES). The emitter also declares any convert-needed locals for `ID`/JooqConvert keys.
-2. **Builder-side.** `projectFilters` stops adding `GeneratedConditionFilter` entries for arguments with `ColumnArg.isLookupKey() == true`. `LookupField.filters()` then contains only non-key filters (field-level `@condition`, per-arg `@condition`).
-3. **`TypeFetcherGenerator.buildQueryLookupRowsMethod`** — replace the current "iterate `filters()` for the lookup `GeneratedConditionFilter`, call `<Type>Conditions.<field>Condition`" block with `LookupValuesJoinEmitter.emit(field.lookupMapping(), …)`. Non-key filters (if any) AND-ed onto the result as today.
+1. **Builder-side.** `projectFilters` stops adding `bodyParams` entries for arguments with `ColumnArg.isLookupKey() == true`. `LookupField.filters()` then contains only non-key filters (field-level `@condition`, per-arg `@condition`). `projectForLookup` already reads these via `ca.isLookupKey()` — no change needed there.
+
+2. **`LookupValuesJoinEmitter`** — new class in `generators/lookup/`. Generates, per lookup field, two artifacts into the enclosing `*Fetchers` class:
+
+   - A pure helper `<fieldName>InputRows(DataFetchingEnvironment env, <TargetTable> table) -> Row[]`. Extracts each key from env, builds one `Row` per input index with `DSL.val(value, targetColumn.getDataType())` cells (typed binds — jOOQ applies the column's Converter internally and renders a plain JDBC bind, no SQL-level CAST). Returns an empty array when the primary list arg is null/empty. Pure function of `env` + `table`; unit-testable in isolation.
+   - A thin fetcher body: `Row[] rows = <fieldName>InputRows(env, table); if (rows.length == 0) return <empty>; Table<?> input = DSL.values(rows).as("<fieldName>Input"); return dsl.select(...).from(table).join(input).using(table.COL1, table.COL2, …).orderBy(input.field("idx")).fetch();`.
+
+   Raw `Row[]` is retained (typed `RowN<…>` has no clean JavaPoet mapping), but each cell is a typed `Param<T>` via `DSL.val`, so VALUES columns carry types without requiring typed row generics in emitted code. USING-join works by construction: VALUES column labels are emitted to match target column names, `idx` stays excluded by virtue of not existing on the target table.
+
+3. **`TypeFetcherGenerator.buildQueryLookupRowsMethod`** — replace the current "iterate `filters()` for the lookup `GeneratedConditionFilter`, call `<Type>Conditions.<field>Condition`" block with calls to the emitter. Non-key filters (if any) are AND-ed as a `.where(...)` before `.orderBy(...)` as today.
+
 4. **`TypeConditionsGenerator`** — gain an explicit `skip LookupField` arm. Self-documents the decoupling rather than leaving a silent "no `GeneratedConditionFilter` → no method" side effect.
+
 5. **Variant-coverage meta-test (roadmap P1 #1).** Extend the sealed-root meta-test to assert every `LookupField` permit has an emission arm in `TypeFetcherGenerator`. Pin it here — this is the phase where lookup emission becomes a live capability rather than a stub.
 
 **Verification.**
@@ -84,9 +93,9 @@ Both iterate the same `filters()` list. Removing lookup keys from `filters()` (a
 - Pipeline test: `LookupField.filters()` contains no `GeneratedConditionFilter` for lookup-key args; `<Type>Conditions` class no longer has a method for lookup fields. `GeneratedSourcesSmokeTest` confirms.
 - **No `CodeBlock`-substring assertions** (per CLAUDE.md). The emitter is verified via the above: generated code compiles (real jOOQ catalog) and produces ordered results against a real database. Emitter-level tests, if any, render the produced SQL via `DSLContext.renderInlined(...)` or equivalent and assert on the rendered SQL string — behaviour-level, not shape-level.
 
-**Multi-list-key tuple correlation.** When multiple `@lookupKey` args are lists, treat them as zipped by index (one row of the VALUES table per input index, broadcasting scalars). Length-mismatch handling is deferred to the first schema that demands it.
+**Multi-list-key tuple correlation.** When multiple `@lookupKey` args are lists, treat them as zipped by index (one row of the VALUES table per input index, broadcasting scalars). Row count N is determined by the first list-typed column's length; scalars broadcast across all rows. If multiple list args have mismatched lengths the generated code fails at VALUES construction — the concrete error shape pins on the first schema that demands finer handling. If all `@lookupKey` args are scalar, N=1 — a single-row VALUES+JOIN, semantically identical to `WHERE k = v` but uniform with the list-keyed path (no special case in the generator).
 
-**Risk.** Downstream consumers that `import static`-ed the now-gone `<Type>Conditions.<field>Condition` method break at compile time. Grep the example server and approval tests before merging; the compile signal is itself proof of the decoupling.
+**Blast radius.** Spike (2026-04-18): zero external consumers of the generated `<Type>Conditions.<field>Condition` methods. Only caller is `TypeFetcherGenerator.buildQueryLookupRowsMethod` itself — exactly the method this phase rewrites. Example server, example service, and approval tests reference *user-written* condition classes via schema-level `@condition(className:, method:)`, which is an orthogonal concept. `GeneratedSourcesSmokeTest` does not enumerate `*Conditions` classes; no update required there. Phase 1 is therefore a single-site change with no parallel deprecation path.
 
 ### Phase 2 — Child-field lookup generators (G5/G6)
 
@@ -152,7 +161,13 @@ These should be answered before the corresponding phase begins.
 
 | Phase | Decision | Resolution |
 |---|---|---|
-| 1 | `LookupValuesJoinEmitter` raw-`Row` arrays vs. typed `RowN`? | Raw arrays — jOOQ's idiomatic form for dynamic VALUES. Suppression scoped to emitted code, not generator code. |
+| 1 | `LookupValuesJoinEmitter` raw-`Row` arrays vs. typed `RowN`? | Raw arrays with typed bind cells — `DSL.val(value, targetColumn.getDataType())` preserves column types at bind time without requiring typed `RowN<…>` in generated code. Raw-types `@SuppressWarnings` scoped to emitted code only. |
+| 1 | Value binding: manual `.convert()` at call site, `DSL.cast`, or `DSL.val(value, dataType)`? | `DSL.val(value, dataType)` — typed `Param<T>` invokes the column's own Converter internally and renders a plain JDBC bind (no SQL-level CAST). Collapses the `CallSiteExtraction` branches: `Direct` and `JooqConvert` become the same emission, `EnumValueOf` and `TextMapLookup` add a tiny per-extraction pre-step that produces the Java value before `DSL.val`. |
+| 1 | Join kind: USING vs explicit ON condition? | USING — VALUES column labels are emitted to match target column names by construction. `idx` (ordering column) is naturally excluded because it's not on the target. |
+| 1 | Emitter shape: inline in `buildQueryLookupRowsMethod`, or extracted helper? | Extracted `<fieldName>InputRows(env, table) -> Row[]` helper generated into the same `*Fetchers` class. The helper is a pure function — unit-testable against a mocked env + real jOOQ table class — and the fetcher body becomes thin composition. |
+| 1 | VALUES alias scheme? | `<fieldName>Input` (lowerCamelCase of the lookup field name, suffix `Input`). Unique per fetcher; no collision concerns within a single generated SQL query. |
+| 1 | Empty-input semantics? | Short-circuit to empty `Result` before constructing VALUES (jOOQ rejects empty `Row[]`; this also matches legacy `in ([])` → no rows behaviour). |
+| 1 | Extraction restriction on `@lookupKey` args? | None — all `CallSiteExtraction` variants flow through `DSL.val`. `EnumValueOf` and `TextMapLookup` produce already-converted Java values (enum instance / mapped string) that jOOQ binds through the target column's DataType. `ContextArg` is unreachable by directive position (`@lookupKey` only applies to `ARGUMENT_DEFINITION`); the emitter asserts as a defensive check. |
 | 1 | `TypeConditionsGenerator` explicit `skip LookupField` arm, or "no `GeneratedConditionFilter` → no method" as an implicit consequence? | Explicit arm — self-documents the decoupling. |
 | 1 | Multi-list-key correlation: zipped, cartesian, or error? | Zipped (tuple correlation) with length-mismatch as a runtime error. Matches the N × M contract. First schema that needs it pins the length-mismatch policy. |
 | 3 | Partial-binding tolerance on a `TableInputArg`: error on unmatched input field, or record as `UnboundBinding`? | Error at classify time. Matches scalar-arg strictness. |
@@ -194,3 +209,4 @@ Structural properties (method names, param types, presence/absence) are the righ
 - 2026-04-17 — 2026-04-18: steps 0, 1, 2, 3, 4, 5, 6, 10 landed (foundation complete).
 - 2026-04-18 — plan rewritten to reflect foundation status and reframe remaining work as a six-phase generator migration. Steps 7–9 of the old plan absorbed into phases with explicit sub-items and decision points.
 - 2026-04-18 — post-review tightening. Two foundation fixes landed: `ColumnArg.isLookupKey` lifts `@lookupKey` into the classifier (projection no longer re-reads SDL); `projectForFilter` rejects fields that trip the lookup gate but produce an empty `LookupMapping`, closing the input-field-`@lookupKey` gap until Phase 3. Plan collapsed from six phases to four: the disposable `LookupConditionEmitter` interstitial is gone; Phase 1 lands VALUES + JOIN directly. Phase 3 composite-key work is a single atomic change (binding population + `sourcePath` + projection + emitter). Phase 4 gains a required override-propagation test matrix. Test strategy rewritten to execution-level assertions only — no `CodeBlock`-substring or snapshot-of-emitted-SQL tests.
+- 2026-04-18 (late) — Phase 1 design tightening. Blast-radius spike: zero external consumers — single-site change, no parallel deprecation path. Emitter shape: extracted `<fieldName>InputRows(env, table) -> Row[]` helper + thin fetcher body (pure helper is unit-testable; fetcher is composition). Join: USING (VALUES labels emitted to match target column names). Bind: `DSL.val(value, dataType)` — typed `Param<T>` invokes the column's Converter internally, plain JDBC bind, no SQL-level CAST. No extraction restriction on `@lookupKey`. Alias scheme `<fieldName>Input`. Uniform emission for n=1. Decision table extended with seven Phase-1 resolutions.
