@@ -357,6 +357,18 @@ class BuildContext {
     }
 
     /**
+     * Resolves a jOOQ {@code Table} + {@code Field} list to a list of {@link ColumnRef}s for FK
+     * source/target column population. Returns an empty list when the catalog is unavailable.
+     */
+    private List<ColumnRef> resolveFkColumnRefs(org.jooq.Table<?> table, List<? extends org.jooq.Field<?>> fields) {
+        return fields.stream()
+            .map(f -> catalog.findColumn(table, f.getName()))
+            .<JooqCatalog.ColumnEntry>flatMap(Optional::stream)
+            .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()))
+            .toList();
+    }
+
+    /**
      * Parses the {@code @reference(path:)} directive on {@code container} into a {@link ParsedPath}.
      *
      * <p>Returns {@code ParsedPath(List.of(), null)} when no {@code @reference} directive is present.
@@ -453,8 +465,12 @@ class BuildContext {
             }
             String fkJavaConstant = catalog.fkJavaConstantName(f.getName()).orElse("");
             TableRef targetTable = resolveTable(targetSqlName);
+            TableRef sourceTable = resolveTable(currentSourceSqlName != null ? currentSourceSqlName
+                : (targetSqlName.equalsIgnoreCase(keySideTable) ? fkSideTable : keySideTable));
+            List<ColumnRef> sourceColumns = resolveFkColumnRefs(f.getTable(), f.getFields());
+            List<ColumnRef> targetColumns = resolveFkColumnRefs(f.getKey().getTable(), f.getKey().getFields());
             MethodRef whereFilter = hasCondition ? resolveConditionRef(asMap(conditionRaw)) : null;
-            out.add(new FkJoin(f.getName(), fkJavaConstant, targetTable, whereFilter, alias));
+            out.add(new FkJoin(f.getName(), fkJavaConstant, sourceTable, sourceColumns, targetTable, targetColumns, whereFilter, alias));
             return;
         }
         if (tableName.isPresent()) {
@@ -479,8 +495,11 @@ class BuildContext {
             String targetSqlName = currentSourceSqlName.equalsIgnoreCase(fkSideTable) ? keySideTable : fkSideTable;
             String fkJavaConstant = catalog.fkJavaConstantName(f.getName()).orElse("");
             TableRef targetTable = resolveTable(targetSqlName);
+            TableRef sourceTable = resolveTable(currentSourceSqlName);
+            List<ColumnRef> sourceColumns = resolveFkColumnRefs(f.getTable(), f.getFields());
+            List<ColumnRef> targetColumns = resolveFkColumnRefs(f.getKey().getTable(), f.getKey().getFields());
             MethodRef whereFilter = hasCondition ? resolveConditionRef(asMap(conditionRaw)) : null;
-            out.add(new FkJoin(f.getName(), fkJavaConstant, targetTable, whereFilter, alias));
+            out.add(new FkJoin(f.getName(), fkJavaConstant, sourceTable, sourceColumns, targetTable, targetColumns, whereFilter, alias));
             return;
         }
         if (hasCondition) {

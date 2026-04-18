@@ -45,7 +45,7 @@ class ArgumentValidationTest {
 
         NO_FILTERS("no filters (stubbed)",
             tableField(List.of()),
-            List.of(stubbedError("Film.actors", TableField.class))),
+            List.of()),
 
         WITH_COLUMN_FILTER("GeneratedConditionFilter scalar (stubbed)",
             tableField(List.of(new GeneratedConditionFilter("TestConditions", "actorsCondition",
@@ -53,15 +53,15 @@ class ArgumentValidationTest {
                 List.of(new CallParam("id", new CallSiteExtraction.Direct(), false, "java.lang.Integer")),
                 List.of(new BodyParam("id", new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
                     "java.lang.Integer", false, false, new CallSiteExtraction.Direct()))))),
-            List.of(stubbedError("Film.actors", TableField.class))),
+            List.of()),
 
         WITH_INPUT_FILTER("table-bound input type arg — skipped (empty filters) (stubbed)",
             tableField(List.of()),
-            List.of(stubbedError("Film.actors", TableField.class))),
+            List.of()),
 
         WITH_CONDITION_FILTER("ConditionFilter (stubbed)",
             tableField(List.of(new ConditionFilter("com.example.Conditions", "cond", List.of()))),
-            List.of(stubbedError("Film.actors", TableField.class)));
+            List.of());
 
         private final String description;
         private final GraphitronField field;

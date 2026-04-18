@@ -59,7 +59,7 @@ class NodeIdReferenceFieldValidationTest {
                 new ReturnTypeRef.TableBoundReturnType("Language", new TableRef("language", "LANGUAGE", "Language", List.of()), new FieldWrapper.Single(true)),
                 new TableRef("film", "FILM", "Film", List.of()),
                 null, List.of(),
-                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", new TableRef("language", "", "", List.of()), null, ""))),
+                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(), new TableRef("language", "", "", List.of()), List.of(), null, ""))),
             List.of(stubbedError("Film.languageId", NodeIdReferenceField.class))),
 
         PATH_WRONG_TABLE("explicit FK path leading to the wrong table — one error (and stubbed)",
@@ -67,7 +67,7 @@ class NodeIdReferenceFieldValidationTest {
                 new ReturnTypeRef.TableBoundReturnType("Language", new TableRef("language", "LANGUAGE", "Language", List.of()), new FieldWrapper.Single(true)),
                 new TableRef("film", "FILM", "Film", List.of()),
                 null, List.of(),
-                List.of(new JoinStep.FkJoin("sequel_fkey", "", new TableRef("film", "", "", List.of()), null, ""))),
+                List.of(new JoinStep.FkJoin("sequel_fkey", "", null, List.of(), new TableRef("film", "", "", List.of()), List.of(), null, ""))),
             List.of("Field 'Film.languageId': @reference path does not lead to the table of type 'Language'",
                 stubbedError("Film.languageId", NodeIdReferenceField.class))),
 

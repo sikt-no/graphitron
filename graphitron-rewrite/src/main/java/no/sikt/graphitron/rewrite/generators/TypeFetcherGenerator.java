@@ -129,6 +129,17 @@ public class TypeFetcherGenerator {
         InputField.NestingField.class);
 
     /**
+     * Leaves whose SELECT projection is emitted inline by {@link TypeClassGenerator}'s
+     * {@code $fields} method — no per-field fetcher method is generated. Together with
+     * {@link #IMPLEMENTED_LEAVES}, {@link #NOT_DISPATCHED_LEAVES}, and
+     * {@link #NOT_IMPLEMENTED_REASONS}{@code .keySet()}, this forms an exhaustive four-way
+     * disjoint partition of every {@link GraphitronField} sealed leaf; enforced by
+     * {@code GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus}.
+     */
+    public static final Set<Class<? extends GraphitronField>> PROJECTED_LEAVES = Set.of(
+        ChildField.TableField.class);
+
+    /**
      * Maps each unimplemented field variant class to the reason string that the generated stub
      * includes in its {@link UnsupportedOperationException} message.
      *
@@ -184,8 +195,7 @@ public class TypeFetcherGenerator {
             Map.entry(MutationField.MutationServiceRecordField.class,
                 "MutationServiceRecordField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #4"),
             // ChildField stubs — TableTargetField sub-hierarchy
-            Map.entry(ChildField.TableField.class,
-                "TableField inline subquery not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #1"),
+            // (ChildField.TableField is now in PROJECTED_LEAVES — inline emission via TypeClassGenerator.$fields)
             Map.entry(ChildField.LookupTableField.class,
                 "LookupTableField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #1"),
             Map.entry(ChildField.TableInterfaceField.class,
@@ -300,7 +310,8 @@ public class TypeFetcherGenerator {
                 case ChildField.ColumnReferenceField f          -> builder.addMethod(stub(f));
                 case ChildField.NodeIdField f                   -> builder.addMethod(stub(f));
                 case ChildField.NodeIdReferenceField f          -> builder.addMethod(stub(f));
-                case ChildField.TableField f                    -> builder.addMethod(stub(f));
+                // ChildField.TableField has no fetcher — inline projection via TypeClassGenerator.$fields.
+                case ChildField.TableField ignored              -> { }
                 case ChildField.LookupTableField f              -> builder.addMethod(stub(f));
                 case ChildField.TableInterfaceField f           -> builder.addMethod(stub(f));
                 case ChildField.RecordTableField f              -> builder.addMethod(stub(f));
@@ -1053,6 +1064,14 @@ public class TypeFetcherGenerator {
             return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.$L.$L))",
                 field.name(), columnFetcherClass, tablesClass,
                 parentTable.javaFieldName(), cf.column().javaName());
+        }
+        if (field instanceof ChildField.TableField) {
+            // Inline projection: the parent's record already carries this field as a named column
+            // (aliased multiset / RowN). Read it by name from the parent Record — no fetcher method.
+            var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
+                ColumnFetcherClassGenerator.CLASS_NAME);
+            return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.field($S)))",
+                field.name(), columnFetcherClass, DSL, field.name());
         }
         return CodeBlock.of("\n.dataFetcher($S, $L::$L)", field.name(), className, field.name());
     }

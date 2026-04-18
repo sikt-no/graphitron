@@ -66,7 +66,12 @@ public class TypeClassGenerator {
             .map(f -> (ChildField.PlatformIdField) f)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
-        return buildTypeSpec(typeName, type.table(), columnFields, platformIdFields);
+        var tableFields = schema.fieldsOf(typeName).stream()
+            .filter(f -> f instanceof ChildField.TableField)
+            .map(f -> (ChildField.TableField) f)
+            .sorted(Comparator.comparing(GraphitronField::name))
+            .toList();
+        return buildTypeSpec(typeName, type.table(), columnFields, platformIdFields, tableFields);
     }
 
     /**
@@ -74,13 +79,16 @@ public class TypeClassGenerator {
      * @param tableRef        the resolved table reference with jOOQ field/class names
      * @param columnFields    the scalar column fields to include in {@code $fields()}, in declaration order
      * @param platformIdFields the legacy platform-id fields whose getters return {@code SelectField<String>}
+     * @param tableFields     the inline {@code @reference}-path table fields emitted as correlated
+     *                        subqueries via {@link InlineTableFieldEmitter}
      */
     static TypeSpec buildTypeSpec(String typeName, TableRef tableRef,
             List<ChildField.ColumnField> columnFields,
-            List<ChildField.PlatformIdField> platformIdFields) {
+            List<ChildField.PlatformIdField> platformIdFields,
+            List<ChildField.TableField> tableFields) {
         return TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
-            .addMethod(build$FieldsMethod(tableRef, columnFields, platformIdFields))
+            .addMethod(build$FieldsMethod(tableRef, columnFields, platformIdFields, tableFields))
             .build();
     }
 
@@ -100,7 +108,8 @@ public class TypeClassGenerator {
      */
     private static MethodSpec build$FieldsMethod(TableRef tableRef,
             List<ChildField.ColumnField> columnFields,
-            List<ChildField.PlatformIdField> platformIdFields) {
+            List<ChildField.PlatformIdField> platformIdFields,
+            List<ChildField.TableField> tableFields) {
         var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
@@ -128,7 +137,12 @@ public class TypeClassGenerator {
             builder.addCode("        case $S -> fields.add(table.$L());\n",
                 pf.name(), pf.getterName());
         }
-        builder.addCode("        default -> { } // nested/unhandled fields\n");
+        for (var tf : tableFields) {
+            builder.addCode("        case $S -> {\n", tf.name());
+            builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableRef, "table"));
+            builder.addCode("        }\n");
+        }
+        builder.addCode("        default -> { } // unhandled fields\n");
         builder.addCode("    }\n");
         builder.addCode("}\n");
 

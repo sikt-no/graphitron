@@ -50,11 +50,12 @@ class GeneratorCoverageTest {
     }
 
     /**
-     * Every sealed leaf of {@link GraphitronField} must land in exactly one of three sets:
+     * Every sealed leaf of {@link GraphitronField} must land in exactly one of four sets:
      * {@link TypeFetcherGenerator#IMPLEMENTED_LEAVES}, {@link TypeFetcherGenerator#NOT_IMPLEMENTED_REASONS}'s
-     * key set, or {@link TypeFetcherGenerator#NOT_DISPATCHED_LEAVES}. Guarantees that adding a
-     * new leaf without updating any of the three sets fails the build, and that a leaf can't
-     * silently live in two sets (which would let a stub entry linger after the real arm is added).
+     * key set, {@link TypeFetcherGenerator#NOT_DISPATCHED_LEAVES}, or
+     * {@link TypeFetcherGenerator#PROJECTED_LEAVES}. Guarantees that adding a new leaf without
+     * updating any of the four sets fails the build, and that a leaf can't silently live in two
+     * sets (which would let a stub entry linger after the real arm is added).
      */
     @Test
     void everyGraphitronFieldLeafHasAKnownDispatchStatus() {
@@ -62,6 +63,7 @@ class GeneratorCoverageTest {
         Set<Class<?>> implemented = new HashSet<>(TypeFetcherGenerator.IMPLEMENTED_LEAVES);
         Set<Class<?>> stubbed = new HashSet<>(TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.keySet());
         Set<Class<?>> notDispatched = new HashSet<>(TypeFetcherGenerator.NOT_DISPATCHED_LEAVES);
+        Set<Class<?>> projected = new HashSet<>(TypeFetcherGenerator.PROJECTED_LEAVES);
 
         assertThat(simpleNames(intersection(implemented, stubbed)))
             .as("IMPLEMENTED_LEAVES ∩ NOT_IMPLEMENTED_REASONS — a leaf cannot be both real and stubbed")
@@ -69,27 +71,37 @@ class GeneratorCoverageTest {
         assertThat(simpleNames(intersection(implemented, notDispatched)))
             .as("IMPLEMENTED_LEAVES ∩ NOT_DISPATCHED_LEAVES — a dispatched leaf cannot also be filtered before dispatch")
             .isEmpty();
+        assertThat(simpleNames(intersection(implemented, projected)))
+            .as("IMPLEMENTED_LEAVES ∩ PROJECTED_LEAVES — a leaf cannot be both fetcher-implemented and projection-only")
+            .isEmpty();
         assertThat(simpleNames(intersection(stubbed, notDispatched)))
             .as("NOT_IMPLEMENTED_REASONS ∩ NOT_DISPATCHED_LEAVES — a stubbed leaf must be reachable to be stubbed")
+            .isEmpty();
+        assertThat(simpleNames(intersection(stubbed, projected)))
+            .as("NOT_IMPLEMENTED_REASONS ∩ PROJECTED_LEAVES — projection-only means no stub is needed")
+            .isEmpty();
+        assertThat(simpleNames(intersection(notDispatched, projected)))
+            .as("NOT_DISPATCHED_LEAVES ∩ PROJECTED_LEAVES — a projected leaf must be dispatched to the projection path")
             .isEmpty();
 
         Set<Class<?>> union = new HashSet<>();
         union.addAll(implemented);
         union.addAll(stubbed);
         union.addAll(notDispatched);
+        union.addAll(projected);
 
         Set<Class<?>> missing = new HashSet<>(leaves);
         missing.removeAll(union);
         assertThat(simpleNames(missing))
             .as("every GraphitronField leaf must be declared in exactly one of IMPLEMENTED_LEAVES, "
-                + "NOT_IMPLEMENTED_REASONS.keySet(), or NOT_DISPATCHED_LEAVES")
+                + "NOT_IMPLEMENTED_REASONS.keySet(), NOT_DISPATCHED_LEAVES, or PROJECTED_LEAVES")
             .isEmpty();
 
         Set<Class<?>> stale = new HashSet<>(union);
         stale.removeAll(leaves);
         assertThat(simpleNames(stale))
-            .as("none of IMPLEMENTED_LEAVES / NOT_IMPLEMENTED_REASONS / NOT_DISPATCHED_LEAVES may "
-                + "name a class outside the GraphitronField sealed hierarchy")
+            .as("none of IMPLEMENTED_LEAVES / NOT_IMPLEMENTED_REASONS / NOT_DISPATCHED_LEAVES / "
+                + "PROJECTED_LEAVES may name a class outside the GraphitronField sealed hierarchy")
             .isEmpty();
     }
 

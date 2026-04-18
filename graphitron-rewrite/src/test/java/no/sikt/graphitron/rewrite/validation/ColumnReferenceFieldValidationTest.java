@@ -22,12 +22,12 @@ class ColumnReferenceFieldValidationTest {
 
         RESOLVED_IMPLICIT("no @field — column name defaults to the GraphQL field name; path resolved via FK (stubbed)",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", new TableRef("language", "", "", List.of()), null, "")), false),
+                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(), new TableRef("language", "", "", List.of()), List.of(), null, "")), false),
             List.of(stubbedError("Film.languageName", ColumnReferenceField.class))),
 
         RESOLVED_EXPLICIT("@field(name:) overrides the column name; path resolved via FK (stubbed)",
             new ColumnReferenceField("Film", "languageName", null, "language_name", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", new TableRef("language", "", "", List.of()), null, "")), false),
+                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(), new TableRef("language", "", "", List.of()), List.of(), null, "")), false),
             List.of(stubbedError("Film.languageName", ColumnReferenceField.class))),
 
         CONDITION_METHOD("path resolved via condition method instead of a FK (stubbed)",
@@ -37,7 +37,7 @@ class ColumnReferenceFieldValidationTest {
 
         JAVA_NAME_PRESENT("@field(javaName:) is not supported — validation error (and stubbed)",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", new TableRef("language", "", "", List.of()), null, "")), true),
+                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(), new TableRef("language", "", "", List.of()), List.of(), null, "")), true),
             List.of("Field 'Film.languageName': @field(javaName:) is not supported in record-based output",
                 stubbedError("Film.languageName", ColumnReferenceField.class))),
 

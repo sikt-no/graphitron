@@ -32,31 +32,31 @@ class TableFieldValidationTest {
 
         NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time (stubbed)",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null),
-            List.of(stubbedError("Film.actors", TableField.class))),
+            List.of()),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey (stubbed)",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", new TableRef("film_actor", "", "", List.of()), null, "")),
+                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), new TableRef("film_actor", "", "", List.of()), List.of(), null, "")),
                 List.of(), new OrderBySpec.None(), null),
-            List.of(stubbedError("Film.actors", TableField.class))),
+            List.of()),
 
         WITH_CONDITION_ONLY("condition-only join step — no FK (stubbed)",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), "")),
                 List.of(), new OrderBySpec.None(), null),
-            List.of(stubbedError("Film.actors", TableField.class))),
+            List.of()),
 
         FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause (stubbed)",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(),
                 List.of(new ConditionFilter("com.example.Conditions", "actorCondition", List.of())),
                 new OrderBySpec.None(), null),
-            List.of(stubbedError("Film.actors", TableField.class))),
+            List.of()),
 
         FIELD_CONDITION_RESOLVED_OVERRIDE("resolved @condition with override:true — override applied at build time (stubbed)",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(),
                 List.of(new ConditionFilter("com.example.Conditions", "actorCondition", List.of())),
                 new OrderBySpec.None(), null),
-            List.of(stubbedError("Film.actors", TableField.class))),
+            List.of()),
 
         DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields (stubbed)",
             new TableField("Film", "actors", null,
@@ -64,7 +64,7 @@ class TableFieldValidationTest {
                 List.of(), List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
                 null),
-            List.of(stubbedError("Film.actors", TableField.class))),
+            List.of()),
 
         DEFAULT_ORDER_INDEX("@defaultOrder with named index (stubbed)",
             new TableField("Film", "actors", null,
@@ -72,7 +72,7 @@ class TableFieldValidationTest {
                 List.of(), List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("last_name", "LAST_NAME", "java.lang.String"), null)), "ASC"),
                 null),
-            List.of(stubbedError("Film.actors", TableField.class))),
+            List.of()),
 
         DEFAULT_ORDER_PRIMARY_KEY("@defaultOrder with primaryKey mode (stubbed)",
             new TableField("Film", "actors", null,
@@ -80,7 +80,7 @@ class TableFieldValidationTest {
                 List.of(), List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
                 null),
-            List.of(stubbedError("Film.actors", TableField.class))),
+            List.of()),
 
         PAGINATED_WITH_ORDERING("connection with pagination and ordering (stubbed)",
             new TableField("Film", "actors", null,
@@ -92,7 +92,7 @@ class TableFieldValidationTest {
                     null,
                     new PaginationSpec.PaginationArg("after", "String", false),
                     null)),
-            List.of(stubbedError("Film.actors", TableField.class))),
+            List.of()),
 
         PAGINATED_WITHOUT_ORDERING("connection with pagination but no ordering — error (and stubbed)",
             new TableField("Film", "actors", null,
@@ -104,8 +104,7 @@ class TableFieldValidationTest {
                     null,
                     new PaginationSpec.PaginationArg("after", "String", false),
                     null)),
-            List.of("Field 'Film.actors': paginated fields must have ordering (add @defaultOrder or @orderBy)",
-                stubbedError("Film.actors", TableField.class)));
+            List.of("Field 'Film.actors': paginated fields must have ordering (add @defaultOrder or @orderBy)"));
 
         private final String description;
         private final GraphitronField field;

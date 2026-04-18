@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import java.util.List;
+
 /**
  * One step in the join path expressed by a {@code @reference} directive.
  *
@@ -63,9 +65,15 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * <p>{@code fkName} is the SQL constraint name (e.g. {@code "film_language_id_fkey"}), retained
      * for error messages and debugging. {@code fkJavaConstant} is the Java constant name in the
      * generated {@code Keys} class (e.g. {@code "FK_FILM__FILM_LANGUAGE_ID_FKEY"}); it may be
-     * empty when the jOOQ catalog is not available (unit tests). {@code targetTable} is the fully
-     * resolved {@link TableRef} for the table this step navigates <em>to</em>. The source table is
-     * always known from the previous step or from the parent type; only the destination is stored.
+     * empty when the jOOQ catalog is not available (unit tests).
+     *
+     * <p>{@code sourceTable} / {@code sourceColumns} resolve to the table and columns <em>holding</em>
+     * the FK (e.g. {@code film.language_id}); {@code targetTable} / {@code targetColumns} resolve
+     * to the table and PK columns the FK <em>points to</em> (e.g. {@code language.language_id}).
+     * These are populated at build time from the jOOQ {@code ForeignKey} and drive G5's correlated
+     * subquery direction branching (whether the parent holds the FK or the child does). Both column
+     * lists have equal arity by jOOQ invariant. When the jOOQ catalog is unavailable (unit tests)
+     * these fall back to an empty {@link TableRef} / empty list.
      *
      * <p>{@code alias} is the unique table alias for this step within the enclosing query, computed
      * at build time as {@code fieldName + "_" + stepIndex} (e.g. {@code "language_0"} for the
@@ -82,7 +90,10 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
     record FkJoin(
         String fkName,
         String fkJavaConstant,
+        TableRef sourceTable,
+        List<ColumnRef> sourceColumns,
         TableRef targetTable,
+        List<ColumnRef> targetColumns,
         MethodRef whereFilter,
         String alias
     ) implements JoinStep {}
