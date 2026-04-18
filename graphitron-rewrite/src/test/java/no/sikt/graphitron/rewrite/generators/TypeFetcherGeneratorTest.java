@@ -6,13 +6,12 @@ import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BodyParam;
-import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
@@ -195,18 +194,15 @@ class TypeFetcherGeneratorTest {
 
     private static GraphitronField lookupQueryField(String name, List<BodyParam> bodyParams) {
         var returnType = tableBoundFilm(nonNullList());
-        var callParams = bodyParams.stream()
-            .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list(), bp.javaType()))
+        // Post-argres Phase 1: @lookupKey args live on LookupMapping, not on filters. Build the
+        // mapping from the fixture's "body params" (retaining the parameter name as a fixture
+        // convenience — callers still talk in terms of logical arg rows).
+        var columns = bodyParams.stream()
+            .map(bp -> new LookupMapping.LookupColumn(bp.name(), bp.column(), bp.extraction(), bp.list()))
             .toList();
-        var filter = new GeneratedConditionFilter(
-            "fake.code.generated.rewrite.types.FilmConditions",
-            name + "Condition",
-            FILM_TABLE,
-            callParams,
-            bodyParams);
         return new QueryField.QueryLookupTableField("Query", name, null, returnType,
-            List.of(filter), new OrderBySpec.None(), null,
-            new no.sikt.graphitron.rewrite.model.LookupMapping(List.of(), FILM_TABLE));
+            List.of(), new OrderBySpec.None(), null,
+            new LookupMapping(columns, FILM_TABLE));
     }
 
     private static BodyParam listKeyParam(String name, String javaName, String javaType) {
@@ -292,10 +288,13 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void queryLookupField_idListKey_usesJooqConvertInRowsMethod() {
+    void queryLookupField_idListKey_bindsViaColumnDataTypeInInputRowsHelper() {
         var field = lookupQueryField("filmById", List.of(listIdKeyParam("film_id", "FILM_ID", "java.lang.Integer")));
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
-        assertThat(method(spec, "lookupFilmById").code().toString()).contains("getDataType()");
+        // Post argres Phase 1: column type info flows through the input-rows helper via
+        // DSL.val(value, table.FILM_ID.getDataType()) — jOOQ's own Converter does the coercion.
+        // The legacy "stream().map(getDataType::convert)" call site is gone.
+        assertThat(method(spec, "filmByIdInputRows").code().toString()).contains("getDataType()");
     }
 
     // ===== @splitQuery TableField =====

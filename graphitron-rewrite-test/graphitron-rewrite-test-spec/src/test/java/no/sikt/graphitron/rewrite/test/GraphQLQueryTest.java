@@ -223,8 +223,21 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute("{ filmById(film_id: [\"1\", \"3\"]) { filmId title } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
         assertThat(films).hasSize(2);
+        // containsExactly (not InAnyOrder) — VALUES+JOIN preserves input order by joining on the
+        // derived table's idx column. See docs/argument-resolution.md Phase 1.
         assertThat(films).extracting(f -> f.get("title"))
-            .containsExactlyInAnyOrder("ACADEMY DINOSAUR", "ADAPTATION HOLES");
+            .containsExactly("ACADEMY DINOSAUR", "ADAPTATION HOLES");
+    }
+
+    @Test
+    void filmById_preservesInputOrder() {
+        // VALUES+JOIN ordering evidence: request IDs in a non-sorted order and assert output order
+        // matches input order. This is the one thing IN/EQ could not do, so it's the
+        // behaviour-level proof that the emitter uses ordered VALUES+JOIN.
+        Map<String, Object> data = execute("{ filmById(film_id: [\"3\", \"1\", \"2\"]) { filmId title } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        assertThat(films).extracting(f -> f.get("filmId"))
+            .containsExactly(3, 1, 2);
     }
 
     @Test

@@ -914,7 +914,10 @@ class FieldBuilder {
                 case ArgumentRef.ScalarArg.ColumnArg ca -> {
                     boolean autoSuppressed = ca.suppressedByFieldOverride()
                         || (ca.argCondition().isPresent() && ca.argCondition().get().override());
-                    if (!autoSuppressed) {
+                    // Lookup-key args are consumed by projectForLookup → LookupMapping and
+                    // emitted via VALUES+JOIN by LookupValuesJoinEmitter. They must not appear
+                    // as GeneratedConditionFilter bodyParams (per docs/argument-resolution.md Phase 1).
+                    if (!autoSuppressed && !ca.isLookupKey()) {
                         String javaType = javaTypeFor(ca.extraction(), ca.column());
                         bodyParams.add(new BodyParam(ca.name(), ca.column(), javaType, ca.nonNull(), ca.list(), ca.extraction()));
                     }

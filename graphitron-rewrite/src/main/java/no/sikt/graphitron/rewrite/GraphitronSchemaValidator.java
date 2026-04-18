@@ -178,13 +178,18 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         } else {
-            boolean anyFilterIsList = field.filters().stream().anyMatch(f -> switch (f) {
-                case no.sikt.graphitron.rewrite.model.GeneratedConditionFilter gcf ->
-                    gcf.bodyParams().stream().anyMatch(bp -> bp.list());
-                case no.sikt.graphitron.rewrite.model.ConditionFilter ignored -> false;
-            });
+            // Lookup cardinality is determined by whether any @lookupKey arg is a list. Post argres
+            // Phase 1, lookup-key args live on LookupMapping; any legacy filter-carried list arg is
+            // also considered (validator is input-shape-agnostic and covers both paths).
+            boolean anyKeyIsList = field.lookupMapping().columns().stream()
+                    .anyMatch(no.sikt.graphitron.rewrite.model.LookupMapping.LookupColumn::list)
+                || field.filters().stream().anyMatch(f -> switch (f) {
+                    case no.sikt.graphitron.rewrite.model.GeneratedConditionFilter gcf ->
+                        gcf.bodyParams().stream().anyMatch(bp -> bp.list());
+                    case no.sikt.graphitron.rewrite.model.ConditionFilter ignored -> false;
+                });
             boolean returnIsList = field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List;
-            if (anyFilterIsList != returnIsList) {
+            if (anyKeyIsList != returnIsList) {
                 errors.add(new ValidationError(
                     "Field '" + field.qualifiedName() + "': result type does not match input cardinality",
                     field.location()

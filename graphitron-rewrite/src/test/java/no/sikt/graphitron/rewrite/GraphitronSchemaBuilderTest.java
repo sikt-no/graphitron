@@ -1262,7 +1262,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         TABLE_FIELD_LOOKUP_KEY_ARG(
-            "@lookupKey on a child-field argument (no @splitQuery) — field classified as LookupTableField",
+            "@lookupKey on a child-field argument (no @splitQuery) — field classified as LookupTableField; key flows through LookupMapping",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
@@ -1272,8 +1272,10 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.LookupTableField) schema.field("Film", "actor");
-                assertThat(f.filters()).hasSize(1);
-                assertThat(((GeneratedConditionFilter) f.filters().get(0)).bodyParams().get(0).name()).isEqualTo("actor_id");
+                // @lookupKey args are emitted via VALUES+JOIN from LookupMapping, not as filters.
+                assertThat(f.filters()).isEmpty();
+                assertThat(f.lookupMapping().columns()).hasSize(1);
+                assertThat(f.lookupMapping().columns().get(0).argName()).isEqualTo("actor_id");
             }),
 
         TABLE_FIELD_ORDER_BY_ARG(
@@ -2035,7 +2037,7 @@ class GraphitronSchemaBuilderTest {
     enum RootFieldCase {
 
         LOOKUP_QUERY_FIELD(
-            "field with @lookupKey list arg → QueryLookupTableField with list return",
+            "field with @lookupKey list arg → QueryLookupTableField with list return; key flows through LookupMapping, not filters",
             """
             type Film @table(name: "film") { title: String }
             type Query { filmById(film_id: [ID] @lookupKey): [Film!]! }
@@ -2043,8 +2045,11 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.field("Query", "filmById")).isInstanceOf(QueryField.QueryLookupTableField.class);
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
-                assertThat(f.filters()).hasSize(1);
-                assertThat(((GeneratedConditionFilter) f.filters().get(0)).bodyParams().get(0).name()).isEqualTo("film_id");
+                // @lookupKey args no longer populate filters() — see docs/argument-resolution.md Phase 1.
+                // They are emitted via VALUES+JOIN from LookupMapping.columns() instead.
+                assertThat(f.filters()).isEmpty();
+                assertThat(f.lookupMapping().columns()).hasSize(1);
+                assertThat(f.lookupMapping().columns().get(0).argName()).isEqualTo("film_id");
                 assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class);
             }),
 
@@ -2063,20 +2068,19 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LOOKUP_FIELD_COLUMN_ARG(
-            "lookup field list arg whose column exists → ColumnFilter with resolved jOOQ field",
+            "lookup field list arg whose column exists → resolved LookupColumn in LookupMapping",
             """
             type Film @table(name: "film") { title: String }
             type Query { filmById(film_id: [ID] @lookupKey): [Film!]! }
             """,
             schema -> {
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
-                assertThat(f.filters()).hasSize(1);
-                assertThat(f.filters().get(0)).isInstanceOf(GeneratedConditionFilter.class);
-                var gcf = (GeneratedConditionFilter) f.filters().get(0);
-                var a = gcf.bodyParams().get(0);
-                assertThat(a.name()).isEqualTo("film_id");
-                assertThat(a.column().javaName()).isEqualTo("FILM_ID");
-                assertThat(a.column().columnClass()).isNotEmpty();
+                assertThat(f.filters()).isEmpty();
+                assertThat(f.lookupMapping().columns()).hasSize(1);
+                var col = f.lookupMapping().columns().get(0);
+                assertThat(col.argName()).isEqualTo("film_id");
+                assertThat(col.targetColumn().javaName()).isEqualTo("FILM_ID");
+                assertThat(col.targetColumn().columnClass()).isNotEmpty();
             }),
 
         LOOKUP_FIELD_PLAIN_SCALAR_ARG(
@@ -2141,8 +2145,9 @@ class GraphitronSchemaBuilderTest {
                 assertThat(orderBy.directionFieldName()).isEqualTo("direction");
                 assertThat(orderBy.namedOrders()).hasSize(1);
                 assertThat(orderBy.namedOrders().get(0).name()).isEqualTo("TITLE");
-                assertThat(f.filters()).hasSize(1);
-                assertThat(((GeneratedConditionFilter) f.filters().get(0)).bodyParams().get(0).name()).isEqualTo("film_id");
+                assertThat(f.filters()).isEmpty();
+                assertThat(f.lookupMapping().columns()).hasSize(1);
+                assertThat(f.lookupMapping().columns().get(0).argName()).isEqualTo("film_id");
             }),
 
         LOOKUP_FIELD_ORDERBY_ARG_BAD_STRUCTURE(

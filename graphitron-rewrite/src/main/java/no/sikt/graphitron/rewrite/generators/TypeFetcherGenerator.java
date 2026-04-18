@@ -19,7 +19,6 @@ import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -254,8 +253,12 @@ public class TypeFetcherGenerator {
                     // handled in wiring via ColumnFetcher — no method emitted
                 }
                 case QueryField.QueryLookupTableField qlf -> {
+                    var lookupTableRef = qlf.returnType().table();
+                    var lookupTableClass = GeneratorUtils.ResolvedTableNames
+                        .of(lookupTableRef, qlf.returnType().returnTypeName()).jooqTableClass();
                     builder.addMethod(buildQueryLookupFetcher(qlf));
                     builder.addMethod(buildQueryLookupRowsMethod(qlf));
+                    builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(qlf, lookupTableClass));
                 }
                 case QueryField.QueryTableField qtf -> {
                     if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection) {
@@ -876,23 +879,26 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Generates the lookup rows method that builds the condition and delegates to the table's
-     * {@code selectMany}. The method name comes from {@link QueryField.QueryLookupTableField#lookupMethodName()}.
+     * Generates the lookup rows method for a {@link QueryField.QueryLookupTableField}.
      *
-     * <p>List-keyed arguments (annotated {@code @lookupKey} on a {@code [T]} argument) become an
-     * IN condition; scalar-keyed arguments become an EQ condition. Type conversion via
-     * {@code getDataType().convert()} handles both {@code ID} (delivered as String) and numeric
-     * GraphQL scalars transparently.
+     * <p>The body is emitted via {@link LookupValuesJoinEmitter}: a typed {@code Row[]} is
+     * constructed by a companion helper, then the VALUES derived table is joined to the target
+     * via {@code USING (…)} and ordered by the derived table's {@code idx} column to preserve
+     * input ordering. See {@code docs/argument-resolution.md} Phase 1 for design rationale.
      *
      * <p>Generated code (single list key):
      * <pre>{@code
      * public static Result<Record> lookupFilmById(DataFetchingEnvironment env) {
      *     Film table = Tables.FILM;
-     *     Condition condition = DSL.noCondition();
-     *     List<String> filmIdKeys = env.getArgument("film_id");
-     *     condition = condition.and(FilmConditions.filmByIdCondition(table, filmIdKeys.stream().map(table.FILM_ID.getDataType()::convert).toList()));
-     *     List<SortField<?>> orderBy = List.of();
-     *     return Film.selectMany(env, condition, orderBy);
+     *     Row[] rows = filmByIdInputRows(env, table);
+     *     var dsl = graphitronContext(env).getDslContext(env);
+     *     if (rows.length == 0) return dsl.newResult();
+     *     Table<?> input = DSL.values(rows).as("filmByIdInput", "idx", "FILM_ID");
+     *     return dsl.select(Film.$fields(env.getSelectionSet(), table, env))
+     *               .from(table)
+     *               .join(input).using(table.FILM_ID)
+     *               .orderBy(input.field("idx"))
+     *               .fetch();
      * }
      * }</pre>
      */
@@ -906,37 +912,27 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env");
 
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
-        builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
 
+        // Declare the WHERE condition for non-key filters (field-level @condition or per-arg
+        // @condition). Post-C1 lookup-key args flow through LookupValuesJoinEmitter and never
+        // appear here; the loop iterates only ConditionFilter / non-lookup GeneratedConditionFilter
+        // entries. For pure-@lookupKey fields (the common case) filters() is empty and this is a
+        // no-op that jOOQ elides.
+        builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
         for (var filter : field.filters()) {
-            if (!(filter instanceof GeneratedConditionFilter gcf)) continue;
-            // Declare local variables for list JooqConvert keys (List<String> — avoids convert() overload ambiguity)
-            for (var bp : gcf.bodyParams()) {
-                if (bp.extraction() instanceof CallSiteExtraction.JooqConvert && bp.list()) {
+            for (var param : filter.callParams()) {
+                if (param.extraction() instanceof CallSiteExtraction.JooqConvert && param.list()) {
                     builder.addStatement("$T<$T> $L = env.getArgument($S)",
-                        LIST, String.class, toCamelCase(bp.name()) + "Keys", bp.name());
+                        LIST, String.class, toCamelCase(param.name()) + "Keys", param.name());
                 }
             }
-            var callParams = gcf.bodyParams().stream()
-                .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list(), bp.javaType()))
-                .toList();
+            var callArgs = buildCallArgs(filter.callParams(), filter.className());
             builder.addStatement("condition = condition.and($T.$L($L))",
-                ClassName.bestGuess(gcf.className()), gcf.methodName(),
-                buildCallArgs(callParams, gcf.className()));
+                ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
         }
 
-        builder.addCode(buildOrderByCode(field.orderBy()));
-        builder.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
-        builder.addCode(CodeBlock.builder()
-            .add("return dsl\n")
-            .indent()
-            .add(".select($T.$$fields(env.getSelectionSet(), table, env))\n", names.typeClass())
-            .add(".from(table)\n")
-            .add(".where(condition)\n")
-            .add(".orderBy(orderBy)\n")
-            .add(".fetch();\n")
-            .unindent()
-            .build());
+        var typeFieldsCall = CodeBlock.of("$T.$$fields(env.getSelectionSet(), table, env)", names.typeClass());
+        builder.addCode(LookupValuesJoinEmitter.buildFetcherBody(field, typeFieldsCall));
         return builder.build();
     }
 

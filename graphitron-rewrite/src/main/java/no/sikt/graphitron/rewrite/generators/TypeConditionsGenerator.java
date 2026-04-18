@@ -12,6 +12,7 @@ import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.LookupField;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
@@ -57,6 +58,12 @@ public class TypeConditionsGenerator {
     }
 
     private static Optional<GeneratedConditionFilter> extractGeneratedConditionFilter(GraphitronField field) {
+        // LookupField variants have their lookup-key args emitted via VALUES + JOIN by
+        // LookupValuesJoinEmitter; they do not need a generated condition method. This explicit
+        // skip self-documents the decoupling introduced in docs/argument-resolution.md Phase 1.
+        // Note: a lookup field with a mixed non-lookup-key column filter is not yet supported
+        // (no such schema exists today); that case would need to emit the non-key filter here.
+        if (field instanceof LookupField) return Optional.empty();
         if (!(field instanceof SqlGeneratingField sgf)) return Optional.empty();
         return sgf.filters().stream()
             .filter(f -> f instanceof GeneratedConditionFilter)
