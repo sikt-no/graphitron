@@ -1,8 +1,8 @@
 # argres Phase 2b — Split(Lookup)TableField DataLoader rows-method emission
 
-> **Status:** Draft
+> **Status:** Approved
 >
-> Skeleton. Fills in the DataLoader rows-method bodies for `ChildField.SplitTableField` and `ChildField.SplitLookupTableField`, which today compile but throw `UnsupportedOperationException` at runtime. Completes the split-query story for inline DataLoader batching; `RecordLookupTableField` (Phase 2c) remains out of scope pending the `BatchKey.ObjectBased` model decision.
+> Fills in the DataLoader rows-method bodies for `ChildField.SplitTableField` and `ChildField.SplitLookupTableField`, which today compile but throw `UnsupportedOperationException` at runtime. Completes the split-query story for inline DataLoader batching; `RecordLookupTableField` (Phase 2c) remains out of scope pending the `BatchKey.ObjectBased` model decision.
 
 Phase 2a made `LookupTableField` render inline via `DSL.multiset` + VALUES/JOIN keyset. Phase 2b covers the DataLoader-batched complement: flat SELECT per batch instead of a per-parent multiset projection. Together, 2a and 2b close the `LookupField` generation story and make the two most common split-query shapes work end-to-end.
 
@@ -105,7 +105,7 @@ private static List<List<Record>> scatterByIdx(Result<Record> flat, int keyCount
 }
 ```
 
-For single cardinality, `scatterByIdx` returns `List<Record>` where each slot is the `first()` row per idx (or `null` if empty). Emitted as a slim helper alongside the list variant.
+For single cardinality, `scatterFirstByIdx` returns `List<Record>` aligned with `keys` where each slot is the first row for that idx, or `null` when the SELECT returned no row for that key. The null-not-empty-list convention matches DataLoader's contract for single-cardinality fields (graphql-java reads the `CompletableFuture<Record>` and treats `null` as "no result for this parent", which propagates to GraphQL as an explicit null). If two rows share an idx (ambiguous schema), the second silently wins; the emitter asserts single-cardinality at codegen time by inspecting `returnType().wrapper()` and the SQL should never return multiple matches in practice, but the helper does not defensively assert at runtime — treat as an execution-tier test coverage item.
 
 **The `__idx__` projection column is harmless downstream.** graphql-java field resolvers read by GraphQL field name; `__idx__` isn't in the selection set, so it's never fetched by a DataFetcher. The projection cost is one additional integer column per row — negligible.
 
@@ -135,7 +135,7 @@ Extend `SplitRowsMethodEmitter` with the lookup branch: add the `xxxInputRows` h
 
 ### C3 — Classifier rejection for `@asConnection` on `Split*`
 
-Per Open Decision 3 (defer pagination). `FieldBuilder` rejects `FieldWrapper.Connection` on `SplitTableField` / `SplitLookupTableField` classification with a specific diagnostic naming "connection semantics on split-query fields are not supported in argres Phase 2b; see classification-vocabulary follow-up X". Pipeline test covers the rejection. Parallels G5 C1's TableField rejection + Phase 2a C1's LookupTableField rejection — the invariant that `Split*.returnType().wrapper() != Connection` is established in one commit so C1/C2 emitters rely on it cleanly.
+Per Open Decision 3 (defer pagination). `FieldBuilder` rejects `FieldWrapper.Connection` on `SplitTableField` / `SplitLookupTableField` classification with a concrete diagnostic: `"@asConnection on @splitQuery fields is not supported; per-parent pagination inside a DataLoader batch requires window-function partitioning and is deferred to a follow-up plan."` No "follow-up X" placeholder — the diagnostic is a self-contained explanation plus "deferred to a follow-up plan" that does not name a specific doc the reader must look up. When the pagination-on-split-fields plan lands, update the diagnostic to reference it. Pipeline test covers the rejection. Parallels G5 C1's TableField rejection + Phase 2a C1's LookupTableField rejection — the invariant that `Split*.returnType().wrapper() != Connection` is established in one commit so C1/C2 emitters rely on it cleanly.
 
 Ordering note. C3 logically precedes C1 (it's a classifier invariant the emitter assumes) but it can land after as long as no fixture in `test-spec` schema pairs `@splitQuery` with `@asConnection`. A one-line grep audit before landing confirms this.
 
@@ -197,6 +197,7 @@ Per CLAUDE.md — structural at unit tier, behaviour at execution tier:
 
 ## History
 
+- **2026-04-19 (Draft → Approved)** — independent reviewer pass by a session that didn't author either Draft iteration. Verified line-number citations against trunk: `TypeFetcherGenerator:942-981` (buildServiceDataFetcher), `:992-1010` (buildServiceRowsMethod), `:1016-1024` / `:1026-1035` (both Split stubs), `ChildField.java:128-143` / `:157-173` (Split* / SplitLookup* records), `FieldBuilder:245` (parentBatchKey construction), `GeneratorUtils:130-136` / `:171-204` (keyElementType + buildKeyExtraction), `InlineLookupTableFieldEmitter:130-144` (USING→ON lesson). All accurate. Two small reviewer fixes landed in the same pass: (a) C3's classifier-rejection diagnostic no longer contains the literal "follow-up X" placeholder — replaced with a self-contained reason plus a soft "deferred to a follow-up plan" pointer that will be tightened when the pagination-on-split-fields plan lands; (b) `scatterFirstByIdx`'s null-vs-empty-list semantics pinned — null for no-match, first() for match, ambiguous-key "second silently wins" acknowledged as an execution-tier coverage concern. Plan is implementation-ready; C1 can start immediately.
 - **2026-04-19 (second Draft iteration)** — full design pass after code audit on trunk:
   - **Current state corrected.** The skeleton said only the rows-method body was a stub; in fact both `buildSplitQueryDataFetcher` (`:1016-1024`) and `buildSplitRowsMethod` (`:1026-1035`) are stubs. Phase 2b rewrites both.
   - **Fetcher shape pinned.** Match `buildServiceDataFetcher` (`:942-981`): DataLoader-registering via `graphitronContext(env).getDataLoaderName` + `DataLoaderFactory.newDataLoaderWithContext` + `GeneratorUtils.buildKeyExtraction`. A shared `buildDataLoaderRegisteringFetcher` helper is an optional micro-refactor, not a prerequisite.
