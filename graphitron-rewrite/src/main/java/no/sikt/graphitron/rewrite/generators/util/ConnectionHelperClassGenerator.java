@@ -25,12 +25,13 @@ import java.util.List;
  *
  * <p>Also contains a nested {@code Edge} record class carrying a {@code Record} and cursor string.
  *
- * <p>Cursor encoding: each ORDER BY column value is serialised as a JSON array element using
- * {@code field.getDataType().convert(val)} for type-safe round-tripping. The array is
- * Base64-encoded. {@code null} values are encoded as JSON {@code null}. Decoding returns
- * {@code Field<?>[]} using {@code DSL.val(converted, dataType)} per column, so jOOQ's
- * {@code .seek(Field<?>...)} receives correctly-typed bind values. When no cursor is present,
- * {@code DSL.noField(field)} is returned per column — making {@code .seek()} a no-op.
+ * <p>Cursor encoding: column values are joined with {@code \u0000} (NUL) as separator;
+ * SQL {@code NULL} is encoded as {@code \u0001} (SOH). The joined string is Base64-encoded.
+ * PostgreSQL strings cannot contain NUL bytes, so no escaping is needed. Decoding splits on
+ * {@code \u0000} and uses {@code field.getDataType().convert(token)} for type-safe
+ * round-tripping. Returns {@code Field<?>[]} so jOOQ's {@code .seek(Field<?>...)} receives
+ * correctly-typed bind values. When no cursor is present, {@code DSL.noField(field)} is
+ * returned per column — making {@code .seek()} a no-op.
  *
  * <p>Generated as a source file so consuming projects have no runtime dependency on Graphitron.
  */
@@ -87,17 +88,11 @@ public class ConnectionHelperClassGenerator {
             .addParameter(RECORD, "record")
             .addParameter(listOfField, "orderByColumns")
             .addStatement("var sb = new $T()", ClassName.get("java.lang", "StringBuilder"))
-            .addStatement("sb.append('[')")
             .addCode("for (int i = 0; i < orderByColumns.size(); i++) {\n")
-            .addCode("    if (i > 0) sb.append(',');\n")
+            .addCode("    if (i > 0) sb.append(\"\\u0000\");\n")
             .addCode("    Object val = record.get(orderByColumns.get(i));\n")
-            .addCode("    if (val == null) {\n")
-            .addCode("        sb.append(\"null\");\n")
-            .addCode("    } else {\n")
-            .addCode("        sb.append(org.jooq.tools.json.JSONValue.toJSONString(val.toString()));\n")
-            .addCode("    }\n")
+            .addCode("    sb.append(val == null ? \"\\u0001\" : val.toString());\n")
             .addCode("}\n")
-            .addStatement("sb.append(']')")
             .addStatement("return $T.getEncoder().encodeToString(sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))", BASE64)
             .build();
 
@@ -115,20 +110,13 @@ public class ConnectionHelperClassGenerator {
             .addCode("        seekFields[i] = $T.noField(orderByColumns.get(i));\n", DSL)
             .addCode("    return seekFields;\n")
             .addCode("}\n")
-            .addStatement("String json = new String($T.getDecoder().decode(cursor), java.nio.charset.StandardCharsets.UTF_8)", BASE64)
-            .addCode("org.jooq.tools.json.JSONArray arr;\n")
-            .addCode("try {\n")
-            .addCode("    arr = (org.jooq.tools.json.JSONArray) org.jooq.tools.json.JSONValue.parseWithException(json);\n")
-            .addCode("} catch (org.jooq.tools.json.ParseException e) {\n")
-            .addCode("    throw new IllegalArgumentException(\"Invalid cursor\", e);\n")
-            .addCode("}\n")
+            .addStatement("String[] tokens = new String($T.getDecoder().decode(cursor), java.nio.charset.StandardCharsets.UTF_8).split(\"\\u0000\", -1)", BASE64)
             .addCode("for (int i = 0; i < orderByColumns.size(); i++) {\n")
-            .addCode("    Object token = arr.get(i);\n")
             .addCode("    $T col = orderByColumns.get(i);\n", JOOQ_FIELD)
-            .addCode("    if (token == null) {\n")
+            .addCode("    if (\"\\u0001\".equals(tokens[i])) {\n")
             .addCode("        seekFields[i] = $T.val((Object) null, col.getDataType());\n", DSL)
             .addCode("    } else {\n")
-            .addCode("        seekFields[i] = $T.val(col.getDataType().convert(token.toString()), col.getDataType());\n", DSL)
+            .addCode("        seekFields[i] = $T.val(col.getDataType().convert(tokens[i]), col.getDataType());\n", DSL)
             .addCode("    }\n")
             .addCode("}\n")
             .addStatement("return seekFields")

@@ -182,7 +182,7 @@ Enumerated by `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`; the stubbed-varian
 **Miscellaneous:**
 
 - **Paginated-fields transform coexistence** **[Unplanned]** — builder fallback loses `defaultPageSize` when `@asConnection` is stripped. See [../paginated-fields.md](../paginated-fields.md).
-- **Cursor format stability** **[Unplanned]** — `paginated-fields.md` uses jOOQ's internal `org.jooq.tools.json.JSONValue`. Document the risk and a replacement path if jOOQ removes it.
+- **Cursor format stability** **[Done]** — replaced `org.jooq.tools.json.JSONValue` with a NUL-delimited format (`\u0000` separator, `\u0001` for SQL NULL). No escaping needed (PostgreSQL strings cannot contain NUL bytes). See `paginated-fields.md`.
 - **Selection parser audit** **[Unplanned]** — `selection/` hand-rolls ~500 LOC that graphql-java already parses. Audit whether the runtime path really needs re-parsing.
 - **`GraphitronContext` extension-point docs** **[Unplanned]** — document what belongs in a `GraphitronContext` method vs a jOOQ `ExecuteListener` vs a schema directive.
 - **Drop `graphitron-common` build dependency from `graphitron-rewrite`** **[Unplanned]** — one production import + one test-classpath resource. Inline `MultiSourceReader` + auto-inject `directives.graphqls` from the module's own classpath. Emitted code's *runtime* dependency on `graphitron-common` is unchanged.

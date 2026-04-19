@@ -44,9 +44,9 @@ For structural detection (pre-expanded Connection types in SDL): `FieldBuilder.b
 
 ### Cursor format
 
-Each cursor is a Base64-encoded JSON array: `["val1", "val2", null, ...]`. Values are serialised using the column's `toString()` representation; `null` values use JSON `null`. Decoded using `org.jooq.tools.json.JSONValue` (bundled in jOOQ; internal API, no stability guarantee, but acceptable for self-contained generated code).
+Each cursor is a Base64-encoded NUL-delimited string: column values joined by `\u0000`, with SQL `NULL` encoded as `\u0001`. PostgreSQL strings cannot contain NUL bytes, so no escaping is needed. No external parser dependency.
 
-No type tags — the ORDER BY columns in `ConnectionResult.orderByColumns` carry the type information. `DataType.convert(stringVal)` reconstructs the correct Java type during decode.
+No type tags — the ORDER BY columns in `ConnectionResult.orderByColumns` carry the type information. `DataType.convert(token)` reconstructs the correct Java type during decode.
 
 ### Backward pagination invariants
 
