@@ -16,7 +16,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,37 +28,48 @@ class SplitTableFieldValidationTest {
 
     private static final BatchKey PARENT_BATCH_KEY = new BatchKey.RowKeyed(List.of());
 
+    // Validator messages for the intra-variant runtime-stub branches of SplitRowsMethodEmitter.
+    // Kept inline (rather than read from SplitRowsMethodEmitter.unsupportedReason) so a change
+    // to the production string breaks this test loudly — update both sides in the same commit.
+    private static final String SINGLE_CARDINALITY_STUB =
+        "Field 'Film.actors': Single-cardinality @splitQuery on 'Film.actors' not yet supported; "
+        + "list cardinality is the Phase 2b C1 scope. "
+        + "Single-cardinality requires joining the parent table to bridge parent PK to parent FK.";
+    private static final String EMPTY_PATH_STUB =
+        "Field 'Film.actors': @splitQuery 'Film.actors' requires a @reference path — "
+        + "Phase 2b C1 scope does not support path-less batched splits";
+
     enum Case implements ValidatorCase {
 
-        NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
+        NO_PATH("single cardinality, no @reference — runtime stub at emit time, surfaced as build error",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
-            List.of()),
+            List.of(SINGLE_CARDINALITY_STUB)),
 
-        WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
+        WITH_FK_PATH("single cardinality with FK path — runtime stub at emit time, surfaced as build error",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), new TableRef("film_actor", "", "", List.of()), List.of(), null, "")),
                 List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
-            List.of()),
+            List.of(SINGLE_CARDINALITY_STUB)),
 
-        WITH_CONDITION_ONLY("condition-only join step — no FK",
+        WITH_CONDITION_ONLY("single cardinality with condition-only join step — runtime stub, build error",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), "")),
                 List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
-            List.of()),
+            List.of(SINGLE_CARDINALITY_STUB)),
 
-        FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause; no errors",
+        FIELD_CONDITION_RESOLVED("single cardinality with resolved @condition — single-cardinality stub still surfaces",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(),
                 List.of(new ConditionFilter("com.example.Conditions", "actorCondition", List.of())),
                 new OrderBySpec.None(), null, PARENT_BATCH_KEY),
-            List.of()),
+            List.of(SINGLE_CARDINALITY_STUB)),
 
-        DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields — valid",
+        LIST_NO_PATH("list cardinality with empty joinPath — empty-path stub surfaces as build error",
             new SplitTableField("Film", "actors", null,
                 actorReturn(new FieldWrapper.List(true, true)),
                 List.of(), List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
                 null, PARENT_BATCH_KEY),
-            List.of());
+            List.of(EMPTY_PATH_STUB));
 
         private final String description;
         private final GraphitronField field;

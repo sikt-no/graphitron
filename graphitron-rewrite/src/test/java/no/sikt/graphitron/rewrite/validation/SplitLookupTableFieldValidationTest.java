@@ -13,7 +13,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,19 +28,31 @@ class SplitLookupTableFieldValidationTest {
 
     private static final BatchKey PARENT_BATCH_KEY = new BatchKey.RowKeyed(List.of());
 
+    // Validator messages for the intra-variant runtime-stub branches. See the sibling comment
+    // in SplitTableFieldValidationTest for why these are inlined rather than read from
+    // SplitRowsMethodEmitter.unsupportedReason.
+    private static final String SINGLE_CARDINALITY_STUB =
+        "Field 'Language.film': Single-cardinality @splitQuery @lookupKey on 'Language.film' "
+        + "not yet supported; list cardinality is the Phase 2b C2 scope.";
+    private static final String EMPTY_PATH_STUB_FILMS =
+        "Field 'Language.films': @splitQuery @lookupKey 'Language.films' requires a @reference path — "
+        + "Phase 2b C2 scope does not support path-less batched lookup splits";
+
     enum Case implements ValidatorCase {
 
-        VALID_SINGLE("single return — valid",
+        SINGLE_CARDINALITY_STUBBED("single return — runtime stub today, surfaced as build error",
             new SplitLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY, EMPTY_LOOKUP),
-            List.of()),
+            List.of(SINGLE_CARDINALITY_STUB)),
 
-        VALID_LIST("list return — valid",
+        LIST_EMPTY_PATH_STUBBED("list return with empty joinPath — empty-path stub, surfaced as build error",
             new SplitLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY, EMPTY_LOOKUP),
-            List.of()),
+            List.of(EMPTY_PATH_STUB_FILMS)),
 
-        CONNECTION_BLOCKED("connection return — not valid on lookup field",
+        CONNECTION_BLOCKED("connection return — not valid on lookup field; empty-path stub also surfaces",
             new SplitLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true)), List.of(), List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY, EMPTY_LOOKUP),
-            List.of("Field 'Language.films': lookup fields must not return a connection"));
+            List.of(
+                "Field 'Language.films': lookup fields must not return a connection",
+                EMPTY_PATH_STUB_FILMS));
 
         private final String description;
         private final GraphitronField field;

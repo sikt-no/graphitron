@@ -120,27 +120,9 @@ public final class SplitRowsMethodEmitter {
     // -----------------------------------------------------------------------
 
     private static MethodSpec buildForSplitTable(ChildField.SplitTableField stf, TableRef parentTable) {
-        ReturnTypeRef.TableBoundReturnType returnType = stf.returnType();
-        boolean isList = returnType.wrapper().isList();
-
-        // Single cardinality with parentHoldsFk=true requires the parent table in the JOIN
-        // chain (parentInput carries parent PK, but the FK hop connects parent FK → target PK
-        // — we need an extra hop through the parent table). Deferred to a follow-up.
-        if (!isList) {
-            return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(),
-                "Single-cardinality @splitQuery on '" + stf.qualifiedName()
-                + "' not yet supported; list cardinality is the Phase 2b C1 scope. "
-                + "Single-cardinality requires joining the parent table to bridge parent PK to parent FK.");
-        }
-        if (JoinPathEmitter.hasConditionJoin(stf.joinPath())) {
-            return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(),
-                "@splitQuery '" + stf.qualifiedName() + "' with a condition-join step cannot be "
-                + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
-        }
-        if (stf.joinPath().isEmpty()) {
-            return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(),
-                "@splitQuery '" + stf.qualifiedName() + "' requires a @reference path — "
-                + "Phase 2b C1 scope does not support path-less batched splits");
+        var stubReason = unsupportedReason(stf);
+        if (stubReason.isPresent()) {
+            return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(), stubReason.get());
         }
 
         return buildListMethod(
@@ -149,37 +131,79 @@ public final class SplitRowsMethodEmitter {
             /* lookupMapping */ null);
     }
 
+    /**
+     * Returns the reason why this {@link ChildField.SplitTableField} cannot be emitted as a
+     * working DataLoader rows method today — or empty if it is emittable. Shared between
+     * {@link #buildForSplitTable} (runtime stub) and
+     * {@code GraphitronSchemaValidator.validateVariantIsImplemented} (build-time error), so
+     * the two stay in lock-step. Moving a branch from here to a real emitter body must
+     * update this predicate in the same commit.
+     */
+    public static java.util.Optional<String> unsupportedReason(ChildField.SplitTableField stf) {
+        boolean isList = stf.returnType().wrapper().isList();
+        // Single cardinality with parentHoldsFk=true requires the parent table in the JOIN
+        // chain (parentInput carries parent PK, but the FK hop connects parent FK → target PK
+        // — we need an extra hop through the parent table). Deferred to a follow-up.
+        if (!isList) {
+            return java.util.Optional.of(
+                "Single-cardinality @splitQuery on '" + stf.qualifiedName()
+                + "' not yet supported; list cardinality is the Phase 2b C1 scope. "
+                + "Single-cardinality requires joining the parent table to bridge parent PK to parent FK.");
+        }
+        if (JoinPathEmitter.hasConditionJoin(stf.joinPath())) {
+            return java.util.Optional.of(
+                "@splitQuery '" + stf.qualifiedName() + "' with a condition-join step cannot be "
+                + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
+        }
+        if (stf.joinPath().isEmpty()) {
+            return java.util.Optional.of(
+                "@splitQuery '" + stf.qualifiedName() + "' requires a @reference path — "
+                + "Phase 2b C1 scope does not support path-less batched splits");
+        }
+        return java.util.Optional.empty();
+    }
+
     // -----------------------------------------------------------------------
     // SplitLookupTableField (C2)
     // -----------------------------------------------------------------------
 
     private static MethodSpec buildForSplitLookupTable(ChildField.SplitLookupTableField slf, TableRef parentTable) {
-        ReturnTypeRef.TableBoundReturnType returnType = slf.returnType();
-        boolean isList = returnType.wrapper().isList();
-
-        // Same restrictions as SplitTableField — single cardinality defers to a follow-up, a
-        // ConditionJoin step needs classification-vocab item 5, empty joinPath (standalone
-        // @splitQuery @lookupKey with no @reference) is out of C2 scope.
-        if (!isList) {
-            return buildRuntimeStub(slf.rowsMethodName(), slf.batchKey(), slf.returnType(),
-                "Single-cardinality @splitQuery @lookupKey on '" + slf.qualifiedName()
-                + "' not yet supported; list cardinality is the Phase 2b C2 scope.");
-        }
-        if (JoinPathEmitter.hasConditionJoin(slf.joinPath())) {
-            return buildRuntimeStub(slf.rowsMethodName(), slf.batchKey(), slf.returnType(),
-                "@splitQuery @lookupKey '" + slf.qualifiedName() + "' with a condition-join step cannot be "
-                + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
-        }
-        if (slf.joinPath().isEmpty()) {
-            return buildRuntimeStub(slf.rowsMethodName(), slf.batchKey(), slf.returnType(),
-                "@splitQuery @lookupKey '" + slf.qualifiedName() + "' requires a @reference path — "
-                + "Phase 2b C2 scope does not support path-less batched lookup splits");
+        var stubReason = unsupportedReason(slf);
+        if (stubReason.isPresent()) {
+            return buildRuntimeStub(slf.rowsMethodName(), slf.batchKey(), slf.returnType(), stubReason.get());
         }
 
         return buildListMethod(
             slf.name(), slf.rowsMethodName(), slf.returnType(),
             slf.joinPath(), slf.filters(), slf.batchKey(), parentTable,
             slf.lookupMapping());
+    }
+
+    /**
+     * Split* sibling of {@link #unsupportedReason(ChildField.SplitTableField)}. Same contract:
+     * non-empty reason → field cannot be emitted today; empty → emittable.
+     */
+    public static java.util.Optional<String> unsupportedReason(ChildField.SplitLookupTableField slf) {
+        boolean isList = slf.returnType().wrapper().isList();
+        // Same restrictions as SplitTableField — single cardinality defers to a follow-up, a
+        // ConditionJoin step needs classification-vocab item 5, empty joinPath (standalone
+        // @splitQuery @lookupKey with no @reference) is out of C2 scope.
+        if (!isList) {
+            return java.util.Optional.of(
+                "Single-cardinality @splitQuery @lookupKey on '" + slf.qualifiedName()
+                + "' not yet supported; list cardinality is the Phase 2b C2 scope.");
+        }
+        if (JoinPathEmitter.hasConditionJoin(slf.joinPath())) {
+            return java.util.Optional.of(
+                "@splitQuery @lookupKey '" + slf.qualifiedName() + "' with a condition-join step cannot be "
+                + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
+        }
+        if (slf.joinPath().isEmpty()) {
+            return java.util.Optional.of(
+                "@splitQuery @lookupKey '" + slf.qualifiedName() + "' requires a @reference path — "
+                + "Phase 2b C2 scope does not support path-less batched lookup splits");
+        }
+        return java.util.Optional.empty();
     }
 
     /**

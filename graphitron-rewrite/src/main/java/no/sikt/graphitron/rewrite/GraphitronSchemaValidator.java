@@ -158,6 +158,21 @@ public class GraphitronSchemaValidator {
                 "Field '" + field.qualifiedName() + "': " + reason,
                 field.location()
             ));
+            return;
+        }
+        // Intra-variant stubs: some SplitTableField / SplitLookupTableField shapes (single
+        // cardinality, condition-join in FK path, empty FK path) compile but the emitted
+        // rows method throws at request time. NOT_IMPLEMENTED_REASONS is class-keyed so
+        // cannot distinguish these from emittable shapes — delegate to the emitter's own
+        // shape predicate so validator and emitter stay in lock-step.
+        if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.SplitTableField stf) {
+            no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter.unsupportedReason(stf)
+                .ifPresent(msg -> errors.add(new ValidationError(
+                    "Field '" + field.qualifiedName() + "': " + msg, field.location())));
+        } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField slf) {
+            no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter.unsupportedReason(slf)
+                .ifPresent(msg -> errors.add(new ValidationError(
+                    "Field '" + field.qualifiedName() + "': " + msg, field.location())));
         }
     }
 
