@@ -14,9 +14,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Verifies the structural contract: a {@code @splitQuery} child field produces a
  * DataLoader-registering fetcher (returning {@code CompletableFuture}) and a paired rows method
- * (taking {@code List<RowN>, DataFetchingEnvironment, SelectedField} and returning
- * {@code List<List<Record>>} for list cardinality). The shared {@code scatterByIdx} helper is
- * emitted exactly once per fetcher class containing any Split* field.
+ * (taking {@code List<RowN>, DataFetchingEnvironment} and returning {@code List<List<Record>>}
+ * for list cardinality). The shared {@code scatterByIdx} helper is emitted exactly once per
+ * fetcher class containing any Split* field.
  */
 class SplitTableFieldPipelineTest {
 
