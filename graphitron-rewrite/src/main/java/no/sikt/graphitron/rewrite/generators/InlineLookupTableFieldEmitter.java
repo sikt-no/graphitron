@@ -2,6 +2,8 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -36,7 +38,6 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
  */
 public final class InlineLookupTableFieldEmitter {
 
-    private static final ClassName ROW_N = ClassName.get("org.jooq", "RowN");
     private static final ClassName TABLE = ClassName.get("org.jooq", "Table");
 
     private InlineLookupTableFieldEmitter() {}
@@ -105,8 +106,23 @@ public final class InlineLookupTableFieldEmitter {
         }
 
         // Extract VALUES rows via the per-field helper method (emitted by TypeClassGenerator).
+        // Typed Row<M+1> / Record<M+1> for idx + @lookupKey columns — matches the helper's
+        // return type retyped in C1. DSL.values(Row<M+1>...) yields Table<Record<M+1>>, so
+        // input.field(Field<T>) and input.field(int, Class<T>) both remain typed Field<T>.
+        List<LookupMapping.LookupColumn> lookupCols = lf.lookupMapping().columns();
+        int lookupArity = lookupCols.size() + 1;
+        TypeName[] lookupTypeArgs = new TypeName[lookupArity];
+        lookupTypeArgs[0] = ClassName.get(Integer.class);
+        for (int i = 0; i < lookupCols.size(); i++) {
+            lookupTypeArgs[i + 1] = ClassName.bestGuess(lookupCols.get(i).targetColumn().columnClass());
+        }
+        TypeName lookupRowType = ParameterizedTypeName.get(
+            ClassName.get("org.jooq", "Row" + lookupArity), lookupTypeArgs);
+        TypeName lookupInputTableType = ParameterizedTypeName.get(TABLE,
+            ParameterizedTypeName.get(ClassName.get("org.jooq", "Record" + lookupArity), lookupTypeArgs));
+
         String inputRowsName = LookupValuesJoinEmitter.inputRowsMethodName(lf);
-        code.addStatement("$T[] rows = $L(sf, $L)", ROW_N, inputRowsName, terminalAlias);
+        code.addStatement("$T[] rows = $L(sf, $L)", lookupRowType, inputRowsName, terminalAlias);
 
         // Empty input short-circuit: emit a multiset with falseCondition so the parent record still
         // carries the aliased slot (needed for the DataFetcher). DSL.values([]) itself is rejected
@@ -119,13 +135,12 @@ public final class InlineLookupTableFieldEmitter {
 
         // VALUES derived-table alias: "idx" + one column per lookup key. Labels must match the
         // target column's SQL name (not the Java field name) — Postgres USING is case-sensitive.
-        List<LookupMapping.LookupColumn> lookupCols = lf.lookupMapping().columns();
         var aliasArgs = CodeBlock.builder();
         aliasArgs.add("$S, $S", lf.name() + "Input", "idx");
         for (var col : lookupCols) {
             aliasArgs.add(", $S", col.targetColumn().sqlName());
         }
-        code.addStatement("$T<?> input = $T.values(rows).as($L)", TABLE, DSL, aliasArgs.build());
+        code.addStatement("$T input = $T.values(rows).as($L)", lookupInputTableType, DSL, aliasArgs.build());
 
         // Explicit ON clause against the VALUES derived table — USING cannot be used for the
         // VALUES join because a preceding junction-table JOIN (e.g. film_actor) may already

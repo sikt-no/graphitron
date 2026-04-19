@@ -6,7 +6,6 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.LookupField;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
@@ -54,15 +53,38 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
 final class LookupValuesJoinEmitter {
 
     private static final ClassName TABLE = ClassName.get("org.jooq", "Table");
-    private static final ClassName ROW_N = ClassName.get("org.jooq", "RowN");
-    private static final TypeName WILDCARD_TABLE =
-        ParameterizedTypeName.get(TABLE, WildcardTypeName.subtypeOf(Object.class));
-    // RowN[] — RowN is the untyped row interface used for dynamic-arity VALUES tables.
-    // Row[] (raw Row) cannot be passed to DSL.values(...) because the Row2/Row3/... overloads
-    // are more specific than the RowN... fallback and raw Row matches none of them.
-    private static final ArrayTypeName ROW_ARRAY = ArrayTypeName.of(ROW_N);
+    private static final ClassName SUPPRESS_WARNINGS = ClassName.get("java.lang", "SuppressWarnings");
 
     private LookupValuesJoinEmitter() {}
+
+    /** jOOQ exposes typed Row1..Row22 / Record1..Record22; higher arities fall back to raw. */
+    private static ClassName rowClass(int arity) {
+        return ClassName.get("org.jooq", "Row" + arity);
+    }
+
+    private static ClassName recordClass(int arity) {
+        return ClassName.get("org.jooq", "Record" + arity);
+    }
+
+    /**
+     * Returns the {@code Row<N+1>} / {@code Record<N+1>} type arguments: {@code Integer} for the
+     * {@code idx} cell, then one per lookup column (its Java type via {@code columnClass()}).
+     * Rejects arities &gt;22 — same mechanism as the parent-side cap in
+     * {@link SplitRowsMethodEmitter}.
+     */
+    private static TypeName[] rowTypeArgs(List<LookupMapping.LookupColumn> columns) {
+        int arity = columns.size() + 1;
+        if (arity > 22) {
+            throw new IllegalStateException(
+                "@lookupKey arity " + columns.size() + " + idx exceeds jOOQ's typed Row/Record arity limit (22)");
+        }
+        TypeName[] typeArgs = new TypeName[arity];
+        typeArgs[0] = ClassName.get(Integer.class);
+        for (int i = 0; i < columns.size(); i++) {
+            typeArgs[i + 1] = ClassName.bestGuess(columns.get(i).targetColumn().columnClass());
+        }
+        return typeArgs;
+    }
 
     /** Returns the GraphQL field name for a {@link LookupField}, used to derive helper names. */
     static String fieldName(LookupField field) {
@@ -85,16 +107,19 @@ final class LookupValuesJoinEmitter {
     }
 
     /**
-     * Generates the {@code <fieldName>InputRows(DataFetchingEnvironment env, <TargetTable> table) -> Row[]}
+     * Generates the {@code <fieldName>InputRows(DataFetchingEnvironment env, <TargetTable> table) -> Row<N+1>[]}
      * helper method. The helper:
      * <ol>
      *   <li>Extracts each {@code @lookupKey} arg from {@code env}.</li>
      *   <li>Computes row count {@code n} — the length of the first list-typed argument, broadcasting
      *       scalars across all rows. With no list arg, {@code n = 1}.</li>
-     *   <li>Returns {@code new Row[0]} when the list arg is {@code null} or empty (short-circuit).</li>
      *   <li>Builds one {@code DSL.row(DSL.inline(i), DSL.val(v, table.COL.getDataType()), …)} per
-     *       index. {@code DSL.val} invokes the target column's Converter on the raw value — no
+     *       index — positional call to the typed {@code Row<N+1>} overload so
+     *       {@code Field<Integer>} / {@code Field<ColType>} types flow into the array element.
+     *       {@code DSL.val} invokes the target column's Converter on the raw value — no
      *       Java-side {@code .convert()} call and no SQL {@code CAST}.</li>
+     *   <li>Returns a typed {@code Row<N+1><Integer, colType1, …>[]} (length 0 when the list arg
+     *       is null/empty — callers check {@code rows.length == 0}).</li>
      * </ol>
      *
      * @param field the lookup field (source of {@link LookupMapping})
@@ -102,10 +127,11 @@ final class LookupValuesJoinEmitter {
      */
     static MethodSpec buildInputRowsMethod(LookupField field, ClassName targetTableClass) {
         List<LookupMapping.LookupColumn> columns = requireColumns(field);
+        TypeName[] typeArgs = rowTypeArgs(columns);
 
         var builder = MethodSpec.methodBuilder(inputRowsMethodName(field))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(ROW_ARRAY)
+            .returns(ArrayTypeName.of(ParameterizedTypeName.get(rowClass(typeArgs.length), typeArgs)))
             .addParameter(ENV, "env")
             .addParameter(targetTableClass, "table");
 
@@ -120,7 +146,7 @@ final class LookupValuesJoinEmitter {
             }
         }
 
-        addRowBuildingCore(builder, columns);
+        addRowBuildingCore(builder, columns, typeArgs);
         return builder.build();
     }
 
@@ -130,7 +156,8 @@ final class LookupValuesJoinEmitter {
      * the args live on the child selection when the lookup is projected inline by a parent's
      * {@code $fields} (argres Phase 2a). Row-construction core is shared with the root variant.
      *
-     * <p>Signature: {@code <fieldName>InputRows(SelectedField sf, <TargetTable> table) -> RowN[]}.
+     * <p>Signature: {@code <fieldName>InputRows(SelectedField sf, <TargetTable> table) -> Row<N+1>[]}
+     * with the same typed arity as the root variant.
      *
      * <p>{@code SelectedField.getArguments()} returns {@code Map<String, Object>}; list args need
      * an explicit {@code (List<?>)} cast to match the typed-local declaration the shared core
@@ -138,10 +165,11 @@ final class LookupValuesJoinEmitter {
      */
     static MethodSpec buildChildInputRowsMethod(LookupField field, ClassName targetTableClass) {
         List<LookupMapping.LookupColumn> columns = requireColumns(field);
+        TypeName[] typeArgs = rowTypeArgs(columns);
 
         var builder = MethodSpec.methodBuilder(inputRowsMethodName(field))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(ROW_ARRAY)
+            .returns(ArrayTypeName.of(ParameterizedTypeName.get(rowClass(typeArgs.length), typeArgs)))
             .addParameter(SELECTED_FIELD, "sf")
             .addParameter(targetTableClass, "table");
 
@@ -156,7 +184,7 @@ final class LookupValuesJoinEmitter {
             }
         }
 
-        addRowBuildingCore(builder, columns);
+        addRowBuildingCore(builder, columns, typeArgs);
         return builder.build();
     }
 
@@ -173,11 +201,20 @@ final class LookupValuesJoinEmitter {
     }
 
     /**
-     * Shared row-building tail: row-count computation, empty short-circuit, typed-value loop,
-     * return. Assumes each column's value is already in a local named via {@link #argLocalName}
-     * and that {@code table} refers to the target-table alias.
+     * Shared row-building tail: row-count computation, typed-row-array creation, typed-value
+     * loop, return. Assumes each column's value is already in a local named via
+     * {@link #argLocalName} and that {@code table} refers to the target-table alias.
+     *
+     * <p>{@code typeArgs} — the {@code Row<N+1>} / {@code Record<N+1>} parameterisation
+     * ({@code Integer} for {@code idx}, then the columns) computed once by the caller via
+     * {@link #rowTypeArgs}.
      */
-    private static void addRowBuildingCore(MethodSpec.Builder builder, List<LookupMapping.LookupColumn> columns) {
+    private static void addRowBuildingCore(MethodSpec.Builder builder,
+            List<LookupMapping.LookupColumn> columns, TypeName[] typeArgs) {
+        int arity = typeArgs.length;
+        TypeName rowType = ParameterizedTypeName.get(rowClass(arity), typeArgs);
+        ClassName rawRowClass = rowClass(arity);
+
         // Row count N — from the first list column's length, or 1 if all scalar.
         var primaryList = columns.stream().filter(LookupMapping.LookupColumn::list).findFirst().orElse(null);
         if (primaryList == null) {
@@ -187,13 +224,14 @@ final class LookupValuesJoinEmitter {
             builder.addStatement("int n = $L == null ? 0 : $L.size()", local, local);
         }
 
-        // Short-circuit empty input — jOOQ rejects empty RowN[], and legacy in([]) → no rows.
-        builder.addCode("if (n == 0) return new $T[0];\n", ROW_N);
-
-        // Build typed rows. Cells are declared as Object[] and passed to DSL.row(Object...) so the
-        // call resolves to the RowN-producing overload (a varargs Field<?>[] call would bind to
-        // the more-specific RowN<T1, T2, …> overloads instead, which we cannot name dynamically).
-        builder.addStatement("$T rows = new $T[n]", ROW_ARRAY, ROW_N);
+        // Typed Row<N+1>[] — one Row<N+1><Integer, colType1, …> per input index. Generic array
+        // creation requires the unchecked cast; scoped to this one line. DSL.row(Field<T1>, …,
+        // Field<TN>) picks the typed Row<N+1> overload (not Row(Object...) returning untyped
+        // RowN), so Field<Integer> from DSL.inline(i) and Field<ColType> from
+        // DSL.val(v, table.COL.getDataType()) flow into rows[i]. When n == 0 the loop is a no-op
+        // and we return an empty typed array — callers branch on rows.length == 0.
+        builder.addCode("@$T($S)\n", SUPPRESS_WARNINGS, "unchecked");
+        builder.addStatement("$T[] rows = ($T[]) new $T[n]", rowType, rowType, rawRowClass);
         builder.beginControlFlow("for (int i = 0; i < n; i++)");
 
         var cells = CodeBlock.builder();
@@ -203,14 +241,13 @@ final class LookupValuesJoinEmitter {
             String valueExpr = col.list()
                 ? argLocalName(col) + ".get(i)"
                 : argLocalName(col);
-            // DSL.val(value, dataType) — typed bind; jOOQ's Convert + the column's registered
+            // DSL.val(value, dataType) — typed Field<T>; jOOQ's Convert + the column's registered
             // Converter coerce the raw env value (String / Integer / enum instance / …) to the
             // column's Java type at bind time. No SQL CAST rendered.
             cells.add("$T.val($L, table.$L.getDataType())",
                 DSL, valueExpr, col.targetColumn().javaName());
         }
-        builder.addStatement("$T[] cells = new $T[] { $L }", Object.class, Object.class, cells.build());
-        builder.addStatement("rows[i] = $T.row(cells)", DSL);
+        builder.addStatement("rows[i] = $T.row($L)", DSL, cells.build());
         builder.endControlFlow();
         builder.addStatement("return rows");
     }
@@ -227,10 +264,10 @@ final class LookupValuesJoinEmitter {
      *
      * <p>Emits:
      * <pre>{@code
-     * Row[] rows = <fieldName>InputRows(env, table);
+     * Row<N+1><Integer, colType1, …>[] rows = <fieldName>InputRows(env, table);
      * var dsl = graphitronContext(env).getDslContext(env);
      * if (rows.length == 0) return dsl.newResult();
-     * Table<?> input = DSL.values(rows).as("<fieldName>Input", "idx", "COL1", "COL2", …);
+     * Table<Record<N+1><Integer, colType1, …>> input = DSL.values(rows).as("<fieldName>Input", "idx", "COL1", "COL2", …);
      * return dsl.select(<typeFieldsCall>)
      *           .from(table)
      *           .join(input).using(table.COL1, table.COL2, …)
@@ -251,6 +288,11 @@ final class LookupValuesJoinEmitter {
     static CodeBlock buildFetcherBody(LookupField field, CodeBlock typeFieldsCall) {
         List<LookupMapping.LookupColumn> columns = field.lookupMapping().columns();
         String alias = inputTableAlias(field);
+        TypeName[] typeArgs = rowTypeArgs(columns);
+        int arity = typeArgs.length;
+        TypeName rowArrayType = ArrayTypeName.of(ParameterizedTypeName.get(rowClass(arity), typeArgs));
+        TypeName inputTableType = ParameterizedTypeName.get(TABLE,
+            ParameterizedTypeName.get(recordClass(arity), typeArgs));
 
         // VALUES column labels — "idx", then one per lookup column. Labels must match the target
         // column's SQL name (e.g. "film_id"), not the jOOQ Java field name (e.g. "FILM_ID"), because
@@ -269,10 +311,10 @@ final class LookupValuesJoinEmitter {
         }
 
         return CodeBlock.builder()
-            .addStatement("$T rows = $L(env, table)", ROW_ARRAY, inputRowsMethodName(field))
+            .addStatement("$T rows = $L(env, table)", rowArrayType, inputRowsMethodName(field))
             .addStatement("var dsl = graphitronContext(env).getDslContext(env)")
             .add("if (rows.length == 0) return dsl.newResult();\n")
-            .addStatement("$T input = $T.values(rows).as($L)", WILDCARD_TABLE, DSL, aliasArgs.build())
+            .addStatement("$T input = $T.values(rows).as($L)", inputTableType, DSL, aliasArgs.build())
             .add("return dsl\n")
             .indent()
             .add(".select($L)\n", typeFieldsCall)

@@ -151,6 +151,25 @@ Ordering note. C3 logically precedes C1 (it's a classifier invariant the emitter
   - `@lookupKey` narrowing: same parents with different lookup-key inputs.
   - Multi-hop `@reference` path: junction table in the middle (ON-vs-USING lesson still applies).
 
+### C5 — Typed lookup-input VALUES (follow-up, landed with 2b)
+
+Scope. C1 landed the parent-input VALUES table as a typed `Row<N+1>[]` / `Table<Record<N+1>>`, but `LookupValuesJoinEmitter`'s shared row-building core kept the earlier untyped `RowN[]` / `Table<?>` shape. The asymmetry surfaced during Phase 2b review: the parent side threads column types through the generated code, while the lookup side stayed `Table<?>` and opaque. C5 retypes the lookup side to mirror the parent pattern.
+
+- **`LookupValuesJoinEmitter` (shared core).** Replace the constant pair `ROW_N` / `ROW_ARRAY` with per-call arity-specific `Row<N+1>` / `Record<N+1>` computed from `LookupMapping.columns()`. Helpers `rowClass(int)` / `recordClass(int)` (`org.jooq.Row{N}` / `Record{N}`) plus `rowTypeArgs(columns)` which returns `[Integer, colType1, …, colTypeN]` by reading `LookupColumn.targetColumn().columnClass()` and resolving each via `ClassName.bestGuess`. Arity capped at 22 (same invariant the parent side enforces — matches jOOQ's typed `Row/Record` hierarchy).
+- **`buildInputRowsMethod` / `buildChildInputRowsMethod` return type.** `RowN[]` → `Row<N+1><Integer, colType…>[]`. Bodies use `DSL.row(DSL.inline(i), DSL.val(v, table.COL.getDataType()), …)` with positional `val(Object, DataType<T>)` calls to preserve the typed inference all the way into `DSL.values`.
+- **`addRowBuildingCore`.** Declares the typed array via the unavoidable unchecked cast `@SuppressWarnings("unchecked") Row2<…>[] rows = (Row2<…>[]) new Row2[n];` (Java forbids `new Row2<Integer, Integer>[n]`). The `if (n == 0) return new RowN[0]` early return is removed — with the unconditional typed-array creation and a zero-trip for-loop, an empty typed array is the natural fall-through; callers (`buildFetcherBody`, `SplitRowsMethodEmitter`, `InlineLookupTableFieldEmitter`) already guard `rows.length == 0` at their site.
+- **`SplitRowsMethodEmitter` lookup branch.** The `SplitLookupTableField` arm declares `Row<N+1>[] lookupRows` and `Table<Record<N+1>> lookupInput` using the same arity/type-args computation, reusing its existing `rowClass` / `recordClass` helpers. Symmetric to the parent-side `Row<N+1>[] parentRows` + `Table<Record<N+1>> parentInput` already emitted from C1.
+- **`InlineLookupTableFieldEmitter`.** The inline (Phase 2a) emitter keeps parity by re-computing the typed lookup shapes and emitting `Row<N+1>[] rows` + `Table<Record<N+1>> input` in its local code block.
+- **Generated output, verified.** Example fixture `FilmFetchers.java`:
+  ```java
+  Row2<Integer, Integer>[] lookupRows = actorsBySplitLookupInputRows(env, a1);
+  if (lookupRows.length == 0) return emptyScatter(keys.size());
+  Table<Record2<Integer, Integer>> lookupInput = DSL.values(lookupRows).as("actorsBySplitLookupInput", "idx", "actor_id");
+  ```
+  Symmetric with the parent-side `Row2<Integer, Integer>[] parentRows` / `Table<Record2<Integer, Integer>> parentInput` that C1 already emits.
+
+**Why now, folded into 2b.** The typed-parent pattern shipped from C1; leaving the lookup side as `Table<?>` ossifies an asymmetry that costs more to remove later (every subsequent Phase 2c/future emitter has to choose whether to match the typed-parent or the untyped-lookup precedent). The change is mechanical (~75%): the same arity/type-args computation already exists on the parent side, reused verbatim. No behaviour change, no execution-test change; compile-time type information in generated code improves, and Phase 2c inherits a single consistent convention.
+
 ### Resolved decisions
 
 Second iteration — each decision resolved with concrete reasoning.
@@ -197,6 +216,13 @@ Per CLAUDE.md — structural at unit tier, behaviour at execution tier:
 
 ## History
 
+### Learnings from C5
+
+C5 shipped alongside the standalone Draft `plan-lookup-input-typing.md` being folded into this plan. Two concrete learnings worth recording:
+
+1. **The `if (n == 0) return new RowN[0]` short-circuit was dead weight.** The untyped-`RowN` version inherited this early return from an era when the array creation line was a plain `new RowN[n]` — harmless to keep. Under the typed-`Row<N+1>[]` rewrite, the unconditional cast-from-raw `new Row{N}[n]` path produces an empty array correctly at n=0 (the for-loop runs zero times). All three call sites already guard `rows.length == 0` before doing anything with it, so removing the short-circuit was a net simplification, not a behaviour change. Lesson: each time the surrounding code is rewritten, audit defensive branches for "still earning their keep" — they rot in place.
+2. **`MethodSpec.Builder` has `addCode`, not `add` — `CodeBlock.Builder` has `add`.** Easy to confuse because both accept the same format-string API. Compile-time catch via the rewrite unit tests; noted because the mistake is repeatable on future emitter work.
+
 ### Learnings from C1
 
 C1 shipped at `f261dde` + `320394b` + `0c27eb8`. Four plan deviations, documented here so C2/C3/C4 don't rediscover them:
@@ -211,6 +237,7 @@ C1 shipped at `f261dde` + `320394b` + `0c27eb8`. Four plan deviations, documente
 
 C2 inherits all four. The plan's C2 reference to "`RowN[]` construction shared with C1" (line 132) now means "typed `Row<N+1>[]` via `fieldJ()` — see `SplitRowsMethodEmitter.buildListMethod`".
 
+- **2026-04-19 (C5 folded into 2b)** — Phase 2b review flagged a typing asymmetry: C1 landed typed `Row<N+1>` / `Table<Record<N+1>>` for the parent-input VALUES, but `LookupValuesJoinEmitter`'s shared core still emitted untyped `RowN[]` / `Table<?>` for the lookup-input. A standalone Draft plan (`plan-lookup-input-typing.md`) was spun up, then folded into this plan as C5 after the reviewer concluded the change was ~75% mechanical and the follow-up would compound consistency debt if deferred. C5 retypes `LookupValuesJoinEmitter` (shared core + both `buildInputRowsMethod` / `buildChildInputRowsMethod`), the `SplitLookupTableField` arm in `SplitRowsMethodEmitter`, and `InlineLookupTableFieldEmitter`. The dead `if (n == 0) return new RowN[0]` short-circuit was removed (callers already guard length). 482/482 unit tests green; `mvn compile -pl :graphitron-rewrite-test-spec -Plocal-db` green; 55/55 execution tests green. The standalone plan doc and the Backlog roadmap entry were deleted in the same commit.
 - **2026-04-19 (Draft → Approved)** — independent reviewer pass by a session that didn't author either Draft iteration. Verified line-number citations against trunk: `TypeFetcherGenerator:942-981` (buildServiceDataFetcher), `:992-1010` (buildServiceRowsMethod), `:1016-1024` / `:1026-1035` (both Split stubs), `ChildField.java:128-143` / `:157-173` (Split* / SplitLookup* records), `FieldBuilder:245` (parentBatchKey construction), `GeneratorUtils:130-136` / `:171-204` (keyElementType + buildKeyExtraction), `InlineLookupTableFieldEmitter:130-144` (USING→ON lesson). All accurate. Two small reviewer fixes landed in the same pass: (a) C3's classifier-rejection diagnostic no longer contains the literal "follow-up X" placeholder — replaced with a self-contained reason plus a soft "deferred to a follow-up plan" pointer that will be tightened when the pagination-on-split-fields plan lands; (b) `scatterFirstByIdx`'s null-vs-empty-list semantics pinned — null for no-match, first() for match, ambiguous-key "second silently wins" acknowledged as an execution-tier coverage concern. Plan is implementation-ready; C1 can start immediately.
 - **2026-04-19 (second Draft iteration)** — full design pass after code audit on trunk:
   - **Current state corrected.** The skeleton said only the rows-method body was a stub; in fact both `buildSplitQueryDataFetcher` (`:1016-1024`) and `buildSplitRowsMethod` (`:1026-1035`) are stubs. Phase 2b rewrites both.

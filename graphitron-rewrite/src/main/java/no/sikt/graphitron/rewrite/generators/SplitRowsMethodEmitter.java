@@ -68,7 +68,6 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RECORD;
  */
 public final class SplitRowsMethodEmitter {
 
-    private static final ClassName ROW_N = ClassName.get("org.jooq", "RowN");
     private static final ClassName TABLE = ClassName.get("org.jooq", "Table");
     private static final ClassName FIELD = ClassName.get("org.jooq", "Field");
     private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
@@ -307,24 +306,33 @@ public final class SplitRowsMethodEmitter {
         String lookupInputAlias = fieldName + "Input";
         if (lookupMapping != null) {
             List<LookupMapping.LookupColumn> lookupCols = lookupMapping.columns();
-            body.addStatement("$T[] lookupRows = $LInputRows(env, $L)", ROW_N, fieldName, terminalAlias);
+            // Typed Row<M+1> / Record<M+1> for lookupInput — idx + one cell per @lookupKey
+            // column. Arity known at codegen time; the cap is enforced inside LookupValuesJoinEmitter
+            // (which emits the helper this call consumes). DSL.values(Row<M+1>...) returns
+            // Table<Record<M+1>> — typed through to field access by index or name.
+            int lookupArity = lookupCols.size() + 1;
+            TypeName[] lookupTypeArgs = new TypeName[lookupArity];
+            lookupTypeArgs[0] = ClassName.get(Integer.class);
+            for (int i = 0; i < lookupCols.size(); i++) {
+                lookupTypeArgs[i + 1] = ClassName.bestGuess(lookupCols.get(i).targetColumn().columnClass());
+            }
+            TypeName lookupRowType = ParameterizedTypeName.get(rowClass(lookupArity), lookupTypeArgs);
+            TypeName lookupRecordType = ParameterizedTypeName.get(recordClass(lookupArity), lookupTypeArgs);
+            TypeName lookupInputTableType = ParameterizedTypeName.get(TABLE, lookupRecordType);
+            body.addStatement("$T[] lookupRows = $LInputRows(env, $L)", lookupRowType, fieldName, terminalAlias);
             // Empty lookup input → every parent gets an empty list; short-circuit before building
-            // the VALUES table (jOOQ rejects empty RowN[] → DSL.values).
+            // the VALUES table (jOOQ rejects empty Row<M+1>[] → DSL.values).
             body.beginControlFlow("if (lookupRows.length == 0)");
             body.addStatement("return emptyScatter(keys.size())");
             body.endControlFlow();
-            // Labels: ("fieldNameInput", "idx", lookupCol1.sqlName, ...). DSL.values(RowN...)
-            // returns Table<Record> (untyped record) — we still get typed access via
-            // field(int, Class<T>) below.
+            // Labels: ("fieldNameInput", "idx", lookupCol1.sqlName, ...).
             var lookupAliasArgs = CodeBlock.builder();
             lookupAliasArgs.add("$S, $S", lookupInputAlias, "idx");
             for (var col : lookupCols) {
                 lookupAliasArgs.add(", $S", col.targetColumn().sqlName());
             }
-            TypeName wildcardTable = ParameterizedTypeName.get(TABLE,
-                WildcardTypeName.subtypeOf(Object.class));
             body.addStatement("$T lookupInput = $T.values(lookupRows).as($L)",
-                wildcardTable, DSL, lookupAliasArgs.build());
+                lookupInputTableType, DSL, lookupAliasArgs.build());
         }
 
         // Flat SELECT: FROM terminal, JOIN bridging hops back toward step 0, JOIN parentInput
