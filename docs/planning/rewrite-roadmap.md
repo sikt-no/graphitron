@@ -154,10 +154,6 @@ Classifier fails on `@table` + `@record` combined on an input type — legacy to
 
 Steps 1-2 shipped on `claude/review-docs-plan-adYJW`. Step 5 superseded by `plan-variant-coverage-meta-test.md`. Steps 3-4 (re-section renames + doc rewire) deferred until the sealed hierarchy stabilises; picking them up mid-churn means constant rework.
 
-### Body-substring test rewrite **[Pending Review]** — [plan-body-substring-test-rewrite.md](plan-body-substring-test-rewrite.md)
-
-28 `assertThat(code.toString()).contains(...)` violations across 6 test files get audited per-site and classified (delete / rewrite via a new `TypeSpecAssertions` helper / rewrite via execution test / keep-with-marker). CLAUDE.md already bans the pattern; plan gives the mechanical disposition. Three-commit structure (helper → migration → optional lint gate).
-
 ### Platform-id as synthesized NodeId **[In Progress]** — [legacy-platform-id.md](legacy-platform-id.md)
 
 Pivot from treating platform-id as a separate sum-type variant (`PlatformIdField`) to synthesizing `NodeType` classification from `__ID_TYPE_ID` + `__ID_KEY_COLUMNS` constants emitted by a coordinated KjerneJooqGenerator release. All downstream paths (projection, filter, mutation binding) flow through the existing `@nodeId` generator machinery — `NodeIdStrategy.createId` / `hasId` / `hasIds` / `setId`. Unifies what would have been two parallel classification-and-emission paths into one; deletes `InputField.PlatformIdField` / `ChildField.PlatformIdField` after migration. Co-lands the `ChildField.NodeIdField` emission currently stubbed in `NOT_IMPLEMENTED_REASONS`. Mutation binding still blocked on argres Phase 3 for `InputColumnBinding` population. Supersedes the previous four-item plan (prior Items 1-2 shipped as the parallel-variant approach and will be undone in the final commit of this plan).
@@ -199,6 +195,7 @@ Short history — landings worth remembering when picking up related work.
 - `15f9f61e` — Variant-coverage Phase 1. `IMPLEMENTED_LEAVES` + `NOT_DISPATCHED_LEAVES` sibling sets; partition invariant enforced by `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`.
 - `1e48c4ee` — Argument-resolution Phase 1. VALUES + JOIN lookup emission for `QueryLookupTableField`.
 - `aaadb78b` — Argument-resolution Phase 2a. Inline `ChildField.LookupTableField` emission via `InlineLookupTableFieldEmitter`; VALUES + explicit-ON keyset layered onto G5's correlated-subquery shape. `LookupTableField` moved to `PROJECTED_LEAVES`. Classifier rejects `@asConnection` and Single-cardinality on inline `@lookupKey`. Co-lands `LookupValuesJoinEmitter.buildChildInputRowsMethod` (SelectedField-based arg extraction). Six execution tests via `Film.actors(actor_id:)` junction fixture.
+- `7417f53` — Body-substring test rewrite. `TypeSpecAssertions` helper (`hasFieldsArm`, `wiringFor(field) → DataFetcherKind`, `hasNoDataFetchers`) + 28-site migration across 6 test files. 28 → 4 intentionally-marked sites, each justified inline. C3 (lint gate) deferred per OD 3. CLAUDE.md ban now matches test-file reality.
 
 ---
 

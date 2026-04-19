@@ -1,8 +1,8 @@
 # Replace body-substring assertions on generated `CodeBlock`s
 
-> **Status:** Pending Review
+> **Status:** Done
 >
-> C1 (`TypeSpecAssertions` helper) and C2 (28-site migration) shipped. 28 → 4: only four intentionally-marked body-content assertions remain, each justified inline. C3 (lint gate) deferred per the plan's recommendation.
+> C1 (`TypeSpecAssertions` helper) and C2 (28-site migration) shipped. 28 → 4: only four intentionally-marked body-content assertions remain, each justified inline. C3 (lint gate) deferred per the plan's recommendation. Reviewed 2026-04-19 (independent session).
 
 ## Current state
 
@@ -170,6 +170,7 @@ Add a small `ForbiddenWordsTest` or checkstyle rule that flags `code().toString(
 
 ## History
 
+- **2026-04-19 (Pending Review → Done)** — Independent-session review. Verified grep of `graphitron-rewrite/src/test` shows exactly the 4 kept sites (`TypeFetcherGeneratorTest:283, 530, 550, 602`), each with multi-line inline justification linking it to an execution-tier gap or a no-structural-equivalent invariant. `TypeSpecAssertions` helper is self-contained, throws on unrecognised dataFetcher shapes (safety net for emitter drift). Per-file disposition in C2's commit message matches the diff. `mvn -pl :graphitron-rewrite test` — 465/465 green. Completion criteria satisfied: "every remaining site carries the marker" branch, not the "zero uses" branch, but that's what the criteria allows. OD 2's two gaps (`connectionField_customPaginationArgNames_emittedInFetcher`, `connectionField_emitsRelayValidation_firstAndLastConflict`) are honestly flagged in the plan history as execution-tier follow-ups rather than hidden; they add one sentence to the parity-matrix item when that ships.
 - **2026-04-19 (In Progress → Pending Review)** — C1 + C2 landed. `TypeSpecAssertions` helper added (`hasFieldsArm`, `wiringFor(field) → DataFetcherKind`, `hasNoDataFetchers`). 28 body-substring sites reduced to 4 intentionally-marked ones — honest disposition documented in C2's commit message. Open decisions resolved:
   - **OD 1 (helper vs generator refactor).** Adopted helper. Scan fragility confined to one file.
   - **OD 2 (execution-tier companions).** Two kept sites (`connectionField_customPaginationArgNames_emittedInFetcher` and `connectionField_emitsRelayValidation_firstAndLastConflict`) would need new execution fixtures to delete cleanly — deferred as follow-up rather than bundled. Plan budgeted 2 kept; actual is 4, with the extra two flagging real execution-coverage gaps.
