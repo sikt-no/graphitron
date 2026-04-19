@@ -134,6 +134,10 @@ Unified `ArgumentRef` classification + projection in the builder; gates `@condit
 
 Extend G5's `TypeClassGenerator.$fields` inline emission to `ChildField.LookupTableField` by layering a VALUES + USING keyset onto the correlated subquery shape. `LookupTableField` moves from `NOT_IMPLEMENTED_REASONS` to `PROJECTED_LEAVES`. Adds a child-facing variant of `LookupValuesJoinEmitter.buildInputRowsMethod` that reads `@lookupKey` args from a `SelectedField` instead of the outer `DataFetchingEnvironment`. Two-commit structure (emitter + switch arm + partition migration; then schema fixture + execution tests). `SplitLookupTableField` (Phase 2b) and `RecordLookupTableField` (Phase 2c, blocked on `BatchKey` model question) remain out of scope.
 
+### argres Phase 2b — Split(Lookup)TableField DataLoader rows-method emission **[Draft]** — [plan-argres-phase-2b.md](plan-argres-phase-2b.md)
+
+Fill in the DataLoader rows-method bodies for `ChildField.SplitTableField` and `ChildField.SplitLookupTableField`. Both sit in `IMPLEMENTED_LEAVES` today but their `rowsXxx` methods throw `UnsupportedOperationException` at runtime — fetcher + skeleton compile, body is a stub. Phase 2b replaces the stub with a flat batched SELECT built on G5's `JoinPathEmitter` and Phase 2a's `LookupValuesJoinEmitter.buildChildInputRowsMethod` (for the `@lookupKey` variant) plus a sibling helper for parent-FK-keyed `SplitTableField`. No partition migration — the meta-test contract tightens implicitly as `IMPLEMENTED_LEAVES` starts meaning "emits working code" rather than "emits a method that throws". Five open decisions pinned; first-iteration skeleton.
+
 ### `IdReferenceField` input filter variant **[Draft]** — [plan-id-reference-input-field.md](plan-id-reference-input-field.md)
 
 `[ID!] @reference(path: ...)` filter inputs currently mis-classify as `UnclassifiedType` because the `@field(name:)` value is a method-accessor suffix (`hasTerminIds`), not a column. Add a new `InputField.IdReferenceField` permit classified via directive detection.
