@@ -62,6 +62,17 @@ type Category @table(name: "category") {
     }}])
 }
 
+"""
+FilmDetails is a @record type backed by jOOQ's FilmRecord (JooqTableRecordType).
+It is reached via Film.filmDetails (ConstructorField — the Film Record is passed through
+as the FilmDetails source), and has a RecordTableField child (language: Language) that
+DataLoader-batches language lookups keyed by the Film's language_id column.
+"""
+type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+    title:    String!     @field(name: "title")
+    language: [Language!]! @reference(path: [{key: "film_language_id_fkey"}])
+}
+
 type Film @table(name: "film") {
     filmId:      Int!         @field(name: "FILM_ID")
     title:       String!      @field(name: "TITLE")
@@ -70,6 +81,10 @@ type Film @table(name: "film") {
     rating:      MpaaRating   @field(name: "RATING")
     textRating:  String       @field(name: "TEXT_RATING")
     length:      Int          @field(name: "LENGTH")
+    languageId:  Int          @field(name: "LANGUAGE_ID")
+    # C4 RecordTableField fixture: pass Film record through to FilmDetails (ConstructorField),
+    # then batch-load Language via DataLoader from FilmDetails.language (RecordTableField).
+    filmDetails: FilmDetails
     # argres Phase 2a: child-level @lookupKey via junction table (film_actor).
     # VALUES+USING keyset narrows by actor_id; FK chain restricts to the parent film.
     actors(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [

@@ -19,6 +19,7 @@ import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
+import no.sikt.graphitron.rewrite.model.ChildField.ConstructorField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
@@ -314,12 +315,16 @@ class FieldBuilder {
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, parentTableType.table(), wrapper));
         }
 
-        // ConstructorField is intentionally not classified here — its directive and generation
-        // semantics are not yet defined (planned future deliverable). Fields that would logically
-        // map to ConstructorField fall through to UnclassifiedField, which the validator rejects
-        // with a clear error, making the gap visible and enforced rather than silently ignored.
+        // ConstructorField: @table parent with a @record child — pass the parent's Record through as
+        // the child's source. The child's own Fetchers class handles property/table-child resolution.
+        if (elementType instanceof ResultType rt) {
+            var wrapper = buildWrapper(fieldDef);
+            var returnType = (ReturnTypeRef.ResultReturnType) ctx.resolveReturnType(elementTypeName, wrapper);
+            return new ConstructorField(parentTypeName, name, location, returnType);
+        }
+
         return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-            "ConstructorField (child field on @table type returning a @record type) is not yet supported");
+            "return type '" + elementTypeName + "' is not a @table, @record, interface, or union Graphitron type");
     }
 
     // ===== Wrapper helpers =====

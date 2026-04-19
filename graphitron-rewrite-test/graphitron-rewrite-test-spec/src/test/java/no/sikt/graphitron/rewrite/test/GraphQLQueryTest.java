@@ -58,7 +58,7 @@ class GraphQLQueryTest {
 
         // Count JDBC round-trips via an ExecuteListener. Tests that care (DataLoader batching)
         // call QUERY_COUNT.set(0) before executing and assert on the count afterward.
-        dsl.configuration().set(org.jooq.impl.DefaultExecuteListenerProvider.providerOf(
+        dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
             new org.jooq.impl.DefaultExecuteListener() {
                 @Override
                 public void executeStart(org.jooq.ExecuteContext ctx) {
@@ -795,5 +795,56 @@ class GraphQLQueryTest {
 
         assertThat(films).allSatisfy(f ->
             assertThat((List<?>) f.get("actorsBySplitLookup")).isEmpty());
+    }
+
+    // ===== C4: RecordTableField — @record parent + DataLoader language batch =====
+
+    @Test
+    void recordTableField_singleFilm_returnsLanguage() {
+        // Film 1 (ACADEMY DINOSAUR) has language_id=1 (English).
+        // filmDetails is a ConstructorField pass-through; language is a RecordTableField DataLoader.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { languageId filmDetails { title language { name } } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        assertThat(films).hasSize(1);
+        var details = (Map<String, Object>) films.get(0).get("filmDetails");
+        assertThat(details.get("title")).isEqualTo("ACADEMY DINOSAUR");
+        List<Map<String, Object>> langs = (List<Map<String, Object>>) details.get("language");
+        assertThat(langs).hasSize(1);
+        assertThat(langs.get(0).get("name").toString().trim()).isEqualTo("English");
+    }
+
+    @Test
+    void recordTableField_multipleParents_batchesIntoOneSqlRoundTrip() {
+        // 5 films all have language_id=1. DataLoader should batch all 5 language lookups into 1
+        // SQL SELECT (the rowsLanguage method) rather than firing 5 separate queries.
+        // Expected: 2 round-trips — 1 for films root query + 1 for the batched language rows.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ films { languageId filmDetails { language { name } } } }");
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+        assertThat(films).hasSize(5);
+        // Every film maps to English (language_id=1 for all test-data films).
+        assertThat(films).allSatisfy(f -> {
+            var details = (Map<String, Object>) f.get("filmDetails");
+            List<Map<String, Object>> langs = (List<Map<String, Object>>) details.get("language");
+            assertThat(langs).hasSize(1);
+            assertThat(langs.get(0).get("name").toString().trim()).isEqualTo("English");
+        });
+    }
+
+    @Test
+    void recordTableField_propertyField_resolvedFromSameRecord() {
+        // title is a PropertyField on FilmDetails; it uses ColumnFetcher(DSL.field("title"))
+        // which extracts from the same Film Record passed through by the ConstructorField.
+        Map<String, Object> data = execute(
+            "{ films { filmDetails { title } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+        assertThat(films).hasSize(5);
+        assertThat(films).extracting(f -> ((Map<String, Object>) f.get("filmDetails")).get("title"))
+            .containsExactly(
+                "ACADEMY DINOSAUR", "ACE GOLDFINGER", "ADAPTATION HOLES",
+                "AFFAIR PREJUDICE", "AGENT TRUMAN");
     }
 }

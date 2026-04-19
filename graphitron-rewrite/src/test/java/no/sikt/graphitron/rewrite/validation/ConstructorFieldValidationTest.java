@@ -10,7 +10,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -18,9 +17,9 @@ class ConstructorFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        STUBBED("constructor field — not yet implemented, produces stubbed-variant error",
+        BASIC("constructor field — pass-through, no validation errors",
             new ConstructorField("Film", "constructed", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true))),
-            List.of(stubbedError("Film.constructed", ConstructorField.class)));
+            List.of());
 
         private final String description;
         private final GraphitronField field;

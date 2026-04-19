@@ -116,7 +116,8 @@ public class TypeFetcherGenerator {
         ChildField.SplitLookupTableField.class,
         ChildField.PropertyField.class,
         ChildField.RecordField.class,
-        ChildField.RecordTableField.class);
+        ChildField.RecordTableField.class,
+        ChildField.ConstructorField.class);
 
     /**
      * Leaves that can never reach the fetcher switch at runtime: {@link InputField} leaves are
@@ -222,8 +223,6 @@ public class TypeFetcherGenerator {
                 "UnionField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3"),
             Map.entry(ChildField.NestingField.class,
                 "NestingField not yet implemented — see rewrite-roadmap.md"),
-            Map.entry(ChildField.ConstructorField.class,
-                "ConstructorField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(ChildField.ServiceRecordField.class,
                 "ServiceRecordField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(ChildField.ComputedField.class,
@@ -343,7 +342,7 @@ public class TypeFetcherGenerator {
                 case ChildField.InterfaceField f                -> builder.addMethod(stub(f));
                 case ChildField.UnionField f                    -> builder.addMethod(stub(f));
                 case ChildField.NestingField f                  -> builder.addMethod(stub(f));
-                case ChildField.ConstructorField f              -> builder.addMethod(stub(f));
+                case ChildField.ConstructorField ignored        -> { /* wired inline: env -> env.getSource() */ }
                 case ChildField.ServiceRecordField f            -> builder.addMethod(stub(f));
                 case ChildField.RecordField ignored             -> { /* wired inline via buildPropertyOrRecordFetcherEntry */ }
                 case ChildField.ComputedField f                 -> builder.addMethod(stub(f));
@@ -1256,6 +1255,9 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock buildWiringEntry(GraphitronField field, String className,
             TableRef parentTable, GraphitronType.ResultType resultType) {
+        if (field instanceof ChildField.ConstructorField cf) {
+            return CodeBlock.of("\n.dataFetcher($S, env -> env.getSource())", cf.name());
+        }
         if (field instanceof ChildField.PropertyField pf && resultType != null) {
             return buildPropertyOrRecordFetcherEntry(pf.name(), pf.columnName(), resultType);
         }

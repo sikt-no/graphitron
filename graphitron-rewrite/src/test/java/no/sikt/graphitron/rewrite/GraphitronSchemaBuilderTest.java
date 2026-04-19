@@ -4,6 +4,7 @@ import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.QueryField;
@@ -2354,15 +2355,6 @@ class GraphitronSchemaBuilderTest {
 
     enum UnclassifiedFieldCase {
 
-        CHILD_FIELD_ON_TABLE_TYPE_RETURNING_RESULT_TYPE(
-            "field on @table type returning a @record type with no directive → UnclassifiedField (ConstructorField not yet supported)",
-            """
-            type FilmDetails @record { rating: String }
-            type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
-            """,
-            schema -> assertThat(schema.field("Film", "details")).isInstanceOf(UnclassifiedField.class)),
-
         QUERY_FIELD_RETURNING_UNCLASSIFIED_TYPE(
             "query field returning a type with no Graphitron directive → UnclassifiedField",
             """
@@ -2401,6 +2393,18 @@ class GraphitronSchemaBuilderTest {
     @EnumSource(UnclassifiedFieldCase.class)
     void unclassifiedFieldClassification(UnclassifiedFieldCase tc) {
         tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== ConstructorField — @table parent with @record child =====
+
+    @Test
+    void constructorField_tableParentRecordChild_classifiedAsConstructorField() {
+        var schema = build("""
+            type FilmDetails @record { rating: String }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """);
+        assertThat(schema.field("Film", "details")).isInstanceOf(ChildField.ConstructorField.class);
     }
 
     // ===== Type directive mutual exclusivity =====
