@@ -1,8 +1,8 @@
 # Replace body-substring assertions on generated `CodeBlock`s
 
-> **Status:** In Progress
+> **Status:** Pending Review
 >
-> 28 occurrences across 6 test files, all asserting `assertThat(someMethod.code().toString()).contains(...)`. CLAUDE.md bans the pattern; the audit below shows most are redundant with compile/execution tiers and the remainder can be rewritten via structural JavaPoet-API helpers. The plan is audit-heavy because the mechanical per-assertion work dominates the design space.
+> C1 (`TypeSpecAssertions` helper) and C2 (28-site migration) shipped. 28 → 4: only four intentionally-marked body-content assertions remain, each justified inline. C3 (lint gate) deferred per the plan's recommendation.
 
 ## Current state
 
@@ -170,4 +170,10 @@ Add a small `ForbiddenWordsTest` or checkstyle rule that flags `code().toString(
 
 ## History
 
+- **2026-04-19 (In Progress → Pending Review)** — C1 + C2 landed. `TypeSpecAssertions` helper added (`hasFieldsArm`, `wiringFor(field) → DataFetcherKind`, `hasNoDataFetchers`). 28 body-substring sites reduced to 4 intentionally-marked ones — honest disposition documented in C2's commit message. Open decisions resolved:
+  - **OD 1 (helper vs generator refactor).** Adopted helper. Scan fragility confined to one file.
+  - **OD 2 (execution-tier companions).** Two kept sites (`connectionField_customPaginationArgNames_emittedInFetcher` and `connectionField_emitsRelayValidation_firstAndLastConflict`) would need new execution fixtures to delete cleanly — deferred as follow-up rather than bundled. Plan budgeted 2 kept; actual is 4, with the extra two flagging real execution-coverage gaps.
+  - **OD 3 (C3 lint gate).** Deferred per the plan's recommendation. Revisit if the pattern re-appears.
+  - **OD 4 (`OrderByResult(` assertion).** Deleted — redundant with the sibling return-type assertion (`.returnType().toString().endsWith("OrderByResult")`). Java's type system forces the body to construct it.
+- **2026-04-19 (In Progress)** — author-of-Draft starts implementation on user direction; workflow's Draft → Approved independent reviewer still needed for the Pending Review → Done transition.
 - **2026-04-19 — drafted.** Status: Draft. Audit of 28 sites across 6 files grouped them into 6 patterns with per-pattern verdicts: 11 delete / 10 rewrite via helper / ~5 rewrite via execution test / 2 keep with justification. Three-commit structure (helper / migration / optional lint). Four open decisions pinned.
