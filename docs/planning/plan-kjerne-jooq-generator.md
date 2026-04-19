@@ -40,13 +40,13 @@ A rewrite that:
 1. **Emits two new public static finals on every table class that has a configured view with a non-null `plattformIdColumns`:**
 
    ```java
-   public static final String __ID_TYPE_ID = "VITNEMALSTEKST";
+   public static final String __ID_TYPE_ID = "368";
    public static final Field<?>[] __ID_KEY_COLUMNS = new Field<?>[] {
        INSTITUSJONSNR_EIER, STUDIEPROGRAMKODE, TERMINKODE_FRA, ARSTALL_FRA
    };
    ```
 
-   — the value of `__ID_TYPE_ID` matches the existing `view.getViewName()` (what the base64 composite-id prefix already uses in production); `__ID_KEY_COLUMNS` lists the `TableField` references in the order of `<plattformId><column>` entries. Order is load-bearing per legacy-platform-id §KjerneJooqGenerator contract.
+   — `__ID_TYPE_ID` is `String.valueOf(view.getViewId())` (the integer `368` for `VITNEMALSTEKST`). `PlatformIdHelpers.lagId(viewId, vals)` encodes the numeric viewId into the base64 prefix; the constant therefore carries the same value that the composite ID already uses in production. `view.getViewName()` (the SQL view name) is kept for the `IdHelpers.nameById` lookup and is *not* the typeId. `__ID_KEY_COLUMNS` lists the `TableField` references in the order of `<plattformId><column>` entries. Order is load-bearing per legacy-platform-id §KjerneJooqGenerator contract.
 
 2. **Preserves every existing emission byte-for-byte equivalent** so consumers on the current generator continue to compile unchanged. Legacy-platform-id explicitly allows `getId()` / `hasId` / `hasIds` to stay — the rewrite stops calling them but non-graphitron callers still do. Record-class `set<Qualifier>` keeps its `changed(..., false)` only-on-primary-id quirk unless we explicitly decide to change it (open question).
 
@@ -91,7 +91,7 @@ If the user prefers a different location (e.g. a throwaway branch, or `docs/plan
    - (a) Minimal surgical patch: paste the current source, add constant emission in one new method called from `generateTableClassFooter`, leave everything else identical.
    - (b) Clean-slate rewrite: extract small helpers (`EmitIdConstants`, `EmitHasMethods`, `EmitRecordAccessors`), fix the FK-loop bug, keep emission byte-equivalent for the pieces we don't deliberately change.
    - Preference? (b) is my recommendation iff we're comfortable shouldering the "prove byte-equivalence" burden; (a) is the cheap safe default.
-3. **`__ID_TYPE_ID` value source.** Today the plan uses `view.getViewName()` (e.g. `"VITNEMALSTEKST"`). That matches the base64-prefix value production already encodes. Any reason to prefer a different source — say, the GraphQL type name, or a new XML element — before we bake `viewName` in?
+3. ~~**`__ID_TYPE_ID` value source.**~~ **Resolved:** stringified `view.getViewId()` (e.g. `"368"`). That is what `PlatformIdHelpers.lagId(Integer viewId, ...)` encodes into the base64 prefix today; the constant mirrors the existing on-the-wire value. `viewName` is a lookup key inside `IdHelpers.nameById`, not the typeId.
 4. **FK-reached views.** Do we emit `__ID_TYPE_ID` / `__ID_KEY_COLUMNS` constants only once per table (for the table's own view) or also per FK-reached view with a different suffix (e.g. `__PERSON_ID_TYPE_ID`)? Legacy-platform-id §"Classification" only reads the table's own metadata — so once per table is sufficient. Confirming before committing to the emission shape.
 5. **Indexes / `PlatformIdHelpers` / `IdHelpers.java`** — all untouched by this plan? The legacy-platform-id rewrite doesn't read them, but keeping the existing generator intact by default means the new version emits them identically.
 6. **Verification plan.** Without a build in this repo, how do we know the new version is correct before Sikt integrates it? Options:
