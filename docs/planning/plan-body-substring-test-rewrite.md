@@ -1,6 +1,6 @@
 # Replace body-substring assertions on generated `CodeBlock`s
 
-> **Status:** Draft
+> **Status:** In Progress
 >
 > 28 occurrences across 6 test files, all asserting `assertThat(someMethod.code().toString()).contains(...)`. CLAUDE.md bans the pattern; the audit below shows most are redundant with compile/execution tiers and the remainder can be rewritten via structural JavaPoet-API helpers. The plan is audit-heavy because the mechanical per-assertion work dominates the design space.
 

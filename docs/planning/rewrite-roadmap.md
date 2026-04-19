@@ -154,7 +154,7 @@ Classifier fails on `@table` + `@record` combined on an input type — legacy to
 
 Steps 1-2 shipped on `claude/review-docs-plan-adYJW`. Step 5 superseded by `plan-variant-coverage-meta-test.md`. Steps 3-4 (re-section renames + doc rewire) deferred until the sealed hierarchy stabilises; picking them up mid-churn means constant rework.
 
-### Body-substring test rewrite **[Draft]** — [plan-body-substring-test-rewrite.md](plan-body-substring-test-rewrite.md)
+### Body-substring test rewrite **[In Progress]** — [plan-body-substring-test-rewrite.md](plan-body-substring-test-rewrite.md)
 
 28 `assertThat(code.toString()).contains(...)` violations across 6 test files get audited per-site and classified (delete / rewrite via a new `TypeSpecAssertions` helper / rewrite via execution test / keep-with-marker). CLAUDE.md already bans the pattern; plan gives the mechanical disposition. Three-commit structure (helper → migration → optional lint gate).
 
