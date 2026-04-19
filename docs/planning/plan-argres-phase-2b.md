@@ -4,14 +4,7 @@
 >
 > Fills in the DataLoader rows-method bodies for `ChildField.SplitTableField` and `ChildField.SplitLookupTableField`. Both were compile-only skeletons (`IMPLEMENTED_LEAVES` but runtime-throwing); Phase 2b makes `IMPLEMENTED_LEAVES` mean "emits working code".
 
-## What shipped
-
-- **`SplitRowsMethodEmitter`** — flat batched SELECT keyed on a VALUES-derived parent table; idx-scatter via `scatterByIdx`. Reuses `JoinPathEmitter` (FK chain), `ArgCallEmitter` (`@condition` filters), and `LookupValuesJoinEmitter.buildChildInputRowsMethod` (`@lookupKey` VALUES).
-- **`buildSplitQueryDataFetcher`** rewritten — DataLoader-registering shape. Uses `buildDataLoaderName()` (tenant prefix via `getTenantId(env)` + path-key join), not the deprecated `getDataLoaderName`.
-- **C3** — classifier rejects `FieldWrapper.Connection` on both `Split*` variants with a diagnostic explaining the window-function deferral.
-- **C5 (folded in)** — lookup-input VALUES retypes from `RowN[]`/`Table<?>` to `Row<N+1>`/`Table<Record<N+1>>`, matching the parent-input typing from C1.
-
-## Patterns established (Phase 2c inherits these)
+## Patterns (Phase 2c inherits these)
 
 - **Rows-method signature: 2-param.** `(List<RowN<…>> keys, DataFetchingEnvironment env)` — no `SelectedField` parameter. `DataFetchingFieldSelectionSet` is read via `env.getSelectionSet()` directly.
 - **Key unpacking: codegen-time arity via `fieldJ()`.** `keys.get(i)` is cast to the concrete `RowN<…>` (known at codegen time from `BatchKey.RowKeyed.keyColumns().size()`); cells are read via `k.field1()`…`k.fieldN()` (not `valueJ()` — those live on `RecordN`, not `RowN`).
