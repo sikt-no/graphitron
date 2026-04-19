@@ -20,15 +20,12 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Validates filter entries on SQL-generating fields. The validator does not currently inspect
- * filter contents, so each case produces no filter-specific errors. The fixture uses
- * {@link TableField}, which is itself stubbed, so every case also surfaces the
- * stubbed-variant error — that's orthogonal to what this test is asserting.
+ * filter contents, so each case produces no filter-specific errors.
  */
 class ArgumentValidationTest {
 
@@ -43,11 +40,11 @@ class ArgumentValidationTest {
 
     enum Case implements ValidatorCase {
 
-        NO_FILTERS("no filters (stubbed)",
+        NO_FILTERS("no filters",
             tableField(List.of()),
             List.of()),
 
-        WITH_COLUMN_FILTER("GeneratedConditionFilter scalar (stubbed)",
+        WITH_COLUMN_FILTER("GeneratedConditionFilter scalar",
             tableField(List.of(new GeneratedConditionFilter("TestConditions", "actorsCondition",
                 new TableRef("film", "FILM", "Film", List.of()),
                 List.of(new CallParam("id", new CallSiteExtraction.Direct(), false, "java.lang.Integer")),
@@ -55,11 +52,11 @@ class ArgumentValidationTest {
                     "java.lang.Integer", false, false, new CallSiteExtraction.Direct()))))),
             List.of()),
 
-        WITH_INPUT_FILTER("table-bound input type arg — skipped (empty filters) (stubbed)",
+        WITH_INPUT_FILTER("table-bound input type arg — skipped (empty filters)",
             tableField(List.of()),
             List.of()),
 
-        WITH_CONDITION_FILTER("ConditionFilter (stubbed)",
+        WITH_CONDITION_FILTER("ConditionFilter",
             tableField(List.of(new ConditionFilter("com.example.Conditions", "cond", List.of()))),
             List.of());
 

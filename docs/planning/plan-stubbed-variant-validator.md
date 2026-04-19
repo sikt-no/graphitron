@@ -17,11 +17,20 @@
   single-sourced helper so tests and production read the same reason
   string.
 - 33 per-variant test cases retrofitted across 27 classes.
-  Dual-purpose test classes (e.g., `ColumnReferenceFieldValidationTest`
-  houses both stubbed `ChildField.ColumnReferenceField` cases and
-  not-dispatched `InputField.ColumnReferenceField` cases) had only
-  the stubbed cases updated, confirming Decision A's "null for
-  non-stubbed leaves" path end-to-end.
+  The "null for non-stubbed leaves" path (Decision A) is
+  end-to-end-confirmed by two patterns already in the tree:
+  - **Implemented-leaf null**: `ServiceFieldValidationTest` houses
+    both stubbed `ChildField.ServiceRecordField` cases (got
+    `stubbedError`) and implemented `ChildField.ServiceTableField`
+    cases (no `stubbedError`, expected-error lists unchanged). The
+    latter would have failed if the validator fired on an
+    `IMPLEMENTED_LEAVES` entry.
+  - **Not-dispatched-leaf null**: `PlatformIdFieldValidationTest`
+    (covers `InputField.PlatformIdField`) and
+    `InputNestingFieldValidationTest` (covers
+    `InputField.NestingField`) each assert `List.of()`. Both targets
+    are in `NOT_DISPATCHED_LEAVES`; the tests would break if the
+    validator mistakenly fired on them.
 
 **Mojo severity flip — Decision E** (`7cf568f4`):
 - `ValidateMojo.failOnRewriteValidationError` `@Parameter` added,
@@ -62,11 +71,13 @@ Things worth checking:
    test class load time. Tests are decoupled from reason-string
    text; changing a reason string in `NOT_IMPLEMENTED_REASONS` does
    not require test updates.
-4. Dual-purpose test classes: `ColumnReferenceFieldValidationTest`
-   retrofits the stubbed `ChildField.ColumnReferenceField` cases
-   and leaves the `InputField.ColumnReferenceField` cases untouched.
-   This is the pattern the plan called out; confirm no stubbed case
-   slipped through.
+4. Cross-leaf null-path confirmation: `ServiceFieldValidationTest`
+   is the sharpest dual-leaf example — `ServiceRecordField` (stubbed)
+   got `stubbedError`, `ServiceTableField` (implemented) did not.
+   The not-dispatched-leaf null is separately witnessed by
+   `PlatformIdFieldValidationTest` and `InputNestingFieldValidationTest`
+   (both `List.of()`). Confirm no stubbed case slipped through and
+   no non-stubbed leaf accidentally gained a `stubbedError`.
 
 ## Items surfaced during implementation
 
