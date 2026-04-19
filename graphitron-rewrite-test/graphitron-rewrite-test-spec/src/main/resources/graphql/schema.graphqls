@@ -76,6 +76,13 @@ type Film @table(name: "film") {
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ])
+    # argres Phase 2b C4: SplitLookupTableField fixture. Same junction-path shape as actors
+    # above, but DataLoader-batched — each Film gets its own filtered actor list via the
+    # flat-SELECT + VALUES+ON keyset + per-parent scatter shape.
+    actorsBySplitLookup(actor_id: [Int!] @lookupKey): [Actor!]! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
 }
 
 type Actor @table(name: "actor") {

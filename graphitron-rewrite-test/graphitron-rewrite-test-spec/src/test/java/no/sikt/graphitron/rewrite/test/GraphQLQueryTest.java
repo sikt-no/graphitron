@@ -89,9 +89,12 @@ class GraphQLQueryTest {
             }
         };
 
+        // DataLoader registry is per-request; Split* fetchers call computeIfAbsent on it.
+        // graphql-java requires one explicitly even for non-DataLoader queries.
         var input = ExecutionInput.newExecutionInput()
             .query(query)
             .graphQLContext(builder -> builder.put("graphitronContext", context))
+            .dataLoaderRegistry(new org.dataloader.DataLoaderRegistry())
             .build();
 
         var result = graphql.execute(input);
@@ -658,5 +661,95 @@ class GraphQLQueryTest {
         assertThat(film3.get("filmId")).isEqualTo(3);
         var film3Actors = (List<Map<String, Object>>) film3.get("actors");
         assertThat(film3Actors).extracting(a -> a.get("firstName")).containsExactly("PENELOPE");
+    }
+
+    // ===== argres Phase 2b: Split(Lookup)TableField DataLoader fan-out =====
+
+    @Test
+    void splitTableField_singleParent_returnsItsChildren() {
+        // Language.films (SplitTableField) — language 1 has films 1-5 seeded.
+        Map<String, Object> data = execute(
+            "{ languageByKey(language_id: [1]) { languageId films { filmId } } }");
+        List<Map<String, Object>> langs = (List<Map<String, Object>>) data.get("languageByKey");
+        assertThat(langs).hasSize(1);
+        List<Map<String, Object>> films = (List<Map<String, Object>>) langs.get(0).get("films");
+        assertThat(films).extracting(f -> f.get("filmId"))
+            .containsExactlyInAnyOrder(1, 2, 3, 4, 5);
+    }
+
+    @Test
+    void splitTableField_multipleParents_scatterPerParent() {
+        // languages 1, 2, 3 — only language 1 has films in the seed. DataLoader batches the
+        // three parent lookups into one SQL round-trip; the scatter correctly assigns all
+        // films to language 1 and empty lists to languages 2 and 3 (no cross-contamination).
+        Map<String, Object> data = execute(
+            "{ languageByKey(language_id: [1, 2, 3]) { languageId films { filmId } } }");
+        List<Map<String, Object>> langs = (List<Map<String, Object>>) data.get("languageByKey");
+        assertThat(langs).hasSize(3);
+
+        var byId = langs.stream().collect(java.util.stream.Collectors.toMap(
+            l -> (Integer) l.get("languageId"), l -> l));
+        assertThat((List<?>) byId.get(1).get("films")).hasSize(5);
+        assertThat((List<?>) byId.get(2).get("films")).isEmpty();
+        assertThat((List<?>) byId.get(3).get("films")).isEmpty();
+    }
+
+    @Test
+    void splitLookupTableField_filtersActorsPerFilm() {
+        // Film 1 cast: PENELOPE (1), NICK (2). Film 2 cast: PENELOPE (1), ED (3).
+        // Film 3 cast: PENELOPE (1). actor_id: [1, 2] → film 1 gets {1,2}; film 2 gets {1};
+        // film 3 gets {1}.
+        Map<String, Object> data = execute(
+            "{ films { filmId actorsBySplitLookup(actor_id: [1, 2]) { actorId } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+
+        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> (Integer) f.get("filmId"), f -> (List<Map<String, Object>>) f.get("actorsBySplitLookup")));
+
+        assertThat(byId.get(1)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 2);
+        assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactly(1);
+        assertThat(byId.get(3)).extracting(a -> a.get("actorId")).containsExactly(1);
+    }
+
+    @Test
+    void splitLookupTableField_filterExcludesActorsNotInFilm() {
+        // actor_id: [3] → only films 2 and 5 have actor 3. Films 1, 3, 4 return empty lists;
+        // scatter correctly places empty sublists in their slots.
+        Map<String, Object> data = execute(
+            "{ films { filmId actorsBySplitLookup(actor_id: [3]) { actorId } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+
+        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> (Integer) f.get("filmId"), f -> (List<Map<String, Object>>) f.get("actorsBySplitLookup")));
+
+        assertThat(byId.get(1)).isEmpty();
+        assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactly(3);
+        assertThat(byId.get(3)).isEmpty();
+        assertThat(byId.get(4)).isEmpty();
+        assertThat(byId.get(5)).extracting(a -> a.get("actorId")).containsExactly(3);
+    }
+
+    @Test
+    void splitLookupTableField_emptyLookupInput_returnsEmptyPerFilm() {
+        // Empty @lookupKey list → emptyScatter short-circuit. No DB round-trip for the
+        // lookup join; every parent gets an empty sublist.
+        Map<String, Object> data = execute(
+            "{ films { filmId actorsBySplitLookup(actor_id: []) { actorId } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+
+        assertThat(films).allSatisfy(f ->
+            assertThat((List<?>) f.get("actorsBySplitLookup")).isEmpty());
+    }
+
+    @Test
+    void splitLookupTableField_nullLookupInput_returnsEmptyPerFilm() {
+        // Omitting the @lookupKey arg → null → env.getArgument returns null → rowCount=0 →
+        // inputRows helper returns new Row[0] → emptyScatter short-circuit.
+        Map<String, Object> data = execute(
+            "{ films { filmId actorsBySplitLookup { actorId } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+
+        assertThat(films).allSatisfy(f ->
+            assertThat((List<?>) f.get("actorsBySplitLookup")).isEmpty());
     }
 }
