@@ -77,12 +77,65 @@ class FetcherPipelineTest {
     }
 
     @Test
-    void nonTableType_notIncluded() {
+    void recordType_producesAFetchersClass() {
         var classes = generate("""
             type Container @record { value: String }
             type Query { dummy: String }
             """);
-        assertThat(classes).doesNotContain("ContainerFetchers");
+        assertThat(classes).contains("ContainerFetchers");
+    }
+
+    // ===== @record parent — PropertyField and RecordField =====
+
+    @Test
+    void propertyField_onRecordType_hasWiringEntry() {
+        var fetchers = findSpec("ContainerFetchers", """
+            type Container @record { value: String }
+            type Query { dummy: String }
+            """);
+        assertThat(TypeSpecAssertions.wiringFor(fetchers, "value")).isPresent();
+    }
+
+    @Test
+    void propertyField_onRecordType_noPerFieldMethod() {
+        var fetchers = findSpec("ContainerFetchers", """
+            type Container @record { value: String }
+            type Query { dummy: String }
+            """);
+        // PropertyField wired inline — only wiring() is generated, no per-field method
+        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).containsOnly("wiring");
+    }
+
+    @Test
+    void propertyField_untypedPojo_usesPropertyFetcher() {
+        // @record with no backing class → PojoResultType(null) → PropertyDataFetcher.fetching(...)
+        var fetchers = findSpec("ContainerFetchers", """
+            type Container @record { value: String }
+            type Query { dummy: String }
+            """);
+        assertThat(TypeSpecAssertions.wiringFor(fetchers, "value"))
+            .contains(DataFetcherKind.PROPERTY_FETCHER);
+    }
+
+    @Test
+    void recordField_onRecordType_hasWiringEntry() {
+        var fetchers = findSpec("FilmDetailsFetchers", """
+            type FilmStats @record { count: Int }
+            type FilmDetails @record { stats: FilmStats }
+            type Query { dummy: String }
+            """);
+        assertThat(TypeSpecAssertions.wiringFor(fetchers, "stats")).isPresent();
+    }
+
+    @Test
+    void recordField_onRecordType_noPerFieldMethod() {
+        var fetchers = findSpec("FilmDetailsFetchers", """
+            type FilmStats @record { count: Int }
+            type FilmDetails @record { stats: FilmStats }
+            type Query { dummy: String }
+            """);
+        // RecordField wired inline — only wiring() is generated
+        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).containsOnly("wiring");
     }
 
     // ===== Column fields → wired via ColumnFetcher =====

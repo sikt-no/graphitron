@@ -65,7 +65,8 @@ public class TypeFetcherGenerator {
         return schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof GraphitronType.TableType
                       || e.getValue() instanceof GraphitronType.NodeType
-                      || e.getValue() instanceof GraphitronType.RootType)
+                      || e.getValue() instanceof GraphitronType.RootType
+                      || e.getValue() instanceof GraphitronType.ResultType)
             .map(Map.Entry::getKey)
             .sorted()
             .map(typeName -> generateForType(schema, typeName))
@@ -80,7 +81,8 @@ public class TypeFetcherGenerator {
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
-        return generateTypeSpec(typeName, parentTable, fields);
+        GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
+        return generateTypeSpec(typeName, parentTable, resultType, fields);
     }
 
     // Fetcher-specific constants (cross-generator constants come from GeneratorUtils via static import)
@@ -111,7 +113,9 @@ public class TypeFetcherGenerator {
         QueryField.QueryTableField.class,
         ChildField.ServiceTableField.class,
         ChildField.SplitTableField.class,
-        ChildField.SplitLookupTableField.class);
+        ChildField.SplitLookupTableField.class,
+        ChildField.PropertyField.class,
+        ChildField.RecordField.class);
 
     /**
      * Leaves that can never reach the fetcher switch at runtime: {@link InputField} leaves are
@@ -223,24 +227,31 @@ public class TypeFetcherGenerator {
                 "ConstructorField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(ChildField.ServiceRecordField.class,
                 "ServiceRecordField not yet implemented — see rewrite-roadmap.md"),
-            Map.entry(ChildField.RecordField.class,
-                "RecordField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(ChildField.ComputedField.class,
                 "ComputedField not yet implemented — see rewrite-roadmap.md"),
-            Map.entry(ChildField.PropertyField.class,
-                "PropertyField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(ChildField.MultitableReferenceField.class,
                 "MultitableReferenceField not yet implemented — see rewrite-roadmap.md")
         );
+
+    /**
+     * Overload for tests and callers that don't need to specify a {@link GraphitronType.ResultType}.
+     * Delegates to the 4-arg form with {@code resultType = null}.
+     */
+    static TypeSpec generateTypeSpec(String typeName, TableRef parentTable, List<GraphitronField> fields) {
+        return generateTypeSpec(typeName, parentTable, null, fields);
+    }
 
     /**
      * Generates the {@code *Fetchers} class TypeSpec for the given GraphQL type.
      *
      * @param typeName    the GraphQL type name (e.g. {@code "Film"})
      * @param parentTable the resolved {@link TableRef} for the type, or {@code null} for root types
+     * @param resultType  the resolved {@link GraphitronType.ResultType} for {@code @record} parents,
+     *                    or {@code null} for table-backed and root types
      * @param fields      the classified fields belonging to this type
      */
-    static TypeSpec generateTypeSpec(String typeName, TableRef parentTable, List<GraphitronField> fields) {
+    static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
+            GraphitronType.ResultType resultType, List<GraphitronField> fields) {
         var className = typeName + "Fetchers";
         var builder = TypeSpec.classBuilder(className)
             .addModifiers(Modifier.PUBLIC);
@@ -332,9 +343,9 @@ public class TypeFetcherGenerator {
                 case ChildField.NestingField f                  -> builder.addMethod(stub(f));
                 case ChildField.ConstructorField f              -> builder.addMethod(stub(f));
                 case ChildField.ServiceRecordField f            -> builder.addMethod(stub(f));
-                case ChildField.RecordField f                   -> builder.addMethod(stub(f));
+                case ChildField.RecordField ignored             -> { /* wired inline via buildPropertyOrRecordFetcherEntry */ }
                 case ChildField.ComputedField f                 -> builder.addMethod(stub(f));
-                case ChildField.PropertyField f                 -> builder.addMethod(stub(f));
+                case ChildField.PropertyField ignored           -> { /* wired inline via buildPropertyOrRecordFetcherEntry */ }
                 case ChildField.MultitableReferenceField f      -> builder.addMethod(stub(f));
                 // Cannot occur — filtered by generateForType before dispatch
                 case InputField ignored ->
@@ -402,7 +413,7 @@ public class TypeFetcherGenerator {
             builder.addMethod(SplitRowsMethodEmitter.buildEmptyScatterHelper());
         }
 
-        builder.addMethod(buildWiringMethod(typeName, className, parentTable, fields));
+        builder.addMethod(buildWiringMethod(typeName, className, parentTable, resultType, fields));
         return builder.build();
     }
 
@@ -1148,11 +1159,63 @@ public class TypeFetcherGenerator {
     }
 
     /**
+     * Builds a {@code .dataFetcher(...)} wiring entry that reads {@code columnName} from the
+     * backing Java object exposed by {@code env.getSource()} for a {@code @record}-annotated parent.
+     *
+     * <ul>
+     *   <li>{@link GraphitronType.JooqTableRecordType} / {@link GraphitronType.JooqRecordType}:
+     *       {@code new ColumnFetcher<>(DSL.field(columnName))} — untyped string field lookup on the
+     *       jOOQ Record source.</li>
+     *   <li>{@link GraphitronType.JavaRecordType}: lambda casting to the backing class and calling
+     *       the record component accessor ({@code lowerCamelCase(columnName)()} ).</li>
+     *   <li>{@link GraphitronType.PojoResultType} with a non-null class: lambda casting to the
+     *       backing class and calling the bean getter ({@code get + UpperCamelCase(columnName)()} ).</li>
+     *   <li>{@link GraphitronType.PojoResultType} with {@code null} class: delegates to
+     *       graphql-java's {@code PropertyDataFetcher.fetching(columnName)}.</li>
+     * </ul>
+     */
+    private static CodeBlock buildPropertyOrRecordFetcherEntry(
+            String fieldName, String columnName, GraphitronType.ResultType resultType) {
+        var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
+            ColumnFetcherClassGenerator.CLASS_NAME);
+        if (resultType instanceof GraphitronType.JooqTableRecordType
+                || resultType instanceof GraphitronType.JooqRecordType) {
+            return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.field($S)))",
+                fieldName, columnFetcherClass, DSL, columnName);
+        }
+        if (resultType instanceof GraphitronType.JavaRecordType jrt) {
+            var backingClass = ClassName.bestGuess(jrt.fqClassName());
+            var accessor = toCamelCase(columnName);
+            return CodeBlock.of("\n.dataFetcher($S, env -> (($T) env.getSource()).$L())",
+                fieldName, backingClass, accessor);
+        }
+        var prt = (GraphitronType.PojoResultType) resultType;
+        if (prt.fqClassName() != null) {
+            var backingClass = ClassName.bestGuess(prt.fqClassName());
+            var accessorBase = toCamelCase(columnName);
+            var getter = "get" + Character.toUpperCase(accessorBase.charAt(0)) + accessorBase.substring(1);
+            return CodeBlock.of("\n.dataFetcher($S, env -> (($T) env.getSource()).$L())",
+                fieldName, backingClass, getter);
+        }
+        var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
+        return CodeBlock.of("\n.dataFetcher($S, $T.fetching($S))",
+            fieldName, propertyDataFetcher, columnName);
+    }
+
+    /**
      * Builds the wiring entry for one field. Column fields with a parent table use
      * {@link no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator ColumnFetcher}
-     * directly. All other fields use a plain method reference.
+     * directly. Property/record fields on {@code @record} parents use backing-object accessors.
+     * All other fields use a plain method reference.
      */
-    private static CodeBlock buildWiringEntry(GraphitronField field, String className, TableRef parentTable) {
+    private static CodeBlock buildWiringEntry(GraphitronField field, String className,
+            TableRef parentTable, GraphitronType.ResultType resultType) {
+        if (field instanceof ChildField.PropertyField pf && resultType != null) {
+            return buildPropertyOrRecordFetcherEntry(pf.name(), pf.columnName(), resultType);
+        }
+        if (field instanceof ChildField.RecordField rf && resultType != null) {
+            return buildPropertyOrRecordFetcherEntry(rf.name(), rf.columnName(), resultType);
+        }
         if (field instanceof ChildField.ColumnField cf && parentTable != null) {
             var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
                 ColumnFetcherClassGenerator.CLASS_NAME);
@@ -1200,7 +1263,7 @@ public class TypeFetcherGenerator {
     }
 
     private static MethodSpec buildWiringMethod(String typeName, String className,
-            TableRef parentTable, List<GraphitronField> fields) {
+            TableRef parentTable, GraphitronType.ResultType resultType, List<GraphitronField> fields) {
         var body = CodeBlock.builder()
             .add("return $T.newTypeWiring($S)", TYPE_WIRING, typeName);
 
@@ -1209,7 +1272,7 @@ public class TypeFetcherGenerator {
         } else {
             body.indent();
             for (var field : fields) {
-                body.add(buildWiringEntry(field, className, parentTable));
+                body.add(buildWiringEntry(field, className, parentTable, resultType));
             }
             body.add(";\n");
             body.unindent();

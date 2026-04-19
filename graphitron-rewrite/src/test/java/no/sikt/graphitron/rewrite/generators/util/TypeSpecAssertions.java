@@ -25,8 +25,10 @@ public final class TypeSpecAssertions {
         COLUMN_FETCHER,
         /** {@code ClassName::methodName} — delegates to a generated fetcher method. */
         METHOD_REFERENCE,
-        /** {@code env -> { … }} — inline lambda (e.g. single-cardinality multiset unwrap). */
-        LAMBDA
+        /** {@code env -> { … }} — inline lambda (e.g. single-cardinality multiset unwrap or backing-object cast). */
+        LAMBDA,
+        /** {@code PropertyDataFetcher.fetching(…)} — graphql-java reflective accessor for untyped POJO parents. */
+        PROPERTY_FETCHER
     }
 
     /**
@@ -63,6 +65,9 @@ public final class TypeSpecAssertions {
         }
         if (second.contains("::")) {
             return Optional.of(DataFetcherKind.METHOD_REFERENCE);
+        }
+        if (second.contains("PropertyDataFetcher")) {
+            return Optional.of(DataFetcherKind.PROPERTY_FETCHER);
         }
         throw new AssertionError(
             "Unrecognised dataFetcher shape for '" + fieldName + "': " + second
