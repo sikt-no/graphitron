@@ -12,7 +12,9 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Thin wrapper around jOOQ's {@link Catalog}. Loads the catalog once via reflection
@@ -29,6 +31,7 @@ public class JooqCatalog {
     private static final Logger LOGGER = LoggerFactory.getLogger(JooqCatalog.class);
 
     private final Catalog catalog;
+    private final Map<String, NodeIdMetadataLookup> metadataCache = new ConcurrentHashMap<>();
 
     public JooqCatalog(String generatedJooqPackage) {
         this.catalog = loadDefaultCatalog(generatedJooqPackage);
@@ -290,7 +293,33 @@ public class JooqCatalog {
      * probe treats the order as opaque but stable.
      */
     public Optional<NodeIdMetadata> nodeIdMetadata(String tableSqlName) {
-        return findTable(tableSqlName).flatMap(te -> {
+        return lookup(tableSqlName) instanceof NodeIdMetadataLookup.Present p
+            ? Optional.of(p.metadata())
+            : Optional.empty();
+    }
+
+    /**
+     * Sibling of {@link #nodeIdMetadata(String)} that surfaces malformed-metadata reasons at the
+     * classifier boundary. Returns the reason string (without the {@code "KjerneJooqGenerator
+     * metadata on table 'X' is malformed: "} prefix — the caller prepends it) when the constants
+     * are present but fail validation; empty when the constants are absent or well-formed.
+     *
+     * <p>Classifier usage: call this first — if present, fail the type as {@code UnclassifiedType}
+     * with the prefixed message; otherwise call {@link #nodeIdMetadata(String)} to get the
+     * synthesized values. Results share a cache so reflection runs once per table per build.
+     */
+    public Optional<String> nodeIdMetadataDiagnostic(String tableSqlName) {
+        return lookup(tableSqlName) instanceof NodeIdMetadataLookup.Malformed m
+            ? Optional.of(m.reason())
+            : Optional.empty();
+    }
+
+    private NodeIdMetadataLookup lookup(String tableSqlName) {
+        return metadataCache.computeIfAbsent(tableSqlName, this::doLookup);
+    }
+
+    private NodeIdMetadataLookup doLookup(String tableSqlName) {
+        return findTable(tableSqlName).<NodeIdMetadataLookup>map(te -> {
             Class<?> tableClass = te.table().getClass();
             Object typeIdRaw;
             Object keyColumnsRaw;
@@ -298,55 +327,65 @@ public class JooqCatalog {
                 typeIdRaw = tableClass.getField("__ID_TYPE_ID").get(null);
                 keyColumnsRaw = tableClass.getField("__ID_KEY_COLUMNS").get(null);
             } catch (NoSuchFieldException e) {
-                // Absent constants: not an error, just means this table has no platform-id metadata.
-                return Optional.empty();
+                return new NodeIdMetadataLookup.Absent();
             } catch (IllegalAccessException e) {
                 throw new RuntimeException(e);
             }
-            return validateNodeIdMetadata(tableSqlName, typeIdRaw, keyColumnsRaw,
+            return validateLookup(tableSqlName, typeIdRaw, keyColumnsRaw,
                 name -> findColumn(te.table(), name));
-        });
+        }).orElseGet(NodeIdMetadataLookup.Absent::new);
     }
 
     /**
-     * Validation half of {@link #nodeIdMetadata(String)}, factored so tests can exercise each
-     * malformed-metadata branch by passing synthetic raw values without having to swap {@code
-     * static final} fields on a real table class. The {@code columnLookup} resolves a SQL column
-     * name to a {@link ColumnEntry} on the owning table.
+     * Validation half, factored so tests can exercise each malformed-metadata branch by passing
+     * synthetic raw values without having to swap {@code static final} fields on a real table
+     * class. Preserved signature — wraps the three-state {@link #validateLookup}.
      */
     static Optional<NodeIdMetadata> validateNodeIdMetadata(
             String tableSqlName,
             Object typeIdRaw,
             Object keyColumnsRaw,
             java.util.function.Function<String, Optional<ColumnEntry>> columnLookup) {
+        return validateLookup(tableSqlName, typeIdRaw, keyColumnsRaw, columnLookup)
+                instanceof NodeIdMetadataLookup.Present p
+            ? Optional.of(p.metadata())
+            : Optional.empty();
+    }
+
+    private static NodeIdMetadataLookup validateLookup(
+            String tableSqlName,
+            Object typeIdRaw,
+            Object keyColumnsRaw,
+            java.util.function.Function<String, Optional<ColumnEntry>> columnLookup) {
         if (!(typeIdRaw instanceof String typeId) || typeId.isEmpty()) {
-            LOGGER.warn("KjerneJooqGenerator metadata on table '{}' is malformed: __ID_TYPE_ID must be a non-empty String (got: {})",
-                tableSqlName, typeIdRaw);
-            return Optional.empty();
+            return malformed(tableSqlName,
+                "__ID_TYPE_ID must be a non-empty String (got: " + typeIdRaw + ")");
         }
         if (!(keyColumnsRaw instanceof org.jooq.Field<?>[] keyColumnFields) || keyColumnFields.length == 0) {
-            LOGGER.warn("KjerneJooqGenerator metadata on table '{}' is malformed: __ID_KEY_COLUMNS must be a non-empty Field<?>[] (got: {})",
-                tableSqlName, keyColumnsRaw);
-            return Optional.empty();
+            return malformed(tableSqlName,
+                "__ID_KEY_COLUMNS must be a non-empty Field<?>[] (got: " + keyColumnsRaw + ")");
         }
         var resolved = new ArrayList<ColumnRef>(keyColumnFields.length);
         for (int i = 0; i < keyColumnFields.length; i++) {
             var f = keyColumnFields[i];
             if (f == null) {
-                LOGGER.warn("KjerneJooqGenerator metadata on table '{}' is malformed: __ID_KEY_COLUMNS[{}] is null",
-                    tableSqlName, i);
-                return Optional.empty();
+                return malformed(tableSqlName, "__ID_KEY_COLUMNS[" + i + "] is null");
             }
             Optional<ColumnEntry> col = columnLookup.apply(f.getName());
             if (col.isEmpty()) {
-                LOGGER.warn("KjerneJooqGenerator metadata on table '{}' is malformed: __ID_KEY_COLUMNS[{}] references column '{}' which does not belong to this table",
-                    tableSqlName, i, f.getName());
-                return Optional.empty();
+                return malformed(tableSqlName,
+                    "__ID_KEY_COLUMNS[" + i + "] references column '" + f.getName()
+                    + "' which does not belong to this table");
             }
             var e = col.get();
             resolved.add(new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()));
         }
-        return Optional.of(new NodeIdMetadata(typeId, List.copyOf(resolved)));
+        return new NodeIdMetadataLookup.Present(new NodeIdMetadata(typeId, List.copyOf(resolved)));
+    }
+
+    private static NodeIdMetadataLookup.Malformed malformed(String tableSqlName, String reason) {
+        LOGGER.warn("KjerneJooqGenerator metadata on table '{}' is malformed: {}", tableSqlName, reason);
+        return new NodeIdMetadataLookup.Malformed(reason);
     }
 
     /**
@@ -476,6 +515,23 @@ public class JooqCatalog {
      * resolution of {@code __ID_KEY_COLUMNS} to {@link ColumnRef}s on the same table.
      */
     public record NodeIdMetadata(String typeId, List<ColumnRef> keyColumns) {}
+
+    /**
+     * Three-state outcome of a {@link #nodeIdMetadata} reflection probe. {@link Absent} means the
+     * table class has no {@code __ID_TYPE_ID} / {@code __ID_KEY_COLUMNS} constants (legal for
+     * non-platform-id tables). {@link Present} carries the validated metadata. {@link Malformed}
+     * carries a human-readable reason suitable for a classifier-boundary diagnostic; the caller
+     * prepends the {@code "KjerneJooqGenerator metadata on table 'X' is malformed: "} prefix.
+     *
+     * <p>Not part of the primary public API — callers use {@link #nodeIdMetadata(String)} and
+     * {@link #nodeIdMetadataDiagnostic(String)}. The sum type itself is public so tests and
+     * future classifier helpers can switch over the three cases directly.
+     */
+    public sealed interface NodeIdMetadataLookup {
+        record Present(NodeIdMetadata metadata) implements NodeIdMetadataLookup {}
+        record Absent() implements NodeIdMetadataLookup {}
+        record Malformed(String reason) implements NodeIdMetadataLookup {}
+    }
 
     /**
      * Column resolution result.

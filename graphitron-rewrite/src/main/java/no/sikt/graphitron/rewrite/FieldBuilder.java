@@ -1570,7 +1570,7 @@ class FieldBuilder {
             } else {
                 if (!(tableType instanceof NodeType nodeType)) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        "@nodeId requires the containing type to have @node");
+                        "@nodeId requires the containing type to be a node type (via @node or KjerneJooqGenerator metadata)");
                 }
                 return new NodeIdField(parentTypeName, name, location, nodeType.typeId(), nodeType.nodeKeyColumns());
             }

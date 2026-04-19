@@ -145,4 +145,21 @@ class JooqCatalogNodeIdMetadataTest {
                 org.assertj.core.groups.Tuple.tuple("ID_1", "id_1", "java.lang.String"),
                 org.assertj.core.groups.Tuple.tuple("ID_2", "id_2", "java.lang.String"));
     }
+
+    // --- Diagnostic sibling (Step 2): malformed-metadata surfacing ---
+
+    @Test
+    void diagnosticEmptyForWellFormedTable() {
+        assertThat(catalog().nodeIdMetadataDiagnostic("bar")).isEmpty();
+    }
+
+    @Test
+    void diagnosticEmptyForAbsentConstants() {
+        assertThat(catalog().nodeIdMetadataDiagnostic("qux")).isEmpty();
+    }
+
+    @Test
+    void diagnosticEmptyForTableNotInCatalog() {
+        assertThat(catalog().nodeIdMetadataDiagnostic("nonexistent")).isEmpty();
+    }
 }

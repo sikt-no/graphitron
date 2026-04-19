@@ -248,26 +248,89 @@ class TypeBuilder {
                 + candidateHint(tableName, ctx.catalog.allTableSqlNames()));
         }
         TableRef tableRef = tableOpt.get();
-        if (!objType.hasAppliedDirective(DIR_NODE)) {
+
+        // Platform-id synthesis — unconditional probe per the plan. Four branches on
+        // (has @node, has metadata); a fifth "metadata is malformed" surfaces here as
+        // UnclassifiedType regardless of @node presence, so consumers see the issue even when
+        // an SDL author tries to override with explicit @node values.
+        Optional<String> metadataDiagnostic = ctx.catalog.nodeIdMetadataDiagnostic(tableRef.tableName());
+        if (metadataDiagnostic.isPresent()) {
+            return new UnclassifiedType(name, location,
+                "KjerneJooqGenerator metadata on table '" + tableRef.tableName() + "' is malformed: "
+                + metadataDiagnostic.get());
+        }
+        Optional<JooqCatalog.NodeIdMetadata> metadata = ctx.catalog.nodeIdMetadata(tableRef.tableName());
+
+        boolean hasNode = objType.hasAppliedDirective(DIR_NODE);
+        if (!hasNode && metadata.isEmpty()) {
             return new TableType(name, location, tableRef);
         }
-        String typeId = argString(objType, DIR_NODE, ARG_TYPE_ID).orElse(null);
-        List<String> keyColumnNames = argStringList(objType, DIR_NODE, ARG_KEY_COLUMNS);
+        if (!hasNode) {
+            // metadata-only → synthesize NodeType from the constants verbatim.
+            return new NodeType(name, location, tableRef, metadata.get().typeId(),
+                List.copyOf(metadata.get().keyColumns()));
+        }
+
+        // @node directive present — resolve SDL-declared values.
+        String sdlTypeId = argString(objType, DIR_NODE, ARG_TYPE_ID).orElse(null);
+        List<String> sdlKeyColumnNames = argStringList(objType, DIR_NODE, ARG_KEY_COLUMNS);
         var keyColumnErrors = new ArrayList<String>();
-        var keyColumns = new ArrayList<ColumnRef>();
-        for (String colName : keyColumnNames) {
+        var sdlKeyColumns = new ArrayList<ColumnRef>();
+        for (String colName : sdlKeyColumnNames) {
             Optional<ColumnRef> kc = svc.resolveKeyColumn(colName, tableRef.tableName());
             if (kc.isEmpty()) {
                 keyColumnErrors.add("key column '" + colName + "' in @node could not be resolved in the jOOQ table"
                     + candidateHint(colName, ctx.catalog.columnSqlNamesOf(tableRef.tableName())));
             } else {
-                keyColumns.add(kc.get());
+                sdlKeyColumns.add(kc.get());
             }
         }
         if (!keyColumnErrors.isEmpty()) {
             return new UnclassifiedType(name, location, String.join("; ", keyColumnErrors));
         }
-        return new NodeType(name, location, tableRef, typeId, List.copyOf(keyColumns));
+
+        if (metadata.isEmpty()) {
+            // @node-only (pre-pivot path) — use SDL values verbatim, including null/empty when omitted.
+            return new NodeType(name, location, tableRef, sdlTypeId, List.copyOf(sdlKeyColumns));
+        }
+
+        // Both @node and metadata present — apply the collision rule:
+        //  - SDL value omitted  → delegate to metadata on that axis (no disagreement possible).
+        //  - SDL value present, matches metadata → accept.
+        //  - SDL value present, disagrees with metadata → UnclassifiedType with both sides.
+        // typeId is compared by string equality; keyColumns is order-sensitive column equality.
+        var meta = metadata.get();
+        var disagreements = new ArrayList<String>();
+        if (sdlTypeId != null && !sdlTypeId.equals(meta.typeId())) {
+            disagreements.add("@node(typeId: \"" + sdlTypeId + "\") disagrees with KjerneJooqGenerator metadata (typeId: \"" + meta.typeId() + "\")");
+        }
+        if (!sdlKeyColumnNames.isEmpty() && !columnListsMatch(sdlKeyColumns, meta.keyColumns())) {
+            disagreements.add("@node(keyColumns: " + keyColumnsLiteral(sdlKeyColumns)
+                + ") disagrees with KjerneJooqGenerator metadata (keyColumns: " + keyColumnsLiteral(meta.keyColumns()) + ")");
+        }
+        if (!disagreements.isEmpty()) {
+            return new UnclassifiedType(name, location, String.join("; ", disagreements));
+        }
+        // Agreed (or SDL omitted on both axes) — metadata values are authoritative (equal to SDL
+        // on declared axes; fill in the omitted ones).
+        return new NodeType(name, location, tableRef, meta.typeId(), List.copyOf(meta.keyColumns()));
+    }
+
+    private static boolean columnListsMatch(List<ColumnRef> a, List<ColumnRef> b) {
+        if (a.size() != b.size()) return false;
+        for (int i = 0; i < a.size(); i++) {
+            if (!a.get(i).sqlName().equalsIgnoreCase(b.get(i).sqlName())) return false;
+        }
+        return true;
+    }
+
+    private static String keyColumnsLiteral(List<ColumnRef> cols) {
+        var sb = new StringBuilder("[");
+        for (int i = 0; i < cols.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append('"').append(cols.get(i).sqlName()).append('"');
+        }
+        return sb.append(']').toString();
     }
 
     /**
