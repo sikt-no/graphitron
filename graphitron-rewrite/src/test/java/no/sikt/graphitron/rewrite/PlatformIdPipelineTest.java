@@ -229,19 +229,21 @@ class PlatformIdPipelineTest {
 
     enum OutputCase {
         IMPLICIT_ID(
-            "output `id: ID!` on a platform-id table → NodeType parent, PlatformIdField field (until Step 3 flips)",
+            "output `id: ID!` on a platform-id table → NodeType parent, synthesized NodeIdField (Step 3: Path-2 short-circuits the platform-id fallback)",
             """
             type Foo @table(name: "bar") { id: ID! }
             type Query { foo: Foo }
             """,
             schema -> {
                 assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.NodeType.class);
-                var f = (ChildField.PlatformIdField) schema.field("Foo", "id");
-                assertThat(f.getterName()).isEqualTo("getId");
+                var f = (ChildField.NodeIdField) schema.field("Foo", "id");
+                assertThat(f.nodeTypeId()).isEqualTo("Bar");
+                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id_1", "id_2");
             }),
 
         EXPLICIT_PERSON_ID(
-            "output `personId: ID! @field(name: \"PERSON_ID\")` → NodeType parent, PlatformIdField(getPersonId) field",
+            "output `personId: ID! @field(name: \"PERSON_ID\")` → NodeType parent, PlatformIdField(getPersonId) field (the !@field clause keeps this on the platform-id fallback until Step 5)",
             """
             type Foo @table(name: "bar") { personId: ID! @field(name: "PERSON_ID") }
             type Query { foo: Foo }

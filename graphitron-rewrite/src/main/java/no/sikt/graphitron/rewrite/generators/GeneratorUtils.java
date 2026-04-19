@@ -44,6 +44,8 @@ class GeneratorUtils {
     static final ClassName SELECTED_FIELD   = ClassName.get("graphql.schema", "SelectedField");
     /** {@code no.sikt.graphql.GraphitronContext} */
     static final ClassName GRAPHITRON_CONTEXT = ClassName.get("no.sikt.graphql", "GraphitronContext");
+    /** {@code no.sikt.graphql.NodeIdStrategy} */
+    static final ClassName NODE_ID_STRATEGY = ClassName.get("no.sikt.graphql", "NodeIdStrategy");
 
     // -----------------------------------------------------------------------
     // ResolvedTableNames

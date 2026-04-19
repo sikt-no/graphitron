@@ -139,7 +139,8 @@ public class TypeFetcherGenerator {
      */
     public static final Set<Class<? extends GraphitronField>> PROJECTED_LEAVES = Set.of(
         ChildField.TableField.class,
-        ChildField.LookupTableField.class);
+        ChildField.LookupTableField.class,
+        ChildField.NodeIdField.class);
 
     /**
      * Maps each unimplemented field variant class to the reason string that the generated stub
@@ -208,8 +209,6 @@ public class TypeFetcherGenerator {
             // ChildField stubs — remaining direct permits
             Map.entry(ChildField.ColumnReferenceField.class,
                 "ColumnReferenceField not yet implemented — see rewrite-roadmap.md"),
-            Map.entry(ChildField.NodeIdField.class,
-                "NodeIdField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(ChildField.NodeIdReferenceField.class,
                 "NodeIdReferenceField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(ChildField.TableMethodField.class,
@@ -318,11 +317,12 @@ public class TypeFetcherGenerator {
                     // no per-field fetcher method needed here.
                 }
                 case ChildField.ColumnReferenceField f          -> builder.addMethod(stub(f));
-                case ChildField.NodeIdField f                   -> builder.addMethod(stub(f));
                 case ChildField.NodeIdReferenceField f          -> builder.addMethod(stub(f));
-                // ChildField.TableField / LookupTableField have no fetcher — inline projection via TypeClassGenerator.$fields.
+                // ChildField.TableField / LookupTableField / NodeIdField have no fetcher —
+                // inline projection via TypeClassGenerator.$fields.
                 case ChildField.TableField ignored              -> { }
                 case ChildField.LookupTableField ignored        -> { }
+                case ChildField.NodeIdField ignored             -> { }
                 case ChildField.TableInterfaceField f           -> builder.addMethod(stub(f));
                 case ChildField.RecordTableField f              -> builder.addMethod(stub(f));
                 case ChildField.RecordLookupTableField f        -> builder.addMethod(stub(f));
@@ -1187,6 +1187,14 @@ public class TypeFetcherGenerator {
                 ColumnFetcherClassGenerator.CLASS_NAME);
             return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.field($S)))",
                 field.name(), columnFetcherClass, DSL, field.name());
+        }
+        if (field instanceof ChildField.NodeIdField) {
+            // Inline projection via TypeClassGenerator.$fields — the SELECT list carries an aliased
+            // nodeIdStrategy.createId(...) SelectField. Retrieve it from the record by its alias.
+            var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
+                ColumnFetcherClassGenerator.CLASS_NAME);
+            return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.field($S, $T.class)))",
+                field.name(), columnFetcherClass, DSL, field.name(), String.class);
         }
         return CodeBlock.of("\n.dataFetcher($S, $L::$L)", field.name(), className, field.name());
     }
