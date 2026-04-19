@@ -540,17 +540,10 @@ class TypeFetcherGeneratorTest {
     // execution covered by filmsConnection_backward_returnsLastNFilms and
     // filmsConnection_backward_withBeforeCursor_returnsPrevPage.
 
-    @Test
-    void connectionField_emitsRelayValidation_firstAndLastConflict() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
-        // intentional body-content assertion — no structural equivalent.
-        // Relay spec rejects schemas that pass both first and last; the generated fetcher
-        // throws IllegalArgumentException. No execution-tier test asserts the exception
-        // today; when one lands, delete this block. Tracked in the plan as an OD.
-        var code = method(spec, "films").code().toString();
-        assertThat(code).contains("IllegalArgumentException");
-        assertThat(code).contains("first != null && last != null");
-    }
+    // Dropped connectionField_emitsRelayValidation_firstAndLastConflict: execution test
+    // GraphQLQueryTest.filmsConnection_rejectsFirstAndLastTogether covers this behaviourally
+    // (passes first=2 + last=2 and asserts the error surfaces with both arg names in the
+    // message).
 
     // Dropped connectionField_emitsBackwardFlag: Pattern 5 — backward semantics exercised by
     // the filmsConnection_backward_* execution tests.

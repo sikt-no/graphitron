@@ -99,6 +99,34 @@ class GraphQLQueryTest {
         return result.getData();
     }
 
+    /**
+     * Executes a query and returns the {@link graphql.ExecutionResult} without asserting
+     * on errors — for tests that expect a failure path (e.g. Relay first+last validation).
+     */
+    private graphql.ExecutionResult executeRaw(String query) {
+        var context = new GraphitronContext() {
+            @Override
+            public DSLContext getDslContext(DataFetchingEnvironment env) {
+                return dsl;
+            }
+            @Override
+            public <T> T getContextArgument(DataFetchingEnvironment env, String name) {
+                return null;
+            }
+            @Override
+            public String getDataLoaderName(DataFetchingEnvironment env) {
+                return env.getExecutionStepInfo().getPath().toString().replaceAll("/\\d+", "");
+            }
+        };
+
+        var input = ExecutionInput.newExecutionInput()
+            .query(query)
+            .graphQLContext(builder -> builder.put("graphitronContext", context))
+            .build();
+
+        return graphql.execute(input);
+    }
+
     private static String readClasspathResource(String name) {
         try (InputStream is = GraphQLQueryTest.class.getClassLoader().getResourceAsStream(name)) {
             if (is == null) throw new IllegalStateException(name + " not found on classpath");
@@ -348,6 +376,18 @@ class GraphQLQueryTest {
     }
 
     // ===== filmsConnection — backward pagination =====
+
+    @Test
+    void filmsConnection_rejectsFirstAndLastTogether() {
+        // Relay spec: must reject when both first and last are supplied.
+        // graphql-java wraps the fetcher's IllegalArgumentException into an execution error.
+        var result = executeRaw(
+            "{ filmsConnection(first: 2, last: 2) { nodes { title } } }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .containsIgnoringCase("first")
+            .containsIgnoringCase("last");
+    }
 
     @Test
     void filmsConnection_backward_returnsLastNFilms() {
