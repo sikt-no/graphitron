@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.List;
@@ -170,6 +171,47 @@ class GeneratorUtils {
      *       {@code KeyType key = (KeyType) env.getSource()}</li>
      * </ul>
      */
+    /**
+     * Emits the {@code RowN<...> key = DSL.row(...)} statement for a {@link ChildField.RecordTableField}
+     * DataFetcher, extracting the FK value(s) from the {@code @record} parent's backing Java object.
+     *
+     * <p>The accessor per ResultType variant:
+     * <ul>
+     *   <li>{@link GraphitronType.JooqTableRecordType}: {@code ((Record) env.getSource()).get(Tables.T.FK_COL)}</li>
+     *   <li>{@link GraphitronType.JooqRecordType}: {@code ((Record) env.getSource()).get("sql_name")}</li>
+     *   <li>{@link GraphitronType.JavaRecordType}: {@code ((BackingClass) env.getSource()).lowerCamelCase()}</li>
+     *   <li>{@link GraphitronType.PojoResultType} (non-null class): {@code ((BackingClass) env.getSource()).getLowerCamelCase()}</li>
+     * </ul>
+     */
+    static CodeBlock buildRecordKeyExtraction(BatchKey.RowKeyed batchKey, GraphitronType.ResultType resultType) {
+        TypeName keyType = keyElementType(batchKey);
+        List<ColumnRef> fkCols = batchKey.keyColumns();
+        var rowArgs = CodeBlock.builder();
+        for (int i = 0; i < fkCols.size(); i++) {
+            if (i > 0) rowArgs.add(", ");
+            ColumnRef col = fkCols.get(i);
+            if (resultType instanceof GraphitronType.JooqTableRecordType jtt) {
+                var tablesClass = ResolvedTableNames.ofTable(jtt.table()).tablesClass();
+                rowArgs.add("(($T) env.getSource()).get($T.$L.$L)",
+                    RECORD, tablesClass, jtt.table().javaFieldName(), col.javaName());
+            } else if (resultType instanceof GraphitronType.JooqRecordType) {
+                rowArgs.add("(($T) env.getSource()).get($S)", RECORD, col.sqlName());
+            } else if (resultType instanceof GraphitronType.JavaRecordType jrt) {
+                var backingClass = ClassName.bestGuess(jrt.fqClassName());
+                rowArgs.add("(($T) env.getSource()).$L()", backingClass, toCamelCase(col.sqlName()));
+            } else {
+                var prt = (GraphitronType.PojoResultType) resultType;
+                var backingClass = ClassName.bestGuess(prt.fqClassName());
+                var accessorBase = toCamelCase(col.sqlName());
+                var getter = "get" + Character.toUpperCase(accessorBase.charAt(0)) + accessorBase.substring(1);
+                rowArgs.add("(($T) env.getSource()).$L()", backingClass, getter);
+            }
+        }
+        return CodeBlock.builder()
+            .addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build())
+            .build();
+    }
+
     static CodeBlock buildKeyExtraction(BatchKey batchKey, TableRef parentTable) {
         TypeName keyType = keyElementType(batchKey);
         var tablesClass = ResolvedTableNames.ofTable(parentTable).tablesClass();

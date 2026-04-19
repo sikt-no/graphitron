@@ -1071,10 +1071,12 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("FilmDetails", "rating")).isInstanceOf(ServiceRecordField.class)),
 
         RECORD_TABLE_FIELD(
-            "@record parent + @table return type (no @lookupKey) → RecordTableField",
+            "@record parent (typed POJO) + @table return type (no @lookupKey) → RecordTableField",
             """
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record { language: Language }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
             type Film @table(name: "film") { details: FilmDetails }
             type Query { film: Film }
             """,

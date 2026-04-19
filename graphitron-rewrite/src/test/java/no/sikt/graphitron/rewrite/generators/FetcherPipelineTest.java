@@ -138,6 +138,36 @@ class FetcherPipelineTest {
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).containsOnly("wiring");
     }
 
+    // ===== @record parent — RecordTableField =====
+
+    private static final String RECORD_TABLE_SDL = """
+            type Language @table(name: "language") { name: String }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """;
+
+    @Test
+    void recordTableField_onRecordType_hasAsyncDataFetcher() {
+        var fetchers = findSpec("FilmDetailsFetchers", RECORD_TABLE_SDL);
+        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("language");
+    }
+
+    @Test
+    void recordTableField_onRecordType_asyncDataFetcherReturnsCompletableFuture() {
+        var fetchers = findSpec("FilmDetailsFetchers", RECORD_TABLE_SDL);
+        assertThat(method(fetchers, "language").returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<org.jooq.Record>");
+    }
+
+    @Test
+    void recordTableField_onRecordType_hasRowsMethod() {
+        var fetchers = findSpec("FilmDetailsFetchers", RECORD_TABLE_SDL);
+        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("rowsLanguage");
+    }
+
     // ===== Column fields → wired via ColumnFetcher =====
 
     @Test

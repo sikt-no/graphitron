@@ -1134,7 +1134,7 @@ class FieldBuilder {
             return classifyChildFieldOnTableType(fieldDef, parentTypeName, tbt);
         }
         if (parentType instanceof ResultType resultType) {
-            return classifyChildFieldOnResultType(fieldDef, parentTypeName);
+            return classifyChildFieldOnResultType(fieldDef, parentTypeName, resultType);
         }
         if (parentType instanceof ErrorType) {
             return classifyChildFieldOnErrorType(fieldDef, parentTypeName);
@@ -1424,7 +1424,8 @@ class FieldBuilder {
         return String.join(", ", names) + " are mutually exclusive";
     }
 
-    private GraphitronField classifyChildFieldOnResultType(GraphQLFieldDefinition fieldDef, String parentTypeName) {
+    private GraphitronField classifyChildFieldOnResultType(GraphQLFieldDefinition fieldDef, String parentTypeName,
+            ResultType parentResultType) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
@@ -1476,7 +1477,12 @@ class FieldBuilder {
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
                         tfc.lookupMapping());
                 }
-                yield new RecordTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
+                var batchKey = deriveBatchKeyForResultType(objectPath.elements(), parentResultType);
+                if (batchKey == null) {
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        "RecordTableField requires a FK join path and a typed backing class for batch key extraction");
+                }
+                yield new RecordTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), batchKey);
             }
             case ReturnTypeRef.ResultReturnType r ->
                 new RecordField(parentTypeName, name, location, r, columnName);
@@ -1485,6 +1491,28 @@ class FieldBuilder {
             case ReturnTypeRef.PolymorphicReturnType p ->
                 new UnclassifiedField(parentTypeName, name, location, fieldDef, "@record type returning a polymorphic type is not yet supported");
         };
+    }
+
+    /**
+     * Derives the {@link BatchKey} for a {@link no.sikt.graphitron.rewrite.model.ChildField.RecordTableField}
+     * by reading the FK source columns from the join path's first {@link JoinStep.FkJoin} step.
+     *
+     * <p>Returns {@code null} (→ {@link GraphitronField.UnclassifiedField}) when:
+     * <ul>
+     *   <li>the join path is empty or its first step is not an {@link JoinStep.FkJoin}</li>
+     *   <li>the parent is an untyped {@link GraphitronType.PojoResultType} with a {@code null} class
+     *       (cannot generate a typed cast for key extraction)</li>
+     * </ul>
+     */
+    private static BatchKey deriveBatchKeyForResultType(
+            List<JoinStep> joinPath, GraphitronType.ResultType parentResultType) {
+        if (joinPath.isEmpty() || !(joinPath.get(0) instanceof JoinStep.FkJoin fkJoin)) {
+            return null;
+        }
+        if (parentResultType instanceof GraphitronType.PojoResultType prt && prt.fqClassName() == null) {
+            return null;
+        }
+        return new BatchKey.RowKeyed(fkJoin.sourceColumns());
     }
 
     private GraphitronField classifyChildFieldOnTableType(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType tableType) {

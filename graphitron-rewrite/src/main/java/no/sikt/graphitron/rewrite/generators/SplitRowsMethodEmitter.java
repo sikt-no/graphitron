@@ -111,6 +111,9 @@ public final class SplitRowsMethodEmitter {
         if (bkf instanceof ChildField.SplitLookupTableField slf) {
             return buildForSplitLookupTable(slf, parentTable);
         }
+        if (bkf instanceof ChildField.RecordTableField rtf) {
+            return buildForRecordTable(rtf);
+        }
         throw new IllegalArgumentException(
             "SplitRowsMethodEmitter does not handle " + bkf.getClass().getSimpleName());
     }
@@ -204,6 +207,34 @@ public final class SplitRowsMethodEmitter {
                 + "Phase 2b C2 scope does not support path-less batched lookup splits");
         }
         return java.util.Optional.empty();
+    }
+
+    // -----------------------------------------------------------------------
+    // RecordTableField
+    // -----------------------------------------------------------------------
+
+    private static MethodSpec buildForRecordTable(ChildField.RecordTableField rtf) {
+        // Reuse the same unsupported checks as SplitTableField — single cardinality,
+        // ConditionJoin paths, and empty join paths are not supported.
+        boolean isList = rtf.returnType().wrapper().isList();
+        if (!isList) {
+            return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(),
+                "Single-cardinality RecordTableField not yet supported; list cardinality only.");
+        }
+        if (JoinPathEmitter.hasConditionJoin(rtf.joinPath())) {
+            return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(),
+                "RecordTableField '" + rtf.qualifiedName() + "' with a condition-join step cannot be "
+                + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
+        }
+        if (rtf.joinPath().isEmpty()) {
+            return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(),
+                "RecordTableField '" + rtf.qualifiedName() + "' requires a @reference path.");
+        }
+        // parentTable is null for @record parents — buildListMethod does not use it.
+        return buildListMethod(
+            rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
+            rtf.joinPath(), rtf.filters(), rtf.batchKey(), /* parentTable */ null,
+            /* lookupMapping */ null);
     }
 
     /**

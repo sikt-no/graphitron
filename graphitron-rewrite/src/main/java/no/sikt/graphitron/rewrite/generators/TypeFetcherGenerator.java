@@ -115,7 +115,8 @@ public class TypeFetcherGenerator {
         ChildField.SplitTableField.class,
         ChildField.SplitLookupTableField.class,
         ChildField.PropertyField.class,
-        ChildField.RecordField.class);
+        ChildField.RecordField.class,
+        ChildField.RecordTableField.class);
 
     /**
      * Leaves that can never reach the fetcher switch at runtime: {@link InputField} leaves are
@@ -206,8 +207,6 @@ public class TypeFetcherGenerator {
             // inline emission via TypeClassGenerator.$fields; see G5 and argres Phase 2a)
             Map.entry(ChildField.TableInterfaceField.class,
                 "TableInterfaceField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3"),
-            Map.entry(ChildField.RecordTableField.class,
-                "RecordTableField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(ChildField.RecordLookupTableField.class,
                 "RecordLookupTableField not yet implemented — see rewrite-roadmap.md"),
             // ChildField stubs — remaining direct permits
@@ -335,7 +334,10 @@ public class TypeFetcherGenerator {
                 case ChildField.LookupTableField ignored        -> { }
                 case ChildField.NodeIdField ignored             -> { }
                 case ChildField.TableInterfaceField f           -> builder.addMethod(stub(f));
-                case ChildField.RecordTableField f              -> builder.addMethod(stub(f));
+                case ChildField.RecordTableField rtf -> {
+                    builder.addMethod(buildRecordTableDataFetcher(rtf, resultType));
+                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rtf, /* parentTable= */ null));
+                }
                 case ChildField.RecordLookupTableField f        -> builder.addMethod(stub(f));
                 case ChildField.TableMethodField f              -> builder.addMethod(stub(f));
                 case ChildField.InterfaceField f                -> builder.addMethod(stub(f));
@@ -396,10 +398,11 @@ public class TypeFetcherGenerator {
             builder.addMethod(buildReverseOrderByHelper());
         }
 
-        // Emit scatterByIdx helper whenever any Split* field is present — shared across all
-        // SplitRowsMethodEmitter-emitted rows methods in this class (argres Phase 2b).
+        // Emit scatterByIdx helper whenever any Split* or RecordTable field is present — shared
+        // across all SplitRowsMethodEmitter-emitted rows methods in this class.
         boolean hasSplitField = fields.stream().anyMatch(f ->
-            f instanceof ChildField.SplitTableField || f instanceof ChildField.SplitLookupTableField);
+            f instanceof ChildField.SplitTableField || f instanceof ChildField.SplitLookupTableField
+            || f instanceof ChildField.RecordTableField);
         if (hasSplitField) {
             builder.addMethod(SplitRowsMethodEmitter.buildScatterByIdxHelper());
         }
@@ -1131,6 +1134,49 @@ public class TypeFetcherGenerator {
         return CodeBlock.builder()
             .addStatement("$T name = graphitronContext(env).getTenantId(env) + $S + $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
                 String.class, "/", String.class, "/")
+            .build();
+    }
+
+    /**
+     * Builds the DataFetcher method for a {@link ChildField.RecordTableField}. Shape is identical
+     * to {@link #buildSplitQueryDataFetcher} except key extraction uses
+     * {@link GeneratorUtils#buildRecordKeyExtraction} (backing-object accessor) instead of
+     * {@link GeneratorUtils#buildKeyExtraction} (jOOQ table-row accessor).
+     */
+    private static MethodSpec buildRecordTableDataFetcher(
+            ChildField.RecordTableField rtf,
+            GraphitronType.ResultType resultType) {
+
+        boolean isList = rtf.returnType().wrapper().isList();
+        var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
+        var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
+
+        var batchKey = rtf.batchKey();
+        TypeName keyType = GeneratorUtils.keyElementType(batchKey);
+        var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
+        String rowsMethodName = rtf.rowsMethodName();
+
+        TypeName lambdaKeysType = ParameterizedTypeName.get(LIST, keyType);
+        var lambdaBlock = CodeBlock.builder()
+            .add("($T keys, $T batchEnv) -> {\n", lambdaKeysType, BATCH_LOADER_ENV)
+            .indent()
+            .addStatement("$T dfe = ($T) batchEnv.getKeyContextsList().get(0)", ENV, ENV)
+            .addStatement("return $T.completedFuture($L(keys, dfe))", COMPLETABLE_FUTURE, rowsMethodName)
+            .unindent()
+            .add("}")
+            .build();
+
+        return MethodSpec.methodBuilder(rtf.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(returnType)
+            .addParameter(ENV, "env")
+            .addCode(buildDataLoaderName())
+            .addCode(
+                "$T loader = env.getDataLoaderRegistry()\n" +
+                "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
+                loaderType, DATA_LOADER_FACTORY, lambdaBlock)
+            .addCode(GeneratorUtils.buildRecordKeyExtraction((BatchKey.RowKeyed) batchKey, resultType))
+            .addStatement("return loader.load(key, env)")
             .build();
     }
 

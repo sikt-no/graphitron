@@ -7,9 +7,8 @@ package no.sikt.graphitron.rewrite.model;
  * {@link ChildField.SplitTableField}, {@link ChildField.SplitLookupTableField},
  * {@link ChildField.ServiceTableField}.
  *
- * <p>{@link ChildField.RecordTableField} and {@link ChildField.RecordLookupTableField} will
- * implement this interface once the builder can derive their batch key from the parent type's
- * primary key at classification time.
+ * <p>{@link ChildField.RecordLookupTableField} will implement this interface once the
+ * {@code BatchKey.ObjectBased} generator path is resolved (roadmap Backlog).
  *
  * <p>This interface is intentionally standalone (does not extend {@link GraphitronField}) so that
  * it can be applied as an orthogonal capability without being restricted by the sealed hierarchy.

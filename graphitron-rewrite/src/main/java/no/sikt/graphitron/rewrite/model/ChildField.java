@@ -291,8 +291,14 @@ public sealed interface ChildField extends GraphitronField
         List<JoinStep> joinPath,
         List<WhereFilter> filters,
         OrderBySpec orderBy,
-        PaginationSpec pagination
-    ) implements TableTargetField {}
+        PaginationSpec pagination,
+        BatchKey batchKey
+    ) implements TableTargetField, BatchKeyField {
+        @Override
+        public String rowsMethodName() {
+            return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
+        }
+    }
 
     record RecordLookupTableField(
         String parentTypeName,
