@@ -2,6 +2,7 @@
 
 This document tracks remaining generator work and design principles for the rewrite pipeline.
 For the model taxonomy (types, fields, directives, and what they generate), see [Code Generation Triggers](../code-generation-triggers.md).
+For legacy-vs-rewrite feature coverage, see [Parity Matrix](../parity-matrix.md).
 
 ---
 
@@ -164,7 +165,7 @@ Unplanned items. Pick one, draft a plan, then move to Active.
 
 **Priority (architecture review, 2026-04-17):**
 
-- **Legacy-vs-rewrite parity matrix** **[Unplanned]** — document which features each generator supports (mutations, split queries, federation, connections, interfaces, unions, platformId). Lives in a new `docs/parity-matrix.md`; link from the top of this file when it exists.
+- **Legacy-vs-rewrite parity matrix** **[Done]** — `docs/parity-matrix.md`.
 - **`BatchKey.ObjectBased` generator path decision** **[Unplanned]** — `ObjectBased` exists in the sealed hierarchy but no generator emits for it. Decide: collapse into `RecordKeyed` (A) vs implement a distinct `selectManyByObjectKeys` (B). Blocks any future `ObjectBased`-emitting classifier.
 - **Rebalance test pyramid toward SDL→classified-model→emitted-code pipeline tests** **[Unplanned]** — per-variant structural validator tests (53 classes) dominate the surface; pipeline coverage lives in a single `GraphitronSchemaBuilderTest`. New test investment should go into the classification→emission chain keyed off `graphitron-rewrite-test-fixtures`.
 - **Decompose `FieldBuilder`** **[Unplanned]** — split along the field taxonomy after argument-resolution Phase 2 lands. Blocked on Argument-resolution unification (Active).
@@ -244,9 +245,7 @@ Addressed by the Stubbed-variant validator plan (Done at `9ba498bc` + `7cf568f4`
 
 ### Legacy-vs-rewrite parity is undocumented
 
-The rewrite is a clean reimplementation with no shared code paths, but no doc states which schema features work in each generator. Mutations are entirely stubbed in the rewrite; legacy supports them. Users cannot plan migration and contributors cannot see where the rewrite is behind.
-
-Tracked as the Legacy-vs-rewrite parity matrix Backlog item. Should live in a new `docs/parity-matrix.md` enumerating every directive and every field-variant family, per-generator, with a one-line status (✅ supported / ⏳ stubbed / ❌ no classifier). Linked from the top of this file once it exists.
+Addressed by `docs/parity-matrix.md`.
 
 ---
 
