@@ -122,10 +122,6 @@ Iterate every sealed root in `model/` and assert every permit has at least one c
 
 Unified `ArgumentRef` classification + projection in the builder; gates `@condition`-on-fields, `InputColumnBinding`, and every future argument category. `FieldBuilder` is ~1350 LOC around the three-pass argument model. Phase 1 (classification + projection) shipped; Phase 2 (generator-side migration) is next and gates six downstream features including the `FieldBuilder` decomposition.
 
-### Stubbed-variant validator **[Pending Review]** — [plan-stubbed-variant-validator.md](plan-stubbed-variant-validator.md)
-
-`GraphitronSchemaValidator` rejects schemas whose classification lands on a `NOT_IMPLEMENTED_REASONS` variant; `ValidateMojo` fails the build on rewrite validation errors by default. Implemented; awaiting independent review.
-
 ### G5 — Inline `TableField` emission **[Done]** — [plan-g5-inline-tablefield.md](plan-g5-inline-tablefield.md)
 
 `TableField` emission lives in `TypeClassGenerator.$fields` as a uniform `DSL.multiset` correlated subquery; `TableField` moved to the new `PROJECTED_LEAVES` partition set. C1–C4 landed; seven execution tests cover single-hop / multi-hop / list / self-ref / optional-parent cases. Three post-approval refinements (uniform multiset, runtime alias prefix, cardinality-driven FK direction) documented in the plan history. `ConditionJoin` runtime stub, `FkJoin.alias` dead storage, and `ArgCallEmitter` first-arg hardcode captured as classification-vocabulary followups items 5/6/7. Unblocks argres Phase 2a.
@@ -197,6 +193,7 @@ Short history — landings worth remembering when picking up related work.
 - `1e48c4ee` — Argument-resolution Phase 1. VALUES + JOIN lookup emission for `QueryLookupTableField`.
 - `aaadb78b` — Argument-resolution Phase 2a. Inline `ChildField.LookupTableField` emission via `InlineLookupTableFieldEmitter`; VALUES + explicit-ON keyset layered onto G5's correlated-subquery shape. `LookupTableField` moved to `PROJECTED_LEAVES`. Classifier rejects `@asConnection` and Single-cardinality on inline `@lookupKey`. Co-lands `LookupValuesJoinEmitter.buildChildInputRowsMethod` (SelectedField-based arg extraction). Six execution tests via `Film.actors(actor_id:)` junction fixture.
 - `7417f53` — Body-substring test rewrite. `TypeSpecAssertions` helper (`hasFieldsArm`, `wiringFor(field) → DataFetcherKind`, `hasNoDataFetchers`) + 28-site migration across 6 test files. 28 → 3 intentionally-marked sites, each justified inline. C3 (lint gate) deferred per OD 3. Follow-up (post-Done): `filmsConnection_rejectsFirstAndLastTogether` execution test landed, deleting the Relay-validation kept-with-marker; remaining three markers are `queryLookupField_idListKey_bindsViaColumnDataTypeInInputRowsHelper`, `connectionField_customPaginationArgNames_emittedInFetcher`, `connectionField_withOrderByArg_extraFieldsComeFromOrderingResult`. CLAUDE.md ban now matches test-file reality.
+- `9ba498bc` + `7cf568f4` — Stubbed-variant validator. `GraphitronSchemaValidator.validateVariantIsImplemented` reads `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` and appends a classification error when a field's variant is stubbed. `ValidateMojo` fails the build on rewrite validation errors by default (`-Dgraphitron.failOnRewriteValidationError=false` escape hatch). `FieldValidationTestHelper.stubbedError` lock-steps tests to production reason strings. `StubbedVariantPipelineTest` regression covers SDL → classifier → validator end-to-end. Closes the "schema validates but generated fetcher throws at request time" loop.
 
 ---
 
@@ -239,7 +236,7 @@ Decision needed before implementing any `ObjectBased`-keyed service field. Track
 
 `GraphitronSchemaValidator` reports classification errors (`UnclassifiedType`, `UnclassifiedField`, structural-invariant failures) but has no visibility into which sealed-variant branches of `TypeFetcherGenerator` are implemented. A schema that validates successfully can still emit a Fetchers class whose methods throw `UnsupportedOperationException` at request time.
 
-Addressed by the Stubbed-variant validator plan (Active, Pending Review). The validator consumes `NOT_IMPLEMENTED_REASONS.keySet()` to reject stubbed-branch schemas at build time; `ValidateMojo` fails the build by default. This closes the loop on the "problems caught at build time" principle from `graphitron-principles.md`.
+Addressed by the Stubbed-variant validator plan (Done at `9ba498bc` + `7cf568f4`). The validator consumes `NOT_IMPLEMENTED_REASONS.keySet()` to reject stubbed-branch schemas at build time; `ValidateMojo` fails the build by default. This closes the loop on the "problems caught at build time" principle from `graphitron-principles.md`.
 
 ### Legacy-vs-rewrite parity is undocumented
 

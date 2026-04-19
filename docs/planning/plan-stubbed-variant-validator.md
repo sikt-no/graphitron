@@ -1,8 +1,8 @@
 # Stubbed-Variant Validator Plan (P2 #3)
 
-> **Status:** Pending Review
+> **Status:** Done
 >
-> Implemented at `9ba498bc` (core validator + test retrofit) and `7cf568f4` (ValidateMojo severity flip + pipeline regression) on `claude/graphitron-rewrite`.
+> Implemented at `9ba498bc` (core validator + test retrofit) and `7cf568f4` (ValidateMojo severity flip + pipeline regression) on `claude/graphitron-rewrite`. Reviewed 2026-04-19 (independent session, separate from implementer and from the prior review at `91bb3c9`).
 
 ## What shipped
 
@@ -95,6 +95,11 @@ follow-ups if worth pursuing:
 - **Stale reason strings.** Reasons in `NOT_IMPLEMENTED_REASONS` that
   drift from their stub's true limitation are invisible to these
   tests. A periodic audit is a doc-hygiene concern, not code.
+
+## History
+
+- **2026-04-19 (Pending Review → Done)** — Independent-session review. Verified `GraphitronSchemaValidator.validateVariantIsImplemented` (:154-162) reads `NOT_IMPLEMENTED_REASONS` via `.get(field.getClass())` and skips silently on non-stubbed leaves (the partition invariant). `ValidateMojo`: `rewriteErrors` correctly hoisted outside the rewrite try/catch (:64), `throw new MojoExecutionException` placed after the `legacyFailure` check (:83), escape hatch `-Dgraphitron.failOnRewriteValidationError=false` documented with the re-opened-UOE-window cost named inline. `FieldValidationTestHelper.stubbedError` reads the map at call time (:75-78) — test decoupling from reason-string text confirmed. `StubbedVariantPipelineTest`: three cases (stubbed mutation, stubbed query-node, implemented-variant negative) covering the dispatcher contract end-to-end. `NOT_IMPLEMENTED_REASONS` still accurate after argres Phase 2a — `LookupTableField` correctly migrated to `PROJECTED_LEAVES`, comment on :199 reflects the move. `mvn -pl :graphitron-rewrite test` — 465/465 green. `mvn -pl :graphitron-maven-plugin test` — 7/7 (1 unrelated Watch skip). Three items in "Items surfaced during implementation" remain as follow-ups; none block Done.
+- **2026-04-19 (Pending Review, prior reviewer pass)** — `91bb3c9` corrected dual-purpose claim about `ColumnReferenceFieldValidationTest`, cleaned C3 drift (dead `stubbedError` imports, stale "(stubbed)" suffixes, javadoc claim about `TableField` being stubbed). Status left at Pending Review — that reviewer addressed plan/test drift, not the Pending Review → Done gate.
 
 ## References
 
