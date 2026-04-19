@@ -1,6 +1,6 @@
 # Bug: `@table` + `@record` Input Types Fail Validation in Rewrite
 
-> **Status:** Draft
+> **Status:** In Progress
 >
 > Classifier fails on `@table` + `@record` combined on an input type — legacy tolerates this. Fix treats `@record` as authoritative and logs a warning naming `@table` as shadowed; introduces a builder warnings channel reusable by classification-vocabulary item 2.
 
