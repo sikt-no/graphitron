@@ -1,6 +1,6 @@
 # argres Phase 2a — Inline `LookupTableField` emission
 
-> **Status:** Approved
+> **Status:** In Progress
 >
 > Phase 2a of the [argument-resolution plan](argument-resolution.md). G5 has landed, clearing the inline-subquery prerequisite. Scope: the `ChildField.LookupTableField` variant only (inline, table-mapped parent). `SplitLookupTableField` is Phase 2b; `RecordLookupTableField` is Phase 2c (blocked on the `BatchKey` model question).
 
