@@ -89,6 +89,7 @@ public class TypeFetcherGenerator {
     private static final ClassName COMPLETABLE_FUTURE   = ClassName.get("java.util.concurrent", "CompletableFuture");
     private static final ClassName DATA_LOADER          = ClassName.get("org.dataloader", "DataLoader");
     private static final ClassName DATA_LOADER_FACTORY  = ClassName.get("org.dataloader", "DataLoaderFactory");
+    private static final ClassName BATCH_LOADER_ENV     = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
     private static final ClassName ARRAY_LIST           = ClassName.get("java.util", "ArrayList");
     private static final ClassName MAP                  = ClassName.get("java.util", "Map");
     /** {@code List<SortField<?>>} — the return type of every {@code *OrderBy} helper method. */
@@ -281,12 +282,12 @@ public class TypeFetcherGenerator {
                     builder.addMethod(buildServiceRowsMethod(stf, stf.returnType()));
                 }
                 case ChildField.SplitTableField stf -> {
-                    builder.addMethod(buildSplitQueryDataFetcher(stf.name(), stf.batchKey()));
-                    builder.addMethod(buildSplitRowsMethod(stf));
+                    builder.addMethod(buildSplitQueryDataFetcher(stf, stf.returnType(), parentTable));
+                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(stf, parentTable));
                 }
                 case ChildField.SplitLookupTableField slf -> {
-                    builder.addMethod(buildSplitQueryDataFetcher(slf.name(), slf.batchKey()));
-                    builder.addMethod(buildSplitRowsMethod(slf));
+                    builder.addMethod(buildSplitQueryDataFetcher(slf, slf.returnType(), parentTable));
+                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(slf, parentTable));
                 }
                 // Stub variants — see NOT_IMPLEMENTED_REASONS
                 case QueryField.QueryTableMethodTableField f  -> builder.addMethod(stub(f));
@@ -373,6 +374,14 @@ public class TypeFetcherGenerator {
             qtf.returnType().wrapper() instanceof FieldWrapper.Connection);
         if (hasConnectionField) {
             builder.addMethod(buildReverseOrderByHelper());
+        }
+
+        // Emit scatterByIdx helper whenever any Split* field is present — shared across all
+        // SplitRowsMethodEmitter-emitted rows methods in this class (argres Phase 2b).
+        boolean hasSplitField = fields.stream().anyMatch(f ->
+            f instanceof ChildField.SplitTableField || f instanceof ChildField.SplitLookupTableField);
+        if (hasSplitField) {
+            builder.addMethod(SplitRowsMethodEmitter.buildScatterByIdxHelper());
         }
 
         builder.addMethod(buildWiringMethod(typeName, className, parentTable, fields));
@@ -1010,28 +1019,75 @@ public class TypeFetcherGenerator {
     }
 
     // -----------------------------------------------------------------------
-    // SplitTableField / SplitLookupTableField — CompletableFuture stubs
+    // SplitTableField / SplitLookupTableField — DataLoader-registering fetcher + flat
+    // correlated-batch rows method. See SplitRowsMethodEmitter for the body shape.
     // -----------------------------------------------------------------------
 
-    private static MethodSpec buildSplitQueryDataFetcher(String fieldName, BatchKey batchKey) {
-        var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, ParameterizedTypeName.get(LIST, RECORD));
-        return MethodSpec.methodBuilder(fieldName)
+    /**
+     * Generates a DataLoader-registering fetcher for a Split* field. Shape mirrors the intended
+     * {@link #buildServiceDataFetcher} pattern — extract the per-parent batch key, register/lookup
+     * the DataLoader, delegate to the rows method via the batch lambda.
+     *
+     * <p>List cardinality: returns {@code CompletableFuture<List<Record>>}. Single: returns
+     * {@code CompletableFuture<Record>}.
+     *
+     * <p>The batch lambda uses {@code DataLoaderFactory.newDataLoader(BatchLoaderWithContext)} —
+     * picked by overload resolution from the {@code (keys, env) -> …} lambda shape. The older
+     * service-stub template cited {@code newDataLoaderWithContext} which does not exist on
+     * {@code DataLoaderFactory}; the rows-method-takes-SelectedField shape was based on a similar
+     * mis-cited {@code DataFetchingFieldSelectionSet.getField(String)} API — also absent. Phase 2b
+     * drops both: the rows method takes only {@code (List<KeyType>, DataFetchingEnvironment)}, and
+     * uses {@code env.getSelectionSet()} directly for projection (which is semantically identical
+     * to {@code sel.getSelectionSet()} when {@code sel} is the field being fetched).
+     */
+    private static MethodSpec buildSplitQueryDataFetcher(
+            BatchKeyField bkf,
+            ReturnTypeRef.TableBoundReturnType tb,
+            TableRef parentTable) {
+
+        boolean isList = tb.wrapper().isList();
+        var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
+        var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
+
+        var batchKey = bkf.batchKey();
+        TypeName keyType = GeneratorUtils.keyElementType(batchKey);
+        var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
+        String rowsMethodName = bkf.rowsMethodName();
+        String fieldName = bkfFieldName(bkf);
+
+        // Lambda parameters are explicitly typed. The target-typed inference otherwise picks
+        // `List<Object>` — the call `rowsMethodName(keys, dfe)` then can't narrow to
+        // `List<RowN<...>>`. Typing one lambda parameter requires typing both per Java lambda
+        // syntax rules.
+        TypeName lambdaKeysType = ParameterizedTypeName.get(LIST, keyType);
+        var lambdaBlock = CodeBlock.builder()
+            .add("($T keys, $T batchEnv) -> {\n", lambdaKeysType, BATCH_LOADER_ENV)
+            .indent()
+            .addStatement("$T dfe = ($T) batchEnv.getKeyContextsList().get(0)", ENV, ENV)
+            .addStatement("return $T.completedFuture($L(keys, dfe))", COMPLETABLE_FUTURE, rowsMethodName)
+            .unindent()
+            .add("}")
+            .build();
+
+        var methodBuilder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
             .addParameter(ENV, "env")
-            .addStatement("throw new $T()", UnsupportedOperationException.class)
-            .build();
+            .addStatement("$T name = graphitronContext(env).getDataLoaderName(env)", String.class)
+            .addCode(
+                "$T loader = env.getDataLoaderRegistry()\n" +
+                "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
+                loaderType, DATA_LOADER_FACTORY, lambdaBlock);
+
+        methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, parentTable));
+        return methodBuilder.addStatement("return loader.load(key, env)").build();
     }
 
-    private static MethodSpec buildSplitRowsMethod(BatchKeyField bkf) {
-        TypeName keysElementType = GeneratorUtils.keyElementType(bkf.batchKey());
-        var sourcesType = ParameterizedTypeName.get(LIST, keysElementType);
-        return MethodSpec.methodBuilder(bkf.rowsMethodName())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(Object.class)
-            .addParameter(sourcesType, "sources")
-            .addStatement("throw new $T()", UnsupportedOperationException.class)
-            .build();
+    private static String bkfFieldName(BatchKeyField bkf) {
+        if (bkf instanceof ChildField.SplitTableField stf) return stf.name();
+        if (bkf instanceof ChildField.SplitLookupTableField slf) return slf.name();
+        throw new IllegalArgumentException(
+            "buildSplitQueryDataFetcher does not handle " + bkf.getClass().getSimpleName());
     }
 
     // -----------------------------------------------------------------------

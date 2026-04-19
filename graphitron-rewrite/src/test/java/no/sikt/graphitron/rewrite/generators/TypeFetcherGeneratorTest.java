@@ -337,11 +337,21 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void splitQuery_rowsMethodTakesTypedKeyList() {
+    void splitQuery_rowsMethodTakesTypedKeyListAndEnv() {
         var m = method(specWithSplitQuery("Language", "films"), "rowsFilms");
         assertThat(m.parameters()).extracting(p -> p.type().toString())
-            .containsExactly("java.util.List<org.jooq.Row1<java.lang.Integer>>");
-        assertThat(m.parameters()).extracting(p -> p.name()).containsExactly("sources");
+            .containsExactly(
+                "java.util.List<org.jooq.Row1<java.lang.Integer>>",
+                "graphql.schema.DataFetchingEnvironment");
+        assertThat(m.parameters()).extracting(p -> p.name())
+            .containsExactly("keys", "env");
+    }
+
+    @Test
+    void splitQuery_rowsMethodReturnsListOfListOfRecord() {
+        var m = method(specWithSplitQuery("Language", "films"), "rowsFilms");
+        assertThat(m.returnType().toString())
+            .isEqualTo("java.util.List<java.util.List<org.jooq.Record>>");
     }
 
     // ===== @service field with TableBoundReturnType =====
