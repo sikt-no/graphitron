@@ -48,6 +48,8 @@ Each cursor is a Base64-encoded NUL-delimited string: column values joined by `\
 
 No type tags — the ORDER BY columns in `ConnectionResult.orderByColumns` carry the type information. `DataType.convert(token)` reconstructs the correct Java type during decode.
 
+> **Oracle warning:** Oracle `VARCHAR2`/`CLOB` columns can contain NUL bytes (`\u0000`), unlike PostgreSQL. If a sort column value contains a NUL byte, the cursor will be corrupted on decode. This is rare in practice, but Oracle users should avoid using columns that may contain NUL bytes as connection sort keys.
+
 ### Backward pagination invariants
 
 - `backward = last != null`
