@@ -130,7 +130,7 @@ Unified `ArgumentRef` classification + projection in the builder; gates `@condit
 
 `TableField` emission lives in `TypeClassGenerator.$fields` as a uniform `DSL.multiset` correlated subquery; `TableField` moved to the new `PROJECTED_LEAVES` partition set. C1–C4 landed; seven execution tests cover single-hop / multi-hop / list / self-ref / optional-parent cases. Three post-approval refinements (uniform multiset, runtime alias prefix, cardinality-driven FK direction) documented in the plan history. `ConditionJoin` runtime stub, `FkJoin.alias` dead storage, and `ArgCallEmitter` first-arg hardcode captured as classification-vocabulary followups items 5/6/7. Unblocks argres Phase 2a.
 
-### argres Phase 2a — Inline `LookupTableField` emission **[In Progress]** — [plan-argres-phase-2a.md](plan-argres-phase-2a.md)
+### argres Phase 2a — Inline `LookupTableField` emission **[Pending Review]** — [plan-argres-phase-2a.md](plan-argres-phase-2a.md)
 
 Extend G5's `TypeClassGenerator.$fields` inline emission to `ChildField.LookupTableField` by layering a VALUES + USING keyset onto the correlated subquery shape. `LookupTableField` moves from `NOT_IMPLEMENTED_REASONS` to `PROJECTED_LEAVES`. Adds a child-facing variant of `LookupValuesJoinEmitter.buildInputRowsMethod` that reads `@lookupKey` args from a `SelectedField` instead of the outer `DataFetchingEnvironment`. Two-commit structure (emitter + switch arm + partition migration; then schema fixture + execution tests). `SplitLookupTableField` (Phase 2b) and `RecordLookupTableField` (Phase 2c, blocked on `BatchKey` model question) remain out of scope.
 
