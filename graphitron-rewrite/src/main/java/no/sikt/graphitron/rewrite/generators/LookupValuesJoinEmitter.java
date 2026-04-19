@@ -23,26 +23,33 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
 
 /**
  * Emits the VALUES + JOIN lookup select for a {@link LookupField}, driven by its
- * {@link LookupMapping}.
+ * {@link LookupMapping}. Two call sites consume this emitter — the Phase 1 root-lookup path
+ * and the Phase 2a inline-child-lookup path — with slightly different plumbing at each.
  *
- * <p>Each lookup field gets two generated artifacts in its {@code *Fetchers} class:
- * <ol>
- *   <li>A pure helper {@code <fieldName>InputRows(env, table) -> Row[]} that extracts each
- *       {@code @lookupKey} arg from the {@code DataFetchingEnvironment} and builds a typed
- *       {@code Row} per input index using {@code DSL.val(value, column.getDataType())}. jOOQ
- *       applies the target column's Converter internally; no SQL-level {@code CAST} is
- *       rendered. Pure function of {@code env} + {@code table} — unit-testable in isolation.</li>
- *   <li>The fetcher body that calls the helper, short-circuits on empty input, builds a
- *       {@code DSL.values(rows).as("<fieldName>Input", "idx", "COL1", …)} derived table,
- *       joins it via {@code USING (COL1, COL2, …)}, and orders by the derived table's
- *       {@code idx} column to preserve input ordering.</li>
- * </ol>
+ * <p><b>Root-lookup path (Phase 1)</b> — {@link QueryField.QueryLookupTableField}.
+ * {@link #buildInputRowsMethod} emits the input-rows helper into the enclosing {@code *Fetchers}
+ * class (args read from {@code DataFetchingEnvironment}). {@link #buildFetcherBody} emits the
+ * fetcher body: helper call, empty short-circuit, {@code DSL.values(rows).as(...)} derived
+ * table, {@code .join(input).using(table.COL1, table.COL2, …)}, and
+ * {@code .orderBy(input.field("idx"))} to preserve input ordering. {@code USING} is safe because
+ * the root lookup's {@code FROM} side is the target table only — no FK chain can bring in a
+ * duplicate column name.
  *
- * <p>USING-join works by construction because the VALUES column labels are emitted to match
- * the target column names ({@code LookupColumn.targetColumn().javaName()}); the {@code idx}
- * ordering column is naturally excluded from USING because it is not on the target table.
+ * <p><b>Child-lookup path (Phase 2a)</b> — {@link ChildField.LookupTableField}.
+ * {@link #buildChildInputRowsMethod} emits the input-rows helper into the enclosing type class
+ * (e.g. {@code Film}); args come from a {@code SelectedField} instead of the outer
+ * {@code DataFetchingEnvironment} because the lookup is projected inline by the parent's
+ * {@code $fields}. The VALUES derived-table join is emitted by
+ * {@link InlineLookupTableFieldEmitter} using an explicit {@code ON} predicate rather than
+ * {@code USING} — the child path's FK chain may traverse a junction table whose column name
+ * collides with the lookup-key target column (see {@code InlineLookupTableFieldEmitter}'s
+ * class-level Javadoc).
  *
- * <p>See {@code docs/argument-resolution.md} for the Phase 1 design rationale.
+ * <p>Row construction is shared between both paths: typed {@code DSL.val(value, col.getDataType())}
+ * per cell, so jOOQ applies the target column's Converter internally and renders a plain JDBC
+ * bind — no SQL-level {@code CAST}. See {@link #addRowBuildingCore}.
+ *
+ * <p>See {@code docs/argument-resolution.md} for the full design rationale across both paths.
  */
 final class LookupValuesJoinEmitter {
 

@@ -15,9 +15,16 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 
 /**
  * Builds the switch-arm body for one inline {@link ChildField.LookupTableField} in
- * {@link TypeClassGenerator}'s {@code $fields} method. Layers a VALUES + USING keyset onto
+ * {@link TypeClassGenerator}'s {@code $fields} method. Layers a VALUES + JOIN keyset onto
  * G5's correlated-subquery shape: the inner subquery is narrowed by both the FK-path parent
  * correlation and the {@code @lookupKey} input rows.
+ *
+ * <p>The VALUES join uses an explicit {@code ON} predicate — not {@code USING} — because the
+ * inner FK chain may traverse a junction table whose column names collide with the lookup-key
+ * target columns (e.g. {@code film_actor.actor_id} alongside {@code actor.actor_id}).
+ * {@code USING} requires the column to appear exactly once on each side of the join;
+ * {@code ON} dereferences the VALUES column via {@code input.field(terminal.COL)} and therefore
+ * stays unambiguous regardless of what the FK chain brings in.
  *
  * <p>Relies on classifier invariants established by argres Phase 2a C1:
  * {@code LookupTableField.returnType().wrapper()} is neither {@link no.sikt.graphitron.rewrite.model.FieldWrapper.Connection}
