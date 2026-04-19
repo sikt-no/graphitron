@@ -137,7 +137,8 @@ public class TypeFetcherGenerator {
      * {@code GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus}.
      */
     public static final Set<Class<? extends GraphitronField>> PROJECTED_LEAVES = Set.of(
-        ChildField.TableField.class);
+        ChildField.TableField.class,
+        ChildField.LookupTableField.class);
 
     /**
      * Maps each unimplemented field variant class to the reason string that the generated stub
@@ -195,9 +196,8 @@ public class TypeFetcherGenerator {
             Map.entry(MutationField.MutationServiceRecordField.class,
                 "MutationServiceRecordField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #4"),
             // ChildField stubs — TableTargetField sub-hierarchy
-            // (ChildField.TableField is now in PROJECTED_LEAVES — inline emission via TypeClassGenerator.$fields)
-            Map.entry(ChildField.LookupTableField.class,
-                "LookupTableField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #1"),
+            // (ChildField.TableField and ChildField.LookupTableField are in PROJECTED_LEAVES —
+            // inline emission via TypeClassGenerator.$fields; see G5 and argres Phase 2a)
             Map.entry(ChildField.TableInterfaceField.class,
                 "TableInterfaceField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3"),
             Map.entry(ChildField.RecordTableField.class,
@@ -310,9 +310,9 @@ public class TypeFetcherGenerator {
                 case ChildField.ColumnReferenceField f          -> builder.addMethod(stub(f));
                 case ChildField.NodeIdField f                   -> builder.addMethod(stub(f));
                 case ChildField.NodeIdReferenceField f          -> builder.addMethod(stub(f));
-                // ChildField.TableField has no fetcher — inline projection via TypeClassGenerator.$fields.
+                // ChildField.TableField / LookupTableField have no fetcher — inline projection via TypeClassGenerator.$fields.
                 case ChildField.TableField ignored              -> { }
-                case ChildField.LookupTableField f              -> builder.addMethod(stub(f));
+                case ChildField.LookupTableField ignored        -> { }
                 case ChildField.TableInterfaceField f           -> builder.addMethod(stub(f));
                 case ChildField.RecordTableField f              -> builder.addMethod(stub(f));
                 case ChildField.RecordLookupTableField f        -> builder.addMethod(stub(f));
@@ -1077,6 +1077,16 @@ public class TypeFetcherGenerator {
                     "\n.dataFetcher($S, env -> { $T r = (($T) env.getSource()).get($S, $T.class); return r == null || r.isEmpty() ? null : r.get(0); })",
                     field.name(), resultClass, recordClass, field.name(), resultClass);
             }
+            var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
+                ColumnFetcherClassGenerator.CLASS_NAME);
+            return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.field($S)))",
+                field.name(), columnFetcherClass, DSL, field.name());
+        }
+        if (field instanceof ChildField.LookupTableField) {
+            // Inline projection: same outer shape as TableField list cardinality — the parent's
+            // record carries this field as an aliased multiset, and graphql-java iterates the
+            // Result directly. Single cardinality is rejected by the classifier for @lookupKey,
+            // so only the list path is needed.
             var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
                 ColumnFetcherClassGenerator.CLASS_NAME);
             return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.field($S)))",

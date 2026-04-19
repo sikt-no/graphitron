@@ -249,6 +249,14 @@ class FieldBuilder {
                     tfc.lookupMapping());
             }
             if (!hasSplitQuery && hasLookupKey) {
+                if (returnType.wrapper() instanceof FieldWrapper.Connection) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        "@asConnection on inline (non-@splitQuery) LookupTableField is not supported; add @splitQuery for batched connection semantics");
+                }
+                if (returnType.wrapper() instanceof FieldWrapper.Single) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        "Single-cardinality @lookupKey is not supported; pass a list-returning field or drop @lookupKey");
+                }
                 return new no.sikt.graphitron.rewrite.model.ChildField.LookupTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
                     tfc.lookupMapping());

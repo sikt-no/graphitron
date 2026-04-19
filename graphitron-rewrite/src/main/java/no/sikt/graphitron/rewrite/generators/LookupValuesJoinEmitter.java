@@ -18,6 +18,7 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.ENV;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.LIST;
+import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.SELECTED_FIELD;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
 
 /**
@@ -93,13 +94,7 @@ final class LookupValuesJoinEmitter {
      * @param targetTableClass the JavaPoet reference to the concrete jOOQ table class (e.g. {@code Film})
      */
     static MethodSpec buildInputRowsMethod(LookupField field, ClassName targetTableClass) {
-        List<LookupMapping.LookupColumn> columns = field.lookupMapping().columns();
-        if (columns.isEmpty()) {
-            // projectForFilter enforces non-empty LookupMapping before classification; reaching this
-            // is a generator-side bug, not a schema error.
-            throw new IllegalStateException(
-                "LookupField '" + fieldName(field) + "' has no lookup columns; classifier invariant violated");
-        }
+        List<LookupMapping.LookupColumn> columns = requireColumns(field);
 
         var builder = MethodSpec.methodBuilder(inputRowsMethodName(field))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -108,6 +103,7 @@ final class LookupValuesJoinEmitter {
             .addParameter(targetTableClass, "table");
 
         // Extract each arg into a local. Lists are List<?> (nullable); scalars are Object.
+        // env.getArgument is <T>-inferred so the cast is implicit.
         for (var col : columns) {
             String local = argLocalName(col);
             if (col.list()) {
@@ -117,6 +113,64 @@ final class LookupValuesJoinEmitter {
             }
         }
 
+        addRowBuildingCore(builder, columns);
+        return builder.build();
+    }
+
+    /**
+     * Child-field variant of {@link #buildInputRowsMethod}. Reads {@code @lookupKey} args from a
+     * {@link graphql.schema.SelectedField} instead of a {@code DataFetchingEnvironment}, since
+     * the args live on the child selection when the lookup is projected inline by a parent's
+     * {@code $fields} (argres Phase 2a). Row-construction core is shared with the root variant.
+     *
+     * <p>Signature: {@code <fieldName>InputRows(SelectedField sf, <TargetTable> table) -> RowN[]}.
+     *
+     * <p>{@code SelectedField.getArguments()} returns {@code Map<String, Object>}; list args need
+     * an explicit {@code (List<?>)} cast to match the typed-local declaration the shared core
+     * expects.
+     */
+    static MethodSpec buildChildInputRowsMethod(LookupField field, ClassName targetTableClass) {
+        List<LookupMapping.LookupColumn> columns = requireColumns(field);
+
+        var builder = MethodSpec.methodBuilder(inputRowsMethodName(field))
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(ROW_ARRAY)
+            .addParameter(SELECTED_FIELD, "sf")
+            .addParameter(targetTableClass, "table");
+
+        // Extract each arg. sf.getArguments() is Map<String,Object>; list args take an explicit cast.
+        for (var col : columns) {
+            String local = argLocalName(col);
+            if (col.list()) {
+                builder.addStatement("$T<?> $L = ($T<?>) sf.getArguments().get($S)",
+                    LIST, local, LIST, col.argName());
+            } else {
+                builder.addStatement("$T $L = sf.getArguments().get($S)", Object.class, local, col.argName());
+            }
+        }
+
+        addRowBuildingCore(builder, columns);
+        return builder.build();
+    }
+
+    /** Classifier-invariant check shared by the root and child input-rows builders. */
+    private static List<LookupMapping.LookupColumn> requireColumns(LookupField field) {
+        List<LookupMapping.LookupColumn> columns = field.lookupMapping().columns();
+        if (columns.isEmpty()) {
+            // projectForFilter enforces non-empty LookupMapping before classification; reaching this
+            // is a generator-side bug, not a schema error.
+            throw new IllegalStateException(
+                "LookupField '" + fieldName(field) + "' has no lookup columns; classifier invariant violated");
+        }
+        return columns;
+    }
+
+    /**
+     * Shared row-building tail: row-count computation, empty short-circuit, typed-value loop,
+     * return. Assumes each column's value is already in a local named via {@link #argLocalName}
+     * and that {@code table} refers to the target-table alias.
+     */
+    private static void addRowBuildingCore(MethodSpec.Builder builder, List<LookupMapping.LookupColumn> columns) {
         // Row count N — from the first list column's length, or 1 if all scalar.
         var primaryList = columns.stream().filter(LookupMapping.LookupColumn::list).findFirst().orElse(null);
         if (primaryList == null) {
@@ -152,7 +206,6 @@ final class LookupValuesJoinEmitter {
         builder.addStatement("rows[i] = $T.row(cells)", DSL);
         builder.endControlFlow();
         builder.addStatement("return rows");
-        return builder.build();
     }
 
     /**

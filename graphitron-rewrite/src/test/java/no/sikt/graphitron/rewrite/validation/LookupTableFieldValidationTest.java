@@ -14,7 +14,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 import java.util.List;
 import java.util.Optional;
 
-import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,21 +28,23 @@ class LookupTableFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        STUBBED_SINGLE("single return — not yet implemented, produces stubbed-variant error",
+        // Single-cardinality @lookupKey is now rejected at classifier time (argres Phase 2a C1);
+        // it cannot reach the validator. Kept as a structural-validator smoke test: the model
+        // record itself is constructible, and the validator has no extra errors to add.
+        SINGLE_NOW_PROJECTED("single return — no validator errors; classifier rejection prevents reaching this state",
             new LookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null,
                 EMPTY_LOOKUP),
-            List.of(stubbedError("Language.film", LookupTableField.class))),
+            List.of()),
 
-        STUBBED_LIST("list return — not yet implemented, produces stubbed-variant error",
+        LIST_PROJECTED("list return — inline-projected, no validator errors",
             new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), new OrderBySpec.None(), null,
                 EMPTY_LOOKUP),
-            List.of(stubbedError("Language.films", LookupTableField.class))),
+            List.of()),
 
-        CONNECTION_BLOCKED("connection return — not valid on lookup field (and stubbed)",
+        CONNECTION_BLOCKED("connection return — not valid on lookup field (validator mirror of classifier rejection)",
             new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true)), List.of(), List.of(), new OrderBySpec.None(), null,
                 EMPTY_LOOKUP),
-            List.of("Field 'Language.films': lookup fields must not return a connection",
-                stubbedError("Language.films", LookupTableField.class)));
+            List.of("Field 'Language.films': lookup fields must not return a connection"));
 
         private final String description;
         private final GraphitronField field;

@@ -71,7 +71,12 @@ public class TypeClassGenerator {
             .map(f -> (ChildField.TableField) f)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
-        return buildTypeSpec(typeName, type.table(), columnFields, platformIdFields, tableFields);
+        var lookupTableFields = schema.fieldsOf(typeName).stream()
+            .filter(f -> f instanceof ChildField.LookupTableField)
+            .map(f -> (ChildField.LookupTableField) f)
+            .sorted(Comparator.comparing(GraphitronField::name))
+            .toList();
+        return buildTypeSpec(typeName, type.table(), columnFields, platformIdFields, tableFields, lookupTableFields);
     }
 
     /**
@@ -81,15 +86,26 @@ public class TypeClassGenerator {
      * @param platformIdFields the legacy platform-id fields whose getters return {@code SelectField<String>}
      * @param tableFields     the inline {@code @reference}-path table fields emitted as correlated
      *                        subqueries via {@link InlineTableFieldEmitter}
+     * @param lookupTableFields the inline {@code @lookupKey} table fields emitted as correlated
+     *                        subqueries with a VALUES + USING keyset via
+     *                        {@link InlineLookupTableFieldEmitter}. Each field also contributes a
+     *                        private input-rows helper method on the type class.
      */
     static TypeSpec buildTypeSpec(String typeName, TableRef tableRef,
             List<ChildField.ColumnField> columnFields,
             List<ChildField.PlatformIdField> platformIdFields,
-            List<ChildField.TableField> tableFields) {
-        return TypeSpec.classBuilder(typeName)
+            List<ChildField.TableField> tableFields,
+            List<ChildField.LookupTableField> lookupTableFields) {
+        var builder = TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
-            .addMethod(build$FieldsMethod(tableRef, columnFields, platformIdFields, tableFields))
-            .build();
+            .addMethod(build$FieldsMethod(tableRef, columnFields, platformIdFields, tableFields, lookupTableFields));
+        for (var lf : lookupTableFields) {
+            var targetJooqTableClass = ClassName.get(
+                no.sikt.graphitron.rewrite.RewriteConfig.getGeneratedJooqPackage() + ".tables",
+                lf.returnType().table().javaClassName());
+            builder.addMethod(LookupValuesJoinEmitter.buildChildInputRowsMethod(lf, targetJooqTableClass));
+        }
+        return builder.build();
     }
 
     /**
@@ -109,7 +125,8 @@ public class TypeClassGenerator {
     private static MethodSpec build$FieldsMethod(TableRef tableRef,
             List<ChildField.ColumnField> columnFields,
             List<ChildField.PlatformIdField> platformIdFields,
-            List<ChildField.TableField> tableFields) {
+            List<ChildField.TableField> tableFields,
+            List<ChildField.LookupTableField> lookupTableFields) {
         var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
@@ -140,6 +157,11 @@ public class TypeClassGenerator {
         for (var tf : tableFields) {
             builder.addCode("        case $S -> {\n", tf.name());
             builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, "table"));
+            builder.addCode("        }\n");
+        }
+        for (var lf : lookupTableFields) {
+            builder.addCode("        case $S -> {\n", lf.name());
+            builder.addCode("$L", InlineLookupTableFieldEmitter.buildSwitchArmBody(lf, "table"));
             builder.addCode("        }\n");
         }
         builder.addCode("        default -> { } // unhandled fields\n");

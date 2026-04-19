@@ -43,6 +43,7 @@ class TypeClassGeneratorTest {
             filmTable(List.of(col("id", "ID", "java.lang.Integer"))),
             FILM_COLUMNS,
             List.of(),
+            List.of(),
             List.of());
     }
 
@@ -74,6 +75,7 @@ class TypeClassGeneratorTest {
             filmTable(),
             List.of(),
             List.of(platformIdField("Film", "id", "getId")),
+            List.of(),
             List.of());
         var code = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("$fields")).findFirst().orElseThrow()
@@ -88,6 +90,7 @@ class TypeClassGeneratorTest {
             filmTable(),
             List.of(),
             List.of(platformIdField("Film", "personId", "getPersonId")),
+            List.of(),
             List.of());
         var code = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("$fields")).findFirst().orElseThrow()

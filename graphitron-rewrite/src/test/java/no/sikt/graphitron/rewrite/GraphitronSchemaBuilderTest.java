@@ -1263,12 +1263,12 @@ class GraphitronSchemaBuilderTest {
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
-                actor(actor_id: ID! @lookupKey): Actor
+                actors(actor_id: [Int!]! @lookupKey): [Actor!]!
             }
             type Query { film: Film }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.ChildField.LookupTableField) schema.field("Film", "actor");
+                var f = (no.sikt.graphitron.rewrite.model.ChildField.LookupTableField) schema.field("Film", "actors");
                 // @lookupKey args are emitted via VALUES+JOIN from LookupMapping, not as filters.
                 assertThat(f.filters()).isEmpty();
                 assertThat(f.lookupMapping().columns()).hasSize(1);
