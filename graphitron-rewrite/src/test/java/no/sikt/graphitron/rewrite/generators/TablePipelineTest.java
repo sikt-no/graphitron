@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
+import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -98,13 +99,12 @@ class TablePipelineTest {
             type Film @table(name: "film") { title: String, filmId: Int @field(name: "film_id") }
             type Query { dummy: String }
             """);
-        var fields = filmSpec.methodSpecs().stream()
-            .filter(m -> m.name().equals("$fields")).findFirst().orElseThrow();
-        var code = fields.code().toString();
-        assertThat(code).contains("case \"title\"");
-        assertThat(code).contains("table.TITLE");
-        assertThat(code).contains("case \"filmId\"");
-        assertThat(code).contains("table.FILM_ID");
+        // Which SQL columns back which GraphQL fields is a $fields body-content question;
+        // compile tier (graphitron-rewrite-test-spec) catches a wrong Tables.FILM.TITLE reference,
+        // execution tier catches wrong values. Here we only verify the arms are present for each
+        // declared GraphQL field.
+        assertThat(TypeSpecAssertions.hasFieldsArm(filmSpec, "title")).isTrue();
+        assertThat(TypeSpecAssertions.hasFieldsArm(filmSpec, "filmId")).isTrue();
     }
 
     @Test
@@ -113,11 +113,8 @@ class TablePipelineTest {
             type Film @table(name: "film") { title: String, hidden: String @notGenerated }
             type Query { dummy: String }
             """);
-        var fields = filmSpec.methodSpecs().stream()
-            .filter(m -> m.name().equals("$fields")).findFirst().orElseThrow();
-        var code = fields.code().toString();
-        assertThat(code).contains("case \"title\"");
-        assertThat(code).doesNotContain("hidden");
+        assertThat(TypeSpecAssertions.hasFieldsArm(filmSpec, "title")).isTrue();
+        assertThat(TypeSpecAssertions.hasFieldsArm(filmSpec, "hidden")).isFalse();
     }
 
     // ===== Helpers =====

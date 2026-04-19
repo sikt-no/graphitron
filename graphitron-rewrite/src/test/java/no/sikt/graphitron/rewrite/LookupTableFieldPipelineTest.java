@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
+import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,9 +50,7 @@ class LookupTableFieldPipelineTest {
         var methodNames = filmClass.methodSpecs().stream().map(m -> m.name()).toList();
         assertThat(methodNames).contains("$fields", "actorsInputRows");
 
-        var dollarFields = filmClass.methodSpecs().stream()
-            .filter(m -> m.name().equals("$fields")).findFirst().orElseThrow();
-        assertThat(dollarFields.code().toString()).contains("case \"actors\"");
+        assertThat(TypeSpecAssertions.hasFieldsArm(filmClass, "actors")).isTrue();
     }
 
     @Test

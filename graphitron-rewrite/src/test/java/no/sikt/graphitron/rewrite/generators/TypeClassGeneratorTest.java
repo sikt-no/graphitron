@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -70,33 +71,28 @@ class TypeClassGeneratorTest {
     // ===== Platform-id fields =====
 
     @Test
-    void $fields_containsPlatformIdMethodCall() {
+    void $fields_platformIdField_producesSwitchArm() {
         var spec = TypeClassGenerator.buildTypeSpec("Film",
             filmTable(),
             List.of(),
             List.of(platformIdField("Film", "id", "getId")),
             List.of(),
             List.of());
-        var code = spec.methodSpecs().stream()
-            .filter(m -> m.name().equals("$fields")).findFirst().orElseThrow()
-            .code().toString();
-        assertThat(code).contains("case \"id\"");
-        assertThat(code).contains("table.getId()");
+        assertThat(TypeSpecAssertions.hasFieldsArm(spec, "id")).isTrue();
     }
 
     @Test
-    void $fields_platformIdUsesMethodCallNotFieldAccess() {
+    void $fields_platformIdField_producesSwitchArmForNamedGetter() {
         var spec = TypeClassGenerator.buildTypeSpec("Film",
             filmTable(),
             List.of(),
             List.of(platformIdField("Film", "personId", "getPersonId")),
             List.of(),
             List.of());
-        var code = spec.methodSpecs().stream()
-            .filter(m -> m.name().equals("$fields")).findFirst().orElseThrow()
-            .code().toString();
-        assertThat(code).contains("table.getPersonId()");
-        assertThat(code).doesNotContain("table.PERSONID");
+        assertThat(TypeSpecAssertions.hasFieldsArm(spec, "personId")).isTrue();
+        // Accessor selection (table.getPersonId() vs table.getId()) is a body-content question.
+        // Compile tier catches the wrong accessor via graphitron-rewrite-test-spec; execution
+        // tier catches wrong values via PlatformIdPipelineTest fixtures.
     }
 
     // ===== Signatures =====

@@ -4,6 +4,8 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.TestFixtures;
+import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
+import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.DataFetcherKind;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -139,12 +141,11 @@ class TypeFetcherGeneratorTest {
             .containsExactly("graphql.schema.DataFetchingEnvironment");
     }
 
-    @Test
-    void queryTableField_isNotStub() {
-        var field = queryTableField("films", true);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
-        assertThat(method(spec, "films").code().toString()).doesNotContain("UnsupportedOperationException");
-    }
+    // Dropped queryTableField_isNotStub / queryLookupField_rowsMethod_isNotStub /
+    // queryLookupField_scalarKey_isNotStub / connectionField_isNotStub: redundant with
+    // GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus's four-way
+    // partition — any leaf in IMPLEMENTED_LEAVES or PROJECTED_LEAVES is guaranteed not to
+    // route through stub(f).
 
     // ===== wiring() method =====
 
@@ -158,25 +159,25 @@ class TypeFetcherGeneratorTest {
     @Test
     void wiring_noFields_noDataFetchers() {
         var spec = TypeFetcherGenerator.generateTypeSpec("Film", null, List.of());
-        assertThat(method(spec, "wiring").code().toString()).doesNotContain("dataFetcher(");
+        assertThat(TypeSpecAssertions.hasNoDataFetchers(spec)).isTrue();
     }
 
     @Test
     void wiring_columnField_usesColumnFetcher() {
         var spec = TypeFetcherGenerator.generateTypeSpec("Film", FILM_TABLE,
             List.of(columnField("title", "title", "TITLE", "java.lang.String")));
-        var wiringCode = method(spec, "wiring").code().toString();
-        assertThat(wiringCode).contains("ColumnFetcher");
-        assertThat(wiringCode).contains("Tables.FILM.TITLE");
+        assertThat(TypeSpecAssertions.wiringFor(spec, "title"))
+            .contains(DataFetcherKind.COLUMN_FETCHER);
+        // The specific column reference (Tables.FILM.TITLE vs wrong column) is body-content —
+        // compile tier against real jOOQ catches it, execution tier catches wrong values.
     }
 
     @Test
     void wiring_queryField_usesPlainMethodReference() {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null,
             List.of(queryTableField("films", true)));
-        var wiringCode = method(spec, "wiring").code().toString();
-        assertThat(wiringCode).contains("QueryFetchers::films");
-        assertThat(wiringCode).doesNotContain("LightDataFetcher");
+        assertThat(TypeSpecAssertions.wiringFor(spec, "films"))
+            .contains(DataFetcherKind.METHOD_REFERENCE);
     }
 
     @Test
@@ -185,9 +186,8 @@ class TypeFetcherGeneratorTest {
             columnField("title", "title", "TITLE", "java.lang.String"),
             columnField("releaseYear", "release_year", "RELEASE_YEAR", "java.lang.Integer"));
         var spec = TypeFetcherGenerator.generateTypeSpec("Film", FILM_TABLE, fields);
-        var wiringCode = method(spec, "wiring").code().toString();
-        assertThat(wiringCode).contains("dataFetcher(\"title\"");
-        assertThat(wiringCode).contains("dataFetcher(\"releaseYear\"");
+        assertThat(TypeSpecAssertions.wiringFor(spec, "title")).isPresent();
+        assertThat(TypeSpecAssertions.wiringFor(spec, "releaseYear")).isPresent();
     }
 
     // ===== QueryLookupTableField =====
@@ -237,12 +237,10 @@ class TypeFetcherGeneratorTest {
             .containsExactly("graphql.schema.DataFetchingEnvironment");
     }
 
-    @Test
-    void queryLookupField_dataFetcher_delegatesToRowsMethod() {
-        var field = lookupQueryField("filmById", List.of(listKeyParam("film_id", "FILM_ID", "java.lang.Integer")));
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
-        assertThat(method(spec, "filmById").code().toString()).contains("lookupFilmById");
-    }
+    // Dropped queryLookupField_dataFetcher_delegatesToRowsMethod: asserted that filmById's body
+    // references lookupFilmById. A dangling helper reference would fail compile on
+    // graphitron-rewrite-test-spec; a wrong helper reference would fail execution. The sibling
+    // test queryLookupField_hasLookupRowsMethod asserts the helper method exists.
 
     @Test
     void queryLookupField_hasLookupRowsMethod() {
@@ -268,32 +266,20 @@ class TypeFetcherGeneratorTest {
             .containsExactly("graphql.schema.DataFetchingEnvironment");
     }
 
-    @Test
-    void queryLookupField_rowsMethod_isNotStub() {
-        var field = lookupQueryField("filmById", List.of(listKeyParam("film_id", "FILM_ID", "java.lang.Integer")));
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
-        assertThat(method(spec, "lookupFilmById").code().toString())
-            .doesNotContain("UnsupportedOperationException");
-    }
-
-    @Test
-    void queryLookupField_scalarKey_isNotStub() {
-        var fields = List.of(
-            listKeyParam("customer_id", "CUSTOMER_ID", "java.lang.Integer"),
-            scalarKeyParam("store_id", "STORE_ID", "java.lang.Integer"));
-        var field = lookupQueryField("customerById", fields);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
-        assertThat(method(spec, "customerById").code().toString())
-            .doesNotContain("UnsupportedOperationException");
-    }
+    // Dropped queryLookupField_rowsMethod_isNotStub / queryLookupField_scalarKey_isNotStub:
+    // see the top-of-class note at queryTableField_isNotStub — partition test covers this.
 
     @Test
     void queryLookupField_idListKey_bindsViaColumnDataTypeInInputRowsHelper() {
         var field = lookupQueryField("filmById", List.of(listIdKeyParam("film_id", "FILM_ID", "java.lang.Integer")));
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        // intentional body-content assertion — no structural equivalent.
         // Post argres Phase 1: column type info flows through the input-rows helper via
         // DSL.val(value, table.FILM_ID.getDataType()) — jOOQ's own Converter does the coercion.
-        // The legacy "stream().map(getDataType::convert)" call site is gone.
+        // If the getDataType() call is dropped, GraphQL String args won't coerce to the target
+        // column's Java type at bind time. Execution tier covers the end-to-end behaviour but
+        // the specific emitter call is tested here for faster diagnosis of regressions inside
+        // LookupValuesJoinEmitter.
         assertThat(method(spec, "filmByIdInputRows").code().toString()).contains("getDataType()");
     }
 
@@ -442,16 +428,10 @@ class TypeFetcherGeneratorTest {
             .endsWith("OrderByResult");
     }
 
-    @Test
-    void orderByArg_helperMethod_bodyConstructsOrderByResult() {
-        // The helper must construct OrderByResult — which packages both sort fields (for SQL)
-        // and cursor columns (for pagination) in a single object so the two are always in sync.
-        var field = queryTableFieldWithOrderByArg("films");
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
-        var body = method(spec, "filmsOrderBy").code().toString();
-        // Body must use the OrderByResult constructor, not return a bare list.
-        assertThat(body).contains("OrderByResult(");
-    }
+    // Dropped orderByArg_helperMethod_bodyConstructsOrderByResult: the sibling test
+    // orderByArg_helperMethod_returnsOrderByResult asserts the return type ends with
+    // OrderByResult. Java's type system forces the body to construct one — the body-content
+    // check was redundant with the return-type check.
 
     @Test
     void orderByArg_helperMethod_takesEnvParameter() {
@@ -462,12 +442,10 @@ class TypeFetcherGeneratorTest {
             .containsExactly("graphql.schema.DataFetchingEnvironment");
     }
 
-    @Test
-    void orderByArg_fetcherBody_callsHelperMethod() {
-        var field = queryTableFieldWithOrderByArg("films");
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
-        assertThat(method(spec, "films").code().toString()).contains("filmsOrderBy(env)");
-    }
+    // Dropped orderByArg_fetcherBody_callsHelperMethod: Pattern 2 — "method A references
+    // helper B" is compile-tier territory. Dangling reference fails test-spec compile; wrong
+    // reference fails execution. Test was tied to the emitter's literal "filmsOrderBy(env)"
+    // string, breaking on any refactor that changed call-site shape.
 
     @Test
     void noOrderByArg_noHelperMethod() {
@@ -515,19 +493,11 @@ class TypeFetcherGeneratorTest {
         assertThat(method(spec, "films").returnType().toString()).endsWith("ConnectionResult");
     }
 
-    @Test
-    void connectionField_isNotStub() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
-        assertThat(method(spec, "films").code().toString()).doesNotContain("UnsupportedOperationException");
-    }
+    // Dropped connectionField_isNotStub: see queryTableField_isNotStub — partition test covers it.
 
-    @Test
-    void connectionField_usesPaginationArgNamesFromModel() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
-        var code = method(spec, "films").code().toString();
-        assertThat(code).contains("\"first\"");
-        assertThat(code).contains("\"after\"");
-    }
+    // Dropped connectionField_usesPaginationArgNamesFromModel: Pattern 5 — the default
+    // pagination arg names (first/after/last/before) are exercised end-to-end by the 18+
+    // filmsConnection cases in graphitron-rewrite-test-spec's GraphQLQueryTest.
 
     @Test
     void connectionField_withOrderByArg_emitsHelperMethod() {
@@ -536,22 +506,8 @@ class TypeFetcherGeneratorTest {
         assertThat(spec.methodSpecs()).extracting(MethodSpec::name).contains("filmsOrderBy");
     }
 
-    @Test
-    void connectionField_withOrderByArg_fetcherCallsHelper() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null,
-            List.of(connectionFieldWithArgOrderBy("films")));
-        assertThat(method(spec, "films").code().toString()).contains("filmsOrderBy(env)");
-    }
-
-    @Test
-    void connectionField_withOrderByArg_extraFieldsComeFromOrderingResult() {
-        // Both orderBy (for SQL) and extraFields (for cursor) must be derived from the same dispatch.
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null,
-            List.of(connectionFieldWithArgOrderBy("films")));
-        var code = method(spec, "films").code().toString();
-        assertThat(code).contains("ordering.sortFields()");
-        assertThat(code).contains("ordering.columns()");
-    }
+    // Dropped connectionField_withOrderByArg_fetcherCallsHelper: Pattern 2 — helper-reference
+    // body assertion, covered by compile tier. Sibling test above asserts the helper exists.
 
     @Test
     void connectionField_customPaginationArgNames_emittedInFetcher() {
@@ -566,6 +522,11 @@ class TypeFetcherGeneratorTest {
             TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, true, 100, null)),
             List.of(), orderBy, customPagination);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        // intentional body-content assertion — no structural equivalent.
+        // Custom pagination arg names are not exercised by any execution-tier fixture (the
+        // test-spec schema uses the default first/after/last/before). Until a fixture with
+        // renamed args lands, verify model-driven arg names are emitted and the defaults are
+        // *not* emitted.
         var code = method(spec, "films").code().toString();
         assertThat(code).contains("\"pageSize\"");
         assertThat(code).contains("\"cursor\"");
@@ -575,30 +536,24 @@ class TypeFetcherGeneratorTest {
 
     // ===== Backward pagination and Relay validation =====
 
-    @Test
-    void connectionField_emitsLastAndBeforeArgReads() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
-        var code = method(spec, "films").code().toString();
-        assertThat(code).contains("\"last\"");
-        assertThat(code).contains("\"before\"");
-    }
+    // Dropped connectionField_emitsLastAndBeforeArgReads: Pattern 5 — backward-pagination
+    // execution covered by filmsConnection_backward_returnsLastNFilms and
+    // filmsConnection_backward_withBeforeCursor_returnsPrevPage.
 
     @Test
     void connectionField_emitsRelayValidation_firstAndLastConflict() {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
+        // intentional body-content assertion — no structural equivalent.
+        // Relay spec rejects schemas that pass both first and last; the generated fetcher
+        // throws IllegalArgumentException. No execution-tier test asserts the exception
+        // today; when one lands, delete this block. Tracked in the plan as an OD.
         var code = method(spec, "films").code().toString();
-        // Relay spec: must reject if both first and last are supplied
         assertThat(code).contains("IllegalArgumentException");
         assertThat(code).contains("first != null && last != null");
     }
 
-    @Test
-    void connectionField_emitsBackwardFlag() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
-        var code = method(spec, "films").code().toString();
-        assertThat(code).contains("backward");
-        assertThat(code).contains("last != null");
-    }
+    // Dropped connectionField_emitsBackwardFlag: Pattern 5 — backward semantics exercised by
+    // the filmsConnection_backward_* execution tests.
 
     @Test
     void connectionField_emitsReverseOrderByHelper() {
@@ -628,20 +583,24 @@ class TypeFetcherGeneratorTest {
         assertThat(spec.methodSpecs()).extracting(MethodSpec::name).doesNotContain("reverseOrderBy");
     }
 
-    @Test
-    void connectionField_usesSingleExpressionSeek() {
-        // Type-safe cursor: decodeCursor returns Field<?>[], used in .seek() directly — no if-branch
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
-        var code = method(spec, "films").code().toString();
-        assertThat(code).contains(".seek(seekFields)");
-        assertThat(code).doesNotContain("if (seekValues");
-    }
+    // Dropped connectionField_usesSingleExpressionSeek and connectionField_columnDrivenCursorDecode:
+    // Pattern 5 — cursor decode + seek semantics exercised end-to-end by
+    // filmsConnection_withAfterCursor_returnsNextPage and
+    // filmsConnection_backward_withBeforeCursor_returnsPrevPage. Any regression in the seek
+    // or decodeCursor shape breaks those queries.
 
     @Test
-    void connectionField_columnDrivenCursorDecode() {
-        // decodeCursor must receive extraFields (the ORDER BY column list) — not just the cursor string
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
+    void connectionField_withOrderByArg_extraFieldsComeFromOrderingResult() {
+        // intentional body-content assertion — no structural equivalent.
+        // Both orderBy (for SQL) and extraFields (for cursor) must be derived from the same
+        // OrderByResult dispatch — the same "ordering" local. If they diverge, SQL ORDER BY
+        // and cursor columns get out of sync, which execution-tier only catches on a specific
+        // multi-column ordering query with cursor pagination. Keep the body assertion as a
+        // faster diagnostic signal.
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null,
+            List.of(connectionFieldWithArgOrderBy("films")));
         var code = method(spec, "films").code().toString();
-        assertThat(code).contains("decodeCursor(cursor, extraFields)");
+        assertThat(code).contains("ordering.sortFields()");
+        assertThat(code).contains("ordering.columns()");
     }
 }

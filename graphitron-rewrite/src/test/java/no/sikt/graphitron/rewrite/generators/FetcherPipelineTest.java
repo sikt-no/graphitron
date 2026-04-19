@@ -5,6 +5,8 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
+import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
+import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.DataFetcherKind;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -87,31 +89,27 @@ class FetcherPipelineTest {
 
     @Test
     void wiring_columnField_usesColumnFetcher() {
-        var wiringCode = findWiring("FilmFetchers", """
+        var fetchers = findSpec("FilmFetchers", """
             type Film @table(name: "film") { title: String }
             type Query { dummy: String }
             """);
-        assertThat(wiringCode).contains("ColumnFetcher");
-        assertThat(wiringCode).doesNotContain("FilmFetchers::title");
+        assertThat(TypeSpecAssertions.wiringFor(fetchers, "title"))
+            .contains(DataFetcherKind.COLUMN_FETCHER);
     }
 
-    @Test
-    void columnField_withFieldDirective_usesRemappedColumn() {
-        var wiring = findWiring("FilmFetchers", """
-            type Film @table(name: "film") { filmId: Int @field(name: "film_id") }
-            type Query { dummy: String }
-            """);
-        assertThat(wiring).contains("FILM_ID");
-    }
+    // Dropped "columnField_withFieldDirective_usesRemappedColumn": the specific jOOQ column
+    // referenced by the ColumnFetcher (FILM_ID vs TITLE) is body-content. Compile tier catches a
+    // wrong Tables.FILM.<X> reference; execution tier catches wrong values. The classifier's
+    // @field(name:) handling is covered separately by GraphitronSchemaBuilderTest.
 
     @Test
     void notGeneratedField_isExcluded() {
-        var wiring = findWiring("FilmFetchers", """
+        var fetchers = findSpec("FilmFetchers", """
             type Film @table(name: "film") { title: String, hidden: String @notGenerated }
             type Query { dummy: String }
             """);
-        assertThat(wiring).contains("\"title\"");
-        assertThat(wiring).doesNotContain("\"hidden\"");
+        assertThat(TypeSpecAssertions.wiringFor(fetchers, "title")).isPresent();
+        assertThat(TypeSpecAssertions.wiringFor(fetchers, "hidden")).isEmpty();
     }
 
     // ===== Root query table fields =====
@@ -265,12 +263,6 @@ class FetcherPipelineTest {
             .filter(t -> t.name().equals(className))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Class not found: " + className));
-    }
-
-    private String findWiring(String className, String sdl) {
-        return findSpec(className, sdl).methodSpecs().stream()
-            .filter(m -> m.name().equals("wiring"))
-            .findFirst().orElseThrow().code().toString();
     }
 
     private MethodSpec method(TypeSpec spec, String name) {

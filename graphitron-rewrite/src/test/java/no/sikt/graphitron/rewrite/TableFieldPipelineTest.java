@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
+import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,11 +47,7 @@ class TableFieldPipelineTest {
             .findFirst()
             .orElseThrow();
 
-        var code = filmClass.methodSpecs().stream()
-            .filter(m -> m.name().equals("$fields")).findFirst().orElseThrow()
-            .code().toString();
-
-        assertThat(code).contains("case \"language\"");
+        assertThat(TypeSpecAssertions.hasFieldsArm(filmClass, "language")).isTrue();
     }
 
     @Test
