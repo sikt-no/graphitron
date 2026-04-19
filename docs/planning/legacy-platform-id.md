@@ -311,12 +311,19 @@ Mutation binding (previous Item 3) remains gated on argres Phase 3 and lands via
 
 **How the constants land on the test-spec table.** KjerneJooqGenerator X.Y does not ship with this plan; the test-spec cannot regenerate and get the constants for free. The production probe reads `<TableClass>.__ID_TYPE_ID` / `__ID_KEY_COLUMNS` by reflecting on the table class itself — so the test-spec's mechanism must also produce constants *on* the generated class, not a sibling file. A `*Ext.java` sibling (earlier-draft suggestion) doesn't deliver the same addressing shape and is rejected.
 
-Two viable mechanisms:
+**Primary mechanism: copy-and-edit a generated table class.**
 
-1. **Custom `JavaGenerator` subclass** — add a `GraphitronTestJavaGenerator extends JavaGenerator` to `graphitron-rewrite-test-fixtures` that overrides `generateTableClassFooter(JavaWriter, TableDefinition)` and emits the two constants per a hardcoded table-name → typeId/keyColumns map. Wire via `<generator><name>` in `graphitron-rewrite-test-fixtures/pom.xml` (currently unset — stock `JavaGenerator`). Mirrors what KjerneJooqGenerator will do in production; reverts cleanly post-X.Y by dropping the subclass and the `<name>` config.
-2. **Test-fixture fallback probe** — extend `JooqCatalog.nodeIdMetadata` to additionally check a table-name → metadata map supplied by the build, used only when the class-level constants are absent. The production call still reads constants natively; the test-spec build supplies the map from a resource file. Lower-effort but introduces a parallel pathway that must be torn down post-X.Y.
+1. Pick a Sakila fixture table whose shape fits the platform-id test (ideally composite-business-key, terminal-ish in the FK graph to minimise blast radius from step 2).
+2. Run `mvn generate-sources` once; copy the produced `target/generated-sources/jooq/.../tables/<Table>.java` into `graphitron-rewrite-test-fixtures/src/main/java/.../tables/<Table>.java` (same package).
+3. Add `<excludes><Table></excludes>` to the `<database>` block in `graphitron-rewrite-test-fixtures/pom.xml` so jOOQ doesn't regenerate and trigger a duplicate-class compile error.
+4. Hand-edit the copy: add `public static final String __ID_TYPE_ID = "<TypeName>";` and `public static final Field<?>[] __ID_KEY_COLUMNS = { <COL1>, <COL2>, … };`.
+5. Post-X.Y: remove the `<excludes>`, delete the hand-edited file, jOOQ regenerates with constants emitted natively.
 
-Pick mechanism (1) — it exercises exactly the same code path the production probe will use. If the Java-generator wiring effort proves larger than one commit, defer real test-spec compile-tier coverage to post-X.Y and rely on the synthetic `platformidfixture` for pipeline-level coverage in the interim. Flag that choice in Step 1's commit message so Step 3's execution-test claim can track the actual state.
+**Caveat to resolve at implementation time.** Excluding a table from jOOQ codegen can affect `Keys.java` / `Tables.java` references — incoming foreign keys from other tables may drop if jOOQ doesn't emit FK entries against externally-defined classes. Mitigations: (a) prefer a table with no incoming FKs (leaf in the FK graph); (b) if the chosen table has incoming FKs, also copy `Keys.java` and trim to the needed entries, or verify jOOQ's behaviour on the current version emits FKs against excluded classes. Decide at Step 1 kickoff once a concrete table is chosen.
+
+**Fallback if the copy-and-edit scope grows beyond ~2 files.** Do-nothing in the pre-X.Y window — rely on the synthetic `platformidfixture` for pipeline-level coverage and defer real test-spec compile/execution coverage to post-X.Y. Flag this choice in Step 1's commit message so Step 3's execution-test claim tracks the actual state.
+
+(An earlier iteration proposed a custom `JavaGenerator` subclass emitting constants via `generateTableClassFooter`; rejected as more invasive than copy-and-edit and leaving a subclass around the fixture for cleanup post-X.Y.)
 
 ## Open points
 
@@ -331,6 +338,7 @@ Pick mechanism (1) — it exercises exactly the same code path the production pr
 
 ## History
 
+- **2026-04-19 (sixth Draft iteration)** — simplified the Step 1 compile-tier mechanism: copy a generated table class into `src/main/java/...`, add `<excludes>` to the jOOQ plugin config, hand-edit the copy to add the two constants. Reverts post-X.Y by dropping the `<excludes>` and the hand-edited file. Replaces the fifth iteration's `JavaGenerator` subclass proposal (now rejected — more invasive than copy-and-edit, leaves a subclass to remove post-X.Y). Single caveat flagged: excluding a table may drop incoming-FK entries in `Keys.java`; mitigations (leaf-table choice or `Keys.java` copy) decided at Step 1 kickoff once a concrete table is picked. Do-nothing fallback preserved for when the copy scope grows beyond ~2 files.
 - **2026-04-19 (fifth Draft iteration, reviewer pass)** — three corrections to Step 1 / Step 3 mechanics:
   - **Compile-tier mechanism reworked.** Fourth-iteration text offered "sibling `*Ext.java`" as a fallback when `pom.xml` lacks a jOOQ post-hook. Verified: `graphitron-rewrite-test-fixtures/pom.xml:45-77` configures stock `JavaGenerator` with no `<generator><name>` override, and a sibling file cannot deliver `<TableClass>.__ID_TYPE_ID` addressing — the production probe reflects on the table class itself, so the test-spec must too. Rewrote the section: primary path is a custom `JavaGenerator` subclass emitting `generateTableClassFooter` constants (mirrors what KjerneJooqGenerator will do, reverts cleanly); secondary path is a test-fixture fallback probe in `JooqCatalog.nodeIdMetadata`; explicit do-nothing fallback if the Java-generator wiring exceeds one commit — synthetic fixture covers pipeline tier, execution-tier coverage deferred to post-X.Y and called out in Step 1's commit message.
   - **Step 3 Path-2 placement pinned.** Previously said "runs before the platform-id fallback" without specifying whether "before" meant before the `column.isEmpty()` block entry or inside the block before the `platformIdMethods.contains(getterName)` check. Named the exact placement: inside `FieldBuilder.java:1594-1612`, before the platform-id check at `:1603`. Removes ambiguity for the implementer.
