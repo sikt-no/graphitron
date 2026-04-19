@@ -33,7 +33,11 @@ case "filmsByIds" -> {
         fields.add(DSL.multiset(DSL.select(Film.$fields(sf.getSelectionSet(), f0, env))
             .from(f0).where(DSL.falseCondition())).as("filmsByIds"));
     } else {
-        Table<?> input = DSL.values(rows).as("filmsByIdsInput", "idx", "FILM_ID");
+        // VALUES column labels — "idx" + each target column's SQL name (lowercase, not the
+        // jOOQ Java field name). USING compares rendered identifiers against the derived
+        // table's labels; mismatched casing breaks USING on Postgres. See
+        // LookupValuesJoinEmitter.java:195-202 for the authoritative rule.
+        Table<?> input = DSL.values(rows).as("filmsByIdsInput", "idx", "film_id");
         fields.add(DSL.multiset(
             DSL.select(Film.$fields(sf.getSelectionSet(), f0, env))
                 .from(f0)
@@ -46,21 +50,29 @@ case "filmsByIds" -> {
 ```
 
 The inner subquery combines two predicates:
-1. **Parent-row correlation** — as in G5, derived from `joinPath.get(0)` against the parent alias (`table` for top-level, or a deeper alias in nested contexts).
-2. **Keyset narrowing via VALUES** — `.join(DSL.values(rows).as("<name>Input", "idx", "COL"…)).using(<target-cols>)`. Preserves input ordering via `orderBy(input.field("idx"))`.
+1. **Parent-row correlation** — as in G5, derived from `joinPath.get(0)` against the parent alias (`table` for top-level, or a deeper alias in nested contexts). Uses G5's cardinality-driven FK-direction branching (`Single` → parent holds FK, `List` → parent is PK side) via `JoinPathEmitter.emitCorrelationWhere`.
+2. **Keyset narrowing via VALUES** — `.join(DSL.values(rows).as("<name>Input", "idx", "<col_sql_name>"…)).using(<target-cols>)`. Preserves input ordering via `orderBy(input.field("idx"))`.
 
-Single-cardinality child LookupTableFields are unusual but legal; they follow the G5 convention (`.limit(1)` inside, single-value `DataFetcher` unwrap in wiring).
+The two predicates **AND** — the result is the intersection of FK-correlated rows and the lookup keyset. This is the semantic a child-level `@lookupKey` on a table-mapped parent should carry: a user asking `store { filmsByIds(film_id: [1,2]) }` expects "films 1 and 2 that are actually stocked at this store", not "films 1 and 2 regardless of store". If the keyset contains IDs unrelated to the parent, those entries drop out (and the input-order slot is empty).
+
+**Empty-input shape (first branch above)** is not the same construct as Phase 1's empty-input short-circuit. Phase 1 returns `dsl.newResult()` at the Java level (a complete early return from a fetcher method). Phase 2a's emitter sits inside a SELECT-list slot and must emit an SQL expression that produces an empty multiset; `DSL.multiset(select ... where(falseCondition()))` is the SQL-level equivalent. Both deliver the same observable result (empty collection) through different mechanisms.
+
+**Connection wrapper note.** G5 C1's classifier rejection of `@asConnection` applies only to the `TableField` branch (`FieldBuilder.java:260-263`). The `LookupTableField` branch (lines 251-254) does *not* currently reject `Connection`. Phase 2a must either extend the rejection or emit an unclassified error — see Open Decision 6.
+
+Single-cardinality child LookupTableFields are unusual but legal; they follow the G5 convention (`.limit(1)` inside, single-value `DataFetcher` unwrap in wiring). With `@lookupKey` this resolves to "the first matched row by input order" — a canonical ordering tiebreaker that may or may not be what the user intended. See Open Decision 7.
 
 ### Argument extraction: `env.getArgument` vs `sf.getArguments`
 
-**Decision needed.** Phase 1's `LookupValuesJoinEmitter.buildInputRowsMethod` extracts args via `env.getArgument(name)`. That works for root queries where the env's root args *are* the field's args. For child fields, the `@lookupKey` args are on the child's `SelectedField`, not on the outer env's root. The helper must read `sf.getArguments().get(name)` instead.
+**Decision needed.** Phase 1's `LookupValuesJoinEmitter.buildInputRowsMethod` extracts args via `env.getArgument(name)` (line 114-117). That works for root queries where the env's root args *are* the field's args. For child fields, the `@lookupKey` args are on the child's `SelectedField`, not on the outer env's root. The helper must read `sf.getArguments().get(name)` instead.
 
 Options:
-- **(A)** Extend `LookupValuesJoinEmitter.buildInputRowsMethod` with a second overload that takes a `SelectedField` parameter and reads from it.
+- **(A)** Extend `LookupValuesJoinEmitter` with a sibling `buildChildInputRowsMethod(LookupField, ClassName)` that reads from a `SelectedField` parameter instead of `env`. The row-construction core (typed `DSL.val(v, col.getDataType())` per cell, `RowN[]` assembly, empty-input short-circuit) is shared via a common private helper.
 - **(B)** Pass extracted values as parameters to the helper; inline extraction at the call site. The helper becomes pure row-construction without env/sf awareness.
 - **(C)** Split the helper: one root variant, one child variant. Two similar-but-not-identical helpers on `*Fetchers` / type class respectively.
 
 Recommend (A) — smallest surface delta, preserves the pure-function testability of Phase 1's helper, single source of truth for row-construction.
+
+**Signature hazard for (A).** `SelectedField.getArguments()` returns `Map<String, Object>`, not a typed accessor. The child variant therefore replaces the typed `env.getArgument(name)` with `sf.getArguments().get(name)` plus a cast — `List<?>` for list args, `Object` for scalars — same as Phase 1 after the type-inference is satisfied. No cast is needed at the `DSL.val(value, dataType)` site because the row-construction core already treats cells as `Object`. The extension therefore differs only in the extraction statements emitted, not the row-building loop.
 
 ### Helper method placement
 
@@ -95,25 +107,28 @@ Carried over from Phase 1 and G5:
 - `LookupTableField.lookupMapping().columns()` is non-empty (classifier rejects empty mappings at classify time).
 - `LookupTableField.joinPath()` is non-empty (must navigate from parent).
 - All `@lookupKey` args are scalar. Composite-key input-type lookups are Phase 3.
-- `LookupTableField.returnType().wrapper()` is `Single` or `List` (not `Connection` — classifier rejects `@asConnection` on inline paths per G5 C1).
+
+**Not yet invariant — must be established in C1:**
+- `LookupTableField.returnType().wrapper()` is `Single` or `List`, not `Connection`. G5 C1's classifier rejection lives in the `TableField` construction branch (`FieldBuilder.java:260-263`) and does *not* cover `LookupTableField`. C1 must either extend the rejection (preferred — keeps the builder invariant uniform across all inline variants) or teach the emitter to handle `Connection` (rejected — duplicates G5's precedent).
 
 ## Commit Structure
 
 Two commits, ordered.
 
-### C1 — Emitter + switch arm + partition migration + tests
+### C1 — Classifier rejection + emitter + switch arm + partition migration + tests
 
 One atomic change because the partition disjoint-cover property fails unless all parts land together.
 
-- **Extend `LookupValuesJoinEmitter`** with a `buildChildInputRowsMethod(LookupField, ClassName)` overload (or a second method variant) that reads from a `SelectedField` parameter instead of `DataFetchingEnvironment`. The row-construction core (typed `DSL.val(v, col.getDataType())` per cell, `RowN[]` assembly) is shared with the root variant.
+- **Extend G5 C1's classifier rejection to `LookupTableField`.** `FieldBuilder.java:251-254` currently constructs `LookupTableField` regardless of wrapper. Insert a `FieldWrapper.Connection` check ahead of the construction, reusing G5's error message modulo the variant name: "`@asConnection` on inline (non-`@splitQuery`) LookupTableField is not supported; add `@splitQuery` for batched connection semantics". Establishes the builder invariant Phase 2a's emitter relies on. Blast radius: whatever test fixtures or production schemas pair `@asConnection` with `@lookupKey` (audit via grep before landing — likely zero).
+- **Extend `LookupValuesJoinEmitter`** with a `buildChildInputRowsMethod(LookupField, ClassName)` sibling that reads from a `SelectedField` parameter instead of `DataFetchingEnvironment`. Share the row-construction core (typed `DSL.val(v, col.getDataType())` per cell, `RowN[]` assembly, empty-input short-circuit) with the root variant through a common private helper. Package-private is fine — `TypeClassGenerator` lives in the same `generators` package as `LookupValuesJoinEmitter`.
 - **New emitter class or extension.** Either:
   - Add a `LookupTableField` branch to `InlineTableFieldEmitter.buildSwitchArmBody`, or
   - Introduce `InlineLookupTableFieldEmitter` as a dedicated class that composes `InlineTableFieldEmitter`'s join/correlation logic with `LookupValuesJoinEmitter`'s VALUES + USING pattern.
   **Decision needed at implementation time** — prefer extension if the shared logic with G5 dominates; prefer a new class if the divergence is substantial.
 - **`TypeClassGenerator.$fields`** — add `case ChildField.LookupTableField` arm. Also emit the per-field input-rows helper method on the type class (alongside `$fields`).
 - **`TypeFetcherGenerator`** — move `LookupTableField` from `NOT_IMPLEMENTED_REASONS` to `PROJECTED_LEAVES`; switch arm becomes `{ }`.
-- **Pipeline test.** Extend `TableFieldPipelineTest` (or add a sibling `LookupTableFieldPipelineTest`) — SDL with a child `@lookupKey` field produces a `TypeSpec` whose `$fields` has an arm, no fetcher method emitted, helper method present on the type class.
-- **Compilation gate.** `mvn compile -pl :graphitron-rewrite-test-spec -Plocal-db` must pass.
+- **Pipeline test.** Extend `TableFieldPipelineTest` (or add a sibling `LookupTableFieldPipelineTest`) — SDL with a child `@lookupKey` field produces a `TypeSpec` whose `$fields` has an arm, no fetcher method emitted, helper method present on the type class. Also assert the classifier-rejection case: `@asConnection` + `@lookupKey` on an inline path returns `UnclassifiedField`.
+- **Compilation gate — note the limitation.** `mvn compile -pl :graphitron-rewrite-test-spec -Plocal-db` passes trivially after C1 because the existing test-spec schema contains zero child-lookup fields; no new generated code is exercised. The real compile-tier coverage lands with C2's schema fixture. C1 still runs the build to guarantee no regression in G5-era generated code.
 
 ### C2 — Schema fixtures + execution tests
 
@@ -144,13 +159,15 @@ No `CodeBlock`-substring assertions on emitted method bodies.
 
 ## Open Decisions
 
-Answer at Draft-review or implementation time.
+Answer at Draft-review or implementation time. Items 1–3 have concrete recommendations and can be resolved by reviewer assent; items 4–7 need implementation-time investigation.
 
-1. **Argument extraction locus.** `env.getArgument` vs `sf.getArguments().get`? Recommend (A) above — extend `LookupValuesJoinEmitter` with a `SelectedField`-reading variant.
-2. **Emitter class layout.** Extend `InlineTableFieldEmitter` with a `LookupTableField` branch, or introduce `InlineLookupTableFieldEmitter`? Decide when the C1 emitter diff is visible.
+1. **Argument extraction locus.** `env.getArgument` vs `sf.getArguments().get`? Recommend (A) above — extend `LookupValuesJoinEmitter` with a `SelectedField`-reading variant sharing the row-construction core.
+2. **Emitter class layout.** Extend `InlineTableFieldEmitter` with a `LookupTableField` branch, or introduce `InlineLookupTableFieldEmitter`? Decide when the C1 emitter diff is visible. Heuristic: if the branch body is <30 lines and the FK/correlation/orderBy shared logic dominates, extend; if the VALUES + USING + child-helper plumbing dwarfs the shared portion, split.
 3. **Helper method placement.** Input-rows helper on the type class (e.g. `Customer`) vs. inlined into the switch-arm body? Recommend: type-class helper, matching Phase 1's separation-of-concerns rationale.
 4. **Schema fixture choice.** Which Sakila table best exercises a child LookupTableField without forcing large init.sql additions? Resolve alongside C2.
-5. **Empty-input inner shape.** `DSL.multiset(select … .where(falseCondition()))` vs a pre-built empty-multiset constant? Any SQL dialect concerns?
+5. **Empty-input inner shape.** `DSL.multiset(select … .where(falseCondition()))` vs a pre-built empty-multiset constant? Any SQL dialect concerns? (Plan recommends falseCondition because it's clearly an SQL-level expression and requires no additional helper; revisit only if it produces unoptimisable plans on Postgres.)
+6. **`@asConnection` + `@lookupKey` classifier behaviour.** Phase 2a extends G5 C1's rejection to `LookupTableField` (see C1 bullet 1). Confirmation needed that no production or test fixture pairs the two directives today — grep before landing. If anything does, the rejection needs a graceful-rollout plan first.
+7. **Single-cardinality + `@lookupKey` semantics.** A child lookup field returning a single object (e.g. `Customer.latestAddress(address_id: [Int!]! @lookupKey): Address`) resolves to "first matched row by input order" via `.limit(1)`. Option X: accept as-is and document the semantics in a classification comment. Option Y: reject at classifier time — Single + `@lookupKey` is almost always a schema bug (why pass a list of keys if only one row is returned?). Option Y matches Graphitron's "reject ambiguous combinations" style elsewhere (see G5 C1 for `@asConnection` on inline). Recommendation: Option Y unless existing fixtures demonstrate a use case.
 
 ## Cross-plan Dependencies
 
@@ -170,3 +187,4 @@ Answer at Draft-review or implementation time.
 ## History
 
 - 2026-04-19 — drafted after G5 landed (`0ac6048d`) and cleared the inline-subquery prerequisite. Status: Draft. Five open decisions pinned for reviewer / implementation.
+- 2026-04-19 — reviewer pass: (a) fixed the Shape example's VALUES column label — `"FILM_ID"` → `"film_id"` (SQL name, not Java name; `LookupValuesJoinEmitter.java:195-202` is authoritative). (b) Made the **parent-correlation AND lookup-keyset** semantics explicit; prior draft's shape AND'd them without justifying the intent. (c) Clarified that the empty-input shape (`DSL.multiset(...).where(falseCondition())`) is the SQL-expression equivalent of Phase 1's Java-level `dsl.newResult()` — same observable, different construct. (d) Flagged the **Connection classifier gap**: G5 C1's rejection lives in the `TableField` branch only (`FieldBuilder.java:260-263`); `LookupTableField` accepts `Connection` today. C1 must extend the rejection. (e) Added Open Decision 6 (classifier-rejection grep-before-landing) and Open Decision 7 (Single-cardinality + `@lookupKey` semantics — recommend classifier rejection). (f) Renamed C1 header to reflect the added classifier-rejection step; tightened the compile-gate note (trivial until C2's fixture lands). (g) Pinned cardinality-driven FK-direction branching as inherited from G5, rather than left implicit. (h) Nailed the helper-signature hazard — `SelectedField.getArguments()` is a raw `Map<String, Object>`, casts required for list args.
