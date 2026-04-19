@@ -288,6 +288,15 @@ public class TypeFetcherGenerator {
                 case ChildField.SplitLookupTableField slf -> {
                     builder.addMethod(buildSplitQueryDataFetcher(slf, slf.returnType(), parentTable));
                     builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(slf, parentTable));
+                    // Emit the VALUES-building input-rows helper alongside the rows method.
+                    // Phase 2a's env-based variant (buildInputRowsMethod) reads args from
+                    // env.getArgument(name) — correct for a Split* fetcher whose @lookupKey args
+                    // live on the field itself (vs. Phase 2a's inline child-lookup path where
+                    // args live on a parent's SelectedField).
+                    var lookupTableRef = slf.returnType().table();
+                    var lookupTableClass = GeneratorUtils.ResolvedTableNames
+                        .of(lookupTableRef, slf.returnType().returnTypeName()).jooqTableClass();
+                    builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(slf, lookupTableClass));
                 }
                 // Stub variants — see NOT_IMPLEMENTED_REASONS
                 case QueryField.QueryTableMethodTableField f  -> builder.addMethod(stub(f));
@@ -382,6 +391,15 @@ public class TypeFetcherGenerator {
             f instanceof ChildField.SplitTableField || f instanceof ChildField.SplitLookupTableField);
         if (hasSplitField) {
             builder.addMethod(SplitRowsMethodEmitter.buildScatterByIdxHelper());
+        }
+
+        // emptyScatter is only needed for SplitLookupTableField (empty @lookupKey args short-
+        // circuit). Skip when only plain Split fields are present — keeps generated output
+        // minimal.
+        boolean hasSplitLookupField = fields.stream().anyMatch(f ->
+            f instanceof ChildField.SplitLookupTableField);
+        if (hasSplitLookupField) {
+            builder.addMethod(SplitRowsMethodEmitter.buildEmptyScatterHelper());
         }
 
         builder.addMethod(buildWiringMethod(typeName, className, parentTable, fields));

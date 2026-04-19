@@ -127,6 +127,51 @@ class SplitTableFieldPipelineTest {
     }
 
     @Test
+    void splitLookupQueryField_producesFetcherRowsMethodAndInputRowsHelper() {
+        // @splitQuery + @lookupKey: fetcher returns CompletableFuture<List<Record>>, rows method
+        // emits the VALUES+JOIN flat batched SELECT, and the inputRows helper builds the
+        // lookup-key RowN[] from env.getArgument.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+                actorsByKey(actor_id: [Int!]! @lookupKey): [Actor!]! @splitQuery
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+            }
+            type Query { film: Film }
+            """);
+
+        var filmFetchers = TypeFetcherGenerator.generate(schema).stream()
+            .filter(t -> t.name().equals("FilmFetchers"))
+            .findFirst()
+            .orElseThrow();
+
+        var methodNames = filmFetchers.methodSpecs().stream().map(m -> m.name()).toList();
+        assertThat(methodNames)
+            .contains("actorsByKey", "rowsActorsByKey", "actorsByKeyInputRows", "scatterByIdx", "emptyScatter");
+    }
+
+    @Test
+    void splitLookupQueryField_emptyScatterHelperOnlyWhenSplitLookupPresent() {
+        var schemaPlain = TestSchemaHelper.buildSchema("""
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @splitQuery
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+            }
+            type Query { film: Film }
+            """);
+
+        var plainFilmFetchers = TypeFetcherGenerator.generate(schemaPlain).stream()
+            .filter(t -> t.name().equals("FilmFetchers"))
+            .findFirst().orElseThrow();
+
+        assertThat(plainFilmFetchers.methodSpecs()).extracting(m -> m.name())
+            .as("plain @splitQuery doesn't need emptyScatter — no @lookupKey short-circuit")
+            .doesNotContain("emptyScatter")
+            .contains("scatterByIdx");
+    }
+
+    @Test
     void noSplitFields_noScatterByIdxHelper() {
         var schema = TestSchemaHelper.buildSchema("""
             type Language @table(name: "language") { name: String }

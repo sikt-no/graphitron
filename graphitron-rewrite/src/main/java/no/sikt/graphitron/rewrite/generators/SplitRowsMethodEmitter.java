@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -13,6 +12,7 @@ import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
@@ -110,9 +110,7 @@ public final class SplitRowsMethodEmitter {
             return buildForSplitTable(stf, parentTable);
         }
         if (bkf instanceof ChildField.SplitLookupTableField slf) {
-            // C2 stub — the lookup branch adds a second VALUES+ON join on top of C1's shape.
-            return buildCodegenStub(slf.rowsMethodName(), slf, bkf.batchKey(), slf.returnType(),
-                "SplitLookupTableField rows-method emission lands in argres Phase 2b C2");
+            return buildForSplitLookupTable(slf, parentTable);
         }
         throw new IllegalArgumentException(
             "SplitRowsMethodEmitter does not handle " + bkf.getClass().getSimpleName());
@@ -130,35 +128,85 @@ public final class SplitRowsMethodEmitter {
         // chain (parentInput carries parent PK, but the FK hop connects parent FK → target PK
         // — we need an extra hop through the parent table). Deferred to a follow-up.
         if (!isList) {
-            return buildRuntimeStub(stf,
+            return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(),
                 "Single-cardinality @splitQuery on '" + stf.qualifiedName()
                 + "' not yet supported; list cardinality is the Phase 2b C1 scope. "
                 + "Single-cardinality requires joining the parent table to bridge parent PK to parent FK.");
         }
         if (JoinPathEmitter.hasConditionJoin(stf.joinPath())) {
-            return buildRuntimeStub(stf,
+            return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(),
                 "@splitQuery '" + stf.qualifiedName() + "' with a condition-join step cannot be "
                 + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
         }
         if (stf.joinPath().isEmpty()) {
-            return buildRuntimeStub(stf,
+            return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(),
                 "@splitQuery '" + stf.qualifiedName() + "' requires a @reference path — "
                 + "Phase 2b C1 scope does not support path-less batched splits");
         }
 
-        return buildListMethod(stf, parentTable);
+        return buildListMethod(
+            stf.name(), stf.rowsMethodName(), stf.returnType(),
+            stf.joinPath(), stf.filters(), stf.batchKey(), parentTable,
+            /* lookupMapping */ null);
     }
 
-    private static MethodSpec buildListMethod(ChildField.SplitTableField stf, TableRef parentTable) {
-        TableRef terminalTable = stf.returnType().table();
+    // -----------------------------------------------------------------------
+    // SplitLookupTableField (C2)
+    // -----------------------------------------------------------------------
+
+    private static MethodSpec buildForSplitLookupTable(ChildField.SplitLookupTableField slf, TableRef parentTable) {
+        ReturnTypeRef.TableBoundReturnType returnType = slf.returnType();
+        boolean isList = returnType.wrapper().isList();
+
+        // Same restrictions as SplitTableField — single cardinality defers to a follow-up, a
+        // ConditionJoin step needs classification-vocab item 5, empty joinPath (standalone
+        // @splitQuery @lookupKey with no @reference) is out of C2 scope.
+        if (!isList) {
+            return buildRuntimeStub(slf.rowsMethodName(), slf.batchKey(), slf.returnType(),
+                "Single-cardinality @splitQuery @lookupKey on '" + slf.qualifiedName()
+                + "' not yet supported; list cardinality is the Phase 2b C2 scope.");
+        }
+        if (JoinPathEmitter.hasConditionJoin(slf.joinPath())) {
+            return buildRuntimeStub(slf.rowsMethodName(), slf.batchKey(), slf.returnType(),
+                "@splitQuery @lookupKey '" + slf.qualifiedName() + "' with a condition-join step cannot be "
+                + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
+        }
+        if (slf.joinPath().isEmpty()) {
+            return buildRuntimeStub(slf.rowsMethodName(), slf.batchKey(), slf.returnType(),
+                "@splitQuery @lookupKey '" + slf.qualifiedName() + "' requires a @reference path — "
+                + "Phase 2b C2 scope does not support path-less batched lookup splits");
+        }
+
+        return buildListMethod(
+            slf.name(), slf.rowsMethodName(), slf.returnType(),
+            slf.joinPath(), slf.filters(), slf.batchKey(), parentTable,
+            slf.lookupMapping());
+    }
+
+    /**
+     * Shared body emitter for list-cardinality Split* rows methods. For
+     * {@link ChildField.SplitTableField} pass {@code lookupMapping = null}; for
+     * {@link ChildField.SplitLookupTableField} pass its mapping and the emitter adds a second
+     * VALUES derived-table JOIN narrowing on the {@code @lookupKey} args.
+     */
+    private static MethodSpec buildListMethod(
+            String fieldName,
+            String rowsMethodName,
+            ReturnTypeRef.TableBoundReturnType returnType,
+            List<JoinStep> joinPath,
+            List<WhereFilter> filters,
+            BatchKey batchKey,
+            TableRef parentTable,
+            LookupMapping lookupMapping) {
+        TableRef terminalTable = returnType.table();
         ClassName tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
         ClassName keysClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Keys");
         ClassName typeClass = ClassName.get(
             RewriteConfig.outputPackage() + ".rewrite.types",
-            stf.returnType().returnTypeName());
+            returnType.returnTypeName());
 
-        BatchKey.RowKeyed batchKey = (BatchKey.RowKeyed) stf.batchKey();
-        List<ColumnRef> pkCols = batchKey.keyColumns();
+        BatchKey.RowKeyed rowKeyed = (BatchKey.RowKeyed) batchKey;
+        List<ColumnRef> pkCols = rowKeyed.keyColumns();
         TypeName keyElement = GeneratorUtils.keyElementType(batchKey);
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
@@ -180,7 +228,7 @@ public final class SplitRowsMethodEmitter {
         TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
         TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
 
-        List<JoinStep> path = stf.joinPath();
+        List<JoinStep> path = joinPath;
         List<String> aliases = JoinPathEmitter.generateAliases(path, terminalTable);
         String terminalAlias = aliases.get(aliases.size() - 1);
         String firstAlias = aliases.get(0);
@@ -233,7 +281,7 @@ public final class SplitRowsMethodEmitter {
                 fk.targetTable().javaClassName());
             body.addStatement("$T $L = $T.$L.as($S)",
                 jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(),
-                stf.name() + "_" + aliases.get(i));
+                fieldName + "_" + aliases.get(i));
         }
 
         // Projection: $fields(env.getSelectionSet(), terminalAlias, env) + idx.as("__idx__").
@@ -251,6 +299,33 @@ public final class SplitRowsMethodEmitter {
             listOfField, ARRAY_LIST, typeClass, terminalAlias);
         body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
             Integer.class, IDX_COLUMN);
+
+        // Lookup-input VALUES (SplitLookupTableField only). Uses the env-based helper shape from
+        // Phase 1 — args live on env.getArgument(name) for a Split fetcher (not on a child
+        // SelectedField as in Phase 2a's inline projection). The helper method name follows
+        // Phase 2a's convention: <fieldName>InputRows.
+        String lookupInputAlias = fieldName + "Input";
+        if (lookupMapping != null) {
+            List<LookupMapping.LookupColumn> lookupCols = lookupMapping.columns();
+            body.addStatement("$T[] lookupRows = $LInputRows(env, $L)", ROW_N, fieldName, terminalAlias);
+            // Empty lookup input → every parent gets an empty list; short-circuit before building
+            // the VALUES table (jOOQ rejects empty RowN[] → DSL.values).
+            body.beginControlFlow("if (lookupRows.length == 0)");
+            body.addStatement("return emptyScatter(keys.size())");
+            body.endControlFlow();
+            // Labels: ("fieldNameInput", "idx", lookupCol1.sqlName, ...). DSL.values(RowN...)
+            // returns Table<Record> (untyped record) — we still get typed access via
+            // field(int, Class<T>) below.
+            var lookupAliasArgs = CodeBlock.builder();
+            lookupAliasArgs.add("$S, $S", lookupInputAlias, "idx");
+            for (var col : lookupCols) {
+                lookupAliasArgs.add(", $S", col.targetColumn().sqlName());
+            }
+            TypeName wildcardTable = ParameterizedTypeName.get(TABLE,
+                WildcardTypeName.subtypeOf(Object.class));
+            body.addStatement("$T lookupInput = $T.values(lookupRows).as($L)",
+                wildcardTable, DSL, lookupAliasArgs.build());
+        }
 
         // Flat SELECT: FROM terminal, JOIN bridging hops back toward step 0, JOIN parentInput
         // on first-hop source columns eq parent PK via parentInput.field(sqlName).
@@ -285,6 +360,26 @@ public final class SplitRowsMethodEmitter {
         }
         sel.add(".join(parentInput).on($L)\n", onCond.build());
 
+        // Lookup-input JOIN (SplitLookupTableField only). ON predicate uses typed
+        // lookupInput.field(i+1, ColType.class) so the .eq against terminalAlias.COL matches
+        // types directly. Position mapping inside lookupInput: index 0 is idx, indices 1..M
+        // are the lookup columns in LookupMapping order. Same USING-vs-ON reasoning as the
+        // parent-input JOIN.
+        if (lookupMapping != null) {
+            var lookupOnCond = CodeBlock.builder();
+            List<LookupMapping.LookupColumn> lookupCols = lookupMapping.columns();
+            for (int i = 0; i < lookupCols.size(); i++) {
+                if (i > 0) lookupOnCond.add(".and(");
+                var col = lookupCols.get(i);
+                ClassName colType = ClassName.bestGuess(col.targetColumn().columnClass());
+                lookupOnCond.add("$L.$L.eq(lookupInput.field($L, $T.class))",
+                    terminalAlias, col.targetColumn().javaName(),
+                    i + 1, colType);
+                if (i > 0) lookupOnCond.add(")");
+            }
+            sel.add(".join(lookupInput).on($L)\n", lookupOnCond.build());
+        }
+
         // WHERE: per-hop whereFilters + field-level filters.
         var where = CodeBlock.builder();
         where.add("$T.noCondition()", DSL);
@@ -297,7 +392,7 @@ public final class SplitRowsMethodEmitter {
                     JoinPathEmitter.emitTwoArgMethodCall(hop.whereFilter(), srcAlias, tgtAlias));
             }
         }
-        for (WhereFilter f : stf.filters()) {
+        for (WhereFilter f : filters) {
             where.add(".and($T.$L($L))",
                 ClassName.bestGuess(f.className()), f.methodName(),
                 ArgCallEmitter.buildCallArgs(f.callParams(), f.className()));
@@ -309,7 +404,7 @@ public final class SplitRowsMethodEmitter {
 
         body.addStatement("return scatterByIdx(flat, keys.size())");
 
-        return MethodSpec.methodBuilder(stf.rowsMethodName())
+        return MethodSpec.methodBuilder(rowsMethodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(listOfListOfRecord)
             .addParameter(keysListType, "keys")
@@ -322,25 +417,12 @@ public final class SplitRowsMethodEmitter {
     // Stubs: runtime (body-throws) and codegen (emitter-throws)
     // -----------------------------------------------------------------------
 
-    /** Runtime stub: the signature is correct, body throws so the regression surfaces on call. */
-    private static MethodSpec buildRuntimeStub(ChildField.SplitTableField stf, String reason) {
-        boolean isList = stf.returnType().wrapper().isList();
-        TypeName keyElement = GeneratorUtils.keyElementType(stf.batchKey());
-        TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
-        TypeName valueType = isList
-            ? ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, RECORD))
-            : ParameterizedTypeName.get(LIST, RECORD);
-        return MethodSpec.methodBuilder(stf.rowsMethodName())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(valueType)
-            .addParameter(keysListType, "keys")
-            .addParameter(ENV, "env")
-            .addStatement("throw new $T($S)", UnsupportedOperationException.class, reason)
-            .build();
-    }
-
-    /** Codegen stub: used when a branch is not yet implemented and we want the signature right. */
-    private static MethodSpec buildCodegenStub(String methodName, BatchKeyField bkf, BatchKey batchKey,
+    /**
+     * Runtime stub: signature is correct (same as the real rows method), body throws so the
+     * regression surfaces the first time the variant is actually called. Used for cardinality,
+     * ConditionJoin, and empty-joinPath branches that C1/C2 don't emit real bodies for.
+     */
+    private static MethodSpec buildRuntimeStub(String methodName, BatchKey batchKey,
             ReturnTypeRef.TableBoundReturnType returnType, String reason) {
         boolean isList = returnType.wrapper().isList();
         TypeName keyElement = GeneratorUtils.keyElementType(batchKey);
@@ -360,6 +442,29 @@ public final class SplitRowsMethodEmitter {
     // -----------------------------------------------------------------------
     // Scatter helper — emitted once per fetcher class that has any Split* field.
     // -----------------------------------------------------------------------
+
+    /**
+     * Builds the private static {@code emptyScatter(int keyCount)} helper returning a
+     * pre-populated list of empty sublists. Used by the SplitLookupTableField rows method's
+     * empty-lookup-input short-circuit (when {@code @lookupKey} args are null/empty, every
+     * parent gets an empty result without touching the database).
+     */
+    public static MethodSpec buildEmptyScatterHelper() {
+        TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        TypeName listOfListOfRecord = ParameterizedTypeName.get(LIST, listOfRecord);
+        return MethodSpec.methodBuilder("emptyScatter")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(listOfListOfRecord)
+            .addParameter(int.class, "keyCount")
+            .addCode(CodeBlock.builder()
+                .addStatement("$T out = new $T<>(keyCount)", listOfListOfRecord, ARRAY_LIST)
+                .beginControlFlow("for (int i = 0; i < keyCount; i++)")
+                .addStatement("out.add(new $T<>())", ARRAY_LIST)
+                .endControlFlow()
+                .addStatement("return out")
+                .build())
+            .build();
+    }
 
     /**
      * Builds the private static {@code scatterByIdx(Result<Record>, int)} helper that turns a
