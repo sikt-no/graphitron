@@ -171,6 +171,8 @@ Unplanned items. Pick one, draft a plan, then move to Active.
 - **Decompose `FieldBuilder`** **[Unplanned]** — split along the field taxonomy after argument-resolution Phase 2 lands. Blocked on Argument-resolution unification (Active).
 - **Audit custom pagination-arg-name support** **[Unplanned]** — `PaginationSpec` accepts non-default arg names (`pageSize`/`cursor` instead of `first`/`after`), but no test-spec fixture exercises it and no documented public API lets a schema author opt in. Decide: (a) remove the classifier plumbing as dead code + delete the `connectionField_customPaginationArgNames_emittedInFetcher` body-assertion, or (b) document the mechanism and add an execution fixture. Surfaced during the body-substring test rewrite's OD 2; user leaned toward (a) but the investigation is deferred.
 
+- **Record-field emission** **[Draft]** — [plan-record-fields.md](plan-record-fields.md). `TypeFetcherGenerator` produces no fetcher class for `ResultType` parents today; `PropertyField`, `RecordField`, `RecordTableField`, `RecordLookupTableField` all stubbed. Phase 3 blocked on `BatchKey.ObjectBased` decision.
+
 **Generator stubs to complete:**
 
 Enumerated by `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`; the stubbed-variant validator (Active, Pending Review) fails the build when a schema lands on one. Approximate priority:
