@@ -10,6 +10,7 @@ import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
@@ -1299,13 +1300,24 @@ public class TypeFetcherGenerator {
             return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.field($S)))",
                 field.name(), columnFetcherClass, DSL, field.name());
         }
-        if (field instanceof ChildField.NodeIdField) {
-            // Inline projection via TypeClassGenerator.$fields — the SELECT list carries an aliased
-            // nodeIdStrategy.createId(...) SelectField. Retrieve it from the record by its alias.
-            var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
-                ColumnFetcherClassGenerator.CLASS_NAME);
-            return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.field($S, $T.class)))",
-                field.name(), columnFetcherClass, DSL, field.name(), String.class);
+        if (field instanceof ChildField.NodeIdField nf && parentTable != null) {
+            // Key columns are projected by TypeClassGenerator.$fields; the DataFetcher reads them
+            // from the parent Record and encodes the opaque node ID in Java. Encoding matches the
+            // legacy NodeIdStrategy wire format so IDs round-trip between generators.
+            var encoderClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
+                NodeIdEncoderClassGenerator.CLASS_NAME);
+            var recordClass = ClassName.get("org.jooq", "Record");
+            var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
+            var body = CodeBlock.builder()
+                .add("\n.dataFetcher($S, env -> {\n", field.name())
+                .add("    $T r = ($T) env.getSource();\n", recordClass, recordClass)
+                .add("    return $T.encode($S", encoderClass, nf.nodeTypeId());
+            for (var col : nf.nodeKeyColumns()) {
+                body.add(",\n        r.get($T.$L.$L)", tablesClass, parentTable.javaFieldName(), col.javaName());
+            }
+            body.add(");\n")
+                .add("})");
+            return body.build();
         }
         return CodeBlock.of("\n.dataFetcher($S, $L::$L)", field.name(), className, field.name());
     }

@@ -19,7 +19,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-import static javax.lang.model.element.Modifier.PRIVATE;
 import static javax.lang.model.element.Modifier.PUBLIC;
 import static javax.lang.model.element.Modifier.STATIC;
 
@@ -106,9 +105,6 @@ public class TypeClassGenerator {
         var builder = TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
             .addMethod(build$FieldsMethod(tableRef, columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields));
-        if (!nodeIdFields.isEmpty()) {
-            builder.addMethod(buildNodeIdStrategyHelper());
-        }
         for (var lf : lookupTableFields) {
             var targetJooqTableClass = ClassName.get(
                 no.sikt.graphitron.rewrite.RewriteConfig.getGeneratedJooqPackage() + ".tables",
@@ -166,9 +162,11 @@ public class TypeClassGenerator {
                 pf.name(), pf.getterName());
         }
         for (var nf : nodeIdFields) {
-            var keyColsBlock = buildKeyColumnsArray(nf);
-            builder.addCode("        case $S -> fields.add(nodeIdStrategy(env).createId($S, $L).as($S));\n",
-                nf.name(), nf.nodeTypeId(), keyColsBlock, nf.name());
+            builder.addCode("        case $S -> {\n", nf.name());
+            for (var col : nf.nodeKeyColumns()) {
+                builder.addCode("            fields.add(table.$L);\n", col.javaName());
+            }
+            builder.addCode("        }\n");
         }
         for (var tf : tableFields) {
             builder.addCode("        case $S -> {\n", tf.name());
@@ -188,27 +186,4 @@ public class TypeClassGenerator {
         return builder.build();
     }
 
-    private static no.sikt.graphitron.javapoet.CodeBlock buildKeyColumnsArray(ChildField.NodeIdField nf) {
-        if (nf.nodeKeyColumns().isEmpty()) {
-            throw new IllegalStateException(
-                "NodeIdField '" + nf.name() + "' on type '" + nf.parentTypeName() + "' has no key columns");
-        }
-        var body = no.sikt.graphitron.javapoet.CodeBlock.builder();
-        body.add("new $T<?>[] { ", FIELD);
-        for (int i = 0; i < nf.nodeKeyColumns().size(); i++) {
-            if (i > 0) body.add(", ");
-            body.add("table.$L", nf.nodeKeyColumns().get(i).javaName());
-        }
-        body.add(" }");
-        return body.build();
-    }
-
-    private static MethodSpec buildNodeIdStrategyHelper() {
-        return MethodSpec.methodBuilder("nodeIdStrategy")
-            .addModifiers(PRIVATE, STATIC)
-            .returns(NODE_ID_STRATEGY)
-            .addParameter(ENV, "env")
-            .addStatement("return env.getGraphQlContext().get($S)", "nodeIdStrategy")
-            .build();
-    }
 }
