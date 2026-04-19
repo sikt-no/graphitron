@@ -120,15 +120,23 @@ public final class InlineLookupTableFieldEmitter {
         }
         code.addStatement("$T<?> input = $T.values(rows).as($L)", TABLE, DSL, aliasArgs.build());
 
-        // USING column references — against the terminal (target-table) alias.
-        var usingArgs = CodeBlock.builder();
+        // Explicit ON clause against the VALUES derived table — USING cannot be used for the
+        // VALUES join because a preceding junction-table JOIN (e.g. film_actor) may already
+        // expose an identically-named column, which Postgres rejects with "common column name ...
+        // appears more than once in left table." ON dereferences the VALUES column by name
+        // (input.field(terminal.COL)) so the predicate is unambiguous regardless of junctions.
+        var onCondition = CodeBlock.builder();
         for (int i = 0; i < lookupCols.size(); i++) {
-            if (i > 0) usingArgs.add(", ");
-            usingArgs.add("$L.$L", terminalAlias, lookupCols.get(i).targetColumn().javaName());
+            if (i > 0) onCondition.add(".and(");
+            var col = lookupCols.get(i);
+            onCondition.add("$L.$L.eq(input.field($L.$L))",
+                terminalAlias, col.targetColumn().javaName(),
+                terminalAlias, col.targetColumn().javaName());
+            if (i > 0) onCondition.add(")");
         }
 
         CodeBlock innerSelect = buildInnerSelect(lf, path, aliases, terminalAlias, typeClass,
-            keysClass, parentAlias, usingArgs.build());
+            keysClass, parentAlias, onCondition.build());
         code.addStatement("fields.add($T.multiset($L).as($S))", DSL, innerSelect, lf.name());
         code.endControlFlow();
 
@@ -142,7 +150,7 @@ public final class InlineLookupTableFieldEmitter {
      */
     private static CodeBlock buildInnerSelect(ChildField.LookupTableField lf, List<JoinStep> path,
             List<String> aliases, String terminalAlias, ClassName typeClass, ClassName keysClass,
-            String parentAlias, CodeBlock usingArgs) {
+            String parentAlias, CodeBlock onCondition) {
         var sel = CodeBlock.builder();
         sel.add("$T.select($T.$$fields(sf.getSelectionSet(), $L, env))",
             DSL, typeClass, terminalAlias);
@@ -158,8 +166,8 @@ public final class InlineLookupTableFieldEmitter {
                 prevAlias, keysClass, bridging.fkJavaConstant());
         }
 
-        // JOIN the VALUES derived table on the lookup keyset.
-        sel.add("\n        .join(input).using($L)", usingArgs);
+        // JOIN the VALUES derived table on the lookup keyset (explicit ON — see buildFkOnlyArm).
+        sel.add("\n        .join(input).on($L)", onCondition);
 
         // WHERE: step 0's correlation against parent (skipped when path is empty), then whereFilter
         // methods, then user filters. Start with a DSL.noCondition() anchor when there's no

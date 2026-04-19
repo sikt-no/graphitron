@@ -70,6 +70,18 @@ type Film @table(name: "film") {
     rating:      MpaaRating   @field(name: "RATING")
     textRating:  String       @field(name: "TEXT_RATING")
     length:      Int          @field(name: "LENGTH")
+    # argres Phase 2a: child-level @lookupKey via junction table (film_actor).
+    # VALUES+USING keyset narrows by actor_id; FK chain restricts to the parent film.
+    actors(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
+}
+
+type Actor @table(name: "actor") {
+    actorId:   Int!    @field(name: "ACTOR_ID")
+    firstName: String! @field(name: "FIRST_NAME")
+    lastName:  String! @field(name: "LAST_NAME")
 }
 
 type Language @table(name: "language") {

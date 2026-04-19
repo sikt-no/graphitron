@@ -235,3 +235,17 @@ INSERT INTO category (name, parent_category_id) VALUES
 
 INSERT INTO film_category (film_id, category_id) VALUES
     (1, 4), (2, 1), (3, 3), (4, 4), (5, 1);
+
+-- Cast each film with actors from the seeded actor pool (1=PENELOPE, 2=NICK, 3=ED).
+-- Used by argres Phase 2a execution tests (Film.actors inline @lookupKey via film_actor).
+--   film 1 (ACADEMY DINOSAUR) → PENELOPE, NICK
+--   film 2 (ACE GOLDFINGER)   → PENELOPE, ED
+--   film 3 (ADAPTATION HOLES) → PENELOPE
+--   film 4 (AFFAIR PREJUDICE) → NICK
+--   film 5 (AGENT TRUMAN)     → ED
+INSERT INTO film_actor (actor_id, film_id) VALUES
+    (1, 1), (2, 1),
+    (1, 2), (3, 2),
+    (1, 3),
+    (2, 4),
+    (3, 5);

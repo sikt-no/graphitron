@@ -545,4 +545,78 @@ class GraphQLQueryTest {
         List<Map<String, Object>> cats = (List<Map<String, Object>>) data.get("categoryById");
         assertThat(cats.get(0).get("parent")).isNull();
     }
+
+    // ===== argres Phase 2a — inline LookupTableField (Film.actors via film_actor junction) =====
+
+    @Test
+    void inlineLookupTableField_returnsMatchingActors() {
+        // Film 1 (ACADEMY DINOSAUR) cast: PENELOPE (id=1), NICK (id=2).
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { actors(actor_id: [1, 2]) { actorId firstName } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        List<Map<String, Object>> actors = (List<Map<String, Object>>) films.get(0).get("actors");
+        assertThat(actors).extracting(a -> a.get("firstName"))
+            .containsExactlyInAnyOrder("PENELOPE", "NICK");
+    }
+
+    @Test
+    void inlineLookupTableField_preservesInputOrder() {
+        // Input [2, 1] should return NICK before PENELOPE.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { actors(actor_id: [2, 1]) { firstName } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        List<Map<String, Object>> actors = (List<Map<String, Object>>) films.get(0).get("actors");
+        assertThat(actors).extracting(a -> a.get("firstName"))
+            .containsExactly("NICK", "PENELOPE");
+    }
+
+    @Test
+    void inlineLookupTableField_fkFilter_excludesActorsNotInFilm() {
+        // Film 1 cast: actors 1, 2. Actor 3 (ED) is not in film 1 — the FK chain drops him.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { actors(actor_id: [1, 3]) { firstName } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        List<Map<String, Object>> actors = (List<Map<String, Object>>) films.get(0).get("actors");
+        assertThat(actors).extracting(a -> a.get("firstName")).containsExactly("PENELOPE");
+    }
+
+    @Test
+    void inlineLookupTableField_emptyInput_returnsEmpty() {
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { actors(actor_id: []) { firstName } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        List<Map<String, Object>> actors = (List<Map<String, Object>>) films.get(0).get("actors");
+        assertThat(actors).isEmpty();
+    }
+
+    @Test
+    void inlineLookupTableField_nullInput_returnsEmpty() {
+        // actor_id is optional; omitting it should short-circuit to an empty list (n=0 path).
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { actors { firstName } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        List<Map<String, Object>> actors = (List<Map<String, Object>>) films.get(0).get("actors");
+        assertThat(actors).isEmpty();
+    }
+
+    @Test
+    void inlineLookupTableField_acrossMultipleParents_perFilmFiltering() {
+        // Film 2 (ACE GOLDFINGER) cast: PENELOPE (1), ED (3). Film 3 cast: PENELOPE only.
+        // Same input [1, 3] on both → film 2 has both; film 3 has only PENELOPE.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"2\", \"3\"]) { filmId actors(actor_id: [1, 3]) { firstName } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        assertThat(films).hasSize(2);
+
+        var film2 = films.get(0);
+        assertThat(film2.get("filmId")).isEqualTo(2);
+        var film2Actors = (List<Map<String, Object>>) film2.get("actors");
+        assertThat(film2Actors).extracting(a -> a.get("firstName"))
+            .containsExactlyInAnyOrder("PENELOPE", "ED");
+
+        var film3 = films.get(1);
+        assertThat(film3.get("filmId")).isEqualTo(3);
+        var film3Actors = (List<Map<String, Object>>) film3.get("actors");
+        assertThat(film3Actors).extracting(a -> a.get("firstName")).containsExactly("PENELOPE");
+    }
 }
