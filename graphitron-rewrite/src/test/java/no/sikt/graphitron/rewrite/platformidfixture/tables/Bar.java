@@ -18,7 +18,7 @@ import org.jooq.impl.TableImpl;
 /**
  * Hand-written jOOQ table that mimics the shape the custom {@code KjerneJooqGenerator} emits for
  * tables with a legacy composite platform key: two real key columns ({@code ID_1}, {@code ID_2})
- * plus the {@code __ID_TYPE_ID} / {@code __ID_KEY_COLUMNS} metadata constants the rewrite's
+ * plus the {@code __NODE_TYPE_ID} / {@code __NODE_KEY_COLUMNS} metadata constants the rewrite's
  * {@link no.sikt.graphitron.rewrite.JooqCatalog#nodeIdMetadata} probe reflects on. Retains the
  * legacy {@code get*Id() -> SelectField<String>} instance methods and the record-level
  * {@code getId}/{@code setId}/{@code getPersonId}/{@code setPersonId} accessors — these continue
@@ -38,9 +38,9 @@ public class Bar extends TableImpl<BarRecord> {
      * these two constants via reflection to synthesize {@code NodeType} classification for
      * platform-id tables; see the plan at {@code docs/planning/legacy-platform-id.md}.
      */
-    public static final String __ID_TYPE_ID = "Bar";
+    public static final String __NODE_TYPE_ID = "Bar";
 
-    public static final org.jooq.Field<?>[] __ID_KEY_COLUMNS = { BAR.ID_1, BAR.ID_2 };
+    public static final org.jooq.Field<?>[] __NODE_KEY_COLUMNS = { BAR.ID_1, BAR.ID_2 };
 
     @Override
     public Class<BarRecord> getRecordType() {

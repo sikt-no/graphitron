@@ -267,10 +267,10 @@ public class JooqCatalog {
      * SQL name. Reads two static fields via reflection:
      *
      * <ul>
-     *   <li>{@code public static final String __ID_TYPE_ID} — the {@code typeId} that identifies
+     *   <li>{@code public static final String __NODE_TYPE_ID} — the {@code typeId} that identifies
      *       the node type in encoded IDs (same value a consumer would write as
      *       {@code @node(typeId:)} in SDL for the same table).</li>
-     *   <li>{@code public static final Field<?>[] __ID_KEY_COLUMNS} — the underlying
+     *   <li>{@code public static final Field<?>[] __NODE_KEY_COLUMNS} — the underlying
      *       {@link org.jooq.Field} references in positional order. Each is resolved to a
      *       {@link ColumnRef} via the table's column set; any unresolved entry fails the probe.</li>
      * </ul>
@@ -279,8 +279,8 @@ public class JooqCatalog {
      * <ul>
      *   <li>the catalog is unavailable or the table cannot be found;</li>
      *   <li>either constant is absent on the table class;</li>
-     *   <li>the constants fail the sanity checks: {@code __ID_TYPE_ID} non-null and non-empty,
-     *       {@code __ID_KEY_COLUMNS} non-null, non-empty, and every entry resolvable to a column
+     *   <li>the constants fail the sanity checks: {@code __NODE_TYPE_ID} non-null and non-empty,
+     *       {@code __NODE_KEY_COLUMNS} non-null, non-empty, and every entry resolvable to a column
      *       on the same table. Malformed metadata logs a warning keyed on the table SQL name; the
      *       classifier boundary surfaces this as an {@code UnclassifiedType} once the probe is
      *       consumed there (Step 2 of the platform-id plan).</li>
@@ -288,7 +288,7 @@ public class JooqCatalog {
      *
      * <p>Consumer-side: {@code NodeIdStrategy.createId(typeId, keyFields)} and
      * {@code NodeIdStrategy.hasIds(typeId, ids, keyFields)} both depend on the positional order of
-     * {@code __ID_KEY_COLUMNS} — reordering between releases would re-encode new IDs in a different
+     * {@code __NODE_KEY_COLUMNS} — reordering between releases would re-encode new IDs in a different
      * order than decoded IDs produced pre-upgrade, and {@code hasIds} would fail to match. The
      * probe treats the order as opaque but stable.
      */
@@ -324,8 +324,8 @@ public class JooqCatalog {
             Object typeIdRaw;
             Object keyColumnsRaw;
             try {
-                typeIdRaw = tableClass.getField("__ID_TYPE_ID").get(null);
-                keyColumnsRaw = tableClass.getField("__ID_KEY_COLUMNS").get(null);
+                typeIdRaw = tableClass.getField("__NODE_TYPE_ID").get(null);
+                keyColumnsRaw = tableClass.getField("__NODE_KEY_COLUMNS").get(null);
             } catch (NoSuchFieldException e) {
                 return new NodeIdMetadataLookup.Absent();
             } catch (IllegalAccessException e) {
@@ -359,22 +359,22 @@ public class JooqCatalog {
             java.util.function.Function<String, Optional<ColumnEntry>> columnLookup) {
         if (!(typeIdRaw instanceof String typeId) || typeId.isEmpty()) {
             return malformed(tableSqlName,
-                "__ID_TYPE_ID must be a non-empty String (got: " + typeIdRaw + ")");
+                "__NODE_TYPE_ID must be a non-empty String (got: " + typeIdRaw + ")");
         }
         if (!(keyColumnsRaw instanceof org.jooq.Field<?>[] keyColumnFields) || keyColumnFields.length == 0) {
             return malformed(tableSqlName,
-                "__ID_KEY_COLUMNS must be a non-empty Field<?>[] (got: " + keyColumnsRaw + ")");
+                "__NODE_KEY_COLUMNS must be a non-empty Field<?>[] (got: " + keyColumnsRaw + ")");
         }
         var resolved = new ArrayList<ColumnRef>(keyColumnFields.length);
         for (int i = 0; i < keyColumnFields.length; i++) {
             var f = keyColumnFields[i];
             if (f == null) {
-                return malformed(tableSqlName, "__ID_KEY_COLUMNS[" + i + "] is null");
+                return malformed(tableSqlName, "__NODE_KEY_COLUMNS[" + i + "] is null");
             }
             Optional<ColumnEntry> col = columnLookup.apply(f.getName());
             if (col.isEmpty()) {
                 return malformed(tableSqlName,
-                    "__ID_KEY_COLUMNS[" + i + "] references column '" + f.getName()
+                    "__NODE_KEY_COLUMNS[" + i + "] references column '" + f.getName()
                     + "' which does not belong to this table");
             }
             var e = col.get();
@@ -511,14 +511,14 @@ public class JooqCatalog {
     /**
      * Node-identity metadata read from a table class by {@link #nodeIdMetadata(String)}.
      *
-     * <p>{@code typeId} is the {@code __ID_TYPE_ID} constant. {@code keyColumns} is the positional
-     * resolution of {@code __ID_KEY_COLUMNS} to {@link ColumnRef}s on the same table.
+     * <p>{@code typeId} is the {@code __NODE_TYPE_ID} constant. {@code keyColumns} is the positional
+     * resolution of {@code __NODE_KEY_COLUMNS} to {@link ColumnRef}s on the same table.
      */
     public record NodeIdMetadata(String typeId, List<ColumnRef> keyColumns) {}
 
     /**
      * Three-state outcome of a {@link #nodeIdMetadata} reflection probe. {@link Absent} means the
-     * table class has no {@code __ID_TYPE_ID} / {@code __ID_KEY_COLUMNS} constants (legal for
+     * table class has no {@code __NODE_TYPE_ID} / {@code __NODE_KEY_COLUMNS} constants (legal for
      * non-platform-id tables). {@link Present} carries the validated metadata. {@link Malformed}
      * carries a human-readable reason suitable for a classifier-boundary diagnostic; the caller
      * prepends the {@code "KjerneJooqGenerator metadata on table 'X' is malformed: "} prefix.

@@ -2,11 +2,11 @@
 
 > **Status:** Draft
 >
-> Rewrite Sikt's externally-owned `KjerneJooqGenerator` so every platform-id table class additionally emits two public static finals — `__ID_TYPE_ID` and `__ID_KEY_COLUMNS` — that [legacy-platform-id.md](legacy-platform-id.md) reflects on. Scratch-only in this repo (proposed location: `scratch/kjerne-jooq/`); final sources move to Sikt's external repo and the rewrite picks up a released jar.
+> Rewrite Sikt's externally-owned `KjerneJooqGenerator` so every platform-id table class additionally emits two public static finals — `__NODE_TYPE_ID` and `__NODE_KEY_COLUMNS` — that [legacy-platform-id.md](legacy-platform-id.md) reflects on. Scratch-only in this repo (proposed location: `scratch/kjerne-jooq/`); final sources move to Sikt's external repo and the rewrite picks up a released jar.
 
 ## Why
 
-`legacy-platform-id.md` is **[In Progress]** with a hard external blocker: `JooqCatalog.nodeIdMetadata(tableSqlName)` must reflect on `public static final String __ID_TYPE_ID` and `public static final Field<?>[] __ID_KEY_COLUMNS` on the jOOQ-generated table class. No KjerneJooqGenerator release emits those today. Classifier Steps 2–6 of that plan cannot ship until one does.
+`legacy-platform-id.md` is **[In Progress]** with a hard external blocker: `JooqCatalog.nodeIdMetadata(tableSqlName)` must reflect on `public static final String __NODE_TYPE_ID` and `public static final Field<?>[] __NODE_KEY_COLUMNS` on the jOOQ-generated table class. No KjerneJooqGenerator release emits those today. Classifier Steps 2–6 of that plan cannot ship until one does.
 
 Doing the generator work here — in the same branch family as the rewrite — lets us prototype emission, review the exact Java shape against the rewrite's reflection code, and hand Sikt a reference implementation rather than a prose spec.
 
@@ -40,13 +40,13 @@ A rewrite that:
 1. **Emits two new public static finals on every table class that has a configured view with a non-null `plattformIdColumns`:**
 
    ```java
-   public static final String __ID_TYPE_ID = "368";
-   public static final Field<?>[] __ID_KEY_COLUMNS = new Field<?>[] {
+   public static final String __NODE_TYPE_ID = "368";
+   public static final Field<?>[] __NODE_KEY_COLUMNS = new Field<?>[] {
        INSTITUSJONSNR_EIER, STUDIEPROGRAMKODE, TERMINKODE_FRA, ARSTALL_FRA
    };
    ```
 
-   — `__ID_TYPE_ID` is `String.valueOf(view.getViewId())` (the integer `368` for `VITNEMALSTEKST`). `PlatformIdHelpers.lagId(viewId, vals)` encodes the numeric viewId into the base64 prefix; the constant therefore carries the same value that the composite ID already uses in production. `view.getViewName()` (the SQL view name) is kept for the `IdHelpers.nameById` lookup and is *not* the typeId. `__ID_KEY_COLUMNS` lists the `TableField` references in the order of `<plattformId><column>` entries. Order is load-bearing per legacy-platform-id §KjerneJooqGenerator contract.
+   — `__NODE_TYPE_ID` is `String.valueOf(view.getViewId())` (the integer `368` for `VITNEMALSTEKST`). `PlatformIdHelpers.lagId(viewId, vals)` encodes the numeric viewId into the base64 prefix; the constant therefore carries the same value that the composite ID already uses in production. `view.getViewName()` (the SQL view name) is kept for the `IdHelpers.nameById` lookup and is *not* the typeId. `__NODE_KEY_COLUMNS` lists the `TableField` references in the order of `<plattformId><column>` entries. Order is load-bearing per legacy-platform-id §KjerneJooqGenerator contract.
 
 2. **Preserves every existing emission byte-for-byte equivalent** so consumers on the current generator continue to compile unchanged. Legacy-platform-id explicitly allows `getId()` / `hasId` / `hasIds` to stay — the rewrite stops calling them but non-graphitron callers still do. Record-class `set<Qualifier>` keeps its `changed(..., false)` only-on-primary-id quirk unless we explicitly decide to change it (open question).
 
@@ -74,15 +74,15 @@ If the user prefers a different location (e.g. a throwaway branch, or `docs/plan
 
 - **Running tests inside this repo that depend on the new generator.** The Graphitron rewrite's test suite does not execute this code — verification happens when Sikt cuts a release and the rewrite picks it up. We can compile the scratch files manually during iteration but we won't wire them into `mvn verify`.
 - **Removing `@Deprecated` method emissions.** Legacy-platform-id says these can stay. Removing them is a separate, later decision that trades "smaller generated code" against "breaks every non-graphitron consumer call site" — not justified by this plan's scope.
-- **Changing the XML config shape.** Any new config fields (e.g. a `<typeIdOverride>` to decouple `__ID_TYPE_ID` from `viewName`) would need a separate deliberation on the Sikt side and is out of scope here.
+- **Changing the XML config shape.** Any new config fields (e.g. a `<typeIdOverride>` to decouple `__NODE_TYPE_ID` from `viewName`) would need a separate deliberation on the Sikt side and is out of scope here.
 - **Fixing the `return`-instead-of-`continue` FK-loop bug** in `generateRecordClassFooter` / `generateTableClassFooter`. Behavioural preservation is the default; fixing it would be a named open question with a before/after snippet if we decide to.
 - **Introducing a `typeId` ↔ jOOQ-table reflection helper inside the generator itself.** The rewrite-side consumer (`JooqCatalog.nodeIdMetadata`) handles reflection — the generator's job is only to emit the constants.
 
 ## Key Constraints
 
-- **Java 17 for the generated code.** Consumers may still be on Java 17; the emitted `__ID_KEY_COLUMNS = new Field<?>[] { ... }` syntax is plain Java 8+ and is safe. The generator source itself can target whatever Sikt's build uses today (ask during iteration).
+- **Java 17 for the generated code.** Consumers may still be on Java 17; the emitted `__NODE_KEY_COLUMNS = new Field<?>[] { ... }` syntax is plain Java 8+ and is safe. The generator source itself can target whatever Sikt's build uses today (ask during iteration).
 - **jOOQ `JavaGenerator` API compatibility.** The current code uses `JavaWriter.println`, `out.tab(1).println`, `getStrategy().getFile/getFullJavaClassName/getJavaIdentifier/getJavaClassName`. The rewrite stays on these APIs — no jumping to a fresh jOOQ generator-strategy mechanism mid-rewrite.
-- **`org.jooq.Field<?>[]` — not `TableField`.** The rewrite's `NodeIdMetadata` probe expects `public static final Field<?>[] __ID_KEY_COLUMNS`. Declaring the narrower `TableField` type would still match if we change the rewrite-side probe, but `Field<?>` keeps the rewrite contract as written in legacy-platform-id §"KjerneJooqGenerator contract" (`Field<?>[]`) and matches the jOOQ method-reference signatures consumers already expect.
+- **`org.jooq.Field<?>[]` — not `TableField`.** The rewrite's `NodeIdMetadata` probe expects `public static final Field<?>[] __NODE_KEY_COLUMNS`. Declaring the narrower `TableField` type would still match if we change the rewrite-side probe, but `Field<?>` keeps the rewrite contract as written in legacy-platform-id §"KjerneJooqGenerator contract" (`Field<?>[]`) and matches the jOOQ method-reference signatures consumers already expect.
 
 ## Open Questions
 
@@ -91,8 +91,8 @@ If the user prefers a different location (e.g. a throwaway branch, or `docs/plan
    - (a) Minimal surgical patch: paste the current source, add constant emission in one new method called from `generateTableClassFooter`, leave everything else identical.
    - (b) Clean-slate rewrite: extract small helpers (`EmitIdConstants`, `EmitHasMethods`, `EmitRecordAccessors`), fix the FK-loop bug, keep emission byte-equivalent for the pieces we don't deliberately change.
    - Preference? (b) is my recommendation iff we're comfortable shouldering the "prove byte-equivalence" burden; (a) is the cheap safe default.
-3. ~~**`__ID_TYPE_ID` value source.**~~ **Resolved:** stringified `view.getViewId()` (e.g. `"368"`). That is what `PlatformIdHelpers.lagId(Integer viewId, ...)` encodes into the base64 prefix today; the constant mirrors the existing on-the-wire value. `viewName` is a lookup key inside `IdHelpers.nameById`, not the typeId.
-4. **FK-reached views.** Do we emit `__ID_TYPE_ID` / `__ID_KEY_COLUMNS` constants only once per table (for the table's own view) or also per FK-reached view with a different suffix (e.g. `__PERSON_ID_TYPE_ID`)? Legacy-platform-id §"Classification" only reads the table's own metadata — so once per table is sufficient. Confirming before committing to the emission shape.
+3. ~~**`__NODE_TYPE_ID` value source.**~~ **Resolved:** stringified `view.getViewId()` (e.g. `"368"`). That is what `PlatformIdHelpers.lagId(Integer viewId, ...)` encodes into the base64 prefix today; the constant mirrors the existing on-the-wire value. `viewName` is a lookup key inside `IdHelpers.nameById`, not the typeId.
+4. **FK-reached views.** Do we emit `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` constants only once per table (for the table's own view) or also per FK-reached view with a different suffix (e.g. `__PERSON_ID_TYPE_ID`)? Legacy-platform-id §"Classification" only reads the table's own metadata — so once per table is sufficient. Confirming before committing to the emission shape.
 5. **Indexes / `PlatformIdHelpers` / `IdHelpers.java`** — all untouched by this plan? The legacy-platform-id rewrite doesn't read them, but keeping the existing generator intact by default means the new version emits them identically.
 6. **Verification plan.** Without a build in this repo, how do we know the new version is correct before Sikt integrates it? Options:
    - (a) Manual: copy into the external repo, run its tests, report back.

@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * input-side ({@link InputField.PlatformIdField}) and output-side ({@link ChildField.PlatformIdField})
  * classifier fallbacks that fire when a column lookup misses, plus the type-level {@link
  * GraphitronType.NodeType} synthesis landed in Step 2 of the platform-id plan (tables whose jOOQ
- * class exposes {@code __ID_TYPE_ID} + {@code __ID_KEY_COLUMNS} constants classify as {@code
+ * class exposes {@code __NODE_TYPE_ID} + {@code __NODE_KEY_COLUMNS} constants classify as {@code
  * NodeType} regardless of whether the SDL declares {@code @node}).
  *
  * <p>Uses the synthetic catalog in {@code no.sikt.graphitron.rewrite.platformidfixture} instead of
@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * a hand-written catalog is the only way to exercise the positive branches end-to-end. The fixture
  * has two tables:
  * <ul>
- *   <li>{@code bar} — table class carries {@code __ID_TYPE_ID = "Bar"} and {@code __ID_KEY_COLUMNS
+ *   <li>{@code bar} — table class carries {@code __NODE_TYPE_ID = "Bar"} and {@code __NODE_KEY_COLUMNS
  *       = { BAR.ID_1, BAR.ID_2 }}; also retains the legacy {@code getId()}/{@code getPersonId()}
  *       instance methods and the record-level accessors until Step 5 deletes the fallback.</li>
  *   <li>{@code qux} — plain table; no metadata, no platform-id accessors. Negative-case fixture.</li>

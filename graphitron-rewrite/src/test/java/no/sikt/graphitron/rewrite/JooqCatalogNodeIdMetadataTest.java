@@ -47,7 +47,7 @@ class JooqCatalogNodeIdMetadataTest {
 
     @Test
     void keyColumnOrderPreservesConstantDeclaration() {
-        // The order of __ID_KEY_COLUMNS is load-bearing — encode/decode must pair positionally.
+        // The order of __NODE_KEY_COLUMNS is load-bearing — encode/decode must pair positionally.
         var meta = catalog().nodeIdMetadata("bar").orElseThrow();
         assertThat(meta.keyColumns()).hasSize(2);
         assertThat(meta.keyColumns().get(0).sqlName()).isEqualTo("id_1");
