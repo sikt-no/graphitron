@@ -154,6 +154,10 @@ Steps 1-2 shipped on `claude/review-docs-plan-adYJW`. Step 5 superseded by `plan
 
 Pivot from treating platform-id as a separate sum-type variant (`PlatformIdField`) to synthesizing `NodeType` classification from `__ID_TYPE_ID` + `__ID_KEY_COLUMNS` constants emitted by a coordinated KjerneJooqGenerator release. All downstream paths (projection, filter, mutation binding) flow through the existing `@nodeId` generator machinery — `NodeIdStrategy.createId` / `hasId` / `hasIds` / `setId`. Unifies what would have been two parallel classification-and-emission paths into one; deletes `InputField.PlatformIdField` / `ChildField.PlatformIdField` after migration. Co-lands the `ChildField.NodeIdField` emission currently stubbed in `NOT_IMPLEMENTED_REASONS`. Mutation binding still blocked on argres Phase 3 for `InputColumnBinding` population. Supersedes the previous four-item plan (prior Items 1-2 shipped as the parallel-variant approach and will be undone in the final commit of this plan).
 
+### KjerneJooqGenerator rewrite — emit NodeId metadata constants **[Draft]** — [plan-kjerne-jooq-generator.md](plan-kjerne-jooq-generator.md)
+
+Rewrite Sikt's externally-owned `KjerneJooqGenerator` so every platform-id table class additionally emits `public static final String __ID_TYPE_ID` and `public static final Field<?>[] __ID_KEY_COLUMNS`. Unblocks legacy-platform-id Steps 2–6 at release time. Scratch-only in this repo (proposed `scratch/kjerne-jooq/`); Sikt copies the final sources into their external repo and cuts a release.
+
 ## Backlog
 
 Unplanned items. Pick one, draft a plan, then move to Active.
