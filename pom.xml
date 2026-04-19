@@ -41,6 +41,7 @@
         <version.jackson.annotations>2.21</version.jackson.annotations>
         <version.postgresql>42.7.10</version.postgresql>
         <version.testcontainers.postgresql>2.0.4</version.testcontainers.postgresql>
+        <version.error-prone>2.36.0</version.error-prone>
     </properties>
 
     <dependencyManagement>
@@ -381,7 +382,17 @@
                     <compilerArgs>
                         <!-- show all compiler warnings -->
                         <arg>-Xlint:all</arg>
+                        <arg>-XDcompilePolicy=simple</arg>
+                        <arg>-Xplugin:ErrorProne</arg>
+                        <arg>-XDshould-stop.ifError=FLOW</arg>
                     </compilerArgs>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>com.google.errorprone</groupId>
+                            <artifactId>error_prone_core</artifactId>
+                            <version>${version.error-prone}</version>
+                        </path>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
             <plugin>
