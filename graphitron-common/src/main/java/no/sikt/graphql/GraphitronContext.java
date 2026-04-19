@@ -22,6 +22,24 @@ public interface GraphitronContext {
     <T> T getContextArgument(DataFetchingEnvironment env, String name);
 
     /**
+     * Returns the tenant identifier for the current request, or an empty string when tenant
+     * scoping does not apply. Graphitron combines this with the field path (list indices
+     * stripped) to build DataLoader names — two tenants issuing the same query must not share
+     * a DataLoader cache, otherwise one tenant can observe the other's data.
+     *
+     * <p>Default implementation returns an empty string. Applications with multi-tenant data
+     * separation override this to return a per-request tenant identifier (extracted from
+     * {@code env.getGraphQlContext()}, a JWT claim, or similar).
+     *
+     * <p>Unlike {@link #getDataLoaderName}, this method's output is concatenated by Graphitron
+     * with a path segment that Graphitron controls — implementations cannot accidentally
+     * produce a DataLoader name that collides across field paths or aliases.
+     */
+    default String getTenantId(DataFetchingEnvironment env) {
+        return "";
+    }
+
+    /**
      * Returns the name under which Graphitron will register and look up the DataLoader for the
      * field currently being resolved.
      *
@@ -49,6 +67,12 @@ public interface GraphitronContext {
      * <p>Strip integer segments (list indices) from the path before using it as the name:
      * {@code /user/friends/0/orders} and {@code /user/friends/1/orders} are the same field
      * position and must share a DataLoader for batching to work.
+     *
+     * <p><strong>Legacy only.</strong> The rewrite emitter (argres Phase 2b onwards) no longer
+     * calls this method — it constructs the DataLoader name from {@link #getTenantId} combined
+     * with {@code env.getExecutionStepInfo().getPath().getKeysOnly()} directly, so the path
+     * handling is always correct and only the tenant prefix is pluggable. Legacy generated
+     * code and legacy helpers ({@code EnvironmentHandler}) still consume this method.
      *
      * @param env the DataFetchingEnvironment for the field currently being resolved
      * @return a name that is unique per field path (without list indices) within the query

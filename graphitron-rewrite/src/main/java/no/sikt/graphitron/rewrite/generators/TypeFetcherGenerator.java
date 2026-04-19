@@ -979,7 +979,7 @@ public class TypeFetcherGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
             .addParameter(ENV, "env")
-            .addStatement("$T name = graphitronContext(env).getDataLoaderName(env)", String.class)
+            .addCode(buildDataLoaderName())
             .addCode(
                 "$T loader = env.getDataLoaderRegistry()\n" +
                 "    .computeIfAbsent(name, k -> $T.newDataLoaderWithContext($L));\n",
@@ -1073,7 +1073,7 @@ public class TypeFetcherGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
             .addParameter(ENV, "env")
-            .addStatement("$T name = graphitronContext(env).getDataLoaderName(env)", String.class)
+            .addCode(buildDataLoaderName())
             .addCode(
                 "$T loader = env.getDataLoaderRegistry()\n" +
                 "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
@@ -1081,6 +1081,28 @@ public class TypeFetcherGenerator {
 
         methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, parentTable));
         return methodBuilder.addStatement("return loader.load(key, env)").build();
+    }
+
+    /**
+     * Emits the DataLoader name construction for the rewrite emitter. The name is built from
+     * {@code GraphitronContext.getTenantId(env)} + {@code "/"} +
+     * {@code env.getExecutionStepInfo().getPath().getKeysOnly()} joined by {@code "/"} —
+     * tenant-scoped and path-unique. The path is Graphitron-controlled; only the tenant prefix
+     * is pluggable via {@link no.sikt.graphql.GraphitronContext#getTenantId}, so implementers
+     * cannot accidentally produce a colliding name.
+     *
+     * <p>{@code ResultPath.getKeysOnly()} returns named segments only (list indices stripped),
+     * so {@code /films/0/actors} and {@code /films/1/actors} map to the same
+     * {@code [films, actors]} key list — the correct batching scope for a per-parent
+     * DataLoader. Aliased uses of the same field get different path segments because
+     * graphql-java records aliases as path keys, so {@code heroes: actors} and
+     * {@code villains: actors} end up in different DataLoaders.
+     */
+    private static CodeBlock buildDataLoaderName() {
+        return CodeBlock.builder()
+            .addStatement("$T name = graphitronContext(env).getTenantId(env) + $S + $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
+                String.class, "/", String.class, "/")
+            .build();
     }
 
     private static String bkfFieldName(BatchKeyField bkf) {
