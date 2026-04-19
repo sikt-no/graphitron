@@ -105,4 +105,8 @@ public final class TestFixtures {
     public static ChildField.PlatformIdField platformIdField(String parentType, String name, String getterName) {
         return new ChildField.PlatformIdField(parentType, name, null, getterName);
     }
+
+    public static ChildField.NodeIdField nodeIdField(String parentType, String name, String nodeTypeId, List<ColumnRef> keyColumns) {
+        return new ChildField.NodeIdField(parentType, name, null, nodeTypeId, keyColumns);
+    }
 }

@@ -189,6 +189,10 @@ public class TypeClassGenerator {
     }
 
     private static no.sikt.graphitron.javapoet.CodeBlock buildKeyColumnsArray(ChildField.NodeIdField nf) {
+        if (nf.nodeKeyColumns().isEmpty()) {
+            throw new IllegalStateException(
+                "NodeIdField '" + nf.name() + "' on type '" + nf.parentTypeName() + "' has no key columns");
+        }
         var body = no.sikt.graphitron.javapoet.CodeBlock.builder();
         body.add("new $T<?>[] { ", FIELD);
         for (int i = 0; i < nf.nodeKeyColumns().size(); i++) {

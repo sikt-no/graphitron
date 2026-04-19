@@ -162,4 +162,15 @@ class JooqCatalogNodeIdMetadataTest {
     void diagnosticEmptyForTableNotInCatalog() {
         assertThat(catalog().nodeIdMetadataDiagnostic("nonexistent")).isEmpty();
     }
+
+    @Test
+    void diagnosticPresentForMalformedConstants() {
+        // MalformedBar has __NODE_TYPE_ID = "" — the empty-string check is the first validation gate.
+        // A non-empty Optional here proves the Malformed branch in nodeIdMetadataDiagnostic fires,
+        // not the Absent branch (which would also return empty and make the three tests above pass
+        // even if instanceof arms were accidentally swapped).
+        assertThat(catalog().nodeIdMetadataDiagnostic("malformed_bar"))
+            .isPresent()
+            .get().asString().contains("__NODE_TYPE_ID");
+    }
 }

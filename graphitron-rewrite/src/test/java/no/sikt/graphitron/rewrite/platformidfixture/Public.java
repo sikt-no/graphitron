@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.platformidfixture;
 import java.util.List;
 
 import no.sikt.graphitron.rewrite.platformidfixture.tables.Bar;
+import no.sikt.graphitron.rewrite.platformidfixture.tables.MalformedBar;
 import no.sikt.graphitron.rewrite.platformidfixture.tables.Qux;
 
 import org.jooq.Catalog;
@@ -18,6 +19,7 @@ public class Public extends SchemaImpl {
     public static final Public PUBLIC = new Public();
 
     public final Bar BAR = Bar.BAR;
+    public final MalformedBar MALFORMED_BAR = MalformedBar.MALFORMED_BAR;
     public final Qux QUX = Qux.QUX;
 
     private Public() {
@@ -31,6 +33,6 @@ public class Public extends SchemaImpl {
 
     @Override
     public final List<Table<?>> getTables() {
-        return List.of(Bar.BAR, Qux.QUX);
+        return List.of(Bar.BAR, MalformedBar.MALFORMED_BAR, Qux.QUX);
     }
 }

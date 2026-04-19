@@ -15,6 +15,7 @@ import java.util.List;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.rewrite.TestFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import java.util.List;
 
 /**
  * Unit tests for {@link TypeClassGenerator}. Tests verify structural properties of the generated
@@ -96,6 +97,48 @@ class TypeClassGeneratorTest {
         // Accessor selection (table.getPersonId() vs table.getId()) is a body-content question.
         // Compile tier catches the wrong accessor via graphitron-rewrite-test-spec; execution
         // tier catches wrong values via PlatformIdPipelineTest fixtures.
+    }
+
+    // ===== NodeId fields =====
+
+    @Test
+    void $fields_nodeIdField_producesSwitchArm() {
+        var spec = TypeClassGenerator.buildTypeSpec("Film",
+            filmTable(),
+            List.of(),
+            List.of(),
+            List.of(nodeIdField("Film", "id", "Film", List.of(filmIdCol()))),
+            List.of(),
+            List.of());
+        assertThat(TypeSpecAssertions.hasFieldsArm(spec, "id")).isTrue();
+    }
+
+    @Test
+    void nodeIdStrategyHelperEmittedWhenNodeIdFieldPresent() {
+        var spec = TypeClassGenerator.buildTypeSpec("Film",
+            filmTable(),
+            List.of(),
+            List.of(),
+            List.of(nodeIdField("Film", "id", "Film", List.of(filmIdCol()))),
+            List.of(),
+            List.of());
+        var helper = spec.methodSpecs().stream()
+            .filter(m -> m.name().equals("nodeIdStrategy"))
+            .findFirst();
+        assertThat(helper).isPresent();
+        assertThat(helper.get().modifiers()).contains(
+            javax.lang.model.element.Modifier.PRIVATE,
+            javax.lang.model.element.Modifier.STATIC);
+        assertThat(helper.get().returnType().toString())
+            .endsWith("NodeIdStrategy");
+    }
+
+    @Test
+    void nodeIdStrategyHelperNotEmittedWithoutNodeIdFields() {
+        // Already covered by generate_allMethodsArePresent (only "$fields" expected),
+        // but explicit here so the zero-overhead guarantee is named.
+        assertThat(spec().methodSpecs()).extracting(MethodSpec::name)
+            .doesNotContain("nodeIdStrategy");
     }
 
     // ===== Signatures =====
