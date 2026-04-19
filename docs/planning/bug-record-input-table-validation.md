@@ -1,8 +1,8 @@
 # Bug: `@table` + `@record` Input Types Fail Validation in Rewrite
 
-> **Status:** In Progress
+> **Status:** Pending Review
 >
-> Classifier fails on `@table` + `@record` combined on an input type — legacy tolerates this. Fix treats `@record` as authoritative and logs a warning naming `@table` as shadowed; introduces a builder warnings channel reusable by classification-vocabulary item 2.
+> C1–C4 landed on `claude/review-argument-handling-avbee`. Classifier now treats `@record` as authoritative on an input also carrying `@table`, emits a `BuildWarning` naming the shadowed directive, and classifies the input as if only `@record` were declared. Warnings flow through `GraphitronSchema.warnings()` to the Maven mojos. 471/471 unit tests green.
 
 Affects: rewrite classifier/validator — does not affect the legacy code generator.
 
@@ -163,13 +163,16 @@ dispatch before `@record` got a chance.
   widespread in real schemas. Warning-first preserves compatibility; a later ratchet to
   rejection (if any) is a separate decision.
 
-## Affected files
+## Affected files (landed)
 
-- `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/TypeBuilder.java` — `buildInputType`
-- `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchema.java` — add `warnings()`
-- `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/BuildContext.java` — warnings collector
-- (new) `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/BuildWarning.java`
-- `graphitron-maven-plugin/src/main/java/no/sikt/graphitron/mojo/ValidateMojo.java` — surface warnings
-- `graphitron-maven-plugin/src/main/java/no/sikt/graphitron/mojo/GenerateMojo.java` — surface warnings
-- `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java` — pipeline test
-- `docs/code-generation-triggers.md` — doc note
+- `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/TypeBuilder.java` — `buildInputType` gains a precedence check for `@table` + `@record` that routes to `buildNonTableInputType` and adds a `BuildWarning`.
+- `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchema.java` — `warnings()` accessor added; three-arg convenience constructor for the builder.
+- `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/BuildContext.java` — private `warnings` list, `addWarning(BuildWarning)` and `warnings()` accessor.
+- `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/BuildWarning.java` — new record, shape-parallel to `ValidationError`.
+- `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilder.java` — threads `ctx.warnings()` into the constructed schema.
+- `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/GraphQLRewriteGenerator.java` — surfaces each warning via its SLF4J `LOGGER.warn` using the same `file:line:col: ...` format the error path uses.
+- `graphitron-maven-plugin/src/main/java/no/sikt/graphitron/mojo/ValidateMojo.java` — surfaces warnings via `getLog().warn(formatWarning(...))` right after the builder call, before the validator runs.
+- `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java` — new `InputTypeCase.TABLE_PLUS_RECORD` case asserts the input classifies as `JooqTableRecordInputType` and the warning is emitted with the expected message.
+- `docs/code-generation-triggers.md` — table row added for the `@table` + `@record` combination, explaining `@record` dominates and the clean-up path.
+
+Not touched: `GenerateMojo.java` — it calls `GraphQLRewriteGenerator.generate()`, which now surfaces warnings inline via its own SLF4J logger. The mojo doesn't need a separate integration point.

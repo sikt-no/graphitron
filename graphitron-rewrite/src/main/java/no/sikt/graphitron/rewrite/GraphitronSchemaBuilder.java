@@ -67,7 +67,7 @@ public class GraphitronSchemaBuilder {
                         FieldCoordinates.coordinates(objType.getName(), fieldDef.getName()),
                         fieldBuilder.classifyField(fieldDef, objType.getName(), parentType)));
             });
-        return new GraphitronSchema(ctx.types, Collections.unmodifiableMap(fields));
+        return new GraphitronSchema(ctx.types, Collections.unmodifiableMap(fields), ctx.warnings());
     }
 
     private static void validateDirectiveSchema(BuildContext ctx) {

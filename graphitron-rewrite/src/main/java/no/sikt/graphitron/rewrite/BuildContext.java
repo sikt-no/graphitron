@@ -122,9 +122,23 @@ class BuildContext {
      */
     ServiceCatalog svc;
 
+    /**
+     * Non-fatal advisories collected during classification. Surfaced to the Maven log by
+     * the plugin's validate / generate mojos; never fail the build. See {@link BuildWarning}.
+     */
+    private final List<BuildWarning> warnings = new ArrayList<>();
+
     BuildContext(GraphQLSchema schema, JooqCatalog catalog) {
         this.schema = schema;
         this.catalog = catalog;
+    }
+
+    void addWarning(BuildWarning warning) {
+        warnings.add(warning);
+    }
+
+    List<BuildWarning> warnings() {
+        return List.copyOf(warnings);
     }
 
     // ===== Directive-reading helpers =====

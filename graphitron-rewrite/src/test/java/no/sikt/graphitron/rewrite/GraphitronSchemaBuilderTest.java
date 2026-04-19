@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.model.MutationField;
@@ -1564,6 +1565,25 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var t = (UnclassifiedType) schema.type("FilmInput");
                 assertThat(t.reason()).contains("com.example.nonexistent.Missing").contains("could not be loaded");
+            }),
+
+        TABLE_PLUS_RECORD(
+            "@table + @record on an input → @record wins, @table shadowed with build warning",
+            """
+            input FilmInput
+                @table(name: "film")
+                @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"})
+            { id: ID }
+            type Query { x: String }
+            """,
+            schema -> {
+                // @record dispatches first — classification ignores @table entirely.
+                var t = (JooqTableRecordInputType) schema.type("FilmInput");
+                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
+                // Warning emitted naming the shadowed directive.
+                assertThat(schema.warnings())
+                    .extracting(BuildWarning::message)
+                    .anyMatch(m -> m.contains("FilmInput") && m.contains("@table is shadowed by @record"));
             });
 
         final String sdl;

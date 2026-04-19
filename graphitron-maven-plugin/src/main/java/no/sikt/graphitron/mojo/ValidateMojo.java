@@ -3,6 +3,7 @@ package no.sikt.graphitron.mojo;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generate.GraphQLGenerator;
 import no.sikt.graphitron.generate.Validator;
+import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.GraphitronSchemaValidator;
 import no.sikt.graphitron.rewrite.ValidationError;
@@ -65,6 +66,9 @@ public class ValidateMojo extends AbstractGraphitronMojo implements Validator {
         try {
             var registry = getTypeDefinitionRegistry(GeneratorConfig.generatorSchemaFiles());
             var graphitronSchema = GraphitronSchemaBuilder.build(registry);
+            for (var warning : graphitronSchema.warnings()) {
+                getLog().warn(formatWarning(warning));
+            }
             rewriteErrors = new GraphitronSchemaValidator().validate(graphitronSchema);
             for (var error : rewriteErrors) {
                 getLog().warn(formatError(error));
@@ -100,5 +104,13 @@ public class ValidateMojo extends AbstractGraphitronMojo implements Validator {
             return loc.getSourceName() + ":" + loc.getLine() + ":" + loc.getColumn() + ": " + error.message();
         }
         return error.message();
+    }
+
+    private static String formatWarning(BuildWarning warning) {
+        var loc = warning.location();
+        if (loc != null) {
+            return loc.getSourceName() + ":" + loc.getLine() + ":" + loc.getColumn() + ": " + warning.message();
+        }
+        return warning.message();
     }
 }

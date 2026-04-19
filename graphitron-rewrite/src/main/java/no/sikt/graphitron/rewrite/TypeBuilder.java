@@ -401,6 +401,18 @@ class TypeBuilder {
         var filteredFields = inputType.getFieldDefinitions().stream()
             .filter(f -> !f.hasAppliedDirective(DIR_NOT_GENERATED))
             .toList();
+        // @record dominates @table on input types: legacy treats the combination as @record-only
+        // (six legacy paths skip when hasJavaRecordReference() is true; see
+        // docs/planning/bug-record-input-table-validation.md). The rewrite used to fall into the
+        // @table branch first, attempt to resolve the input's fields as columns, and fail. Warn
+        // and route through @record instead so schemas using the combination still classify.
+        if (inputType.hasAppliedDirective(DIR_TABLE) && inputType.hasAppliedDirective(DIR_RECORD)) {
+            ctx.addWarning(new BuildWarning(
+                "Input type '" + name + "': @table is shadowed by @record and is ignored. "
+                + "This combination is not supported — remove @table from this input.",
+                location));
+            return buildNonTableInputType(inputType, name, location);
+        }
         if (inputType.hasAppliedDirective(DIR_TABLE)) {
             String tableName = argString(inputType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
             Optional<TableRef> tableOpt = svc.resolveTable(tableName);

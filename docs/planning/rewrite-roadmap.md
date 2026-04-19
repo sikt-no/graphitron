@@ -142,7 +142,7 @@ Fill in the DataLoader rows-method bodies for `ChildField.SplitTableField` and `
 
 Five independent doc/generator-behaviour cleanups around the "source context vs. target type" split. None is a release blocker; they can land in any order. Item 2 (build warning channel) is reusable by the `@table`+`@record` bug fix and by the stubbed-variant validator's "warn instead of fail" configurations. Item 5 (lookup-condition method signature docs + execution test) gates G5/G6 execution tests.
 
-### `@table` + `@record` input type validation bug **[In Progress]** — [bug-record-input-table-validation.md](bug-record-input-table-validation.md)
+### `@table` + `@record` input type validation bug **[Pending Review]** — [bug-record-input-table-validation.md](bug-record-input-table-validation.md)
 
 Classifier fails on `@table` + `@record` combined on an input type — legacy tolerates. Fix treats `@record` as authoritative, logs a warning naming `@table` as shadowed. Introduces the shared build-warnings channel also consumed by classification-vocabulary item 2.
 

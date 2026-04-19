@@ -15,19 +15,36 @@ import java.util.Map;
  * <p>Types are keyed by name. The {@link #fields} map is the authoritative flat index of all
  * classified fields, keyed by {@link FieldCoordinates}. Use {@link #field} for O(1) point
  * lookups and {@link #fieldsOf} for O(1) per-type lookups (pre-grouped at construction time).
+ *
+ * <p>{@link #warnings} carries non-fatal advisories the builder accumulated during
+ * classification — shape-parallel to the errors {@code GraphitronSchemaValidator} produces, but
+ * never fail the build. Surfaced by the plugin's mojos to the Maven log.
  */
 public record GraphitronSchema(
     Map<String, GraphitronType> types,
     Map<FieldCoordinates, GraphitronField> fields,
-    Map<String, List<GraphitronField>> fieldsByType
+    Map<String, List<GraphitronField>> fieldsByType,
+    List<BuildWarning> warnings
 ) {
 
     /**
      * Two-arg convenience constructor: groups fields by {@code parentTypeName} automatically,
      * preserving insertion order (declaration order when the fields map is a {@link LinkedHashMap}).
+     * No warnings.
      */
     public GraphitronSchema(Map<String, GraphitronType> types, Map<FieldCoordinates, GraphitronField> fields) {
-        this(types, fields, groupByType(fields));
+        this(types, fields, groupByType(fields), List.of());
+    }
+
+    /**
+     * Three-arg convenience constructor used by {@link GraphitronSchemaBuilder} — same
+     * field-grouping as the two-arg form but preserves the {@code warnings} list the builder
+     * accumulated during classification.
+     */
+    public GraphitronSchema(Map<String, GraphitronType> types,
+                            Map<FieldCoordinates, GraphitronField> fields,
+                            List<BuildWarning> warnings) {
+        this(types, fields, groupByType(fields), List.copyOf(warnings));
     }
 
     private static Map<String, List<GraphitronField>> groupByType(Map<FieldCoordinates, GraphitronField> fields) {

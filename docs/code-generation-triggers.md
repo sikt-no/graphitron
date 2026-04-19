@@ -108,6 +108,7 @@ Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
 | Union type | `UnionType` | `*Fetchers` class |
 | `@error` | `ErrorType` | No generation (error mapping config) |
 | Input type with `@table` | `TableInputType` | Used in mutation generation |
+| Input type with `@table` + `@record` | `InputType`* (via `@record`) | On input types, `@record` dominates `@table`. When both are present, `@table` is ignored and the input classifies as if only `@record` were declared; a build warning names the shadowed directive. Clean up by removing `@table` from the input declaration — the warning disappears naturally. |
 | Input type without `@table` | `InputType`* | No generation (developer-provided class) |
 | Input type with `@table` used on fields with conflicting return tables | `PojoInputType` (unbound) | No generation — column binding resolved per field-usage |
 | Conflicting or unresolvable directives | `UnclassifiedType` | Validation error — build fails |

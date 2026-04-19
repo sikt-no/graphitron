@@ -38,6 +38,15 @@ public class GraphQLRewriteGenerator {
         var registry = getTypeDefinitionRegistry(RewriteConfig.generatorSchemaFiles());
         var schema = GraphitronSchemaBuilder.build(registry);
 
+        schema.warnings().forEach(w -> {
+            var loc = w.location();
+            if (loc != null) {
+                LOGGER.warn("{}:{}:{}: warning: {}", loc.getSourceName(), loc.getLine(), loc.getColumn(), w.message());
+            } else {
+                LOGGER.warn("warning: {}", w.message());
+            }
+        });
+
         var jooqCatalog = new JooqCatalog(RewriteConfig.getGeneratedJooqPackage());
         var errors = new GraphitronSchemaValidator(jooqCatalog).validate(schema);
         if (!errors.isEmpty()) {
