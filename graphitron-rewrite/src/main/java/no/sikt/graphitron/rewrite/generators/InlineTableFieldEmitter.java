@@ -17,8 +17,13 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 /**
  * Builds the switch-arm body for one inline {@link ChildField.TableField} in
  * {@link TypeClassGenerator}'s {@code $fields} method. Emits a correlated subquery projecting the
- * nested type, wrapped as {@code DSL.multiset(...)} (list cardinality) or
- * {@code DSL.field(DSL.select(DSL.row(...)))} (single cardinality).
+ * nested type, uniformly wrapped as {@code DSL.multiset(...)} for both cardinalities. Single
+ * cardinality adds {@code .limit(1)} inside the subquery and is unwrapped on the read side by a
+ * lambda {@code DataFetcher} registered in wiring.
+ *
+ * <p>Uniform multiset is a deliberate deviation from the G5 plan's two-shape fork — jOOQ 3.20's
+ * {@code DSL.row(Collection)} flattens nested aliased fields at render time, breaking depth-2
+ * self-referential projections. See plan history iteration 7 for the empirical findings.
  *
  * <p>Relies on the C1 invariant {@code TableField.returnType().wrapper() != Connection}.
  *
@@ -92,9 +97,9 @@ public final class InlineTableFieldEmitter {
 
     /**
      * Builds the inner correlated subquery expression: {@code DSL.select(...).from(...).join(...)
-     * .where(...).orderBy(...).limit(...)}. For list cardinality the outer caller wraps this in
-     * {@code DSL.multiset(...)}; for single cardinality, in {@code DSL.field(...)} with an
-     * explicit {@code DSL.row(...)} projection inside the SELECT.
+     * .where(...).orderBy(...).limit(...)}. The outer caller wraps this uniformly in
+     * {@code DSL.multiset(...)} for both cardinalities; single cardinality caps at {@code .limit(1)}
+     * here and is unwrapped on the read side.
      */
     private static CodeBlock buildInnerSelect(ChildField.TableField tf, List<JoinStep> path,
             List<String> aliases, String terminalAlias, ClassName typeClass, ClassName keysClass,

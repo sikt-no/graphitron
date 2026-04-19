@@ -126,9 +126,9 @@ Unified `ArgumentRef` classification + projection in the builder; gates `@condit
 
 `GraphitronSchemaValidator` rejects schemas whose classification lands on a `NOT_IMPLEMENTED_REASONS` variant; `ValidateMojo` fails the build on rewrite validation errors by default. Implemented; awaiting independent review.
 
-### G5 — Inline `TableField` emission **[Pending Review]** — [plan-g5-inline-tablefield.md](plan-g5-inline-tablefield.md)
+### G5 — Inline `TableField` emission **[Done]** — [plan-g5-inline-tablefield.md](plan-g5-inline-tablefield.md)
 
-Emission stub throws `UnsupportedOperationException` for every `ChildField.TableField`. Classification complete; emission lives in `TypeClassGenerator.$fields` as a correlated subquery, not in `TypeFetcherGenerator`. Gating prerequisite for argres Phase 2a (the lookup variant layers VALUES+JOIN onto this shape). Execution-test prerequisite: document the lookup-condition method signature (classification-vocabulary item 5).
+`TableField` emission lives in `TypeClassGenerator.$fields` as a uniform `DSL.multiset` correlated subquery; `TableField` moved to the new `PROJECTED_LEAVES` partition set. C1–C4 landed; seven execution tests cover single-hop / multi-hop / list / self-ref / optional-parent cases. Three post-approval refinements (uniform multiset, runtime alias prefix, cardinality-driven FK direction) documented in the plan history. `ConditionJoin` runtime stub, `FkJoin.alias` dead storage, and `ArgCallEmitter` first-arg hardcode captured as classification-vocabulary followups items 5/6/7. Unblocks argres Phase 2a.
 
 ### `IdReferenceField` input filter variant **[Draft]** — [plan-id-reference-input-field.md](plan-id-reference-input-field.md)
 

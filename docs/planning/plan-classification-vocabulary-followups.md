@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> Five independent doc/generator-behaviour cleanups surfaced during the `code-generation-triggers.md` rewrite; none picked up yet. Any of them can land independently; none is a release blocker.
+> Seven independent doc/generator-behaviour cleanups surfaced during the `code-generation-triggers.md` rewrite plus G5's Pending Review sweep; none picked up yet. Any of them can land independently; none is a release blocker.
 
 Each item below corrects a place where the doc or the code still treats `@lookupKey` as scope-defining, mis-states the `@condition` rule, or is missing the new **source context vs. target type** split. Items are prioritised rough-to-low effort.
 
@@ -162,6 +162,70 @@ Empirical data from attempting ConditionJoin inline emission during G5 C3/C4:
 Execution-test design: reuse the `Category.similar` fixture. Seed data-driven condition (e.g.
 `sameNamePrefix` matches categories whose names share the first letter). Assert runtime shape
 for the N × M contract.
+
+---
+
+## 6. `FkJoin.alias` is dead storage
+
+`BuildContext` populates `FkJoin.alias` as `fieldName + "_" + stepIndex` (e.g. `"language_0"`)
+while resolving a `@reference` path. No code reads it: the G5 emitter derives its own
+aliases via `JoinPathEmitter.generateAliases` from the target table's `javaClassName()` + hop
+index, and layers a runtime prefix (`parent.getName() + "_" + suffix`) for self-ref recursion
+uniqueness. The stored value is never consulted.
+
+**Change.** Pick one:
+
+- **Drop it.** Remove `alias` from the `FkJoin` record, its `ConditionJoin` sibling, and the
+  construction sites in `BuildContext`. Adjust the 9 direct-construction test sites.
+- **Use it.** Make `JoinPathEmitter.generateAliases` consume `FkJoin.alias()` when present and
+  fall back to the `javaClassName()`-derived form only when empty. This keeps the builder's
+  claim on aliasing honest and aligns with the plan's "Alias generation" section.
+
+"Drop it" is the smaller change. "Use it" aligns with the plan's original intent (builder owns
+alias identity). Pick based on whether argres Phase 2a or G6 want per-hop aliases threaded
+through the model.
+
+**Impact.** Cosmetic. No generated-code difference either way.
+
+---
+
+## 7. `ArgCallEmitter.buildCallArgs` hardcodes `"table"` as the first argument
+
+`buildCallArgs` (`generators/ArgCallEmitter.java:29-36`) emits `"table"` as the literal first
+argument of every filter-method call:
+
+```java
+public static CodeBlock buildCallArgs(List<CallParam> params, String conditionsClassName) {
+    var args = CodeBlock.builder();
+    args.add("table");
+    ...
+}
+```
+
+On the fetcher path this is correct — `TypeFetcherGenerator`'s generated methods receive
+`table` as a parameter naming the row table. On the G5 inline-subquery path, `"table"` is the
+**parent** alias (the outer `$fields(sel, table, env)` parameter), not the terminal/target
+alias inside the correlated subquery. `InlineTableFieldEmitter.buildInnerSelect`'s user-filter
+loop (`tf.filters()`, lines 137-141) calls `ArgCallEmitter.buildCallArgs` and so passes the
+parent alias to each `@condition(filter:)` method — almost certainly not what users intend,
+since filters typically operate on the target table.
+
+No G5 fixture exercises `@condition(filter:)` on an inline `TableField`, so this latent bug is
+untested. It will surface the first time an inline reference field carries `@condition(filter:)`.
+
+**Change.** Add a required `srcAlias` parameter to `ArgCallEmitter.buildCallArgs`:
+
+```java
+public static CodeBlock buildCallArgs(List<CallParam> params, String conditionsClassName, String srcAlias)
+```
+
+Fetcher callers pass `"table"` unchanged; the inline-subquery caller passes the terminal alias
+of the correlated subquery. Add an `InlineTableFieldEmitter` pipeline test with a filter method
+to lock the wiring down.
+
+**Related.** Whether the "source" for an inline-subquery filter is the terminal alias or the
+step-0 source alias is a design call — item 5's condition-method signature work decides this
+for condition joins; the same answer likely applies here.
 
 ---
 

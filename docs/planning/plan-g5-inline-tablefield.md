@@ -1,8 +1,8 @@
 # G5 — Inline `TableField` emission
 
-> **Status:** Pending Review
+> **Status:** Done
 >
-> Classification complete; emission stub throws `UnsupportedOperationException` for every `ChildField.TableField`. Prerequisite for argres Phase 2a (the lookup variant layers VALUES+JOIN onto this inline-subquery shape).
+> Emission lives in `TypeClassGenerator.$fields` as a correlated `DSL.multiset` subquery; `TableField` sits in `PROJECTED_LEAVES`. C1 (classifier rejection of `@asConnection` on inline `TableField`), C2 (`ArgCallEmitter` extraction), C3 (emitter + partition migration + four-way meta-test), C4 (schema fixtures + 7 execution tests) all landed. Three post-approval refinements (uniform multiset, runtime alias prefix, cardinality-driven FK direction) documented in history iteration 7. `ConditionJoin` runtime stub + `FkJoin.alias` dead storage + `ArgCallEmitter` first-arg hardcode deferred as classification-vocabulary followups items 5/6/7. Prerequisite for argres Phase 2a (the lookup variant layers VALUES+JOIN onto this shape); unblocked.
 
 `ChildField.TableField` is a table-mapped child field that projects a nested record (or list of records) into the parent's SELECT via a correlated sub-SELECT. It is *not* a DataLoader path — it stays inline, a single round-trip for the parent and its nested reads.
 
@@ -23,6 +23,14 @@ Inline `TableField` emission lives in **`TypeClassGenerator.$fields`**, not `Typ
 `TypeFetcherGenerator`'s arm moves to a new fourth set `PROJECTED_LEAVES` after G5 — no fetcher method is generated. The meta-test partition grows from three sets to four (landed in C3; see Resolved decision 4).
 
 ### Shape
+
+> **Implementation update (C3 / dc07882 / plan history iteration 7).** The two-shape fork
+> described below was empirically superseded: jOOQ 3.20's `DSL.row(Collection)` flattens nested
+> aliased fields at render time, breaking depth-2+ self-referential projections. Both
+> cardinalities now use `DSL.multiset(...)` uniformly; single cardinality adds `.limit(1)` inside
+> the subquery and is unwrapped on the read side by a lambda `DataFetcher`. The list-cardinality
+> shape below still matches the implementation; the single-cardinality shape is historical.
+> See `InlineTableFieldEmitter.buildSwitchArmBody` for the current code.
 
 Two emission shapes, chosen by the GraphQL return cardinality. Both share the correlated-subquery core (select + from + joins + where + orderBy + limit); only the outermost wrapping differs.
 
@@ -262,3 +270,4 @@ Per CLAUDE.md: structural assertions for unit tests, behaviour-level assertions 
   2. **Runtime alias prefix for recursive depth.** Plan specified deterministic per-hop aliases (`l0`, `c0`, with two-char fallback on same-chain collision). Works for same-chain collisions; does NOT handle cross-depth collisions in self-referential recursion (e.g. `category { parent { parent { … } } }` emits nested subselects all using `"c0"`, which PostgreSQL scoping resolves to the innermost, yielding a self-reference `c0.category_id = c0.parent_category_id`). Implementation derives the per-hop alias at runtime from the enclosing table's `getName()` — each hop is `<parentAlias>_<staticSuffix>`, making aliases globally unique across arbitrary nesting depth. The static `JoinPathEmitter.generateAliases` suffix remains deterministic as specified; the runtime prefix is purely additive uniqueness.
   3. **Cardinality-driven FK direction (self-ref).** Plan specified `first.sourceTable().equals(parentTable)` as the parent-holds-FK discriminator. Works for non-self-ref; fails for self-referential FKs where both sides are the same table (e.g. `Category.parent` and `Category.children` traverse the same FK but in opposite directions). Implementation uses cardinality as the reliable signal — `Single` → parent holds FK, `List` → parent is the PK side. Subsumes the source-table check and works for all cases.
   Findings from attempting `ConditionJoin` inline emission captured in `plan-classification-vocabulary-followups.md` item 5: proposed `ConditionJoin` enrichment (add `TableRef targetTable`), emitter shape once item 5 resolves target tables, and the `Category.similar` fixture ready for item 5 to build on.
+- 2026-04-19 — reviewer pass on Pending Review: stale javadoc in `InlineTableFieldEmitter` (class-level and `buildInnerSelect`-level comments still described the two-shape fork) updated to match the uniform `DSL.multiset` implementation; plan's `Shape` section annotated with an implementation-update callout pointing at history iteration 7. Two latent issues captured as classification-vocabulary followups: item 6 (`FkJoin.alias` is dead storage — builder writes it, nothing reads it) and item 7 (`ArgCallEmitter.buildCallArgs` hardcodes `"table"` as the first argument — wrong alias on the inline-subquery path; untested because no G5 fixture uses `@condition(filter:)` on inline `TableField`). Pending Review → Done.
