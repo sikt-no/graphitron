@@ -25,6 +25,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -39,6 +40,7 @@ class GraphQLQueryTest {
     static PostgreSQLContainer<?> postgres;
     static DSLContext dsl;
     static GraphQL graphql;
+    static final AtomicInteger QUERY_COUNT = new AtomicInteger();
 
     @BeforeAll
     static void startDatabase() throws Exception {
@@ -53,6 +55,16 @@ class GraphQLQueryTest {
             postgres.start();
             dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         }
+
+        // Count JDBC round-trips via an ExecuteListener. Tests that care (DataLoader batching)
+        // call QUERY_COUNT.set(0) before executing and assert on the count afterward.
+        dsl.configuration().set(org.jooq.impl.DefaultExecuteListenerProvider.providerOf(
+            new org.jooq.impl.DefaultExecuteListener() {
+                @Override
+                public void executeStart(org.jooq.ExecuteContext ctx) {
+                    QUERY_COUNT.incrementAndGet();
+                }
+            }));
 
         // Build GraphQL schema from the SDL used by the generator
         var sdl = Files.readString(Path.of("src/main/resources/graphql/schema.graphqls"));
@@ -682,8 +694,14 @@ class GraphQLQueryTest {
         // languages 1, 2, 3 — only language 1 has films in the seed. DataLoader batches the
         // three parent lookups into one SQL round-trip; the scatter correctly assigns all
         // films to language 1 and empty lists to languages 2 and 3 (no cross-contamination).
+        QUERY_COUNT.set(0);
         Map<String, Object> data = execute(
             "{ languageByKey(language_id: [1, 2, 3]) { languageId films { filmId } } }");
+        // Expect 2 JDBC round-trips: 1 for languageByKey root + 1 batched for films. An
+        // unbatched scatter would fire 1 + N=3 = 4. This is the primary proof that the
+        // DataLoader fan-in works — the value assertions below only prove scatter correctness.
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
+
         List<Map<String, Object>> langs = (List<Map<String, Object>>) data.get("languageByKey");
         assertThat(langs).hasSize(3);
 
@@ -695,12 +713,31 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void splitTableField_preservesParentInputOrder_scatterAlignsByIdx() {
+        // Non-identity parent order: [3, 1, 2] — only language 1 has films. If the scatter
+        // keyed children by parent-PK instead of __idx__, the films array would land on a
+        // different slot than the language-1 slot. Asserts both (a) parent order preservation
+        // from VALUES+JOIN on the root lookup, and (b) __idx__ scatter alignment on the child
+        // DataLoader.
+        Map<String, Object> data = execute(
+            "{ languageByKey(language_id: [3, 1, 2]) { languageId films { filmId } } }");
+        List<Map<String, Object>> langs = (List<Map<String, Object>>) data.get("languageByKey");
+        assertThat(langs).extracting(l -> l.get("languageId")).containsExactly(3, 1, 2);
+        assertThat((List<?>) langs.get(0).get("films")).isEmpty();
+        assertThat((List<?>) langs.get(1).get("films")).hasSize(5);
+        assertThat((List<?>) langs.get(2).get("films")).isEmpty();
+    }
+
+    @Test
     void splitLookupTableField_filtersActorsPerFilm() {
         // Film 1 cast: PENELOPE (1), NICK (2). Film 2 cast: PENELOPE (1), ED (3).
         // Film 3 cast: PENELOPE (1). actor_id: [1, 2] → film 1 gets {1,2}; film 2 gets {1};
         // film 3 gets {1}.
+        QUERY_COUNT.set(0);
         Map<String, Object> data = execute(
             "{ films { filmId actorsBySplitLookup(actor_id: [1, 2]) { actorId } } }");
+        // 5 parent films + 1 batched SplitLookup child = 2 round-trips. Unbatched: 1 + 5 = 6.
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
 
         var byId = films.stream().collect(java.util.stream.Collectors.toMap(
@@ -733,8 +770,12 @@ class GraphQLQueryTest {
     void splitLookupTableField_emptyLookupInput_returnsEmptyPerFilm() {
         // Empty @lookupKey list → emptyScatter short-circuit. No DB round-trip for the
         // lookup join; every parent gets an empty sublist.
+        QUERY_COUNT.set(0);
         Map<String, Object> data = execute(
             "{ films { filmId actorsBySplitLookup(actor_id: []) { actorId } } }");
+        // Parent query only — the empty-input short-circuit returns emptyScatter without
+        // touching DSL, so no child round-trip fires.
+        assertThat(QUERY_COUNT.get()).isEqualTo(1);
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
 
         assertThat(films).allSatisfy(f ->
@@ -745,8 +786,11 @@ class GraphQLQueryTest {
     void splitLookupTableField_nullLookupInput_returnsEmptyPerFilm() {
         // Omitting the @lookupKey arg → null → env.getArgument returns null → rowCount=0 →
         // inputRows helper returns new Row[0] → emptyScatter short-circuit.
+        QUERY_COUNT.set(0);
         Map<String, Object> data = execute(
             "{ films { filmId actorsBySplitLookup { actorId } } }");
+        // Same short-circuit as the empty-list case — parent query only.
+        assertThat(QUERY_COUNT.get()).isEqualTo(1);
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
 
         assertThat(films).allSatisfy(f ->

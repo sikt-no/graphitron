@@ -13,16 +13,19 @@
 - **VALUES + explicit ON** (not USING). Junction tables re-expose FK column names that collide with target-table column names; USING would be ambiguous. Phase 2a's USING→ON lesson applies identically here.
 - **DataLoader factory: `newDataLoader` with explicitly-typed lambda.** Target-typed inference picks `List<Object>`, breaking the rows-method call. Both lambda parameters need explicit types.
 
-## Not implemented
+## Not implemented — rejected at validate time
 
-- **Single-cardinality `Split*` fields** — runtime stub (`buildRuntimeStub`). `scatterFirstByIdx` (one `Record` per parent key, `null` for no-match) does not exist. This is not documented in the plan's Non-goals and should be.
-- **`ConditionJoin` steps in FK path** — runtime stub, same as G5/Phase 2a.
+The three shapes below were runtime-throwing stubs; review surfaced them through the validator
+so build-time now fails instead of request-time. `SplitRowsMethodEmitter.unsupportedReason`
+is the single source of truth — both the emitter (runtime stub) and
+`GraphitronSchemaValidator.validateVariantIsImplemented` (build-time error) call it.
 
-## Review blockers (open before Done)
-
-1. **N-parents → 1-SQL-round-trip assertion missing.** The execution tests verify scatter correctness but do not assert that multiple parents produce a single SQL batch. This is the primary proof that DataLoader batching works. Add a query-count assertion to `splitTableField_multipleParents_scatterPerParent`.
-2. **Input-order preservation not tested for `SplitTableField`.** Only tested for the inline lookup path. Add a fixture with parents in non-identity order.
-3. **`AS_CONNECTION_SPLIT_LOOKUP_REJECTED` tests fewer message substrings than `AS_CONNECTION_SPLIT_REJECTED`.** Messages are identical in `FieldBuilder`; the test should be symmetric.
+- **Single-cardinality `Split*` fields.** `scatterFirstByIdx` (one `Record` per parent key,
+  `null` for no-match) does not exist. Validator rejects these at build time.
+- **`ConditionJoin` steps in FK path.** Blocked on classification-vocabulary item 5 resolving
+  condition-method target tables. Validator rejects.
+- **Path-less `Split*` (empty `joinPath`).** A `@splitQuery` field without `@reference` today.
+  Validator rejects.
 
 ## Non-goals
 

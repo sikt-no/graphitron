@@ -579,7 +579,9 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.field("Film", "actorsByKey")).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) schema.field("Film", "actorsByKey")).reason())
-                    .contains("@asConnection on @splitQuery fields is not supported");
+                    .contains("@asConnection on @splitQuery fields is not supported")
+                    .contains("window-function partitioning")
+                    .contains("deferred to a follow-up plan");
             }),
 
         SPLIT_QUERY(
