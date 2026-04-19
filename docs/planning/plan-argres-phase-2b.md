@@ -1,6 +1,6 @@
 # argres Phase 2b — Split(Lookup)TableField DataLoader rows-method emission
 
-> **Status:** In Progress
+> **Status:** Pending Review
 >
 > Fills in the DataLoader rows-method bodies for `ChildField.SplitTableField` and `ChildField.SplitLookupTableField`, which today compile but throw `UnsupportedOperationException` at runtime. Completes the split-query story for inline DataLoader batching; `RecordLookupTableField` (Phase 2c) remains out of scope pending the `BatchKey.ObjectBased` model decision.
 
