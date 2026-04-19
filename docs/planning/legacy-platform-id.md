@@ -284,7 +284,7 @@ Skipping step 2 before step 4 fails loudly: every `id: ID!` on a (formerly) plat
 
 Five commits, roughly in order. Each lands independently and green.
 
-1. **`JooqCatalog.nodeIdMetadata` probe** — reflection over `__ID_TYPE_ID` + `__ID_KEY_COLUMNS`. No callers yet; unit-tested against the synthetic fixture (which gets the constants added in the same commit) and against at least one test-spec jOOQ table so the compile tier exercises real metadata. No test changes needed elsewhere — `PlatformIdField` variants still fire for everything.
+1. **`JooqCatalog.nodeIdMetadata` probe** — *shipped*. Reflection probe landed on the synthetic fixture (constants added to `Bar.java`). Malformed-metadata branches covered by a package-private `JooqCatalog.validateNodeIdMetadata` helper under `JooqCatalogNodeIdMetadataTest`. Compile-tier coverage (real test-spec jOOQ table with hand-edited constants) took the do-nothing fallback — deferred to post-X.Y per the Compile-tier coverage section; Step 3's execution-test claim has to track this. See **Learnings from Step 1** below.
 2. **`TypeBuilder` synthesizes `NodeType`** — `buildTableType` reads `nodeIdMetadata` **unconditionally** for every `@table` type and branches on the four `(has @node, has metadata)` combinations:
     - neither → `TableType` (unchanged).
     - `@node` only → existing path, typeId/keyColumns from SDL (unchanged).
@@ -297,6 +297,12 @@ Five commits, roughly in order. Each lands independently and green.
 5. **Delete `PlatformIdField` sum-type variants + supporting catalog methods** — the variant records, the `FieldBuilder`/`TypeBuilder` fallbacks, `hasPlatformIdAccessors`, `platformIdOutputMethodNames`, `sqlToAccessorSuffix` (if no other caller), `IMPLEMENTED_LEAVES` entries, `ChildPlatformIdFieldValidationTest` / `PlatformIdFieldValidationTest`. Partition invariants in the variant-coverage meta-test resolve automatically since the record no longer exists. **Test migration:** the two variant-specific test classes are deleted; no replacements needed — pipeline coverage for `NodeIdField` outcomes shipped in steps 2-4.
 
 Mutation binding (previous Item 3) remains gated on argres Phase 3 and lands via that plan — but as a `NodeIdField` input variant, not `PlatformIdField`.
+
+### Learnings from Step 1
+
+- **`__ID_KEY_COLUMNS` references instance fields via the static singleton.** Standard jOOQ emits columns as `public final TableField<...>` instance fields, not statics. The static `__ID_KEY_COLUMNS` array therefore must qualify each entry through the table's static singleton — the fixture uses `{ BAR.ID_1, BAR.ID_2 }`, mirroring what `KjerneJooqGenerator` will need to emit inside `<Customer>.java`: `{ CUSTOMER.STORE_ID, CUSTOMER.CUSTOMER_ID }`. Source-order matters: `public static final Customer CUSTOMER = new Customer();` must come before `__ID_KEY_COLUMNS` so the singleton is constructed (and its instance fields initialised) before the array literal evaluates. Pin this in the KjerneJooqGenerator design doc alongside the ordering-stability rule already in Open points.
+- **Validator factored package-private for malformed-case testability.** `JooqCatalog.validateNodeIdMetadata(String, Object, Object, Function<String, Optional<ColumnEntry>>)` separates the reflection-read from the validation so each malformed-metadata branch is unit-testable without swapping `static final` fields on the fixture class (Java 17+ reflection on final fields is finicky and the `Field.setAccessible(true) + Field.set(null, ...)` dance is unreliable across JVMs). Step 2's `JooqCatalog.nodeIdMetadata` consumer can assume the probe returns `Optional<NodeIdMetadata>` with all sanity checks passed.
+- **Malformed metadata currently only logs.** Step 1 has no classifier-boundary consumer, so the probe logs a warning keyed on table SQL name and returns empty. Step 2 wires the classifier to consume the probe; the diagnostic-channel surfacing (malformed metadata → `UnclassifiedType` with the "KjerneJooqGenerator metadata on table 'X' is malformed: …" reason) will need a way to distinguish "absent" from "malformed" at that boundary. Candidate shapes: a two-valued return (`Optional<Result<NodeIdMetadata, String>>`-style) or a separate `Optional<String> nodeIdMetadataDiagnostic(String tableSqlName)` sibling. Decide at Step 2 kickoff.
 
 ---
 

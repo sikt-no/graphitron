@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import org.jooq.Catalog;
 import org.jooq.ForeignKey;
 import org.jooq.Schema;
@@ -8,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -258,6 +260,96 @@ public class JooqCatalog {
     }
 
     /**
+     * Probe for KjerneJooqGenerator's node-identity metadata on the table class with the given
+     * SQL name. Reads two static fields via reflection:
+     *
+     * <ul>
+     *   <li>{@code public static final String __ID_TYPE_ID} — the {@code typeId} that identifies
+     *       the node type in encoded IDs (same value a consumer would write as
+     *       {@code @node(typeId:)} in SDL for the same table).</li>
+     *   <li>{@code public static final Field<?>[] __ID_KEY_COLUMNS} — the underlying
+     *       {@link org.jooq.Field} references in positional order. Each is resolved to a
+     *       {@link ColumnRef} via the table's column set; any unresolved entry fails the probe.</li>
+     * </ul>
+     *
+     * <p>Returns {@link Optional#empty()} when:
+     * <ul>
+     *   <li>the catalog is unavailable or the table cannot be found;</li>
+     *   <li>either constant is absent on the table class;</li>
+     *   <li>the constants fail the sanity checks: {@code __ID_TYPE_ID} non-null and non-empty,
+     *       {@code __ID_KEY_COLUMNS} non-null, non-empty, and every entry resolvable to a column
+     *       on the same table. Malformed metadata logs a warning keyed on the table SQL name; the
+     *       classifier boundary surfaces this as an {@code UnclassifiedType} once the probe is
+     *       consumed there (Step 2 of the platform-id plan).</li>
+     * </ul>
+     *
+     * <p>Consumer-side: {@code NodeIdStrategy.createId(typeId, keyFields)} and
+     * {@code NodeIdStrategy.hasIds(typeId, ids, keyFields)} both depend on the positional order of
+     * {@code __ID_KEY_COLUMNS} — reordering between releases would re-encode new IDs in a different
+     * order than decoded IDs produced pre-upgrade, and {@code hasIds} would fail to match. The
+     * probe treats the order as opaque but stable.
+     */
+    public Optional<NodeIdMetadata> nodeIdMetadata(String tableSqlName) {
+        return findTable(tableSqlName).flatMap(te -> {
+            Class<?> tableClass = te.table().getClass();
+            Object typeIdRaw;
+            Object keyColumnsRaw;
+            try {
+                typeIdRaw = tableClass.getField("__ID_TYPE_ID").get(null);
+                keyColumnsRaw = tableClass.getField("__ID_KEY_COLUMNS").get(null);
+            } catch (NoSuchFieldException e) {
+                // Absent constants: not an error, just means this table has no platform-id metadata.
+                return Optional.empty();
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException(e);
+            }
+            return validateNodeIdMetadata(tableSqlName, typeIdRaw, keyColumnsRaw,
+                name -> findColumn(te.table(), name));
+        });
+    }
+
+    /**
+     * Validation half of {@link #nodeIdMetadata(String)}, factored so tests can exercise each
+     * malformed-metadata branch by passing synthetic raw values without having to swap {@code
+     * static final} fields on a real table class. The {@code columnLookup} resolves a SQL column
+     * name to a {@link ColumnEntry} on the owning table.
+     */
+    static Optional<NodeIdMetadata> validateNodeIdMetadata(
+            String tableSqlName,
+            Object typeIdRaw,
+            Object keyColumnsRaw,
+            java.util.function.Function<String, Optional<ColumnEntry>> columnLookup) {
+        if (!(typeIdRaw instanceof String typeId) || typeId.isEmpty()) {
+            LOGGER.warn("KjerneJooqGenerator metadata on table '{}' is malformed: __ID_TYPE_ID must be a non-empty String (got: {})",
+                tableSqlName, typeIdRaw);
+            return Optional.empty();
+        }
+        if (!(keyColumnsRaw instanceof org.jooq.Field<?>[] keyColumnFields) || keyColumnFields.length == 0) {
+            LOGGER.warn("KjerneJooqGenerator metadata on table '{}' is malformed: __ID_KEY_COLUMNS must be a non-empty Field<?>[] (got: {})",
+                tableSqlName, keyColumnsRaw);
+            return Optional.empty();
+        }
+        var resolved = new ArrayList<ColumnRef>(keyColumnFields.length);
+        for (int i = 0; i < keyColumnFields.length; i++) {
+            var f = keyColumnFields[i];
+            if (f == null) {
+                LOGGER.warn("KjerneJooqGenerator metadata on table '{}' is malformed: __ID_KEY_COLUMNS[{}] is null",
+                    tableSqlName, i);
+                return Optional.empty();
+            }
+            Optional<ColumnEntry> col = columnLookup.apply(f.getName());
+            if (col.isEmpty()) {
+                LOGGER.warn("KjerneJooqGenerator metadata on table '{}' is malformed: __ID_KEY_COLUMNS[{}] references column '{}' which does not belong to this table",
+                    tableSqlName, i, f.getName());
+                return Optional.empty();
+            }
+            var e = col.get();
+            resolved.add(new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()));
+        }
+        return Optional.of(new NodeIdMetadata(typeId, List.copyOf(resolved)));
+    }
+
+    /**
      * Returns the names of {@code get*Id()} instance methods on the jOOQ table class (not the
      * record class) that take no parameters and return an {@link org.jooq.SelectField}. These are
      * emitted by the custom jOOQ code generator for tables with a legacy composite platform key and
@@ -376,6 +468,14 @@ public class JooqCatalog {
     }
 
     public record TableEntry(String javaFieldName, Table<?> table) {}
+
+    /**
+     * Node-identity metadata read from a table class by {@link #nodeIdMetadata(String)}.
+     *
+     * <p>{@code typeId} is the {@code __ID_TYPE_ID} constant. {@code keyColumns} is the positional
+     * resolution of {@code __ID_KEY_COLUMNS} to {@link ColumnRef}s on the same table.
+     */
+    public record NodeIdMetadata(String typeId, List<ColumnRef> keyColumns) {}
 
     /**
      * Column resolution result.

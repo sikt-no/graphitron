@@ -17,8 +17,12 @@ import org.jooq.impl.TableImpl;
 
 /**
  * Hand-written jOOQ table that mimics the shape the custom {@code KjerneJooqGenerator} emits for
- * tables with a legacy composite platform key: one ordinary column plus {@code get*Id() ->
- * SelectField<String>} instance methods that have no backing {@code TableField}.
+ * tables with a legacy composite platform key: two real key columns ({@code ID_1}, {@code ID_2})
+ * plus the {@code __ID_TYPE_ID} / {@code __ID_KEY_COLUMNS} metadata constants the rewrite's
+ * {@link no.sikt.graphitron.rewrite.JooqCatalog#nodeIdMetadata} probe reflects on. Retains the
+ * legacy {@code get*Id() -> SelectField<String>} instance methods and the record-level
+ * {@code getId}/{@code setId}/{@code getPersonId}/{@code setPersonId} accessors — these continue
+ * to drive the platform-id classification path until it is deleted in Step 5.
  *
  * <p>Used only by platform-id pipeline tests. {@link BarRecord} is the paired record class.
  */
@@ -29,6 +33,15 @@ public class Bar extends TableImpl<BarRecord> {
 
     public static final Bar BAR = new Bar();
 
+    /**
+     * Node-identity metadata emitted by the custom {@code KjerneJooqGenerator}. The rewrite reads
+     * these two constants via reflection to synthesize {@code NodeType} classification for
+     * platform-id tables; see the plan at {@code docs/planning/legacy-platform-id.md}.
+     */
+    public static final String __ID_TYPE_ID = "Bar";
+
+    public static final org.jooq.Field<?>[] __ID_KEY_COLUMNS = { BAR.ID_1, BAR.ID_2 };
+
     @Override
     public Class<BarRecord> getRecordType() {
         return BarRecord.class;
@@ -36,6 +49,12 @@ public class Bar extends TableImpl<BarRecord> {
 
     public final TableField<BarRecord, String> NAME =
         createField(DSL.name("name"), SQLDataType.VARCHAR, this, "");
+
+    public final TableField<BarRecord, String> ID_1 =
+        createField(DSL.name("id_1"), SQLDataType.VARCHAR, this, "");
+
+    public final TableField<BarRecord, String> ID_2 =
+        createField(DSL.name("id_2"), SQLDataType.VARCHAR, this, "");
 
     private Bar(Name alias, Table<BarRecord> aliased) {
         super(alias, null, aliased, null, DSL.comment(""), TableOptions.table(), null);
