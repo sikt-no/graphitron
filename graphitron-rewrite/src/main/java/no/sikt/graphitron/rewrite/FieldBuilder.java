@@ -244,6 +244,11 @@ class FieldBuilder {
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
             var parentBatchKey = new BatchKey.RowKeyed(parentTableType.table().primaryKeyColumns());
             if (hasSplitQuery && hasLookupKey) {
+                if (returnType.wrapper() instanceof FieldWrapper.Connection) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        "@asConnection on @splitQuery fields is not supported; per-parent pagination inside a "
+                        + "DataLoader batch requires window-function partitioning and is deferred to a follow-up plan.");
+                }
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), parentBatchKey,
                     tfc.lookupMapping());
@@ -262,6 +267,11 @@ class FieldBuilder {
                     tfc.lookupMapping());
             }
             if (hasSplitQuery) {
+                if (returnType.wrapper() instanceof FieldWrapper.Connection) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        "@asConnection on @splitQuery fields is not supported; per-parent pagination inside a "
+                        + "DataLoader batch requires window-function partitioning and is deferred to a follow-up plan.");
+                }
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), parentBatchKey);
             }

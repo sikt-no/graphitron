@@ -549,58 +549,36 @@ class GraphitronSchemaBuilderTest {
                     .contains("@asConnection on inline (non-@splitQuery) TableField is not supported");
             }),
 
-        AS_CONNECTION_SPLIT_CUSTOM_PAGE_SIZE(
-            "@asConnection(defaultFirstValue: 50) @splitQuery → SplitTableField with custom page size",
-            """
-            type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") { actors: [Actor!]! @asConnection(defaultFirstValue: 50) @splitQuery @defaultOrder(primaryKey: true) }
-            type Query { film: Film }
-            """,
-            schema -> {
-                var tf = (SplitTableField) schema.field("Film", "actors");
-                var conn = (FieldWrapper.Connection) tf.returnType().wrapper();
-                assertThat(conn.defaultPageSize()).isEqualTo(50);
-            }),
-
-        AS_CONNECTION_SPLIT_CUSTOM_NAME(
-            "@asConnection(connectionName: \"MovieActorsConnection\") @splitQuery → SplitTableField with custom name",
-            """
-            type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") { actors: [Actor!]! @asConnection(connectionName: "MovieActorsConnection") @splitQuery @defaultOrder(primaryKey: true) }
-            type Query { film: Film }
-            """,
-            schema -> {
-                var tf = (SplitTableField) schema.field("Film", "actors");
-                var conn = (FieldWrapper.Connection) tf.returnType().wrapper();
-                assertThat(conn.connectionName()).isEqualTo("MovieActorsConnection");
-            }),
-
-        AS_CONNECTION_SPLIT_SYNTHESIZES_PAGINATION(
-            "@asConnection @splitQuery synthesizes PaginationSpec when no explicit pagination args",
+        AS_CONNECTION_SPLIT_REJECTED(
+            "@asConnection @splitQuery → UnclassifiedField (per-parent pagination inside DataLoader "
+            + "batch requires window-function partitioning, deferred to a follow-up plan; argres 2b C3)",
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") { actors: [Actor!]! @asConnection @splitQuery @defaultOrder(primaryKey: true) }
             type Query { film: Film }
             """,
             schema -> {
-                var tf = (SplitTableField) schema.field("Film", "actors");
-                assertThat(tf.pagination()).isNotNull();
-                assertThat(tf.pagination().first()).isNotNull();
-                assertThat(tf.pagination().first().name()).isEqualTo("first");
-                assertThat(tf.pagination().after()).isNotNull();
-                assertThat(tf.pagination().after().name()).isEqualTo("after");
+                assertThat(schema.field("Film", "actors")).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) schema.field("Film", "actors")).reason())
+                    .contains("@asConnection on @splitQuery fields is not supported")
+                    .contains("window-function partitioning")
+                    .contains("deferred to a follow-up plan");
             }),
 
-        AS_CONNECTION_SPLIT_ORDERING_DETECTED(
-            "@asConnection @splitQuery field is treated as list for ordering detection",
+        AS_CONNECTION_SPLIT_LOOKUP_REJECTED(
+            "@asConnection @splitQuery + @lookupKey → UnclassifiedField (same rejection as "
+            + "SplitTableField — per-parent pagination inside a DataLoader batch is out of scope)",
             """
             type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") { actors: [Actor!]! @asConnection @splitQuery @defaultOrder(primaryKey: true) }
+            type Film @table(name: "film") {
+                actorsByKey(actor_id: [Int!]! @lookupKey): [Actor!]! @asConnection @splitQuery @defaultOrder(primaryKey: true)
+            }
             type Query { film: Film }
             """,
             schema -> {
-                var tf = (SplitTableField) schema.field("Film", "actors");
-                assertThat(tf.orderBy()).isInstanceOf(OrderBySpec.Fixed.class);
+                assertThat(schema.field("Film", "actorsByKey")).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) schema.field("Film", "actorsByKey")).reason())
+                    .contains("@asConnection on @splitQuery fields is not supported");
             }),
 
         SPLIT_QUERY(
@@ -726,8 +704,10 @@ class GraphitronSchemaBuilderTest {
                 assertThat(order.direction()).isEqualTo("DESC");
             }),
 
-        CONNECTION_WITH_DEFAULT_ORDER_INDEX(
-            "@defaultOrder(index:) on a connection field with @splitQuery resolves to Fixed order",
+        CONNECTION_WITH_DEFAULT_ORDER_INDEX_SPLIT_REJECTED(
+            "ActorConnection + @splitQuery → UnclassifiedField (argres 2b C3: @asConnection on @splitQuery "
+            + "rejected regardless of @defaultOrder; connection wrapper is inferred from ActorConnection "
+            + "return type, not literal @asConnection)",
             """
             type Actor @table(name: "actor") { name: String }
             type ActorEdge { node: Actor cursor: String }
@@ -737,12 +717,7 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """,
-            schema -> {
-                var order = (OrderBySpec.Fixed) ((SplitTableField) schema.field("Film", "actors")).orderBy();
-                assertThat(order).isNotNull();
-                assertThat(order.columns()).hasSize(1);
-                assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
-            }),
+            schema -> assertThat(schema.field("Film", "actors")).isInstanceOf(UnclassifiedField.class)),
 
         NO_DEFAULT_ORDER_PK_FALLBACK(
             "no @defaultOrder on PK table → TableField with PK columns auto-filled as Fixed order",
