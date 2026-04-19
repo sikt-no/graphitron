@@ -34,20 +34,26 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RECORD;
  * <ol>
  *   <li>Empty-input short-circuit — returns {@code List.of()} without touching the DSL context.</li>
  *   <li>Parent-input {@code VALUES} table carrying {@code (idx, parent_pk...)} — one row per
- *       {@code keys[i]}. Keys are unpacked by codegen-time arity via {@code Row2<…>.field1()} /
- *       {@code .field2()} — jOOQ's {@code Row} exposes its cells as typed {@code Field} references,
- *       and {@code DSL.row(Field, Field, …)} happily accepts them. Attempted runtime introspection
- *       via {@code Row.intoArray()} or a hypothetical {@code .value1()} was rejected at
- *       implementation time (the {@code value*()} accessors live on {@code Record1/Record2/…},
- *       not on {@code Row1/Row2/…} — the earlier plan wording got the API wrong).</li>
+ *       {@code keys[i]}. Rows are typed {@code Row<N+1><Integer, pkType1, pkType2, …>}, the
+ *       corresponding typed {@link org.jooq.Table} carries {@link org.jooq.Record Record}&lt;N+1&gt;,
+ *       and column access via {@code parentInput.fieldsRow().fieldK()} returns typed
+ *       {@link org.jooq.Field Field}&lt;T&gt;. Arity is known at codegen time from
+ *       {@link BatchKey.RowKeyed#keyColumns()}; generic array creation is the one unavoidable
+ *       {@code @SuppressWarnings("unchecked")} per generated method.</li>
+ *   <li>Key unpacking uses {@code k.field1()}…{@code k.fieldN()} — {@code Row1/Row2/…} expose
+ *       their cells as typed {@code Field<T>} references (the inline {@code Field} jOOQ created
+ *       when {@link GeneratorUtils#buildKeyExtraction} built the key via {@code DSL.row(record.get(col))}).
+ *       The earlier plan's Decision 7 cited {@code value1()} calls, but those live on
+ *       {@code Record1/Record2/…}, not on {@code Row} — {@code Row} is a schema construct, not
+ *       a data carrier.</li>
  *   <li>FK chain aliases identical to G5 / Phase 2a.</li>
- *   <li>{@code .select($fields + parentInput.field("idx").as("__idx__"))} — the {@code __idx__}
- *       column drives the Java-side scatter, see {@link #IDX_COLUMN}.</li>
- *   <li>Explicit {@code ON} predicate joining the first FK hop to {@code parentInput} — inherits
- *       the USING→ON lesson from {@link InlineLookupTableFieldEmitter} (junction tables re-expose
- *       the FK column and would collide under USING). The lookup uses the typed parent table
- *       field reference ({@code parentInput.field(Tables.FILM.FILM_ID)}) rather than a bare string
- *       name, so the resulting {@code Field<T>} matches the FK column's type in {@code .eq(...)}.</li>
+ *   <li>{@code .select($fields + parentInput.fieldsRow().field1().as("__idx__"))} — the
+ *       {@code __idx__} column drives the Java-side scatter, see {@link #IDX_COLUMN}.</li>
+ *   <li>Explicit {@code ON} predicate joining the first FK hop to {@code parentInput} via
+ *       {@code parentInput.fieldsRow().fieldK()} — typed {@code Field<T>}, matching the FK
+ *       column's type in {@code .eq(...)}. Inherits the USING→ON lesson from
+ *       {@link InlineLookupTableFieldEmitter} (junction tables re-expose the FK column and
+ *       would collide under USING).</li>
  *   <li>{@code scatterByIdx(flat, keys.size())} — emitted once per fetcher class, see
  *       {@code TypeFetcherGenerator.buildScatterByIdxHelper}.</li>
  * </ol>
@@ -66,7 +72,19 @@ public final class SplitRowsMethodEmitter {
     private static final ClassName TABLE = ClassName.get("org.jooq", "Table");
     private static final ClassName FIELD = ClassName.get("org.jooq", "Field");
     private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
-    private static final ArrayTypeName ROW_ARRAY = ArrayTypeName.of(ROW_N);
+
+    /**
+     * Returns the jOOQ {@code RowN}/{@code RecordN} class name for a given arity. jOOQ has typed
+     * Row1..Row22 and Record1..Record22 classes; arities &gt;22 fall back to raw {@code RowN} and
+     * {@code Record}. Phase 2b C1 rejects parent PKs &gt;22 cols at codegen time.
+     */
+    private static ClassName rowClass(int arity) {
+        return ClassName.get("org.jooq", "Row" + arity);
+    }
+
+    private static ClassName recordClass(int arity) {
+        return ClassName.get("org.jooq", "Record" + arity);
+    }
 
     /**
      * SELECT-projection alias for the parent-input {@code idx} column. Chosen to be
@@ -146,6 +164,22 @@ public final class SplitRowsMethodEmitter {
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName listOfListOfRecord = ParameterizedTypeName.get(LIST, listOfRecord);
 
+        // Typed RowN+1 and RecordN+1 for parentInput: idx + parent PK columns. Arity known at
+        // codegen time, capped at 22 (jOOQ's typed Row/Record classes).
+        int parentRowArity = pkCols.size() + 1;
+        if (parentRowArity > 22) {
+            throw new IllegalStateException(
+                "Parent PK arity " + pkCols.size() + " + idx exceeds jOOQ's typed Row/Record arity limit (22)");
+        }
+        TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
+        parentRowTypeArgs[0] = ClassName.get(Integer.class);  // idx
+        for (int i = 0; i < pkCols.size(); i++) {
+            parentRowTypeArgs[i + 1] = ClassName.bestGuess(pkCols.get(i).columnClass());
+        }
+        TypeName parentRowType = ParameterizedTypeName.get(rowClass(parentRowArity), parentRowTypeArgs);
+        TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
+        TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
+
         List<JoinStep> path = stf.joinPath();
         List<String> aliases = JoinPathEmitter.generateAliases(path, terminalTable);
         String terminalAlias = aliases.get(aliases.size() - 1);
@@ -161,34 +195,35 @@ public final class SplitRowsMethodEmitter {
 
         body.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
 
-        // Parent-input VALUES rows. Keys are RowN-typed; unpack by codegen-time arity via
-        // field1()/field2()/… calls. Each fieldN() returns a Field<T> holding the inline value
-        // we placed there via buildKeyExtraction's DSL.row(Record.get(col)) shape. The arg arity
-        // must not resolve to DSL.row(T1, T2, …) — those return Row2/Row3/… which don't extend
-        // RowN. Instead we build an Object[] cell array and pass it to DSL.row(Object...), the
-        // RowN-producing varargs overload. Same trick as LookupValuesJoinEmitter.addRowBuildingCore.
-        body.addStatement("$T parentRows = new $T[keys.size()]", ROW_ARRAY, ROW_N);
+        // Parent-input VALUES rows — fully typed. One Row<N+1><Integer, pkType1, …> per key[i].
+        // Generic array creation is the one unavoidable unchecked cast: Java forbids
+        //   new Row2<Integer, Integer>[n]
+        // so we cast a raw Row<N+1>[] up to the typed array. Scoped to this one line.
+        // DSL.row(Field<T1>, Field<T2>, …) picks the typed Row<N> overload (not Row(Object...)
+        // which would return untyped RowN), so we keep type info from DSL.inline(i) and
+        // k.fieldJ() all the way into parentRows[i].
+        body.add("@$T($S)\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked");
+        body.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
+            parentRowType, parentRowType, rowClass(parentRowArity));
         body.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
         body.addStatement("$T k = keys.get(i)", keyElement);
-        var cells = CodeBlock.builder();
-        cells.add("$T.inline(i)", DSL);
+        var rowArgs = CodeBlock.builder();
+        rowArgs.add("$T.inline(i)", DSL);
         for (int i = 0; i < pkCols.size(); i++) {
-            cells.add(", k.field$L()", i + 1);
+            rowArgs.add(", k.field$L()", i + 1);
         }
-        body.addStatement("$T[] cells = new $T[] { $L }", Object.class, Object.class, cells.build());
-        body.addStatement("parentRows[i] = $T.row(cells)", DSL);
+        body.addStatement("parentRows[i] = $T.row($L)", DSL, rowArgs.build());
         body.endControlFlow();
 
         // VALUES derived-table alias: "parentInput", "idx", pk_col1_sqlName, pk_col2_sqlName, …
+        // DSL.values(Row<N>... rows) returns Table<Record<N>> — typed through to field access.
         var parentInputAlias = CodeBlock.builder();
         parentInputAlias.add("$S, $S", "parentInput", "idx");
         for (var col : pkCols) {
             parentInputAlias.add(", $S", col.sqlName());
         }
-        TypeName wildcardTable = ParameterizedTypeName.get(TABLE,
-            WildcardTypeName.subtypeOf(Object.class));
         body.addStatement("$T parentInput = $T.values(parentRows).as($L)",
-            wildcardTable, DSL, parentInputAlias.build());
+            parentInputTableType, DSL, parentInputAlias.build());
 
         // FK chain aliases — declare terminal first (FROM target), then each bridging hop.
         for (int i = 0; i < path.size(); i++) {
@@ -201,16 +236,21 @@ public final class SplitRowsMethodEmitter {
                 stf.name() + "_" + aliases.get(i));
         }
 
-        // Projection: $fields(env.getSelectionSet(), terminalAlias, env) + parentInput.idx as __idx__
+        // Projection: $fields(env.getSelectionSet(), terminalAlias, env) + idx.as("__idx__").
         // env.getSelectionSet() is the child-selection for the Split field itself — exactly what
         // a SelectedField.getSelectionSet() would return, so the rows method signature does not
         // need a separate SelectedField parameter. See the "dropped sel parameter" commit message.
+        //
+        // Typed idx access: parentInput.field(0, Integer.class) → Field<Integer>. Table.fieldsRow()
+        // inherits from Fields and returns untyped Row (it's not overridden on Table<RecordN> with
+        // a typed return, despite RecordN itself exposing typed fieldsRow). The typed-by-index
+        // Fields.field(int, Class<T>) is the idiomatic jOOQ alternative and preserves type safety.
         TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         TypeName listOfField = ParameterizedTypeName.get(LIST, wildField);
         body.addStatement("$T selectFields = new $T<>($T.$$fields(env.getSelectionSet(), $L, env))",
             listOfField, ARRAY_LIST, typeClass, terminalAlias);
-        body.addStatement("selectFields.add(($T) parentInput.field($S).as($S))",
-            wildField, "idx", IDX_COLUMN);
+        body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
+            Integer.class, IDX_COLUMN);
 
         // Flat SELECT: FROM terminal, JOIN bridging hops back toward step 0, JOIN parentInput
         // on first-hop source columns eq parent PK via parentInput.field(sqlName).
@@ -228,19 +268,19 @@ public final class SplitRowsMethodEmitter {
                 prevAlias, keysClass, bridging.fkJavaConstant());
         }
         // JOIN parentInput on step 0's source columns (target/terminal side for list cardinality).
-        // Look up the parentInput field via the typed parent-table Field reference — returns
-        // Field<T>, which matches the FK column's type in .eq(...). Looking up by bare name
-        // returns Field<?> which the compiler cannot narrow. ON rather than USING dodges
+        // parentInput.field(n, Class<T>) returns Field<T>, matching the FK column's type in
+        // .eq(...). Position mapping: index 0 is idx, indices 1..N are the parent PK columns
+        // in the order declared by BatchKey.RowKeyed.keyColumns(). ON rather than USING dodges
         // junction-column collisions, as Phase 2a C2 established.
-        ClassName parentTablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
         var onCond = CodeBlock.builder();
         for (int i = 0; i < firstHop.sourceColumns().size(); i++) {
             if (i > 0) onCond.add(".and(");
-            onCond.add("$L.$L.eq(parentInput.field($T.$L.$L))",
+            ColumnRef pk = pkCols.get(i);
+            ClassName pkType = ClassName.bestGuess(pk.columnClass());
+            onCond.add("$L.$L.eq(parentInput.field($L, $T.class))",
                 firstAlias,
                 firstHop.sourceColumns().get(i).javaName(),
-                parentTablesClass, parentTable.javaFieldName(),
-                firstHop.targetColumns().get(i).javaName());
+                i + 1, pkType);
             if (i > 0) onCond.add(")");
         }
         sel.add(".join(parentInput).on($L)\n", onCond.build());
