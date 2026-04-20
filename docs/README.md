@@ -29,7 +29,8 @@ You're implementing generators, adding field variants, or fixing bugs in the rew
 
 4. **[Code Generation Triggers](code-generation-triggers.md)** — The full classification taxonomy: schema patterns → sealed variants → generated output. This is the reference for what the code does.
 5. **[Rewrite Model](rewrite-model.md)** — Visual Mermaid diagrams of the sealed type hierarchy: field variants, type variants, and support/composition types. Includes notes on structural redundancy and potential cleanup.
-6. **[Rewrite Roadmap](planning/rewrite-roadmap.md)** — Design principles for the rewrite, remaining generator work, and known gaps. Full set of in-flight plans lives under [planning/](planning/).
+6. **[Rewrite Design Principles](rewrite-design-principles.md)** — Architectural and technical principles governing the rewrite pipeline (generation-thinking, sealed hierarchies, classification boundaries, test tiers, etc.).
+7. **[Rewrite Roadmap](planning/rewrite-roadmap.md)** — Remaining generator work and known gaps. Full set of in-flight plans lives under [planning/](planning/).
 
 Active implementation plans (read when you're working on the specific feature):
 - **[Paginated Fields](paginated-fields.md)** — Dynamic ordering cursors, backward pagination, known bugs.
@@ -51,7 +52,8 @@ Active implementation plans (read when you're working on the specific feature):
 | [Example README](/graphitron-example/README.md) | Schema authors | Working Sakila example |
 | [Code Generation Triggers](code-generation-triggers.md) | Contributors | Schema → classification → generated code |
 | [Rewrite Model](rewrite-model.md) | Contributors | Sealed type hierarchy diagrams and cleanup notes |
-| [Rewrite Roadmap](planning/rewrite-roadmap.md) | Contributors | Design principles, remaining work, known gaps |
+| [Rewrite Design Principles](rewrite-design-principles.md) | Contributors | Architectural/technical principles for the rewrite pipeline |
+| [Rewrite Roadmap](planning/rewrite-roadmap.md) | Contributors | Remaining work and known gaps |
 | [Paginated Fields](paginated-fields.md) | Contributors | Pagination implementation plan |
 | [Argument Resolution](planning/argument-resolution.md) | Contributors | Argument classification, @condition, lookup generation |
 | [Legacy PlatformId](planning/legacy-platform-id.md) | Contributors | Legacy `id: ID!` input classification via record `getId`/`setId` |
