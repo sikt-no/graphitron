@@ -17,7 +17,7 @@ Invoke `/create_plan` with the research path passed **inline in the same message
 
 Plan goals:
 
-1. **Simplify and refactor** — Look for opportunities to simplify the changed code: reduce nesting, improve readability, improve variable and method names where unclear. This mirrors what the `simplify` skill does; the user can run `Skill: simplify` after reviewing the plan.
+1. **Simplify and refactor** — Look for opportunities to simplify the changed code: reduce nesting, improve readability, improve variable and method names where unclear. This mirrors what the `simplify` skill does; the user can run `Skill: simplify` after reviewing the plan. We have our own javapoet in `graphitron-codegen-parent/graphitron-javapoet/` — when refactoring code that generates Java source, check if any of its methods can be used or swapped in to simplify and improve the code.
 
 2. **Add Javadoc** — Add Javadoc to public methods where it aids understanding. Skip trivial getters/setters or methods where the name is fully self-explanatory.
 
