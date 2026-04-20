@@ -173,6 +173,10 @@ public class GraphitronSchemaValidator {
             no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter.unsupportedReason(slf)
                 .ifPresent(msg -> errors.add(new ValidationError(
                     "Field '" + field.qualifiedName() + "': " + msg, field.location())));
+        } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.RecordTableField rtf) {
+            no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter.unsupportedReason(rtf)
+                .ifPresent(msg -> errors.add(new ValidationError(
+                    "Field '" + field.qualifiedName() + "': " + msg, field.location())));
         }
     }
 

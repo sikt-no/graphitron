@@ -99,17 +99,16 @@ public final class SplitRowsMethodEmitter {
      * {@link ChildField.SplitLookupTableField}. The returned {@link MethodSpec} is complete
      * (signature + body) and is added directly to the enclosing {@code *Fetchers} class.
      *
-     * @param bkf          the Split* field — must be a {@link ChildField.SplitTableField} or
-     *                     {@link ChildField.SplitLookupTableField} (C2). Other
-     *                     {@link BatchKeyField} leaves throw {@link IllegalArgumentException}.
-     * @param parentTable  the table-bound parent's {@link TableRef}
+     * @param bkf  the batched field — must be one of {@link ChildField.SplitTableField},
+     *             {@link ChildField.SplitLookupTableField}, or {@link ChildField.RecordTableField}.
+     *             Other {@link BatchKeyField} leaves throw {@link IllegalArgumentException}.
      */
-    public static MethodSpec buildRowsMethod(BatchKeyField bkf, TableRef parentTable) {
+    public static MethodSpec buildRowsMethod(BatchKeyField bkf) {
         if (bkf instanceof ChildField.SplitTableField stf) {
-            return buildForSplitTable(stf, parentTable);
+            return buildForSplitTable(stf);
         }
         if (bkf instanceof ChildField.SplitLookupTableField slf) {
-            return buildForSplitLookupTable(slf, parentTable);
+            return buildForSplitLookupTable(slf);
         }
         if (bkf instanceof ChildField.RecordTableField rtf) {
             return buildForRecordTable(rtf);
@@ -122,7 +121,7 @@ public final class SplitRowsMethodEmitter {
     // SplitTableField
     // -----------------------------------------------------------------------
 
-    private static MethodSpec buildForSplitTable(ChildField.SplitTableField stf, TableRef parentTable) {
+    private static MethodSpec buildForSplitTable(ChildField.SplitTableField stf) {
         var stubReason = unsupportedReason(stf);
         if (stubReason.isPresent()) {
             return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(), stubReason.get());
@@ -130,7 +129,7 @@ public final class SplitRowsMethodEmitter {
 
         return buildListMethod(
             stf.name(), stf.rowsMethodName(), stf.returnType(),
-            stf.joinPath(), stf.filters(), stf.batchKey(), parentTable,
+            stf.joinPath(), stf.filters(), stf.batchKey(),
             /* lookupMapping */ null);
     }
 
@@ -170,7 +169,7 @@ public final class SplitRowsMethodEmitter {
     // SplitLookupTableField (C2)
     // -----------------------------------------------------------------------
 
-    private static MethodSpec buildForSplitLookupTable(ChildField.SplitLookupTableField slf, TableRef parentTable) {
+    private static MethodSpec buildForSplitLookupTable(ChildField.SplitLookupTableField slf) {
         var stubReason = unsupportedReason(slf);
         if (stubReason.isPresent()) {
             return buildRuntimeStub(slf.rowsMethodName(), slf.batchKey(), slf.returnType(), stubReason.get());
@@ -178,7 +177,7 @@ public final class SplitRowsMethodEmitter {
 
         return buildListMethod(
             slf.name(), slf.rowsMethodName(), slf.returnType(),
-            slf.joinPath(), slf.filters(), slf.batchKey(), parentTable,
+            slf.joinPath(), slf.filters(), slf.batchKey(),
             slf.lookupMapping());
     }
 
@@ -214,27 +213,37 @@ public final class SplitRowsMethodEmitter {
     // -----------------------------------------------------------------------
 
     private static MethodSpec buildForRecordTable(ChildField.RecordTableField rtf) {
-        // Reuse the same unsupported checks as SplitTableField — single cardinality,
-        // ConditionJoin paths, and empty join paths are not supported.
+        var stubReason = unsupportedReason(rtf);
+        if (stubReason.isPresent()) {
+            return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(), stubReason.get());
+        }
+        return buildListMethod(
+            rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
+            rtf.joinPath(), rtf.filters(), rtf.batchKey(),
+            /* lookupMapping */ null);
+    }
+
+    /**
+     * Split* sibling of {@link #unsupportedReason(ChildField.SplitTableField)}. Same contract:
+     * non-empty reason → field cannot be emitted today; empty → emittable.
+     */
+    public static java.util.Optional<String> unsupportedReason(ChildField.RecordTableField rtf) {
         boolean isList = rtf.returnType().wrapper().isList();
         if (!isList) {
-            return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(),
-                "Single-cardinality RecordTableField not yet supported; list cardinality only.");
+            return java.util.Optional.of(
+                "Single-cardinality RecordTableField on '" + rtf.qualifiedName()
+                + "' not yet supported; list cardinality only.");
         }
         if (JoinPathEmitter.hasConditionJoin(rtf.joinPath())) {
-            return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(),
+            return java.util.Optional.of(
                 "RecordTableField '" + rtf.qualifiedName() + "' with a condition-join step cannot be "
                 + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
         }
         if (rtf.joinPath().isEmpty()) {
-            return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(),
+            return java.util.Optional.of(
                 "RecordTableField '" + rtf.qualifiedName() + "' requires a @reference path.");
         }
-        // parentTable is null for @record parents — buildListMethod does not use it.
-        return buildListMethod(
-            rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
-            rtf.joinPath(), rtf.filters(), rtf.batchKey(), /* parentTable */ null,
-            /* lookupMapping */ null);
+        return java.util.Optional.empty();
     }
 
     /**
@@ -250,7 +259,6 @@ public final class SplitRowsMethodEmitter {
             List<JoinStep> joinPath,
             List<WhereFilter> filters,
             BatchKey batchKey,
-            TableRef parentTable,
             LookupMapping lookupMapping) {
         TableRef terminalTable = returnType.table();
         ClassName tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");

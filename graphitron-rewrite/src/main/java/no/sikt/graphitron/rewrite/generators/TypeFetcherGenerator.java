@@ -292,11 +292,11 @@ public class TypeFetcherGenerator {
                 }
                 case ChildField.SplitTableField stf -> {
                     builder.addMethod(buildSplitQueryDataFetcher(stf, stf.returnType(), parentTable));
-                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(stf, parentTable));
+                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(stf));
                 }
                 case ChildField.SplitLookupTableField slf -> {
                     builder.addMethod(buildSplitQueryDataFetcher(slf, slf.returnType(), parentTable));
-                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(slf, parentTable));
+                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(slf));
                     // Emit the VALUES-building input-rows helper alongside the rows method.
                     // Phase 2a's env-based variant (buildInputRowsMethod) reads args from
                     // env.getArgument(name) — correct for a Split* fetcher whose @lookupKey args
@@ -336,7 +336,7 @@ public class TypeFetcherGenerator {
                 case ChildField.TableInterfaceField f           -> builder.addMethod(stub(f));
                 case ChildField.RecordTableField rtf -> {
                     builder.addMethod(buildRecordTableDataFetcher(rtf, resultType));
-                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rtf, /* parentTable= */ null));
+                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rtf));
                 }
                 case ChildField.RecordLookupTableField f        -> builder.addMethod(stub(f));
                 case ChildField.TableMethodField f              -> builder.addMethod(stub(f));
