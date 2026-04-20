@@ -214,7 +214,7 @@ Structural properties (method names, param types, presence/absence) are the righ
 ## Cross-plan Ownership
 
 - **`InputColumnBinding`** — canonical definition in this plan, consumed by both this plan (Phase 3) and `legacy-platform-id.md` (item 3). Implementation lands with this plan.
-- **Variant-coverage meta-test** — the meta-test (every sealed-root permit has a classification case and a generator branch — see `plan-variant-coverage-meta-test.md`) is extended *in Phase 1* to assert every `LookupField` permit has an emission arm in `TypeFetcherGenerator`. Phase 2 adds assertions for the child-field permits as they come online.
+- **Variant-coverage meta-test** — every sealed-root permit has a classification case (`VariantCoverageTest.everySealedLeafHasAClassificationCase`) and a generator branch (`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`). Phase 1 and Phase 2 of this plan extended both invariants to cover `LookupField` permits as they came online.
 
 ## History
 

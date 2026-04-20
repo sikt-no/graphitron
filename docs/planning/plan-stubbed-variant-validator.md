@@ -113,5 +113,5 @@ follow-ups if worth pursuing:
   — end-to-end regression.
 - `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/validation/FieldValidationTestHelper.java`
   — `stubbedError(...)` helper.
-- `plan-variant-coverage-meta-test.md` — Phase 1 shipped is the
-  invariant this plan's validator check relies on.
+- `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`
+  — the three-way-partition invariant this plan's validator check relies on.

@@ -115,10 +115,6 @@ The practical implication: when adding code to a generator, distinguish between 
 
 Items with a plan in Draft, Approved, In Progress, or Pending Review. First line: state marker + plan link. Description below.
 
-### Variant-coverage meta-test **[Approved]** — [plan-variant-coverage-meta-test.md](plan-variant-coverage-meta-test.md)
-
-Iterate every sealed root in `model/` and assert every permit has at least one classification test case and one generator branch (or a documented allowlist entry). Phase 1 (generator-branch partition) shipped; Phase 2 (classification-case coverage) pending; Phase 3 (narrow-component coverage) deferred. Structural, cheap, compounding.
-
 ### Argument-resolution unification **[Approved]** — [argument-resolution.md](argument-resolution.md)
 
 Unified `ArgumentRef` classification + projection in the builder; gates `@condition`-on-fields, `InputColumnBinding`, and every future argument category. Phase 1 (classification + projection, VALUES+JOIN for `QueryLookupTableField`) and Phase 2 (generator-side migration: 2a inline `LookupTableField`, 2b `Split(Lookup)TableField` DataLoader rows-methods) have shipped. Phase 2c (`RecordLookupTableField`) is tracked under `plan-record-lookup-field.md`. Phase 3 (composite keys via `TableInputArg` + `InputColumnBinding`) is next under this plan; Phase 4 (`@condition` on `INPUT_FIELD_DEFINITION`) deferred until after Phase 3.
@@ -161,7 +157,7 @@ Five independent doc/generator-behaviour cleanups around the "source context vs.
 
 ### Docs-as-index stabilization **[Approved — deferred]** — [plan-docs-as-index-into-tests.md](plan-docs-as-index-into-tests.md)
 
-Steps 1-2 shipped on `claude/review-docs-plan-adYJW`. Step 5 superseded by `plan-variant-coverage-meta-test.md`. Steps 3-4 (re-section renames + doc rewire) deferred until the sealed hierarchy stabilises; picking them up mid-churn means constant rework.
+Steps 1-2 shipped on `claude/review-docs-plan-adYJW`. Step 5 superseded by `GeneratorCoverageTest` + `VariantCoverageTest` (the variant-coverage meta-test). Steps 3-4 (re-section renames + doc rewire) deferred until the sealed hierarchy stabilises; picking them up mid-churn means constant rework.
 
 ### Platform-id as synthesized NodeId **[In Progress]** — [legacy-platform-id.md](legacy-platform-id.md)
 
@@ -235,6 +231,7 @@ Short history — landings worth remembering when picking up related work.
 - `7417f53` — Body-substring test rewrite. `TypeSpecAssertions` helper (`hasFieldsArm`, `wiringFor(field) → DataFetcherKind`, `hasNoDataFetchers`) + 28-site migration across 6 test files. 28 → 3 intentionally-marked sites, each justified inline. C3 (lint gate) deferred per OD 3. Follow-up (post-Done): `filmsConnection_rejectsFirstAndLastTogether` execution test landed, deleting the Relay-validation kept-with-marker; remaining three markers are `queryLookupField_idListKey_bindsViaColumnDataTypeInInputRowsHelper`, `connectionField_customPaginationArgNames_emittedInFetcher`, `connectionField_withOrderByArg_extraFieldsComeFromOrderingResult`. CLAUDE.md ban now matches test-file reality.
 - `9ba498bc` + `7cf568f4` — Stubbed-variant validator. `GraphitronSchemaValidator.validateVariantIsImplemented` reads `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` and appends a classification error when a field's variant is stubbed. `ValidateMojo` fails the build on rewrite validation errors by default (`-Dgraphitron.failOnRewriteValidationError=false` escape hatch). `FieldValidationTestHelper.stubbedError` lock-steps tests to production reason strings. `StubbedVariantPipelineTest` regression covers SDL → classifier → validator end-to-end. Closes the "schema validates but generated fetcher throws at request time" loop.
 - `@table` + `@record` input-type fix. `@record` dominates `@table` on input types; classifier routes through `buildNonTableInputType` and emits a `BuildWarning` naming the shadowed directive. Introduces the reusable `BuildWarning` / `BuildContext.warnings()` / `GraphitronSchema.warnings()` channel surfaced by the mojos — consumed by classification-vocabulary item 2.
+- `d33ace9` — Variant-coverage meta-test Phase 2. `ClassificationCase` interface + `VariantCoverageTest.everySealedLeafHasAClassificationCase` retrofit 26 classification enums in `GraphitronSchemaBuilderTest` with machine-readable `variants()` sets (plus five new enum constants for previously-uncovered leaves: `NodeType`, `RootType`, `TableInterfaceType`, `UnionType`, `ChildField.ConstructorField`). `NO_CASE_REQUIRED` allowlist carries four entries (two `PlatformIdField` leaves scheduled for deletion; two `JooqRecord` types without a non-`TableRecord` fixture). Phase 3 (narrow-component coverage — `BatchKey`, `ParamSource`, `CallSiteExtraction`, …) deferred until concrete demand; file a new plan then.
 - Java-17 output ratchet. `graphitron-rewrite-test-spec`'s compile goal pinned to `release=17` (testCompile stays at parent's `release=21`). Java-21 syntax emitted by a generator emitter now fails this module's build rather than reaching a consumer's. `-Werror` deliberately omitted — conflates with pre-existing raw-type warnings in generated code.
 
 ---
