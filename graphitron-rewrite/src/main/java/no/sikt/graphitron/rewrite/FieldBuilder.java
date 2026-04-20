@@ -1512,17 +1512,6 @@ class FieldBuilder {
     }
 
     /**
-     * Derives the {@link BatchKey} for a {@link no.sikt.graphitron.rewrite.model.ChildField.RecordTableField}
-     * by reading the FK source columns from the join path's first {@link JoinStep.FkJoin} step.
-     *
-     * <p>Returns {@code null} (→ {@link GraphitronField.UnclassifiedField}) when:
-     * <ul>
-     *   <li>the join path is empty or its first step is not an {@link JoinStep.FkJoin}</li>
-     *   <li>the parent is an untyped {@link GraphitronType.PojoResultType} with a {@code null} class
-     *       (cannot generate a typed cast for key extraction)</li>
-     * </ul>
-     */
-    /**
      * Resolves the parent-table {@link ColumnRef} for a {@code PropertyField} or {@code RecordField}
      * when the parent is a {@link GraphitronType.JooqTableRecordType} whose backing jOOQ table
      * resolves in the catalog and contains a column with the given SQL name. Returns {@code null}
@@ -1540,6 +1529,19 @@ class FieldBuilder {
         return svc.resolveColumnInTable(columnName, jtrt.table().tableName()).orElse(null);
     }
 
+    /**
+     * Derives the {@link BatchKey} for a record-parent batched field
+     * ({@link no.sikt.graphitron.rewrite.model.ChildField.RecordTableField},
+     * {@link no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField}) by reading the FK
+     * source columns from the join path's first {@link JoinStep.FkJoin} step.
+     *
+     * <p>Returns {@code null} (→ {@link GraphitronField.UnclassifiedField}) when:
+     * <ul>
+     *   <li>the join path is empty or its first step is not an {@link JoinStep.FkJoin}</li>
+     *   <li>the parent is an untyped {@link GraphitronType.PojoResultType} with a {@code null} class
+     *       (cannot generate a typed cast for key extraction)</li>
+     * </ul>
+     */
     private static BatchKey deriveBatchKeyForResultType(
             List<JoinStep> joinPath, GraphitronType.ResultType parentResultType) {
         if (joinPath.isEmpty() || !(joinPath.get(0) instanceof JoinStep.FkJoin fkJoin)) {

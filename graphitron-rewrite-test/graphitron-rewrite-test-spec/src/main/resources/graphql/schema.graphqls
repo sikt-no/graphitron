@@ -71,10 +71,12 @@ DataLoader-batches language lookups keyed by the Film's language_id column.
 type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
     title:    String!     @field(name: "title")
     language: [Language!]! @reference(path: [{key: "film_language_id_fkey"}])
-    # record-fields Phase 2 fixture: @record parent + @splitQuery + @lookupKey. Classifies as
+    # record-fields Phase 2 fixture: @record parent + @lookupKey. Classifies as
     # RecordLookupTableField — DataLoader-batches actor lookups keyed by the Film record's
     # film_id, with the lookup-input VALUES join narrowing by the caller-provided actor_id list.
-    actorsByLookup(actor_id: [Int!] @lookupKey): [Actor!]! @splitQuery @reference(path: [
+    # @splitQuery is not needed on record-parent fields; classifyChildFieldOnResultType never
+    # inspects it (record-parent table-bound fields are DataLoader-batched unconditionally).
+    actorsByLookup(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ])
