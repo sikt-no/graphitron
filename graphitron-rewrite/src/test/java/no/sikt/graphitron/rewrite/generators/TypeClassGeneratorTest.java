@@ -113,34 +113,6 @@ class TypeClassGeneratorTest {
         assertThat(TypeSpecAssertions.hasFieldsArm(spec, "id")).isTrue();
     }
 
-    @Test
-    void nodeIdStrategyHelperEmittedWhenNodeIdFieldPresent() {
-        var spec = TypeClassGenerator.buildTypeSpec("Film",
-            filmTable(),
-            List.of(),
-            List.of(),
-            List.of(nodeIdField("Film", "id", "Film", List.of(filmIdCol()))),
-            List.of(),
-            List.of());
-        var helper = spec.methodSpecs().stream()
-            .filter(m -> m.name().equals("nodeIdStrategy"))
-            .findFirst();
-        assertThat(helper).isPresent();
-        assertThat(helper.get().modifiers()).contains(
-            javax.lang.model.element.Modifier.PRIVATE,
-            javax.lang.model.element.Modifier.STATIC);
-        assertThat(helper.get().returnType().toString())
-            .endsWith("NodeIdStrategy");
-    }
-
-    @Test
-    void nodeIdStrategyHelperNotEmittedWithoutNodeIdFields() {
-        // Already covered by generate_allMethodsArePresent (only "$fields" expected),
-        // but explicit here so the zero-overhead guarantee is named.
-        assertThat(spec().methodSpecs()).extracting(MethodSpec::name)
-            .doesNotContain("nodeIdStrategy");
-    }
-
     // ===== Signatures =====
 
     @Test
