@@ -1,6 +1,6 @@
 # Record-fields Phase 2 — `RecordLookupTableField` emission
 
-> **Status:** In Progress
+> **Status:** Pending Review
 >
 > Lift `ChildField.RecordLookupTableField` out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` by combining record-fields Phase 1's key-extraction pattern (`GeneratorUtils.buildRecordKeyExtraction`) with argres Phase 2b's `SplitLookupTableField` rows-method shape. Covers G6 row 4 ("Result-mapped `LookupTableField`, `@splitQuery` + `@lookupKey`").
 

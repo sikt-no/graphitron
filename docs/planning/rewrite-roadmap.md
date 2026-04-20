@@ -143,7 +143,7 @@ Filled in the DataLoader rows-method bodies for `ChildField.SplitTableField` and
 
 `TypeFetcherGenerator` emits `*Fetchers` for `ResultType` parents; `PropertyField`, `RecordField`, `ConstructorField`, and `RecordTableField` (DataLoader-batched) all working with execution tests. Intra-variant stubs (single cardinality, `ConditionJoin`, empty `joinPath`) route through `SplitRowsMethodEmitter.unsupportedReason(RecordTableField)` and surface as build-time errors via `GraphitronSchemaValidator.validateVariantIsImplemented`.
 
-### Record-fields Phase 2 — `RecordLookupTableField` **[In Progress]** — [plan-record-lookup-field.md](plan-record-lookup-field.md)
+### Record-fields Phase 2 — `RecordLookupTableField` **[Pending Review]** — [plan-record-lookup-field.md](plan-record-lookup-field.md)
 
 Lift `ChildField.RecordLookupTableField` out of `NOT_IMPLEMENTED_REASONS` by adding a `BatchKey` field (via Phase 1's `deriveBatchKeyForResultType`) and emitting with `SplitRowsMethodEmitter` + `LookupValuesJoinEmitter` + `GeneratorUtils.buildRecordKeyExtraction`. No longer blocked on the `BatchKey.ObjectBased` decision — Phase 1 established `RowKeyed`-for-all-typed-`ResultType` with per-variant accessor dispatch, which `RecordLookupTableField` inherits unchanged.
 
@@ -210,7 +210,7 @@ Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` (25 entries); the
    - `ChildField.TableMethodField` — child `@tableMethod`: user supplies a pre-filtered `Table<?>`.
    - `ChildField.ServiceRecordField` — `@service` child returning a non-table value (record/scalar).
    - `ChildField.MultitableReferenceField` — `@reference` targeting multiple possible tables (polymorphic).
-9. **`ChildField.RecordLookupTableField`** **[Tracked]** — Record-fields Phase 2 Draft in Active.
+9. **`ChildField.RecordLookupTableField`** **[Pending Review]** — Record-fields Phase 2 in Active.
 
 **Miscellaneous:**
 
