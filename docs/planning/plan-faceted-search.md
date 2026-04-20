@@ -30,7 +30,7 @@ input FilmFilter {
 }
 ```
 
-Graphitron expands this to (follows [GG-335](https://sikt.atlassian.net/browse/GG-335) literal shape):
+Graphitron expands this to:
 
 ```graphql
 type QueryFilmerConnection {
@@ -46,13 +46,22 @@ type QueryFilmerConnectionFacets {
     category: [StringFacetValue!]!
 }
 
-# Per-scalar named types. All carry value: String regardless of the input scalar
-# (GG-335 is explicit: StringFacetValue.value and BooleanFacetValue.value are both String).
-# The type name preserves the semantic type so the frontend can pick the right
-# rendering/input control; the wire value is uniformly text.
-type MpaaRatingFacetValue { value: String! count: Int! }
-type StringFacetValue     { value: String! count: Int! }
+# Per-scalar named types. value always matches the filter-input field's
+# scalar type — so a client filters by the same value it sees in facets,
+# no coercion:  filter: { rating: [facetValue.value] }.
+type MpaaRatingFacetValue { value: MpaaRating! count: Int! }
+type StringFacetValue     { value: String!     count: Int! }
 ```
+
+> **Deviation from GG-335.** The ticket's Studieprogram example shows
+> `type BooleanFacetValue { value: String count: Int }` — `value`
+> literally `String` even for the Boolean case. We read this as ticket
+> shorthand rather than a considered design: a stringly-typed API
+> forces clients to re-parse values before round-tripping them into the
+> filter, and gives up GraphQL's primary safety guarantee. This plan
+> uses `value: <same scalar as the filter field>` — e.g.
+> `BooleanFacetValue.value: Boolean!`. Confirm with the ticket author
+> during Draft → Approved review.
 
 At runtime, a selection of `facets.rating` triggers an extra
 `GROUP BY rating` query against the same table + the same non-`rating`
@@ -186,7 +195,7 @@ window functions — all options are greenfield.
 |---|---|---|---|---|
 | **A. One `GROUP BY` per facet** | 1 + N | Trivially yes — each query owns its WHERE | `DSL.select(col, count()).from(t).where(cond).groupBy(col)` — all targets | **v1 default** |
 | **B. `GROUPING SETS`** (single query, multiple groupings) | 1 | **No** — one WHERE shared across all sets | `DSL.groupBy(DSL.groupingSets(...))` — PostgreSQL & Oracle | Rejected — breaks the independence contract |
-| **B′. `UNION ALL` of per-facet `GROUP BY`s** | 1 | Yes — each branch owns its WHERE | `q1.unionAll(q2)` — all targets | v2 round-trip optimization |
+| **B′. `UNION ALL` of per-facet `GROUP BY`s** | 1 | Yes — each branch owns its WHERE | `q1.unionAll(q2)` — all targets | v2 round-trip optimization (with caveats, see below) |
 | **C. Window fns (`COUNT() OVER (PARTITION BY col)`)** | 1 + N still needed | Yes, but no benefit over A | All targets | Rejected — pagination/facet sets must differ; no win |
 | **D. Conditional aggregation (`COUNT(*) FILTER (WHERE …)`)** | 1 | Yes, but quadratic code + needs known value domain | PostgreSQL `FILTER` / SQL:2003 | Rejected — open-ended string facets can't enumerate values |
 
@@ -207,14 +216,21 @@ predicate — but then the paginated `edges`/`nodes` result is also
 un-rating-filtered, which is wrong. Every rescue path ends up as a
 separate query per facet, i.e. Option A re-derived.
 
-**Why `UNION ALL` is the right v2 upgrade, not `GROUPING SETS`.**
+**Why `UNION ALL` is the conditional v2 upgrade, not `GROUPING SETS`.**
 Per-branch WHERE is preserved (each facet keeps its filter-minus-self
-slice). All branches share shape `(facet_name TEXT, value TEXT, count
-BIGINT)` — which *is exactly* GG-335's `value: String` contract. The
-planner can share base-table scans across branches where the predicates
-overlap. Emitter change is local to `buildQueryConnectionFetcher`;
-classifier/transform untouched. Defer to v2 after v1's round-trip
-profile is measured.
+slice), unlike GROUPING SETS. The planner can share base-table scans
+across branches where the predicates overlap.
+
+**Caveat introduced by typed facet values.** With `value: <filter
+scalar>` (this plan's choice), each facet's value column has its own
+Java/JDBC type — `MpaaRating`, `Boolean`, `Integer`, `String` — so
+`UNION ALL` branches don't column-type-unify without coercion. Options:
+(a) group same-typed facets into separate `UNION ALL` batches — 1 query
+per distinct value type instead of 1 per facet; (b) cast to a polymorphic
+representation (`JSONB` / `TEXT`) and re-parse on the read side per
+facet's known Java type; (c) stay with Option A. Choose during v2
+evaluation when real profiling data is available. Classifier/transform
+are untouched in either case.
 
 **v1 picks A.** Selection-aware — a facet whose field isn't in the
 GraphQL selection set produces no query, so the round-trip count tracks
@@ -260,19 +276,17 @@ For every input field carrying `@facet`:
 1. Resolve the value scalar (the GraphQL type of the input field, stripped
    of list/non-null). For scalar/enum leaves, this is the facet value type.
 2. Ensure a `{Scalar}FacetValue` type exists in the registry; add it if
-   not. Schema per GG-335 — `value` is **always `String!`** regardless
-   of the input scalar:
+   not. `value` carries the **same scalar as the filter-input field**,
+   preserving round-trip symmetry:
    ```graphql
-   type MpaaRatingFacetValue { value: String! count: Int! }
-   type StringFacetValue     { value: String! count: Int! }
-   type BooleanFacetValue    { value: String! count: Int! }
+   type MpaaRatingFacetValue { value: MpaaRating! count: Int! }
+   type StringFacetValue     { value: String!     count: Int! }
+   type BooleanFacetValue    { value: Boolean!    count: Int! }
+   type IntFacetValue        { value: Int!        count: Int! }
    ```
-   The per-scalar *name* preserves semantic typing for the frontend;
-   the *value* is stringified (enum → name, Boolean → `"true"`/
-   `"false"`, Int → decimal, etc.). This also aligns with the v2
-   `UNION ALL` optimization — all facet branches produce rows with
-   `VARCHAR` values that union-unify without casting heterogeneous
-   types.
+   A client feeds `facetValue.value` straight back into the filter
+   input with no conversion. Custom scalars synthesize
+   `<CustomScalar>FacetValue` on demand the same way.
 3. Build a `{ConnectionName}Facets` type with one non-null list field per
    `@facet` input, field name matching the input field name.
 4. Add `facets: {ConnectionName}Facets` to the Connection type.
@@ -451,28 +465,33 @@ field's `FieldWrapper.Connection`:
 3. Emit:
    ```java
    var {facet}Rows = dsl
-       .select(table.field("{COL}").cast(String.class), DSL.count())
+       .select(table.field("{COL}"), DSL.count())
        .from(table)
        .where({facetConditionMinusSelf})
        .groupBy(table.field("{COL}"))
        .fetch();
    ```
-   The `.cast(String.class)` produces the `value: String` shape GG-335
-   specifies (enum → name, Boolean → `"true"`/`"false"`, numeric →
-   decimal text). Applied at the SQL layer so the carrier is uniformly
-   typed regardless of source column type.
+   No SQL-layer coercion. The column keeps its native type (enum,
+   Boolean, Int, String); jOOQ's generated `Field<T>` carries the
+   Java type corresponding to the filter-input field's scalar. The
+   existing `graphql-java` scalar coercers serialize to the wire —
+   enums as enum name, Booleans as boolean, ints as int — identical
+   to how these columns surface on the Connection's `nodes` path.
 4. Collect each result into the `ConnectionResult`'s facets map under
-   the input-field name.
+   the input-field name. Values are stored as `Object` but remain
+   natively typed so the wiring layer's default property fetcher
+   serializes them correctly without inspection.
 
 Gate the whole block on `conn.facets().isEmpty()` — when no facets are
 declared, the fetcher stays byte-identical to today's output.
 
 > **v2 optimization** (not in this plan): replace N separate queries
-> with one `UNION ALL` of per-facet `GROUP BY`s, producing rows of
-> shape `(facet_name TEXT, value TEXT, count BIGINT)`. Preserves
-> filter-minus-self (each branch keeps its own WHERE), single
-> round-trip, same DB work. Defer until v1 round-trip profiling
-> justifies the emitter complexity. Classifier model is unaffected.
+> with `UNION ALL` batching per distinct value scalar — facets sharing
+> a value type coalesce into one query, facets with different scalars
+> stay separate. Preserves filter-minus-self (each branch keeps its
+> WHERE). See the SQL emission strategy section for the typed-value
+> caveat. Defer until v1 round-trip profiling justifies the emitter
+> complexity. Classifier model is unaffected either way.
 
 #### `GraphitronWiringClassGenerator.java:67-79`
 
@@ -526,8 +545,10 @@ input FilmFacetFilter @table(name: "film") {
 `LANGUAGE_NAME` doesn't exist as a plain column on `film` — use a column
 that does: pick `RATING` + a second scalar like `RENTAL_DURATION`
 (Integer) so both an enum-scalar facet and an Integer-scalar facet are
-exercised. Both surface as `value: String` over the wire (GG-335 shape)
-— `"PG"`, `"3"` — so assertions compare strings, not native scalars.
+exercised. Values surface as native types over the wire — enum values
+deserialize as `MpaaRating.PG`, integers as `3`. Assertions compare
+typed values; this is also the test that pins the round-trip property
+(`filter: { rating: [facetValue.value] }` works with no coercion).
 Final column choice finalized during implementation.
 
 #### Execution tests
@@ -601,11 +622,13 @@ inkluderes og gir flate resultat."*
    `@facet(parent: "<otherFacetField>")` arg or by inferring from the
    referenced column's FK path. Both call for schema-design alignment
    with the supergraph team (ticket explicitly notes this).
-2. Requires the `*FacetValue` shape to grow `parentValue: String` and
-   the `*ConnectionFacets` field type to accept
-   `facets(includeChildrenOf: [String!])`. v1's shape must leave room:
-   Phase 2 reserves the argument name and keeps the returned list
-   uniformly typed so Phase 5 is additive, not migratory.
+2. Requires the `*FacetValue` shape to grow
+   `parentValue: <same scalar as value>` (nullable, NULL at root) and
+   the per-facet field to accept `facets(includeChildrenOf: [<that
+   scalar>])`. v1's shape must leave room: each `*FacetValue` is an
+   independent type so Phase 5 can add `parentValue` additively
+   without breaking wire compat. Argument name `includeChildrenOf` is
+   reserved now so existing queries don't collide later.
 3. SQL: one `GROUP BY` per requested level, WHERE includes
    `parent_id IN includeChildrenOf` — still Option A from the SQL
    strategy section. No new SQL shape needed; ROLLUP remains wrong
@@ -645,16 +668,23 @@ reviewers can confirm the v1 design does not foreclose it.
 - **Regression:** existing `filmsConnection*` tests unchanged; structural
   diff confirms fetcher output is byte-identical when `@facet` is absent.
 
-## Resolved by GG-335 (decisions, not questions)
+## Resolved design decisions
 
-- **Facet-value shape.** Per-scalar type name (`MpaaRatingFacetValue`,
-  `StringFacetValue`, `BooleanFacetValue`) with a uniform
-  `value: String!` field. Ticket is explicit; the chat's earlier
-  `{name, count, value}` sketch is superseded.
-- **Hierarchical shape.** Flat response + `includeChildrenOf: [Int]`
-  argument + `parentValue` pointer. No nested query structures under
-  `facets`. Ticket is explicit. Implementation deferred to Phase 5
-  but the v1 types must not foreclose this.
+- **Facet-value shape — per-scalar typed, matching the filter field.**
+  `MpaaRatingFacetValue.value: MpaaRating!`,
+  `BooleanFacetValue.value: Boolean!`, etc. Rationale: a facet value
+  is a candidate filter value; typing them the same preserves
+  round-trip symmetry (`filter: { x: [facetValue.value] }` with no
+  coercion) and keeps GraphQL's type-safety guarantee. **This
+  overrides the literal GG-335 text** (which shows
+  `BooleanFacetValue.value: String` — read as ticket-writing
+  shorthand rather than considered design). Flag for confirmation
+  during Draft → Approved review.
+- **Hierarchical shape (Phase 5).** Flat response +
+  `includeChildrenOf: [<parent value type>]` argument +
+  `parentValue` pointer typed to match. No nested query structures
+  under `facets`. GG-335 is explicit on the no-nesting rule.
+  Implementation deferred to Phase 5; v1 types must not foreclose it.
 - **Per-facet independence semantics.** Every facet's counts reflect
   the base filter *minus that facet's own predicate* — enabling a
   user to change their selection within the same facet without
@@ -671,20 +701,15 @@ reviewers can confirm the v1 design does not foreclose it.
    depended on by both, (b) duplicate + cross-module assertion test.
    (a) is cleaner; (b) is faster. Decide during Phase 1 review.
 
-2. **Boolean + enum String coercion — SQL-layer vs. emitter-layer.**
-   Phase 3 proposes `col.cast(String.class)` at SQL time. For PostgreSQL
-   enums and Boolean, this yields `"PG"` / `"t"`/`"f"` respectively —
-   Boolean needs `CASE WHEN col THEN 'true' ELSE 'false' END` or a
-   consistent jOOQ converter. Verify the exact SQL during Phase 3 and
-   pin a per-type-kind stringification helper (likely on `FacetSpec`).
-
-3. **Round-trip budget for multi-facet requests.** N+1 queries is
+2. **Round-trip budget for multi-facet requests.** N+1 queries is
    selection-gated — a client requesting 6 facets pays 7 round-trips.
-   At what N does the v2 `UNION ALL` batching become required rather
-   than optional? Needs a real-query measurement during Phase 4. If the
-   admissions UX routinely requests 10+ facets, promote v2 into v1.
+   At what N does v2 batching become required rather than optional?
+   Needs a real-query measurement during Phase 4. Note the batching is
+   harder now that values are typed — `UNION ALL` works per distinct
+   scalar, not globally. A client whose facets span 4 distinct scalars
+   would pay 4 round-trips post-v2, not 1.
 
-4. **Facets on columns reached through FK joins.** v1 rejects
+3. **Facets on columns reached through FK joins.** v1 rejects
    `@facet` on `@reference`-bound input fields. GG-335's Studieprogram
    hierarchical example implies faceting over a joined parent
    (Fakultet → Institutt). Lifting this restriction is entangled with
