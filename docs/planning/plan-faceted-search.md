@@ -63,11 +63,12 @@ type StringFacetValue     { value: String!     count: Int! }
 > `BooleanFacetValue.value: Boolean!`. Confirm with the ticket author
 > during Draft → Approved review.
 
-At runtime, a selection of `facets.rating` triggers an extra
-`GROUP BY rating` query against the same table + the same non-`rating`
-predicates as the main Connection query (see *SQL emission strategy*
-below for why not `GROUPING SETS`). Results merge into a single
-`ConnectionResult` carrier.
+At runtime, any selection under `facets` triggers **one extra SQL
+statement** — a single `GROUPING SETS` query with per-aggregate
+`FILTER (WHERE …)` clauses, one grouping set per selected facet. This
+yields all facet counts in a single table scan while preserving the
+per-facet *filter-minus-self* semantics. See *SQL emission strategy*
+below. Results merge into a single `ConnectionResult` carrier.
 
 ## Current State
 
@@ -105,9 +106,11 @@ below for why not `GROUPING SETS`). Results merge into a single
   encountered.
 - `FieldWrapper.Connection` carries a `FacetSpec` describing each facet
   (input-field name → column + value-scalar type).
-- `TypeFetcherGenerator` emits one `GROUP BY` query per requested facet,
-  reusing the main query's `Condition` with the self-predicate removed (so a
-  selected facet value still shows its siblings' counts).
+- `TypeFetcherGenerator` emits **one** `GROUPING SETS` aggregate query
+  covering all selected facets in a single table scan. Each grouping
+  set's count column uses a `FILTER (WHERE …)` clause that applies the
+  full Connection filter *minus that facet's own predicate*, so a
+  selected facet value still shows its siblings' counts.
 - `ConnectionResult` carries the facet results; a new `ConnectionHelper.facets`
   static assembles them; `GraphitronWiringClassGenerator` wires the `facets`
   field on each Connection type.
@@ -178,63 +181,111 @@ Phase 5 ships hierarchical facets after v1 lands.
 
 ---
 
-## SQL emission strategy — per-facet `GROUP BY`
+## SQL emission strategy — one `GROUPING SETS` query per Connection request
 
-Four SQL shapes can compute facet aggregates. Only one satisfies the
-*filter ↔ facet independence* UX contract GG-335 requires.
+The facet aggregate is a **separate** query from the paginated
+edges/nodes — it joins no rows into that query and shares no WHERE
+clause with it. This decoupling is what makes a single-scan, multi-facet
+aggregate viable: the facet query is free to compute per-facet counts
+under per-facet predicates without perturbing pagination.
 
 The contract: when a user has filtered `rating: [PG]`, the `rating`
 facet must still show counts for *all* ratings (so the user can pivot
 their selection). Every *other* facet (`rental_duration`, …) must show
-counts for films matching `rating = PG`. Formally: each facet computes
-`GROUP BY facetCol` under the *full WHERE minus that facet's own
-predicate*. Codebase has no existing use of `GROUPING SETS`/`ROLLUP`/
-window functions — all options are greenfield.
+counts for films matching `rating = PG`. Formally: each facet computes a
+count grouped on its column under the *full filter minus that facet's
+own predicate*. The paginated `edges`/`nodes` query is unaffected and
+continues to apply the full filter unchanged.
 
-| Strategy | Round-trips | Filter-minus-self per facet | jOOQ / portability | Verdict |
-|---|---|---|---|---|
-| **A. One `GROUP BY` per facet** | 1 + N | Trivially yes — each query owns its WHERE | `DSL.select(col, count()).from(t).where(cond).groupBy(col)` — all targets | **v1 default** |
-| **B. `GROUPING SETS`** (single query, multiple groupings) | 1 | **No** — one WHERE shared across all sets | `DSL.groupBy(DSL.groupingSets(...))` — PostgreSQL & Oracle | Rejected — breaks the independence contract |
-| **B′. `UNION ALL` of per-facet `GROUP BY`s** | 1 | Yes — each branch owns its WHERE | `q1.unionAll(q2)` — all targets | v2 round-trip optimization (with caveats, see below) |
-| **C. Window fns (`COUNT() OVER (PARTITION BY col)`)** | 1 + N still needed | Yes, but no benefit over A | All targets | Rejected — pagination/facet sets must differ; no win |
-| **D. Conditional aggregation (`COUNT(*) FILTER (WHERE …)`)** | 1 | Yes, but quadratic code + needs known value domain | PostgreSQL `FILTER` / SQL:2003 | Rejected — open-ended string facets can't enumerate values |
+### v1 default: one `GROUPING SETS` query with per-aggregate `FILTER`
 
-**Why `GROUPING SETS`/`ROLLUP` look attractive but fail.** A single SQL
-statement shares one WHERE clause across every grouping set. If the user
-filtered `rating = PG` the `rental_duration` set would count only PG
-rows, *and* the `rating` set would count only PG — the latter collapses
-the facet to a single bucket and defeats its purpose. ROLLUP is designed
-for strict parent→child hierarchies over one WHERE (country → state →
-city), which is not what "show me counts ignoring my current rating
-filter" asks for.
+```sql
+SELECT
+    GROUPING(rating)           AS g_rating,
+    GROUPING(rental_duration)  AS g_rental,
+    rating,
+    rental_duration,
+    COUNT(*) FILTER (WHERE <cond_minus_rating>) AS rating_count,
+    COUNT(*) FILTER (WHERE <cond_minus_rental>) AS rental_count
+FROM film
+GROUP BY GROUPING SETS ((rating), (rental_duration));
+```
 
-**Why window functions don't help.** `COUNT(*) OVER (PARTITION BY
-rating)` computes within the result set produced by the enclosing
-query's WHERE. To get sibling-rating counts when the user has filtered
-`rating = PG`, the enclosing WHERE must *not* include the rating
-predicate — but then the paginated `edges`/`nodes` result is also
-un-rating-filtered, which is wrong. Every rescue path ends up as a
-separate query per facet, i.e. Option A re-derived.
+Each grouping set yields one row per distinct value of the facet column
+it groups on. Per-aggregate `FILTER (WHERE …)` clauses apply the
+corresponding filter-minus-self predicate on the same scan — so the
+"one WHERE shared across grouping sets" objection that rules out plain
+`GROUPING SETS` no longer applies: there *is* no outer WHERE; the
+per-set predicates live on the aggregates.
 
-**Why `UNION ALL` is the conditional v2 upgrade, not `GROUPING SETS`.**
-Per-branch WHERE is preserved (each facet keeps its filter-minus-self
-slice), unlike GROUPING SETS. The planner can share base-table scans
-across branches where the predicates overlap.
+Rows are demultiplexed client-side via the `GROUPING()` flags: a row
+with `g_rating = 0, g_rental = 1` carries a `rating` facet value
+(`rating_count` is the count; `rental_count` is meaningless and
+ignored). This is a small, mechanical decoder on the Java side.
 
-**Caveat introduced by typed facet values.** With `value: <filter
-scalar>` (this plan's choice), each facet's value column has its own
-Java/JDBC type — `MpaaRating`, `Boolean`, `Integer`, `String` — so
-`UNION ALL` branches don't column-type-unify without coercion. Options:
-(a) group same-typed facets into separate `UNION ALL` batches — 1 query
-per distinct value type instead of 1 per facet; (b) cast to a polymorphic
-representation (`JSONB` / `TEXT`) and re-parse on the read side per
-facet's known Java type; (c) stay with Option A. Choose during v2
-evaluation when real profiling data is available. Classifier/transform
-are untouched in either case.
+One table scan covers *all* facets in the Connection request, whether
+their value domains are bounded (enums, Booleans) or open-ended
+(strings, Ints, custom scalars). No pre-query for DISTINCT values is
+needed — `GROUPING SETS` discovers them in the same scan as the counts.
 
-**v1 picks A.** Selection-aware — a facet whose field isn't in the
-GraphQL selection set produces no query, so the round-trip count tracks
-what the client actually asked for.
+### Round-trips and scans
+
+Two round-trips per Connection request that selects any facet: one
+for edges/nodes, one for the facet aggregate. When no facet field is
+in the GraphQL selection set, the aggregate query is skipped entirely
+— one round-trip, identical to today.
+
+A selection gate still matters, but at the *grouping-set* level: a
+facet whose field isn't selected contributes no grouping set and no
+aggregate column, shrinking the single query.
+
+### Strategy comparison
+
+| Strategy | Round-trips | Scans per facet query | Filter-minus-self per facet | Portability | Verdict |
+|---|---|---|---|---|---|
+| **A. `GROUPING SETS` + per-aggregate `FILTER`** | 2 | 1 | Yes — each set's aggregate owns its `FILTER` predicate | PostgreSQL ✓ (Oracle ✓; SQL:2003) | **v1 default** |
+| **B. One `GROUP BY` per facet** | 1 + N | N | Trivially yes — each query owns its WHERE | All targets | Fallback if A unavailable; v2 optimization not needed |
+| **C. `UNION ALL` of per-facet `GROUP BY`s** | 2 | Up to N (planner-dependent; CTE materialization helps) | Yes — each branch owns its WHERE | All targets | Redundant once A lands; same round-trip, worse scan count |
+| **D. Plain `GROUPING SETS`** (shared outer WHERE) | 2 | 1 | **No** — single WHERE shared across sets | PostgreSQL, Oracle | Rejected — collapses the facet whose filter is active |
+| **E. Window fns (`COUNT() OVER (PARTITION BY col)`)** | 2 | 1 per facet column (cartesian issue across facets) | Possible per-facet via `FILTER (WHERE …) OVER (PARTITION BY …)` | All targets | Subsumed by A; no advantage and awkward for multi-facet |
+| **F. Conditional aggregation on known values** (`COUNT(*) FILTER (WHERE col = 'G')` etc.) | 2 | 1 | Yes | PostgreSQL `FILTER` / SQL:2003 | Rejected — requires pre-enumerated value domains; A subsumes it without that constraint |
+
+**Why plain `GROUPING SETS` (strategy D) still fails.** A single shared
+outer WHERE applied before the grouping sets collapses any facet whose
+predicate is active: if the WHERE has `rating = 'PG'` then the `rating`
+grouping set only sees PG rows and the facet collapses to one bucket.
+Strategy A avoids this by dropping the outer WHERE entirely and moving
+each set's predicate into the `FILTER` clause of *its* count aggregate.
+
+**Why window functions (strategy E) are subsumed.** A shape like
+`SELECT DISTINCT col, COUNT(*) FILTER (WHERE cond_minus_col) OVER
+(PARTITION BY col) FROM film` does give you one-scan, filter-minus-self
+counts for a *single* facet. But combining multiple facets into one
+query runs into cartesian-cardinality issues across distinct facet
+columns. `GROUPING SETS` is the natural fit for multi-facet.
+
+**Why `UNION ALL` (strategy C) is redundant once A lands.** It has the
+same round-trip count as A (one aggregate query), but PostgreSQL will
+typically scan the base table once per branch — the CTE-materialization
+path that would deduplicate scans has its own cost. A is strictly at
+least as good on scans, with a cleaner result shape.
+
+### Typed-value shape inside one query
+
+With `value: <filter scalar>` (this plan's choice), each facet's value
+column has its own Java/JDBC type — `MpaaRating`, `Boolean`, `Integer`,
+`String`. Because strategy A keeps each facet's value in its *own*
+column position (`rating`, `rental_duration`, …), no cross-facet type
+unification is needed. jOOQ's `Field<T>` on each column preserves the
+native Java type; decoding reads only the column corresponding to the
+row's active grouping set.
+
+### Fallback to B
+
+If a target dialect later added to Graphitron lacks `GROUPING SETS`
+support (or its `FILTER` clause), the emitter falls back to strategy B
+— one `GROUP BY` query per facet — at no cost to the classifier or
+transform. The choice lives inside the fetcher.
 
 ---
 
@@ -416,14 +467,16 @@ now reachable from a classified field.
 
 ---
 
-## Phase 3 — Emitter: per-facet GROUP BY + wiring
+## Phase 3 — Emitter: single `GROUPING SETS` aggregate + wiring
 
 ### Overview
 
 `TypeFetcherGenerator.buildQueryConnectionFetcher` (`:519`) emits one
-extra `GROUP BY` SELECT per facet, reusing the main query's table and
-condition-minus-self. Results are packaged into an extended
-`ConnectionResult`; `ConnectionHelper` gets a `facets` accessor;
+extra `GROUPING SETS` SELECT that covers every selected facet in a
+single table scan, with per-aggregate `FILTER` clauses carrying each
+facet's filter-minus-self predicate. Results are demultiplexed via
+`GROUPING()` flags and packaged into an extended `ConnectionResult`;
+`ConnectionHelper` gets a `facets` accessor;
 `GraphitronWiringClassGenerator` adds a `facets` dataFetcher.
 
 ### Changes
@@ -444,54 +497,97 @@ trivially exposes `value` and `count` by property name.
 
 #### `TypeFetcherGenerator.buildQueryConnectionFetcher`
 
-Per the *SQL emission strategy* section above: one independent
-`GROUP BY` per facet, each with its own filter-minus-self WHERE.
-No `GROUPING SETS`, no window functions — see that section for
-the rejection rationale.
+Per the *SQL emission strategy* section above: one `GROUPING SETS`
+query with per-aggregate `FILTER` clauses carrying filter-minus-self
+for each selected facet. The paginated `edges`/`nodes` query is
+unchanged.
 
-After the main SELECT is emitted (`:519–`), for each `FacetSpec` on the
-field's `FieldWrapper.Connection`:
+After the main SELECT is emitted (`:519–`), determine the set of
+facets present in the GraphQL selection set (a facet whose field is
+not selected contributes nothing):
 
-1. **Selection gate** — skip if the GraphQL selection set does not
-   include `facets/<inputFieldName>`. Unlike v1.1 thinking, making this
-   mandatory up-front (not a follow-up) is cheap and contains the
-   N-round-trip cost to what the client actually asked for.
-2. Build a Condition by ANDing every argument-derived predicate **except**
-   the one sourced from the facet's own input field. This requires
-   `buildConditionCall` to either (a) expose per-argument conjuncts or
-   (b) accept a `skip: String` parameter naming the input-field to omit.
-   Option (b) is the smaller edit; take it unless implementation finds
-   Phase 2 already has the per-conjunct data on the wrapper.
-3. Emit:
+- If the selected-facets set is empty — or if `conn.facets()` is
+  empty — emit no aggregate query. The fetcher stays byte-identical
+  to today's output in that case.
+
+Otherwise, emit one aggregate query. Let `selectedFacets` be the
+subset of `conn.facets()` that the client actually asked for.
+
+1. **Per-facet conditions.** For each facet `f` in `selectedFacets`,
+   build `cond_minus_f` — the full argument-derived Condition with
+   `f`'s own predicate omitted. This requires `buildConditionCall` to
+   either (a) expose per-argument conjuncts or (b) accept a
+   `skip: String` parameter naming the input-field to omit. Option (b)
+   is the smaller edit; take it unless implementation finds Phase 2
+   already has the per-conjunct data on the wrapper.
+
+2. **Grouping sets and aggregate columns.** Emit (one single-column
+   grouping set per selected facet, one `filterWhere` count per
+   selected facet):
    ```java
-   var {facet}Rows = dsl
-       .select(table.field("{COL}"), DSL.count())
+   Field<?>[] facetCols = selectedFacets.stream()
+       .map(f -> table.field(f.columnName()))
+       .toArray(Field[]::new);
+
+   Field<Integer>[] groupingFlags = Arrays.stream(facetCols)
+       .map(DSL::grouping)
+       .toArray(Field[]::new);
+
+   Field<Integer>[] counts = selectedFacets.stream()
+       .map(f -> DSL.count().filterWhere(condMinusSelf(f))
+                     .as(f.inputFieldName() + "_count"))
+       .toArray(Field[]::new);
+
+   Field<?>[][] groupingSets = Arrays.stream(facetCols)
+       .map(c -> new Field<?>[]{ c })
+       .toArray(Field[][]::new);
+
+   var facetRows = dsl
+       .select(concat(groupingFlags, facetCols, counts))
        .from(table)
-       .where({facetConditionMinusSelf})
-       .groupBy(table.field("{COL}"))
+       .groupBy(DSL.groupingSets(groupingSets))
        .fetch();
    ```
-   No SQL-layer coercion. The column keeps its native type (enum,
-   Boolean, Int, String); jOOQ's generated `Field<T>` carries the
-   Java type corresponding to the filter-input field's scalar. The
-   existing `graphql-java` scalar coercers serialize to the wire —
-   enums as enum name, Booleans as boolean, ints as int — identical
-   to how these columns surface on the Connection's `nodes` path.
-4. Collect each result into the `ConnectionResult`'s facets map under
-   the input-field name. Values are stored as `Object` but remain
-   natively typed so the wiring layer's default property fetcher
-   serializes them correctly without inspection.
+   No outer `WHERE` on this query — each facet's predicate lives in
+   its own `filterWhere` on the count aggregate. No SQL-layer
+   coercion on value columns: each `facetCol` keeps its native type
+   (enum, Boolean, Int, String); jOOQ's generated `Field<T>` carries
+   the Java type corresponding to the filter-input field's scalar.
+   The existing `graphql-java` scalar coercers serialize to the wire
+   — enums as enum name, Booleans as boolean, ints as int —
+   identical to how these columns surface on the Connection's
+   `nodes` path.
 
-Gate the whole block on `conn.facets().isEmpty()` — when no facets are
-declared, the fetcher stays byte-identical to today's output.
+3. **Demultiplex rows into the facets map.** For each row, find the
+   single facet whose `GROUPING()` flag is `0` (its column carries
+   the value). Read the value column and the corresponding
+   `_count` column; append `(value, count)` to the facets map
+   under that input-field name.
 
-> **v2 optimization** (not in this plan): replace N separate queries
-> with `UNION ALL` batching per distinct value scalar — facets sharing
-> a value type coalesce into one query, facets with different scalars
-> stay separate. Preserves filter-minus-self (each branch keeps its
-> WHERE). See the SQL emission strategy section for the typed-value
-> caveat. Defer until v1 round-trip profiling justifies the emitter
-> complexity. Classifier model is unaffected either way.
+   Sketch:
+   ```java
+   Map<String, List<FacetValueRow>> facets = new HashMap<>();
+   for (Record row : facetRows) {
+       for (FacetSpec f : selectedFacets) {
+           if (row.get(groupingFlag(f)) == 0) {
+               Object value = row.get(table.field(f.columnName()));
+               int count = row.get(f.inputFieldName() + "_count", Integer.class);
+               facets.computeIfAbsent(f.inputFieldName(), k -> new ArrayList<>())
+                     .add(new FacetValueRow(value, count));
+               break;  // only one grouping set is active per row
+           }
+       }
+   }
+   ```
+
+4. Attach the facets map to the `ConnectionResult`.
+
+**Dialect fallback.** If the target dialect does not support
+`GROUPING SETS` + `FILTER` (Graphitron targets PostgreSQL today, where
+both are supported), fall back to strategy B from the SQL section —
+one `GROUP BY` query per selected facet. The fallback is an emitter
+decision only; model and classifier are unaffected. Defer actually
+writing the fallback until a dialect that needs it is added.
 
 #### `GraphitronWiringClassGenerator.java:67-79`
 
@@ -564,17 +660,20 @@ Three cases, each running through a real Sakila database:
 3. **Multiple facets filtered.** Confirm each facet's counts ignore
    only its own predicate.
 
-Round-trip assertions: one query for edges, one per facet. For the case
-with two facets that's three round-trips total — lock this number in
-to catch accidental selection-set regressions.
+Round-trip assertions: one query for edges/nodes, one aggregate query
+for all selected facets. Two round-trips total, regardless of how many
+facets are selected — lock this number in to catch regressions that
+would re-introduce per-facet round-trips. When no facet field is in
+the selection set, the aggregate is skipped: one round-trip.
 
 ### Success Criteria
 
 - [ ] All three execution cases pass against PostgreSQL Sakila.
 - [ ] `mvn verify -pl :graphitron-rewrite-test,:graphitron-rewrite-test-fixtures,:graphitron-rewrite-test-spec -Plocal-db`
       clean.
-- [ ] JDBC round-trip count matches the expected value per case
-      (one per *selected* facet — unselected facets produce no query).
+- [ ] JDBC round-trip count matches the expected value per case: 2
+      when any facet is selected (edges + single aggregate), 1 when
+      none is.
 
 ---
 
@@ -629,10 +728,11 @@ inkluderes og gir flate resultat."*
    independent type so Phase 5 can add `parentValue` additively
    without breaking wire compat. Argument name `includeChildrenOf` is
    reserved now so existing queries don't collide later.
-3. SQL: one `GROUP BY` per requested level, WHERE includes
-   `parent_id IN includeChildrenOf` — still Option A from the SQL
-   strategy section. No new SQL shape needed; ROLLUP remains wrong
-   for the same filter-minus-self reason.
+3. SQL: each requested level adds one grouping set to the same
+   `GROUPING SETS` query, with `parent_id IN includeChildrenOf` in
+   its `FILTER` clause — still the same v1 shape. No new SQL
+   strategy needed; ROLLUP remains wrong for the same
+   filter-minus-self reason.
 
 ### What Phase 1–3 must preserve
 
@@ -701,13 +801,17 @@ reviewers can confirm the v1 design does not foreclose it.
    depended on by both, (b) duplicate + cross-module assertion test.
    (a) is cleaner; (b) is faster. Decide during Phase 1 review.
 
-2. **Round-trip budget for multi-facet requests.** N+1 queries is
-   selection-gated — a client requesting 6 facets pays 7 round-trips.
-   At what N does v2 batching become required rather than optional?
-   Needs a real-query measurement during Phase 4. Note the batching is
-   harder now that values are typed — `UNION ALL` works per distinct
-   scalar, not globally. A client whose facets span 4 distinct scalars
-   would pay 4 round-trips post-v2, not 1.
+2. **Aggregate-query cost at high facet counts.** v1 packs all
+   selected facets into one `GROUPING SETS` query. Cardinality scales
+   with the union of distinct-value counts across selected facet
+   columns (each facet contributes one row per distinct value) —
+   typically small for enum/Boolean facets, potentially larger for
+   open-ended string facets. Measure during Phase 4 on the Sakila
+   fixture. If a pathological case emerges (e.g. a high-cardinality
+   string facet combined with several others), an optimization path
+   is to split into two aggregate queries — bounded-domain facets in
+   one, each open-ended facet in its own — but only if real profiling
+   data justifies the emitter complexity.
 
 3. **Facets on columns reached through FK joins.** v1 rejects
    `@facet` on `@reference`-bound input fields. GG-335's Studieprogram
