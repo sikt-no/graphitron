@@ -12,7 +12,9 @@ import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.QueryField;
 
 import javax.lang.model.element.Modifier;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.ENV;
@@ -128,6 +130,7 @@ final class LookupValuesJoinEmitter {
     static MethodSpec buildInputRowsMethod(LookupField field, ClassName targetTableClass) {
         List<LookupMapping.LookupColumn> columns = requireColumns(field);
         TypeName[] typeArgs = rowTypeArgs(columns);
+        Map<String, RootSource> roots = rootSources(columns);
 
         var builder = MethodSpec.methodBuilder(inputRowsMethodName(field))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -135,18 +138,19 @@ final class LookupValuesJoinEmitter {
             .addParameter(ENV, "env")
             .addParameter(targetTableClass, "table");
 
-        // Extract each arg into a local. Lists are List<?> (nullable); scalars are Object.
-        // env.getArgument is <T>-inferred so the cast is implicit.
-        for (var col : columns) {
-            String local = argLocalName(col);
-            if (col.list()) {
-                builder.addStatement("$T<?> $L = env.getArgument($S)", LIST, local, col.argName());
+        // Extract each root argument into a local. Lists are List<?> (nullable); scalars and
+        // composite-key input types both come in as Object (the Map<String,Object> for a
+        // composite root is downcast per column via columnValueExpr). env.getArgument is
+        // <T>-inferred so the cast is implicit.
+        for (var root : roots.values()) {
+            if (root.list()) {
+                builder.addStatement("$T<?> $L = env.getArgument($S)", LIST, root.localName(), root.argName());
             } else {
-                builder.addStatement("$T $L = env.getArgument($S)", Object.class, local, col.argName());
+                builder.addStatement("$T $L = env.getArgument($S)", Object.class, root.localName(), root.argName());
             }
         }
 
-        addRowBuildingCore(builder, columns, typeArgs);
+        addRowBuildingCore(builder, columns, typeArgs, roots);
         return builder.build();
     }
 
@@ -166,6 +170,7 @@ final class LookupValuesJoinEmitter {
     static MethodSpec buildChildInputRowsMethod(LookupField field, ClassName targetTableClass) {
         List<LookupMapping.LookupColumn> columns = requireColumns(field);
         TypeName[] typeArgs = rowTypeArgs(columns);
+        Map<String, RootSource> roots = rootSources(columns);
 
         var builder = MethodSpec.methodBuilder(inputRowsMethodName(field))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -173,18 +178,19 @@ final class LookupValuesJoinEmitter {
             .addParameter(SELECTED_FIELD, "sf")
             .addParameter(targetTableClass, "table");
 
-        // Extract each arg. sf.getArguments() is Map<String,Object>; list args take an explicit cast.
-        for (var col : columns) {
-            String local = argLocalName(col);
-            if (col.list()) {
+        // Extract each root argument. sf.getArguments() is Map<String,Object>; list roots take
+        // an explicit cast. Composite-key roots come through as Object (a Map<String,Object>
+        // downcast per column via columnValueExpr).
+        for (var root : roots.values()) {
+            if (root.list()) {
                 builder.addStatement("$T<?> $L = ($T<?>) sf.getArguments().get($S)",
-                    LIST, local, LIST, col.argName());
+                    LIST, root.localName(), LIST, root.argName());
             } else {
-                builder.addStatement("$T $L = sf.getArguments().get($S)", Object.class, local, col.argName());
+                builder.addStatement("$T $L = sf.getArguments().get($S)", Object.class, root.localName(), root.argName());
             }
         }
 
-        addRowBuildingCore(builder, columns, typeArgs);
+        addRowBuildingCore(builder, columns, typeArgs, roots);
         return builder.build();
     }
 
@@ -210,17 +216,18 @@ final class LookupValuesJoinEmitter {
      * {@link #rowTypeArgs}.
      */
     private static void addRowBuildingCore(MethodSpec.Builder builder,
-            List<LookupMapping.LookupColumn> columns, TypeName[] typeArgs) {
+            List<LookupMapping.LookupColumn> columns, TypeName[] typeArgs,
+            Map<String, RootSource> roots) {
         int arity = typeArgs.length;
         TypeName rowType = ParameterizedTypeName.get(rowClass(arity), typeArgs);
         ClassName rawRowClass = rowClass(arity);
 
-        // Row count N — from the first list column's length, or 1 if all scalar.
-        var primaryList = columns.stream().filter(LookupMapping.LookupColumn::list).findFirst().orElse(null);
+        // Row count N — from the first list root's length, or 1 if every root is scalar.
+        var primaryList = roots.values().stream().filter(RootSource::list).findFirst().orElse(null);
         if (primaryList == null) {
             builder.addStatement("int n = 1");
         } else {
-            String local = argLocalName(primaryList);
+            String local = primaryList.localName();
             builder.addStatement("int n = $L == null ? 0 : $L.size()", local, local);
         }
 
@@ -238,9 +245,7 @@ final class LookupValuesJoinEmitter {
         cells.add("$T.inline(i)", DSL);
         for (var col : columns) {
             cells.add(", ");
-            String valueExpr = col.list()
-                ? argLocalName(col) + ".get(i)"
-                : argLocalName(col);
+            CodeBlock valueExpr = columnValueExpr(col, roots.get(col.argName()));
             // DSL.val(value, dataType) — typed Field<T>; jOOQ's Convert + the column's registered
             // Converter coerce the raw env value (String / Integer / enum instance / …) to the
             // column's Java type at bind time. No SQL CAST rendered.
@@ -328,12 +333,58 @@ final class LookupValuesJoinEmitter {
     }
 
     /**
-     * Returns the Java local-variable name for a lookup column's extracted value. Converts
-     * {@code snake_case} to {@code lowerCamelCase} and suffixes list-typed args with {@code Keys}.
+     * Describes the top-level argument backing one or more {@link LookupMapping.LookupColumn}s.
+     * All columns sharing a root arg share a single extracted local — critical for composite-key
+     * input types where several {@code @lookupKey} fields live on one argument.
+     *
+     * <p>{@code argName} is the GraphQL argument name. {@code list} reflects the outer argument's
+     * list cardinality — all columns rooted here inherit this listness. {@code localName} is the
+     * Java local-variable name holding the extracted value: {@code toCamelCase(argName)} with a
+     * {@code Keys} suffix when list-typed.
      */
-    private static String argLocalName(LookupMapping.LookupColumn col) {
-        String camel = toCamelCase(col.argName());
-        return col.list() ? camel + "Keys" : camel;
+    private record RootSource(String argName, boolean list, String localName) {
+        static RootSource of(String argName, boolean list) {
+            String camel = toCamelCase(argName);
+            return new RootSource(argName, list, list ? camel + "Keys" : camel);
+        }
+    }
+
+    /**
+     * Groups lookup columns by their top-level argument, preserving declaration order.
+     * A composite-key input argument contributes one entry with multiple columns underneath.
+     */
+    private static Map<String, RootSource> rootSources(List<LookupMapping.LookupColumn> columns) {
+        var roots = new LinkedHashMap<String, RootSource>();
+        for (var col : columns) {
+            roots.computeIfAbsent(col.argName(), k -> RootSource.of(k, col.list()));
+        }
+        return roots;
+    }
+
+    /**
+     * The value expression that reads one lookup column's raw value inside the row-building loop,
+     * given the root's extracted local. Branches on {@link LookupMapping.LookupColumn#isComposite()}
+     * and list cardinality:
+     * <ul>
+     *   <li>Scalar path, scalar root → {@code rootLocal}</li>
+     *   <li>Scalar path, list root   → {@code rootLocal.get(i)}</li>
+     *   <li>Composite path, scalar root → {@code ((Map<?,?>) rootLocal).get("inputField")}</li>
+     *   <li>Composite path, list root   → {@code ((Map<?,?>) rootLocal.get(i)).get("inputField")}</li>
+     * </ul>
+     * jOOQ's {@code DSL.val(value, table.COL.getDataType())} then wraps the value via the target
+     * column's Converter.
+     */
+    private static CodeBlock columnValueExpr(LookupMapping.LookupColumn col, RootSource root) {
+        if (col.isComposite()) {
+            String inputField = col.sourcePath().segments().get(1);
+            CodeBlock elem = root.list()
+                ? CodeBlock.of("$L.get(i)", root.localName())
+                : CodeBlock.of("$L", root.localName());
+            return CodeBlock.of("(($T<?, ?>) $L).get($S)", Map.class, elem, inputField);
+        }
+        return root.list()
+            ? CodeBlock.of("$L.get(i)", root.localName())
+            : CodeBlock.of("$L", root.localName());
     }
 
 }

@@ -10,6 +10,10 @@ type Query {
     customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
     storeById(store_id: [Int] @lookupKey @field(name: "store_id")): [Store!]!
     categoryById(category_id: [Int] @lookupKey @field(name: "category_id")): [Category!]!
+    # argres Phase 3: composite-key lookup via @table input type. Each FilmActorKey carries
+    # two @lookupKey scalar fields (film_id, actor_id); the generator materialises a VALUES
+    # derived table with columns (idx, film_id, actor_id) and joins on both keys.
+    filmActorsByKey(key: [FilmActorKey!]! @lookupKey): [FilmActor!]!
     filmsConnection(
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
@@ -113,6 +117,19 @@ type Actor @table(name: "actor") {
     actorId:   Int!    @field(name: "ACTOR_ID")
     firstName: String! @field(name: "FIRST_NAME")
     lastName:  String! @field(name: "LAST_NAME")
+}
+
+# argres Phase 3 composite-key fixture. Each key carries both film_id and actor_id as
+# @lookupKey scalars. The generator builds a VALUES(idx, film_id, actor_id) derived table
+# and joins on the full composite key, preserving caller input order.
+input FilmActorKey @table(name: "film_actor") {
+    filmId:  Int! @field(name: "film_id")  @lookupKey
+    actorId: Int! @field(name: "actor_id") @lookupKey
+}
+
+type FilmActor @table(name: "film_actor") {
+    filmId:  Int! @field(name: "film_id")
+    actorId: Int! @field(name: "actor_id")
 }
 
 type Language @table(name: "language") {

@@ -11,9 +11,9 @@ For architectural and technical design principles, see [Rewrite Design Principle
 
 Items with a plan in Draft, Approved, In Progress, or Pending Review. First line: state marker + plan link. Description below.
 
-### Argument-resolution unification **[Approved]** — [argument-resolution.md](argument-resolution.md)
+### Argument-resolution unification **[Pending Review]** — [argument-resolution.md](argument-resolution.md)
 
-Unified `ArgumentRef` classification + projection in the builder; gates `@condition`-on-fields, `InputColumnBinding`, and every future argument category. Phase 1 (classification + projection, VALUES+JOIN for `QueryLookupTableField`) and Phase 2 (generator-side migration: 2a inline `LookupTableField`, 2b `Split(Lookup)TableField` DataLoader rows-methods) have shipped. Phase 2c (`RecordLookupTableField`) is tracked under `plan-record-lookup-field.md`. Phase 3 (composite keys via `TableInputArg` + `InputColumnBinding`) is next under this plan; Phase 4 (`@condition` on `INPUT_FIELD_DEFINITION`) deferred until after Phase 3.
+Unified `ArgumentRef` classification + projection in the builder; gates `@condition`-on-fields, `InputColumnBinding`, and every future argument category. Phase 1 (classification + projection, VALUES+JOIN for `QueryLookupTableField`), Phase 2 (generator-side migration: 2a inline `LookupTableField`, 2b `Split(Lookup)TableField` DataLoader rows-methods), and Phase 3 (composite keys via `TableInputArg` + `InputColumnBinding` — atomic binding population, 2-segment `LookupColumn.sourcePath`, composite `LookupValuesJoinEmitter` grouping by root arg) have shipped. Phase 2c (`RecordLookupTableField`) is tracked under `plan-record-lookup-field.md`. Phase 4 (`@condition` on `INPUT_FIELD_DEFINITION`) remains deferred.
 
 ### G5 — Inline `TableField` emission **[Done]** — [plan-g5-inline-tablefield.md](plan-g5-inline-tablefield.md)
 

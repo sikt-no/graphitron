@@ -198,7 +198,9 @@ class TypeFetcherGeneratorTest {
         // mapping from the fixture's "body params" (retaining the parameter name as a fixture
         // convenience — callers still talk in terms of logical arg rows).
         var columns = bodyParams.stream()
-            .map(bp -> new LookupMapping.LookupColumn(bp.name(), bp.column(), bp.extraction(), bp.list()))
+            .map(bp -> new LookupMapping.LookupColumn(
+                new LookupMapping.SourcePath(List.of(bp.name())),
+                bp.column(), bp.extraction(), bp.list()))
             .toList();
         return new QueryField.QueryLookupTableField("Query", name, null, returnType,
             List.of(), new OrderBySpec.None(), null,

@@ -1,8 +1,8 @@
 # Argument Resolution
 
-> **Status:** Approved
+> **Status:** Pending Review
 >
-> Foundation (classification + projection) landed on `claude/graphitron-rewrite`. Phase 1 (VALUES+JOIN for `QueryLookupTableField`) and Phase 2a/2b (inline `LookupTableField`, DataLoader `Split(Lookup)TableField`) have shipped; Phase 2c (`RecordLookupTableField`) is delegated to `plan-record-lookup-field.md`. Phase 3 (composite keys via `TableInputArg` + `InputColumnBinding`) is the remaining generator-side work under this plan.
+> Foundation (classification + projection) landed on `claude/graphitron-rewrite`. Phase 1 (VALUES+JOIN for `QueryLookupTableField`), Phase 2a/2b (inline `LookupTableField`, DataLoader `Split(Lookup)TableField`), and Phase 3 (composite keys via `TableInputArg` + `InputColumnBinding` — binding population, 2-segment `LookupColumn.sourcePath`, composite `LookupValuesJoinEmitter` grouping by root arg) have shipped. Phase 2c (`RecordLookupTableField`) is delegated to `plan-record-lookup-field.md`. Phase 4 (`@condition` on `INPUT_FIELD_DEFINITION`) remains deferred.
 
 Plan for unified argument classification in the builder, `@condition` directive support, and lookup-field generation. The foundation (builder-side) is in; the generator-side refactor is the substantial work ahead and is the focus of this plan going forward.
 
@@ -17,11 +17,11 @@ What's live on `claude/graphitron-rewrite` today:
 - **`@lookupKey` classified once.** `ArgumentRef.ScalarArg.ColumnArg.isLookupKey` captures the directive at classify time; `projectForLookup` reads only refs and never re-touches the SDL. The classifier is the single source of truth for "is this a lookup key column".
 - **Non-empty-`LookupMapping` invariant enforced at classify time.** `projectForFilter` checks that a field tripping the lookup gate (`hasLookupKeyAnywhere`) produces at least one `LookupColumn`; otherwise it returns a classify-time error rather than deferring the failure to the generator. This closes the gap where `@lookupKey` on an input-type field would silently produce an empty mapping.
 - **`InputColumnBinding`** (cross-plan type shared with legacy-platform-id) is defined in `model/`; `TableInputArg.fieldBindings` is its consumer.
+- **Composite-key `@lookupKey` via `@table` input types.** `FieldBuilder.buildLookupBindings` walks a `TableInputArg`'s input fields, materialises one `InputColumnBinding` per `@lookupKey`-bearing scalar `ColumnField`, and `projectForLookup` emits one `LookupColumn` per binding with a 2-segment `SourcePath` `[argName, inputFieldName]`. `LookupValuesJoinEmitter` groups columns by their root argument, emits one row-building local per root, and reads each composite column as `((Map<String,Object>) elem).get("inputField")` at the call site. Non-`ColumnField` or list-typed input fields bearing `@lookupKey` fail at classify time with a specific reason.
 - **`UnboundArg` / `UnclassifiedArg` surface as field-level errors** via `projectFilters`, preserving the legacy `"argument 'X': <reason>"` format plus a Levenshtein candidate hint for column misses.
 
 What the generator does *not* yet do:
 
-- `TableInputArg.fieldBindings` is always empty — composite-key input types have no generator path yet (Phase 3).
 - `@condition` on `INPUT_FIELD_DEFINITION` is not yet classified or emitted (Phase 4).
 - `ChildField.RecordLookupTableField` remains in `NOT_IMPLEMENTED_REASONS`; emission is owned by `plan-record-lookup-field.md`.
 
@@ -123,20 +123,20 @@ Both iterate the same `filters()` list. Removing lookup keys from `filters()` (a
 
 **Cross-reference.** Roadmap G5/G6 track these stubs. G5 is now an explicit prerequisite rather than a parallel track; `rewrite-roadmap.md` notes the dependency.
 
-### Phase 3 — Composite keys via `TableInputArg` + `InputColumnBinding`
+### Phase 3 — Composite keys via `TableInputArg` + `InputColumnBinding` **[Shipped]**
 
-**Goal.** Populate `TableInputArg.fieldBindings` with real `InputColumnBinding` entries so the lookup emitter can treat an input-typed argument as a source of multiple key columns. Lifts the classify-time error that the foundation step surfaces ("@lookupKey declared but no scalar argument resolved to a lookup column") once composite-key inputs produce columns.
+**Goal.** Populate `TableInputArg.fieldBindings` with real `InputColumnBinding` entries so the lookup emitter can treat an input-typed argument as a source of multiple key columns. Lifts the classify-time error that the foundation step surfaces once composite-key inputs produce columns.
 
-**Today.** `TableInputArg.fieldBindings` is always `List.of()`. The builder knows the input type's `TableRef` but doesn't walk the type's fields to resolve bindings. A field whose lookup keys come only from an input-type's fields is rejected at classify time with the error above.
+**Shipped shape.** Atomic four-part change (single commit).
 
-**Atomic change (single logical commit — the three steps cannot ship separately without leaving `LookupColumn.sourcePath` half-wired).**
+- **Binding population.** `FieldBuilder.buildLookupBindings` walks a `TableInputArg`'s `InputField.ColumnField` entries, picking those that carry `@lookupKey` on the SDL side. Each matched field becomes one `InputColumnBinding(inputFieldName, columnRef, extraction)`. Non-`ColumnField` targets and list-typed fields bearing `@lookupKey` fail at classify time with specific reasons; `projectForFilter` surfaces those accumulated reasons in preference to the generic empty-mapping error.
+- **Schema-model change.** `LookupColumn.sourcePath` is a `List<String>` segments record (argres `SourcePath`): length 1 for scalar `@lookupKey` args, length 2 for composite fields reached through a `@table` input type. The `argName()` accessor is retained as the first segment for back-compat; `isComposite()` returns `true` for 2+-segment paths.
+- **Projection.** `projectForLookup` dispatches on `ArgumentRef` variants: `ColumnArg(isLookupKey)` yields a 1-segment column; `TableInputArg` yields one 2-segment column per binding, inheriting `list` from the outer arg and scalar from the inner field.
+- **Emitter.** `LookupValuesJoinEmitter` groups columns by their root argument (`RootSource`), emits one row-building local per root (list cardinality drives `rowCount`), and reads each composite column at the call site as `((Map<String,Object>) elem).get("inputField")`. Scalar and composite paths share the same typed-bind shape via `DSL.val(value, dataType)`.
 
-- **Binding population.** In `FieldBuilder.classifyArgument`, for a `TableInputArg`, walk the input type's fields and build `InputColumnBinding(fieldName, columnRef, extraction)` for each field that resolves to a column on `inputTable`. Unmatched fields error at classify time (matches `UnboundArg` strictness for scalar args).
-- **Schema-model change.** Add `LookupColumn.sourcePath` — a record capturing the hierarchy (top-level arg name, then zero or more input-field names). `argName` drops as an ambiguous label. Generators read the path to build unique VALUES column labels and to derive extraction code at the call site.
-- **Projection.** Extend `projectForLookup` to walk `TableInputArg.fieldBindings` and add `LookupColumn` entries with populated `sourcePath`. Each binding becomes one key column.
-- **Emitter.** `LookupValuesJoinEmitter` handles the composite-key case: for an input-typed arg, extract its value once at the fetcher, then read each bound field for row construction.
+Execution coverage: four GraphQL-level tests in `graphitron-rewrite-test-spec` (matching pairs, input-order preservation, mismatched-pair exclusion via the composite AND, empty input) using a `film_actor`-backed `FilmActorKey` input type.
 
-**Architectural decision already committed.** `TableInputArg` stays builder-internal. Bindings flow through `LookupMapping.columns()` unchanged — one `LookupColumn` per input field. Generators never see `TableInputArg` or `InputColumnBinding` directly.
+**Architectural decision committed.** `TableInputArg` stays builder-internal. Bindings flow through `LookupMapping.columns()` unchanged — one `LookupColumn` per input-type `@lookupKey` field. Generators never see `TableInputArg` or `InputColumnBinding` directly.
 
 ### Phase 4 — `@condition` on `INPUT_FIELD_DEFINITION`
 

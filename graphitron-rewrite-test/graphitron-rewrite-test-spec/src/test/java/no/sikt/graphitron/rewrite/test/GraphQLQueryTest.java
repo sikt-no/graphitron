@@ -797,6 +797,53 @@ class GraphQLQueryTest {
             assertThat((List<?>) f.get("actorsBySplitLookup")).isEmpty());
     }
 
+    // ===== argres Phase 3 — composite-key @lookupKey via @table input type =====
+
+    @Test
+    void compositeKeyLookup_returnsMatchingPairs() {
+        // film_actor seed: (film 1, actor 1), (film 1, actor 2), (film 2, actor 1), (film 2, actor 3),
+        // (film 3, actor 1), (film 4, actor 2), (film 5, actor 3). Composite-key join on both
+        // film_id AND actor_id — query two existing pairs.
+        Map<String, Object> data = execute(
+            "{ filmActorsByKey(key: [{filmId: 1, actorId: 2}, {filmId: 2, actorId: 3}]) { filmId actorId } }");
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmActorsByKey");
+        assertThat(rows).hasSize(2);
+        assertThat(rows).extracting(r -> r.get("filmId") + ":" + r.get("actorId"))
+            .containsExactly("1:2", "2:3");
+    }
+
+    @Test
+    void compositeKeyLookup_preservesInputOrder() {
+        // VALUES+JOIN preserves input order via the derived table's idx column, even for composite
+        // keys. Reverse the input to prove ordering is not coincidentally PK-sorted.
+        Map<String, Object> data = execute(
+            "{ filmActorsByKey(key: [{filmId: 3, actorId: 1}, {filmId: 1, actorId: 2}, {filmId: 2, actorId: 1}]) { filmId actorId } }");
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmActorsByKey");
+        assertThat(rows).extracting(r -> r.get("filmId") + ":" + r.get("actorId"))
+            .containsExactly("3:1", "1:2", "2:1");
+    }
+
+    @Test
+    void compositeKeyLookup_mismatchedPairExcluded() {
+        // (film 4, actor 1) is NOT a row in film_actor (film 4's cast is actor 2 only). Both
+        // film 4 and actor 1 exist individually, but the composite JOIN rejects the pair.
+        // (film 1, actor 1) is a real pair → returned.
+        Map<String, Object> data = execute(
+            "{ filmActorsByKey(key: [{filmId: 4, actorId: 1}, {filmId: 1, actorId: 1}]) { filmId actorId } }");
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmActorsByKey");
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).get("filmId")).isEqualTo(1);
+        assertThat(rows.get(0).get("actorId")).isEqualTo(1);
+    }
+
+    @Test
+    void compositeKeyLookup_emptyInput_returnsEmpty() {
+        Map<String, Object> data = execute(
+            "{ filmActorsByKey(key: []) { filmId actorId } }");
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmActorsByKey");
+        assertThat(rows).isEmpty();
+    }
+
     // ===== C4: RecordTableField — @record parent + DataLoader language batch =====
 
     @Test

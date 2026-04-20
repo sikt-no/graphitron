@@ -93,6 +93,32 @@ class LookupTableFieldPipelineTest {
     }
 
     @Test
+    void compositeKeyInputType_producesSwitchArmAndInputRowsHelper() {
+        // Phase 3 — @table input type with @lookupKey on two scalar fields emits inline via
+        // TypeClassGenerator.$fields, with a composite VALUES helper on the type class.
+        var schema = TestSchemaHelper.buildSchema("""
+            input FilmActorKey @table(name: "film_actor") {
+                filmId: Int @field(name: "film_id") @lookupKey
+                actorId: Int @field(name: "actor_id") @lookupKey
+            }
+            type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
+            type Film @table(name: "film") {
+                filmActors(key: [FilmActorKey!]! @lookupKey): [FilmActor!]!
+            }
+            type Query { film: Film }
+            """);
+
+        var filmClass = TypeClassGenerator.generate(schema).stream()
+            .filter(t -> t.name().equals("Film"))
+            .findFirst()
+            .orElseThrow();
+
+        var methodNames = filmClass.methodSpecs().stream().map(m -> m.name()).toList();
+        assertThat(methodNames).contains("$fields", "filmActorsInputRows");
+        assertThat(TypeSpecAssertions.hasFieldsArm(filmClass, "filmActors")).isTrue();
+    }
+
+    @Test
     void singleCardinalityLookupKey_classifiesAsUnclassifiedField() {
         var schema = TestSchemaHelper.buildSchema("""
             type Actor @table(name: "actor") { name: String }

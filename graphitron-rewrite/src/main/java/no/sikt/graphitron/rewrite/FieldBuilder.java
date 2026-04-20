@@ -40,6 +40,8 @@ import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.InputColumnBinding;
+import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
@@ -663,9 +665,9 @@ class FieldBuilder {
         if (ctx.types.containsKey(typeName)) {
             var resolvedType = ctx.types.get(typeName);
             if (resolvedType instanceof GraphitronType.TableInputType tit) {
-                // Step 2: emit structurally. fieldBindings populated in step 9.
+                List<InputColumnBinding> bindings = buildLookupBindings(tit, arg, fieldDef, name, errors);
                 return new ArgumentRef.InputTypeArg.TableInputArg(
-                    name, typeName, nonNull, list, tit.table(), List.of(), argCondition);
+                    name, typeName, nonNull, list, tit.table(), bindings, argCondition);
             }
             return new ArgumentRef.InputTypeArg.PlainInputArg(
                 name, typeName, nonNull, list, argCondition);
@@ -689,23 +691,81 @@ class FieldBuilder {
             return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                 "enum filter validation failed for column '" + columnRef.sqlName() + "'");
         }
-        CallSiteExtraction extraction;
-        if (enumClassName != null) {
-            extraction = new CallSiteExtraction.EnumValueOf(enumClassName);
-        } else if ("ID".equals(typeName)) {
-            extraction = new CallSiteExtraction.JooqConvert(columnRef.javaName());
-        } else {
-            var textEnumMapping = buildTextEnumMapping(typeName);
-            if (textEnumMapping != null) {
-                String mapFieldName = fieldDef.getName().toUpperCase() + "_" + name.toUpperCase() + "_MAP";
-                extraction = new CallSiteExtraction.TextMapLookup(mapFieldName, textEnumMapping);
-            } else {
-                extraction = new CallSiteExtraction.Direct();
-            }
-        }
+        CallSiteExtraction extraction = deriveExtraction(typeName, columnRef, enumClassName,
+            fieldDef.getName().toUpperCase() + "_" + name.toUpperCase() + "_MAP");
         boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
         return new ArgumentRef.ScalarArg.ColumnArg(
             name, typeName, nonNull, list, columnRef, extraction, argCondition, fieldOverride, isLookupKey);
+    }
+
+    /**
+     * Derives the {@link CallSiteExtraction} strategy for a scalar column-bound value given its
+     * GraphQL type and target column. {@code enumClassName} is the result of
+     * {@link #validateEnumFilter} (non-null only for jOOQ-enum columns). {@code mapFieldName} is
+     * the generated static-map field name used when the GraphQL type is a text-mapped enum.
+     */
+    private CallSiteExtraction deriveExtraction(String typeName, ColumnRef columnRef,
+                                                String enumClassName, String mapFieldName) {
+        if (enumClassName != null) {
+            return new CallSiteExtraction.EnumValueOf(enumClassName);
+        }
+        if ("ID".equals(typeName)) {
+            return new CallSiteExtraction.JooqConvert(columnRef.javaName());
+        }
+        var textEnumMapping = buildTextEnumMapping(typeName);
+        if (textEnumMapping != null) {
+            return new CallSiteExtraction.TextMapLookup(mapFieldName, textEnumMapping);
+        }
+        return new CallSiteExtraction.Direct();
+    }
+
+    /**
+     * Walks a {@link GraphitronType.TableInputType} argument's fields and builds one
+     * {@link InputColumnBinding} per {@code @lookupKey}-bearing input field (argres Phase 3).
+     *
+     * <p>Only {@link InputField.ColumnField} entries contribute bindings — a {@code @lookupKey}
+     * on a {@code @reference}-navigating, nesting, or platform-id input field is rejected here.
+     * List-typed input fields are also rejected: list cardinality must live on the outer
+     * argument, not on an individual input-type field.
+     *
+     * <p>Returns {@link List#of()} when no input field carries {@code @lookupKey} — the caller
+     * (validity gate in {@link #projectForFilter}) reports "empty lookup mapping despite
+     * {@code @lookupKey}" only when the field trips the lookup gate with no other source of
+     * lookup columns.
+     */
+    private List<InputColumnBinding> buildLookupBindings(GraphitronType.TableInputType tit,
+            GraphQLArgument arg, GraphQLFieldDefinition fieldDef, String argName, List<String> errors) {
+        var sdlType = ctx.schema.getType(tit.name());
+        if (!(sdlType instanceof GraphQLInputObjectType iot)) {
+            return List.of();
+        }
+        var byName = tit.inputFields().stream()
+            .collect(Collectors.toMap(InputField::name, f -> f));
+        var bindings = new ArrayList<InputColumnBinding>();
+        for (var sdlField : iot.getFieldDefinitions()) {
+            if (!sdlField.hasAppliedDirective(DIR_LOOKUP_KEY)) continue;
+            var resolved = byName.get(sdlField.getName());
+            if (!(resolved instanceof InputField.ColumnField cf)) {
+                errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
+                    + "': @lookupKey is only supported on scalar column fields");
+                continue;
+            }
+            if (cf.list()) {
+                errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
+                    + "': @lookupKey on a list-typed input field is not supported; "
+                    + "move list cardinality to the outer argument");
+                continue;
+            }
+            String enumClassName = validateEnumFilter(cf.typeName(), cf.column(), errors);
+            if (enumClassName != null && enumClassName.isEmpty()) {
+                continue; // enum validation failed; error already appended
+            }
+            String mapFieldName = fieldDef.getName().toUpperCase() + "_"
+                + argName.toUpperCase() + "_" + sdlField.getName().toUpperCase() + "_MAP";
+            CallSiteExtraction extraction = deriveExtraction(cf.typeName(), cf.column(), enumClassName, mapFieldName);
+            bindings.add(new InputColumnBinding(sdlField.getName(), cf.column(), extraction));
+        }
+        return List.copyOf(bindings);
     }
 
     /**
@@ -850,13 +910,17 @@ class FieldBuilder {
         var lookupMapping = projectForLookup(refs, rt);
         // LookupField invariant: if the field will classify as a lookup variant (signalled by
         // @lookupKey appearing anywhere on its arguments), the mapping must have at least one
-        // column. Today only scalar @lookupKey args contribute columns; @lookupKey on input-type
-        // fields trips the gate without producing any column (composite-key support is Phase 5).
-        // Surface the gap as a classify-time error rather than letting the generator fail later.
+        // column. Both scalar @lookupKey args (ColumnArg) and @lookupKey on composite-key input
+        // fields (TableInputArg.fieldBindings, argres Phase 3) contribute; the gate fires only
+        // when every lookup-key source failed to produce a column (e.g. all fieldBindings were
+        // rejected for being @reference-navigating or list-typed).
         if (hasLookupKeyAnywhere(fieldDef) && lookupMapping.columns().isEmpty()) {
-            return TableFieldComponents.error(
-                "@lookupKey is declared but no scalar argument resolved to a lookup column — "
-                + "composite-key input types with @lookupKey on their fields are not yet supported");
+            // Prefer the specific binding-failure reason (e.g. @lookupKey on a @reference field)
+            // when buildLookupBindings recorded one; fall back to the generic empty-mapping error.
+            String msg = errors.isEmpty()
+                ? "@lookupKey is declared but no argument resolved to a lookup column"
+                : String.join("; ", errors);
+            return TableFieldComponents.error(msg);
         }
         return new TableFieldComponents(filters, orderBy, projectPaginationSpec(refs, fieldDef), null, lookupMapping);
     }
@@ -875,9 +939,23 @@ class FieldBuilder {
     private LookupMapping projectForLookup(List<ArgumentRef> refs, TableRef targetTable) {
         var columns = new ArrayList<LookupMapping.LookupColumn>();
         for (var ref : refs) {
-            if (!(ref instanceof ArgumentRef.ScalarArg.ColumnArg ca)) continue;
-            if (!ca.isLookupKey()) continue;
-            columns.add(new LookupMapping.LookupColumn(ca.name(), ca.column(), ca.extraction(), ca.list()));
+            switch (ref) {
+                case ArgumentRef.ScalarArg.ColumnArg ca when ca.isLookupKey() ->
+                    columns.add(new LookupMapping.LookupColumn(
+                        new LookupMapping.SourcePath(List.of(ca.name())),
+                        ca.column(), ca.extraction(), ca.list()));
+                case ArgumentRef.InputTypeArg.TableInputArg tia -> {
+                    // Each binding on a @table input type's @lookupKey field becomes one column.
+                    // List cardinality is inherited from the outer argument — individual input
+                    // fields are guaranteed scalar by buildLookupBindings.
+                    for (var binding : tia.fieldBindings()) {
+                        columns.add(new LookupMapping.LookupColumn(
+                            new LookupMapping.SourcePath(List.of(tia.name(), binding.inputFieldName())),
+                            binding.targetColumn(), binding.extraction(), tia.list()));
+                    }
+                }
+                default -> {}
+            }
         }
         return new LookupMapping(List.copyOf(columns), targetTable);
     }
