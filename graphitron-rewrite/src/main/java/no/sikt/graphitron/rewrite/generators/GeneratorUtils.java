@@ -155,21 +155,6 @@ class GeneratorUtils {
     }
 
     /**
-     * Generates a {@link CodeBlock} that declares a {@code key} local variable by extracting
-     * the batch key from {@code env.getSource()} — suitable for use inside a DataLoader-based
-     * data fetcher method.
-     *
-     * <p>The generated statement pattern depends on the {@link BatchKey} variant:
-     * <ul>
-     *   <li>{@link BatchKey.RowKeyed} →
-     *       {@code RowN<...> key = DSL.row(((Record) env.getSource()).get(Tables.T.COL), ...)}</li>
-     *   <li>{@link BatchKey.RecordKeyed} →
-     *       {@code RecordN<...> key = ((Record) env.getSource()).into(Tables.T.COL, ...)}</li>
-     *   <li>{@link BatchKey.ObjectBased} →
-     *       {@code KeyType key = (KeyType) env.getSource()}</li>
-     * </ul>
-     */
-    /**
      * Emits the {@code RowN<...> key = DSL.row(...)} statement for a {@link ChildField.RecordTableField}
      * DataFetcher, extracting the FK value(s) from the {@code @record} parent's backing Java object.
      *

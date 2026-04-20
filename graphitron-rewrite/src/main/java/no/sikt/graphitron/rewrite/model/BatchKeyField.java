@@ -5,10 +5,10 @@ package no.sikt.graphitron.rewrite.model;
  *
  * <p>Implemented by all field variants that are DataLoader-backed:
  * {@link ChildField.SplitTableField}, {@link ChildField.SplitLookupTableField},
- * {@link ChildField.ServiceTableField}.
+ * {@link ChildField.ServiceTableField}, {@link ChildField.RecordTableField}.
  *
- * <p>{@link ChildField.RecordLookupTableField} will implement this interface once the
- * {@code BatchKey.ObjectBased} generator path is resolved (roadmap Backlog).
+ * <p>{@link ChildField.RecordLookupTableField} will implement this interface in record-fields
+ * Phase 2 — it needs the same {@code BatchKey} addition plus the lookup-input VALUES join.
  *
  * <p>This interface is intentionally standalone (does not extend {@link GraphitronField}) so that
  * it can be applied as an orthogonal capability without being restricted by the sealed hierarchy.
