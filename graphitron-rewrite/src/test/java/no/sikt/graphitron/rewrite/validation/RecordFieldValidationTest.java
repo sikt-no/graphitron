@@ -20,13 +20,13 @@ class RecordFieldValidationTest {
         IMPLICIT_COLUMN("no @field — column name defaults to GraphQL field name",
             new RecordField("Language", "name", null,
                 new ReturnTypeRef.ScalarReturnType("String", new FieldWrapper.Single(true)),
-                "name"),
+                "name", null),
             List.of()),
 
         EXPLICIT_COLUMN("@field(name:) overrides column name",
             new RecordField("Language", "displayName", null,
                 new ReturnTypeRef.ScalarReturnType("String", new FieldWrapper.Single(true)),
-                "display_name"),
+                "display_name", null),
             List.of());
 
         private final String description;

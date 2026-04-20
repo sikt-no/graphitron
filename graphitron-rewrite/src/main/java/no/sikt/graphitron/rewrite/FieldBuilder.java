@@ -1153,7 +1153,7 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
         if (isScalarOrEnum(fieldDef)) {
-            return new PropertyField(parentTypeName, name, location, name);
+            return new PropertyField(parentTypeName, name, location, name, null);
         }
         return new UnclassifiedField(parentTypeName, name, location, fieldDef,
             "fields on @error types must be scalar or enum");
@@ -1461,7 +1461,8 @@ class FieldBuilder {
             String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
                 ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
                 : name;
-            return new PropertyField(parentTypeName, name, location, columnName);
+            return new PropertyField(parentTypeName, name, location, columnName,
+                resolveColumnOnJooqTableRecord(columnName, parentResultType));
         }
 
         // Object return type on a result-mapped parent.
@@ -1490,9 +1491,11 @@ class FieldBuilder {
                 yield new RecordTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), batchKey);
             }
             case ReturnTypeRef.ResultReturnType r ->
-                new RecordField(parentTypeName, name, location, r, columnName);
+                new RecordField(parentTypeName, name, location, r, columnName,
+                    resolveColumnOnJooqTableRecord(columnName, parentResultType));
             case ReturnTypeRef.ScalarReturnType s ->
-                new RecordField(parentTypeName, name, location, s, columnName);
+                new RecordField(parentTypeName, name, location, s, columnName,
+                    resolveColumnOnJooqTableRecord(columnName, parentResultType));
             case ReturnTypeRef.PolymorphicReturnType p ->
                 new UnclassifiedField(parentTypeName, name, location, fieldDef, "@record type returning a polymorphic type is not yet supported");
         };
@@ -1509,6 +1512,24 @@ class FieldBuilder {
      *       (cannot generate a typed cast for key extraction)</li>
      * </ul>
      */
+    /**
+     * Resolves the parent-table {@link ColumnRef} for a {@code PropertyField} or {@code RecordField}
+     * when the parent is a {@link GraphitronType.JooqTableRecordType} whose backing jOOQ table
+     * resolves in the catalog and contains a column with the given SQL name. Returns {@code null}
+     * for all other {@link GraphitronType.ResultType} variants, when the {@code JooqTableRecordType}
+     * has a {@code null} {@code TableRef} (backing class not loaded at build time), or when the
+     * SQL column name doesn't match any column on the resolved table.
+     *
+     * <p>A non-null result unlocks typed {@code Tables.X.COL} emission in
+     * {@link no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator};
+     * a null result falls back to untyped {@code DSL.field("col_name")} access.
+     */
+    private ColumnRef resolveColumnOnJooqTableRecord(String columnName, GraphitronType.ResultType parentResultType) {
+        if (!(parentResultType instanceof GraphitronType.JooqTableRecordType jtrt)) return null;
+        if (jtrt.table() == null) return null;
+        return svc.resolveColumnInTable(columnName, jtrt.table().tableName()).orElse(null);
+    }
+
     private static BatchKey deriveBatchKeyForResultType(
             List<JoinStep> joinPath, GraphitronType.ResultType parentResultType) {
         if (joinPath.isEmpty() || !(joinPath.get(0) instanceof JoinStep.FkJoin fkJoin)) {

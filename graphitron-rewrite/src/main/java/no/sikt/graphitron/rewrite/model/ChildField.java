@@ -312,12 +312,22 @@ public sealed interface ChildField extends GraphitronField
         LookupMapping lookupMapping
     ) implements TableTargetField, LookupField {}
 
+    /**
+     * @param column the resolved parent-table column when the parent is a
+     *     {@link GraphitronType.JooqTableRecordType} with a resolvable {@link TableRef} and the
+     *     SQL column name maps to a real column; {@code null} otherwise (including for
+     *     {@link GraphitronType.JooqRecordType}, {@link GraphitronType.JavaRecordType}, and
+     *     {@link GraphitronType.PojoResultType} parents). When non-null, the generator emits a
+     *     typed {@code Tables.X.COL} reference; when null, it falls back to
+     *     {@code DSL.field("col_name")} or a bean/record accessor depending on the parent.
+     */
     record RecordField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        String columnName
+        String columnName,
+        ColumnRef column
     ) implements ChildField {}
 
     record ComputedField(
@@ -328,11 +338,19 @@ public sealed interface ChildField extends GraphitronField
         List<JoinStep> joinPath
     ) implements ChildField {}
 
+    /**
+     * @param column the resolved parent-table column when the parent is a
+     *     {@link GraphitronType.JooqTableRecordType} with a resolvable {@link TableRef} and the
+     *     SQL column name maps to a real column; {@code null} otherwise. When non-null, the
+     *     generator emits a typed {@code Tables.X.COL} reference; when null, it falls back to
+     *     {@code DSL.field("col_name")} or a bean/record accessor depending on the parent.
+     */
     record PropertyField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        String columnName
+        String columnName,
+        ColumnRef column
     ) implements ChildField {}
 
     record MultitableReferenceField(

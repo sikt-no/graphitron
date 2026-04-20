@@ -20,6 +20,7 @@ import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -1209,9 +1210,12 @@ public class TypeFetcherGenerator {
      * backing Java object exposed by {@code env.getSource()} for a {@code @record}-annotated parent.
      *
      * <ul>
-     *   <li>{@link GraphitronType.JooqTableRecordType} / {@link GraphitronType.JooqRecordType}:
-     *       {@code new ColumnFetcher<>(DSL.field(columnName))} — untyped string field lookup on the
-     *       jOOQ Record source.</li>
+     *   <li>{@link GraphitronType.JooqTableRecordType} with a resolved {@code column}:
+     *       {@code new ColumnFetcher<>(Tables.X.COL)} — typed field reference on the concrete
+     *       jOOQ table constant.</li>
+     *   <li>{@link GraphitronType.JooqTableRecordType} without a resolved {@code column} (backing
+     *       class not loaded at build time, or name mismatch) / {@link GraphitronType.JooqRecordType}:
+     *       {@code new ColumnFetcher<>(DSL.field(columnName))} — untyped string field lookup.</li>
      *   <li>{@link GraphitronType.JavaRecordType}: lambda casting to the backing class and calling
      *       the record component accessor ({@code lowerCamelCase(columnName)()} ).</li>
      *   <li>{@link GraphitronType.PojoResultType} with a non-null class: lambda casting to the
@@ -1221,9 +1225,14 @@ public class TypeFetcherGenerator {
      * </ul>
      */
     private static CodeBlock buildPropertyOrRecordFetcherEntry(
-            String fieldName, String columnName, GraphitronType.ResultType resultType) {
+            String fieldName, String columnName, ColumnRef column, GraphitronType.ResultType resultType) {
         var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
             ColumnFetcherClassGenerator.CLASS_NAME);
+        if (resultType instanceof GraphitronType.JooqTableRecordType jtrt && column != null && jtrt.table() != null) {
+            var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
+            return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.$L.$L))",
+                fieldName, columnFetcherClass, tablesClass, jtrt.table().javaFieldName(), column.javaName());
+        }
         if (resultType instanceof GraphitronType.JooqTableRecordType
                 || resultType instanceof GraphitronType.JooqRecordType) {
             return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.field($S)))",
@@ -1260,10 +1269,10 @@ public class TypeFetcherGenerator {
             return CodeBlock.of("\n.dataFetcher($S, env -> env.getSource())", cf.name());
         }
         if (field instanceof ChildField.PropertyField pf && resultType != null) {
-            return buildPropertyOrRecordFetcherEntry(pf.name(), pf.columnName(), resultType);
+            return buildPropertyOrRecordFetcherEntry(pf.name(), pf.columnName(), pf.column(), resultType);
         }
         if (field instanceof ChildField.RecordField rf && resultType != null) {
-            return buildPropertyOrRecordFetcherEntry(rf.name(), rf.columnName(), resultType);
+            return buildPropertyOrRecordFetcherEntry(rf.name(), rf.columnName(), rf.column(), resultType);
         }
         if (field instanceof ChildField.ColumnField cf && parentTable != null) {
             var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
