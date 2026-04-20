@@ -882,7 +882,6 @@ reviewers can confirm the v1 design does not foreclose it.
   ticket with the target SDL shape.
 - Jira: [SOPP-141](https://sikt.atlassian.net/browse/SOPP-141) —
   admissions initiative; closed in favour of GG-335.
-- `docs/paginated-fields.md` — current `@asConnection` machinery.
 - `graphitron-schema-transform/.../MakeConnections.java:157` —
   `transformListWrapperToConnection` hook point.
 - `graphitron-rewrite/.../FieldBuilder.java:350-354` —

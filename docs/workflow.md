@@ -53,50 +53,10 @@ independent Claude session (a fresh agent with no prior context on the
 work) can also review — it has no shared context and must evaluate on
 the artifact alone.
 
-### What review is for
-
-Review is an active editing role, not a yes/no vote. A reviewer's job
-is to:
-
-1. **Find weaknesses** — factual errors, missing integration points,
-   unstated assumptions, invariants that don't hold, stale references
-   to code that no longer exists, hand-wavy decisions that will trip up
-   the implementer, missing test coverage, scope creep.
-2. **Find opportunities** — simpler alternatives, cheaper commit
-   structures, places where an existing pattern already solves the
-   problem, decisions worth pinning explicitly rather than leaving open.
-3. **Land the improvements directly.** A reviewer who has the plan
-   loaded and has identified a concrete fix is already the cheapest
-   committer of that fix. Write the edit; commit it; push. Handing back
-   a feedback list for someone else to apply is a valid but slower
-   fallback — use it when the change needs the original author's
-   judgment (schema design calls, genuine ambiguity) or when the
-   reviewer lacks confidence in the surrounding context.
-
-A "LGTM" review that adds no commit is suspect. If the plan was
-already perfect, the reviewer should be able to articulate *why* it's
-complete — what they looked for and didn't find. A review that ends in
-sign-off without any prior iteration commit should include explicit
-reasoning about the cases that *could* have been weaknesses.
-
-Pending Review → Done follows the same rule: if the reviewer sees
-corrections to the implementation, land them (or a plan update
-capturing the remaining work) rather than just commenting.
-
-### Authorship during iteration
-
-"Author" in the transitions table means the most recent committer of
-the plan file in Draft state, not a fixed identity. The Draft →
-Approved sign-off must come from someone other than whoever wrote the
-most recent Draft commit. Iteration rotates the "author" identity;
-each round's reviewer must be a third party to the revision they're
-approving.
-
-This means a plan can be revised by the original author, then by
-reviewer A (who commits improvements), then approved by reviewer B —
-three parties, two reviews, one approval. It also means a reviewer
-who lands substantive edits disqualifies themselves from approving
-that revision; another party must sign off.
+"Author" means the most recent committer of the plan file in Draft
+state, not a fixed identity. A reviewer who lands substantive edits
+disqualifies themselves from approving that revision; another party
+must sign off.
 
 ## Plan file conventions
 

@@ -25,9 +25,3 @@ Graphitron generates the mechanical parts — data fetching, response formatting
 Complex systems fail in complex ways. Simple systems fail in understandable ways.
 
 Generated code should be readable without special tools. Fewer runtime dependencies mean fewer things to break, update, or watch go unmaintained. Explicit mappings in schema annotations mean future maintainers can understand the relationship between API and database without reverse-engineering magic. Problems caught at build time are far cheaper than problems caught in production.
-
-## Technology choices are temporary
-
-We believe GraphQL is a good choice today. We don't believe it's permanent — history suggests it isn't. The database schema is more durable than the API schema. Business logic should be independent of API technology. Generated code can be regenerated.
-
-This isn't about predicting what comes next. It's about structuring the system so that whatever comes next can be accommodated without rewriting everything.

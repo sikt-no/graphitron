@@ -6,20 +6,13 @@ Technical and architectural principles that govern the rewrite pipeline. For Gra
 
 ## Generation-thinking
 
-**Before implementing a generator body, ensure the model carries what the generator needs — pre-resolved, generation-ready.**
-
-The model's job is to be a clean decision boundary. `GraphitronSchemaBuilder` reads directives once and resolves everything: table names, column references, method names, call-site argument extraction strategies, body-generation strategies. Generators receive a model that is already in terms of "what to emit", not "what to interpret".
+**Before implementing a generator body, ensure the model carries what the generator needs — pre-resolved, generation-ready.** `GraphitronSchemaBuilder` reads directives once and resolves everything: table names, column references, method names, extraction strategies. Generators receive a model in terms of "what to emit", not "what to interpret".
 
 Signs a model type needs more pre-resolution:
-- A generator switches on a raw string (e.g. `"ASC".equalsIgnoreCase(fixed.direction())`)
-- A generator contains a multi-arm type switch that recurs across multiple generators (the same switch in 3 places → move the result to the model)
-- A generator recomputes a derived name from a field name (e.g. `"load" + capitalize(sf.name())`)
-- Generation and calling are conflated in the same model type (e.g. the old `WhereFilter` carrying both column references for body-generation and call expressions for call-site — split them)
-- A generator branches on a predicate over pre-resolved data (e.g. `first.sourceTable().equals(parentTable)` to pick FK direction). The decision was not resolved, only its inputs were.
-
-**Corollary — pre-resolve decisions, not just inputs.** Pre-resolving the data a decision reads (e.g. the FK columns on both sides of a join) is not the same as pre-resolving the decision itself (which side holds the FK). When G5's `FkJoin` enriches itself with `sourceColumns` and `targetColumns`, the emitter still branches on direction. Stronger form: lift the fork into the model as a sealed sub-variant — `CorrelationShape.ChildHoldsFk(ours, theirs)` / `ParentHoldsFk(ours, theirs)` — resolved once in the builder. The generator switches, never infers. Rule of thumb: if two generators branch on the same predicate over a model field, the branch belongs in the model.
-
-**The corollary for tests**: do not assert on generated method bodies. Assert on structural properties (method names, parameter types, return types, which methods exist). Body-content tests are implementation tests that break on every refactor. The correct signal that a body is right is compilation (`graphitron-rewrite-test-spec mvn compile`) and execution against a real database.
+- A generator switches on a raw string, or recomputes a derived name from a field name.
+- The same multi-arm type switch recurs across multiple generators.
+- Generation and calling are conflated in the same model type.
+- A generator branches on a predicate over pre-resolved data (e.g. which side of a join holds the FK). The decision was not resolved, only its inputs were — lift the fork into the model as a sealed sub-variant. Rule of thumb: if two generators branch on the same predicate over a model field, the branch belongs in the model.
 
 ## Sealed hierarchies over enums for typed information
 
@@ -37,14 +30,9 @@ When different variants of a concept carry different data, use a sealed interfac
 
 ## Capability interfaces and sealed switches serve different roles
 
-When a generation pattern applies uniformly across multiple field variants, use an orthogonal capability interface rather than an N-way `instanceof` chain. The interface declares what a field can do; the generator matches on the capability.
+When a generation pattern applies uniformly across multiple field variants, use an orthogonal capability interface rather than an N-way `instanceof` chain. Established interfaces: `SqlGeneratingField`, `MethodBackedField`, `BatchKeyField`.
 
-Established interfaces:
-- `SqlGeneratingField` — `returnType()`, `filters()`, `orderBy()`, `pagination()` (11 variants)
-- `MethodBackedField` — `method()` returning `MethodRef` (8 variants)
-- `BatchKeyField` — `batchKey()`, `rowsMethodName()` (3 variants, more planned)
-
-**Capabilities do not eliminate exhaustiveness bookkeeping — they relocate it.** A capability expresses what is *uniformly true* across variants; a sealed switch expresses what *varies by variant identity*. Both patterns belong, neither replaces the other. Heuristic: use a capability when the generator treats the variants identically (iterate `SqlGeneratingField.filters()` the same way regardless of leaf type). Use a sealed switch when the generator forks on identity (which `$fields` arm to emit for this leaf, which rows-method signature to synthesise). A new leaf added to a sealed hierarchy costs one sealed-switch arm *and* a capability implementation if it opts in — the switch doesn't go away, only the `instanceof` chain that tried to re-derive the capability at each call site.
+Capabilities express what is *uniformly true* across variants; sealed switches express what *varies by identity*. Use a capability when the generator treats variants identically (iterate `SqlGeneratingField.filters()` regardless of leaf type). Use a sealed switch when the generator forks on identity (which `$fields` arm to emit, which rows-method signature to synthesise). Capabilities don't eliminate exhaustiveness bookkeeping — they relocate it.
 
 ## Narrow component types over broad interfaces
 
@@ -54,9 +42,9 @@ This pushes classification certainty into the type system: code that receives a 
 
 ## Sub-taxonomies for resolution outcomes
 
-Complex resolution outcomes get their own sealed type rather than being stored as raw strings. `BatchKey` is a sub-taxonomy of `ParamSource.Sources`, just as `TableRef` is a sub-taxonomy of `GraphitronType.TableBackedType` and `ColumnRef` is a sub-taxonomy of `InputField.ColumnField`. This pattern keeps each concept's complexity local and makes the taxonomy self-documenting: the type of a field tells you exactly what states it can be in.
+Complex resolution outcomes get their own sealed type rather than being stored as raw strings. `BatchKey` is a sub-taxonomy of `ParamSource.Sources`, `TableRef` of `GraphitronType.TableBackedType`, `ColumnRef` of `InputField.ColumnField`. The type of a field tells you exactly what states it can be in.
 
-**Corollary — audit sub-taxonomy pressure at stable points.** Each sub-taxonomy (`TableRef`, `ColumnRef`, `BatchKey`, `CallSiteExtraction`, `ArgumentRef`, `ReturnTypeRef.*BoundReturnType`, …) pays for itself individually; the aggregate cognitive cost of N parallel narrow hierarchies compounds and is not tracked per-addition. At stable points in the rewrite (milestone boundaries), audit: which sub-taxonomies could collapse into a sibling or a single parent now that their forcing functions are visible? Prefer collapse once compile-time guarantees are no longer the binding constraint. Each new sub-taxonomy proposal comes with a one-line note on what distinct information it carries that a sibling cannot — a sub-taxonomy without that note is probably a field on an existing record.
+Each new sub-taxonomy proposal comes with a one-line note on what distinct information it carries that a sibling cannot — otherwise it's probably a field on an existing record. At milestone boundaries, audit which sub-taxonomies could collapse now that their forcing functions are visible.
 
 ## Builder-internal sealed hierarchies for multi-target classification
 

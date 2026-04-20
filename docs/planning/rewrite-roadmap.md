@@ -69,6 +69,9 @@ Three legacy-parity gaps surfaced by running the rewrite validator against a rea
 **Cleanup / drift:**
 
 - **Unify `rowsMethodName()` across `BatchKeyField` leaves** **[Unplanned]** — `"rows" + capitalize(name())` is now copy-pasted into four records (`SplitTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField` — surfaced by record-fields Phase 2 review 2026-04-20). Lift to a default method on `BatchKeyField` (or a static helper on the interface). If the naming convention ever shifts, changing one record leaves the others silently divergent; only execution tests would catch it.
+- **Collapse `TableTargetField` structural redundancy** **[Unplanned]** — `TableField`, `SplitTableField`, `LookupTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField` all share the same component set (`returnType · joinPath · filters · orderBy · pagination`). They vary only by (parent context: table-mapped vs. result-mapped) × (split query y/n) × (lookup key y/n). Consider collapsing into fewer types with flags, or intermediate sealed interfaces (`StandardTableField permits TableField, SplitTableField`, `RecordBoundField permits RecordTableField, RecordLookupTableField`).
+- **Shared interface for `QueryField` / `ChildField` table-bound parallels** **[Unplanned]** — `QueryTableField` / `QueryLookupTableField` / `QueryTableInterfaceField` / `QueryServiceTableField` / `QueryServiceRecordField` structurally mirror their `ChildField` counterparts; root variants just drop `joinPath`. Both root and child carry the same `filters · orderBy · pagination` triple via `SqlGeneratingField`. Evaluate a shared interface capturing `returnType · filters · orderBy · pagination`. `QueryTableMethodTableField` / `QueryServiceTableField` intentionally stay outside — developer-controlled methods replace SQL generation.
+- **`JoinConditionRef` for shared `(source, target)` calling convention** **[Unplanned]** — `ConditionJoin.condition` and `FkJoin.whereFilter` both carry a `MethodRef` with a `SourceTable, Table → Condition` signature, while `ConditionFilter` (also `MethodRef`) uses `Table, Arg... → Condition`. The two groupings aren't expressed in the type system. Consider a `JoinConditionRef` wrapper for the join case so the contracts are distinguishable at the type level.
 
 **Generator stubs to complete:**
 
@@ -90,8 +93,8 @@ Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`; the stubbed-vari
 
 **Miscellaneous:**
 
-- **Paginated-fields transform coexistence** **[Unplanned]** — builder fallback loses `defaultPageSize` when `@asConnection` is stripped. See [../paginated-fields.md](../paginated-fields.md).
-- **Cursor format stability** **[Done]** — replaced `org.jooq.tools.json.JSONValue` with a NUL-delimited format (`\u0000` separator, `\u0001` for SQL NULL). Safe on PostgreSQL (NUL bytes rejected by the DB); Oracle allows NUL bytes in `VARCHAR2`/`CLOB`, so sort columns containing `\u0000` would corrupt the cursor — documented as a warning in `paginated-fields.md`.
+- **Paginated-fields transform coexistence** **[Unplanned]** — when the schema goes through both the transform and the builder, `@asConnection` is stripped before the builder sees it. The builder falls back to structural detection, which works but loses `defaultPageSize` (defaults to 100). Document or wire the default through.
+- **Cursor format stability** **[Done]** — replaced `org.jooq.tools.json.JSONValue` with a NUL-delimited format (`\u0000` separator, `\u0001` for SQL NULL). Safe on PostgreSQL (NUL bytes rejected by the DB); Oracle allows NUL bytes in `VARCHAR2`/`CLOB`, so sort columns containing `\u0000` would corrupt the cursor — Oracle users should avoid such columns as connection sort keys.
 - **Selection parser audit** **[Unplanned]** — `selection/` hand-rolls ~500 LOC that graphql-java already parses. Audit whether the runtime path really needs re-parsing.
 - **`GraphitronContext` extension-point docs** **[Unplanned]** — document what belongs in a `GraphitronContext` method vs a jOOQ `ExecuteListener` vs a schema directive.
 - **Drop `graphitron-common` build dependency from `graphitron-rewrite`** **[Unplanned]** — one production import + one test-classpath resource. Inline `MultiSourceReader` + auto-inject `directives.graphqls` from the module's own classpath. Emitted code's *runtime* dependency on `graphitron-common` is unchanged.
@@ -145,7 +148,7 @@ G6 covers four categories of DataLoader-backed field. Before implementing any ca
 
 No DTOs, no TypeMappers. DataFetchers return `Result<Record>`; GraphQL-Java traverses the records using the registered field DataFetchers.
 
-**Exception:** Connection fields return `ConnectionResult` — a generated carrier wrapping `Result<Record>` + pagination context. See [paginated-fields.md](../paginated-fields.md).
+**Exception:** Connection fields return `ConnectionResult` — a generated carrier wrapping `Result<Record>` + pagination context.
 
 ### Selection-aware queries and multiset
 

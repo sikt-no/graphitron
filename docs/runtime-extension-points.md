@@ -206,21 +206,6 @@ the policies automatically.
 
 ---
 
-## Choosing Your Approach
-
-| Goal | Mechanism | How |
-|------|-----------|-----|
-| Multi-tenancy | `getDslContext()` + database RLS | Set session context, create RLS policies |
-| Context values in conditions | `getContextArgument()` + `@tableMethod`/`@condition` `contextArguments` | Pass runtime values (user ID, tenant ID) to generated condition calls |
-| Type conversion / custom mappings | jOOQ `Configuration` | Set converters, forced types, record mappers on `DefaultConfiguration` |
-| SQL logging / metrics | jOOQ `ExecuteListener` | Register on `DefaultConfiguration` in `getDslContext()` |
-| Transaction management | `getDslContext()` | Return a transaction-aware `DSLContext` for mutations |
-
-**Key principle:** Generated code calls `GraphitronContext` and uses whatever it returns. Runtime
-concerns live in your implementation, not in generated code.
-
----
-
 **See also:**
 - [Security Model](security.md) — Database-level security philosophy
 - [Common Module README](../graphitron-common/README.md) — GraphitronContext API reference

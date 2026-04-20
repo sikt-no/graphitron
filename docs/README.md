@@ -28,35 +28,15 @@ You're writing a GraphQL schema and want Graphitron to generate the wiring code.
 You're implementing generators, adding field variants, or fixing bugs in the rewrite pipeline.
 
 4. **[Code Generation Triggers](code-generation-triggers.md)** — The full classification taxonomy: schema patterns → sealed variants → generated output. This is the reference for what the code does.
-5. **[Rewrite Model](rewrite-model.md)** — Visual Mermaid diagrams of the sealed type hierarchy: field variants, type variants, and support/composition types. Includes notes on structural redundancy and potential cleanup.
+5. **[Rewrite Model](rewrite-model.md)** — Visual Mermaid diagrams of the sealed type hierarchy: field variants, type variants, and support/composition types.
 6. **[Rewrite Design Principles](rewrite-design-principles.md)** — Architectural and technical principles governing the rewrite pipeline (generation-thinking, sealed hierarchies, classification boundaries, test tiers, etc.).
 7. **[Rewrite Roadmap](planning/rewrite-roadmap.md)** — Remaining generator work and known gaps. Full set of in-flight plans lives under [planning/](planning/).
 
 Active implementation plans (read when you're working on the specific feature):
-- **[Paginated Fields](paginated-fields.md)** — Dynamic ordering cursors, backward pagination, known bugs.
 - **[Argument Resolution](planning/argument-resolution.md)** — Unified argument classification, @condition support, lookup VALUES generation.
 - **[Legacy PlatformId](planning/legacy-platform-id.md)** — Classifying legacy `id: ID!` mutation input fields that bind to composite platform keys via record-level `getId`/`setId`.
 
 ---
-
-## Quick Reference
-
-| Document | Audience | Purpose |
-|----------|----------|---------|
-| [Vision and Goal](vision-and-goal.md) | Everyone | Problem statement and design approach |
-| [Graphitron Principles](graphitron-principles.md) | Everyone | Design philosophy and long-term thinking |
-| [Dependencies](dependencies.md) | Everyone | Why jOOQ and GraphQL-Java |
-| [Java Codegen README](/graphitron-codegen-parent/graphitron-java-codegen/README.md) | Schema authors | Directive reference with examples |
-| [Security](security.md) | Schema authors | Security model explanation |
-| [Runtime Extension Points](runtime-extension-points.md) | Schema authors | GraphitronContext, ExecuteListener, RLS |
-| [Example README](/graphitron-example/README.md) | Schema authors | Working Sakila example |
-| [Code Generation Triggers](code-generation-triggers.md) | Contributors | Schema → classification → generated code |
-| [Rewrite Model](rewrite-model.md) | Contributors | Sealed type hierarchy diagrams and cleanup notes |
-| [Rewrite Design Principles](rewrite-design-principles.md) | Contributors | Architectural/technical principles for the rewrite pipeline |
-| [Rewrite Roadmap](planning/rewrite-roadmap.md) | Contributors | Remaining work and known gaps |
-| [Paginated Fields](paginated-fields.md) | Contributors | Pagination implementation plan |
-| [Argument Resolution](planning/argument-resolution.md) | Contributors | Argument classification, @condition, lookup generation |
-| [Legacy PlatformId](planning/legacy-platform-id.md) | Contributors | Legacy `id: ID!` input classification via record `getId`/`setId` |
 
 ## Other Documentation
 

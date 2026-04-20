@@ -209,7 +209,7 @@ Structural properties (method names, param types, presence/absence) are the righ
 - **Mutations.** Input-type arguments for DML use a different mapping (create/update records, not lookup keys). The argument-resolution pipeline here is read-only. Mutations get their own plan.
 - **Non-`@table` input types with columns.** The "implicit-table" heuristic in legacy that tries to infer a target table from the input's field names is not reproduced. Inputs must carry `@table` to bind to one.
 - **Renaming `LookupTableField` / `SplitLookupTableField` etc.** The sealed-type names already describe the lookup variants accurately. No rename is implied by any decision in this plan.
-- **Cursor-format stability** for paginated lookups. `paginated-fields.md` owns that concern; this plan doesn't touch it.
+- **Cursor-format stability** for paginated lookups. Tracked on the roadmap; this plan doesn't touch it.
 
 ## Cross-plan Ownership
 
