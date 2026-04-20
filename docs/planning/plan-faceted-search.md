@@ -5,8 +5,10 @@
 > Add a `@facet` directive for filter-input fields. The schema-transform stage
 > expands each `@asConnection` field's Connection type with a `facets` object
 > whose fields mirror the `@facet`-marked filter inputs; the rewrite classifier
-> and fetcher emit GROUP-BY aggregation SQL per facet. Delivers the
-> "filter ↔ facet" contract the admissions UX needs without nested queries.
+> and fetcher emit one `GROUPING SETS` aggregate query per Connection request,
+> with per-aggregate `FILTER` clauses giving each facet its filter-minus-self
+> predicate in a single table scan. Delivers the "filter ↔ facet" contract the
+> admissions UX needs without nested queries.
 
 ## Overview
 
@@ -77,7 +79,7 @@ below. Results merge into a single `ConnectionResult` carrier.
   knows about facets (`MakeConnections.java:157` —
   `transformListWrapperToConnection`).
 - The rewrite classifier picks up the expanded Connection via
-  `FieldBuilder.java:350-354`, producing `FieldWrapper.Connection` carrying
+  `FieldBuilder.java:356,370`, producing `FieldWrapper.Connection` carrying
   `defaultPageSize` and `connectionName` only
   (`FieldWrapper.java:64-75`).
 - `TypeFetcherGenerator.buildQueryConnectionFetcher`
@@ -92,9 +94,19 @@ below. Results merge into a single `ConnectionResult` carrier.
 - `BuildContext.java:54-74` lists every directive the rewrite reads;
   there is no `DIR_FACET`.
 - No execution-test fixture combines `@asConnection` with a filter input
-  today — `schema.graphqls:13-20` has `filmsConnection` + `filmsOrderedConnection`
+  today — `schema.graphqls:17-24` has `filmsConnection` + `filmsOrderedConnection`
   but only scalar filter args at argument level, not a `@table`-backed filter
   input.
+- Filter-input conditions are emitted via `WhereFilter` (sealed into
+  `GeneratedConditionFilter` / `ConditionFilter`, one per
+  `@condition`-bound method). `TypeFetcherGenerator.buildConditionCall`
+  (`:494-509`) iterates filters, emitting one
+  `condition = condition.and(Filters.method(table, args...))` per
+  filter. The filter method itself ANDs all its fields internally — so
+  the fetcher cannot surgically drop a single input-field's predicate
+  by passing a skip name; the filter-class generator owns that
+  assembly. This shapes Phase 3's condition-minus-self strategy (see
+  below).
 
 ## Desired End State
 
@@ -515,11 +527,32 @@ subset of `conn.facets()` that the client actually asked for.
 
 1. **Per-facet conditions.** For each facet `f` in `selectedFacets`,
    build `cond_minus_f` — the full argument-derived Condition with
-   `f`'s own predicate omitted. This requires `buildConditionCall` to
-   either (a) expose per-argument conjuncts or (b) accept a
-   `skip: String` parameter naming the input-field to omit. Option (b)
-   is the smaller edit; take it unless implementation finds Phase 2
-   already has the per-conjunct data on the wrapper.
+   `f`'s own predicate omitted. The current filter class bundles all
+   its input-field predicates into one generated method (see *Current
+   State*), so the fetcher cannot ask the filter to "skip field X".
+   Instead, reconstruct facet predicates inline in the fetcher using
+   `FacetSpec` data (which Phase 2 places on `FieldWrapper.Connection`):
+
+   - Build a **base condition** equal to the full filter's condition
+     applied to *every non-facet field*. The cleanest route is to
+     teach `TypeConditionsGenerator` to emit a second overload —
+     `applyNonFacet(table, filter)` — that skips every `@facet`-marked
+     input field when building `condition`. The existing
+     `applyFull(...)` overload continues to back the edges/nodes
+     query. Adds a generator touch-point but keeps facet knowledge
+     out of the filter method's body.
+   - For each facet `g`, its own predicate is the column-equality /
+     `IN` implied by `FacetSpec.columnName` and the value(s) the
+     client passed at `env.getArgument("filter").get(g.inputFieldName())`.
+     The fetcher emits this inline via jOOQ:
+     `DSL.field(g.columnName(), g.jooqType()).in(values)` (or `.eq`
+     for a scalar-valued facet). Gate on null/empty — absent input
+     contributes no conjunct.
+   - `cond_minus_f = baseCondition AND (⋀ g ≠ f of g's inline predicate)`.
+
+   This leaves the filter-class generation with one additive change
+   (a second overload) and puts facet-predicate reconstruction in the
+   one place that already has `FacetSpec`: the fetcher.
 
 2. **Grouping sets and aggregate columns.** Emit (one single-column
    grouping set per selected facet, one `filterWhere` count per
@@ -818,6 +851,30 @@ reviewers can confirm the v1 design does not foreclose it.
    hierarchical example implies faceting over a joined parent
    (Fakultet → Institutt). Lifting this restriction is entangled with
    Phase 5; confirm it can stay rejected until then.
+
+4. **NULL values in facet columns.** When a `@facet`-marked column has
+   NULL rows, should the aggregate produce a bucket `{ value: null,
+   count: N }` or exclude NULLs? `GROUP BY` treats NULL as its own
+   group by default, so the natural behaviour is *include* — but that
+   requires `*FacetValue.value` to be nullable, which conflicts with
+   the v1 shape's `value: <scalar>!` non-null typing. Options: (a)
+   make `value` nullable across the board, losing a bit of type
+   guarantee for clients that never expect NULL; (b) drop NULL
+   buckets, arguing that a NULL-valued filter-input doesn't round-trip
+   meaningfully anyway (`rating: [null]` is not a useful filter);
+   (c) nullable only where the underlying column is nullable,
+   propagated from the jOOQ catalog. Pick during Phase 2 review —
+   classifier needs to know before `*FacetValue` is synthesized.
+
+5. **Ordering of facet values.** The plan does not pin a sort order
+   for the returned facet buckets. Candidates: by count descending
+   (matches typical UI "top N" rendering), by value natural order
+   (stable across requests and easy to test), or unspecified (client
+   must sort). GG-335's examples don't say. Recommend count-desc with
+   a stable tiebreaker on the value column so results are
+   deterministic; revisit if a client needs value-natural order.
+   Pin during Phase 3 review — affects the emitter's `.orderBy(...)`
+   on the aggregate query.
 
 ## References
 
