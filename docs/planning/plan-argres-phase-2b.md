@@ -1,6 +1,6 @@
 # argres Phase 2b — Split(Lookup)TableField DataLoader rows-method emission
 
-> **Status:** Pending Review
+> **Status:** Done
 >
 > Fills in the DataLoader rows-method bodies for `ChildField.SplitTableField` and `ChildField.SplitLookupTableField`. Both were compile-only skeletons (`IMPLEMENTED_LEAVES` but runtime-throwing); Phase 2b makes `IMPLEMENTED_LEAVES` mean "emits working code".
 
