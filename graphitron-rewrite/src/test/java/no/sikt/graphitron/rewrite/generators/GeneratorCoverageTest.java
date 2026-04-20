@@ -16,7 +16,7 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class GeneratorCoverageTest {
+public class GeneratorCoverageTest {
 
     /**
      * Recursive leaf walker — {@link Class#getPermittedSubclasses()} is shallow; it returns

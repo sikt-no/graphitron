@@ -32,6 +32,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
+import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
@@ -51,6 +52,8 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -60,6 +63,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import java.util.Set;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
@@ -84,7 +88,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== ColumnField =====
 
-    enum ColumnFieldCase {
+    enum ColumnFieldCase implements ClassificationCase {
         IMPLICIT_COLUMN_NAME(
             "scalar field without @field uses the GraphQL field name as the column name",
             """
@@ -150,6 +154,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(ColumnField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -161,7 +166,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== ColumnReferenceField =====
 
-    enum ColumnReferenceFieldCase {
+    enum ColumnReferenceFieldCase implements ClassificationCase {
         KNOWN_FK_BY_SQL_NAME(
             "@reference with a lowercase SQL FK name resolves to FkJoin",
             """
@@ -311,6 +316,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(ColumnReferenceField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -322,7 +328,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== NotGeneratedField =====
 
-    enum NotGeneratedFieldCase {
+    enum NotGeneratedFieldCase implements ClassificationCase {
         BASIC(
             "@notGenerated fields are classified as NotGeneratedField regardless of return type",
             """
@@ -337,6 +343,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(NotGeneratedField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -348,7 +355,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== MultitableReferenceField =====
 
-    enum MultitableReferenceFieldCase {
+    enum MultitableReferenceFieldCase implements ClassificationCase {
         BASIC(
             "@multitableReference produces a MultitableReferenceField",
             """
@@ -365,6 +372,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(MultitableReferenceField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -376,7 +384,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== NodeIdField =====
 
-    enum NodeIdFieldCase {
+    enum NodeIdFieldCase implements ClassificationCase {
         WITH_NODE_DIRECTIVE(
             "@nodeId on a type that also has @node — classified as NodeIdField with resolved key columns",
             """
@@ -404,6 +412,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(NodeIdField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -415,7 +424,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== NodeIdReferenceField =====
 
-    enum NodeIdReferenceFieldCase {
+    enum NodeIdReferenceFieldCase implements ClassificationCase {
         RESOLVED(
             "typeName pointing to a @node type resolves to NodeIdReferenceField with a WithNode and empty joinPath",
             """
@@ -479,6 +488,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(NodeIdReferenceField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -495,7 +505,7 @@ class GraphitronSchemaBuilderTest {
      * variant the builder can produce from this shape. Covers the
      * <em>Child Fields (on {@code @table} parent)</em> table in {@code code-generation-triggers.md}.
      */
-    enum TableFieldCase {
+    enum TableFieldCase implements ClassificationCase {
         SINGLE_RETURN_TYPE(
             "@table return type (default) → TableField (Single cardinality, empty joinPath)",
             """
@@ -592,7 +602,9 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { actors: [Actor!]! @splitQuery }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("Film", "actors")).isInstanceOf(SplitTableField.class)),
+            schema -> assertThat(schema.field("Film", "actors")).isInstanceOf(SplitTableField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(SplitTableField.class); }
+        },
 
         SPLIT_LOOKUP_TABLE_FIELD(
             "@splitQuery + @lookupKey on @table parent → SplitLookupTableField",
@@ -603,7 +615,9 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("Film", "actor")).isInstanceOf(SplitLookupTableField.class)),
+            schema -> assertThat(schema.field("Film", "actor")).isInstanceOf(SplitLookupTableField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(SplitLookupTableField.class); }
+        },
 
         WITH_REFERENCE_PATH(
             "@reference(path:) populates the joinPath with one FkJoin",
@@ -758,6 +772,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(TableField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -769,7 +784,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== TableMethodField =====
 
-    enum TableMethodFieldCase {
+    enum TableMethodFieldCase implements ClassificationCase {
         SINGLE_RETURN(
             "@tableMethod with object return type → Single cardinality",
             """
@@ -834,6 +849,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(TableMethodField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -845,7 +861,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== NestingField =====
 
-    enum NestingFieldCase {
+    enum NestingFieldCase implements ClassificationCase {
         PLAIN_OBJECT_TYPE(
             "a field returning a plain object type (no @table) on a @table parent → NestingField",
             """
@@ -870,6 +886,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(NestingField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -881,7 +898,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== ServiceTableField / ServiceRecordField =====
 
-    enum ServiceFieldCase {
+    enum ServiceFieldCase implements ClassificationCase {
         ON_TABLE_TYPE_SCALAR_RETURN(
             "@service on a @table parent returning scalar → ServiceRecordField",
             """
@@ -905,7 +922,9 @@ class GraphitronSchemaBuilderTest {
                 var f = (ServiceTableField) schema.field("Film", "language");
                 assertThat(f.returnType()).isInstanceOf(no.sikt.graphitron.rewrite.model.ReturnTypeRef.TableBoundReturnType.class);
                 assertThat(f.returnType().returnTypeName()).isEqualTo("Language");
-            });
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(ServiceTableField.class); }
+        };
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -913,6 +932,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(ServiceRecordField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -924,7 +944,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== ComputedField =====
 
-    enum ComputedFieldCase {
+    enum ComputedFieldCase implements ClassificationCase {
         SCALAR_RETURN(
             "@externalField on a @table parent → ComputedField",
             """
@@ -939,6 +959,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(ComputedField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -950,7 +971,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== TableInterfaceField / InterfaceField / UnionField =====
 
-    enum InterfaceUnionFieldCase {
+    enum InterfaceUnionFieldCase implements ClassificationCase {
         TABLE_INTERFACE_FIELD(
             "field returning a @table+@discriminate interface → TableInterfaceField",
             """
@@ -959,7 +980,9 @@ class GraphitronSchemaBuilderTest {
             type Actor @table(name: "actor") { media: MediaItem }
             type Query { actor: Actor }
             """,
-            schema -> assertThat(schema.field("Actor", "media")).isInstanceOf(TableInterfaceField.class)),
+            schema -> assertThat(schema.field("Actor", "media")).isInstanceOf(TableInterfaceField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(TableInterfaceField.class); }
+        },
 
         INTERFACE_FIELD(
             "field returning a plain interface (no @table) → InterfaceField",
@@ -969,7 +992,9 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { language: Named }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("Film", "language")).isInstanceOf(InterfaceField.class)),
+            schema -> assertThat(schema.field("Film", "language")).isInstanceOf(InterfaceField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(InterfaceField.class); }
+        },
 
         INTERFACE_WITH_NESTING_IMPLEMENTORS(
             "interface whose implementing types are nesting types (no @table) → InterfaceType with Unbound participants, no error",
@@ -992,7 +1017,9 @@ class GraphitronSchemaBuilderTest {
                     .extracting(p -> p.typeName())
                     .containsExactlyInAnyOrder("EmnerolleGyldighetsperiode", "KlasserolleGyldighetsperiode");
                 assertThat(it.participants()).allMatch(p -> p instanceof ParticipantRef.Unbound);
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(InterfaceType.class); }
+        },
 
         UNION_FIELD(
             "field returning a union → UnionField",
@@ -1003,7 +1030,9 @@ class GraphitronSchemaBuilderTest {
             type Actor @table(name: "actor") { media: MediaItem }
             type Query { actor: Actor }
             """,
-            schema -> assertThat(schema.field("Actor", "media")).isInstanceOf(UnionField.class)),
+            schema -> assertThat(schema.field("Actor", "media")).isInstanceOf(UnionField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnionField.class); }
+        },
 
         UNION_WITH_NESTING_MEMBER(
             "union with a nesting-type member (no @table) → union classified as UnclassifiedType",
@@ -1013,7 +1042,39 @@ class GraphitronSchemaBuilderTest {
             union MediaOrPeriod = Film | DatePeriod
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.type("MediaOrPeriod")).isInstanceOf(UnclassifiedType.class));
+            schema -> assertThat(schema.type("MediaOrPeriod")).isInstanceOf(UnclassifiedType.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(); }
+        },
+
+        TABLE_INTERFACE_TYPE(
+            "@table+@discriminate interface → TableInterfaceType with discriminator and participants",
+            """
+            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+            type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var t = (TableInterfaceType) schema.type("MediaItem");
+                assertThat(t.discriminatorColumn()).isEqualTo("kind");
+                assertThat(t.participants()).isNotEmpty();
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(TableInterfaceType.class); }
+        },
+
+        UNION_TYPE(
+            "plain union of @table types → UnionType with participants",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") { title: String }
+            union MediaItem = Language | Film
+            type Query { film: Film }
+            """,
+            schema -> {
+                var t = (UnionType) schema.type("MediaItem");
+                assertThat(t.participants()).hasSize(2);
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnionType.class); }
+        };
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -1021,6 +1082,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -1037,7 +1099,7 @@ class GraphitronSchemaBuilderTest {
      * this shape. Covers the <em>Child Fields (on {@code @record} parent)</em> table in
      * {@code code-generation-triggers.md}.
      */
-    enum NonTableParentCase {
+    enum NonTableParentCase implements ClassificationCase {
         PROPERTY_FIELD_ON_RESULT_TYPE(
             "@record (ResultType) parent — scalar field → PropertyField using field name as columnName",
             """
@@ -1048,7 +1110,9 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (PropertyField) schema.field("FilmDetails", "title");
                 assertThat(f.columnName()).isEqualTo("title");
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(PropertyField.class); }
+        },
 
         PROPERTY_FIELD_EXPLICIT_NAME(
             "@record parent + @field(name:) — PropertyField uses the explicit column name",
@@ -1069,7 +1133,9 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { details: FilmDetails }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("FilmDetails", "rating")).isInstanceOf(ServiceRecordField.class)),
+            schema -> assertThat(schema.field("FilmDetails", "rating")).isInstanceOf(ServiceRecordField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(ServiceRecordField.class); }
+        },
 
         RECORD_TABLE_FIELD(
             "@record parent (typed POJO) + @table return type (no @lookupKey) → RecordTableField",
@@ -1081,7 +1147,9 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { details: FilmDetails }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("FilmDetails", "language")).isInstanceOf(RecordTableField.class)),
+            schema -> assertThat(schema.field("FilmDetails", "language")).isInstanceOf(RecordTableField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        },
 
         RECORD_LOOKUP_TABLE_FIELD(
             "@record parent (typed POJO) + @table return type + @lookupKey → RecordLookupTableField with populated BatchKey",
@@ -1097,7 +1165,9 @@ class GraphitronSchemaBuilderTest {
                 var f = (RecordLookupTableField) schema.field("FilmDetails", "language");
                 assertThat(f.batchKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed.class);
                 assertThat(((no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed) f.batchKey()).keyColumns()).isNotEmpty();
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
+        },
 
         RECORD_FIELD(
             "@record parent + non-table object return type → RecordField",
@@ -1107,7 +1177,9 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { details: FilmDetails }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("FilmDetails", "stats")).isInstanceOf(RecordField.class)),
+            schema -> assertThat(schema.field("FilmDetails", "stats")).isInstanceOf(RecordField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordField.class); }
+        },
 
         SERVICE_TABLE_FIELD_ON_RECORD_PARENT(
             "@record parent + @service + @table return type → ServiceTableField",
@@ -1117,7 +1189,20 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { details: FilmDetails }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("FilmDetails", "language")).isInstanceOf(ServiceTableField.class));
+            schema -> assertThat(schema.field("FilmDetails", "language")).isInstanceOf(ServiceTableField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(ServiceTableField.class); }
+        },
+
+        CONSTRUCTOR_FIELD(
+            "@table parent + @record child type → ConstructorField",
+            """
+            type FilmDetails @record { rating: String }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "details")).isInstanceOf(ChildField.ConstructorField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(ChildField.ConstructorField.class); }
+        };
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -1125,6 +1210,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -1136,7 +1222,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== ResultType backing-class classification =====
 
-    enum ResultTypeCase {
+    enum ResultTypeCase implements ClassificationCase {
         NO_CLASS(
             "@record with no backing class → PojoResultType with null fqClassName",
             """
@@ -1168,7 +1254,9 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var t = (JavaRecordType) schema.type("FilmDetails");
                 assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto");
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(JavaRecordType.class); }
+        },
 
         JOOQ_TABLE_RECORD_CLASS(
             "@record with jOOQ TableRecord class → JooqTableRecordType with fqClassName and resolved table",
@@ -1181,7 +1269,9 @@ class GraphitronSchemaBuilderTest {
                 assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
                 assertThat(t.table()).isNotNull();
                 assertThat(t.table().tableName()).isEqualTo("film");
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(JooqTableRecordType.class); }
+        },
 
         UNKNOWN_CLASS(
             "@record with unresolvable class → UnclassifiedType with explanation",
@@ -1192,7 +1282,9 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var t = (UnclassifiedType) schema.type("FilmDetails");
                 assertThat(t.reason()).contains("com.example.nonexistent.Missing").contains("could not be loaded");
-            });
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(); }
+        };
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -1200,6 +1292,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(PojoResultType.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -1211,7 +1304,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== P4: Field arguments =====
 
-    enum ArgumentParsingCase {
+    enum ArgumentParsingCase implements ClassificationCase {
         TABLE_FIELD_NO_ARGS(
             "TableField with no arguments — empty filters list",
             """
@@ -1260,7 +1353,9 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.filters()).isEmpty();
                 assertThat(f.lookupMapping().columns()).hasSize(1);
                 assertThat(f.lookupMapping().columns().get(0).argName()).isEqualTo("actor_id");
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(LookupTableField.class); }
+        },
 
         TABLE_FIELD_ORDER_BY_ARG(
             "@orderBy arg with valid input type → OrderBySpec.Argument on orderBy(); filters empty",
@@ -1500,6 +1595,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -1511,7 +1607,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== P4: InputType classification =====
 
-    enum InputTypeCase {
+    enum InputTypeCase implements ClassificationCase {
         BASIC_INPUT_TYPE(
             "input type with no @table → classified as InputType",
             """
@@ -1552,7 +1648,9 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var t = (JavaRecordInputType) schema.type("FilmInput");
                 assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto");
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(JavaRecordInputType.class); }
+        },
 
         JOOQ_TABLE_RECORD_CLASS(
             "@record with jOOQ TableRecord class → JooqTableRecordInputType with fqClassName and resolved table",
@@ -1565,7 +1663,9 @@ class GraphitronSchemaBuilderTest {
                 assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
                 assertThat(t.table()).isNotNull();
                 assertThat(t.table().tableName()).isEqualTo("film");
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(JooqTableRecordInputType.class); }
+        },
 
         UNKNOWN_CLASS(
             "@record with unresolvable class → UnclassifiedType with explanation",
@@ -1576,7 +1676,9 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var t = (UnclassifiedType) schema.type("FilmInput");
                 assertThat(t.reason()).contains("com.example.nonexistent.Missing").contains("could not be loaded");
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(); }
+        },
 
         TABLE_PLUS_RECORD(
             "@table + @record on an input → @record wins, @table shadowed with build warning",
@@ -1595,7 +1697,9 @@ class GraphitronSchemaBuilderTest {
                 assertThat(schema.warnings())
                     .extracting(BuildWarning::message)
                     .anyMatch(m -> m.contains("FilmInput") && m.contains("@table is shadowed by @record"));
-            });
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(); }
+        };
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -1603,6 +1707,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(PojoInputType.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -1614,7 +1719,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== P4b: TableInputType classification =====
 
-    enum TableInputTypeCase {
+    enum TableInputTypeCase implements ClassificationCase {
         EXPLICIT_TABLE_DIRECTIVE(
             "input type with @table → TableInputType with ResolvedTable",
             """
@@ -1630,7 +1735,9 @@ class GraphitronSchemaBuilderTest {
                 var f = (no.sikt.graphitron.rewrite.model.InputField.ColumnField) it.inputFields().get(0);
                 assertThat(f.name()).isEqualTo("customerId");
                 assertThat(f.column().javaName()).isEqualTo("CUSTOMER_ID");
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(TableInputType.class, InputField.ColumnField.class); }
+        },
 
         EXPLICIT_TABLE_UNRESOLVED_COLUMN(
             "input type with @table but unknown column → UnclassifiedType",
@@ -1700,7 +1807,9 @@ class GraphitronSchemaBuilderTest {
                 assertThat(crf.joinPath()).hasSize(1);
                 assertThat(crf.joinPath().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.model.JoinStep.FkJoin.class);
                 assertThat(crf.column().javaName()).isEqualTo("NAME");
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnReferenceField.class); }
+        },
 
         COLUMN_REFERENCE_FIELD_UNKNOWN_FK(
             "@reference on an input field with unknown FK → UnclassifiedType",
@@ -1736,7 +1845,9 @@ class GraphitronSchemaBuilderTest {
                 assertThat(nf.fields()).hasSize(1);
                 var inner = (no.sikt.graphitron.rewrite.model.InputField.ColumnField) nf.fields().get(0);
                 assertThat(inner.column().javaName()).isEqualTo("TITLE");
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(InputField.NestingField.class); }
+        },
 
         NESTED_INPUT_FIELD_UNKNOWN_COLUMN(
             "nested plain input type with unresolvable column → UnclassifiedType on parent",
@@ -1792,6 +1903,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -1803,7 +1915,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== Type classification =====
 
-    enum TypeClassificationCase {
+    enum TypeClassificationCase implements ClassificationCase {
         RESOLVED_TABLE(
             "@table(name:) with a real DB table → TableType with ResolvedTable",
             """
@@ -1821,7 +1933,33 @@ class GraphitronSchemaBuilderTest {
             type Film @table { title: String }
             type Query { film: Film }
             """,
-            schema -> assertThat(((TableType) schema.type("Film")).table().tableName()).isEqualTo("film"));
+            schema -> assertThat(((TableType) schema.type("Film")).table().tableName()).isEqualTo("film")),
+
+        NODE_TYPE(
+            "@table+@node type → NodeType with resolved key columns",
+            """
+            type Film @table(name: "film") @node(keyColumns: ["film_id"]) {
+              id: ID! @nodeId
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var t = (NodeType) schema.type("Film");
+                assertThat(t.table().tableName()).isEqualTo("film");
+                assertThat(t.nodeKeyColumns()).isNotEmpty();
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(NodeType.class); }
+        },
+
+        ROOT_TYPE(
+            "Query and Mutation root types → RootType",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.type("Query")).isInstanceOf(RootType.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(RootType.class); }
+        };
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -1829,6 +1967,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(TableType.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -1840,7 +1979,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== ErrorType =====
 
-    enum ErrorTypeCase {
+    enum ErrorTypeCase implements ClassificationCase {
         GENERIC_HANDLER_TYPE_AND_CLASS_NAME(
             "GENERIC handler captures handlerType and className",
             """
@@ -1909,6 +2048,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(ErrorType.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -1924,7 +2064,7 @@ class GraphitronSchemaBuilderTest {
      * Child fields on an {@code @error} type. Fields are expected to be scalar or enum —
      * they back a POJO exposed via graphql-java's default {@code PropertyDataFetcher}.
      */
-    enum ErrorFieldCase {
+    enum ErrorFieldCase implements ClassificationCase {
         SCALAR_FIELD(
             "@error parent — scalar field → PropertyField using field name as columnName",
             """
@@ -1985,6 +2125,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(PropertyField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -2037,7 +2178,7 @@ class GraphitronSchemaBuilderTest {
      * the builder can produce. Covers the <em>Query Fields</em> and <em>Mutation Fields</em>
      * tables in {@code code-generation-triggers.md}.
      */
-    enum RootFieldCase {
+    enum RootFieldCase implements ClassificationCase {
 
         LOOKUP_QUERY_FIELD(
             "field with @lookupKey list arg → QueryLookupTableField with list return; key flows through LookupMapping, not filters",
@@ -2054,7 +2195,9 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.lookupMapping().columns()).hasSize(1);
                 assertThat(f.lookupMapping().columns().get(0).argName()).isEqualTo("film_id");
                 assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class);
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryLookupTableField.class); }
+        },
 
         LOOKUP_NESTED_IN_INPUT(
             "@lookupKey nested in input type with no direct scalar key → UnclassifiedField (composite-key support deferred to Phase 3)",
@@ -2173,7 +2316,9 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { title: String }
             type Query { films: [Film!]! }
             """,
-            schema -> assertThat(schema.field("Query", "films")).isInstanceOf(QueryField.QueryTableField.class)),
+            schema -> assertThat(schema.field("Query", "films")).isInstanceOf(QueryField.QueryTableField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryTableField.class); }
+        },
 
         TABLE_QUERY_FIELD_WITH_ARGS(
             "table query field with @orderBy argument → OrderBySpec.Argument on orderBy(); filters empty",
@@ -2210,7 +2355,9 @@ class GraphitronSchemaBuilderTest {
                         && t.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Context)
                     .extracting(p -> ((no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed) p).name())
                     .containsExactly("tenantId");
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryTableMethodTableField.class); }
+        },
 
         NODE_QUERY_FIELD(
             "field named 'node' → QueryNodeField",
@@ -2219,7 +2366,9 @@ class GraphitronSchemaBuilderTest {
             type Film implements Node @table(name: "film") { id: ID! title: String }
             type Query { node(id: ID!): Node }
             """,
-            schema -> assertThat(schema.field("Query", "node")).isInstanceOf(QueryField.QueryNodeField.class)),
+            schema -> assertThat(schema.field("Query", "node")).isInstanceOf(QueryField.QueryNodeField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryNodeField.class); }
+        },
 
         ENTITY_QUERY_FIELD(
             "field named '_entities' → QueryEntityField",
@@ -2229,7 +2378,9 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { title: String }
             type Query { _entities(representations: [_Any!]!): [_Entity]! }
             """,
-            schema -> assertThat(schema.field("Query", "_entities")).isInstanceOf(QueryField.QueryEntityField.class)),
+            schema -> assertThat(schema.field("Query", "_entities")).isInstanceOf(QueryField.QueryEntityField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryEntityField.class); }
+        },
 
         TABLE_INTERFACE_QUERY_FIELD(
             "field returning table-interface type → QueryTableInterfaceField",
@@ -2238,7 +2389,9 @@ class GraphitronSchemaBuilderTest {
             type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
             type Query { media: MediaItem }
             """,
-            schema -> assertThat(schema.field("Query", "media")).isInstanceOf(QueryField.QueryTableInterfaceField.class)),
+            schema -> assertThat(schema.field("Query", "media")).isInstanceOf(QueryField.QueryTableInterfaceField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryTableInterfaceField.class); }
+        },
 
         INTERFACE_QUERY_FIELD(
             "field returning plain interface → QueryInterfaceField",
@@ -2247,7 +2400,9 @@ class GraphitronSchemaBuilderTest {
             type Film implements Named @table(name: "film") { name: String }
             type Query { named: Named }
             """,
-            schema -> assertThat(schema.field("Query", "named")).isInstanceOf(QueryField.QueryInterfaceField.class)),
+            schema -> assertThat(schema.field("Query", "named")).isInstanceOf(QueryField.QueryInterfaceField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryInterfaceField.class); }
+        },
 
         UNION_QUERY_FIELD(
             "field returning union → QueryUnionField",
@@ -2257,7 +2412,9 @@ class GraphitronSchemaBuilderTest {
             union SearchResult = Film | Actor
             type Query { search: SearchResult }
             """,
-            schema -> assertThat(schema.field("Query", "search")).isInstanceOf(QueryField.QueryUnionField.class)),
+            schema -> assertThat(schema.field("Query", "search")).isInstanceOf(QueryField.QueryUnionField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryUnionField.class); }
+        },
 
         SERVICE_QUERY_FIELD(
             "@service on root query field, @table return type → QueryServiceTableField",
@@ -2272,7 +2429,9 @@ class GraphitronSchemaBuilderTest {
                 var f = (QueryField.QueryServiceTableField) schema.field("Query", "externalFilm");
                 assertThat(f.method().className()).isEqualTo("no.sikt.graphitron.rewrite.TestServiceStub");
                 assertThat(f.method().methodName()).isEqualTo("get");
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryServiceTableField.class); }
+        },
 
         QUERY_SERVICE_RECORD_FIELD(
             "@service on root query field, non-table return type → QueryServiceRecordField",
@@ -2282,7 +2441,9 @@ class GraphitronSchemaBuilderTest {
                 filmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
             }
             """,
-            schema -> assertThat(schema.field("Query", "filmDetails")).isInstanceOf(QueryField.QueryServiceRecordField.class)),
+            schema -> assertThat(schema.field("Query", "filmDetails")).isInstanceOf(QueryField.QueryServiceRecordField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryServiceRecordField.class); }
+        },
 
         INSERT_MUTATION_FIELD(
             "@mutation(typeName: INSERT) → MutationInsertTableField",
@@ -2291,7 +2452,9 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             type Mutation { createFilm: Film @mutation(typeName: INSERT) }
             """,
-            schema -> assertThat(schema.field("Mutation", "createFilm")).isInstanceOf(MutationField.MutationInsertTableField.class)),
+            schema -> assertThat(schema.field("Mutation", "createFilm")).isInstanceOf(MutationField.MutationInsertTableField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationInsertTableField.class); }
+        },
 
         UPDATE_MUTATION_FIELD(
             "@mutation(typeName: UPDATE) → MutationUpdateTableField",
@@ -2300,7 +2463,9 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             type Mutation { updateFilm: Film @mutation(typeName: UPDATE) }
             """,
-            schema -> assertThat(schema.field("Mutation", "updateFilm")).isInstanceOf(MutationField.MutationUpdateTableField.class)),
+            schema -> assertThat(schema.field("Mutation", "updateFilm")).isInstanceOf(MutationField.MutationUpdateTableField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
+        },
 
         DELETE_MUTATION_FIELD(
             "@mutation(typeName: DELETE) → MutationDeleteTableField",
@@ -2309,7 +2474,9 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             type Mutation { deleteFilm: Film @mutation(typeName: DELETE) }
             """,
-            schema -> assertThat(schema.field("Mutation", "deleteFilm")).isInstanceOf(MutationField.MutationDeleteTableField.class)),
+            schema -> assertThat(schema.field("Mutation", "deleteFilm")).isInstanceOf(MutationField.MutationDeleteTableField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationDeleteTableField.class); }
+        },
 
         UPSERT_MUTATION_FIELD(
             "@mutation(typeName: UPSERT) → MutationUpsertTableField",
@@ -2318,7 +2485,9 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             type Mutation { upsertFilm: Film @mutation(typeName: UPSERT) }
             """,
-            schema -> assertThat(schema.field("Mutation", "upsertFilm")).isInstanceOf(MutationField.MutationUpsertTableField.class)),
+            schema -> assertThat(schema.field("Mutation", "upsertFilm")).isInstanceOf(MutationField.MutationUpsertTableField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpsertTableField.class); }
+        },
 
         SERVICE_MUTATION_FIELD(
             "@service on mutation field, @table return type → MutationServiceTableField",
@@ -2329,7 +2498,9 @@ class GraphitronSchemaBuilderTest {
                 externalMutation: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "run"})
             }
             """,
-            schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.MutationServiceTableField.class)),
+            schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.MutationServiceTableField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceTableField.class); }
+        },
 
         MUTATION_SERVICE_RECORD_FIELD(
             "@service on mutation field, non-table return type → MutationServiceRecordField",
@@ -2340,7 +2511,9 @@ class GraphitronSchemaBuilderTest {
                 externalMutation: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "run"})
             }
             """,
-            schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.MutationServiceRecordField.class));
+            schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.MutationServiceRecordField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
+        };
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -2348,6 +2521,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -2359,7 +2533,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== UnclassifiedField =====
 
-    enum UnclassifiedFieldCase {
+    enum UnclassifiedFieldCase implements ClassificationCase {
 
         QUERY_FIELD_RETURNING_UNCLASSIFIED_TYPE(
             "query field returning a type with no Graphitron directive → UnclassifiedField",
@@ -2392,6 +2566,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -2417,7 +2592,7 @@ class GraphitronSchemaBuilderTest {
     // @table, @record, and @error are mutually exclusive — the builder produces UnclassifiedType
     // carrying the names of the conflicting directives in its reason.
 
-    enum TypeDirectiveConflictCase {
+    enum TypeDirectiveConflictCase implements ClassificationCase {
 
         TABLE_AND_RECORD_CONFLICT(
             "@table and @record on the same type → UnclassifiedType with reason mentioning both",
@@ -2451,6 +2626,7 @@ class GraphitronSchemaBuilderTest {
             this.typeName = typeName;
             this.conflictingDirectives = conflictingDirectives;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedType.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -2468,7 +2644,7 @@ class GraphitronSchemaBuilderTest {
     // @multitableReference are mutually exclusive. @nodeId and @reference CAN be combined.
     // The builder produces UnclassifiedField with a reason naming the conflicting directives.
 
-    enum ChildFieldDirectiveConflictCase {
+    enum ChildFieldDirectiveConflictCase implements ClassificationCase {
 
         SERVICE_AND_EXTERNAL_FIELD_CONFLICT(
             "@service and @externalField → UnclassifiedField with reason naming both",
@@ -2548,6 +2724,7 @@ class GraphitronSchemaBuilderTest {
             this.fieldName = fieldName;
             this.conflictingDirectives = conflictingDirectives;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -2565,7 +2742,7 @@ class GraphitronSchemaBuilderTest {
     // Mutation fields: @service, @mutation are mutually exclusive.
     // The builder produces UnclassifiedField with a reason naming the conflicting directives.
 
-    enum RootFieldDirectiveConflictCase {
+    enum RootFieldDirectiveConflictCase implements ClassificationCase {
 
         SERVICE_AND_LOOKUP_KEY_CONFLICT(
             "@service and @lookupKey on query → UnclassifiedField with reason naming both",
@@ -2625,6 +2802,7 @@ class GraphitronSchemaBuilderTest {
             this.fieldName = fieldName;
             this.conflictingDirectives = conflictingDirectives;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -2667,7 +2845,7 @@ class GraphitronSchemaBuilderTest {
     //   For flat batch JOINs the aliases would be injected directly into a shared SELECT,
     //   making the fieldName prefix essential to prevent duplicate alias errors.
 
-    enum JoinStepAliasCase {
+    enum JoinStepAliasCase implements ClassificationCase {
 
         SINGLE_HOP_ALIAS(
             "single-hop @reference gets alias fieldName_0",
@@ -2732,6 +2910,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
+        @Override public Set<Class<?>> variants() { return Set.of(TableField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
