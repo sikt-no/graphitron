@@ -131,6 +131,10 @@ Unified `ArgumentRef` classification + projection in the builder; gates `@condit
 
 Extended G5's `TypeClassGenerator.$fields` inline emission to `ChildField.LookupTableField`. VALUES + explicit-ON keyset layered onto the correlated-subquery shape (USING failed under junction-table column collisions on Postgres). `LookupTableField` moved to `PROJECTED_LEAVES`. Classifier rejects `@asConnection` and Single-cardinality + `@lookupKey` as `UnclassifiedField`. Six execution tests cover matching-actors, input-order preservation, FK filtering, empty input, null input, and across-multiple-parents per-film filtering. `SplitLookupTableField` (Phase 2b) and `RecordLookupTableField` (Phase 2c, blocked on `BatchKey` model question) remain out of scope.
 
+### `BatchKey.ObjectBased` removal **[Draft]** — [plan-batchkey-remove-objectbased.md](plan-batchkey-remove-objectbased.md)
+
+Collapse `BatchKey` to two variants (`RowKeyed`, `RecordKeyed`). The only remaining producer of `ObjectBased` is `ServiceCatalog.classifySourcesType` — a DTO parent handing a `List<Dto>` to an `@service` child. Split that arm: `TableRecord<?>` element types classify as `RowKeyed` from the parent table's PK (the record carries the columns); non-`TableRecord` element types return `Optional.empty()` → `UnclassifiedField` at validate time, with a message pointing at the future lifter directive. `GeneratorUtils` `ObjectBased` switch arms and the `validateServiceTableField` escape-hatch are deleted. Migration note: DTOs flowing through any DataLoader path must be backed by a jOOQ `TableRecord<>` with populated key columns until the lifter directive ships. Record-fields Phase 1/2 are not touched — they already use `RowKeyed` + FK metadata.
+
 ### argres Phase 2b — Split(Lookup)TableField DataLoader rows-method emission **[Done]** — shipped at `34359b4`
 
 Filled in the DataLoader rows-method bodies for `ChildField.SplitTableField` and `ChildField.SplitLookupTableField`. Both were `IMPLEMENTED_LEAVES` with `rowsXxx` methods throwing `UnsupportedOperationException` at runtime; now emit a flat batched SELECT built on G5's `JoinPathEmitter` and Phase 2a's `LookupValuesJoinEmitter.buildChildInputRowsMethod` (for the `@lookupKey` variant), keyed on a VALUES derived table whose leading `__idx__` column drives the DataLoader scatter. Intra-variant stubs (single cardinality, ConditionJoin path, empty `joinPath`) route through `SplitRowsMethodEmitter.unsupportedReason` — the single source of truth shared with `GraphitronSchemaValidator.validateVariantIsImplemented` so build fails at schema-compile time instead of request time. Execution tests assert exact JDBC round-trip counts (2 per batched query vs. N+1 unbatched) and non-identity parent-order scatter alignment.
@@ -174,7 +178,7 @@ Unplanned items. Pick one, draft a plan, then move to Active.
 **Priority (architecture review, 2026-04-17):**
 
 - **Legacy-vs-rewrite parity matrix** **[Done]** — `docs/parity-matrix.md`.
-- **`BatchKey.ObjectBased` generator path decision** **[Unplanned]** — `ObjectBased` exists in the sealed hierarchy but no generator emits for it. Only produced today by `ServiceCatalog.classifySourcesType` for `@service` `List<Sources>` parameters whose element is a bare class (TableRecord or DTO). Decide: keep and implement a distinct `selectManyByObjectKeys` / `selectOneByObjectKeys` path in `TypeFetcherGenerator` when the first `ServiceTableField` consumer lands (Option B, preferred — `ObjectBased` carries a class name that `RecordKeyed` cannot model), vs. collapse into `RecordKeyed` (Option A, rejected for `@record`-parent paths — Phase 1 resolved those via `RowKeyed`-for-all with per-`ResultType` accessor dispatch). Does not block record-fields Phase 2.
+- **`BatchKey` lifter directive** **[Unplanned]** — mechanism (directive, interface, or fluent builder — TBD) for a schema author to supply a DTO → `RowN`/`RecordN` conversion, enabling DataLoader batching on result-type parents. Feeds the existing column-keyed path — `BatchKey` stays at two variants. Blocks nothing today; the DTO-parent service-child shape is rejected at validate time until this lands. See `plan-batchkey-remove-objectbased.md` for the rejection rule.
 - **Rebalance test pyramid toward SDL→classified-model→emitted-code pipeline tests** **[Unplanned]** — per-variant structural validator tests (53 classes) dominate the surface; pipeline coverage lives in a single `GraphitronSchemaBuilderTest`. New test investment should go into the classification→emission chain keyed off `graphitron-rewrite-test-fixtures`.
 - **Decompose `FieldBuilder`** **[Unplanned]** — split along the field taxonomy after argument-resolution Phase 2 lands. Blocked on Argument-resolution unification (Active).
 - **Audit custom pagination-arg-name support** **[Unplanned]** — `PaginationSpec` accepts non-default arg names (`pageSize`/`cursor` instead of `first`/`after`), but no test-spec fixture exercises it and no documented public API lets a schema author opt in. Decide: (a) remove the classifier plumbing as dead code + delete the `connectionField_customPaginationArgNames_emittedInFetcher` body-assertion, or (b) document the mechanism and add an execution fixture. Surfaced during the body-substring test rewrite's OD 2; user leaned toward (a) but the investigation is deferred.
@@ -234,16 +238,6 @@ G6 covers four categories of DataLoader-backed field. Before implementing any ca
 **Note:** This gap is about the `@condition` directive on *fields* (WHERE predicate). It is distinct from condition joins in `@reference` paths — `{condition: {className, method}}` in a `path:` element — which are fully resolved by the builder into `ConditionJoin` steps.
 
 **Fix**: add `@condition` directive reading to `FieldBuilder.resolveFilters()`. `ConditionFilter` now implements `MethodRef` directly, so the builder constructs it with `(className, methodName, params)` and `callParams()` is derived automatically.
-
-### `ObjectBased` batch loading is unimplemented
-
-`BatchKey.ObjectBased` exists in the sealed hierarchy but has no rows-method implementation in `TypeFetcherGenerator` — the service rows method currently throws `UnsupportedOperationException` for all `BatchKey` variants.
-
-Two options:
-- **Option A** — collapse `ObjectBased` into `RecordKeyed` if it always implies a jOOQ `TableRecord` parent in practice.
-- **Option B** — implement a distinct `selectManyByObjectKeys` / `selectOneByObjectKeys` path in `TypeFetcherGenerator`.
-
-Decision needed before implementing any `ObjectBased`-keyed service field. Tracked as a Backlog item (`BatchKey.ObjectBased` generator path decision); this roadmap owns the decision, plans that want to emit `ObjectBased` cannot land until it is made.
 
 ### Validator cannot detect generator stubs
 
