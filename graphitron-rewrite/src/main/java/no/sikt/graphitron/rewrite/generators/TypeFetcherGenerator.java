@@ -119,6 +119,7 @@ public class TypeFetcherGenerator {
         ChildField.PropertyField.class,
         ChildField.RecordField.class,
         ChildField.RecordTableField.class,
+        ChildField.RecordLookupTableField.class,
         ChildField.ConstructorField.class);
 
     /**
@@ -210,8 +211,6 @@ public class TypeFetcherGenerator {
             // inline emission via TypeClassGenerator.$fields; see G5 and argres Phase 2a)
             Map.entry(ChildField.TableInterfaceField.class,
                 "TableInterfaceField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3"),
-            Map.entry(ChildField.RecordLookupTableField.class,
-                "RecordLookupTableField not yet implemented — see rewrite-roadmap.md"),
             // ChildField stubs — remaining direct permits
             Map.entry(ChildField.ColumnReferenceField.class,
                 "ColumnReferenceField not yet implemented — see rewrite-roadmap.md"),
@@ -336,10 +335,19 @@ public class TypeFetcherGenerator {
                 case ChildField.NodeIdField ignored             -> { }
                 case ChildField.TableInterfaceField f           -> builder.addMethod(stub(f));
                 case ChildField.RecordTableField rtf -> {
-                    builder.addMethod(buildRecordTableDataFetcher(rtf, resultType));
+                    builder.addMethod(buildRecordBasedDataFetcher(rtf, resultType));
                     builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rtf));
                 }
-                case ChildField.RecordLookupTableField f        -> builder.addMethod(stub(f));
+                case ChildField.RecordLookupTableField rltf -> {
+                    builder.addMethod(buildRecordBasedDataFetcher(rltf, resultType));
+                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rltf));
+                    // Input-rows helper identical in shape to SplitLookupTableField's — reads
+                    // @lookupKey args from env.getArgument(name) and emits the typed Row<M+1>[].
+                    var lookupTableRef = rltf.returnType().table();
+                    var lookupTableClass = GeneratorUtils.ResolvedTableNames
+                        .of(lookupTableRef, rltf.returnType().returnTypeName()).jooqTableClass();
+                    builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(rltf, lookupTableClass));
+                }
                 case ChildField.TableMethodField f              -> builder.addMethod(stub(f));
                 case ChildField.InterfaceField f                -> builder.addMethod(stub(f));
                 case ChildField.UnionField f                    -> builder.addMethod(stub(f));
@@ -399,20 +407,20 @@ public class TypeFetcherGenerator {
             builder.addMethod(buildReverseOrderByHelper());
         }
 
-        // Emit scatterByIdx helper whenever any Split* or RecordTable field is present — shared
-        // across all SplitRowsMethodEmitter-emitted rows methods in this class.
+        // Emit scatterByIdx helper whenever any Split* or record-backed batched field is present —
+        // shared across all SplitRowsMethodEmitter-emitted rows methods in this class.
         boolean hasSplitField = fields.stream().anyMatch(f ->
             f instanceof ChildField.SplitTableField || f instanceof ChildField.SplitLookupTableField
-            || f instanceof ChildField.RecordTableField);
+            || f instanceof ChildField.RecordTableField || f instanceof ChildField.RecordLookupTableField);
         if (hasSplitField) {
             builder.addMethod(SplitRowsMethodEmitter.buildScatterByIdxHelper());
         }
 
-        // emptyScatter is only needed for SplitLookupTableField (empty @lookupKey args short-
-        // circuit). Skip when only plain Split fields are present — keeps generated output
-        // minimal.
+        // emptyScatter is needed whenever @lookupKey input can be empty at request time — that is,
+        // for SplitLookupTableField and RecordLookupTableField. Plain Split* / RecordTable fields
+        // never use the empty-input short-circuit.
         boolean hasSplitLookupField = fields.stream().anyMatch(f ->
-            f instanceof ChildField.SplitLookupTableField);
+            f instanceof ChildField.SplitLookupTableField || f instanceof ChildField.RecordLookupTableField);
         if (hasSplitLookupField) {
             builder.addMethod(SplitRowsMethodEmitter.buildEmptyScatterHelper());
         }
@@ -1139,23 +1147,27 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Builds the DataFetcher method for a {@link ChildField.RecordTableField}. Shape is identical
-     * to {@link #buildSplitQueryDataFetcher} except key extraction uses
+     * Builds the DataFetcher method for a record-parent batched field
+     * ({@link ChildField.RecordTableField}, {@link ChildField.RecordLookupTableField}). Shape is
+     * identical to {@link #buildSplitQueryDataFetcher} except key extraction uses
      * {@link GeneratorUtils#buildRecordKeyExtraction} (backing-object accessor) instead of
      * {@link GeneratorUtils#buildKeyExtraction} (jOOQ table-row accessor).
+     *
+     * @param <T> the concrete field type — must implement both {@link ChildField.TableTargetField}
+     *            (for {@code returnType()} and {@code name()}) and {@link BatchKeyField} (for
+     *            {@code batchKey()} and {@code rowsMethodName()}).
      */
-    private static MethodSpec buildRecordTableDataFetcher(
-            ChildField.RecordTableField rtf,
-            GraphitronType.ResultType resultType) {
+    private static <T extends ChildField.TableTargetField & BatchKeyField> MethodSpec
+            buildRecordBasedDataFetcher(T field, GraphitronType.ResultType resultType) {
 
-        boolean isList = rtf.returnType().wrapper().isList();
+        boolean isList = field.returnType().wrapper().isList();
         var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
 
-        var batchKey = rtf.batchKey();
+        var batchKey = field.batchKey();
         TypeName keyType = GeneratorUtils.keyElementType(batchKey);
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
-        String rowsMethodName = rtf.rowsMethodName();
+        String rowsMethodName = field.rowsMethodName();
 
         TypeName lambdaKeysType = ParameterizedTypeName.get(LIST, keyType);
         var lambdaBlock = CodeBlock.builder()
@@ -1167,7 +1179,7 @@ public class TypeFetcherGenerator {
             .add("}")
             .build();
 
-        return MethodSpec.methodBuilder(rtf.name())
+        return MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
             .addParameter(ENV, "env")
