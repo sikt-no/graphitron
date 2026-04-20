@@ -185,12 +185,24 @@ Unplanned items. Pick one, draft a plan, then move to Active.
 
 **Generator stubs to complete:**
 
-Enumerated by `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`; the stubbed-variant validator (Active, Pending Review) fails the build when a schema lands on one. Approximate priority:
+Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` (25 entries); the stubbed-variant validator (Done at `9ba498bc` + `7cf568f4`) fails the build by default when a schema lands on one. Priority numbers `#1`–`#4` are referenced by the reason strings emitted from the generator and must stay stable. Items marked **[Tracked]** already have an Active plan; the rest need drafts.
 
-1. `TypeFetcherGenerator` — `TableField` / `LookupTableField` inline-subquery methods (tracked by G5 in Active + argres Phase 2a).
-2. `TypeFetcherGenerator` — `SplitTableField` / `SplitLookupTableField` rows-method bodies (DataLoader batch SQL; argres Phase 2b).
-3. `TypeFetcherGenerator` — `QueryTableInterfaceField`, `QueryInterfaceField`, `QueryUnionField` fetchers.
-4. `TypeFetcherGenerator` — Mutation bodies (INSERT / UPDATE / DELETE / UPSERT).
+1. **`TableField` / `LookupTableField` inline-subquery methods** **[Tracked]** — G5 **[Done]** + argres Phase 2a **[Done]**. Leaves moved to `PROJECTED_LEAVES`; emission happens through `TypeClassGenerator.$fields`. Note: `QueryField.QueryTableMethodTableField`'s reason string still references `#1` but that leaf is actually covered by #7 below — a drift to fix when editing the generator next.
+2. **`SplitTableField` / `SplitLookupTableField` DataLoader rows-method bodies** **[Tracked]** — argres Phase 2b **[Done]**.
+3. **Interface / union fetchers** — `QueryField.QueryInterfaceField`, `QueryField.QueryTableInterfaceField`, `QueryField.QueryUnionField`, `ChildField.InterfaceField`, `ChildField.UnionField`, `ChildField.TableInterfaceField`. Shared abstraction around `__typename` dispatch + per-implementor projection.
+4. **Mutation bodies** — `MutationField.MutationInsertTableField`, `MutationUpdateTableField`, `MutationDeleteTableField`, `MutationUpsertTableField`, `MutationServiceTableField`, `MutationServiceRecordField`. INSERT / UPDATE / DELETE / UPSERT + service-method mutations.
+5. **Apollo Federation `_entities` resolver** — `QueryField.QueryEntityField`. Entity reference resolver dispatching by `__typename` to the registered representation fetchers.
+6. **Relay `Query.node` resolver** — `QueryField.QueryNodeField`. Dispatches by platform-id → table lookup across every platform-id-capable table. Blocked on Platform-id as synthesized NodeId (Active).
+7. **Service-backed and method-backed root fetchers** — `QueryField.QueryServiceTableField`, `QueryField.QueryServiceRecordField`, `QueryField.QueryTableMethodTableField`. Root query bodies that delegate to a user-supplied method (table-bound, record/scalar-bound, or pre-filtered `Table<?>` respectively).
+8. **Non-table / scalar / reference child leaves** — miscellaneous `ChildField` variants, each currently rejected at validate time:
+   - `ChildField.NestingField` — nested object inheriting the parent's table context unchanged (no navigation, no SQL).
+   - `ChildField.ColumnReferenceField` — `@reference(path:)` resolving to a scalar column via a join path.
+   - `ChildField.NodeIdReferenceField` — `@nodeId` scalar on a reference path. Blocked on Platform-id (Active).
+   - `ChildField.ComputedField` — computed scalar, possibly with `joinPath` context.
+   - `ChildField.TableMethodField` — child `@tableMethod`: user supplies a pre-filtered `Table<?>`.
+   - `ChildField.ServiceRecordField` — `@service` child returning a non-table value (record/scalar).
+   - `ChildField.MultitableReferenceField` — `@reference` targeting multiple possible tables (polymorphic).
+9. **`ChildField.RecordLookupTableField`** **[Tracked]** — Record-fields Phase 2 Draft in Active.
 
 **Miscellaneous:**
 
