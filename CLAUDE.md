@@ -34,7 +34,7 @@ Do NOT write code-string assertions that check generated method bodies (e.g. `as
 - **Unit tests** (`*GeneratorTest`): structural properties only — method names, return types, parameter signatures, which methods exist.
 - **Pipeline tests** (`*PipelineTest`): SDL → generated `TypeSpec` through the full classifier.
 - **Compilation tests** (`graphitron-rewrite-test-spec` compile): catch type errors and wrong packages against real jOOQ classes.
-- **Execution tests** (`graphitron-rewrite-test-spec`): generated code against a real database. Run with `-pl :graphitron-rewrite-test-spec` — the parent `:graphitron-rewrite-test` POM has no tests of its own.
+- **Execution tests** (`graphitron-rewrite-test-spec`): generated code against a real database. `-pl` doesn't recurse into submodules, so list all three explicitly: `-pl :graphitron-rewrite-test,:graphitron-rewrite-test-fixtures,:graphitron-rewrite-test-spec`.
 
 A cascade of `*PipelineTest` / `GraphitronSchemaBuilderTest` failures with `UnclassifiedType`, `NoSuchElement`, or "table … could not be resolved in the jOOQ catalog" means the fixtures jar in `~/.m2` is missing `DefaultCatalog` (installed before the DB was up). Rebuild with: `mvn install -pl :graphitron-rewrite-test-fixtures -Plocal-db`. Don't bisect trunk — it's your local repo.
 
