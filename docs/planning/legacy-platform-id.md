@@ -35,47 +35,11 @@ The existing method emissions (`getId()`, `hasId`, `hasIds`) can stay — harmle
 
 ## Classification
 
-### Synthesize `NodeType` from metadata
+### Type-level synthesis and output-side `NodeIdField` (shipped)
 
-`TypeBuilder.buildTableType` (`TypeBuilder.java:241-317`) today branches on whether the GraphQL type has `@node`:
+`TypeBuilder.buildTableType` reads `__NODE_TYPE_ID` + `__NODE_KEY_COLUMNS` via `JooqCatalog.nodeIdMetadata` and synthesizes `NodeType` unconditionally when metadata is present. Malformed metadata surfaces as `UnclassifiedType` through `nodeIdMetadataDiagnostic`. Disagreement between a declared `@node(...)` and metadata errors symmetrically on both `typeId` and `keyColumns`; `@node` without `typeId:` / `keyColumns:` takes the metadata value verbatim.
 
-- Has `@node` → `NodeType(typeId, nodeKeyColumns)`
-- Otherwise → `TableType` (no node identity)
-
-With the pivot, a third branch: if the GraphQL type has `@table` but no `@node`, and the backing jOOQ table exposes the metadata constants, synthesize `NodeType` using `__NODE_TYPE_ID` and `__NODE_KEY_COLUMNS`.
-
-**Synthesis is unconditional when metadata is present.** A `@table` type with metadata becomes `NodeType` regardless of whether it declares an `id: ID!` field — the classifier is type-uniform. Behaviour changes only for paths that branch on `NodeType` vs `TableType` at the type level; today those paths (federation entity fetchers, node-interface implementations) are intended to fire for any node-identified table. Step 2 (Scheduling) includes an audit of every `instanceof NodeType` / `switch (... NodeType ...)` site to verify no metadata-carrying table without an `id` field regresses. If the audit surfaces a real divergence, fall back to narrowing synthesis to types declaring at least one `id: ID!`.
-
-**Collision rule — when both `@node` and metadata are present:**
-
-- **Values match exactly** (`typeId` equal, `keyColumns` equal in order and arity) → accept; treat as `NodeType` with those values. Declaring `@node` redundantly is harmless.
-- **Values disagree** → classifier error (`UnclassifiedType`), with both sides in the diagnostic (`"@node(typeId: 'Foo') disagrees with KjerneJooqGenerator metadata (typeId: 'Bar')"`). "Explicit wins" is rejected — silent override of the generator's metadata by a typo-prone SDL literal is exactly the drift this pivot eliminates. This rule applies symmetrically to `typeId` and `keyColumns`: encoding base64 IDs whose decode order doesn't match SDL's declared composite would be a correctness bug, not a drift to paper over.
-- **`@node` declared without `typeId:` or `keyColumns:`** → no claim about the missing argument; metadata's value is taken verbatim. The presence of `@node` asserts node-identity; the omitted argument does not disagree with anything. The `@node` directive documentation at `graphitron-common/src/main/resources/directives.graphqls:243-244` states "if you do not specify keyColumns, we use the primary key in the database and the order set there" — today's rewrite at `TypeBuilder.java:241-317` stores the omission as an empty `keyColumns` list on `NodeType` (no PK substitution lives in `TypeBuilder`; the documented PK-fallback is a legacy-generator behaviour). Under the pivot, the metadata's list is used verbatim (and the two agree on well-formed schemas, since the PK and the composite-key columns coincide on platform-id tables).
-
-The pipeline-test table below encodes the rule.
-
-`JooqCatalog` grows:
-
-```java
-public Optional<NodeIdMetadata> nodeIdMetadata(String tableSqlName);
-
-public record NodeIdMetadata(String typeId, List<ColumnRef> keyColumns) {}
-```
-
-Implementation: reflect on the table class for `public static final String __NODE_TYPE_ID` and `public static final Field<?>[] __NODE_KEY_COLUMNS`; resolve each `Field<?>` to its `ColumnRef` via the existing column-resolution machinery. Returns empty when either constant is absent.
-
-**Malformed-metadata handling.** Both constants must pass sanity checks for `NodeIdMetadata` to be returned: `__NODE_TYPE_ID` non-null and non-empty; `__NODE_KEY_COLUMNS` non-null, non-empty, and every `Field<?>` entry resolvable to a `ColumnRef` on the same table. Any failure makes the probe return empty and pushes a build-time diagnostic keyed on the table SQL name — surfaced at the classifier boundary as an `UnclassifiedType` ("KjerneJooqGenerator metadata on table 'bar' is malformed: …") rather than silently falling back to `TableType`. Silent fallback on malformed constants would reintroduce the drift the pivot is trying to eliminate.
-
-### Output-side `NodeIdField`
-
-Already exists: `ChildField.NodeIdField(parentTypeName, name, location, nodeTypeId, nodeKeyColumns)`. No schema changes.
-
-Two detection paths feed this variant after the pivot:
-
-1. **Directive-driven (existing).** `FieldBuilder.java:1559-1586` handles the `@nodeId` directive: the `@nodeId(typeName:)` variant at `:1560-1579` produces `NodeIdReferenceField` (unchanged); the bare-`@nodeId` variant at `:1580-1586` produces `NodeIdField` (guarded by `tableType instanceof NodeType` at `:1581`, creation at `:1585`). The bare-`@nodeId` path works unchanged for both declared and synthesized `NodeType` parents — no code change.
-2. **Synthesized (new).** On a `NodeType` parent (declared or synthesized), a scalar non-list `ID` field without `@nodeId`, `@reference`, or `@field` that does not match a real column via `resolveColumn` classifies as `NodeIdField(parentTypeName, name, location, nodeType.typeId(), nodeType.nodeKeyColumns())`. This path replaces the deleted platform-id fallback inside the `column.isEmpty()` block at `FieldBuilder.java:1612-1631` (platform-id detection at `:1614-1624`, creation at `:1622`). **Trigger predicate (exact):** `tableType instanceof NodeType nt` AND `"ID".equals(typeName)` AND `!isList` AND `!fieldDef.hasAppliedDirective(DIR_NODE_ID)` AND `!fieldDef.hasAppliedDirective(DIR_REFERENCE)` AND `!fieldDef.hasAppliedDirective(DIR_FIELD)` AND `resolveColumn(columnName, tableType).isEmpty()`. All six clauses match today's platform-id fallback's conditions plus the NodeType narrowing; the only behavioural delta is "no longer requires platform-id accessor methods to exist."
-
-The platform-id fallback at `FieldBuilder.java:1612-1631` (detection `:1614-1624`, creation `:1622`) is deleted as part of Step 5; the new Path 2 detection lands in Step 3 alongside the emission code (Step 2's pipeline test for bare `id: ID!` on a synthesized NodeType asserts `NodeIdField` classification and relies on Path 2 being in place).
+`ChildField.NodeIdField` is populated either by the existing bare-`@nodeId` directive path or by the synthesized Path-2 trigger in `FieldBuilder` (scalar non-list `ID` on a `NodeType` parent, no `@nodeId`/`@reference`/`@field`, no real column). `TypeClassGenerator.$fields` projects the raw key columns; `TypeFetcherGenerator` wires a lambda calling a generated `NodeIdEncoder.encode(typeId, …)` utility with URL-safe base64 no-pad + `,`→`%2C` encoding so IDs round-trip against `NodeIdStrategy.unpackIdValues` / `hasIds`.
 
 ### Input-side `NodeIdField` (new variant)
 
@@ -139,23 +103,7 @@ This permit is intentionally narrow and independent of argres Phase 3's `InputCo
 
 ## Generators
 
-Platform-id stops existing as a separate emission path. Everything flows through `@nodeId` generators — which this plan co-lands (today they're stubs).
-
-### Projection — `TypeClassGenerator.$fields`
-
-For each `ChildField.NodeIdField` on a type, emit:
-
-```java
-case "id" -> fields.add(nodeIdStrategy.createId(
-    "Customer",
-    new Field<?>[] { table.STORE_ID, table.CUSTOMER_ID }));
-```
-
-Uses `NodeIdStrategy.createId(typeId, keyFields)` — already lives in `graphitron-common`. One projection path for both platform-id and declared `@nodeId` types.
-
-### Read-back — `record.into(...)`
-
-The mapping-from-`Record` path derives the ID string via `nodeIdStrategy.createId(record, typeId, keyColumns)`. Same helper, same signature.
+Platform-id stops existing as a separate emission path. Projection and read-back shipped in Step 3 (raw key-column projection + `NodeIdEncoder.encode` in the DataFetcher). Remaining Step 4/5 emission:
 
 ### Filter — lookup path
 
@@ -218,35 +166,11 @@ After the migration lands, these go away:
 
 ---
 
-## Synthetic fixture update
+## Pipeline-test fixture
 
-`no.sikt.graphitron.rewrite.platformidfixture.tables.Bar` grows:
+Synthetic fixture shipped: `Bar` carries `__NODE_TYPE_ID="Bar"` + `__NODE_KEY_COLUMNS={BAR.ID_1, BAR.ID_2}`; `Qux` carries none (negative case). Step 4 adds input-side cases to `PlatformIdFieldValidationTest` / `PlatformIdPipelineTest`:
 
-```java
-public static final String __NODE_TYPE_ID = "Bar";
-public static final Field<?>[] __NODE_KEY_COLUMNS = { /* a real column or two */ };
-```
-
-Needs at least one real `TableField` column to serve as a key. Add `ID_1`, `ID_2` as varchar columns (matching what a composite key shape would look like). `getId()` and `getPersonId()` can stay as harmless no-ops or be removed — the rewrite no longer reflects on them.
-
-`Qux` keeps no metadata constants — stays the negative-case fixture ("no platform-id / no synthesized NodeType").
-
-`PlatformIdPipelineTest` cases become:
-
-**Output side** (`FieldBuilder` classification against a synthesized or declared `NodeType`):
-
-| SDL | Expected outcome |
-|-----|-----------------|
-| `type Foo @table(name: "bar") { id: ID! }` | `ChildField.NodeIdField(nodeTypeId="Bar", nodeKeyColumns=[ID_1, ID_2])` — synthesized |
-| `type Foo @table(name: "bar") @node(typeId: "Bar") { id: ID! }` | Same — matching `@node` accepted, values from metadata (or equivalently `@node`) |
-| `type Foo @table(name: "bar") @node { id: ID! }` | Same — `@node` without args delegates to metadata |
-| `type Foo @table(name: "bar") @node(typeId: "Bar") { id: ID! }` (metadata says `typeId="Bar"`, different `keyColumns`) | Classifier error — partial disagreement still errors; `keyColumns` mismatch reported with both sides |
-| `type Foo @table(name: "bar") @node(keyColumns: ["ID_1", "ID_2"]) { id: ID! }` (metadata matches keyColumns but declares a different `typeId`) | Classifier error — typeId mismatch reported; keyColumns agreement is not a waiver |
-| `type Foo @table(name: "bar") @node(typeId: "Foo") { id: ID! }` | Classifier error — `@node(typeId: "Foo")` disagrees with metadata (`"Bar"`); both values in the diagnostic |
-| `type Foo @table(name: "bar") { id: ID! @nodeId }` | `NodeIdField` via the existing `@nodeId` path (directive-driven, not synthesis) |
-| `type Foo @table(name: "bar") { id: [ID!]! }` | `UnclassifiedField` — list gate short-circuits |
-| `type Foo @table(name: "qux") { id: ID! }` | `UnclassifiedField` — no real column, no metadata, no synthesis |
-| `type Foo @table(name: "bar") { name: String }` (no `id` field) | Type classifies as `NodeType` (metadata present); no field-level impact — uniform synthesis rule |
+Output-side cases (synthesized + declared-`@node` + collision + list-gate + negative) shipped in Steps 2–3; `PlatformIdPipelineTest` covers them. Step 4 adds the input-side cases below.
 
 **Input side** (`TypeBuilder.resolveInputField`; same disagreement and list-gate rules):
 
@@ -284,50 +208,14 @@ Skipping step 2 before step 4 fails loudly: every `id: ID!` on a (formerly) plat
 
 Five commits, roughly in order. Each lands independently and green.
 
-1. **`JooqCatalog.nodeIdMetadata` probe** — *shipped*. Reflection probe landed on the synthetic fixture (constants added to `Bar.java`). Malformed-metadata branches covered by a package-private `JooqCatalog.validateNodeIdMetadata` helper under `JooqCatalogNodeIdMetadataTest`. Compile-tier coverage (real test-spec jOOQ table with hand-edited constants) took the do-nothing fallback — deferred to post-X.Y per the Compile-tier coverage section; Step 3's execution-test claim has to track this. See **Learnings from Step 1** below.
-2. **`TypeBuilder` synthesizes `NodeType`** — *shipped*. `buildTableType` reads metadata unconditionally; malformed metadata surfaces as `UnclassifiedType` via the memoized `nodeIdMetadataDiagnostic` sibling. `PlatformIdPipelineTest` gained 8 type-level cases covering the four `(@node, metadata)` branches plus collision rules. `@nodeId` on a metadata-carrying table flips from `UnclassifiedField` → `NodeIdField` via the existing directive path. See **Learnings from Step 2** below.
-3. **`ChildField.NodeIdField` detection + emission** — *shipped* (landed as `76ce48d`; refactored after review as `c54c107`). Path-2 detection landed in `FieldBuilder` inside the `column.isEmpty()` block before the platform-id check; six-clause predicate matches the Output-side section (intentional `!@field` narrowing). `NodeIdField` moved from `NOT_IMPLEMENTED_REASONS` into `PROJECTED_LEAVES`; fetcher switch arm emptied. `TypeClassGenerator.$fields` projects the raw key columns (`fields.add(table.COL_N)` per column); `TypeFetcherGenerator` wires a `DataFetcher` lambda that reads the keys off the parent `Record` and calls a generated `NodeIdEncoder.encode(typeId, …)` utility (emitted alongside `ColumnFetcher` in `outputPackage().rewrite`). Wire format matches `NodeIdStrategy` (URL-safe base64 no-pad, `,`→`%2C`, `"typeId:v1,v2,…"`) so IDs round-trip between generators. `PlatformIdPipelineTest`'s bare `id: ID!` cases flipped to `NodeIdField`; `NodeIdFieldValidationTest` flipped STUBBED → PROJECTED. All 482 rewrite tests green. Execution test deferred with Step 1's do-nothing fallback. See **Learnings from Step 3** and **Follow-ups from Step 3 review**.
+Steps 1–3 shipped on trunk (probe + metadata-driven `NodeType` synthesis + `ChildField.NodeIdField` projection/DataFetcher). Remaining:
+
 4. **`NodeIdArg` + `LookupMapping` sum type + emitter branches** — classifier produces `NodeIdArg` for scalar ID args targeting NodeType; declared-`@nodeId`-on-input folds in here; `projectForLookup` produces `NodeIdMapping`; `LookupValuesJoinEmitter` dispatches on variant; non-lookup filter path handles the same. Pipeline-test coverage for both lookup and non-lookup shapes. **Test migration:** the `InputField.PlatformIdField` assertions in `PlatformIdFieldValidationTest` flip to `InputField.NodeIdField`. New execution test for a lookup query using platform-id keys.
 5. **Delete `PlatformIdField` sum-type variants + supporting catalog methods** — the variant records, the `FieldBuilder`/`TypeBuilder` fallbacks, `hasPlatformIdAccessors`, `platformIdOutputMethodNames`, `sqlToAccessorSuffix` (if no other caller), `IMPLEMENTED_LEAVES` entries, `ChildPlatformIdFieldValidationTest` / `PlatformIdFieldValidationTest`. Partition invariants in the variant-coverage meta-test resolve automatically since the record no longer exists. **Test migration:** the two variant-specific test classes are deleted; no replacements needed — pipeline coverage for `NodeIdField` outcomes shipped in steps 2-4.
 
 Mutation binding (previous Item 3) remains gated on argres Phase 3 and lands via that plan — but as a `NodeIdField` input variant, not `PlatformIdField`.
 
-### Learnings from Step 3
-
-- **`!@field` narrowing confirmed intentional.** The Output-side Open point asked whether Path-2's `!fieldDef.hasAppliedDirective(DIR_FIELD)` clause (which excludes `id: ID! @field(name:)` from the synthesized `NodeIdField` path) was intentional narrowing or a silent migration break. Resolved as *intentional*: synthesized NodeId fields derive their column set from `__NODE_KEY_COLUMNS` metadata, so `@field(name:)` carries no useful signal on these fields — it would be a silent no-op at best, a cause of drift at worst. After Step 5 deletes the fallback, schemas using `id: ID! @field(...)` on a platform-id table will classify as `UnclassifiedField`; this surfaces in Migration as a third diagnostic case alongside the two existing ones. No code change, just confirming the predicate.
-- **Encoding moved out of SQL into the `DataFetcher`.** Initial design (commit `76ce48d`) projected `nodeIdStrategy(env).createId(typeId, ...).as(fieldName)` as an aliased `SelectField<String>` column and read it back via `ColumnFetcher<>(DSL.field(name, String.class))`. Review (see **Follow-ups from Step 3 review**) surfaced a latent compile-time type error and a design smell — `$fields` reaching into `env.getGraphQlContext()` for a strategy instance purely to build a SQL projection. Refactor (`c54c107`): `$fields` projects the raw key columns; a generated `NodeIdEncoder` utility (emitted alongside `ColumnFetcher`) encodes in Java from the `DataFetcher` lambda. Wire format unchanged — IDs round-trip with anything still using `NodeIdStrategy.unpackIdValues` / `hasIds`.
-- **Test-spec compile tier pre-existingly broken on trunk.** All `@table` types classify as `UnclassifiedType` in the test-spec `mvn compile -pl :graphitron-rewrite-test-spec -Plocal-db` run — 48 errors on trunk before any Step 3 changes, 48 errors after. Not introduced by Step 3, but its existence means the "Compile-tier coverage" claim for Step 3's `NodeIdField` emission (that the generated `DataFetcher` body and `NodeIdEncoder.encode(typeId, r.get(Tables.X.COL))` calls type-check against a real jOOQ table class) is currently unverifiable. Separate concern from this plan; flagging here so a future Step 3/4 reviewer doesn't mistake a pre-existing test-spec failure for a Step 3 regression. Unit-tier coverage (482 rewrite tests) is the only compile-tier guarantee Step 3 currently holds.
-- **Partition migration is mechanical but touches three sites.** Moving `NodeIdField` from `NOT_IMPLEMENTED_REASONS` to `PROJECTED_LEAVES` requires (a) updating the two `Set.of(...)` literals in `TypeFetcherGenerator`, (b) changing the fetcher switch arm from `stub(f)` to an empty `{ }` case, (c) flipping `NodeIdFieldValidationTest` from STUBBED-error-expected to PROJECTED-no-errors-expected (mirrors `LookupTableFieldValidationTest.LIST_PROJECTED`). The partition-invariants meta-test (`VariantCoverageTest` or similar) catches (a) automatically if either set is missed; the other two surface as test failures during the test run. No drift risk.
-
-### Follow-ups from Step 3 review
-
-Review of the initial Step 3 commit (`76ce48d`) surfaced one latent bug and a design smell; both resolved in `c54c107`. Remaining items tracked here:
-
-- **`fields.add(SelectField<String>)` compile-time type error [resolved].** `NodeIdStrategy.createId(...).as(name)` returns `SelectField<String>`, not `Field<String>` (jOOQ 3.19's `row(...).mapping(Class<U>, Function)` is declared `SelectField<U>`). `$fields`'s `List<Field<?>>` therefore rejects it. The `PlatformIdField` arm (`fields.add(table.<accessor>())`) has the same latent bug for the same reason. Masked in both cases by the pre-existingly-broken test-spec compile tier. Resolved by removing all `SelectField`-typed expressions from `$fields` — the NodeIdField arm now projects raw `TableField` key columns, and the encoder moved to Java. The `PlatformIdField` arm remains but is on Step 5's deletion list.
-- **Context reach-in from a context-free method [resolved].** `$fields(sel, table, env)` was calling `env.getGraphQlContext().get("nodeIdStrategy")` to build a SQL projection. Dropping the SQL-side ID projection also drops the reach-in — `$fields` stays context-free except for `env` threading that G5 requires independently.
-- **Structural unit tests for the refactored emission [open].** `TypeClassGeneratorTest` has no case asserting that a `NodeIdField` causes one `fields.add(table.COL_N)` per key column (count matches `nodeKeyColumns().size()`). `TypeFetcherGeneratorTest` has no case asserting the NodeIdField wiring arm emits a `DataFetcher` lambda (not a `ColumnFetcher`) naming `NodeIdEncoder`. Both fit the project's structural-assertion rule and would catch a regression if the refactor is reverted. Add alongside Step 4 to avoid a separate commit.
-- **Execution test against a real jOOQ table [open].** Still blocked on Step 1's deferred test-spec constants. Once Sakila's `store` (or another candidate) carries `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS`, an end-to-end test can encode an ID through the DataFetcher and round-trip it via `NodeIdStrategy.unpackIdValues` — verifying wire-format compatibility as an executable assertion rather than a manual cross-read of `NodeIdEncoder` vs `NodeIdStrategy` source.
-
-### Learnings from Step 2
-
-- **Diagnostic channel: sibling public method on `JooqCatalog`.** Added `Optional<String> nodeIdMetadataDiagnostic(String tableSqlName)` alongside the existing `nodeIdMetadata` reader, both backed by a memoized internal 3-state sum (`Present` / `Absent` / `Malformed(reason)`). Reflection + validation fire once per build per table. Keeps Step 1's 14 `Optional<NodeIdMetadata>`-shape tests untouched; rejected alternative was folding both into a single `Optional<Result<…>>` return.
-- **`validateNodeIdMetadata` kept as the package-private test entry point.** `Optional<NodeIdMetadata>` signature unchanged; internally delegates to the 3-state lookup.
-- **`NodeType` audit cleanly passed.** Six `NodeType` reference sites in the rewrite (`TypeBuilder:120` exhaustive-switch no-op, `FieldBuilder:1559`/`:1571` `@nodeId` guards, `GraphitronSchemaValidator:59,169`, `TypeClassGenerator:50` / `TypeFetcherGenerator:67` filter predicates) all behave correctly for metadata-carrying tables without an `id: ID!` field. No narrow-synthesis fallback needed.
-- **Collision equality is order-sensitive.** SDL-declared columns compare position-by-position (`sqlName` equalsIgnoreCase) against metadata columns — `[id_1, id_2]` vs `[id_2, id_1]` is an error. Step 4's `LookupMapping.NodeIdMapping` inherits this rule.
-- **`FieldBuilder:1572` error message updated** to "@nodeId requires the containing type to be a node type (via @node or KjerneJooqGenerator metadata)". Doc-consistency co-land.
-- **Malformed-fixture end-to-end coverage deferred.** Classifier wiring is 3 `Optional.isPresent()` lines; correctness rests on 9 malformed unit tests + 3 `nodeIdMetadataDiagnostic` cases. A dedicated `MalformedBar` fixture isn't budgeted.
-
-### Learnings from Step 1
-
-- **`__NODE_KEY_COLUMNS` references instance fields via the static singleton.** Standard jOOQ emits columns as `public final TableField<...>` instance fields, not statics. The static `__NODE_KEY_COLUMNS` array therefore must qualify each entry through the table's static singleton — the fixture uses `{ BAR.ID_1, BAR.ID_2 }`, mirroring what `KjerneJooqGenerator` will need to emit inside `<Customer>.java`: `{ CUSTOMER.STORE_ID, CUSTOMER.CUSTOMER_ID }`. Source-order matters: `public static final Customer CUSTOMER = new Customer();` must come before `__NODE_KEY_COLUMNS` so the singleton is constructed (and its instance fields initialised) before the array literal evaluates. Pin this in the KjerneJooqGenerator design doc alongside the ordering-stability rule already in Open points.
-- **Validator factored package-private for malformed-case testability.** `JooqCatalog.validateNodeIdMetadata(String, Object, Object, Function<String, Optional<ColumnEntry>>)` separates the reflection-read from the validation so each malformed-metadata branch is unit-testable without swapping `static final` fields on the fixture class (Java 17+ reflection on final fields is finicky and the `Field.setAccessible(true) + Field.set(null, ...)` dance is unreliable across JVMs). Step 2 resolved via the sibling-method + 3-state-lookup design (see **Learnings from Step 2**).
-
 ---
-
-## Resolved points
-
-- **`__NODE_TYPE_ID` naming rule.** KjerneJooqGenerator derives `__NODE_TYPE_ID` from the same source today's `@node(typeId: "...")` literals use — the GraphQL type name associated with the table in Sikt's schema conventions. The collision rule above (error on disagree) only works if this holds; if the generator picks a different source (e.g. the raw table-class stem `"CustomerRecord"` while SDL uses `"Customer"`), every hybrid schema fails classification. Pin the rule when the generator change is drafted; the rewrite-side consumer treats `__NODE_TYPE_ID` as opaque.
-- **Constants as `Field<?>[]` vs. `List<Field<?>>`.** Array is what jOOQ `hasIds` signatures take; list is easier to build. KjerneJooqGenerator emits `Field<?>[]` (the consumer shape); the rewrite converts to `List<ColumnRef>` at the `JooqCatalog` boundary for model storage.
 
 ## Compile-tier coverage
 
@@ -339,16 +227,7 @@ Step 1 took the do-nothing fallback — the test-spec has no metadata-carrying t
 
 - **Consumers with mixed schemas** — some types `@node`, some platform-id. Both synthesize or declare `NodeType`; the classifier should not care. Pipeline-test cases per the tables above cover this.
 - **Federation entity lookups.** Legacy's `FetchEntityImplementationDBMethodGenerator` dispatches on `processedSchema.isNodeIdField(field)`. The rewrite's equivalent (when it lands) will match on `ChildField.NodeIdField` — no platform-id branch needed.
-- **`JooqCatalog.nodeIdMetadata` memoisation** *(resolved, Step 2)*. The catalog now caches the internal `NodeIdMetadataLookup` 3-state per `tableSqlName` via a `ConcurrentHashMap`; reflection + validation fire once per build regardless of how many classifier passes probe the same table. Closes the foot-gun preemptively.
 - **`NestedInputId` → `InputColumnBinding` collapse.** Once argres Phase 3 lands `InputColumnBinding`, the `NestedInputId` permit added in Step 4 collapses into it — same path-walking semantics, wider binding type. Track as a mechanical cleanup commit after Phase 3; not a blocker for this plan, and the permit is narrow enough that the collapse is local to two files (`CallSiteExtraction.java` + `LookupValuesJoinEmitter`).
 - **`__NODE_KEY_COLUMNS` ordering stability guarantee.** The collision rule's order-sensitive equality check only survives schema re-gens if KjerneJooqGenerator commits to a stable, deterministic column order (e.g. declared-order in the composite-key DDL, then primary-key order, then alphabetical as a tiebreak). A silent reorder between generator releases would re-encode new IDs in a different order than decoded IDs produced pre-upgrade, and `hasIds` would fail to match any of them — silently wrong results across the cut-over. Pin the ordering rule in the KjerneJooqGenerator design doc when the X.Y constants are drafted; the rewrite treats the order as opaque but stable. Release-notes for X.Y+N must call out any ordering change as breaking.
-- **Path-2 `!@field` gate** *(resolved, Step 3)*. The `!fieldDef.hasAppliedDirective(DIR_FIELD)` narrowing is intentional — synthesized NodeId fields get their column set from `__NODE_KEY_COLUMNS`, so `@field(name:)` carries no useful signal. After Step 5 deletes the fallback, `id: ID! @field(...)` on a platform-id table classifies as `UnclassifiedField`; this surfaces in Migration as a third diagnostic case.
 - **`@node` with `null` typeId / empty keyColumns under no-metadata.** Pre-existing behaviour today: `TypeBuilder.java:275` stores `typeId=null` when `@node` is declared without `typeId:`, and `TypeBuilder.java:276-287` stores an empty `keyColumns` list when `@node` is declared without `keyColumns:` (the directive docs say "we use the primary key" but the rewrite's `TypeBuilder` does no PK substitution — only the empty list is recorded). The pivot preserves both on tables with no metadata (no collision, no synthesis). Downstream consumers that dereference `NodeType.typeId()` or pass `NodeType.nodeKeyColumns()` to `NodeIdStrategy.createId(...)` without empty/null guards will NPE or emit `"typeId:"` (bare prefix) — not a regression introduced by this plan, but the `NodeType` audit at Step 2 should note any sites that would blow up on null typeId or empty keyColumns, and either tolerate them or file a follow-up to implement the documented PK-fallback.
 
----
-
-## History
-
-- **2026-04-18 — pivot to synthesized NodeType.** Earlier the plan was a parallel four-item `PlatformIdField` sum-type variant; the argument/filter emission gap surfaced as a parallel type-system problem. Pivoted to having KjerneJooqGenerator emit `__NODE_TYPE_ID` + `__NODE_KEY_COLUMNS` constants so the rewrite subsumes platform-id into the existing `NodeType` / `NodeIdField` classification. Reviewer pass resolved the `@node`-vs-synthesized contradiction (error-on-disagree), pinned input-side `@nodeId` as the first classifier path, added the compile-tier coverage section, and added release sequencing. Items 1-2 of the previous plan (output/input classification, dispatch, synthetic-fixture pipeline tests) are undone in Step 5; classification tests migrate to `NodeIdField` outcomes on the same fixture.
-- **2026-04-19 — Steps 1 + 2 shipped.** Eight Draft iterations between 2026-04-18 and 2026-04-19 consolidated the plan: resolved N1–N4 (error-on-disagree is symmetric, synthesis is unconditional, `NestedInputId` permit deferred to Step 4 kickoff), pinned the Path-2 trigger predicate + placement + `PROJECTED_LEAVES` destination, reworked the compile-tier mechanism to copy-and-edit a generated table class, added the `JooqCatalog.nodeIdMetadata` memoisation + malformed-metadata diagnostic, and corrected line-number drift after each shipped step.
-- **2026-04-19 — Step 3 shipped and refactored.** Initial landing (`76ce48d`) emitted `NodeIdStrategy.createId` inside `$fields` via a context reach-in helper. Reviewer flagged a latent compile-time type mismatch (`SelectField<String>` into `List<Field<?>>`) plus the context-reach-in smell; refactored (`c54c107`) to raw key-column projection + Java-side encoding in a wiring-layer DataFetcher backed by a generated `NodeIdEncoder` utility. Encoding no longer lives in SQL.

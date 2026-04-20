@@ -25,33 +25,6 @@ each constant a `(description, SDL, assertion)` triple. Descriptions are mostly 
 
 ---
 
-## Step 1 — Close the coverage gaps ✅
-
-Every doc table row now has a matching test case. Added:
-
-- `TableFieldCase.SPLIT_LOOKUP_TABLE_FIELD` — `@splitQuery + @lookupKey` on `@table` parent → `SplitLookupTableField`
-- `NonTableParentCase.RECORD_TABLE_FIELD` — `@record` parent, `@table` return type (no `@lookupKey`) → `RecordTableField`
-- `NonTableParentCase.RECORD_LOOKUP_TABLE_FIELD` — `@record` parent, `@table` return type + `@lookupKey` → `RecordLookupTableField`
-- `NonTableParentCase.RECORD_FIELD` — `@record` parent, non-table object return type → `RecordField`
-- `NonTableParentCase.SERVICE_TABLE_FIELD_ON_RECORD_PARENT` — `@record` parent + `@service`, `@table` return → `ServiceTableField`
-- `RootFieldCase.QUERY_SERVICE_RECORD_FIELD` — root query, `@service`, non-table return → `QueryServiceRecordField`
-- `RootFieldCase.MUTATION_SERVICE_RECORD_FIELD` — mutation, `@service`, non-table return → `MutationServiceRecordField`
-
----
-
-## Step 2 — Normalise case-description style ✅
-
-One rule applied: every enum-case description starts with the schema trigger, ends with
-`→ VariantName`, and names at most one additional invariant. Applied to the worst offenders in
-`TableFieldCase` and the three modified enums; other enums left for Step 3 when files are
-split/renamed.
-
-Added per-enum Javadoc to `TableFieldCase`, `NonTableParentCase`, and `RootFieldCase` — one
-paragraph each describing the axis exercised and linking to the relevant table in
-`code-generation-triggers.md`.
-
----
-
 ## Step 3 — Re-section for stable anchors (deferred)
 
 Goal: pointer stability for Step 4 links. Two sub-options:
@@ -91,61 +64,11 @@ Estimate: ~½ day.
 
 ---
 
-## Step 5 — Keep drift out with a meta-test (deferred)
-
-Define a `ClassificationCase` interface with an explicit `Class<?> variant` field on each enum
-case. The meta-test collects all `variant` fields and asserts that every non-allowlisted
-sealed-type permit in `GraphitronField` and `GraphitronType` is represented.
-
-This is strictly more reliable than matching on description strings — description rewording can
-never cause a false negative, and a new sealed permit with no test case is caught at compile
-or test time immediately.
-
-Do the interface + field shape before writing new cases; retrofit existing cases during Step 3.
-
-```java
-// On each test-case enum:
-enum TableFieldCase implements ClassificationCase {
-    SINGLE_RETURN_TYPE("@table return type (default) → TableField (Single, empty joinPath)",
-                       TableField.class, "<sdl>"),
-    // …
-    ;
-    final String description;
-    final Class<?> variant;
-    final String sdl;
-}
-
-// In the meta-test:
-@Test
-void everyClassificationVariantHasAtLeastOneCase() {
-    var covered = allCases().stream()
-        .map(ClassificationCase::variant)
-        .collect(toSet());
-    var allowlist = Set.of(UnclassifiedField.class, /* deliberate exclusions */);
-    var required = permitsOf(GraphitronField.class, GraphitronType.class).stream()
-        .filter(v -> !allowlist.contains(v))
-        .collect(toList());
-    for (var variant : required) {
-        assertThat(covered)
-            .as("No classification case covers %s — add one or add to the allowlist",
-                variant.getSimpleName())
-            .contains(variant);
-    }
-}
-```
-
-Estimate: interface + meta-test ~1–2 hours; retrofitting existing cases ~½ day.
-
----
-
 ## Recommended order (when resuming)
 
-1. **Step 5 (interface + field shape only)** — before writing any new cases in future, so they
-   use the final shape from the start.
-2. **Step 3** (re-section / rename).
-3. **Step 2 remainder** (normalise descriptions in other enums, piggybacks on Step 3's moves).
-4. **Step 4** (rewire doc, waits on stable anchors from Step 3).
-5. **Step 5 (meta-test body)** — lock the invariant once all cases are in final locations.
+1. **Step 3** (re-section / rename).
+2. **Step 2 remainder** (normalise descriptions in remaining enums, piggybacks on Step 3's moves).
+3. **Step 4** (rewire doc, waits on stable anchors from Step 3).
 
 ---
 

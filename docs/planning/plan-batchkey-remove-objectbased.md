@@ -30,8 +30,7 @@ non-`TableRecord` service-sources case at classification time; the existing
 Shapes 2 and 3 do not go through `ServiceCatalog.classifySourcesType`. They derive
 their `BatchKey` in `FieldBuilder.deriveBatchKeyForResultType` from FK metadata, which
 produces `RowKeyed(fkJoin.sourceColumns())` uniformly for typed `ResultType` parents.
-Record-fields Phase 1 (Done on trunk, see `plan-record-fields.md`) established this
-path; Phase 2 (Draft, `plan-record-lookup-field.md`) inherits it. Neither path ever
+Record-fields Phase 1 and Phase 2 (Done on trunk) established this path. Neither path ever
 reached `ObjectBased`. This plan does not touch them.
 
 ## Current state
@@ -305,6 +304,5 @@ Phase 1.
 - Validator site: `GraphitronSchemaValidator.java:426–434`
 - Capability interface: `BatchKeyField.java`
 - Emit arms: `GeneratorUtils.java:135` + `GeneratorUtils.java:242–245`
-- Record-fields path (unaffected): `plan-record-fields.md` (Phase 1 Done),
-  `plan-record-lookup-field.md` (Phase 2 Draft), `FieldBuilder.deriveBatchKeyForResultType`
+- Record-fields path (unaffected): `FieldBuilder.deriveBatchKeyForResultType` (Phase 1 + 2 Done on trunk)
 - Lifter directive backlog entry: `rewrite-roadmap.md` → "`BatchKey` lifter directive"

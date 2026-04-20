@@ -38,6 +38,10 @@ Do NOT write code-string assertions that check generated method bodies (e.g. `as
 
 A cascade of `*PipelineTest` / `GraphitronSchemaBuilderTest` failures with `UnclassifiedType`, `NoSuchElement`, or "table … could not be resolved in the jOOQ catalog" means the fixtures jar in `~/.m2` is missing `DefaultCatalog` (installed before the DB was up). Rebuild with: `mvn install -pl :graphitron-rewrite-test-fixtures -Plocal-db`. Don't bisect trunk — it's your local repo.
 
+## Editing large files
+
+Prefer many small `Edit` calls over one large `Write` when trimming or rewriting a long file. Full-file writes on plans/docs of ~300+ lines tend to time out mid-response and leave the file half-written. Sequence of targeted `Edit` calls (remove section A, remove section B, replace section C) is both safer and faster.
+
 ## Development Workflow
 
 Every change moves Unplanned → Draft → Approved → In Progress → Pending Review → Done, tracked per item in `docs/planning/rewrite-roadmap.md` with inline `[Status]` markers. Plans live at `docs/planning/plan-<slug>.md` and carry a `> **Status:** ...` front-matter that mirrors the roadmap. Reviewer must be a different party than the author (for Draft → Approved) and the implementer (for Pending Review → Done). Any session can add `[Unplanned]` items to the roadmap.
