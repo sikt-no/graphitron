@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> Lift `ChildField.NestingField` out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` by (a) resolving the nested projection at build time during classification and (b) emitting a recursive nested switch inline in the parent type's `$fields` method. Wiring is a source-passthrough data fetcher (same pattern as `ConstructorField`). First arm of roadmap item #8 ("Non-table / scalar / reference child leaves").
+> Lift `ChildField.NestingField` out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` by (a) resolving the nested projection at build time during classification, (b) emitting a recursive nested switch inline in the parent type's `$fields` method, and (c) emitting a per-field `TypeRuntimeWiring` for the nested type so each leaf resolves the same way it does at top level. First arm of roadmap item #8 ("Non-table / scalar / reference child leaves").
 
 ## Current state
 
@@ -17,10 +17,9 @@
 Nested scalars on a plain (non-`@table`, non-`@record`) object type resolve against the parent's jOOQ record:
 
 - **Classification reuses the existing machinery.** The builder walks the nested `GraphQLObjectType`'s fields and delegates each one to `FieldBuilder.classifyChildFieldOnTableType(fieldDef, nestedTypeName, outerParentTableType)`. Nested fields produce the standard sealed-leaf `ChildField` subtypes — `ColumnField` (with `@field(name:)` remapping, as at top level), `NestingField` (recursion), and every other leaf the existing classifier knows about. Directive handling is uniform with top-level; no blanket rejection.
-- **Emission for projectable leaves is a recursive nested switch** inlined into the parent type's existing `$fields(sel, table, env)` method. One switch per nesting level, keyed by GraphQL field name; arms dispatch the same leaves the top-level `$fields` already handles (`ColumnField`, `PlatformIdField`, `NodeIdField`, `TableField`, `LookupTableField`), plus a `NestingField` arm that recurses.
-- **Wiring is passthrough.** `env -> env.getSource()` hands the parent record to graphql-java, which resolves each nested scalar via the default `PropertyDataFetcher` against the jOOQ record's getters (`getTitle()`, `getReleaseYear()`, …). For projectable leaves that is all v1 needs; no fetchers class is emitted for the nested type.
-- **Non-projectable nested leaves are deferred to a follow-up plan.** There is no *semantic* restriction on what directives can appear on a nested type — the outer parent's jOOQ record flows through `env.getSource()` unchanged, so anything that consumes `env.getSource()` at top level (`@service`, `@splitQuery`, `@computed`, …) would behave identically at nested depth. The gap is wiring-side: graphql-java routes data fetchers by `(typeName, fieldName)`, so a `@service` on `FilmDetails.foo` needs registration under `("FilmDetails", "foo")` — a second `TypeRuntimeWiring` the v1 emitter does not produce. Classification stays permissive (any leaf can appear in `nestedFields`); v1 rejects non-projectable leaves in the validator with a message pointing at the follow-up plan; the exhaustive sealed switch in the emitter then treats those leaves as unreachable.
-- **Stubbed leaves reject at build time as they do today.** If a nested field classifies as a leaf still in `NOT_IMPLEMENTED_REASONS` (`ColumnReferenceField`, `ComputedField`, …), the existing stubbed-variant validator rejects the schema — same mechanism, same error shape as top level. As each roadmap-#8 arm lands for projectable leaves, nested support for that arm falls out with it; non-projectable arms additionally require the follow-up wiring plan.
+- **Projection is a recursive nested switch** inlined into the parent type's existing `$fields(sel, table, env)` method. One switch per nesting level, keyed by GraphQL field name; arms dispatch the same leaves the top-level `$fields` already handles (`ColumnField`, `PlatformIdField`, `NodeIdField`, `TableField`, `LookupTableField`), plus a `NestingField` arm that recurses. The SELECT list at the outermost `@table` parent contains every projected column the entire nested selection needs; the outer query materializes one flat jOOQ `Record`.
+- **Per-field wiring is emitted under a `TypeRuntimeWiring` keyed by the nested type name.** Each leaf in `nestedFields` gets the same `.dataFetcher(…)` entry `buildWiringEntry` produces at top level — `new ColumnFetcher<>(Tables.X.COL)` for `ColumnField` (identity-based typed `Field` reference, so `@field(name:)` remap is honored without column aliasing), the existing inline `.dataFetcher` for `TableField`/`LookupTableField`/`NodeIdField`, and so on. The outer parent's wiring for the `NestingField` leaf itself is `env -> env.getSource()` — a bare passthrough that hands the outer `Record` to the nested type's fetchers. Recursion: a nested `NestingField` does the same, and another `TypeRuntimeWiring` is emitted for its nested type at that depth.
+- **Stubbed leaves reject at build time as they do today.** If a nested field classifies as a leaf still in `NOT_IMPLEMENTED_REASONS` (`ColumnReferenceField`, `ComputedField`, …), the existing stubbed-variant validator rejects the schema — same mechanism, same error shape as top level. As each roadmap-#8 arm lands, nested support for that arm falls out with it.
 
 Design rationale — this keeps `NestingField` consistent with the rewrite's core principles:
 
@@ -79,11 +78,11 @@ private static void emitSwitch(CodeBlock.Builder code,
                            sfVar + ".getSelectionSet()", tableVar);
                 code.add("        }\n");
             }
-            // Non-projectable leaves (ConstructorField, FetcherField, …) and all
-            // stubbed leaves are rejected by C2's validator before we get here;
-            // the exhaustive sealed switch makes this unreachable at build time.
+            // Stubbed leaves (ColumnReferenceField, ComputedField, …) are rejected by
+            // C2's validator walk before we get here; the exhaustive sealed switch makes
+            // this unreachable at build time.
             default -> throw new AssertionError(
-                "unreachable: validator rejects non-projectable / stubbed nested leaf " + f);
+                "unreachable: validator rejects stubbed nested leaf " + f);
         }
     }
     code.add("        default -> { } // unhandled fields\n");
@@ -92,31 +91,32 @@ private static void emitSwitch(CodeBlock.Builder code,
 }
 ```
 
-Switch on `ChildField` is exhaustive against the sealed hierarchy: the projectable arms cover v1's nested cases, the `NestingField` arm recurses, and the `default` is a build-time tripwire — not a silent skip — because the validator rejects anything else at parse time. The top-level `$fields` body becomes a single `emitSwitch(code, 0, fields, "sel", "table")` call — same helper, same depth semantics at every level. Inline `TableField`/`LookupTableField` emitters already take a `tableVar` parameter for the correlated-subquery join; the outer parent's alias is reused at every depth since nesting never navigates.
+Switch on `ChildField` is exhaustive against the sealed hierarchy: every leaf the top-level `$fields` already handles gets an arm, the `NestingField` arm recurses, and the `default` is a build-time tripwire — not a silent skip — because the validator rejects anything else at parse time. The top-level `$fields` body becomes a single `emitSwitch(code, 0, fields, "sel", "table")` call — same helper, same depth semantics at every level. Inline `TableField`/`LookupTableField` emitters already take a `tableVar` parameter for the correlated-subquery join; the outer parent's alias is reused at every depth since nesting never navigates.
 
-**Wiring.** Add a `ChildField.NestingField` arm to `TypeFetcherGenerator.buildWiringEntry`:
+**Wiring.** Two changes to `TypeFetcherGenerator`:
 
-```java
-if (field instanceof ChildField.NestingField nf) {
-    return CodeBlock.of("\n.dataFetcher($S, env -> env.getSource())", nf.name());
-}
-```
+1. `buildWiringEntry` gains a `ChildField.NestingField` arm that passes the outer `Record` down:
 
-Identical to the existing `ConstructorField` arm. graphql-java's default `PropertyDataFetcher` resolves each nested scalar from the passed-through parent record via the jOOQ getter it already generates.
+   ```java
+   if (field instanceof ChildField.NestingField nf) {
+       return CodeBlock.of("\n.dataFetcher($S, env -> env.getSource())", nf.name());
+   }
+   ```
 
-**Partition.** Move `NestingField` from `NOT_IMPLEMENTED_REASONS` into `PROJECTED_LEAVES` (it contributes to the parent's `$fields` output list and emits no per-field fetcher method). The sealed-switch arm in `generateTypeSpec` becomes `/* wired inline: env -> env.getSource(); projected via parent $fields */`, mirroring `ConstructorField`. `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` enforces the four-way partition and will catch drift.
+2. The wiring emitter produces an additional `TypeRuntimeWiring.newTypeWiring(nestedTypeName)` builder for each nested plain-object type, walking `nestedFields` and calling the existing `buildWiringEntry` for each leaf. Each leaf gets the same wiring it would at top level — `new ColumnFetcher<>(Tables.X.COL)` for `ColumnField` (the typed `Field` reference is identity-based, so `@field(name:)` remap flows through with no aliasing in the SQL), the existing inline `.dataFetcher(…)` for `TableField`/`LookupTableField`/`NodeIdField`, etc. `NodeIdField` wiring additionally needs the outer parent's `TableRef` (for `Tables.FILM.ID` qualification in the node-id encode call); thread that through the nested emission the same way it is passed at top level. Recursion: a nested `NestingField` entry inside `nestedFields` emits both the outer passthrough wiring and, via recursive descent, a further `TypeRuntimeWiring` for its own nested type. These additional builders flow into the schema-wiring setup alongside top-level builders — simplest placement is a sibling method on the outer parent's Fetchers class (e.g. `wiringNested_FilmDetails()`) collected by the same glue that today collects one `wiring()` per Fetchers class.
 
-**Pipeline test.** SDL with a `@table` parent and a plain-object nesting child classifies as a `NestingField` whose `nestedFields` list is populated against the outer parent's table; `@field(name:)` on a nested scalar resolves to the remapped column; the generated fetchers class contains no method for the nesting field; the parent's `$fields` method contains a nested switch keyed by the nesting field's name.
+**Partition.** Move `NestingField` from `NOT_IMPLEMENTED_REASONS` into `PROJECTED_LEAVES` — at the outer parent it contributes to `$fields` and emits no per-field fetcher *method*. Nested-type wiring lives on the outer parent's Fetchers class (or equivalent collection point), not as per-field methods on a Fetchers class for the nested type, so the four-way partition invariant is unaffected. The sealed-switch arm in `generateTypeSpec` becomes `{ /* wiring: outer passthrough + per-field TypeRuntimeWiring for nested type; SELECT projected via parent $fields */ }`. `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` enforces the four-way partition and will catch drift.
+
+**Pipeline test.** SDL with a `@table` parent and a plain-object nesting child classifies as a `NestingField` whose `nestedFields` list is populated against the outer parent's table; `@field(name:)` on a nested scalar resolves to the remapped column; the generated Fetchers class contains no per-field method for the nesting field; the parent's `$fields` method contains a nested switch keyed by the nesting field's name; the generated wiring includes an additional `TypeRuntimeWiring.newTypeWiring("<NestedType>")` with per-field `.dataFetcher(…)` entries.
 
 ### C2 — Validation + execution tests
 
 Classification failure is most of the validation. C2 adds the two checks classification can't express and locks end-to-end behaviour in tests.
 
-**Validator.** `GraphitronSchemaValidator.validateNestingField` gains three checks:
+**Validator.** `GraphitronSchemaValidator.validateNestingField` gains two checks:
 
-- **`FieldWrapper.List` on `NestingField`.** Passthrough has no sensible list semantic under source-passthrough wiring — the default fetcher can't multiply rows from a single parent record. Legacy may have supported this; if a real schema needs it we lift the rejection in a follow-up with a defined semantic. Today `GraphitronSchemaBuilderTest.NestingFieldCase.LIST_OF_PLAIN_OBJECT_TYPE` classifies successfully and needs its expected outcome flipped to a validation error.
+- **`FieldWrapper.List` on `NestingField`.** A list-valued nested wrapper has no sensible semantic under a single parent `Record` — the outer query produced one row per outer parent, and the passthrough wiring hands that single `Record` down with no way to multiply rows. Legacy may have supported this; if a real schema needs it we lift the rejection in a follow-up with a defined semantic. Today `GraphitronSchemaBuilderTest.NestingFieldCase.LIST_OF_PLAIN_OBJECT_TYPE` classifies successfully and needs its expected outcome flipped to a validation error.
 - **Walk `nestedFields`** and apply `validateVariantIsImplemented` to each. Any sealed leaf still in `NOT_IMPLEMENTED_REASONS` (e.g. `ColumnReferenceField`, `ComputedField`) surfaces as a build-time error at the nested field's location — same mechanism, same error shape, same behaviour as when that leaf appears at the top level. This is the single integration point that makes "as #8 arms land, nested support follows" hold.
-- **Projectability gate (v1-only signpost).** For each leaf in `nestedFields`, reject if its class is not in `PROJECTED_LEAVES`. This blocks nested leaves the top-level emitter handles via a dedicated fetcher method on the parent's `TypeRuntimeWiring` — v1's passthrough wiring emits no such method under the nested type's wiring, so those leaves would compile but fetch wrong at runtime. Error message points at the follow-up plan (non-projectable nested wiring). Lift this check when that plan lands; classification remains permissive so the deferred work is a pure wiring-side change.
 
 **Classification test coverage.** Add to `GraphitronSchemaBuilderTest`:
 
@@ -129,15 +129,15 @@ Classification failure is most of the validation. C2 adds the two checks classif
 
 **Execution tests** (`graphitron-rewrite-test-spec`):
 
-- **Scalar nesting.** `Film @table { details: FilmDetails } ; FilmDetails { title, description, releaseYear }`. Query `film { details { title releaseYear } }` → one SQL round-trip projecting `FILM.TITLE, FILM.RELEASE_YEAR` only. Asserts column-pruning works end-to-end.
-- **Multi-level nesting.** `Film { details: FilmDetails } ; FilmDetails { meta: FilmMeta } ; FilmMeta { releaseYear }`. Confirms the recursive emitter produces a working nested switch.
-- **Null-parent short-circuit.** `film(id: <nonexistent>) { details { title } }` → `details: null`, no NPE. Confirms `env.getSource()` on a null parent is handled by graphql-java's default property fetcher as expected.
+- **Scalar nesting.** `Film @table { details: FilmDetails } ; FilmDetails { title, description, releaseYear }`. Query `film { details { title releaseYear } }` → one SQL round-trip projecting `FILM.TITLE, FILM.RELEASE_YEAR` only, and the returned GraphQL document contains the correct values. Asserts column-pruning works end-to-end *and* the nested `TypeRuntimeWiring` resolves scalars correctly.
+- **`@field(name:)` remap at nested depth.** Nested scalar with `@field(name: "…")` returns the remapped column's value in the GraphQL response — proves the `ColumnFetcher`'s typed `Field` reference path works identically at nested depth as at top level.
+- **Multi-level nesting.** `Film { details: FilmDetails } ; FilmDetails { meta: FilmMeta } ; FilmMeta { releaseYear }`. Confirms the recursive emitter produces a working nested switch and the recursive wiring emission produces working per-level `TypeRuntimeWiring`s.
+- **Null-parent short-circuit.** `film(id: <nonexistent>) { details { title } }` → `details: null`, no NPE. Confirms the nested wiring does not dereference a null source.
 
 Compile gate: `mvn compile -pl :graphitron-rewrite-test,:graphitron-rewrite-test-fixtures,:graphitron-rewrite-test-spec -Plocal-db`.
 
 ## Non-goals
 
-- **Other arms of roadmap #8** — `ColumnReferenceField`, `NodeIdReferenceField`, `ComputedField`, `TableMethodField`, `ServiceRecordField`, `MultitableReferenceField` each get their own plan. Their nested-context support follows automatically from this plan once the top-level emission lands, via the shared `classifyChildFieldOnTableType` classifier and the shared `validateVariantIsImplemented` gate. `NodeIdReferenceField` is additionally blocked on Platform-id (Active).
-- **Non-projectable nested leaves** — any leaf that resolves via a dedicated data fetcher on the parent's `TypeRuntimeWiring` at top level (`ConstructorField`, `FetcherField`, and once their #8 plans land, `@service`, `@splitQuery`, `@computed`, …) is rejected by the v1 validator's projectability gate. There is no semantic barrier — the outer parent's jOOQ record flows through `env.getSource()` unchanged, so these directives would behave identically at nested depth — but v1 emits no `TypeRuntimeWiring` for the nested type, so the fetcher has nowhere to register. Follow-up plan: emit a second `TypeRuntimeWiring` keyed by the nested type name and route non-projectable nested leaves to it. Classification already admits them; the deferred work is pure emitter/wiring.
+- **Other arms of roadmap #8** — `ColumnReferenceField`, `NodeIdReferenceField`, `ComputedField`, `TableMethodField`, `ServiceRecordField`, `MultitableReferenceField` each get their own plan. Their nested-context support follows automatically from this plan once the top-level emission lands, via the shared `classifyChildFieldOnTableType` classifier, the shared `validateVariantIsImplemented` gate, and the shared `buildWiringEntry` call on the emitted nested `TypeRuntimeWiring`. `NodeIdReferenceField` is additionally blocked on Platform-id (Active).
 - **List-cardinality nesting** — rejected at validate time. Lift when a concrete use case arrives with a defined semantic.
-- **Explicit classification of nested child types as `GraphitronType`** — intentionally skipped. `FilmDetails` never enters the `GraphitronType` map; it has no fetchers class, no type class, no wiring. Its fields are classified via the shared `classifyChildFieldOnTableType` path and hung off the enclosing `NestingField` on the outermost `@table` parent.
+- **Explicit classification of nested child types as `GraphitronType`** — intentionally skipped. `FilmDetails` never enters the `GraphitronType` map; it has no Fetchers class (the nested `TypeRuntimeWiring` is emitted from the outer parent's Fetchers class) and no type class. Its fields are classified via the shared `classifyChildFieldOnTableType` path and hung off the enclosing `NestingField` on the outermost `@table` parent.
