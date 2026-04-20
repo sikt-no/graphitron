@@ -42,6 +42,10 @@ Pivot from treating platform-id as a separate sum-type variant (`PlatformIdField
 
 Rewrite Sikt's externally-owned `KjerneJooqGenerator` so every platform-id table class additionally emits `public static final String __NODE_TYPE_ID` and `public static final Field<?>[] __NODE_KEY_COLUMNS`. Unblocks legacy-platform-id Steps 2–6 at release time. Scratch-only in this repo (proposed `scratch/kjerne-jooq/`); Sikt copies the final sources into their external repo and cuts a release.
 
+### Nesting-field emission **[Draft]** — [plan-nesting-field.md](plan-nesting-field.md)
+
+Lift `ChildField.NestingField` out of `NOT_IMPLEMENTED_REASONS`: wire a source-passthrough data fetcher and recurse into the nested selection set from the parent's `$fields` projection via graphql-java's `DataFetchingFieldSelectionSet` API. Nested scalar fields resolve via default property fetching against the parent's jOOQ record — no classification of the nested child type, no separate fetchers class. First arm of Backlog item #8.
+
 ## Backlog
 
 Unplanned items. Pick one, draft a plan, then move to Active.
@@ -76,7 +80,7 @@ Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`; the stubbed-vari
 6. **Relay `Query.node` resolver** — `QueryField.QueryNodeField`. Dispatches by platform-id → table lookup across every platform-id-capable table. Blocked on Platform-id as synthesized NodeId (Active).
 7. **Service-backed and method-backed root fetchers** **[Tracked]** — `QueryField.QueryServiceTableField`, `QueryField.QueryServiceRecordField`, `QueryField.QueryTableMethodTableField`. Root query bodies that delegate to a user-supplied method (table-bound, record/scalar-bound, or pre-filtered `Table<?>` respectively). Plan: [plan-service-root-fetchers.md](plan-service-root-fetchers.md).
 8. **Non-table / scalar / reference child leaves** — miscellaneous `ChildField` variants, each currently rejected at validate time:
-   - `ChildField.NestingField` — nested object inheriting the parent's table context unchanged (no navigation, no SQL).
+   - `ChildField.NestingField` **[Tracked]** — nested object inheriting the parent's table context unchanged (no navigation, no SQL). Plan: [plan-nesting-field.md](plan-nesting-field.md).
    - `ChildField.ColumnReferenceField` — `@reference(path:)` resolving to a scalar column via a join path.
    - `ChildField.NodeIdReferenceField` — `@nodeId` scalar on a reference path. Blocked on Platform-id (Active).
    - `ChildField.ComputedField` — computed scalar, possibly with `joinPath` context.
