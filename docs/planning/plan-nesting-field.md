@@ -1,6 +1,6 @@
 # `ChildField.NestingField` emission
 
-> **Status:** Draft (amended)
+> **Status:** Draft
 >
 > Lift `ChildField.NestingField` out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` by (a) resolving the nested projection at build time during classification and (b) emitting a recursive nested switch inline in the parent type's `$fields` method. Wiring is a source-passthrough data fetcher (same pattern as `ConstructorField`). First arm of roadmap item #8 ("Non-table / scalar / reference child leaves").
 
@@ -53,13 +53,13 @@ record NestingField(
 - Object-type field that is itself a plain object (no `@table`, no `@record`) → recurse, producing a nested `NestingField` whose `returnType.table()` is still the outermost parent's table.
 - Anything else (another `@table` type, a `@record` type, an interface, a union, a list) → classification error naming the unsupported shape.
 
-Cycle guard: the GraphQL type system cannot express a non-nullable object-type cycle, but still track visited type names to refuse recursive self-reference defensively (mirrors `InputField.NestingField` cycle handling).
+Cycle guard: GraphQL schemas can express object-type cycles (`type A { b: B }` + `type B { a: A }`), and this classifier walks the nested type's fields eagerly. Track visited type names on the way down and produce a classification error on self-reference. No existing precedent in the rewrite — this is the first eager type walk of a non-`GraphitronType` object.
 
-**Emitter.** In `TypeClassGenerator`, refactor `build$FieldsMethod`'s inner switch-emission into a static helper:
+**Emitter.** In `TypeClassGenerator`, refactor `build$FieldsMethod`'s inner switch-emission into a static helper that takes a depth counter, suffixes the loop variables (`entry0`/`sf0`, `entry1`/`sf1`, …) to avoid Java's block-scoped local-variable shadowing, and recurses into `NestingField` arms:
 
 ```java
 private static void emitSwitch(CodeBlock.Builder code,
-        TableRef tableRef,
+        int depth,
         List<ChildField.ColumnField> columns,
         List<ChildField.NestingField> nestings,
         List<ChildField.PlatformIdField> platformIds,
@@ -68,21 +68,23 @@ private static void emitSwitch(CodeBlock.Builder code,
         List<ChildField.LookupTableField> lookups,
         String selExpr,
         String tableVar) {
-    code.add("for ($T entry : $L.getFieldsGroupedByResultKey().entrySet()) {\n",
-             entryType, selExpr);
-    code.add("    $T sf = entry.getValue().get(0);\n", SELECTED_FIELD);
-    code.add("    switch (sf.getName()) {\n");
+    var entryVar = "entry" + depth;
+    var sfVar = "sf" + depth;
+    code.add("for ($T $L : $L.getFieldsGroupedByResultKey().entrySet()) {\n",
+             entryType, entryVar, selExpr);
+    code.add("    $T $L = $L.getValue().get(0);\n", SELECTED_FIELD, sfVar, entryVar);
+    code.add("    switch ($L.getName()) {\n", sfVar);
     for (var cf : columns) {
         code.add("        case $S -> fields.add($L.$L);\n",
                  cf.name(), tableVar, cf.column().javaName());
     }
-    // ... existing arms for platformIds, nodeIds, tables, lookups
+    // ... existing arms for platformIds, nodeIds, tables, lookups (top level only)
     for (var nf : nestings) {
         code.add("        case $S -> {\n", nf.name());
-        emitSwitch(code, tableRef,
+        emitSwitch(code, depth + 1,
                    nf.columnFields(), nf.nestingFields(),
                    List.of(), List.of(), List.of(), List.of(),
-                   "sf.getSelectionSet()", tableVar);
+                   sfVar + ".getSelectionSet()", tableVar);
         code.add("        }\n");
     }
     code.add("        default -> { } // unhandled fields\n");
@@ -91,7 +93,7 @@ private static void emitSwitch(CodeBlock.Builder code,
 }
 ```
 
-The top-level `$fields` body becomes a single `emitSwitch(...)` call. Recursive invocations pass empty lists for the slots that only apply at the top level (table-backed subqueries, lookup tables, platform ids, node ids — none of these are valid inside a `NestingField` in v1). The switch on the inner level only handles `ColumnField` and `NestingField`; classifier has already rejected anything else.
+The top-level `$fields` body becomes a single `emitSwitch(code, 0, …, "sel", "table")` call. Recursive invocations pass empty lists for the slots that only apply at the top level (table-backed subqueries, lookup tables, platform ids, node ids — none of these are valid inside a `NestingField` in v1); the classifier has already rejected anything else.
 
 **Wiring.** Add a `ChildField.NestingField` arm to `TypeFetcherGenerator.buildWiringEntry`:
 
@@ -103,7 +105,7 @@ if (field instanceof ChildField.NestingField nf) {
 
 Identical to the existing `ConstructorField` arm. graphql-java's default `PropertyDataFetcher` resolves each nested scalar from the passed-through parent record via the jOOQ getter it already generates.
 
-**Partition.** `NestingField` stays in the projected-into-parent partition — it contributes to the parent's `$fields` output list and needs a wiring entry (source passthrough), but emits no method of its own. Remove it from `NOT_IMPLEMENTED_REASONS`. The sealed-switch arm in `generateTypeSpec` becomes `/* wired inline: env -> env.getSource(); projected via parent $fields */`. `GeneratorCoverageTest` guards the invariant.
+**Partition.** Move `NestingField` from `NOT_IMPLEMENTED_REASONS` into `PROJECTED_LEAVES` (it contributes to the parent's `$fields` output list and emits no per-field fetcher method). The sealed-switch arm in `generateTypeSpec` becomes `/* wired inline: env -> env.getSource(); projected via parent $fields */`, mirroring `ConstructorField`. `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` enforces the four-way partition and will catch drift.
 
 **Pipeline test.** SDL with a `@table` parent and a plain-object nesting child classifies as a `NestingField` whose `columnFields` and `nestingFields` are populated against the parent table; the generated fetchers class contains no method for the nesting field; the parent's `$fields` method contains a nested switch keyed by the nesting field's name.
 
