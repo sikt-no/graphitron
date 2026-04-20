@@ -47,13 +47,13 @@ record NestingField(
 
 `columnFields` are nested scalars resolved to columns on the parent's table. `nestingFields` are recursive inner nesting children (multi-level). Both are fully populated at classification time.
 
-**Classifier.** In `FieldBuilder.classifyObjectReturnChildField`, when the `NestingField` arm fires, walk the nested `GraphQLObjectType`'s field definitions. For each:
+**Classifier.** In `FieldBuilder.classifyObjectReturnChildField`, when the `NestingField` arm fires, walk the nested `GraphQLObjectType`'s field definitions. All error outcomes produce a `GraphitronField.UnclassifiedField` return value with the nested field's location (the existing output-side convention used by the surrounding `classifyObjectReturnChildField` arms). For each field:
 
-- Scalar field → resolve to a `ColumnRef` on the parent's `TableRef` via the existing naming convention (camelCase → `UPPER_SNAKE_CASE`). Unmatched names → classification error with the nested field's location. Directives on the nested field → classification error.
+- Scalar field → resolve to a `ColumnRef` on the parent's `TableRef` via the existing naming convention (camelCase → `UPPER_SNAKE_CASE`). Unmatched names → `UnclassifiedField`. Directives on the nested field → `UnclassifiedField`.
 - Object-type field that is itself a plain object (no `@table`, no `@record`) → recurse, producing a nested `NestingField` whose `returnType.table()` is still the outermost parent's table.
-- Anything else (another `@table` type, a `@record` type, an interface, a union, a list) → classification error naming the unsupported shape.
+- Anything else (another `@table` type, a `@record` type, an interface, a union, a list) → `UnclassifiedField` naming the unsupported shape.
 
-Cycle guard: GraphQL schemas can express object-type cycles (`type A { b: B }` + `type B { a: A }`), and this classifier walks the nested type's fields eagerly. Track visited type names on the way down and produce a classification error on self-reference. No existing precedent in the rewrite — this is the first eager type walk of a non-`GraphitronType` object.
+Cycle guard: GraphQL schemas can express object-type cycles (`type A { b: B }` + `type B { a: A }`), and this classifier walks the nested type's fields eagerly. Track visited type names on the way down and produce an `UnclassifiedField` on self-reference. Mirror the input-side precedent in `TypeBuilder.buildInputField` (`graphitron-rewrite/.../TypeBuilder.java:567–625`): thread a `Set<String> expandingTypes` through the recursion and reject with the same shape — "circular type reference detected while expanding '…'".
 
 **Emitter.** In `TypeClassGenerator`, refactor `build$FieldsMethod`'s inner switch-emission into a static helper that takes a depth counter, suffixes the loop variables (`entry0`/`sf0`, `entry1`/`sf1`, …) to avoid Java's block-scoped local-variable shadowing, and recurses into `NestingField` arms:
 
