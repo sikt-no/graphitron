@@ -110,6 +110,15 @@ that revision; another party must sign off.
   capturing any learnings). The overall plan's status tracks what's
   next — if more phases remain, status stays `Approved`; if only the
   just-shipped phase is pending review, status is `Pending Review`.
+- Plans describe *what* to do, not *how many commits* to land it in.
+  Implementation commit structure is the implementer's judgment —
+  split when the seams add review value, keep unified when they
+  don't. A plan that pre-enumerates "C1 / C2 / C3" with commit-bounded
+  scope is prescribing past its usefulness: the natural seams are only
+  visible once the code exists, and locking them in up front forces
+  premature predictions (e.g. writing C1-scope tests against C2-scope
+  expectations). Plans *may* discuss logical units of work where that
+  aids review, but without fixing them to commits.
 - A plan deleted on Done has its file removed outright. Git history
   preserves it; leaving a tombstone file encourages staleness.
 
@@ -157,8 +166,9 @@ iteration:
    already in good shape — signs off (status → Approved). In practice
    most reviews involve at least one revision commit before sign-off.
 3. **Implementer** writes code, updates the plan (remove shipped,
-   keep pending), sets roadmap to `[Pending Review]`. One commit bundling
-   code + plan update.
+   keep pending), sets roadmap to `[Pending Review]`. One or more
+   commits at the implementer's judgment; the last one carries the
+   plan-status + roadmap update.
 4. **Reviewer (not the implementer)** reads the diff and the plan's
    remaining content. If improvements are needed, either commits them
    directly or updates the plan to capture remaining work (roadmap back
