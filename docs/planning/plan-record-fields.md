@@ -1,6 +1,6 @@
 # Record-field emission
 
-> **Status:** Pending Review
+> **Status:** Done — Phase 1
 >
 > Enables `TypeFetcherGenerator` to produce fetcher classes for `@record`-annotated parent types and emit working code for `PropertyField`, `RecordField`, and `RecordTableField`. All six field variants on `@record` parents are currently unreachable — `TypeFetcherGenerator.generate()` filters out `ResultType` parents entirely, so no `*Fetchers` class is produced for them.
 

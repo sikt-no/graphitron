@@ -135,6 +135,14 @@ Extended G5's `TypeClassGenerator.$fields` inline emission to `ChildField.Lookup
 
 Filled in the DataLoader rows-method bodies for `ChildField.SplitTableField` and `ChildField.SplitLookupTableField`. Both were `IMPLEMENTED_LEAVES` with `rowsXxx` methods throwing `UnsupportedOperationException` at runtime; now emit a flat batched SELECT built on G5's `JoinPathEmitter` and Phase 2a's `LookupValuesJoinEmitter.buildChildInputRowsMethod` (for the `@lookupKey` variant), keyed on a VALUES derived table whose leading `__idx__` column drives the DataLoader scatter. Intra-variant stubs (single cardinality, ConditionJoin path, empty `joinPath`) route through `SplitRowsMethodEmitter.unsupportedReason` — the single source of truth shared with `GraphitronSchemaValidator.validateVariantIsImplemented` so build fails at schema-compile time instead of request time. Execution tests assert exact JDBC round-trip counts (2 per batched query vs. N+1 unbatched) and non-identity parent-order scatter alignment.
 
+### Record-field emission — Phase 1 **[Done]** — [plan-record-fields.md](plan-record-fields.md)
+
+`TypeFetcherGenerator` emits `*Fetchers` for `ResultType` parents; `PropertyField`, `RecordField`, `ConstructorField`, and `RecordTableField` (DataLoader-batched) all working with execution tests. Intra-variant stubs (single cardinality, `ConditionJoin`, empty `joinPath`) route through `SplitRowsMethodEmitter.unsupportedReason(RecordTableField)` and surface as build-time errors via `GraphitronSchemaValidator.validateVariantIsImplemented`.
+
+### Record-fields Phase 2 — `RecordLookupTableField` **[Draft]** — [plan-record-lookup-field.md](plan-record-lookup-field.md)
+
+Lift `ChildField.RecordLookupTableField` out of `NOT_IMPLEMENTED_REASONS` by adding a `BatchKey` field (via Phase 1's `deriveBatchKeyForResultType`) and emitting with `SplitRowsMethodEmitter` + `LookupValuesJoinEmitter` + `GeneratorUtils.buildRecordKeyExtraction`. No longer blocked on the `BatchKey.ObjectBased` decision — Phase 1 established `RowKeyed`-for-all-typed-`ResultType` with per-variant accessor dispatch, which `RecordLookupTableField` inherits unchanged.
+
 ### `IdReferenceField` input filter variant **[Draft]** — [plan-id-reference-input-field.md](plan-id-reference-input-field.md)
 
 `[ID!] @reference(path: ...)` filter inputs currently mis-classify as `UnclassifiedType` because the `@field(name:)` value is a method-accessor suffix (`hasTerminIds`), not a column. Add a new `InputField.IdReferenceField` permit classified via directive detection.
@@ -166,12 +174,10 @@ Unplanned items. Pick one, draft a plan, then move to Active.
 **Priority (architecture review, 2026-04-17):**
 
 - **Legacy-vs-rewrite parity matrix** **[Done]** — `docs/parity-matrix.md`.
-- **`BatchKey.ObjectBased` generator path decision** **[Unplanned]** — `ObjectBased` exists in the sealed hierarchy but no generator emits for it. Decide: collapse into `RecordKeyed` (A) vs implement a distinct `selectManyByObjectKeys` (B). Blocks any future `ObjectBased`-emitting classifier.
+- **`BatchKey.ObjectBased` generator path decision** **[Unplanned]** — `ObjectBased` exists in the sealed hierarchy but no generator emits for it. Only produced today by `ServiceCatalog.classifySourcesType` for `@service` `List<Sources>` parameters whose element is a bare class (TableRecord or DTO). Decide: keep and implement a distinct `selectManyByObjectKeys` / `selectOneByObjectKeys` path in `TypeFetcherGenerator` when the first `ServiceTableField` consumer lands (Option B, preferred — `ObjectBased` carries a class name that `RecordKeyed` cannot model), vs. collapse into `RecordKeyed` (Option A, rejected for `@record`-parent paths — Phase 1 resolved those via `RowKeyed`-for-all with per-`ResultType` accessor dispatch). Does not block record-fields Phase 2.
 - **Rebalance test pyramid toward SDL→classified-model→emitted-code pipeline tests** **[Unplanned]** — per-variant structural validator tests (53 classes) dominate the surface; pipeline coverage lives in a single `GraphitronSchemaBuilderTest`. New test investment should go into the classification→emission chain keyed off `graphitron-rewrite-test-fixtures`.
 - **Decompose `FieldBuilder`** **[Unplanned]** — split along the field taxonomy after argument-resolution Phase 2 lands. Blocked on Argument-resolution unification (Active).
 - **Audit custom pagination-arg-name support** **[Unplanned]** — `PaginationSpec` accepts non-default arg names (`pageSize`/`cursor` instead of `first`/`after`), but no test-spec fixture exercises it and no documented public API lets a schema author opt in. Decide: (a) remove the classifier plumbing as dead code + delete the `connectionField_customPaginationArgNames_emittedInFetcher` body-assertion, or (b) document the mechanism and add an execution fixture. Surfaced during the body-substring test rewrite's OD 2; user leaned toward (a) but the investigation is deferred.
-
-- **Record-field emission** **[Pending Review]** — [plan-record-fields.md](plan-record-fields.md). Phase 1 complete: `TypeFetcherGenerator` now emits `*Fetchers` for `ResultType` parents; `PropertyField`, `RecordField`, `ConstructorField`, and `RecordTableField` (DataLoader-batched) all working with execution tests. Phase 2 (`RecordLookupTableField`) blocked on `BatchKey.ObjectBased` decision.
 
 **Generator stubs to complete:**
 
