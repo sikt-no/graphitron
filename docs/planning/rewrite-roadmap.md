@@ -121,7 +121,7 @@ Iterate every sealed root in `model/` and assert every permit has at least one c
 
 ### Argument-resolution unification **[Approved]** — [argument-resolution.md](argument-resolution.md)
 
-Unified `ArgumentRef` classification + projection in the builder; gates `@condition`-on-fields, `InputColumnBinding`, and every future argument category. `FieldBuilder` is ~1350 LOC around the three-pass argument model. Phase 1 (classification + projection) shipped; Phase 2 (generator-side migration) is next and gates six downstream features including the `FieldBuilder` decomposition.
+Unified `ArgumentRef` classification + projection in the builder; gates `@condition`-on-fields, `InputColumnBinding`, and every future argument category. Phase 1 (classification + projection, VALUES+JOIN for `QueryLookupTableField`) and Phase 2 (generator-side migration: 2a inline `LookupTableField`, 2b `Split(Lookup)TableField` DataLoader rows-methods) have shipped. Phase 2c (`RecordLookupTableField`) is tracked under `plan-record-lookup-field.md`. Phase 3 (composite keys via `TableInputArg` + `InputColumnBinding`) is next under this plan; Phase 4 (`@condition` on `INPUT_FIELD_DEFINITION`) deferred until after Phase 3.
 
 ### G5 — Inline `TableField` emission **[Done]** — [plan-g5-inline-tablefield.md](plan-g5-inline-tablefield.md)
 

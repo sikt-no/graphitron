@@ -2,7 +2,7 @@
 
 > **Status:** Approved
 >
-> Foundation (classification + projection) landed on `claude/graphitron-rewrite`. Phase 2 (generator-side migration: inline `TableField`, lookup VALUES+JOIN, composite-key input bindings) is the remaining work and gates six downstream features.
+> Foundation (classification + projection) landed on `claude/graphitron-rewrite`. Phase 1 (VALUES+JOIN for `QueryLookupTableField`) and Phase 2a/2b (inline `LookupTableField`, DataLoader `Split(Lookup)TableField`) have shipped; Phase 2c (`RecordLookupTableField`) is delegated to `plan-record-lookup-field.md`. Phase 3 (composite keys via `TableInputArg` + `InputColumnBinding`) is the remaining generator-side work under this plan.
 
 Plan for unified argument classification in the builder, `@condition` directive support, and lookup-field generation. The foundation (builder-side) is in; the generator-side refactor is the substantial work ahead and is the focus of this plan going forward.
 
@@ -21,10 +21,9 @@ What's live on `claude/graphitron-rewrite` today:
 
 What the generator does *not* yet do:
 
-- Lookup fetchers still read the `GeneratedConditionFilter` entries from `filters()` and delegate to a generated `<Type>Conditions` method (which does the `.in()`/`.eq()` emission).
-- `LookupMapping.columns()` is populated but not read by any generator.
-- `TableInputArg.fieldBindings` is always empty — composite-key input types have no generator path yet.
-- No VALUES + JOIN emission; legacy IN/EQ semantics still govern lookup SQL.
+- `TableInputArg.fieldBindings` is always empty — composite-key input types have no generator path yet (Phase 3).
+- `@condition` on `INPUT_FIELD_DEFINITION` is not yet classified or emitted (Phase 4).
+- `ChildField.RecordLookupTableField` remains in `NOT_IMPLEMENTED_REASONS`; emission is owned by `plan-record-lookup-field.md`.
 
 ---
 
@@ -226,3 +225,6 @@ Structural properties (method names, param types, presence/absence) are the righ
 - 2026-04-18 (late) — Phase 1 design tightening. Blast-radius spike: zero external consumers — single-site change, no parallel deprecation path. Emitter shape: extracted `<fieldName>InputRows(env, table) -> Row[]` helper + thin fetcher body (pure helper is unit-testable; fetcher is composition). Join: USING (VALUES labels emitted to match target column names). Bind: `DSL.val(value, dataType)` — typed `Param<T>` invokes the column's Converter internally, plain JDBC bind, no SQL-level CAST. No extraction restriction on `@lookupKey`. Alias scheme `<fieldName>Input`. Uniform emission for n=1. Decision table extended with seven Phase-1 resolutions.
 - 2026-04-18 (later) — Phase 1 landed. `FieldBuilder.projectFilters` now excludes `isLookupKey` from bodyParams; `LookupValuesJoinEmitter` emits `<fieldName>InputRows(env, table) -> RowN[]` + thin fetcher with USING-join; `TypeConditionsGenerator` skips `LookupField`; validator reads `lookupMapping().columns()` for cardinality. 446 unit tests + 35 execution tests green; `filmById_preservesInputOrder` test proves ordered VALUES+JOIN.
 - 2026-04-18 (later still) — Phase 2 scope clarified post-reconnaissance. Four prerequisites added: G5 (plain inline `TableField` subquery) gates Phase 2a; inline emission lives in `TypeClassGenerator.$fields`, not `TypeFetcherGenerator`; `RecordLookupTableField` has no `BatchKey` in the sealed hierarchy and the model question must be resolved before 2c; test-spec schema needs child-lookup fields + Sakila seed additions. Sub-items re-split: 2a (LookupTableField, requires G5), 2b (SplitLookupTableField), 2c (RecordLookupTableField, blocked on model decision).
+- 2026-04-19 — Phase 2a landed (`aaadb78b`). Inline `ChildField.LookupTableField` emission via `InlineLookupTableFieldEmitter` inside `TypeClassGenerator.$fields`; VALUES + explicit-ON keyset layered onto G5's correlated-subquery shape. `LookupTableField` moved to `PROJECTED_LEAVES`. Classifier rejects `@asConnection` and Single-cardinality + `@lookupKey` as `UnclassifiedField`. Six execution tests via `Film.actors(actor_id:)` junction fixture.
+- 2026-04-19 — Phase 2b landed (`34359b4`). `SplitTableField` and `SplitLookupTableField` rows-method bodies emit a batched SELECT via `JoinPathEmitter` + `LookupValuesJoinEmitter.buildChildInputRowsMethod`, keyed on a VALUES derived table whose leading `__idx__` drives the DataLoader scatter. Intra-variant stubs route through `SplitRowsMethodEmitter.unsupportedReason`, shared with `GraphitronSchemaValidator.validateVariantIsImplemented`. Execution tests assert exact JDBC round-trip counts and non-identity parent-order scatter alignment.
+- 2026-04-20 — Phase 2c delegated. The `BatchKey`-on-`RecordLookupTableField` model question is resolved by record-fields Phase 1's uniform `BatchKey.RowKeyed` for typed `ResultType` parents; execution lives under its own plan (`plan-record-lookup-field.md`). Argres Phase 2 is complete under this plan; Phase 3 (composite keys) is next.
