@@ -259,6 +259,10 @@ public final class SplitRowsMethodEmitter {
         if (stubReason.isPresent()) {
             return buildRuntimeStub(rltf.rowsMethodName(), rltf.batchKey(), rltf.returnType(), stubReason.get());
         }
+        // Rows-method body is identical to SplitLookupTableField's — same BatchKey.RowKeyed +
+        // LookupMapping shape, so buildListMethod handles both. The record-parent divergence
+        // (backing-object accessor vs jOOQ-table-row accessor for key extraction) lives above
+        // this seam, in TypeFetcherGenerator.buildRecordBasedDataFetcher.
         return buildListMethod(
             rltf.name(), rltf.rowsMethodName(), rltf.returnType(),
             rltf.joinPath(), rltf.filters(), rltf.batchKey(),

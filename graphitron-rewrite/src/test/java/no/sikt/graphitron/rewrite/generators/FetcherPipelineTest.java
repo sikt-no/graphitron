@@ -168,6 +168,51 @@ class FetcherPipelineTest {
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("rowsLanguage");
     }
 
+    // ===== @record parent — RecordLookupTableField =====
+    //
+    // Backing class is the real jOOQ FilmRecord from graphitron-rewrite-test-fixtures — a TableRecord
+    // bound to "film", classifying the parent as JooqTableRecordType. This lets parsePath anchor on
+    // the parent table and resolve the two-hop film → film_actor → actor path, matching the shape
+    // the execution tests exercise in graphitron-rewrite-test-spec.
+
+    private static final String RECORD_LOOKUP_TABLE_SDL = """
+            type Actor @table(name: "actor") { actorId: Int @field(name: "actor_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+              actorsByLookup(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
+                {key: "film_actor_film_id_fkey"},
+                {key: "film_actor_actor_id_fkey"}
+              ])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """;
+
+    @Test
+    void recordLookupTableField_onRecordType_hasAsyncDataFetcher() {
+        var fetchers = findSpec("FilmDetailsFetchers", RECORD_LOOKUP_TABLE_SDL);
+        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("actorsByLookup");
+    }
+
+    @Test
+    void recordLookupTableField_onRecordType_asyncDataFetcherReturnsCompletableFutureListRecord() {
+        var fetchers = findSpec("FilmDetailsFetchers", RECORD_LOOKUP_TABLE_SDL);
+        assertThat(method(fetchers, "actorsByLookup").returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void recordLookupTableField_onRecordType_hasRowsMethod() {
+        var fetchers = findSpec("FilmDetailsFetchers", RECORD_LOOKUP_TABLE_SDL);
+        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("rowsActorsByLookup");
+    }
+
+    @Test
+    void recordLookupTableField_onRecordType_hasInputRowsHelper() {
+        // Lookup-input VALUES helper — distinguishes RecordLookupTableField from RecordTableField.
+        var fetchers = findSpec("FilmDetailsFetchers", RECORD_LOOKUP_TABLE_SDL);
+        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("actorsByLookupInputRows");
+    }
+
     // ===== Column fields → wired via ColumnFetcher =====
 
     @Test
