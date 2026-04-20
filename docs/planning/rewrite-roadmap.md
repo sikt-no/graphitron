@@ -2,7 +2,6 @@
 
 This document tracks remaining generator work.
 For the model taxonomy (types, fields, directives, and what they generate), see [Code Generation Triggers](../code-generation-triggers.md).
-For legacy-vs-rewrite feature coverage, see [Parity Matrix](../parity-matrix.md).
 For architectural and technical design principles, see [Rewrite Design Principles](../rewrite-design-principles.md).
 
 ---
@@ -13,31 +12,11 @@ Items with a plan in Draft, Approved, In Progress, or Pending Review. First line
 
 ### Argument-resolution unification **[Pending Review]** — [argument-resolution.md](argument-resolution.md)
 
-Unified `ArgumentRef` classification + projection in the builder; gates `@condition`-on-fields, `InputColumnBinding`, and every future argument category. Phase 1 (classification + projection, VALUES+JOIN for `QueryLookupTableField`), Phase 2 (generator-side migration: 2a inline `LookupTableField`, 2b `Split(Lookup)TableField` DataLoader rows-methods), and Phase 3 (composite keys via `TableInputArg` + `InputColumnBinding` — atomic binding population, 2-segment `LookupColumn.sourcePath`, composite `LookupValuesJoinEmitter` grouping by root arg) have shipped. Phase 2c (`RecordLookupTableField`) is tracked under `plan-record-lookup-field.md`. Phase 4 (`@condition` on `INPUT_FIELD_DEFINITION`) remains deferred.
-
-### G5 — Inline `TableField` emission **[Done]** — [plan-g5-inline-tablefield.md](plan-g5-inline-tablefield.md)
-
-`TableField` emission lives in `TypeClassGenerator.$fields` as a uniform `DSL.multiset` correlated subquery; `TableField` moved to the new `PROJECTED_LEAVES` partition set. C1–C4 landed; seven execution tests cover single-hop / multi-hop / list / self-ref / optional-parent cases. Three post-approval refinements (uniform multiset, runtime alias prefix, cardinality-driven FK direction) documented in the plan history. `ConditionJoin` runtime stub, `FkJoin.alias` dead storage, and `ArgCallEmitter` first-arg hardcode captured as classification-vocabulary followups items 5/6/7. Unblocks argres Phase 2a.
-
-### argres Phase 2a — Inline `LookupTableField` emission **[Done]** — shipped at `aaadb78b`
-
-Extended G5's `TypeClassGenerator.$fields` inline emission to `ChildField.LookupTableField`. VALUES + explicit-ON keyset layered onto the correlated-subquery shape (USING failed under junction-table column collisions on Postgres). `LookupTableField` moved to `PROJECTED_LEAVES`. Classifier rejects `@asConnection` and Single-cardinality + `@lookupKey` as `UnclassifiedField`. Six execution tests cover matching-actors, input-order preservation, FK filtering, empty input, null input, and across-multiple-parents per-film filtering. `SplitLookupTableField` (Phase 2b) and `RecordLookupTableField` (Phase 2c, blocked on `BatchKey` model question) remain out of scope.
+Unified `ArgumentRef` classification + projection in the builder; gates `@condition`-on-fields, `InputColumnBinding`, and every future argument category. Phase 1 (classification + projection, VALUES+JOIN for `QueryLookupTableField`), Phase 2 (generator-side migration: 2a inline `LookupTableField`, 2b `Split(Lookup)TableField` DataLoader rows-methods, 2c `RecordLookupTableField`), and Phase 3 (composite keys via `TableInputArg` + `InputColumnBinding` — atomic binding population, 2-segment `LookupColumn.sourcePath`, composite `LookupValuesJoinEmitter` grouping by root arg) have all shipped. Phase 4 (`@condition` on `INPUT_FIELD_DEFINITION`) remains deferred.
 
 ### `BatchKey.ObjectBased` removal **[Draft]** — [plan-batchkey-remove-objectbased.md](plan-batchkey-remove-objectbased.md)
 
 Collapse `BatchKey` to two variants (`RowKeyed`, `RecordKeyed`). The only remaining producer of `ObjectBased` is `ServiceCatalog.classifySourcesType` — a DTO parent handing a `List<Dto>` to an `@service` child. Split that arm: `TableRecord<?>` element types classify as `RowKeyed` from the parent table's PK (the record carries the columns); non-`TableRecord` element types return `Optional.empty()` → `UnclassifiedField` at validate time, with a message pointing at the future lifter directive. `GeneratorUtils` `ObjectBased` switch arms and the `validateServiceTableField` escape-hatch are deleted. Migration note: DTOs flowing through any DataLoader path must be backed by a jOOQ `TableRecord<>` with populated key columns until the lifter directive ships. Record-fields Phase 1/2 are not touched — they already use `RowKeyed` + FK metadata.
-
-### argres Phase 2b — Split(Lookup)TableField DataLoader rows-method emission **[Done]** — shipped at `34359b4`
-
-Filled in the DataLoader rows-method bodies for `ChildField.SplitTableField` and `ChildField.SplitLookupTableField`. Both were `IMPLEMENTED_LEAVES` with `rowsXxx` methods throwing `UnsupportedOperationException` at runtime; now emit a flat batched SELECT built on G5's `JoinPathEmitter` and Phase 2a's `LookupValuesJoinEmitter.buildChildInputRowsMethod` (for the `@lookupKey` variant), keyed on a VALUES derived table whose leading `__idx__` column drives the DataLoader scatter. Intra-variant stubs (single cardinality, ConditionJoin path, empty `joinPath`) route through `SplitRowsMethodEmitter.unsupportedReason` — the single source of truth shared with `GraphitronSchemaValidator.validateVariantIsImplemented` so build fails at schema-compile time instead of request time. Execution tests assert exact JDBC round-trip counts (2 per batched query vs. N+1 unbatched) and non-identity parent-order scatter alignment.
-
-### Record-field emission — Phase 1 **[Done]** — [plan-record-fields.md](plan-record-fields.md)
-
-`TypeFetcherGenerator` emits `*Fetchers` for `ResultType` parents; `PropertyField`, `RecordField`, `ConstructorField`, and `RecordTableField` (DataLoader-batched) all working with execution tests. Intra-variant stubs (single cardinality, `ConditionJoin`, empty `joinPath`) route through `SplitRowsMethodEmitter.unsupportedReason(RecordTableField)` and surface as build-time errors via `GraphitronSchemaValidator.validateVariantIsImplemented`.
-
-### Record-fields Phase 2 — `RecordLookupTableField` **[Done]** — [plan-record-lookup-field.md](plan-record-lookup-field.md)
-
-Lifted `ChildField.RecordLookupTableField` out of `NOT_IMPLEMENTED_REASONS` by adding a `BatchKey` field (via Phase 1's `deriveBatchKeyForResultType`) and emitting with `SplitRowsMethodEmitter` + `LookupValuesJoinEmitter` + `GeneratorUtils.buildRecordKeyExtraction`. `buildRecordTableDataFetcher` generalised to `buildRecordBasedDataFetcher<T extends TableTargetField & BatchKeyField>` — `RecordTableField` and `RecordLookupTableField` share the fetcher body. Five execution tests cover single-parent filtering, FK-chain exclusion, multi-parent DataLoader batching (2 round-trips for 5 parents), empty `@lookupKey` short-circuit, and null `@lookupKey` short-circuit. Collateral fix in `FieldBuilder.classifyChildFieldOnResultType`: pass the record-backing SQL table name to `parsePath` so multi-hop paths through junction tables (e.g. `film → film_actor → actor`) don't flip hop 1's FK-direction inference.
 
 ### Service-backed and method-backed root fetchers **[Draft]** — [plan-service-root-fetchers.md](plan-service-root-fetchers.md)
 
@@ -55,10 +34,6 @@ New `@facet` directive for filter-input fields. `MakeConnections` synthesizes a 
 
 Five independent doc/generator-behaviour cleanups around the "source context vs. target type" split. None is a release blocker; they can land in any order. Item 2 (build warning channel) is reusable by the `@table`+`@record` bug fix and by the stubbed-variant validator's "warn instead of fail" configurations. Item 5 (lookup-condition method signature docs + execution test) gates G5/G6 execution tests.
 
-### Docs-as-index stabilization **[Approved — deferred]** — [plan-docs-as-index-into-tests.md](plan-docs-as-index-into-tests.md)
-
-Steps 1-2 shipped on `claude/review-docs-plan-adYJW`. Step 5 superseded by `GeneratorCoverageTest` + `VariantCoverageTest` (the variant-coverage meta-test). Steps 3-4 (re-section renames + doc rewire) deferred until the sealed hierarchy stabilises; picking them up mid-churn means constant rework.
-
 ### Platform-id as synthesized NodeId **[In Progress]** — [legacy-platform-id.md](legacy-platform-id.md)
 
 Pivot from treating platform-id as a separate sum-type variant (`PlatformIdField`) to synthesizing `NodeType` classification from `__NODE_TYPE_ID` + `__NODE_KEY_COLUMNS` constants emitted by a coordinated KjerneJooqGenerator release. All downstream paths (projection, filter, mutation binding) flow through the existing `@nodeId` generator machinery — `NodeIdStrategy.createId` / `hasId` / `hasIds` / `setId`. Unifies what would have been two parallel classification-and-emission paths into one; deletes `InputField.PlatformIdField` / `ChildField.PlatformIdField` after migration. Co-lands the `ChildField.NodeIdField` emission currently stubbed in `NOT_IMPLEMENTED_REASONS`. Mutation binding still blocked on argres Phase 3 for `InputColumnBinding` population. Supersedes the previous four-item plan (prior Items 1-2 shipped as the parallel-variant approach and will be undone in the final commit of this plan).
@@ -73,11 +48,11 @@ Unplanned items. Pick one, draft a plan, then move to Active.
 
 **Priority (architecture review, 2026-04-17):**
 
-- **Legacy-vs-rewrite parity matrix** **[Done]** — `docs/parity-matrix.md`.
 - **`BatchKey` lifter directive** **[Unplanned]** — mechanism (directive, interface, or fluent builder — TBD) for a schema author to supply a DTO → `RowN`/`RecordN` conversion, enabling DataLoader batching on result-type parents. Feeds the existing column-keyed path — `BatchKey` stays at two variants. Blocks nothing today; the DTO-parent service-child shape is rejected at validate time until this lands. See `plan-batchkey-remove-objectbased.md` for the rejection rule.
 - **Rebalance test pyramid toward SDL→classified-model→emitted-code pipeline tests** **[Unplanned]** — per-variant structural validator tests (53 classes) dominate the surface; pipeline coverage lives in a single `GraphitronSchemaBuilderTest`. New test investment should go into the classification→emission chain keyed off `graphitron-rewrite-test-fixtures`.
 - **Decompose `FieldBuilder`** **[Unplanned]** — split along the field taxonomy after argument-resolution Phase 2 lands. Blocked on Argument-resolution unification (Active). Architecture health check 2026-04-20 sized the pressure: 1,750 lines, 218 rejection-gate branches, concentrated in argument classification (`classifyArguments` → `projectForFilter`/`projectForLookup` duplicate decision logic, and each new argument category multiplies the gates). Proposed split: per-branch classifiers (`QueryFieldBuilder`, `MutationFieldBuilder`, `ChildFieldBuilder`) plus a shared argument-classification module once argres Phase 3 stabilizes the `ArgumentRef` sub-taxonomy so the seams don't shift mid-decomposition.
 - **Audit custom pagination-arg-name support** **[Unplanned]** — `PaginationSpec` accepts non-default arg names (`pageSize`/`cursor` instead of `first`/`after`), but no test-spec fixture exercises it and no documented public API lets a schema author opt in. Decide: (a) remove the classifier plumbing as dead code + delete the `connectionField_customPaginationArgNames_emittedInFetcher` body-assertion, or (b) document the mechanism and add an execution fixture. Surfaced during the body-substring test rewrite's OD 2; user leaned toward (a) but the investigation is deferred.
+- **Docs-as-index stabilization** **[Approved — deferred]** — [plan-docs-as-index-into-tests.md](plan-docs-as-index-into-tests.md). Steps 1-2 shipped on `claude/review-docs-plan-adYJW`. Step 5 superseded by `GeneratorCoverageTest` + `VariantCoverageTest`. Steps 3-4 (re-section renames + doc rewire) deferred until the sealed hierarchy stabilises.
 
 **Priority (validator audit against production schema, 2026-04-20):**
 
@@ -93,10 +68,8 @@ Three legacy-parity gaps surfaced by running the rewrite validator against a rea
 
 **Generator stubs to complete:**
 
-Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` (25 entries); the stubbed-variant validator (Done at `9ba498bc` + `7cf568f4`) fails the build by default when a schema lands on one. Priority numbers `#1`–`#4` are referenced by the reason strings emitted from the generator and must stay stable. Items marked **[Tracked]** already have an Active plan; the rest need drafts.
+Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`; the stubbed-variant validator (Done at `9ba498bc` + `7cf568f4`) fails the build by default when a schema lands on one. Priority numbers `#3`–`#4` are referenced by the reason strings emitted from the generator and must stay stable. Items marked **[Tracked]** already have an Active plan; the rest need drafts.
 
-1. **`TableField` / `LookupTableField` inline-subquery methods** **[Tracked]** — G5 **[Done]** + argres Phase 2a **[Done]**. Leaves moved to `PROJECTED_LEAVES`; emission happens through `TypeClassGenerator.$fields`. Note: `QueryField.QueryTableMethodTableField`'s reason string still references `#1` but that leaf is actually covered by #7 below — a drift to fix when editing the generator next.
-2. **`SplitTableField` / `SplitLookupTableField` DataLoader rows-method bodies** **[Tracked]** — argres Phase 2b **[Done]**.
 3. **Interface / union fetchers** — `QueryField.QueryInterfaceField`, `QueryField.QueryTableInterfaceField`, `QueryField.QueryUnionField`, `ChildField.InterfaceField`, `ChildField.UnionField`, `ChildField.TableInterfaceField`. Shared abstraction around `__typename` dispatch + per-implementor projection.
 4. **Mutation bodies** — `MutationField.MutationInsertTableField`, `MutationUpdateTableField`, `MutationDeleteTableField`, `MutationUpsertTableField`, `MutationServiceTableField`, `MutationServiceRecordField`. INSERT / UPDATE / DELETE / UPSERT + service-method mutations.
 5. **Apollo Federation `_entities` resolver** — `QueryField.QueryEntityField`. Entity reference resolver dispatching by `__typename` to the registered representation fetchers. Superseded by "Apollo Federation via federation-jvm transform" in the priority list above; the transform injects `_entities` and `_service` together and this leaf is deleted after that lands.
@@ -110,7 +83,6 @@ Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` (25 entries); the
    - `ChildField.TableMethodField` — child `@tableMethod`: user supplies a pre-filtered `Table<?>`.
    - `ChildField.ServiceRecordField` — `@service` child returning a non-table value (record/scalar).
    - `ChildField.MultitableReferenceField` — `@reference` targeting multiple possible tables (polymorphic).
-9. **`ChildField.RecordLookupTableField`** **[Pending Review]** — Record-fields Phase 2 in Active.
 
 **Miscellaneous:**
 
@@ -127,8 +99,12 @@ Short history — landings worth remembering when picking up related work.
 - `3357928` — Sealed-switch generator dispatch. `TypeFetcherGenerator.generateTypeSpec` became an exhaustive sealed `switch` over all `GraphitronField` leaves; stubbed leaves route through `stub(f)` backed by `NOT_IMPLEMENTED_REASONS`.
 - `15f9f61e` — Variant-coverage Phase 1. `IMPLEMENTED_LEAVES` + `NOT_DISPATCHED_LEAVES` sibling sets; partition invariant enforced by `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`.
 - `1e48c4ee` — Argument-resolution Phase 1. VALUES + JOIN lookup emission for `QueryLookupTableField`.
+- G5 — Inline `TableField` emission. `TypeClassGenerator.$fields` emits uniform `DSL.multiset` correlated subqueries; `TableField` and inline `LookupTableField` moved to `PROJECTED_LEAVES`. Seven execution tests. See [plan-g5-inline-tablefield.md](planning/plan-g5-inline-tablefield.md).
 - `aaadb78b` — Argument-resolution Phase 2a. Inline `ChildField.LookupTableField` emission via `InlineLookupTableFieldEmitter`; VALUES + explicit-ON keyset layered onto G5's correlated-subquery shape. `LookupTableField` moved to `PROJECTED_LEAVES`. Classifier rejects `@asConnection` and Single-cardinality on inline `@lookupKey`. Co-lands `LookupValuesJoinEmitter.buildChildInputRowsMethod` (SelectedField-based arg extraction). Six execution tests via `Film.actors(actor_id:)` junction fixture.
 - `7417f53` — Body-substring test rewrite. `TypeSpecAssertions` helper (`hasFieldsArm`, `wiringFor(field) → DataFetcherKind`, `hasNoDataFetchers`) + 28-site migration across 6 test files. 28 → 3 intentionally-marked sites, each justified inline. C3 (lint gate) deferred per OD 3. Follow-up (post-Done): `filmsConnection_rejectsFirstAndLastTogether` execution test landed, deleting the Relay-validation kept-with-marker; remaining three markers are `queryLookupField_idListKey_bindsViaColumnDataTypeInInputRowsHelper`, `connectionField_customPaginationArgNames_emittedInFetcher`, `connectionField_withOrderByArg_extraFieldsComeFromOrderingResult`. CLAUDE.md ban now matches test-file reality.
+- `34359b4` — Argument-resolution Phase 2b. DataLoader rows-method bodies for `SplitTableField` and `SplitLookupTableField`; VALUES derived table with `__idx__` scatter column. Execution tests assert exact JDBC round-trip counts vs. N+1.
+- Record-fields Phase 1. `TypeFetcherGenerator` emits `*Fetchers` for `ResultType` parents; `PropertyField`, `RecordField`, `ConstructorField`, and `RecordTableField` all working with execution tests. See [plan-record-fields.md](planning/plan-record-fields.md).
+- Record-fields Phase 2. `RecordLookupTableField` lifted out of `NOT_IMPLEMENTED_REASONS`; `BatchKey` added via `deriveBatchKeyForResultType`; `buildRecordBasedDataFetcher<T>` generalised to serve both `RecordTableField` and `RecordLookupTableField`. Five execution tests. See [plan-record-lookup-field.md](planning/plan-record-lookup-field.md).
 - `9ba498bc` + `7cf568f4` — Stubbed-variant validator. `GraphitronSchemaValidator.validateVariantIsImplemented` reads `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` and appends a classification error when a field's variant is stubbed. `ValidateMojo` fails the build on rewrite validation errors by default (`-Dgraphitron.failOnRewriteValidationError=false` escape hatch). `FieldValidationTestHelper.stubbedError` lock-steps tests to production reason strings. `StubbedVariantPipelineTest` regression covers SDL → classifier → validator end-to-end. Closes the "schema validates but generated fetcher throws at request time" loop.
 - `@table` + `@record` input-type fix. `@record` dominates `@table` on input types; classifier routes through `buildNonTableInputType` and emits a `BuildWarning` naming the shadowed directive. Introduces the reusable `BuildWarning` / `BuildContext.warnings()` / `GraphitronSchema.warnings()` channel surfaced by the mojos — consumed by classification-vocabulary item 2.
 - `d33ace9` — Variant-coverage meta-test Phase 2. `ClassificationCase` interface + `VariantCoverageTest.everySealedLeafHasAClassificationCase` retrofit 26 classification enums in `GraphitronSchemaBuilderTest` with machine-readable `variants()` sets (plus five new enum constants for previously-uncovered leaves: `NodeType`, `RootType`, `TableInterfaceType`, `UnionType`, `ChildField.ConstructorField`). `NO_CASE_REQUIRED` allowlist carries four entries (two `PlatformIdField` leaves scheduled for deletion; two `JooqRecord` types without a non-`TableRecord` fixture). Phase 3 (narrow-component coverage — `BatchKey`, `ParamSource`, `CallSiteExtraction`, …) deferred until concrete demand; file a new plan then.
@@ -145,9 +121,7 @@ G6 covers four categories of DataLoader-backed field. Before implementing any ca
 | **`LookupQueryField`** (root lookup) — now live via argres Phase 1 | No — synchronous | Derived target only | Blocked (lookup invariant) | Never — result count = M exactly |
 | **Table-mapped `LookupTableField`** (`@splitQuery` + `@lookupKey`, table-mapped parent) | No — correlated subquery | Derived target + correlated parent join | Blocked | Never |
 | **Result-mapped `TableField`** (`@splitQuery`, no `@lookupKey`) | Yes | Derived source only | Allowed | Allowed |
-| **Result-mapped `LookupTableField`** (`@splitQuery` + `@lookupKey`, result-mapped parent) — aspirational row | Yes | Both | Blocked | Never — result count = N × M |
-
-**Gap in the last row.** The sealed record `ChildField.RecordLookupTableField` today has no `BatchKey` field (unlike `SplitLookupTableField`), so the table's "DataLoader: Yes" entry is aspirational. Before implementing this category, resolve: (a) add `BatchKey` to `RecordLookupTableField`, (b) batch via a different mechanism derived from the parent result, or (c) declare `RecordLookupTableField` synchronous and move this row out of the DataLoader table. See [argres Phase 2c](argument-resolution.md#phase-2--child-field-lookup-generators-g5g6).
+| **Result-mapped `LookupTableField`** (`@splitQuery` + `@lookupKey`, result-mapped parent) | Yes | Both | Blocked | Never — result count = N × M |
 
 ---
 
@@ -160,16 +134,6 @@ G6 covers four categories of DataLoader-backed field. Before implementing any ca
 **Note:** This gap is about the `@condition` directive on *fields* (WHERE predicate). It is distinct from condition joins in `@reference` paths — `{condition: {className, method}}` in a `path:` element — which are fully resolved by the builder into `ConditionJoin` steps.
 
 **Fix**: add `@condition` directive reading to `FieldBuilder.resolveFilters()`. `ConditionFilter` now implements `MethodRef` directly, so the builder constructs it with `(className, methodName, params)` and `callParams()` is derived automatically.
-
-### Validator cannot detect generator stubs
-
-`GraphitronSchemaValidator` reports classification errors (`UnclassifiedType`, `UnclassifiedField`, structural-invariant failures) but has no visibility into which sealed-variant branches of `TypeFetcherGenerator` are implemented. A schema that validates successfully can still emit a Fetchers class whose methods throw `UnsupportedOperationException` at request time.
-
-Addressed by the Stubbed-variant validator plan (Done at `9ba498bc` + `7cf568f4`). The validator consumes `NOT_IMPLEMENTED_REASONS.keySet()` to reject stubbed-branch schemas at build time; `ValidateMojo` fails the build by default. This closes the loop on the "problems caught at build time" principle from [rewrite-design-principles.md](../rewrite-design-principles.md).
-
-### Legacy-vs-rewrite parity is undocumented
-
-Addressed by `docs/parity-matrix.md`.
 
 ---
 

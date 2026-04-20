@@ -223,12 +223,6 @@ Phase 2 of record-fields lands — no remaining hierarchy-level blocker.
 - Delete any remaining *"`ObjectBased` batch loading is unimplemented"* Known Gap if
   still present.
 
-#### `docs/parity-matrix.md`
-
-Audit for any mention of DTO-parent DataLoader batching as a legacy feature. If found,
-flag as "intentionally not ported — use `TableRecord<>` DTO or wait for lifter
-directive".
-
 ### Success criteria
 
 - [ ] Roadmap reads cleanly; no dangling references to `ObjectBased`.
