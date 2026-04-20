@@ -58,11 +58,12 @@ no way to discover it was a no-op.
   `@splitQuery`. Assert (a) classification still succeeds, (b) a warning is reported through
   the new channel, (c) the field variant is still `RecordTableField` / `RecordLookupTableField`.
 
-**Reusability.** The warnings channel will also serve P2 #3 ("validator asks can-this-generate")
-if we want `NOT_IMPLEMENTED_REASONS` hits to be warnings rather than errors in some
-configurations. It is also a prerequisite of the `@table + @record` input-type fix (see
-[bug-record-input-table-validation.md](bug-record-input-table-validation.md)) — the channel
-should be designed once to serve all three callers, whichever lands first.
+**Reusability.** The warnings channel landed with the `@table + @record` input-type fix —
+warnings flow through `BuildContext.addWarning(BuildWarning)` and surface via
+`GraphitronSchema.warnings()` to `GraphQLRewriteGenerator` / `ValidateMojo`. This item
+adds a second caller on the same channel. It will also serve P2 #3 ("validator asks
+can-this-generate") if we want `NOT_IMPLEMENTED_REASONS` hits to be warnings rather than
+errors in some configurations.
 
 ---
 
