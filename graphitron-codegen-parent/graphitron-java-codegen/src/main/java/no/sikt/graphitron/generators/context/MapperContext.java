@@ -10,14 +10,13 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.Nullable;
+
 import java.util.Optional;
-import org.jooq.Field;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.extractKeyAsTableRecord;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyTableRecordTypeName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asRecordName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.namedIteratorPrefixIf;
@@ -100,7 +99,9 @@ public class MapperContext {
         this.isValidation = previousContext.isValidation;
         this.createsDataFetchers = previousContext.createsDataFetchers;
         this.target = target;
-        this.targetType = (RecordObjectDefinition<?, ?>)schema.getRecordType(target);
+        this.targetType = (RecordObjectDefinition<?, ?>) Optional.ofNullable(schema.getRecordType(target))
+                .filter(it -> it instanceof RecordObjectDefinition<?, ?>)
+                .orElse(null);
 
         pastFieldOverrideExists = previousContext.pastFieldOverrideExists || (previousContext.target != null && previousContext.target.hasSetFieldOverride());
         targetIsType = targetType != null;
