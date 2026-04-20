@@ -1471,7 +1471,13 @@ class FieldBuilder {
         String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
             ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
-        var objectPath = ctx.parsePath(fieldDef, name, null);
+        // Typed @record parents backed by a jOOQ TableRecord anchor the path's starting table,
+        // which is how parsePath validates FK direction on each hop. Without it, multi-hop paths
+        // through junction tables (e.g. film → film_actor → actor) flip the first hop's traversal
+        // direction and spuriously fail to resolve.
+        String parentSqlTableName = parentResultType instanceof GraphitronType.JooqTableRecordType jtr && jtr.table() != null
+            ? jtr.table().tableName() : null;
+        var objectPath = ctx.parsePath(fieldDef, name, parentSqlTableName);
         if (objectPath.hasError()) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, objectPath.errorMessage());
         }

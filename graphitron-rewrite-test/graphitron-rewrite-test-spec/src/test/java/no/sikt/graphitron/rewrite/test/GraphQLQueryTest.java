@@ -847,4 +847,82 @@ class GraphQLQueryTest {
                 "ACADEMY DINOSAUR", "ACE GOLDFINGER", "ADAPTATION HOLES",
                 "AFFAIR PREJUDICE", "AGENT TRUMAN");
     }
+
+    // ===== record-fields Phase 2: RecordLookupTableField — @record parent + @splitQuery + @lookupKey =====
+
+    @Test
+    void recordLookupTableField_singleFilm_returnsFilteredActors() {
+        // FilmDetails.actorsByLookup: RecordLookupTableField — DataLoader-batched lookup keyed by
+        // the Film record's film_id, narrowed by the caller's actor_id list via VALUES-join.
+        // Film 1 (ACADEMY DINOSAUR) cast: PENELOPE (1), NICK (2).
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { filmDetails { actorsByLookup(actor_id: [1, 2]) { actorId firstName } } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        var details = (Map<String, Object>) films.get(0).get("filmDetails");
+        List<Map<String, Object>> actors = (List<Map<String, Object>>) details.get("actorsByLookup");
+        assertThat(actors).extracting(a -> a.get("firstName"))
+            .containsExactlyInAnyOrder("PENELOPE", "NICK");
+    }
+
+    @Test
+    void recordLookupTableField_fkFilter_excludesActorsNotInFilm() {
+        // actor_id: [1, 3] on Film 1 → actor 3 (ED) is not in film 1's cast; FK chain drops him.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { filmDetails { actorsByLookup(actor_id: [1, 3]) { firstName } } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        var details = (Map<String, Object>) films.get(0).get("filmDetails");
+        List<Map<String, Object>> actors = (List<Map<String, Object>>) details.get("actorsByLookup");
+        assertThat(actors).extracting(a -> a.get("firstName")).containsExactly("PENELOPE");
+    }
+
+    @Test
+    void recordLookupTableField_multipleParents_batchesIntoOneRoundTrip() {
+        // 5 films + 1 batched RecordLookup child = 2 round-trips. Unbatched: 1 + 5 = 6.
+        // Film 2 cast: PENELOPE (1), ED (3). Film 3 cast: PENELOPE (1). actor_id: [1, 3] →
+        // film 1 gets {1}; film 2 gets {1, 3}; film 3 gets {1}.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ films { filmId filmDetails { actorsByLookup(actor_id: [1, 3]) { actorId } } } }");
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+
+        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> (Integer) f.get("filmId"),
+            f -> (List<Map<String, Object>>) ((Map<String, Object>) f.get("filmDetails")).get("actorsByLookup")));
+
+        assertThat(byId.get(1)).extracting(a -> a.get("actorId")).containsExactly(1);
+        assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 3);
+        assertThat(byId.get(3)).extracting(a -> a.get("actorId")).containsExactly(1);
+    }
+
+    @Test
+    void recordLookupTableField_emptyLookupInput_shortCircuitsNoChildQuery() {
+        // Empty @lookupKey → inputRows helper returns new Row[0] → emptyScatter short-circuit.
+        // No child round-trip fires.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ films { filmId filmDetails { actorsByLookup(actor_id: []) { actorId } } } }");
+        assertThat(QUERY_COUNT.get()).isEqualTo(1);
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+
+        assertThat(films).allSatisfy(f -> {
+            var details = (Map<String, Object>) f.get("filmDetails");
+            assertThat((List<?>) details.get("actorsByLookup")).isEmpty();
+        });
+    }
+
+    @Test
+    void recordLookupTableField_nullLookupInput_shortCircuitsNoChildQuery() {
+        // Omitting @lookupKey arg → null → rowCount=0 path → emptyScatter short-circuit.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ films { filmId filmDetails { actorsByLookup { actorId } } } }");
+        assertThat(QUERY_COUNT.get()).isEqualTo(1);
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+
+        assertThat(films).allSatisfy(f -> {
+            var details = (Map<String, Object>) f.get("filmDetails");
+            assertThat((List<?>) details.get("actorsByLookup")).isEmpty();
+        });
+    }
 }
