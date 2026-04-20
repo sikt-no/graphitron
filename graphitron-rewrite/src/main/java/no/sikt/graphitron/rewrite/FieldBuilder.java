@@ -1479,11 +1479,15 @@ class FieldBuilder {
             case ReturnTypeRef.TableBoundReturnType tb -> {
                 var tfc = resolveTableFieldComponents(fieldDef, tb.table(), elementTypeName);
                 if (tfc.error() != null) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
-                if (hasLookupKeyAnywhere(fieldDef)) {
-                    yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                        tfc.lookupMapping());
-                }
                 var batchKey = deriveBatchKeyForResultType(objectPath.elements(), parentResultType);
+                if (hasLookupKeyAnywhere(fieldDef)) {
+                    if (batchKey == null) {
+                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                            "RecordLookupTableField requires a FK join path and a typed backing class for batch key extraction");
+                    }
+                    yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                        batchKey, tfc.lookupMapping());
+                }
                 if (batchKey == null) {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
                         "RecordTableField requires a FK join path and a typed backing class for batch key extraction");

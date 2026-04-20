@@ -100,8 +100,9 @@ public final class SplitRowsMethodEmitter {
      * (signature + body) and is added directly to the enclosing {@code *Fetchers} class.
      *
      * @param bkf  the batched field — must be one of {@link ChildField.SplitTableField},
-     *             {@link ChildField.SplitLookupTableField}, or {@link ChildField.RecordTableField}.
-     *             Other {@link BatchKeyField} leaves throw {@link IllegalArgumentException}.
+     *             {@link ChildField.SplitLookupTableField}, {@link ChildField.RecordTableField},
+     *             or {@link ChildField.RecordLookupTableField}. Other {@link BatchKeyField}
+     *             leaves throw {@link IllegalArgumentException}.
      */
     public static MethodSpec buildRowsMethod(BatchKeyField bkf) {
         if (bkf instanceof ChildField.SplitTableField stf) {
@@ -112,6 +113,9 @@ public final class SplitRowsMethodEmitter {
         }
         if (bkf instanceof ChildField.RecordTableField rtf) {
             return buildForRecordTable(rtf);
+        }
+        if (bkf instanceof ChildField.RecordLookupTableField rltf) {
+            return buildForRecordLookupTable(rltf);
         }
         throw new IllegalArgumentException(
             "SplitRowsMethodEmitter does not handle " + bkf.getClass().getSimpleName());
@@ -242,6 +246,44 @@ public final class SplitRowsMethodEmitter {
         if (rtf.joinPath().isEmpty()) {
             return java.util.Optional.of(
                 "RecordTableField '" + rtf.qualifiedName() + "' requires a @reference path.");
+        }
+        return java.util.Optional.empty();
+    }
+
+    // -----------------------------------------------------------------------
+    // RecordLookupTableField
+    // -----------------------------------------------------------------------
+
+    private static MethodSpec buildForRecordLookupTable(ChildField.RecordLookupTableField rltf) {
+        var stubReason = unsupportedReason(rltf);
+        if (stubReason.isPresent()) {
+            return buildRuntimeStub(rltf.rowsMethodName(), rltf.batchKey(), rltf.returnType(), stubReason.get());
+        }
+        return buildListMethod(
+            rltf.name(), rltf.rowsMethodName(), rltf.returnType(),
+            rltf.joinPath(), rltf.filters(), rltf.batchKey(),
+            rltf.lookupMapping());
+    }
+
+    /**
+     * Split* sibling of {@link #unsupportedReason(ChildField.SplitTableField)}. Same contract:
+     * non-empty reason → field cannot be emitted today; empty → emittable.
+     */
+    public static java.util.Optional<String> unsupportedReason(ChildField.RecordLookupTableField rltf) {
+        boolean isList = rltf.returnType().wrapper().isList();
+        if (!isList) {
+            return java.util.Optional.of(
+                "Single-cardinality RecordLookupTableField on '" + rltf.qualifiedName()
+                + "' not yet supported; list cardinality only.");
+        }
+        if (JoinPathEmitter.hasConditionJoin(rltf.joinPath())) {
+            return java.util.Optional.of(
+                "RecordLookupTableField '" + rltf.qualifiedName() + "' with a condition-join step cannot be "
+                + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
+        }
+        if (rltf.joinPath().isEmpty()) {
+            return java.util.Optional.of(
+                "RecordLookupTableField '" + rltf.qualifiedName() + "' requires a @reference path.");
         }
         return java.util.Optional.empty();
     }

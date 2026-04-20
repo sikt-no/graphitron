@@ -1084,14 +1084,20 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("FilmDetails", "language")).isInstanceOf(RecordTableField.class)),
 
         RECORD_LOOKUP_TABLE_FIELD(
-            "@record parent + @table return type + @lookupKey → RecordLookupTableField",
+            "@record parent (typed POJO) + @table return type + @lookupKey → RecordLookupTableField with populated BatchKey",
             """
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record { language(language_id: ID! @lookupKey): Language }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              language(language_id: ID! @lookupKey): Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
             type Film @table(name: "film") { details: FilmDetails }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("FilmDetails", "language")).isInstanceOf(RecordLookupTableField.class)),
+            schema -> {
+                var f = (RecordLookupTableField) schema.field("FilmDetails", "language");
+                assertThat(f.batchKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed.class);
+                assertThat(((no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed) f.batchKey()).keyColumns()).isNotEmpty();
+            }),
 
         RECORD_FIELD(
             "@record parent + non-table object return type → RecordField",

@@ -309,8 +309,14 @@ public sealed interface ChildField extends GraphitronField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
+        BatchKey batchKey,
         LookupMapping lookupMapping
-    ) implements TableTargetField, LookupField {}
+    ) implements TableTargetField, BatchKeyField, LookupField {
+        @Override
+        public String rowsMethodName() {
+            return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
+        }
+    }
 
     /**
      * @param column the resolved parent-table column when the parent is a

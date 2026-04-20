@@ -30,15 +30,15 @@ class RecordLookupTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         STUBBED_SINGLE("single return — not yet implemented, produces stubbed-variant error",
-            new RecordLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null, EMPTY_LOOKUP),
+            new RecordLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null, null, EMPTY_LOOKUP),
             List.of(stubbedError("Language.film", RecordLookupTableField.class))),
 
         STUBBED_LIST("list return — not yet implemented, produces stubbed-variant error",
-            new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), new OrderBySpec.None(), null, EMPTY_LOOKUP),
+            new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), new OrderBySpec.None(), null, null, EMPTY_LOOKUP),
             List.of(stubbedError("Language.films", RecordLookupTableField.class))),
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field (and stubbed)",
-            new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true)), List.of(), List.of(), new OrderBySpec.None(), null, EMPTY_LOOKUP),
+            new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true)), List.of(), List.of(), new OrderBySpec.None(), null, null, EMPTY_LOOKUP),
             List.of("Field 'Language.films': lookup fields must not return a connection",
                 stubbedError("Language.films", RecordLookupTableField.class)));
 
