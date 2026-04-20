@@ -44,7 +44,7 @@ Rewrite Sikt's externally-owned `KjerneJooqGenerator` so every platform-id table
 
 ### Nesting-field emission **[Draft]** — [plan-nesting-field.md](plan-nesting-field.md)
 
-Lift `ChildField.NestingField` out of `NOT_IMPLEMENTED_REASONS`: wire a source-passthrough data fetcher and recurse into the nested selection set from the parent's `$fields` projection via graphql-java's `DataFetchingFieldSelectionSet` API. Nested scalar fields resolve via default property fetching against the parent's jOOQ record — no classification of the nested child type, no separate fetchers class. First arm of Backlog item #8.
+Lift `ChildField.NestingField` out of `NOT_IMPLEMENTED_REASONS`. Classify the nested type's fields at parse time against the outer parent's table, project them into the parent's `$fields` via a recursive switch, and emit a `TypeRuntimeWiring` per nested type (registered from the outer parent's Fetchers class) so every leaf — scalar, `@field(name:)` remap, and later `@reference`/`@computed`/nested `@table` arms — resolves identically to its top-level counterpart. Default property fetching is rejected because `@field(name:)` remap would silently return the wrong column. First arm of Backlog item #8.
 
 ## Backlog
 
