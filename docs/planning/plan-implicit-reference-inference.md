@@ -47,19 +47,21 @@ if (resolvedElements.isEmpty()
     var fks = catalog.findForeignKeysBetweenTables(startSqlTableName, targetSqlTableName);
     if (fks.size() == 1) {
         resolvedElements.add(synthesizeFkJoin(fks.get(0), startSqlTableName, fieldName));
-    } else if (fks.isEmpty()) {
-        return new ParsedPath(List.of(),
-            "no foreign key found between tables '" + startSqlTableName + "' and '"
-                + targetSqlTableName + "'; add a @reference directive to specify the join path");
     } else {
         return new ParsedPath(List.of(),
-            "multiple foreign keys found between tables '" + startSqlTableName + "' and '"
-                + targetSqlTableName + "'; add a @reference directive to specify the join path");
+            fkCountMessage(startSqlTableName, targetSqlTableName, fks, /*directiveAbsent=*/true));
     }
 }
 ```
 
 Lift the `FkJoin` construction from the `tableName.isPresent()` branch of `parsePathElement` (lines 490-517) into a shared helper `synthesizeFkJoin(ForeignKey, String sourceSqlName, String fieldName)` and call it from both places. The helper resolves source/target `TableRef`s, FK column lists, and the step alias `fieldName + "_0"`. No `whereFilter` — implicit inference doesn't carry a condition.
+
+Also lift the "0 FKs" / "multiple FKs" error string into a shared helper `fkCountMessage(String source, String target, List<ForeignKey> fks, boolean directiveAbsent)` and call it from **both** inference call sites — the new empty-elements branch in `parsePath` and the existing `tableName.isPresent()` branch in `parsePathElement` (lines 496-504). Both are now the same inference by different triggers and should produce identical user-facing errors. The `directiveAbsent` flag only toggles the "; add a @reference directive…" suffix (redundant when the user already wrote `{table: "..."}`):
+
+- `directiveAbsent = true` (new empty-elements branch): append "; add a @reference directive to specify the join path".
+- `directiveAbsent = false` (existing `tableName.isPresent()` branch): omit the suffix; when multiple FKs, keep the existing "— use 'key' to specify which: …" hint that enumerates candidate FK names.
+
+The existing `parsePathElement` call site at line 495 changes from its own inline string-building to a call to `fkCountMessage(...)` with the FK-list parameter so the "use 'key' to specify which: …" enumeration is preserved.
 
 ### 2. Classifier — call-site updates
 
@@ -76,7 +78,7 @@ Update every `parsePath` call to pass a target. Six sites pass the resolved targ
 | `:1675` — `@service` on table parent | ServiceTableField / ServiceRecordField | `null` (service reconnect) |
 | `:1694` — `@externalField` | ComputedField | `tableType.table().tableName()` (same-table → inference returns empty) |
 | `:1708` — `@tableMethod` | TableMethodField | `tableType.table().tableName()` (same-table) |
-| `:1749` — `@nodeId(typeName:)` | NodeIdReferenceField | `targetType.table().tableName()` |
+| `:1749` — `@nodeId(typeName:)` | NodeIdReferenceField | `targetNodeType.table().tableName()` (line 1744 — `NodeType` is a `TableBackedType`; `.table()` is non-null by `NodeType`'s classification contract) |
 | `:1772` — `@reference` scalar | ColumnReferenceField / MultitableReferenceField | `null` (guarded by outer `hasAppliedDirective`; empty-path never fires here) |
 
 **File:** `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/TypeBuilder.java`
@@ -104,7 +106,7 @@ Delete the EMPTY_PATH branch in each of the four `unsupportedReason(...)` method
 - `RecordTableField` — lines 245-249
 - `RecordLookupTableField` — lines 287-291
 
-The CARDINALITY and CONDITION_JOIN branches stay. Post-change, `path.get(0)` in `buildListMethod` (line 343) is guaranteed to be a non-null `FkJoin` by the classifier contract; no defensive check needed.
+The CARDINALITY and CONDITION_JOIN branches stay. Post-change, `path.get(0)` in `buildListMethod` (line 343) is guaranteed to be a non-null `FkJoin` by the classifier contract: empty paths are rejected in `parsePath` (inference failure → `UnclassifiedField`), and `CONDITION_JOIN`-first paths are rejected upstream via `JoinPathEmitter.hasConditionJoin` in the same `unsupportedReason` method. Add a one-line invariant comment where `path.get(0)` is dereferenced so a future refactor that introduces a new `JoinStep` subtype doesn't silently break the cast.
 
 Also delete `FieldBuilder.deriveBatchKeyForResultType`'s `joinPath.isEmpty()` arm (line 1656). Path emptiness at that point would mean the classifier contract was violated; an `IllegalStateException` is more honest than a user-facing `UnclassifiedField` message.
 
@@ -125,7 +127,9 @@ Also delete `FieldBuilder.deriveBatchKeyForResultType`'s `joinPath.isEmpty()` ar
 **Pipeline tests — add new `GraphitronSchemaBuilderTest` cases:**
 
 - `IMPLICIT_REFERENCE_SPLIT_TABLE` — `[Language.films] @splitQuery` (source `language`, target `film`, single FK `film_language_id_fkey`) → `SplitTableField` with one-element `joinPath`.
+- `IMPLICIT_REFERENCE_SPLIT_LOOKUP_TABLE` — same shape with `@lookupKey` → `SplitLookupTableField` with one-element `joinPath`. Coverage parity with the other lookup-capable variant; exercises the EMPTY_PATH deletion in `unsupportedReason(SplitLookupTableField)` through the classifier rather than a fixture swap.
 - `IMPLICIT_REFERENCE_RECORD_TABLE` — same shape but on a `@record` parent producing `RecordTableField`.
+- `IMPLICIT_REFERENCE_RECORD_LOOKUP_TABLE` — same shape with `@lookupKey` on a `@record` parent producing `RecordLookupTableField`. Same parity rationale.
 - `IMPLICIT_REFERENCE_NODE_ID_REFERENCE` — replaces `NodeIdReferenceFieldValidationTest.IMPLICIT_SINGLE_FK` at the pipeline level.
 - `IMPLICIT_REFERENCE_ZERO_FK` — `Film.actors @splitQuery` (no direct FK between `film` and `actor`) → `UnclassifiedField` with "no foreign key found between tables 'film' and 'actor'…".
 - `IMPLICIT_REFERENCE_MULTIPLE_FK` — `Film.languages` (two FKs `film.language_id` and `film.original_language_id` both point at `language`) → `UnclassifiedField` with "multiple foreign keys found…".
