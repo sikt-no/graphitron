@@ -12,8 +12,11 @@ import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator
 import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
+import no.sikt.graphitron.rewrite.model.TableRef;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -83,6 +86,15 @@ public class GraphQLRewriteGenerator {
             .map(e -> new GraphitronWiringClassGenerator.ConnectionWiring(e.getKey(), e.getValue()))
             .toList();
 
+        // Collect one wiring entry per distinct nested object type reached through a NestingField.
+        // SDL iteration order is preserved by the schema's LinkedHashMap — the first parent seen
+        // becomes the representative, and its table is used to resolve nested ColumnField Fs at
+        // generation time. Multi-parent compatibility relies on jOOQ's name-based fallback in
+        // Record.get(Field), so the generation-time choice doesn't constrain runtime sources.
+        var nestedTypeMap = new java.util.LinkedHashMap<String, GraphitronWiringClassGenerator.NestedTypeWiring>();
+        schema.fields().values().forEach(field -> collectNestedTypes(field, nestedTypeMap));
+        var nestedTypeWirings = List.copyOf(nestedTypeMap.values());
+
         write(GraphitronValuesClassGenerator.generate(),          "rewrite");
         write(ColumnFetcherClassGenerator.generate(),             "rewrite");
         write(NodeIdEncoderClassGenerator.generate(),             "rewrite");
@@ -92,7 +104,27 @@ public class GraphQLRewriteGenerator {
         write(TypeClassGenerator.generate(schema),                "rewrite.types");
         write(TypeConditionsGenerator.generate(schema),           "rewrite.types");
         write(fetcherClasses,                                      "rewrite.types");
-        write(List.of(GraphitronWiringClassGenerator.generate(fetcherClassNames, connectionWirings)), "rewrite");
+        write(List.of(GraphitronWiringClassGenerator.generate(fetcherClassNames, connectionWirings, nestedTypeWirings)), "rewrite");
+    }
+
+    /**
+     * Walks one classified field, registering any {@link ChildField.NestingField} it reaches
+     * (recursively through nested children) into {@code out} — first occurrence wins. The nested
+     * type's wiring is attached to its schema type name; deeper nestings reached through the same
+     * outer NestingField contribute their own {@code NestedTypeWiring} entries.
+     */
+    private static void collectNestedTypes(GraphitronField field,
+            java.util.Map<String, GraphitronWiringClassGenerator.NestedTypeWiring> out) {
+        if (!(field instanceof ChildField.NestingField nf)) {
+            return;
+        }
+        var nestedTypeName = nf.returnType().returnTypeName();
+        TableRef parentTable = nf.returnType().table();
+        out.putIfAbsent(nestedTypeName,
+            new GraphitronWiringClassGenerator.NestedTypeWiring(nestedTypeName, nf.nestedFields(), parentTable));
+        for (var nested : nf.nestedFields()) {
+            collectNestedTypes(nested, out);
+        }
     }
 
     private static void write(List<TypeSpec> specs, String subPackage) {

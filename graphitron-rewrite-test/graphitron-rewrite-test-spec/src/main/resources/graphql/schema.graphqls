@@ -95,6 +95,12 @@ type Film @table(name: "film") {
     textRating:  String       @field(name: "TEXT_RATING")
     length:      Int          @field(name: "LENGTH")
     languageId:  Int          @field(name: "LANGUAGE_ID")
+    # NestingField fixture: plain-object summary type nested inside Film. Fields resolve
+    # against the outer Film table via $fields recursion (Film.summary.title → FILM.TITLE).
+    summary:     FilmSummary
+    # NestingField multi-level fixture: FilmInfo carries a further NestingField (meta)
+    # whose own scalars resolve against the same outer Film table.
+    info:        FilmInfo
     # C4 RecordTableField fixture: pass Film record through to FilmDetails (ConstructorField),
     # then batch-load Language via DataLoader from FilmDetails.language (RecordTableField).
     filmDetails: FilmDetails
@@ -117,6 +123,28 @@ type Actor @table(name: "actor") {
     actorId:   Int!    @field(name: "ACTOR_ID")
     firstName: String! @field(name: "FIRST_NAME")
     lastName:  String! @field(name: "LAST_NAME")
+}
+
+# Plain-object nesting type. No @table, no @record. Nested under Film.summary; the
+# classifier resolves each nested scalar against the outer Film table. `originalTitle`
+# exercises @field(name:) remap at nested depth — resolves to FILM.TITLE despite the
+# distinct GraphQL field name.
+type FilmSummary {
+    title:         String @field(name: "TITLE")
+    releaseYear:   Int    @field(name: "RELEASE_YEAR")
+    originalTitle: String @field(name: "TITLE")
+}
+
+# Multi-level plain-object nesting — `info` contains `meta` contains scalars. Every
+# nested scalar resolves against the same outer Film table (nesting is transparent).
+type FilmInfo {
+    releaseYear: Int    @field(name: "RELEASE_YEAR")
+    meta:        FilmMeta
+}
+
+type FilmMeta {
+    title:  String @field(name: "TITLE")
+    length: Int    @field(name: "LENGTH")
 }
 
 # argres Phase 3 composite-key fixture. Each key carries both film_id and actor_id as

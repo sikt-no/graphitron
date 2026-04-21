@@ -972,4 +972,83 @@ class GraphQLQueryTest {
             assertThat((List<?>) details.get("actorsByLookup")).isEmpty();
         });
     }
+
+    // ===== NestingField — plain-object nested types =====
+
+    @Test
+    void nestingField_nestedScalars_returnCorrectValues() {
+        // Film 1 (ACADEMY DINOSAUR) was seeded with release_year 2006.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { summary { title releaseYear } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        var summary = (Map<String, Object>) films.get(0).get("summary");
+        assertThat(summary).containsEntry("title", "ACADEMY DINOSAUR");
+        assertThat(summary).containsEntry("releaseYear", 2006);
+    }
+
+    @Test
+    void nestingField_fieldNameRemap_resolvesToParentColumn() {
+        // FilmSummary.originalTitle @field(name: "TITLE") resolves to FILM.TITLE despite
+        // the distinct GraphQL field name. Locks the @field(name:) remap at nested depth.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { summary { originalTitle } } }");
+        var films = (List<Map<String, Object>>) data.get("filmById");
+        var summary = (Map<String, Object>) films.get(0).get("summary");
+        assertThat(summary).containsEntry("originalTitle", "ACADEMY DINOSAUR");
+    }
+
+    @Test
+    void nestingField_multiLevelNesting_resolvesThroughTransparentNesting() {
+        // Film.info.meta.title + Film.info.meta.length both resolve against the outer
+        // Film table. ACADEMY DINOSAUR / 86 minutes in the seed data.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { info { releaseYear meta { title length } } } }");
+        var films = (List<Map<String, Object>>) data.get("filmById");
+        var info = (Map<String, Object>) films.get(0).get("info");
+        assertThat(info).containsEntry("releaseYear", 2006);
+        var meta = (Map<String, Object>) info.get("meta");
+        assertThat(meta).containsEntry("title", "ACADEMY DINOSAUR");
+        assertThat(meta).containsEntry("length", 86);
+    }
+
+    @Test
+    void nestingField_onlyRequestedColumnsSelected() {
+        // Requesting only summary.title must project FILM.TITLE — not releaseYear —
+        // since $fields is selection-aware. One round-trip; correct value returned.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { summary { title } } }");
+        assertThat(QUERY_COUNT.get()).isEqualTo(1);
+        var films = (List<Map<String, Object>>) data.get("filmById");
+        var summary = (Map<String, Object>) films.get(0).get("summary");
+        assertThat(summary).containsOnlyKeys("title");
+        assertThat(summary).containsEntry("title", "ACADEMY DINOSAUR");
+    }
+
+    @Test
+    void nestingField_outerListOfFilms_nestedResolvesPerRow() {
+        // Requesting summary across the films root list: each row carries its own
+        // FilmSummary projection, including the per-row release_year.
+        Map<String, Object> data = execute("{ films { filmId summary { releaseYear } } }");
+        var films = (List<Map<String, Object>>) data.get("films");
+        assertThat(films).allSatisfy(f -> {
+            var summary = (Map<String, Object>) f.get("summary");
+            assertThat(summary).containsKey("releaseYear");
+            // All seeded films carry release_year 2006
+            assertThat(summary).containsEntry("releaseYear", 2006);
+        });
+    }
+
+    @Test
+    void nestingField_siblingOfTableFields_doesNotDisrupt() {
+        // Nesting field projects via $fields on the same outer row as sibling column
+        // fields; both must come back correctly on the same query.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { filmId title summary { releaseYear } } }");
+        var films = (List<Map<String, Object>>) data.get("filmById");
+        assertThat(films.get(0)).containsEntry("filmId", 1);
+        assertThat(films.get(0)).containsEntry("title", "ACADEMY DINOSAUR");
+        var summary = (Map<String, Object>) films.get(0).get("summary");
+        assertThat(summary).containsEntry("releaseYear", 2006);
+    }
 }

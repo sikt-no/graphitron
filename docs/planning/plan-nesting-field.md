@@ -1,6 +1,6 @@
 # `ChildField.NestingField` emission
 
-> **Status:** Approved
+> **Status:** Pending Review
 >
 > Lift `ChildField.NestingField` out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Classify the nested type's fields at parse time against the outer parent's table, project them into the parent's `$fields` SELECT list via a recursive switch, and emit a per-field `TypeRuntimeWiring` for the nested type so every leaf resolves the same way it does at top level. Supports sharing a nested type across multiple `@table` parents (e.g. reusable value types like `Money`) when columns exist on every parent with matching Java types. First arm of roadmap item #8.
 

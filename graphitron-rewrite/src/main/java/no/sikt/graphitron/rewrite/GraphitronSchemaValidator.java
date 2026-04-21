@@ -2,6 +2,8 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
+import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
@@ -50,6 +52,7 @@ public class GraphitronSchemaValidator {
         var errors = new ArrayList<ValidationError>();
         types.values().forEach(type -> validateType(type, types, errors));
         schema.fields().values().forEach(field -> validateField(field, types, errors));
+        validateNestingParentCompat(schema, errors);
         return List.copyOf(errors);
     }
 
@@ -414,7 +417,137 @@ public class GraphitronSchemaValidator {
     private void validateUnionField(no.sikt.graphitron.rewrite.model.ChildField.UnionField field, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
-    private void validateNestingField(no.sikt.graphitron.rewrite.model.ChildField.NestingField field, List<ValidationError> errors) {}
+    private void validateNestingField(no.sikt.graphitron.rewrite.model.ChildField.NestingField field, List<ValidationError> errors) {
+        // List cardinality has no source-passthrough semantic: one parent Record in, one list value out.
+        if (field.returnType().wrapper() instanceof FieldWrapper.List) {
+            errors.add(new ValidationError(
+                "Field '" + field.qualifiedName() + "': list cardinality on a plain-object nesting field is not supported",
+                field.location()
+            ));
+        }
+        // Stubbed leaves at nested depth escape the top-level validateVariantIsImplemented pass
+        // (they're inside NestingField.nestedFields(), not in schema.fields()). Walk them here —
+        // this is the integration point the emitter's projection helper relies on for unreachability
+        // of its fallthrough arm.
+        walkNestedVariantsForImplementation(field.nestedFields(), errors);
+    }
+
+    private void walkNestedVariantsForImplementation(List<ChildField> fields, List<ValidationError> errors) {
+        for (var f : fields) {
+            if (f instanceof ChildField.NestingField nf) {
+                walkNestedVariantsForImplementation(nf.nestedFields(), errors);
+            } else {
+                validateVariantIsImplemented(f, errors);
+            }
+        }
+    }
+
+    /**
+     * Schema-level parent-compatibility check for shared nesting types. When two or more {@code @table}
+     * parents declare a field of the same plain-object nesting type, each parent independently classifies
+     * its own {@code nestedFields} against its own table. The representative is the first parent in SDL
+     * order; every subsequent parent's {@code nestedFields} must match the representative's shape field
+     * by field — same name, same kind, and for {@link ChildField.ColumnField} the same SQL column name
+     * and Java column class. jOOQ's name-based fallback in {@code Record.get(Field)} relies on this
+     * invariant: a nested-type wiring emitted with the representative parent's typed {@code Field<T>}
+     * must resolve against any parent's {@code Record} without silent mismatch.
+     *
+     * <p>Non-{@link ChildField.ColumnField} leaves reject at nested depth when the nesting type is
+     * shared: their resolution depends on per-parent metadata (join paths, FK counts), which is
+     * per-field. Multi-parent support for those leaves lands with the corresponding roadmap #8 arm.
+     */
+    private void validateNestingParentCompat(GraphitronSchema schema, List<ValidationError> errors) {
+        var grouped = new java.util.LinkedHashMap<String, List<ChildField.NestingField>>();
+        schema.fields().values().forEach(f -> {
+            if (f instanceof ChildField.NestingField nf) {
+                grouped.computeIfAbsent(nf.returnType().returnTypeName(), k -> new ArrayList<>()).add(nf);
+            }
+        });
+        for (var group : grouped.values()) {
+            if (group.size() < 2) {
+                continue;
+            }
+            var rep = group.get(0);
+            for (int i = 1; i < group.size(); i++) {
+                compareNestedFieldsShape(rep, group.get(i), errors);
+            }
+        }
+    }
+
+    private void compareNestedFieldsShape(ChildField.NestingField rep, ChildField.NestingField other,
+                                          List<ValidationError> errors) {
+        var nestedTypeName = rep.returnType().returnTypeName();
+        var repByName = new java.util.LinkedHashMap<String, ChildField>();
+        rep.nestedFields().forEach(f -> repByName.put(f.name(), f));
+        var otherByName = new java.util.LinkedHashMap<String, ChildField>();
+        other.nestedFields().forEach(f -> otherByName.put(f.name(), f));
+
+        for (var entry : repByName.entrySet()) {
+            var name = entry.getKey();
+            var rf = entry.getValue();
+            var of = otherByName.get(name);
+            if (of == null) {
+                errors.add(new ValidationError(
+                    "Nested type '" + nestedTypeName + "' shared across '" + rep.parentTypeName()
+                        + "' and '" + other.parentTypeName() + "': field '" + name
+                        + "' exists on the first but not the second",
+                    other.location()
+                ));
+                continue;
+            }
+            if (!rf.getClass().equals(of.getClass())) {
+                errors.add(new ValidationError(
+                    "Nested type '" + nestedTypeName + "' shared across '" + rep.parentTypeName()
+                        + "' and '" + other.parentTypeName() + "': field '" + name
+                        + "' classifies as " + rf.getClass().getSimpleName() + " on the first but "
+                        + of.getClass().getSimpleName() + " on the second",
+                    other.location()
+                ));
+                continue;
+            }
+            if (rf instanceof ChildField.ColumnField rcf && of instanceof ChildField.ColumnField ocf) {
+                if (!rcf.column().sqlName().equals(ocf.column().sqlName())) {
+                    errors.add(new ValidationError(
+                        "Nested type '" + nestedTypeName + "' shared across '" + rep.parentTypeName()
+                            + "' and '" + other.parentTypeName() + "': field '" + name
+                            + "' resolves to column '" + rcf.column().sqlName() + "' on the first but '"
+                            + ocf.column().sqlName() + "' on the second",
+                        other.location()
+                    ));
+                } else if (!rcf.column().columnClass().equals(ocf.column().columnClass())) {
+                    errors.add(new ValidationError(
+                        "Nested type '" + nestedTypeName + "' shared across '" + rep.parentTypeName()
+                            + "' and '" + other.parentTypeName() + "': field '" + name
+                            + "' has Java type '" + rcf.column().columnClass() + "' on the first but '"
+                            + ocf.column().columnClass() + "' on the second",
+                        other.location()
+                    ));
+                }
+            } else if (!(rf instanceof ChildField.NestingField)) {
+                // Non-column, non-nesting leaves are not yet supported as multi-parent shared nested
+                // fields — their resolution depends on per-parent metadata that this shape check
+                // doesn't inspect. Lands with the corresponding roadmap #8 arm.
+                errors.add(new ValidationError(
+                    "Nested type '" + nestedTypeName + "' shared across '" + rep.parentTypeName()
+                        + "' and '" + other.parentTypeName() + "': field '" + name
+                        + "' classifies as " + rf.getClass().getSimpleName()
+                        + " which is not yet supported across multiple parents — see rewrite-roadmap.md #8",
+                    other.location()
+                ));
+            }
+        }
+        // Report fields present on `other` but not on `rep`.
+        for (var name : otherByName.keySet()) {
+            if (!repByName.containsKey(name)) {
+                errors.add(new ValidationError(
+                    "Nested type '" + nestedTypeName + "' shared across '" + rep.parentTypeName()
+                        + "' and '" + other.parentTypeName() + "': field '" + name
+                        + "' exists on the second but not the first",
+                    other.location()
+                ));
+            }
+        }
+    }
     private void validateConstructorField(no.sikt.graphitron.rewrite.model.ChildField.ConstructorField field, List<ValidationError> errors) {}
     private void validateServiceTableField(no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);

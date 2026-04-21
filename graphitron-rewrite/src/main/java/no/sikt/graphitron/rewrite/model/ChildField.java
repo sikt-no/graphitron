@@ -221,7 +221,8 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType
+        ReturnTypeRef.TableBoundReturnType returnType,
+        List<ChildField> nestedFields
     ) implements ChildField {}
 
     record ConstructorField(

@@ -149,7 +149,8 @@ public class TypeFetcherGenerator {
     public static final Set<Class<? extends GraphitronField>> PROJECTED_LEAVES = Set.of(
         ChildField.TableField.class,
         ChildField.LookupTableField.class,
-        ChildField.NodeIdField.class);
+        ChildField.NodeIdField.class,
+        ChildField.NestingField.class);
 
     /**
      * Maps each unimplemented field variant class to the reason string that the generated stub
@@ -222,8 +223,6 @@ public class TypeFetcherGenerator {
                 "InterfaceField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3"),
             Map.entry(ChildField.UnionField.class,
                 "UnionField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3"),
-            Map.entry(ChildField.NestingField.class,
-                "NestingField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(ChildField.ServiceRecordField.class,
                 "ServiceRecordField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(ChildField.ComputedField.class,
@@ -351,7 +350,7 @@ public class TypeFetcherGenerator {
                 case ChildField.TableMethodField f              -> builder.addMethod(stub(f));
                 case ChildField.InterfaceField f                -> builder.addMethod(stub(f));
                 case ChildField.UnionField f                    -> builder.addMethod(stub(f));
-                case ChildField.NestingField f                  -> builder.addMethod(stub(f));
+                case ChildField.NestingField ignored            -> { /* wired inline via buildWiringEntry (env -> env.getSource()) */ }
                 case ChildField.ConstructorField ignored        -> { /* wired inline: env -> env.getSource() */ }
                 case ChildField.ServiceRecordField f            -> builder.addMethod(stub(f));
                 case ChildField.RecordField ignored             -> { /* wired inline via buildPropertyOrRecordFetcherEntry */ }
@@ -1275,10 +1274,15 @@ public class TypeFetcherGenerator {
      * directly. Property/record fields on {@code @record} parents use backing-object accessors.
      * All other fields use a plain method reference.
      */
-    private static CodeBlock buildWiringEntry(GraphitronField field, String className,
+    static CodeBlock buildWiringEntry(GraphitronField field, String className,
             TableRef parentTable, GraphitronType.ResultType resultType) {
         if (field instanceof ChildField.ConstructorField cf) {
             return CodeBlock.of("\n.dataFetcher($S, env -> env.getSource())", cf.name());
+        }
+        if (field instanceof ChildField.NestingField nf) {
+            // NestingField carries no data on its own — its nested fields read from the same
+            // parent Record. Pass the source through so the nested type's data fetchers see it.
+            return CodeBlock.of("\n.dataFetcher($S, env -> env.getSource())", nf.name());
         }
         if (field instanceof ChildField.PropertyField pf && resultType != null) {
             return buildPropertyOrRecordFetcherEntry(pf.name(), pf.columnName(), pf.column(), resultType);

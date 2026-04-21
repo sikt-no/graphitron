@@ -18,6 +18,7 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.model.ChildField.ConstructorField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
@@ -77,6 +78,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -223,7 +225,7 @@ class FieldBuilder {
      * ({@code TableInterfaceField}, {@code InterfaceField}, {@code UnionField}, {@code ServiceField},
      * {@code ComputedField}) are added in P3.
      */
-    private GraphitronField classifyObjectReturnChildField(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType parentTableType) {
+    private GraphitronField classifyObjectReturnChildField(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType parentTableType, Set<String> expandingTypes) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
         String rawTypeName = baseTypeName(fieldDef);
@@ -310,11 +312,40 @@ class FieldBuilder {
         }
 
         // NestingField: a plain object type in the schema with no Graphitron classification.
-        // Its fields are resolved from the same table context as the parent.
+        // Its fields are resolved from the same table context as the parent — classified
+        // recursively so nested scalars reach the model as ColumnField (and future arms as
+        // their respective leaves). @record parents cannot reach here; this path is gated
+        // on TableBackedType by classifyChildFieldOnTableType's caller at line 1217.
         if (ctx.schema.getType(elementTypeName) instanceof GraphQLObjectType graphQLObjectType && elementType == null) {
             var wrapper = buildWrapper(fieldDef);
+            if (expandingTypes.contains(elementTypeName)) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    "circular type reference detected while expanding '" + elementTypeName + "'");
+            }
+            var newExpanding = new LinkedHashSet<>(expandingTypes);
+            newExpanding.add(elementTypeName);
+            var nestedFields = new ArrayList<ChildField>();
+            for (var nestedDef : graphQLObjectType.getFieldDefinitions()) {
+                if (nestedDef.hasAppliedDirective(DIR_NOT_GENERATED)) continue;
+                var nested = classifyChildFieldOnTableType(nestedDef, elementTypeName, parentTableType, newExpanding);
+                if (nested instanceof UnclassifiedField unc) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        "nested type '" + elementTypeName + "' field '" + nestedDef.getName() + "': " + unc.reason());
+                }
+                if (nested instanceof NotGeneratedField) {
+                    continue;
+                }
+                if (nested instanceof ChildField cf) {
+                    nestedFields.add(cf);
+                } else {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        "nested type '" + elementTypeName + "' field '" + nestedDef.getName()
+                        + "' classified as unexpected variant " + nested.getClass().getSimpleName());
+                }
+            }
             return new NestingField(parentTypeName, name, location,
-                new ReturnTypeRef.TableBoundReturnType(elementTypeName, parentTableType.table(), wrapper));
+                new ReturnTypeRef.TableBoundReturnType(elementTypeName, parentTableType.table(), wrapper),
+                List.copyOf(nestedFields));
         }
 
         // ConstructorField: @table parent with a @record child — pass the parent's Record through as
@@ -1214,7 +1245,7 @@ class FieldBuilder {
             return classifyRootField(fieldDef, parentTypeName);
         }
         if (parentType instanceof TableBackedType tbt && !(parentType instanceof TableInterfaceType)) {
-            return classifyChildFieldOnTableType(fieldDef, parentTypeName, tbt);
+            return classifyChildFieldOnTableType(fieldDef, parentTypeName, tbt, Set.of());
         }
         if (parentType instanceof ResultType resultType) {
             return classifyChildFieldOnResultType(fieldDef, parentTypeName, resultType);
@@ -1631,7 +1662,7 @@ class FieldBuilder {
         return new BatchKey.RowKeyed(fkJoin.sourceColumns());
     }
 
-    private GraphitronField classifyChildFieldOnTableType(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType tableType) {
+    private GraphitronField classifyChildFieldOnTableType(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType tableType, Set<String> expandingTypes) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
@@ -1697,7 +1728,7 @@ class FieldBuilder {
         }
 
         if (!isScalarOrEnum(fieldDef)) {
-            return classifyObjectReturnChildField(fieldDef, parentTypeName, tableType);
+            return classifyObjectReturnChildField(fieldDef, parentTypeName, tableType, expandingTypes);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_NODE_ID)) {

@@ -47,6 +47,7 @@ class TypeClassGeneratorTest {
             List.of(),
             List.of(),
             List.of(),
+            List.of(),
             List.of());
     }
 
@@ -80,6 +81,7 @@ class TypeClassGeneratorTest {
             List.of(platformIdField("Film", "id", "getId")),
             List.of(),
             List.of(),
+            List.of(),
             List.of());
         assertThat(TypeSpecAssertions.hasFieldsArm(spec, "id")).isTrue();
     }
@@ -90,6 +92,7 @@ class TypeClassGeneratorTest {
             filmTable(),
             List.of(),
             List.of(platformIdField("Film", "personId", "getPersonId")),
+            List.of(),
             List.of(),
             List.of(),
             List.of());
@@ -108,6 +111,7 @@ class TypeClassGeneratorTest {
             List.of(),
             List.of(),
             List.of(nodeIdField("Film", "id", "Film", List.of(filmIdCol()))),
+            List.of(),
             List.of(),
             List.of());
         assertThat(TypeSpecAssertions.hasFieldsArm(spec, "id")).isTrue();

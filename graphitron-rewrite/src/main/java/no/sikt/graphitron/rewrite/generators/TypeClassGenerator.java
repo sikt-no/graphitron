@@ -81,7 +81,12 @@ public class TypeClassGenerator {
             .map(f -> (ChildField.LookupTableField) f)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
-        return buildTypeSpec(typeName, type.table(), columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields);
+        var nestingFields = schema.fieldsOf(typeName).stream()
+            .filter(f -> f instanceof ChildField.NestingField)
+            .map(f -> (ChildField.NestingField) f)
+            .sorted(Comparator.comparing(GraphitronField::name))
+            .toList();
+        return buildTypeSpec(typeName, type.table(), columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields, nestingFields);
     }
 
     /**
@@ -101,10 +106,11 @@ public class TypeClassGenerator {
             List<ChildField.PlatformIdField> platformIdFields,
             List<ChildField.NodeIdField> nodeIdFields,
             List<ChildField.TableField> tableFields,
-            List<ChildField.LookupTableField> lookupTableFields) {
+            List<ChildField.LookupTableField> lookupTableFields,
+            List<ChildField.NestingField> nestingFields) {
         var builder = TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
-            .addMethod(build$FieldsMethod(tableRef, columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields));
+            .addMethod(build$FieldsMethod(tableRef, columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields, nestingFields));
         for (var lf : lookupTableFields) {
             var targetJooqTableClass = ClassName.get(
                 no.sikt.graphitron.rewrite.RewriteConfig.getGeneratedJooqPackage() + ".tables",
@@ -133,7 +139,8 @@ public class TypeClassGenerator {
             List<ChildField.PlatformIdField> platformIdFields,
             List<ChildField.NodeIdField> nodeIdFields,
             List<ChildField.TableField> tableFields,
-            List<ChildField.LookupTableField> lookupTableFields) {
+            List<ChildField.LookupTableField> lookupTableFields,
+            List<ChildField.NestingField> nestingFields) {
         var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
@@ -150,40 +157,82 @@ public class TypeClassGenerator {
             .addParameter(ENV, "env")
             .addStatement("$T<$T> fields = new $T<>()", ARRAY_LIST, fieldWildcard, ARRAY_LIST);
 
-        builder.addCode("for ($T entry : sel.getFieldsGroupedByResultKey().entrySet()) {\n", entryType);
-        builder.addCode("    $T sf = entry.getValue().get(0);\n", SELECTED_FIELD);
-        builder.addCode("    switch (sf.getName()) {\n");
-        for (var cf : columnFields) {
-            builder.addCode("        case $S -> fields.add(table.$L);\n",
-                cf.name(), cf.column().javaName());
-        }
-        for (var pf : platformIdFields) {
-            builder.addCode("        case $S -> fields.add(table.$L());\n",
-                pf.name(), pf.getterName());
-        }
-        for (var nf : nodeIdFields) {
-            builder.addCode("        case $S -> {\n", nf.name());
-            for (var col : nf.nodeKeyColumns()) {
-                builder.addCode("            fields.add(table.$L);\n", col.javaName());
-            }
-            builder.addCode("        }\n");
-        }
-        for (var tf : tableFields) {
-            builder.addCode("        case $S -> {\n", tf.name());
-            builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, "table"));
-            builder.addCode("        }\n");
-        }
-        for (var lf : lookupTableFields) {
-            builder.addCode("        case $S -> {\n", lf.name());
-            builder.addCode("$L", InlineLookupTableFieldEmitter.buildSwitchArmBody(lf, "table"));
-            builder.addCode("        }\n");
-        }
-        builder.addCode("        default -> { } // unhandled fields\n");
-        builder.addCode("    }\n");
-        builder.addCode("}\n");
+        var flat = new ArrayList<ChildField>();
+        flat.addAll(columnFields);
+        flat.addAll(platformIdFields);
+        flat.addAll(nodeIdFields);
+        flat.addAll(tableFields);
+        flat.addAll(lookupTableFields);
+        flat.addAll(nestingFields);
+        emitSelectionSwitch(builder, 0, flat, "table", entryType);
 
         builder.addStatement("return fields");
         return builder.build();
     }
+
+    /**
+     * Emits a {@code for}/{@code switch} block projecting the supplied fields from
+     * {@code selN.getFieldsGroupedByResultKey()} (where N is the recursion depth). At depth 0 the
+     * loop variables are {@code entry}/{@code sf} — matching the names that the inline table-field
+     * and lookup-table-field emitters embed in their generated code. Nested depths (1, 2, …) append
+     * the depth number to avoid shadowing outer scopes — plain {@code entry}/{@code sf} would
+     * violate JLS §14.4.2.
+     *
+     * <p>A {@code NestingField} arm recurses with {@code depth + 1}, reading from the current
+     * depth's {@code sf.getSelectionSet()}. The nested type shares the parent's table context, so
+     * {@code tableArg} is threaded through unchanged.
+     */
+    private static void emitSelectionSwitch(MethodSpec.Builder builder, int depth,
+                                            List<ChildField> fields, String tableArg,
+                                            ParameterizedTypeName entryType) {
+        String parentSel = (depth == 0) ? "sel" : (sfName(depth - 1) + ".getSelectionSet()");
+        String entry = entryName(depth);
+        String sf = sfName(depth);
+
+        builder.addCode("for ($T $L : $L.getFieldsGroupedByResultKey().entrySet()) {\n", entryType, entry, parentSel);
+        builder.addCode("    $T $L = $L.getValue().get(0);\n", SELECTED_FIELD, sf, entry);
+        builder.addCode("    switch ($L.getName()) {\n", sf);
+        for (var f : fields) {
+            switch (f) {
+                case ChildField.ColumnField cf ->
+                    builder.addCode("        case $S -> fields.add($L.$L);\n",
+                        cf.name(), tableArg, cf.column().javaName());
+                case ChildField.PlatformIdField pf ->
+                    builder.addCode("        case $S -> fields.add($L.$L());\n",
+                        pf.name(), tableArg, pf.getterName());
+                case ChildField.NodeIdField nif -> {
+                    builder.addCode("        case $S -> {\n", nif.name());
+                    for (var col : nif.nodeKeyColumns()) {
+                        builder.addCode("            fields.add($L.$L);\n", tableArg, col.javaName());
+                    }
+                    builder.addCode("        }\n");
+                }
+                case ChildField.TableField tf -> {
+                    builder.addCode("        case $S -> {\n", tf.name());
+                    builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableArg));
+                    builder.addCode("        }\n");
+                }
+                case ChildField.LookupTableField lf -> {
+                    builder.addCode("        case $S -> {\n", lf.name());
+                    builder.addCode("$L", InlineLookupTableFieldEmitter.buildSwitchArmBody(lf, tableArg));
+                    builder.addCode("        }\n");
+                }
+                case ChildField.NestingField nf -> {
+                    builder.addCode("        case $S -> {\n", nf.name());
+                    emitSelectionSwitch(builder, depth + 1, nf.nestedFields(), tableArg, entryType);
+                    builder.addCode("        }\n");
+                }
+                default -> {
+                    // Unexpected variants in a projection switch are skipped — validator rejects them.
+                }
+            }
+        }
+        builder.addCode("        default -> { } // unhandled fields\n");
+        builder.addCode("    }\n");
+        builder.addCode("}\n");
+    }
+
+    private static String sfName(int depth) { return depth == 0 ? "sf" : "sf" + depth; }
+    private static String entryName(int depth) { return depth == 0 ? "entry" : "entry" + depth; }
 
 }

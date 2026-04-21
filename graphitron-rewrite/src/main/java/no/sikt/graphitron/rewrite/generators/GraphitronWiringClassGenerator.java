@@ -7,6 +7,8 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.TableRef;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -35,12 +37,31 @@ public class GraphitronWiringClassGenerator {
     public record ConnectionWiring(String connectionTypeName, String edgeTypeName) {}
 
     /**
+     * Nested-type wiring info: one {@code TypeRuntimeWiring} per plain GraphQL object type
+     * reached through a {@link ChildField.NestingField}. The nested type's own data fetchers read
+     * columns from the parent Record via {@link TypeFetcherGenerator#buildWiringEntry}. The
+     * {@code representativeParentTable} is the first-seen parent's table (SDL order); multi-parent
+     * compatibility is handled at runtime by jOOQ's name-based fallback in {@code Record.get(Field)}.
+     *
+     * @param nestedTypeName             the GraphQL type name (e.g. "Money")
+     * @param fields                     the classified nested fields to wire, in SDL order
+     * @param representativeParentTable  the first-seen parent's table; column Field references
+     *                                   resolve against this table at generation time
+     */
+    public record NestedTypeWiring(String nestedTypeName, List<ChildField> fields,
+                                    TableRef representativeParentTable) {}
+
+    /**
      * Generates the {@code GraphitronWiring} class.
      *
      * @param fetcherClassNames  the simple class names of all generated {@code *Fetchers} classes
      * @param connectionWirings  connection type wiring entries for Connection/Edge types
+     * @param nestedTypeWirings  nested-type wiring entries for plain object types reached through
+     *                           {@link ChildField.NestingField}
      */
-    public static TypeSpec generate(List<String> fetcherClassNames, List<ConnectionWiring> connectionWirings) {
+    public static TypeSpec generate(List<String> fetcherClassNames,
+                                     List<ConnectionWiring> connectionWirings,
+                                     List<NestedTypeWiring> nestedTypeWirings) {
         var typesPackage = RewriteConfig.outputPackage() + ".rewrite.types";
         var rewritePackage = RewriteConfig.outputPackage() + ".rewrite";
         var builderType = ClassName.get("graphql.schema.idl", "RuntimeWiring", "Builder");
@@ -48,7 +69,9 @@ public class GraphitronWiringClassGenerator {
         var body = CodeBlock.builder()
             .add("return $T.newRuntimeWiring()", RUNTIME_WIRING);
 
-        boolean hasEntries = !fetcherClassNames.isEmpty() || !connectionWirings.isEmpty();
+        boolean hasEntries = !fetcherClassNames.isEmpty()
+            || !connectionWirings.isEmpty()
+            || !nestedTypeWirings.isEmpty();
 
         if (!hasEntries) {
             body.add(";\n");
@@ -79,6 +102,20 @@ public class GraphitronWiringClassGenerator {
                 body.unindent();
             }
 
+            // Nested-type wiring: one TypeRuntimeWiring per plain object type reached through a
+            // NestingField. The nested type has no *Fetchers class — its data fetchers come from
+            // TypeFetcherGenerator.buildWiringEntry applied to each classified nested field.
+            for (var ntw : nestedTypeWirings) {
+                body.add("\n.type($T.newTypeWiring($S)", TYPE_WIRING, ntw.nestedTypeName());
+                body.indent();
+                for (var nf : ntw.fields()) {
+                    body.add(TypeFetcherGenerator.buildWiringEntry(
+                        nf, null, ntw.representativeParentTable(), null));
+                }
+                body.add(")");
+                body.unindent();
+            }
+
             body.add(";\n");
             body.unindent();
         }
@@ -97,6 +134,11 @@ public class GraphitronWiringClassGenerator {
 
     /** Backward-compatible overload for callers that don't have connection wiring info. */
     public static TypeSpec generate(List<String> fetcherClassNames) {
-        return generate(fetcherClassNames, List.of());
+        return generate(fetcherClassNames, List.of(), List.of());
+    }
+
+    /** Backward-compatible overload for callers without nested-type wiring info. */
+    public static TypeSpec generate(List<String> fetcherClassNames, List<ConnectionWiring> connectionWirings) {
+        return generate(fetcherClassNames, connectionWirings, List.of());
     }
 }

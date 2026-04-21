@@ -872,13 +872,100 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Film", "details")).isInstanceOf(NestingField.class)),
 
         LIST_OF_PLAIN_OBJECT_TYPE(
-            "a list-wrapped plain object type on a @table parent → NestingField",
+            "a list-wrapped plain object type on a @table parent → NestingField (validator rejects at list cardinality)",
             """
-            type Tag { label: String }
+            type Tag { title: String }
             type Film @table(name: "film") { tags: [Tag!]! }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("Film", "tags")).isInstanceOf(NestingField.class));
+            schema -> assertThat(schema.field("Film", "tags")).isInstanceOf(NestingField.class)),
+
+        NESTED_SCALAR_RESOLVES_TO_PARENT_COLUMN(
+            "nested scalar resolves to the outer parent's column",
+            """
+            type FilmDetails { title: String }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var nf = (NestingField) schema.field("Film", "details");
+                assertThat(nf.nestedFields()).singleElement()
+                    .isInstanceOfSatisfying(ColumnField.class, cf -> {
+                        assertThat(cf.name()).isEqualTo("title");
+                        assertThat(cf.column().javaName()).isEqualTo("TITLE");
+                    });
+            }),
+
+        NESTED_FIELD_NAME_REMAP(
+            "@field(name:) on a nested scalar remaps the column",
+            """
+            type FilmDetails { alias: String @field(name: "title") }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var nf = (NestingField) schema.field("Film", "details");
+                assertThat(nf.nestedFields()).singleElement()
+                    .isInstanceOfSatisfying(ColumnField.class, cf -> {
+                        assertThat(cf.name()).isEqualTo("alias");
+                        assertThat(cf.column().javaName()).isEqualTo("TITLE");
+                    });
+            }),
+
+        NESTED_UNMATCHED_COLUMN_ROLLS_UP(
+            "unmatched nested scalar rolls up into the outer NestingField as UnclassifiedField",
+            """
+            type FilmDetails { unmappable: String }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "details"))
+                .isInstanceOfSatisfying(UnclassifiedField.class, uf ->
+                    assertThat(uf.reason()).contains("FilmDetails", "unmappable"))),
+
+        MULTI_LEVEL_NESTING(
+            "multi-level nesting produces a recursive NestingField.nestedFields() entry",
+            """
+            type FilmMeta { releaseYear: Int @field(name: "release_year") }
+            type FilmDetails { title: String meta: FilmMeta }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var outer = (NestingField) schema.field("Film", "details");
+                assertThat(outer.nestedFields()).hasSize(2);
+                assertThat(outer.nestedFields().get(1)).isInstanceOfSatisfying(NestingField.class, inner -> {
+                    assertThat(inner.name()).isEqualTo("meta");
+                    assertThat(inner.nestedFields()).singleElement()
+                        .isInstanceOfSatisfying(ColumnField.class, cf -> {
+                            assertThat(cf.column().javaName()).isEqualTo("RELEASE_YEAR");
+                        });
+                });
+            }),
+
+        SELF_REFERENTIAL_CYCLE_DETECTED(
+            "self-referential nested type → UnclassifiedField with circular-reference message",
+            """
+            type FilmDetails { title: String nested: FilmDetails }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(schema.field("Film", "details"))
+                .isInstanceOfSatisfying(UnclassifiedField.class, uf ->
+                    assertThat(uf.reason()).contains("circular type reference", "FilmDetails"))),
+
+        SHARED_NESTED_TYPE_ACROSS_PARENTS_COMPATIBLE(
+            "two @table parents referencing the same nested type classify independently",
+            """
+            type FilmDetails { title: String }
+            type Film @table(name: "film") { details: FilmDetails }
+            type FilmList @table(name: "film_list") { details: FilmDetails }
+            type Query { film: Film films: [FilmList] }
+            """,
+            schema -> {
+                assertThat(schema.field("Film", "details")).isInstanceOf(NestingField.class);
+                assertThat(schema.field("FilmList", "details")).isInstanceOf(NestingField.class);
+            });
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
