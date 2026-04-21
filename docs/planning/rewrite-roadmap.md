@@ -10,6 +10,10 @@ For architectural and technical design principles, see [Rewrite Design Principle
 
 Items with a plan in Draft, Approved, In Progress, or Pending Review. First line: state marker + plan link. Description below.
 
+### `DSLContext` params on `@service` methods **[Draft]** — [plan-service-dsl-context-param.md](plan-service-dsl-context-param.md)
+
+Type-based classification branch in `ServiceCatalog.reflectServiceMethod` that recognises `org.jooq.DSLContext` parameters and produces a `MethodRef.Param.Typed` carrying `ParamSource.DslContext`. Mirrors the existing `org.jooq.Table` check in `reflectTableMethod`. Closes ten "unrecognized sources type: 'org.jooq.DSLContext'" validator failures surfaced by running the rewrite against a real production schema. `ParamSource.DslContext` is already declared and already constructed by a validator test fixture; nothing in reflection produces one today. No emitter consumes the new param yet (service emitters are stubs) — downstream `plan-service-root-fetchers.md` and the ChildField service follow-up pick it up when they ship. `reflectTableMethod` intentionally unchanged; lifting the `@condition`/`@tableMethod` gate requires a call-site rewrite tracked separately. The `Set<T>` parent-keys error from the same run is also out of scope.
+
 ### Argument-resolution unification **[Pending Review]** — [argument-resolution.md](argument-resolution.md)
 
 Unified `ArgumentRef` classification + projection in the builder; gates `@condition`-on-fields, `InputColumnBinding`, and every future argument category. Phase 1 (classification + projection, VALUES+JOIN for `QueryLookupTableField`), Phase 2 (generator-side migration: 2a inline `LookupTableField`, 2b `Split(Lookup)TableField` DataLoader rows-methods, 2c `RecordLookupTableField`), and Phase 3 (composite keys via `TableInputArg` + `InputColumnBinding` — atomic binding population, 2-segment `LookupColumn.sourcePath`, composite `LookupValuesJoinEmitter` grouping by root arg) have all shipped. Phase 4 (`@condition` on `INPUT_FIELD_DEFINITION`) remains deferred.
