@@ -47,9 +47,9 @@ Add a `targetSqlTableName` parameter to `parsePath` and **delete the two early r
 if (!errors.isEmpty()) {
     return new ParsedPath(List.of(), String.join("; ", errors));
 }
-// resolvedElements.isEmpty() covers both triggers uniformly: @reference absent (parsePath
-// short-circuits before populating the list) and @reference(path: []) (explicit empty list
-// leaves it empty). The equalsIgnoreCase guard skips inference when source == target — the
+// resolvedElements.isEmpty() covers both triggers uniformly: @reference absent (elements
+// stays empty so the parse loop is a no-op) and @reference(path: []) (explicit empty list
+// leaves it empty the same way). The equalsIgnoreCase guard skips inference when source == target — the
 // ComputedField / TableMethodField same-table case (see §"What we're NOT doing"); case-
 // insensitive because JooqCatalog.findForeignKeysBetweenTables itself compares names that
 // way (lines 205-223), so SDL vs catalog casing drift is benign.
