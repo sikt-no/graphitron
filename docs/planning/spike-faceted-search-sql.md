@@ -164,6 +164,91 @@ Observations:
 - Shape E has A's shape (single seq scan, aggregates only) but
   doesn't generalise to open-ended value domains.
 
+> **Caveat — warm cache, small table.** The medians above are from 10
+> warm-cache runs against a 200 000-row table (~15 MB heap) that fits
+> entirely in the 128 MB `shared_buffers`. Under these conditions
+> every shape is CPU-bound on already-resident pages, and wall-clock
+> rewards parallelism (shape C) rather than read cost. Production
+> tables will typically exceed `shared_buffers`; see the v2
+> re-measurement below for the read-cost picture.
+
+## v2 re-measurement — 5M rows, read-cost lens
+
+The v1 medians above were warm-cache on a 15 MB table. Production data
+will cross `shared_buffers` (Postgres default 128 MB), so cold reads —
+not CPU-on-cached-pages — become the dominant cost. Re-measured at
+**5 000 000 rows (444 MB heap, ~3.5× `shared_buffers`)** with per-facet
+fan-out (2 / 5 / 8 facets under the multi-filter scenario) and a
+cluster restart before each cold run. Cold rows capture `EXPLAIN
+(ANALYZE, BUFFERS)` top-level counts (`read` = 8 KB blocks fetched
+from disk, `hit` = already in shared buffers). Warm rows are the
+median of 10 subsequent in-session runs.
+
+Added facet columns for the 8-facet scenario: `language_id` (8 vals),
+`release_year` (24 vals), `special_features` (6 vals),
+`left(title, 1)` (26 vals), `length / 30` (3 vals). Each has a btree
+index like the original three.
+
+| Facets | Shape | Cold `read=` | Cold `hit=` | Cold exec | Warm median |
+|--------|-------|-------------:|------------:|----------:|------------:|
+| 2      | A (GROUPING SETS)       | 56 834 | 15     | 2 093 ms | 1 247 ms |
+| 2      | C (UNION ALL)           | 58 511 | 56 852 | 2 013 ms | 1 614 ms |
+| 2      | **E (FILTER aggs)**     | **56 832** | 0 | **651 ms** | **458 ms** |
+| 5      | A                       | 56 834 | 18     | 3 219 ms | 2 720 ms |
+| 5      | C                       | 58 521 | 61 933 | 2 032 ms | 1 757 ms |
+| 5      | **E**                   | **56 832** | 0 | **1 217 ms** | **999 ms** |
+| 8      | A                       | 56 834 | 18     | 4 326 ms | 3 683 ms |
+| 8      | C                       | 58 521 | 67 003 | 2 063 ms | 1 804 ms |
+| 8      | E                       | *(not measured — ~94 aggregates to hand-expand; read cost already shown constant at 2/5 facets)* |
+
+(56 832 blocks × 8 KB = 444 MB = exactly one full heap scan. The heap
+does not fit in `shared_buffers`.)
+
+### What the top-level Buffers actually show
+
+1. **Shapes A and E do one full scan, regardless of facet count.**
+   `read=56 834` is flat from 2 to 8 facets. Both shape their plan
+   around a single `Seq Scan`: A with HashAggregate holding one hash
+   key per grouping set, E with a Parallel Seq Scan feeding many
+   `count(*) FILTER` aggregates in one pass.
+2. **Shape C's reads are ~1.03× one full scan.** First arm reads the
+   heap cold; subsequent arms find most pages still in cache *within
+   the same query* and show up as `hit=`, not `read=`. The `read=58k`
+   total is not N × table — the N × hypothesis from my
+   earlier-session misreading (summing every indented `Buffers:` line)
+   was wrong. Across 2/5/8 facets the `read=` column barely moves.
+3. **Shape E parallelises; shape A does not.** E's Parallel Seq Scan
+   recruits 2 workers; A's HashAggregate over N grouping keys runs in
+   one backend. That's most of A's CPU penalty at high facet count.
+
+### What the wall-clocks show
+
+- **E dominates at every facet count** — 2.7× faster than A and 3.5×
+  faster than C at 2 facets; 2.7× vs A and 1.8× vs C at 5 facets.
+  Single parallel scan + in-line conditional aggregates is the
+  cheapest shape when it applies.
+- **A vs C crosses over between 2 and 5 facets.** At 2 facets A is
+  30% faster than C (simpler plan, no Gather overhead). At 5 facets C
+  is 55% faster than A (Parallel Append amortises across arms while
+  A's GROUPING SETS stays single-threaded). Most production Connection
+  requests will land in this 2-5 facet range; neither shape dominates.
+- **C and A are within 3% on cold reads** at every facet count in
+  this scale range. The read-cost argument the v1 report leaned on —
+  "C lets the planner pick per-facet indexes" — is correct *when a
+  filter can hit a per-facet index*, but under multi-filter most arms
+  still do a heap scan and reuse the first arm's cached pages. Reads
+  are essentially the same.
+
+### Scaling assumption (unmeasured)
+
+Extrapolated, not measured: if the table were 10–30× larger
+(`shared_buffers` << working set), shape C's cross-arm cache retention
+would degrade — later arms would partially re-read pages evicted by
+earlier arms. A and E would still be 1 × table. A sensible Phase 5
+item is to re-run at 50M rows if/when a real deployment has that much
+data; until then assume C is within 20% of A on reads at Sikt
+production scale.
+
 ## Plan-shape extracts
 
 ### A3 (multi-filter, GROUPING SETS):
@@ -255,30 +340,58 @@ Consumers that need a different ordering can re-sort client-side.
 
 ## Verdict
 
-**The plan's v1 default moves from shape A (GROUPING SETS) to shape C
-(UNION ALL of per-facet GROUP BYs).**
+**v1 default: shape C (`UNION ALL` of per-facet GROUP BYs).** The v2
+re-measurement does not overturn the v1 choice: C and A are within 3%
+on cold reads, and C wins wall-clock at 5+ facets (Parallel Append vs.
+A's single-threaded HashAggregate) while staying within 30% of A at 2
+facets. Shape A stays rejected because its CPU cost grows worst with
+facet count and it never wins on reads to compensate.
 
-Reasons:
+Reasons the verdict stands:
 
-1. Shape A as originally specified in the plan is invalid Postgres
-   syntax. The working variant (CASE-dispatched filter aggregates)
-   parses but loses on every measured scenario.
+1. Shape A as originally specified in the plan (GROUPING() inside
+   FILTER) is invalid Postgres syntax. The CASE-dispatched workaround
+   parses but scales badly with facet count — 8-facet A is 2× slower
+   than 8-facet C at 5M rows.
 2. Shape C matches shape A's "one round-trip" property.
-3. Shape C lets the planner choose per-facet indexes when filters
-   are selective — shape A cannot.
-4. Shape C parallelises across arms automatically via `Parallel
-   Append`. Shape A's HashAggregate over GROUPING SETS is
-   sequential.
+3. Shape C parallelises across arms via `Parallel Append`. Shape A's
+   HashAggregate over GROUPING SETS runs in a single backend — the
+   dominant cost at high facet count.
+4. Shape C's reads are essentially flat at 1× table across 2/5/8
+   facets — cross-arm buffer-cache retention inside the same query
+   prevents the N × table growth earlier analysis feared. (Unmeasured
+   caveat: at 10× larger tables, cross-arm retention degrades. Re-run
+   if a production deployment has >50M rows.)
 5. Shape C is structurally simpler to generate: N `SelectJoinStep`s
    glued with `DSL.unionAll(...)`. No `DSL.groupingSets(...)` or
-   `DSL.grouping(...)` — the Phase 4 sketch's jOOQ API surface
-   shrinks.
+   `DSL.grouping(...)`.
 
-**v2 fallback:** if a Connection field grows past ~10 facets, the
-UNION becomes unwieldy. At that point, the emitter can revert to
-shape B — N separate jOOQ queries issued from the resolver and
-assembled in Java. This is an emitter-side decision; the GraphQL
-surface stays identical.
+**Where the v2 measurement does change the story: shape E is now the
+documented optimisation path.** At 5M rows with the multi-filter
+scenario, E is 2.7× faster than A and 1.8–3.5× faster than C on
+warm wall-clock, and its cold reads are identical to A's (1 × table).
+E's constraint is that every facet value must be known at emit time —
+trivial for enum-backed columns (jOOQ catalog holds them) and small
+FKs (compile-time `@facet(values:)` or a pre-query on the referenced
+table), impossible for open-ended text facets like `left(title, 1)`.
+
+The hybrid that realises E's win without losing generality:
+
+- All facets on the request are bounded-domain (enum, small FK,
+  Boolean): emit a single shape-E query. Fastest path.
+- Any facet is open-ended: fall back to shape C (current v1 default).
+
+Given the measured 2–3× wall-clock gap, this is a meaningful
+post-v1 optimisation, but it is *not* a prerequisite for v1
+correctness. Ship C first; add E as a Phase 5 or post-v1 follow-up
+gated on profiling data from real Sikt schemas. Keep the
+`FacetSpec` record shape amenable to both emitters so the switch is
+internal to `TypeFetcherGenerator`.
+
+**v2 fallback (the existing one, still applicable):** if a Connection
+field grows past ~10 facets, the UNION becomes unwieldy. The emitter
+can revert to shape B — N separate jOOQ queries assembled in Java.
+GraphQL surface stays identical.
 
 **v1 requirements carried to the plan:**
 
@@ -289,8 +402,7 @@ surface stays identical.
   has set it to 0.
 - Column data type used in the UNION must match between arms for
   Postgres; emitter uses `::text` casts when facet columns have
-  different SQL types (rating enum vs. rental_duration smallint vs.
-  left(title,1) text).
+  different SQL types.
 
 ## Follow-ups to fold into the plan revision
 
@@ -299,8 +411,16 @@ surface stays identical.
    to `baseSelect.unionAll(otherFacetSelect).unionAll(...)`.
 2. Phase 4 code sketch: remove GROUPING() / CASE-dispatched filter
    aggregates. Replace with per-facet minus-self `WHERE`
-   reconstruction per arm (same FacetSpec logic; different assembly).
+   reconstruction per arm.
 3. Open Questions #4 and #5: move to "Resolved design decisions" with
    a one-line pointer to this report.
 4. Phase 1 section: mark complete; summarise the verdict inline so
    the plan remains self-contained when the spike report is deleted.
+5. **New — shape E as documented optimisation path.** Add an entry
+   to the plan's "Open Questions" or "Future work" section: when
+   every facet on a request is bounded-domain (enum, small FK,
+   Boolean), emit a single `count(*) FILTER` aggregate per (facet,
+   value) pair instead of a UNION arm. Measured 2–3× warm-clock
+   faster, 1 × table reads, requires value-domain enumeration in the
+   emitter. Keep `FacetSpec` permissive enough that the E/C choice
+   is internal to `TypeFetcherGenerator`.

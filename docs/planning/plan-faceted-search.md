@@ -268,19 +268,29 @@ the single query.
 | **C. `UNION ALL` of per-facet `GROUP BY`s** | 2 | N (index-capable per arm; Parallel Append runs them concurrently) | Yes — each branch owns its WHERE | All targets | **v1 default** |
 | **D. Plain `GROUPING SETS`** (shared outer WHERE) | 2 | 1 | **No** — single WHERE shared across sets | PostgreSQL, Oracle | Rejected — collapses the facet whose filter is active |
 | **E. Window fns (`COUNT() OVER (PARTITION BY col)`)** | 2 | 1 per facet column (cartesian issue across facets) | Possible per-facet via `FILTER (WHERE …) OVER (PARTITION BY …)` | All targets | Rejected — multi-facet grid-cartesian-blows-up |
-| **F. Conditional aggregation on known values** (`COUNT(*) FILTER (WHERE col = 'G')` etc.) | 2 | 1 | Yes | PostgreSQL `FILTER` / SQL:2003 | Rejected — requires pre-enumerated value domains; fails for open-ended facets |
+| **F. Conditional aggregation on known values** (`COUNT(*) FILTER (WHERE col = 'G')` etc.) | 2 | 1 (parallel) | Yes | PostgreSQL `FILTER` / SQL:2003 | Post-v1 optimisation — 2–3× faster than C at 5M rows when all facets are bounded-domain. Falls back to C when any facet is open-ended. See Open Question #3. |
 
-**Why shape C wins over shape A.** Shape A forces a single seq scan
-because GROUPING SETS aggregates depend on every row — no per-facet
-WHERE, no per-facet index. Shape C's arms are independent queries;
-each one's WHERE lets the planner pick a bitmap index scan when
-filters are selective. On the spike dataset:
+**Why shape C wins over shape A.** Shape C's arms are independent
+queries; each one's WHERE lets the planner pick a bitmap index scan
+when filters are selective, and Postgres parallelises arms via
+`Parallel Append`. Shape A's HashAggregate over N grouping keys runs
+single-threaded, so its CPU cost grows worst with facet count. On the
+spike data (see `spike-faceted-search-sql.md` for details):
 
-- S3 (multi-filter, both facets indexed): C 27 ms vs A 38 ms.
-- S5 (open-ended prefix): C 27 ms vs A 51 ms.
-- S1 (no filter): C 29 ms vs A 32 ms — roughly tied.
+- 200 000-row warm-cache S3 (multi-filter): C 27 ms vs A 38 ms.
+- 200 000-row warm-cache S5 (open-ended prefix): C 27 ms vs A 51 ms.
+- 5M-row warm-cache multi-filter, 2 facets: A 1 247 ms vs C 1 614 ms
+  (A slightly ahead at low facet count).
+- 5M-row warm-cache multi-filter, 8 facets: C 1 804 ms vs A 3 683 ms
+  (C wins by 2× once Parallel Append amortises).
 
-Shape C never loses. Shape A never wins.
+Cold reads are within 3% between A and C at 5M rows (both ~1 × table).
+The v2 re-measurement did not overturn v1's choice: C parallelises
+at the facet counts we expect in production, the emitter is simpler,
+and A's constant-read advantage never materialises into wall-clock
+wins beyond 2 facets. See Phase 1 Outcome and Open Question #3 for
+the bounded-domain optimisation path (shape F) that is 2–3× faster
+than C where applicable.
 
 **Why plain `GROUPING SETS` (strategy D) still fails.** A single shared
 outer WHERE applied before the grouping sets collapses any facet whose
@@ -349,29 +359,47 @@ applies.
 
 Five SQL shapes measured against a 200 000-row synthetic Sakila-shaped
 `film_scaled` table across five scenarios (no filter, one filter,
-multi-filter, open-ended prefix, NULL-bearing). Wall-clock medians
-over 10 warm-cache runs + `EXPLAIN (ANALYZE, BUFFERS, VERBOSE)` per
-pair. Full details in [`spike-faceted-search-sql.md`](spike-faceted-search-sql.md).
+multi-filter, open-ended prefix, NULL-bearing), then re-measured at
+5 000 000 rows (heap 444 MB, ~3.5× `shared_buffers`) with per-facet
+fan-out (2 / 5 / 8 facets) and cold-cache top-level Buffers. Full
+details in [`spike-faceted-search-sql.md`](spike-faceted-search-sql.md).
 
-**Decision: v1 default moves from shape A (`GROUPING SETS`) to
-shape C (`UNION ALL` of per-facet `GROUP BY`s).**
+**Decision: v1 default is shape C (`UNION ALL` of per-facet
+`GROUP BY`s).**
 
 Key findings:
 
 - The plan's original shape A form (`GROUPING()` inside `FILTER`) is
   invalid Postgres syntax (`ERROR: grouping operations are not
-  allowed in FILTER`). The CASE-dispatched workaround parses but
-  loses on every measured scenario.
-- Shape A forces a full table seq scan; shape C's independent arms
-  let the planner pick per-facet bitmap index scans when filters are
-  selective, and Postgres parallelises arms via `Parallel Append`.
-- Medians (ms): S1 A=32 C=29; S3 A=38 C=27; S5 A=51 C=27.
+  allowed in FILTER`). The CASE-dispatched workaround parses.
+- At 5M rows, A and C are within 3% on cold reads (both ~1 × table);
+  C's cross-arm buffer retention prevents N × table growth at tested
+  scale. A's HashAggregate over N grouping keys runs single-threaded,
+  so its wall-clock scales badly with facet count (8-facet A = 3.7 s
+  warm; 8-facet C = 1.8 s). At 2 facets A beats C by 30% on warm
+  wall-clock; C wins from 5 facets up via `Parallel Append`.
 - Correctness: all measured shapes produce identical counts vs
   shape B reference.
 - NULL-bearing facet columns emit a NULL group key automatically
   under plain `GROUP BY` (resolves OQ #4).
 - `ORDER BY facet, cnt DESC, value` costs ≈ 0.4 ms at 200 000 rows
   (resolves OQ #5).
+- **Shape F (conditional aggregation on known values) emerged as the
+  optimisation path.** Single parallel seq scan + one `count(*)
+  FILTER` aggregate per (facet, value) pair. At 5M rows F is 2.7×
+  faster than A and 1.8–3.5× faster than C on warm wall-clock, with
+  identical cold reads to A (1 × table). Constraint: every facet
+  value must be known at emit time (enums ✓, small FKs ✓ via
+  `@facet(values:)` or catalog pre-query, open-ended text ✗). Not
+  adopted for v1 because it doesn't generalise; kept as a post-v1
+  emitter-internal swap when every selected facet is bounded-domain.
+  (Spike report labels this shape E; plan's strategy comparison
+  table keeps F for historical continuity.)
+- **Unmeasured scaling caveat.** At 10–30× larger tables,
+  C's cross-arm cache retention degrades (`shared_buffers` shrinks
+  relative to working set). If real deployments land with 50M+ rows
+  in a faceted connection, Phase 5 should re-measure and the
+  bounded-domain hybrid above becomes more attractive.
 
 The "SQL emission strategy" section above, the Phase 4 emitter
 sketch, and the "Resolved design decisions" / "Open Questions"
@@ -955,15 +983,32 @@ reviewers can confirm the v1 design does not foreclose it.
    sum of distinct-value counts across selected facet columns (each
    facet contributes one row per distinct value) — typically small
    for enum/Boolean facets, potentially larger for open-ended string
-   facets. Phase 1 spike measured 2-facet cases only; Phase 5's
-   execution tests re-check at full-integration scale and with more
-   facets. If a pathological case emerges (e.g. a high-cardinality
+   facets. Phase 1 spike v2 re-measurement covered 2 / 5 / 8 facets
+   at 5M rows; Phase 5's execution tests re-check at full-integration
+   scale. If a pathological case emerges (e.g. a high-cardinality
    string facet combined with several others), the fallback is to
    issue one query per facet arm (shape B) — which the spike showed
    wins under heavy filtering anyway. That remains an emitter-side
    choice guarded by real profiling data.
 
-3. **Facets on columns reached through FK joins.** v1 rejects
+3. **Shape F (conditional aggregation) as post-v1 optimisation.**
+   When every facet on a request is bounded-domain (enum-backed
+   scalar, small FK, Boolean), the emitter could swap the UNION ALL
+   chain for a single `count(*) FILTER` aggregate per (facet, value)
+   pair against one parallel seq scan. Spike v2 measured 2–3×
+   warm-clock speedup at 5M rows with identical cold-read cost
+   (`spike-faceted-search-sql.md` §v2 re-measurement). Requires value
+   enumeration per facet — achievable from the jOOQ catalog for enum
+   columns and from an optional `@facet(values: [...])` argument or a
+   compile-time query on the referenced table for small FKs. Design
+   constraint for v1: keep `FacetSpec` + `FieldWrapper.Connection`
+   permissive enough that the C-vs-F choice lives entirely inside
+   `TypeFetcherGenerator`; no wire-format or type-surface impact.
+   Decide in Phase 5 based on profiling: ship F if any Sikt
+   connection exceeds the measured 5-facet threshold or if tables
+   routinely exceed `shared_buffers` by >10×.
+
+4. **Facets on columns reached through FK joins.** v1 rejects
    `@facet` on `@reference`-bound input fields. GG-335's Studieprogram
    hierarchical example implies faceting over a joined parent
    (Fakultet → Institutt). Lifting this restriction is entangled with
