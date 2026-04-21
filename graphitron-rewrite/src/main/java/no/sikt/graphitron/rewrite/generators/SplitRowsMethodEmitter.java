@@ -322,6 +322,10 @@ public final class SplitRowsMethodEmitter {
         List<String> aliases = JoinPathEmitter.generateAliases(path, terminalTable);
         String terminalAlias = aliases.get(aliases.size() - 1);
         String firstAlias = aliases.get(0);
+        // Classifier contract: path is non-empty and its first step is an FkJoin. Empty paths
+        // are rejected in BuildContext.parsePath (inference failure → UnclassifiedField) and the
+        // RecordTableField/RecordLookupTableField caller's deriveBatchKeyForResultType arm;
+        // ConditionJoin-first paths are short-circuited by unsupportedReason above this call.
         JoinStep.FkJoin firstHop = (JoinStep.FkJoin) path.get(0);
 
         var body = CodeBlock.builder();

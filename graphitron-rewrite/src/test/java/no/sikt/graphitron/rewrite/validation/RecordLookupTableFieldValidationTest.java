@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField;
-import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -39,8 +38,6 @@ class RecordLookupTableFieldValidationTest {
     private static final String CONDITION_JOIN_STUB =
         "Field 'Language.films': RecordLookupTableField 'Language.films' with a condition-join step "
         + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables";
-    private static final String EMPTY_PATH_STUB =
-        "Field 'Language.films': RecordLookupTableField 'Language.films' requires a @reference path.";
 
     enum Case implements ValidatorCase {
 
@@ -60,26 +57,15 @@ class RecordLookupTableFieldValidationTest {
                 List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
             List.of(CONDITION_JOIN_STUB)),
 
-        LIST_NO_PATH("list cardinality, empty joinPath — empty-path stub surfaces as build error",
-            new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
-            List.of(EMPTY_PATH_STUB)),
-
-        LIST_WITH_FIELD_CONDITION_EMPTY_PATH("list cardinality with resolved @condition but empty joinPath — empty-path stub surfaces",
-            new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(),
-                List.of(new ConditionFilter("com.example.Conditions", "filmCondition", List.of())),
-                new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
-            List.of(EMPTY_PATH_STUB)),
-
         LIST_WITH_FK_PATH("list cardinality with FK path — emittable, no validation error",
             new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)),
                 List.of(new JoinStep.FkJoin("language_film_id_fkey", "", null, List.of(), new TableRef("film", "", "", List.of()), List.of(), null, "")),
                 List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
             List.of()),
 
-        CONNECTION_BLOCKED("connection return — lookup-field rejection + empty-path stub",
+        CONNECTION_BLOCKED("connection return — lookup-field rejection",
             new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true)), List.of(), List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
-            List.of("Field 'Language.films': lookup fields must not return a connection",
-                EMPTY_PATH_STUB));
+            List.of("Field 'Language.films': lookup fields must not return a connection"));
 
         private final String description;
         private final GraphitronField field;

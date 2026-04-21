@@ -13,7 +13,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
@@ -35,24 +34,6 @@ class NodeIdReferenceFieldValidationTest {
                 null, List.of(),
                 List.of()),
             List.of(stubbedError("Inventory.filmId", NodeIdReferenceField.class))),
-
-        IMPLICIT_NO_FK("no FK between tables — error suggesting @reference (and stubbed)",
-            new NodeIdReferenceField("Film", "categoryId", null, "Category",
-                new ReturnTypeRef.TableBoundReturnType("Category", new TableRef("category", "CATEGORY", "Category", List.of()), new FieldWrapper.Single(true)),
-                new TableRef("film", "FILM", "Film", List.of()),
-                null, List.of(),
-                List.of()),
-            List.of("Field 'Film.categoryId': no foreign key found between tables 'film' and 'category'; add a @reference directive to specify the join path",
-                stubbedError("Film.categoryId", NodeIdReferenceField.class))),
-
-        IMPLICIT_MULTIPLE_FKS("multiple FKs between tables — error suggesting @reference (and stubbed)",
-            new NodeIdReferenceField("Film", "languageId", null, "Language",
-                new ReturnTypeRef.TableBoundReturnType("Language", new TableRef("language", "LANGUAGE", "Language", List.of()), new FieldWrapper.Single(true)),
-                new TableRef("film", "FILM", "Film", List.of()),
-                null, List.of(),
-                List.of()),
-            List.of("Field 'Film.languageId': multiple foreign keys found between tables 'film' and 'language'; add a @reference directive to specify the join path",
-                stubbedError("Film.languageId", NodeIdReferenceField.class))),
 
         WITH_EXPLICIT_PATH("explicit FK path leading to the correct table (stubbed)",
             new NodeIdReferenceField("Film", "languageId", null, "Language",

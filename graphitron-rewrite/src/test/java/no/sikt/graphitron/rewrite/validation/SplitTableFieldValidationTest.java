@@ -4,7 +4,6 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -35,9 +34,6 @@ class SplitTableFieldValidationTest {
         "Field 'Film.actors': Single-cardinality @splitQuery on 'Film.actors' not yet supported; "
         + "list cardinality is the Phase 2b C1 scope. "
         + "Single-cardinality requires joining the parent table to bridge parent PK to parent FK.";
-    private static final String EMPTY_PATH_STUB =
-        "Field 'Film.actors': @splitQuery 'Film.actors' requires a @reference path — "
-        + "Phase 2b C1 scope does not support path-less batched splits";
 
     enum Case implements ValidatorCase {
 
@@ -61,15 +57,7 @@ class SplitTableFieldValidationTest {
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(),
                 List.of(new ConditionFilter("com.example.Conditions", "actorCondition", List.of())),
                 new OrderBySpec.None(), null, PARENT_BATCH_KEY),
-            List.of(SINGLE_CARDINALITY_STUB)),
-
-        LIST_NO_PATH("list cardinality with empty joinPath — empty-path stub surfaces as build error",
-            new SplitTableField("Film", "actors", null,
-                actorReturn(new FieldWrapper.List(true, true)),
-                List.of(), List.of(),
-                new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
-                null, PARENT_BATCH_KEY),
-            List.of(EMPTY_PATH_STUB));
+            List.of(SINGLE_CARDINALITY_STUB));
 
         private final String description;
         private final GraphitronField field;

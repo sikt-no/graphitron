@@ -4,7 +4,6 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordTableField;
-import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
@@ -36,8 +35,6 @@ class RecordTableFieldValidationTest {
     private static final String CONDITION_JOIN_STUB =
         "Field 'FilmDetails.film': RecordTableField 'FilmDetails.film' with a condition-join step "
         + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables";
-    private static final String EMPTY_PATH_STUB =
-        "Field 'FilmDetails.films': RecordTableField 'FilmDetails.films' requires a @reference path.";
 
     enum Case implements ValidatorCase {
 
@@ -62,16 +59,6 @@ class RecordTableFieldValidationTest {
                 List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()), "")),
                 List.of(), new OrderBySpec.None(), null, BATCH_KEY),
             List.of(CONDITION_JOIN_STUB)),
-
-        LIST_NO_PATH("list cardinality, empty joinPath — empty-path stub surfaces as build error",
-            new RecordTableField("FilmDetails", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), new OrderBySpec.None(), null, BATCH_KEY),
-            List.of(EMPTY_PATH_STUB)),
-
-        LIST_WITH_FIELD_CONDITION_EMPTY_PATH("list cardinality with resolved @condition but empty joinPath — empty-path stub surfaces",
-            new RecordTableField("FilmDetails", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(),
-                List.of(new ConditionFilter("com.example.Conditions", "filmCondition", List.of())),
-                new OrderBySpec.None(), null, BATCH_KEY),
-            List.of(EMPTY_PATH_STUB)),
 
         LIST_WITH_FK_PATH("list cardinality with FK path — emittable, no validation error",
             new RecordTableField("FilmDetails", "films", null, filmReturn(new FieldWrapper.List(true, true)),
