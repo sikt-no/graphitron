@@ -31,6 +31,7 @@ import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.TYPE_ID;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * Validates @node and @nodeId directives, node ID references in jOOQ and Java record inputs.
@@ -44,6 +45,7 @@ class NodeValidator extends AbstractSchemaValidator {
     @Override
     void validate() {
         validateNodeDirective();
+        validateTypesUsingNodeInterfaceWithoutNodeDirective();
         validateNodeId();
         validateNodeIdReferenceInJooqRecordInput();
         validateNodeIdFieldsInJavaRecordInputs();
@@ -322,5 +324,30 @@ class NodeValidator extends AbstractSchemaValidator {
                         .ifPresent(recordClass -> validateNodeIdReferenceInRecord(
                                 TableReflection.getTableJavaFieldNameForRecordClass(recordClass).orElseThrow(),
                                 it, false, JOOQMapping.fromTable(getTableName(recordClass)))));
+    }
+
+    private void validateTypesUsingNodeInterfaceWithoutNodeDirective() {
+        if (!schema.nodeExists() ||
+                schema.getQueryType() == null ||
+                schema.getQueryType().getFieldByName(uncapitalize(NODE_TYPE.getName())) == null ||
+                schema.getQueryType().getFieldByName(uncapitalize(NODE_TYPE.getName())).isExplicitlyNotGenerated()) {
+            return;
+        }
+
+        var records = schema
+                .getObjects()
+                .values()
+                .stream()
+                .filter(it -> it.implementsInterface(NODE_TYPE.getName()) && it.hasTable() && !it.hasNodeDirective())
+                .collect(Collectors.groupingBy(
+                        it -> it.getTable().getName(), Collectors.mapping(ObjectDefinition::getName, Collectors.toSet())));
+
+        records.forEach((tableName, schemaTypes) -> {
+            if (schemaTypes.size() > 1) {
+                addErrorMessage(
+                        "Multiple types (%s) implement the %s interface and refer to the same table %s. This is not supported.",
+                        String.join(", ", schemaTypes), NODE_TYPE.getName(), tableName);
+            }
+        });
     }
 }

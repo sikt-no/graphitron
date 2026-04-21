@@ -16,7 +16,6 @@ import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
@@ -26,13 +25,10 @@ import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessage;
 import static no.sikt.graphitron.validation.ValidationHandler.addWarningMessage;
 import static no.sikt.graphitron.validation.messages.InputTableError.MISSING_FIELD;
 import static no.sikt.graphitron.validation.messages.InputTableError.MISSING_NON_NULLABLE;
-import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITY_UNION;
-import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_SERVICE_TYPE;
 import static org.apache.commons.lang3.StringUtils.lowerCase;
 
 /**
- * Validates mutation directives, required fields, delete/insert-with-returning mutations,
- * recursive record inputs, and input record count constraints.
+ * Validates mutation directives, required fields, and delete/insert-with-returning mutations.
  */
 class MutationValidator extends AbstractSchemaValidator {
 
@@ -42,18 +38,10 @@ class MutationValidator extends AbstractSchemaValidator {
 
     @Override
     void validate() {
-        validateMutationDirectives();
-        validateMutationRequiredFields();
-        validateRecursiveRecordInputs();
-        validateOnlyOneInputRecordInputWhenNoTypeTableIsPresent();
-    }
-
-    private void validateMutationDirectives() {
         var mutation = schema.getMutationType();
         if (mutation == null) {
             return;
         }
-
         var mutations = mutation
                 .getFields()
                 .stream()
@@ -63,6 +51,11 @@ class MutationValidator extends AbstractSchemaValidator {
             return;
         }
 
+        validateMutationDirectives(mutations);
+        validateMutationRequiredFields(mutations);
+    }
+
+    private void validateMutationDirectives(List<ObjectField> mutations) {
         mutations
                 .stream()
                 .filter(it -> !it.hasMutationType() && !it.hasServiceReference())
@@ -80,16 +73,9 @@ class MutationValidator extends AbstractSchemaValidator {
         }
     }
 
-    private void validateMutationRequiredFields() {
-        var mutation = schema.getMutationType();
-        if (mutation == null) {
-            return;
-        }
-
-        mutation
-                .getFields()
+    private void validateMutationRequiredFields(List<ObjectField> mutations) {
+        mutations
                 .stream()
-                .filter(ObjectField::isGeneratedWithResolver)
                 .filter(ObjectField::hasMutationType)
                 .forEach(target -> {
                     validateRecordRequiredFields(target);
@@ -331,68 +317,4 @@ class MutationValidator extends AbstractSchemaValidator {
         }
     }
 
-    private void validateRecursiveRecordInputs() {
-        var mutation = schema.getMutationType();
-        var mutations = mutation != null ? mutation.getFields().stream() : Stream.<ObjectField>of();
-        var query = schema.getQueryType();
-        var queries = query != null ? query.getFields().stream() : Stream.<ObjectField>of();
-
-        Stream
-                .concat(queries, mutations)
-                .filter(ObjectField::hasServiceReference)
-                .flatMap(it -> it.getArguments().stream())
-                .filter(schema::isInputType)
-                .forEach(it -> validateRecursiveRecordInputs(it, false, 0));
-    }
-
-    private void validateRecursiveRecordInputs(InputField field, boolean wasRecord, int recursion) {
-        recursionCheck(recursion);
-
-        var input = schema.getInputType(field);
-        if (input == null) {
-            return;
-        }
-
-        var hasTableOrRecordReference = input.hasTable() || input.hasJavaRecordReference();
-
-        if (field.isIterableWrapped() && wasRecord && !hasTableOrRecordReference) {
-            addErrorMessage(
-                    String.format(
-                            "Field %s with Input type %s is iterable, but has no record mapping set. Iterable Input types within records without record mapping can not be mapped to a single field in the surrounding record.",
-                            field.getName(),
-                            input.getName()
-                    )
-            );
-        }
-
-        input.getFields().forEach(it -> validateRecursiveRecordInputs(it, wasRecord || hasTableOrRecordReference, recursion + 1));
-    }
-
-    private void validateOnlyOneInputRecordInputWhenNoTypeTableIsPresent() {
-        var mutation = schema.getMutationType();
-        var mutations = mutation != null ? mutation.getFields().stream() : Stream.<ObjectField>of();
-        var query = schema.getQueryType();
-        var queries = query != null ? query.getFields().stream() : Stream.<ObjectField>of();
-
-        Stream
-                .concat(queries, mutations)
-                .filter(ObjectField::isGeneratedWithResolver)
-                .filter(it -> !it.hasServiceReference())
-                .filter(it -> !it.getTypeName().equals(FEDERATION_SERVICE_TYPE.getName()))
-                .filter(it -> !it.getTypeName().equals(FEDERATION_ENTITY_UNION.getName()))
-                .filter(it -> !schema.isInterface(it))
-                .filter(it -> !schema.isUnion(it))
-                .filter(it -> schema.isScalar(it) || schema.isRecordType(it))
-                .filter(it -> !schema.nextTypeTableExists(it, new HashSet<>()))
-                .collect(Collectors.toMap(it -> it.getContainerTypeName() + "." + it.getName(), it -> schema.findInputTables(it).size()))
-                .entrySet()
-                .stream()
-                .filter(it -> it.getValue() != 1)
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))
-                .forEach((key, value) -> addErrorMessage(
-                        "%s is a field of a type without a table, and has %s potential input records to use as a source for the table in queries. In such cases, there must be exactly one input table so that it can be resolved unambiguously.",
-                        key,
-                        value
-                ));
-    }
 }
