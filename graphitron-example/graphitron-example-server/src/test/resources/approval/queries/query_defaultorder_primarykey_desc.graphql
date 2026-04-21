@@ -1,6 +1,6 @@
 # Tests @defaultOrder(primaryKey: true, direction: DESC)
 query DefaultOrderPrimaryKeyDesc {
-    customersDefaultOrderPrimaryKeyDesc(first: 5) {
+    customersDefaultOrderPrimaryKeyDesc(first: 6) {
         edges {
             cursor
             node {

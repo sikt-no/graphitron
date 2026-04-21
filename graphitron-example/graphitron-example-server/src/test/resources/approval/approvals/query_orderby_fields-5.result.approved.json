@@ -3,6 +3,16 @@
         "customersOrderByFields": {
             "edges": [
                 {
+                    "cursor": "WzEwMDBd",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6MTAwMA",
+                        "name": {
+                            "firstName": "Example",
+                            "lastName": "Customer"
+                        }
+                    }
+                },
+                {
                     "cursor": "WzU5OV0",
                     "node": {
                         "id": "Q3VzdG9tZXI6NTk5",
@@ -21,21 +31,11 @@
                             "lastName": "DELVALLE"
                         }
                     }
-                },
-                {
-                    "cursor": "WzU5N10",
-                    "node": {
-                        "id": "Q3VzdG9tZXI6NTk3",
-                        "name": {
-                            "firstName": "FREDDIE",
-                            "lastName": "DUGGAN"
-                        }
-                    }
                 }
             ],
             "pageInfo": {
-                "startCursor": "WzU5OV0",
-                "endCursor": "WzU5N10",
+                "startCursor": "WzEwMDBd",
+                "endCursor": "WzU5OF0",
                 "hasNextPage": true
             }
         }

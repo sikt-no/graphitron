@@ -9,6 +9,12 @@
                     }
                 },
                 {
+                    "email": "EXAMPLE.CUSTOMER@example.com",
+                    "addressAsSubquery": {
+                        "id": "QWRkcmVzczoxMDAw"
+                    }
+                },
+                {
                     "email": "Mike.Hillyer@sakilastaff.com",
                     "addressAsSubquery": {
                         "id": "QWRkcmVzczoz"

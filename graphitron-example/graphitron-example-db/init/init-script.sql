@@ -30,3 +30,11 @@ ALTER TABLE ONLY FILM
 UPDATE FILM SET SEQUEL = 2 WHERE FILM_ID = 1;
 UPDATE FILM SET SEQUEL = 4 WHERE FILM_ID = 3;
 UPDATE FILM SET SEQUEL = 6 WHERE FILM_ID = 5;
+
+
+
+-- Rows added for testing nested single table interface queries
+INSERT INTO ADDRESS (address_id, address, district, city_id, postal_code, phone)
+VALUES (1000, 'Example Street 1', 'Example District', 244, '22474', '');
+INSERT INTO CUSTOMER (customer_id, store_id, first_name, last_name, email, address_id)
+VALUES (1000, 1, 'Example', 'Customer', 'EXAMPLE.CUSTOMER@example.com', 1000);
