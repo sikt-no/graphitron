@@ -42,7 +42,7 @@ Pivot from treating platform-id as a separate sum-type variant (`PlatformIdField
 
 Rewrite Sikt's externally-owned `KjerneJooqGenerator` so every platform-id table class additionally emits `public static final String __NODE_TYPE_ID` and `public static final Field<?>[] __NODE_KEY_COLUMNS`. Unblocks legacy-platform-id Steps 2–6 at release time. Scratch-only in this repo (proposed `scratch/kjerne-jooq/`); Sikt copies the final sources into their external repo and cuts a release.
 
-### Nesting-field emission **[Approved]** — [plan-nesting-field.md](plan-nesting-field.md)
+### Nesting-field emission **[In Progress]** — [plan-nesting-field.md](plan-nesting-field.md)
 
 Lift `ChildField.NestingField` out of `NOT_IMPLEMENTED_REASONS`. Classify the nested type's fields at parse time against the outer parent's table, project them into the parent's `$fields` via a recursive switch, and emit a `TypeRuntimeWiring` per nested type (registered from the outer parent's Fetchers class) so every leaf — scalar, `@field(name:)` remap, and later `@reference`/`@computed`/nested `@table` arms — resolves identically to its top-level counterpart. Default property fetching is rejected because `@field(name:)` remap would silently return the wrong column. First arm of Backlog item #8.
 
