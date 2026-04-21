@@ -1051,4 +1051,47 @@ class GraphQLQueryTest {
         var summary = (Map<String, Object>) films.get(0).get("summary");
         assertThat(summary).containsEntry("releaseYear", 2006);
     }
+
+    // ===== NestingField — nested inline TableField / LookupTableField (sfName threading) =====
+
+    @Test
+    void nestingField_withNestedInlineTableField_resolvesViaOuterTableAlias() {
+        // Film.inlineBundle.language is an inline TableField nested inside a NestingField.
+        // The switch arm at depth 1 references sf1.getSelectionSet() (not sf), proving the
+        // sfName parameter is threaded through InlineTableFieldEmitter. Without it the
+        // generated code would fail to compile (undefined sf at depth 1).
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { inlineBundle { language { languageId name } } } }");
+        var films = (List<Map<String, Object>>) data.get("filmById");
+        var bundle = (Map<String, Object>) films.get(0).get("inlineBundle");
+        var language = (Map<String, Object>) bundle.get("language");
+        assertThat(language.get("languageId")).isEqualTo(1);
+        assertThat(language.get("name").toString().trim()).isEqualTo("English");
+    }
+
+    @Test
+    void nestingField_withNestedInlineLookupTableField_appliesLookupKey() {
+        // Film.inlineBundle.actorsByKey is an inline LookupTableField nested inside a
+        // NestingField. Exercises the sf1-threaded path through InlineLookupTableFieldEmitter
+        // (inputRows call, empty-input short-circuit, buildInnerSelect all use sfName).
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { inlineBundle { actorsByKey(actor_id: [1, 2]) { actorId firstName } } } }");
+        var films = (List<Map<String, Object>>) data.get("filmById");
+        var bundle = (Map<String, Object>) films.get(0).get("inlineBundle");
+        var actors = (List<Map<String, Object>>) bundle.get("actorsByKey");
+        assertThat(actors).extracting(a -> a.get("firstName"))
+            .containsExactlyInAnyOrder("PENELOPE", "NICK");
+    }
+
+    @Test
+    void nestingField_withNestedInlineLookupTableField_emptyInputShortCircuit() {
+        // Empty @lookupKey list hits the rows.length == 0 short-circuit branch in
+        // InlineLookupTableFieldEmitter — which also uses sfName in the falseCondition
+        // multiset. Parent row still carries the slot, populated as an empty list.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { inlineBundle { actorsByKey(actor_id: []) { actorId } } } }");
+        var films = (List<Map<String, Object>>) data.get("filmById");
+        var bundle = (Map<String, Object>) films.get(0).get("inlineBundle");
+        assertThat((List<?>) bundle.get("actorsByKey")).isEmpty();
+    }
 }

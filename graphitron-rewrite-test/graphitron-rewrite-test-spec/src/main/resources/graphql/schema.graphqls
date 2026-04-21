@@ -101,6 +101,12 @@ type Film @table(name: "film") {
     # NestingField multi-level fixture: FilmInfo carries a further NestingField (meta)
     # whose own scalars resolve against the same outer Film table.
     info:        FilmInfo
+    # NestingField + inline TableField/LookupTableField fixture: exercises the sfName
+    # parameter threaded into the inline emitters. Nested field arms resolve against the
+    # outer Film table alias via $fields recursion at depth 1, so they reference sf1
+    # rather than a literal sf. Without the parameterisation, the generated code for
+    # either nested arm would reference an undefined sf variable at depth ≥ 1.
+    inlineBundle: FilmInlineBundle
     # C4 RecordTableField fixture: pass Film record through to FilmDetails (ConstructorField),
     # then batch-load Language via DataLoader from FilmDetails.language (RecordTableField).
     filmDetails: FilmDetails
@@ -145,6 +151,19 @@ type FilmInfo {
 type FilmMeta {
     title:  String @field(name: "TITLE")
     length: Int    @field(name: "LENGTH")
+}
+
+# NestingField parent for inline TableField + LookupTableField. Resolves against the
+# outer Film table alias, so each nested inline arm is emitted via the sfName-threaded
+# emitter path. `language` is a single-hop inline TableField (Film.language_id →
+# Language.language_id); `actorsByKey` is an inline LookupTableField traversing the
+# film_actor junction with an @lookupKey VALUES+ON keyset.
+type FilmInlineBundle {
+    language: Language @reference(path: [{key: "film_language_id_fkey"}])
+    actorsByKey(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
 }
 
 # argres Phase 3 composite-key fixture. Each key carries both film_id and actor_id as

@@ -50,10 +50,12 @@ public final class InlineLookupTableFieldEmitter {
      * @param parentAlias  the local variable name for the parent alias in the generated code
      *                     (currently always {@code "table"} — {@link TypeClassGenerator}'s
      *                     {@code $fields} signature parameter)
-     * @param sfName       the caller-scope {@code SelectedField} variable name. Outer
-     *                     {@link TypeClassGenerator#emitSelectionSwitch} uses {@code sf} at depth 0
-     *                     and {@code sf1}/{@code sf2}/… inside {@code NestingField} recursion.
-     *                     Threaded through so nested depths don't reference an undefined {@code sf}.
+     * @param sfName       the caller-scope {@code SelectedField} variable name that is in
+     *                     scope at the site where this body is emitted. Threaded through so
+     *                     the emitter substitutes the caller's depth-specific variable rather
+     *                     than a hardcoded literal — required for {@code NestingField}
+     *                     recursion, where each nesting level declares its own
+     *                     {@code SelectedField} local to avoid JLS §14.4.2 shadowing.
      */
     public static CodeBlock buildSwitchArmBody(ChildField.LookupTableField lf, String parentAlias, String sfName) {
         if (JoinPathEmitter.hasConditionJoin(lf.joinPath())) {

@@ -111,13 +111,37 @@ public class TypeClassGenerator {
         var builder = TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
             .addMethod(build$FieldsMethod(tableRef, columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields, nestingFields));
-        for (var lf : lookupTableFields) {
+        // Helpers for inline LookupTableFields are hoisted onto this outer type class — including
+        // ones nested inside NestingField sub-types, which don't get their own type class (plain
+        // objects share the parent's table context). The generated switch arm calls the helper
+        // unqualified, so every reachable LookupTableField must have its helper here.
+        var allLookupFields = new ArrayList<ChildField.LookupTableField>(lookupTableFields);
+        collectNestedLookupFields(nestingFields, allLookupFields);
+        for (var lf : allLookupFields) {
             var targetJooqTableClass = ClassName.get(
                 no.sikt.graphitron.rewrite.RewriteConfig.getGeneratedJooqPackage() + ".tables",
                 lf.returnType().table().javaClassName());
             builder.addMethod(LookupValuesJoinEmitter.buildChildInputRowsMethod(lf, targetJooqTableClass));
         }
         return builder.build();
+    }
+
+    /**
+     * Walks {@link ChildField.NestingField} sub-trees and accumulates every reachable
+     * {@link ChildField.LookupTableField} into {@code sink}. Nested plain-object types share the
+     * parent table-type's class, so their lookup-rows helpers must be emitted there too.
+     */
+    private static void collectNestedLookupFields(List<ChildField.NestingField> nestingFields,
+                                                  List<ChildField.LookupTableField> sink) {
+        for (var nf : nestingFields) {
+            for (var child : nf.nestedFields()) {
+                if (child instanceof ChildField.LookupTableField lf) {
+                    sink.add(lf);
+                } else if (child instanceof ChildField.NestingField deeper) {
+                    collectNestedLookupFields(List.of(deeper), sink);
+                }
+            }
+        }
     }
 
     /**
