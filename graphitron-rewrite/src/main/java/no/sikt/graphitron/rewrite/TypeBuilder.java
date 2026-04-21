@@ -576,7 +576,7 @@ class TypeBuilder {
             ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
         if (field.hasAppliedDirective(DIR_REFERENCE)) {
-            var path = ctx.parsePath(field, name, resolvedTable.tableName());
+            var path = ctx.parsePath(field, name, resolvedTable.tableName(), null);
             if (path.hasError()) return new InputFieldResolution.Unresolved(name, null, path.errorMessage());
             return svc.resolveColumnForReference(columnName, path.elements(), resolvedTable.tableName())
                 .<InputFieldResolution>map(col -> new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(

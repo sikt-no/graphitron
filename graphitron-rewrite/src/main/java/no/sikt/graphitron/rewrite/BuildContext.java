@@ -383,27 +383,39 @@ class BuildContext {
     }
 
     /**
-     * Parses the {@code @reference(path:)} directive on {@code container} into a {@link ParsedPath}.
+     * Parses the {@code @reference(path:)} directive on {@code container} into a {@link ParsedPath},
+     * or — when the directive is absent or carries an empty {@code path:} list — infers a single-hop
+     * {@link FkJoin} from the catalog when exactly one foreign key connects {@code startSqlTableName}
+     * to {@code targetSqlTableName}.
      *
-     * <p>Returns {@code ParsedPath(List.of(), null)} when no {@code @reference} directive is present.
-     * Returns a {@code ParsedPath} with a non-null {@code errorMessage} when any path element
-     * cannot be resolved.
+     * <p>Inference fires only when all three of: {@code startSqlTableName != null},
+     * {@code targetSqlTableName != null}, and the two names differ (case-insensitive) — the same
+     * constraints as {@link JooqCatalog#findForeignKeysBetweenTables}. Zero or multiple FKs produce
+     * a {@code ParsedPath} with a non-null {@code errorMessage} asking the author to write an
+     * explicit {@code @reference} directive.
+     *
+     * <p>Returns {@code ParsedPath(List.of(), null)} when both inference preconditions are
+     * unsatisfied (typical for {@code ColumnReferenceField}, service reconnect, and same-table
+     * {@code @externalField} / {@code @tableMethod} sites).
      *
      * <p>{@code fieldName} is the GraphQL field name and is used to compute per-step aliases
      * ({@code fieldName + "_" + stepIndex}). {@code startSqlTableName} is the SQL table name at
      * the start of the path (the parent type's table), or {@code null} when the source is not
      * table-backed — in which case FK direction is inferred as forward and connectivity is not
-     * validated.
+     * validated. {@code targetSqlTableName} is the SQL name of the return type's table when known,
+     * or {@code null} to disable implicit-path inference at this site.
      */
-    ParsedPath parsePath(GraphQLDirectiveContainer container, String fieldName, String startSqlTableName) {
+    ParsedPath parsePath(GraphQLDirectiveContainer container, String fieldName,
+            String startSqlTableName, String targetSqlTableName) {
         var directive = container.getAppliedDirective(DIR_REFERENCE);
-        if (directive == null) return new ParsedPath(List.of(), null);
-
-        var pathArg = directive.getArgument(ARG_PATH);
-        if (pathArg == null) return new ParsedPath(List.of(), null);
-
-        Object pathValue = pathArg.getValue();
-        List<?> elements = pathValue instanceof List<?> l ? l : List.of(pathValue);
+        var pathArg = directive != null ? directive.getArgument(ARG_PATH) : null;
+        List<?> elements;
+        if (pathArg != null) {
+            Object pathValue = pathArg.getValue();
+            elements = pathValue instanceof List<?> l ? l : List.of(pathValue);
+        } else {
+            elements = List.of();
+        }
 
         var resolvedElements = new ArrayList<JoinStep>();
         var errors = new ArrayList<String>();
@@ -424,7 +436,72 @@ class BuildContext {
         if (!errors.isEmpty()) {
             return new ParsedPath(List.of(), String.join("; ", errors));
         }
+        if (resolvedElements.isEmpty()
+                && startSqlTableName != null
+                && targetSqlTableName != null
+                && !startSqlTableName.equalsIgnoreCase(targetSqlTableName)) {
+            var fks = catalog.findForeignKeysBetweenTables(startSqlTableName, targetSqlTableName);
+            if (fks.size() == 1) {
+                resolvedElements.add(synthesizeFkJoin(fks.get(0), startSqlTableName, fieldName, 0, null));
+            } else {
+                return new ParsedPath(List.of(),
+                    fkCountMessage(startSqlTableName, targetSqlTableName, fks, /*directiveAbsent=*/true));
+            }
+        }
         return new ParsedPath(List.copyOf(resolvedElements), null);
+    }
+
+    /**
+     * Builds an {@link FkJoin} step for a foreign key that connects {@code sourceSqlName} to some
+     * other table. Traversal direction is inferred from which side of the FK the source name
+     * touches (case-insensitive). The step alias follows the explicit-path convention,
+     * {@code fieldName + "_" + stepIndex}, so inferred and explicit position-0 steps produce
+     * record-equivalent {@code FkJoin} values for the same shape.
+     *
+     * <p>{@code sourceSqlName} must be non-null; callers gate inference on that precondition.
+     * {@code whereFilter} is {@code null} for pure inference; the {@code {table:}} branch in
+     * {@link #parsePathElement} may pass a resolved {@link MethodRef} when the element carries
+     * a {@code condition:} sub-argument.
+     */
+    private FkJoin synthesizeFkJoin(ForeignKey<?, ?> f, String sourceSqlName, String fieldName,
+            int stepIndex, MethodRef whereFilter) {
+        String fkSideTable  = f.getTable().getName();
+        String keySideTable = f.getKey().getTable().getName();
+        String targetSqlName = sourceSqlName.equalsIgnoreCase(fkSideTable) ? keySideTable : fkSideTable;
+        String fkJavaConstant = catalog.fkJavaConstantName(f.getName()).orElse("");
+        TableRef targetTable = resolveTable(targetSqlName);
+        TableRef sourceTable = resolveTable(sourceSqlName);
+        List<ColumnRef> sourceColumns = resolveFkColumnRefs(f.getTable(), f.getFields());
+        List<ColumnRef> targetColumns = resolveFkColumnRefs(f.getKey().getTable(), f.getKey().getFields());
+        String alias = fieldName + "_" + stepIndex;
+        return new FkJoin(f.getName(), fkJavaConstant, sourceTable, sourceColumns, targetTable, targetColumns, whereFilter, alias);
+    }
+
+    /**
+     * Renders the zero-FK / multi-FK error message shared by the two inference call sites:
+     * empty-elements inference in {@link #parsePath} ({@code directiveAbsent = true}) and the
+     * {@code {table:}} branch of {@link #parsePathElement} ({@code directiveAbsent = false}).
+     *
+     * <p>When {@code directiveAbsent} is true, both arms append "; add a @reference directive to
+     * specify the join path" — that's the actionable fix when the user omitted the directive
+     * entirely. When false, the zero-FK arm just states the fact (user already wrote
+     * {@code {table: "..."}}, so telling them to add a directive is noise) and the multi-FK arm
+     * instead enumerates the candidate FK names under "— use 'key' to specify which: …".
+     */
+    private String fkCountMessage(String source, String target, List<ForeignKey<?, ?>> fks, boolean directiveAbsent) {
+        if (fks.isEmpty()) {
+            String msg = "no foreign key found between tables '" + source + "' and '" + target + "'";
+            if (directiveAbsent) msg += "; add a @reference directive to specify the join path";
+            return msg;
+        }
+        String msg = "multiple foreign keys found between tables '" + source + "' and '" + target + "'";
+        if (directiveAbsent) {
+            msg += "; add a @reference directive to specify the join path";
+        } else {
+            String fkNames = fks.stream().map(ForeignKey::getName).collect(Collectors.joining(", "));
+            msg += " — use 'key' to specify which: " + fkNames;
+        }
+        return msg;
     }
 
     /**
@@ -493,27 +570,12 @@ class BuildContext {
                 return;
             }
             var fks = catalog.findForeignKeysBetweenTables(currentSourceSqlName, tableName.get());
-            if (fks.isEmpty()) {
-                errors.add("no foreign key found between tables '" + currentSourceSqlName + "' and '" + tableName.get() + "'");
+            if (fks.size() != 1) {
+                errors.add(fkCountMessage(currentSourceSqlName, tableName.get(), fks, /*directiveAbsent=*/false));
                 return;
             }
-            if (fks.size() > 1) {
-                var fkNames = fks.stream().map(ForeignKey::getName).collect(Collectors.joining(", "));
-                errors.add("multiple foreign keys found between tables '" + currentSourceSqlName + "' and '" + tableName.get()
-                    + "' — use 'key' to specify which: " + fkNames);
-                return;
-            }
-            var f = fks.get(0);
-            String fkSideTable  = f.getTable().getName();
-            String keySideTable = f.getKey().getTable().getName();
-            String targetSqlName = currentSourceSqlName.equalsIgnoreCase(fkSideTable) ? keySideTable : fkSideTable;
-            String fkJavaConstant = catalog.fkJavaConstantName(f.getName()).orElse("");
-            TableRef targetTable = resolveTable(targetSqlName);
-            TableRef sourceTable = resolveTable(currentSourceSqlName);
-            List<ColumnRef> sourceColumns = resolveFkColumnRefs(f.getTable(), f.getFields());
-            List<ColumnRef> targetColumns = resolveFkColumnRefs(f.getKey().getTable(), f.getKey().getFields());
             MethodRef whereFilter = hasCondition ? resolveConditionRef(asMap(conditionRaw)) : null;
-            out.add(new FkJoin(f.getName(), fkJavaConstant, sourceTable, sourceColumns, targetTable, targetColumns, whereFilter, alias));
+            out.add(synthesizeFkJoin(fks.get(0), currentSourceSqlName, fieldName, stepIndex, whereFilter));
             return;
         }
         if (hasCondition) {

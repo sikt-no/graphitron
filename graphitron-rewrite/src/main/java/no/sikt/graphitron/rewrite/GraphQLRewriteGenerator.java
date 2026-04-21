@@ -51,8 +51,7 @@ public class GraphQLRewriteGenerator {
             }
         });
 
-        var jooqCatalog = new JooqCatalog(RewriteConfig.getGeneratedJooqPackage());
-        var errors = new GraphitronSchemaValidator(jooqCatalog).validate(schema);
+        var errors = new GraphitronSchemaValidator().validate(schema);
         if (!errors.isEmpty()) {
             errors.forEach(e -> {
                 var loc = e.location();

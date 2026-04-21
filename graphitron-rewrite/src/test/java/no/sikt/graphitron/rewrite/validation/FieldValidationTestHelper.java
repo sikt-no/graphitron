@@ -3,8 +3,6 @@ package no.sikt.graphitron.rewrite.validation;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.GraphitronSchemaValidator;
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -27,7 +25,7 @@ public final class FieldValidationTestHelper {
     private FieldValidationTestHelper() {}
 
     private static GraphitronSchemaValidator validator() {
-        return new GraphitronSchemaValidator(new JooqCatalog(RewriteConfig.getGeneratedJooqPackage()));
+        return new GraphitronSchemaValidator();
     }
 
     // --- Schema assembly helpers ---

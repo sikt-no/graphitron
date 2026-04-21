@@ -31,22 +31,6 @@ import no.sikt.graphitron.rewrite.model.BatchKey;
  */
 public class GraphitronSchemaValidator {
 
-    private final JooqCatalog jooqCatalog;
-
-    /** Production constructor: FK validation is active. */
-    public GraphitronSchemaValidator(JooqCatalog jooqCatalog) {
-        this.jooqCatalog = jooqCatalog;
-    }
-
-    /**
-     * No-catalog constructor: FK validation is skipped (for unit tests that do not exercise the
-     * FK-count path).
-     */
-    public GraphitronSchemaValidator() {
-        this(null);
-    }
-
-
     public List<ValidationError> validate(GraphitronSchema schema) {
         var types = schema.types();
         var errors = new ArrayList<ValidationError>();
@@ -322,43 +306,16 @@ public class GraphitronSchemaValidator {
         // Detection confirmed the table-class method exists; no further structural checks needed.
     }
     private void validateNodeIdReferenceField(no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField field, List<ValidationError> errors) {
-        // @node is always resolved — builder returns UnclassifiedField if the type is missing or lacks @node
-        // Use targetType for table-level FK and path validation
+        // @node is always resolved — builder returns UnclassifiedField if the type is missing or lacks @node.
+        // FK-count validation (implicit inference failure) is handled at classification time in
+        // BuildContext.parsePath; the path is either non-empty here or classification already emitted
+        // an UnclassifiedField. Validate the path's steps and that it leads to the target type's table.
         if (!(field.targetType() instanceof ReturnTypeRef.TableBoundReturnType tb)) {
             validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
             return;
         }
-        no.sikt.graphitron.rewrite.model.TableRef targetTable = tb.table();
-
-        if (field.joinPath().isEmpty()) {
-            // Implicit join: exactly one FK must exist between parent and target tables
-            var parentTable = field.parentTable();
-            if (parentTable != null && jooqCatalog != null) {
-                int fkCount = jooqCatalog.findForeignKeysBetweenTables(
-                    parentTable.tableName(), targetTable.tableName()).size();
-                if (fkCount == 0) {
-                    errors.add(new ValidationError(
-                        "Field '" + field.qualifiedName() + "': no foreign key found between tables '"
-                            + parentTable.tableName() + "' and '"
-                            + targetTable.tableName()
-                            + "'; add a @reference directive to specify the join path",
-                        field.location()
-                    ));
-                } else if (fkCount > 1) {
-                    errors.add(new ValidationError(
-                        "Field '" + field.qualifiedName() + "': multiple foreign keys found between tables '"
-                            + parentTable.tableName() + "' and '"
-                            + targetTable.tableName()
-                            + "'; add a @reference directive to specify the join path",
-                        field.location()
-                    ));
-                }
-            }
-        } else {
-            // Explicit reference path: validate steps and check it leads to the target type's table
-            validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
-            validateReferenceLeadsToType(field.qualifiedName(), field.location(), field.joinPath(), field.typeName(), targetTable, errors);
-        }
+        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
+        validateReferenceLeadsToType(field.qualifiedName(), field.location(), field.joinPath(), field.typeName(), tb.table(), errors);
     }
 
     private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<JoinStep> path, String typeName, no.sikt.graphitron.rewrite.model.TableRef targetTable, List<ValidationError> errors) {

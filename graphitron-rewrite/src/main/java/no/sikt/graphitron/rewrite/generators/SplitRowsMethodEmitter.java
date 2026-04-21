@@ -161,11 +161,6 @@ public final class SplitRowsMethodEmitter {
                 "@splitQuery '" + stf.qualifiedName() + "' with a condition-join step cannot be "
                 + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
         }
-        if (stf.joinPath().isEmpty()) {
-            return java.util.Optional.of(
-                "@splitQuery '" + stf.qualifiedName() + "' requires a @reference path — "
-                + "Phase 2b C1 scope does not support path-less batched splits");
-        }
         return java.util.Optional.empty();
     }
 
@@ -204,11 +199,6 @@ public final class SplitRowsMethodEmitter {
                 "@splitQuery @lookupKey '" + slf.qualifiedName() + "' with a condition-join step cannot be "
                 + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
         }
-        if (slf.joinPath().isEmpty()) {
-            return java.util.Optional.of(
-                "@splitQuery @lookupKey '" + slf.qualifiedName() + "' requires a @reference path — "
-                + "Phase 2b C2 scope does not support path-less batched lookup splits");
-        }
         return java.util.Optional.empty();
     }
 
@@ -242,10 +232,6 @@ public final class SplitRowsMethodEmitter {
             return java.util.Optional.of(
                 "RecordTableField '" + rtf.qualifiedName() + "' with a condition-join step cannot be "
                 + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
-        }
-        if (rtf.joinPath().isEmpty()) {
-            return java.util.Optional.of(
-                "RecordTableField '" + rtf.qualifiedName() + "' requires a @reference path.");
         }
         return java.util.Optional.empty();
     }
@@ -284,10 +270,6 @@ public final class SplitRowsMethodEmitter {
             return java.util.Optional.of(
                 "RecordLookupTableField '" + rltf.qualifiedName() + "' with a condition-join step cannot be "
                 + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
-        }
-        if (rltf.joinPath().isEmpty()) {
-            return java.util.Optional.of(
-                "RecordLookupTableField '" + rltf.qualifiedName() + "' requires a @reference path.");
         }
         return java.util.Optional.empty();
     }
