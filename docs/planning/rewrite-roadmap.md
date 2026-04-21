@@ -50,6 +50,10 @@ Rewrite Sikt's externally-owned `KjerneJooqGenerator` so every platform-id table
 
 Lift `ChildField.NestingField` out of `NOT_IMPLEMENTED_REASONS`. Classify the nested type's fields at parse time against the outer parent's table, project them into the parent's `$fields` via a recursive switch, and emit a `TypeRuntimeWiring` per nested type (registered from the outer parent's Fetchers class) so every leaf — scalar, `@field(name:)` remap, and later `@reference`/`@computed`/nested `@table` arms — resolves identically to its top-level counterpart. Default property fetching is rejected because `@field(name:)` remap would silently return the wrong column. First arm of Backlog item #8.
 
+### Implicit `@reference` path inference **[Draft]** — [plan-implicit-reference-inference.md](plan-implicit-reference-inference.md)
+
+Make `@reference(path: ...)` optional at every child-field site that can use it. `BuildContext.parsePath` gains a target-table parameter and, when the resolved path is empty with both tables known, synthesizes a single-hop `FkJoin` from the one FK between source and target; zero or multiple FKs produce a classifier-time `UnclassifiedField` with "add a `@reference` directive to specify the join path". Deletes the four EMPTY_PATH stub branches in `SplitRowsMethodEmitter.unsupportedReason` (path-less `SplitTableField` / `SplitLookupTableField` / `RecordTableField` / `RecordLookupTableField` variants start working where the inference succeeds) and the duplicated FK-count rule in `GraphitronSchemaValidator.validateNodeIdReferenceField`. Matches legacy-generator behaviour.
+
 ## Backlog
 
 Unplanned items. Pick one, draft a plan, then move to Active.
