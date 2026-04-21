@@ -1,6 +1,6 @@
 # Implicit `@reference` path inference
 
-> **Status:** Draft
+> **Status:** Approved
 
 ## Overview
 

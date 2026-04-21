@@ -46,7 +46,7 @@ Pivot from treating platform-id as a separate sum-type variant (`PlatformIdField
 
 Rewrite Sikt's externally-owned `KjerneJooqGenerator` so every platform-id table class additionally emits `public static final String __NODE_TYPE_ID` and `public static final Field<?>[] __NODE_KEY_COLUMNS`. Unblocks legacy-platform-id Steps 2–6 at release time. Scratch-only in this repo (proposed `scratch/kjerne-jooq/`); Sikt copies the final sources into their external repo and cuts a release.
 
-### Implicit `@reference` path inference **[Draft]** — [plan-implicit-reference-inference.md](plan-implicit-reference-inference.md)
+### Implicit `@reference` path inference **[Approved]** — [plan-implicit-reference-inference.md](plan-implicit-reference-inference.md)
 
 Make `@reference(path: ...)` optional at every child-field site that can use it. `BuildContext.parsePath` gains a target-table parameter and, when the resolved path is empty with both tables known, synthesizes a single-hop `FkJoin` from the one FK between source and target; zero or multiple FKs produce a classifier-time `UnclassifiedField` with "add a `@reference` directive to specify the join path". Deletes the four EMPTY_PATH stub branches in `SplitRowsMethodEmitter.unsupportedReason` (path-less `SplitTableField` / `SplitLookupTableField` / `RecordTableField` / `RecordLookupTableField` variants start working where the inference succeeds) and the duplicated FK-count rule in `GraphitronSchemaValidator.validateNodeIdReferenceField`. Matches legacy-generator behaviour.
 
