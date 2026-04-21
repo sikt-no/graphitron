@@ -5,10 +5,11 @@
 > Add a `@facet` directive for filter-input fields. The schema-transform stage
 > expands each `@asConnection` field's Connection type with a `facets` object
 > whose fields mirror the `@facet`-marked filter inputs; the rewrite classifier
-> and fetcher emit one `GROUPING SETS` aggregate query per Connection request,
-> with per-aggregate `FILTER` clauses giving each facet its filter-minus-self
-> predicate in a single table scan. Delivers the "filter ↔ facet" contract the
-> admissions UX needs without nested queries.
+> and fetcher emit one `UNION ALL` aggregate query per Connection request, with
+> each arm computing one facet's counts under its filter-minus-self predicate.
+> Phase 1 spike confirmed this shape over `GROUPING SETS`
+> ([spike report](spike-faceted-search-sql.md)). Delivers the "filter ↔ facet"
+> contract the admissions UX needs without nested queries.
 
 ## Overview
 
@@ -66,11 +67,13 @@ type StringFacetValue     { value: String!     count: Int! }
 > during Draft → Approved review.
 
 At runtime, any selection under `facets` triggers **one extra SQL
-statement** — a single `GROUPING SETS` query with per-aggregate
-`FILTER (WHERE …)` clauses, one grouping set per selected facet. This
-yields all facet counts in a single table scan while preserving the
-per-facet *filter-minus-self* semantics. See *SQL emission strategy*
-below. Results merge into a single `ConnectionResult` carrier.
+statement** — a `UNION ALL` of per-facet `GROUP BY` arms, one arm per
+selected facet. Each arm applies the full Connection filter *minus
+that facet's own predicate*, so a selected facet value still shows
+its siblings' counts. Postgres plans each arm independently (bitmap
+index scans on selective filters) and executes arms concurrently via
+`Parallel Append`. See *SQL emission strategy* below. Results merge
+into a single `ConnectionResult` carrier.
 
 ## Current State
 
@@ -118,11 +121,12 @@ below. Results merge into a single `ConnectionResult` carrier.
   encountered.
 - `FieldWrapper.Connection` carries a `FacetSpec` describing each facet
   (input-field name → column + value-scalar type).
-- `TypeFetcherGenerator` emits **one** `GROUPING SETS` aggregate query
-  covering all selected facets in a single table scan. Each grouping
-  set's count column uses a `FILTER (WHERE …)` clause that applies the
-  full Connection filter *minus that facet's own predicate*, so a
-  selected facet value still shows its siblings' counts.
+- `TypeFetcherGenerator` emits **one** `UNION ALL` aggregate query per
+  Connection request, one arm per selected facet. Each arm's `WHERE`
+  applies the full Connection filter *minus that facet's own
+  predicate*, so a selected facet value still shows its siblings'
+  counts. Each arm can use per-facet indexes; `Parallel Append`
+  executes arms concurrently.
 - `ConnectionResult` carries the facet results; a new `ConnectionHelper.facets`
   static assembles them; `GraphitronWiringClassGenerator` wires the `facets`
   field on each Connection type.
@@ -197,7 +201,7 @@ facets after v1 lands.
 
 ---
 
-## SQL emission strategy — one `GROUPING SETS` query per Connection request
+## SQL emission strategy — one `UNION ALL` facet query per Connection request
 
 The facet aggregate is a **separate** query from the paginated
 edges/nodes — it joins no rows into that query and shares no WHERE
@@ -213,36 +217,36 @@ count grouped on its column under the *full filter minus that facet's
 own predicate*. The paginated `edges`/`nodes` query is unaffected and
 continues to apply the full filter unchanged.
 
-### v1 default: one `GROUPING SETS` query with per-aggregate `FILTER`
+### v1 default: `UNION ALL` of per-facet `GROUP BY` arms
 
 ```sql
-SELECT
-    GROUPING(rating)           AS g_rating,
-    GROUPING(rental_duration)  AS g_rental,
-    rating,
-    rental_duration,
-    COUNT(*) FILTER (WHERE <cond_minus_rating>) AS rating_count,
-    COUNT(*) FILTER (WHERE <cond_minus_rental>) AS rental_count
+SELECT 'rating' AS facet, rating::text AS value, COUNT(*) AS cnt
 FROM film
-GROUP BY GROUPING SETS ((rating), (rental_duration));
+WHERE <non-facet-filters> AND <all-facet-filters-except-rating>
+GROUP BY rating
+UNION ALL
+SELECT 'rental_duration', rental_duration::text, COUNT(*)
+FROM film
+WHERE <non-facet-filters> AND <all-facet-filters-except-rental>
+GROUP BY rental_duration
+ORDER BY facet, cnt DESC, value;
 ```
 
-Each grouping set yields one row per distinct value of the facet column
-it groups on. Per-aggregate `FILTER (WHERE …)` clauses apply the
-corresponding filter-minus-self predicate on the same scan — so the
-"one WHERE shared across grouping sets" objection that rules out plain
-`GROUPING SETS` no longer applies: there *is* no outer WHERE; the
-per-set predicates live on the aggregates.
+One arm per facet. Each arm applies every filter *except its own*
+(filter-minus-self). Results concatenate into a single shape that the
+Java decoder demultiplexes by the `facet` label column; `value::text`
+unifies heterogeneous facet column types into one SQL type.
 
-Rows are demultiplexed client-side via the `GROUPING()` flags: a row
-with `g_rating = 0, g_rental = 1` carries a `rating` facet value
-(`rating_count` is the count; `rental_count` is meaningless and
-ignored). This is a small, mechanical decoder on the Java side.
-
-One table scan covers *all* facets in the Connection request, whether
-their value domains are bounded (enums, Booleans) or open-ended
-(strings, Ints, custom scalars). No pre-query for DISTINCT values is
-needed — `GROUPING SETS` discovers them in the same scan as the counts.
+Phase 1 spike ([report](spike-faceted-search-sql.md)) measured this
+shape against four alternatives on a 200 000-row dataset. `UNION ALL`
+wins or ties every scenario because Postgres plans each arm
+independently — selective filters pick per-facet indexes; the
+`Parallel Append` executor runs arms concurrently. The originally
+proposed `GROUPING SETS + FILTER` form (now "strategy A" below) is
+invalid syntax in Postgres (`GROUPING()` disallowed inside `FILTER`);
+its CASE-dispatched workaround parses but loses on every measured
+scenario — it forces a full table seq scan regardless of filter
+selectivity, which is exactly the wrong trade-off for selective UIs.
 
 ### Round-trips and scans
 
@@ -251,211 +255,146 @@ for edges/nodes, one for the facet aggregate. When no facet field is
 in the GraphQL selection set, the aggregate query is skipped entirely
 — one round-trip, identical to today.
 
-A selection gate still matters, but at the *grouping-set* level: a
-facet whose field isn't selected contributes no grouping set and no
-aggregate column, shrinking the single query.
+A selection gate still matters per-arm: a facet whose field isn't
+selected contributes no `UNION ALL` arm and no aggregate, shrinking
+the single query.
 
 ### Strategy comparison
 
 | Strategy | Round-trips | Scans per facet query | Filter-minus-self per facet | Portability | Verdict |
 |---|---|---|---|---|---|
-| **A. `GROUPING SETS` + per-aggregate `FILTER`** | 2 | 1 | Yes — each set's aggregate owns its `FILTER` predicate | PostgreSQL ✓ (Oracle ✓; SQL:2003) | **v1 default** |
-| **B. One `GROUP BY` per facet** | 1 + N | N | Trivially yes — each query owns its WHERE | All targets | Fallback if A unavailable; v2 optimization not needed |
-| **C. `UNION ALL` of per-facet `GROUP BY`s** | 2 | Up to N (planner-dependent; CTE materialization helps) | Yes — each branch owns its WHERE | All targets | Redundant once A lands; same round-trip, worse scan count |
+| **A. `GROUPING SETS` + per-aggregate `FILTER`** | 2 | 1 full seq scan | Yes (requires CASE-dispatched aggregates — `GROUPING()` is banned inside `FILTER` in Postgres) | PostgreSQL (CASE form only), Oracle ✓ | Rejected by Phase 1 spike — never fastest, loses per-facet indexes |
+| **B. One `GROUP BY` per facet** | 1 + N | N (index-capable per arm) | Trivially yes — each query owns its WHERE | All targets | v2 fallback when facet count makes UNION ungainly (~10+) |
+| **C. `UNION ALL` of per-facet `GROUP BY`s** | 2 | N (index-capable per arm; Parallel Append runs them concurrently) | Yes — each branch owns its WHERE | All targets | **v1 default** |
 | **D. Plain `GROUPING SETS`** (shared outer WHERE) | 2 | 1 | **No** — single WHERE shared across sets | PostgreSQL, Oracle | Rejected — collapses the facet whose filter is active |
-| **E. Window fns (`COUNT() OVER (PARTITION BY col)`)** | 2 | 1 per facet column (cartesian issue across facets) | Possible per-facet via `FILTER (WHERE …) OVER (PARTITION BY …)` | All targets | Subsumed by A; no advantage and awkward for multi-facet |
-| **F. Conditional aggregation on known values** (`COUNT(*) FILTER (WHERE col = 'G')` etc.) | 2 | 1 | Yes | PostgreSQL `FILTER` / SQL:2003 | Rejected — requires pre-enumerated value domains; A subsumes it without that constraint |
+| **E. Window fns (`COUNT() OVER (PARTITION BY col)`)** | 2 | 1 per facet column (cartesian issue across facets) | Possible per-facet via `FILTER (WHERE …) OVER (PARTITION BY …)` | All targets | Rejected — multi-facet grid-cartesian-blows-up |
+| **F. Conditional aggregation on known values** (`COUNT(*) FILTER (WHERE col = 'G')` etc.) | 2 | 1 | Yes | PostgreSQL `FILTER` / SQL:2003 | Rejected — requires pre-enumerated value domains; fails for open-ended facets |
+
+**Why shape C wins over shape A.** Shape A forces a single seq scan
+because GROUPING SETS aggregates depend on every row — no per-facet
+WHERE, no per-facet index. Shape C's arms are independent queries;
+each one's WHERE lets the planner pick a bitmap index scan when
+filters are selective. On the spike dataset:
+
+- S3 (multi-filter, both facets indexed): C 27 ms vs A 38 ms.
+- S5 (open-ended prefix): C 27 ms vs A 51 ms.
+- S1 (no filter): C 29 ms vs A 32 ms — roughly tied.
+
+Shape C never loses. Shape A never wins.
 
 **Why plain `GROUPING SETS` (strategy D) still fails.** A single shared
 outer WHERE applied before the grouping sets collapses any facet whose
 predicate is active: if the WHERE has `rating = 'PG'` then the `rating`
 grouping set only sees PG rows and the facet collapses to one bucket.
-Strategy A avoids this by dropping the outer WHERE entirely and moving
-each set's predicate into the `FILTER` clause of *its* count aggregate.
+This is the reason the plan originally reached for A's per-aggregate
+FILTER workaround — but A's CASE-dispatched form pays the full-scan
+cost without giving anything back, so we skip to C.
 
 **Why window functions (strategy E) are subsumed.** A shape like
 `SELECT DISTINCT col, COUNT(*) FILTER (WHERE cond_minus_col) OVER
-(PARTITION BY col) FROM film` does give you one-scan, filter-minus-self
-counts for a *single* facet. But combining multiple facets into one
-query runs into cartesian-cardinality issues across distinct facet
-columns. `GROUPING SETS` is the natural fit for multi-facet.
+(PARTITION BY col) FROM film` gives one-scan filter-minus-self counts
+for a *single* facet, but combining multiple facets grids to N₁ × N₂
+× … output rows per input row. `UNION ALL` is the natural fit for
+multi-facet.
 
-**Why `UNION ALL` (strategy C) is redundant once A lands.** It has the
-same round-trip count as A (one aggregate query), but PostgreSQL will
-typically scan the base table once per branch — the CTE-materialization
-path that would deduplicate scans has its own cost. A is strictly at
-least as good on scans, with a cleaner result shape.
+### Typed-value shape
 
-### Typed-value shape inside one query
+Each facet's value column has its own Java/JDBC type on the schema side
+— `MpaaRating`, `Boolean`, `Integer`, `String`. At SQL time, shape C
+requires all arms of the UNION to share a type in each column
+position, so the emitter casts `value` to `TEXT`:
+`rating::text AS value`, `rental_duration::text AS value`, etc. The
+Java decoder reads the `facet` label column and parses `value` back
+to the native Java type from the corresponding `FacetSpec`.
 
-With `value: <filter scalar>` (this plan's choice), each facet's value
-column has its own Java/JDBC type — `MpaaRating`, `Boolean`, `Integer`,
-`String`. Because strategy A keeps each facet's value in its *own*
-column position (`rating`, `rental_duration`, …), no cross-facet type
-unification is needed. jOOQ's `Field<T>` on each column preserves the
-native Java type; decoding reads only the column corresponding to the
-row's active grouping set.
+This is a small mechanical decode. The alternative — wide unified rows
+with one column per facet — was tested in the spike's shape A; it's
+more awkward to assemble in jOOQ and wins on nothing.
+
+### NULL facet buckets
+
+Postgres emits a NULL group key automatically when the facet column
+has NULL values. Phase 1 scenario 7 confirmed this: a rating facet
+under a 200 000-row table with 10 000 NULLs produces a NULL bucket
+with count 10 000 and no cast or special handling. v1 preserves NULL
+as its own facet bucket. The `*FacetValue.value` schema field is
+therefore nullable; the emitter does not inject `IS NOT NULL` around
+facet columns.
+
+### Facet-value ordering
+
+v1 emits `ORDER BY facet, cnt DESC, value` at the outer level. Spike
+measurement: cost is ≈ 0.4 ms on top of the 27 ms base at 200 000
+rows — essentially free because the output set is tiny (≤ a few
+hundred rows per facet). Consumers needing a different ordering can
+re-sort client-side.
 
 ### Fallback to B
 
-If a target dialect later added to Graphitron lacks `GROUPING SETS`
-support (or its `FILTER` clause), the emitter falls back to strategy B
-— one `GROUP BY` query per facet — at no cost to the classifier or
-transform. The choice lives inside the fetcher.
+If a Connection field grows past ~10 facets, shape C's UNION becomes
+unwieldy and emitter readability suffers. At that threshold, the
+fetcher issues N separate jOOQ queries and assembles in Java —
+structurally identical to shape B. Decision lives entirely inside the
+fetcher; the GraphQL surface is unchanged.
+
+If a target dialect later added to Graphitron lacks `UNION ALL` with
+mixed types in the value column (unlikely), the same B fallback
+applies.
 
 ---
 
-## Phase 1 — SQL strategy spike
+## Phase 1 — SQL strategy spike *(complete)*
 
-### Overview
+### Outcome
 
-The "SQL emission strategy" section above picks `GROUPING SETS` +
-per-aggregate `FILTER` as v1 default on reasoning alone — no shape
-has been `EXPLAIN ANALYZE`d against real data. Before emitter work
-(Phase 4) locks the shape into codegen, a short measurement pass
-either confirms the default with evidence or redirects the plan.
+Five SQL shapes measured against a 200 000-row synthetic Sakila-shaped
+`film_scaled` table across five scenarios (no filter, one filter,
+multi-filter, open-ended prefix, NULL-bearing). Wall-clock medians
+over 10 warm-cache runs + `EXPLAIN (ANALYZE, BUFFERS, VERBOSE)` per
+pair. Full details in [`spike-faceted-search-sql.md`](spike-faceted-search-sql.md).
 
-The spike also resolves the two data-shape Open Questions (NULL
-handling and facet-value ordering) as free side-effects: both are
-straight PostgreSQL-behaviour questions that a bench session answers
-without requiring a design decision in the abstract.
+**Decision: v1 default moves from shape A (`GROUPING SETS`) to
+shape C (`UNION ALL` of per-facet `GROUP BY`s).**
 
-Time-boxed to **one working day** of measurement + one session of
-plan revision. If the one-day window doesn't yield a clear winner,
-the spike itself is the finding — escalate to a broader design
-review rather than expanding the spike.
+Key findings:
 
-### Scope and non-goals
+- The plan's original shape A form (`GROUPING()` inside `FILTER`) is
+  invalid Postgres syntax (`ERROR: grouping operations are not
+  allowed in FILTER`). The CASE-dispatched workaround parses but
+  loses on every measured scenario.
+- Shape A forces a full table seq scan; shape C's independent arms
+  let the planner pick per-facet bitmap index scans when filters are
+  selective, and Postgres parallelises arms via `Parallel Append`.
+- Medians (ms): S1 A=32 C=29; S3 A=38 C=27; S5 A=51 C=27.
+- Correctness: all measured shapes produce identical counts vs
+  shape B reference.
+- NULL-bearing facet columns emit a NULL group key automatically
+  under plain `GROUP BY` (resolves OQ #4).
+- `ORDER BY facet, cnt DESC, value` costs ≈ 0.4 ms at 200 000 rows
+  (resolves OQ #5).
 
-- **In scope:** hand-written SQL against Sakila (optionally scaled up
-  by duplicating `film`), measurement of plan shape, scan count,
-  timing per query shape under representative filter scenarios;
-  spot-checks of the jOOQ 3.20 API surface the Phase 4 code sketch
-  relies on.
-- **Out of scope:** any Graphitron codegen changes; any schema
-  directive work; any Java emitter code. The spike does not touch
-  `graphitron-schema-transform` or `graphitron-rewrite`. Its only
-  write targets are the report file and this plan.
+The "SQL emission strategy" section above, the Phase 4 emitter
+sketch, and the "Resolved design decisions" / "Open Questions"
+sections have all been updated to reflect the swap.
 
-### Setup
+### Carried forward to Phase 2+
 
-Sakila via `mise r sakila` (already wired for the local-db Maven
-profile). Sakila's `film` table has ~1 000 rows — small enough that
-sequential-scan timings are noisy. Create a scaled-up working table
-as part of the spike so plans are visible:
-
-```sql
-CREATE TABLE film_scaled AS
-SELECT *, gs AS dup_id
-FROM film, generate_series(1, 200) gs;
-CREATE INDEX ON film_scaled (rating);
-CREATE INDEX ON film_scaled (rental_duration);
-```
-
-Document the scale factor (200×) in the report so timings are
-comparable across shapes.
-
-### Candidate SQL shapes
-
-Write each shape by hand, run against `film_scaled`:
-
-1. **A. `GROUPING SETS` + per-aggregate `FILTER`** — the plan's v1
-   default. One query, N single-column grouping sets, one
-   `COUNT(*) FILTER (WHERE cond_minus_self)` per facet.
-2. **B. N separate `GROUP BY` queries** — the plan's fallback. One
-   query per facet, each with its own `WHERE cond_minus_self`.
-3. **C. `UNION ALL` of per-facet `GROUP BY`s** — rejected in the
-   strategy section as redundant; included here to confirm on plan
-   data (does Postgres share the scan, or rescan per branch?).
-4. **D. Window functions + `FILTER (WHERE …) OVER (PARTITION BY …)`**
-   — single-facet version plus an attempted multi-facet version
-   (expecting cartesian blow-up; confirm).
-5. **E. Conditional aggregation on known-domain values** —
-   `COUNT(*) FILTER (WHERE col = 'G')`, etc., for bounded enums.
-   Baseline for what's achievable when the value domain is pre-known.
-
-### Scenarios
-
-Each shape runs under every scenario that applies:
-
-| # | Scenario | Facets in play | Expected insight |
-|---|---|---|---|
-| 1 | No filter | `rating`, `rental_duration` | Baseline counts — correctness reference |
-| 2 | One facet filter active (`rating = 'PG'`) | same | Verify filter-minus-self on `rating` vs. other facets |
-| 3 | Multiple facet filters active | same | Stress minus-self logic across facets |
-| 4 | Enum-only | `rating` | Bounded-domain simplest case |
-| 5 | Open-ended | e.g. first-char of `title`, or joined `category.name` | Open-ended domain; stress cardinality in shape A |
-| 6 | Mixed | enum + open-ended | Closest to real usage |
-| 7 | NULL-bearing column | `rating` with NULLs injected | Observe GROUPING SETS behaviour on NULLs — feeds Open Question #4 |
-
-### Measurements
-
-Per (shape, scenario) pair:
-
-- `EXPLAIN (ANALYZE, BUFFERS, VERBOSE)` — record scan nodes, rows,
-  planning + execution time, shared-buffer hits/reads.
-- Wall-clock median over 10 `\timing`-enabled runs after a warm-up.
-- Correctness: shape B (one `GROUP BY` per facet) is the reference
-  — its counts are correct by construction. Diff A/C/D/E against B.
-
-Capture raw output verbatim; don't summarise prose-only. A later
-reader (or a future dialect port) needs the plan shapes.
-
-### Decisions to pin
-
-From the measurement pass, resolve:
-
-- **v1 SQL default.** Confirm shape A's selection, or swap to another
-  if scan counts / timings contradict the reasoning.
-- **Open Question #4 — NULL buckets.** Based on scenario 7: do NULLs
-  survive `GROUPING SETS` as a distinct bucket in shape A? If yes,
-  pick between keeping them (make `value` nullable), filtering them
-  (`WHERE col IS NOT NULL` on the aggregate), or
-  catalog-nullability-driven (option c). Commit the decision to
-  "Resolved design decisions."
-- **Open Question #5 — facet-value ordering.** Benchmark count-desc
-  ordering on top of the winning shape (cost of `ORDER BY count(*)
-  FILTER (...) DESC, col`). Record the planner's choice (sort node
-  vs. inline); pick ordering or leave unspecified. Commit to
-  "Resolved design decisions."
-
-### Deliverables
-
-- **`docs/planning/spike-faceted-search-sql.md`** — new file. Report
-  structure: setup, scale factor, one section per shape with SQL +
-  EXPLAIN output per scenario, a summary table comparing scans /
-  timings / correctness, verdict. Kept in `docs/planning/` alongside
-  the plan; deleted together when Done.
-- **Plan revision commit** on `plan-faceted-search.md`:
-  - "SQL emission strategy" section confirms or swaps v1 default,
-    with a one-line cite to the spike report where relevant.
-  - Phase 4 emitter code sketch updated to match the confirmed
-    jOOQ API surface (if the spike found any API claim off).
-  - Open Questions #4, #5 moved to "Resolved design decisions" with
-    the chosen behaviour and a cite to the spike report.
-
-### Success criteria
-
-- [ ] `docs/planning/spike-faceted-search-sql.md` exists with
-      `EXPLAIN (ANALYZE, BUFFERS)` output for all (shape, scenario)
-      pairs that apply.
-- [ ] Correctness diff: shapes A, C, D, E counts match shape B
-      counts for every scenario.
-- [ ] Plan's "SQL emission strategy" section references the spike
-      with a concrete verdict paragraph (even if "v1 default
-      confirmed").
-- [ ] Open Questions #4 and #5 removed from the Open Questions list
-      and added to Resolved design decisions with rationale.
-- [ ] No Java source under `graphitron-rewrite` or
-      `graphitron-schema-transform` changed in this phase.
+- `FacetSpec` carries the facet column and its (Java, SQL) type, as
+  before — no change from the pre-spike design.
+- `value` is emitted as `TEXT` in SQL; Java decodes per facet's
+  `FacetSpec` back to the native type. This is a small change from
+  the pre-spike plan, which kept each facet's value in its own
+  column position across grouping sets.
+- Phase 4 jOOQ surface: `DSL.select(...).from(...).where(...).groupBy(col)`
+  per arm plus `.unionAll(...)` to assemble. No `DSL.groupingSets(...)`
+  or `DSL.grouping(...)`.
 
 ### Spike-vs-plan accounting
 
-The spike lives inside the overall plan's state machine: when Phase 1
-ships, the plan's status stays `Approved` (more phases remain) and the
-roadmap marker stays `[Approved]`. When Phase 5 ships, the plan goes
-`Pending Review`; the spike report file is deleted together with the
-plan on Done.
+The spike completed as the first phase of this plan. The plan stays
+`Draft` until approved; Phase 1's completion does not transition the
+state. When Phase 5 ships, the plan goes `Pending Review`; the spike
+report file is deleted together with the plan on Done.
 
 ---
 
@@ -637,17 +576,19 @@ now reachable from a classified field.
 
 ---
 
-## Phase 4 — Emitter: single `GROUPING SETS` aggregate + wiring
+## Phase 4 — Emitter: `UNION ALL` aggregate + wiring
 
 ### Overview
 
 `TypeFetcherGenerator.buildQueryConnectionFetcher` (`:519`) emits one
-extra `GROUPING SETS` SELECT that covers every selected facet in a
-single table scan, with per-aggregate `FILTER` clauses carrying each
-facet's filter-minus-self predicate. Results are demultiplexed via
-`GROUPING()` flags and packaged into an extended `ConnectionResult`;
-`ConnectionHelper` gets a `facets` accessor;
-`GraphitronWiringClassGenerator` adds a `facets` dataFetcher.
+extra SELECT formed as a `UNION ALL` of per-facet `GROUP BY` arms, one
+arm per selected facet. Each arm applies filter-minus-self in its own
+`WHERE`; each arm's value column is cast to `TEXT` to unify UNION arm
+types. Results carry a `facet` label column used by the Java decoder;
+decoded values parse back to each facet's native Java type via the
+`FacetSpec` carried on `FieldWrapper.Connection`. Results are packaged
+into an extended `ConnectionResult`; `ConnectionHelper` gets a `facets`
+accessor; `GraphitronWiringClassGenerator` adds a `facets` dataFetcher.
 
 ### Changes
 
@@ -667,10 +608,10 @@ trivially exposes `value` and `count` by property name.
 
 #### `TypeFetcherGenerator.buildQueryConnectionFetcher`
 
-Per the *SQL emission strategy* section above: one `GROUPING SETS`
-query with per-aggregate `FILTER` clauses carrying filter-minus-self
-for each selected facet. The paginated `edges`/`nodes` query is
-unchanged.
+Per the *SQL emission strategy* section above: one `UNION ALL` of
+per-facet `GROUP BY` arms. Each arm applies the full Connection
+filter *minus that facet's own predicate*. The paginated `edges` /
+`nodes` query is unchanged.
 
 After the main SELECT is emitted (`:519–`), determine the set of
 facets present in the GraphQL selection set (a facet whose field is
@@ -712,73 +653,76 @@ subset of `conn.facets()` that the client actually asked for.
    (a second overload) and puts facet-predicate reconstruction in the
    one place that already has `FacetSpec`: the fetcher.
 
-2. **Grouping sets and aggregate columns.** Emit (one single-column
-   grouping set per selected facet, one `filterWhere` count per
-   selected facet):
+2. **Per-facet arms.** For each `f` in `selectedFacets`, emit one arm:
    ```java
-   Field<?>[] facetCols = selectedFacets.stream()
-       .map(f -> table.field(f.columnName()))
-       .toArray(Field[]::new);
+   SelectSelectStep<Record3<String, String, Integer>> armFor(FacetSpec f) {
+       Field<?> col = table.field(f.columnName());
+       return DSL
+           .select(
+               DSL.val(f.inputFieldName()).as("facet"),
+               col.cast(String.class).as("value"),
+               DSL.count().as("cnt"))
+           .from(table)
+           .where(condMinusSelf(f))
+           .groupBy(col);
+   }
+   ```
+   `col.cast(String.class)` aligns the `value` column type across
+   arms so `UNION ALL` parses. At decode time the Java side parses
+   back to each facet's native type via the `FacetSpec`.
 
-   Field<Integer>[] groupingFlags = Arrays.stream(facetCols)
-       .map(DSL::grouping)
-       .toArray(Field[]::new);
-
-   Field<Integer>[] counts = selectedFacets.stream()
-       .map(f -> DSL.count().filterWhere(condMinusSelf(f))
-                     .as(f.inputFieldName() + "_count"))
-       .toArray(Field[]::new);
-
-   Field<?>[][] groupingSets = Arrays.stream(facetCols)
-       .map(c -> new Field<?>[]{ c })
-       .toArray(Field[][]::new);
-
+3. **Assemble the UNION.** Glue the arms:
+   ```java
+   var first = armFor(selectedFacets.get(0));
+   Select<Record3<String, String, Integer>> union = first;
+   for (int i = 1; i < selectedFacets.size(); i++) {
+       union = union.unionAll(armFor(selectedFacets.get(i)));
+   }
    var facetRows = dsl
-       .select(concat(groupingFlags, facetCols, counts))
-       .from(table)
-       .groupBy(DSL.groupingSets(groupingSets))
+       .select()
+       .from(union)
+       .orderBy(
+           DSL.field("facet", String.class),
+           DSL.field("cnt", Integer.class).desc(),
+           DSL.field("value", String.class))
        .fetch();
    ```
-   No outer `WHERE` on this query — each facet's predicate lives in
-   its own `filterWhere` on the count aggregate. No SQL-layer
-   coercion on value columns: each `facetCol` keeps its native type
-   (enum, Boolean, Int, String); jOOQ's generated `Field<T>` carries
-   the Java type corresponding to the filter-input field's scalar.
-   The existing `graphql-java` scalar coercers serialize to the wire
-   — enums as enum name, Booleans as boolean, ints as int —
-   identical to how these columns surface on the Connection's
-   `nodes` path.
+   No cross-arm sharing; each arm's planner decision is independent.
+   Postgres' `Parallel Append` executes arms concurrently.
 
-3. **Demultiplex rows into the facets map.** For each row, find the
-   single facet whose `GROUPING()` flag is `0` (its column carries
-   the value). Read the value column and the corresponding
-   `_count` column; append `(value, count)` to the facets map
-   under that input-field name.
-
-   Sketch:
+4. **Decode rows into the facets map.** Each row carries its own
+   `facet` label; no GROUPING() bit-flag decoding needed. Parse
+   `value` back via each facet's `FacetSpec`:
    ```java
    Map<String, List<FacetValueRow>> facets = new HashMap<>();
+   Map<String, FacetSpec> byName = selectedFacets.stream()
+       .collect(Collectors.toMap(FacetSpec::inputFieldName, f -> f));
    for (Record row : facetRows) {
-       for (FacetSpec f : selectedFacets) {
-           if (row.get(groupingFlag(f)) == 0) {
-               Object value = row.get(table.field(f.columnName()));
-               int count = row.get(f.inputFieldName() + "_count", Integer.class);
-               facets.computeIfAbsent(f.inputFieldName(), k -> new ArrayList<>())
-                     .add(new FacetValueRow(value, count));
-               break;  // only one grouping set is active per row
-           }
-       }
+       String label = row.get("facet", String.class);
+       String raw   = row.get("value", String.class);
+       int count    = row.get("cnt",   Integer.class);
+       FacetSpec f  = byName.get(label);
+       Object typed = f.parseValue(raw);    // null-safe; returns null for NULL bucket
+       facets.computeIfAbsent(label, k -> new ArrayList<>())
+             .add(new FacetValueRow(typed, count));
    }
    ```
 
-4. Attach the facets map to the `ConnectionResult`.
+5. Attach the facets map to the `ConnectionResult`.
 
-**Dialect fallback.** If the target dialect does not support
-`GROUPING SETS` + `FILTER` (Graphitron targets PostgreSQL today, where
-both are supported), fall back to strategy B from the SQL section —
-one `GROUP BY` query per selected facet. The fallback is an emitter
-decision only; model and classifier are unaffected. Defer actually
-writing the fallback until a dialect that needs it is added.
+**N-facet fallback.** When `selectedFacets.size()` exceeds ~10, the
+UNION becomes unwieldy and fetcher readability suffers. At that
+threshold the fetcher issues N separate jOOQ queries (shape B) and
+assembles in Java. Same per-arm SQL structure, just N round-trips
+instead of one UNION. The switchover is an emitter-local decision;
+no schema or classifier change. Defer actually writing the N-facet
+path until a schema crosses the threshold.
+
+**jOOQ API surface (3.20.11):** `DSL.select(...)`, `DSL.val(...)`,
+`Field.cast(Class)`, `SelectJoinStep.groupBy(Field)`,
+`Select.unionAll(Select)`, `DSL.count()`, `ResultQuery.fetch()`. No
+`DSL.groupingSets(...)` or `DSL.grouping(...)`. Surface verified
+against the Phase 1 spike's hand-written SQL.
 
 #### `GraphitronWiringClassGenerator.java:67-79`
 
@@ -919,9 +863,9 @@ inkluderes og gir flate resultat."*
    independent type so Phase 6 can add `parentValue` additively
    without breaking wire compat. Argument name `includeChildrenOf` is
    reserved now so existing queries don't collide later.
-3. SQL: each requested level adds one grouping set to the same
-   `GROUPING SETS` query, with `parent_id IN includeChildrenOf` in
-   its `FILTER` clause — still the same v1 shape. No new SQL
+3. SQL: each requested level adds one arm to the same `UNION ALL`
+   chain, with its own `WHERE parent_id IN includeChildrenOf AND
+   <base-minus-self>` predicate — still the same v1 shape. No new SQL
    strategy needed; ROLLUP remains wrong for the same
    filter-minus-self reason.
 
@@ -983,6 +927,20 @@ reviewers can confirm the v1 design does not foreclose it.
   it; the SQL strategy section above builds on it.
 - **No nested `facets { parent { children { ... } } }` structure.**
   Hard constraint from ticket: performance + query-shape driver.
+- **NULL facet buckets — preserve as their own group.** `GROUP BY`
+  emits NULL as a distinct key automatically; Scenario 7 of the
+  spike (`docs/planning/spike-faceted-search-sql.md`, §OQ #4)
+  confirmed all three measured shapes pass NULL through unchanged.
+  v1 emits no `IS NOT NULL` scrubbing; `*FacetValue.value` is
+  **nullable** on the schema side to accommodate. Consumers that
+  want to hide NULL can apply `IS NOT NULL` as a regular filter or
+  drop the row client-side.
+- **Facet-value ordering — count-desc with stable tiebreaker.** v1
+  emits `ORDER BY facet, cnt DESC, value` at the top of the UNION.
+  Spike measured ~0.4 ms overhead at 200× Sakila scale (27.3 →
+  27.7 ms median on shape C) — negligible, and the deterministic
+  tiebreaker on `value` means test assertions stay stable. See
+  `docs/planning/spike-faceted-search-sql.md` §OQ #5.
 
 ## Open Questions
 
@@ -992,50 +950,24 @@ reviewers can confirm the v1 design does not foreclose it.
    depended on by both, (b) duplicate + cross-module assertion test.
    (a) is cleaner; (b) is faster. Decide during Phase 2 review.
 
-2. **Aggregate-query cost at high facet counts.** v1 packs all
-   selected facets into one `GROUPING SETS` query. Cardinality scales
-   with the union of distinct-value counts across selected facet
-   columns (each facet contributes one row per distinct value) —
-   typically small for enum/Boolean facets, potentially larger for
-   open-ended string facets. Primary measurement lands in Phase 1
-   (spike); Phase 5's execution tests re-check at full-integration
-   scale. If a pathological case emerges (e.g. a high-cardinality
-   string facet combined with several others), an optimization path
-   is to split into two aggregate queries — bounded-domain facets in
-   one, each open-ended facet in its own — but only if real profiling
-   data justifies the emitter complexity.
+2. **Aggregate-query cost at high facet counts.** v1 emits one
+   `UNION ALL` arm per selected facet. Cardinality scales with the
+   sum of distinct-value counts across selected facet columns (each
+   facet contributes one row per distinct value) — typically small
+   for enum/Boolean facets, potentially larger for open-ended string
+   facets. Phase 1 spike measured 2-facet cases only; Phase 5's
+   execution tests re-check at full-integration scale and with more
+   facets. If a pathological case emerges (e.g. a high-cardinality
+   string facet combined with several others), the fallback is to
+   issue one query per facet arm (shape B) — which the spike showed
+   wins under heavy filtering anyway. That remains an emitter-side
+   choice guarded by real profiling data.
 
 3. **Facets on columns reached through FK joins.** v1 rejects
    `@facet` on `@reference`-bound input fields. GG-335's Studieprogram
    hierarchical example implies faceting over a joined parent
    (Fakultet → Institutt). Lifting this restriction is entangled with
    Phase 6; confirm it can stay rejected until then.
-
-4. **NULL values in facet columns.** When a `@facet`-marked column has
-   NULL rows, should the aggregate produce a bucket `{ value: null,
-   count: N }` or exclude NULLs? `GROUP BY` treats NULL as its own
-   group by default, so the natural behaviour is *include* — but that
-   requires `*FacetValue.value` to be nullable, which conflicts with
-   the v1 shape's `value: <scalar>!` non-null typing. Options: (a)
-   make `value` nullable across the board, losing a bit of type
-   guarantee for clients that never expect NULL; (b) drop NULL
-   buckets, arguing that a NULL-valued filter-input doesn't round-trip
-   meaningfully anyway (`rating: [null]` is not a useful filter);
-   (c) nullable only where the underlying column is nullable,
-   propagated from the jOOQ catalog. **Resolved by Phase 1 spike** —
-   move to Resolved design decisions when the spike confirms the
-   PostgreSQL behaviour and the plan revision selects between
-   (a)/(b)/(c).
-
-5. **Ordering of facet values.** The plan does not pin a sort order
-   for the returned facet buckets. Candidates: by count descending
-   (matches typical UI "top N" rendering), by value natural order
-   (stable across requests and easy to test), or unspecified (client
-   must sort). GG-335's examples don't say. Recommend count-desc with
-   a stable tiebreaker on the value column so results are
-   deterministic; revisit if a client needs value-natural order.
-   **Resolved by Phase 1 spike** — the ordering-cost measurement
-   pins the recommendation and moves it to Resolved design decisions.
 
 ## References
 
