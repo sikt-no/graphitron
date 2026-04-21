@@ -438,7 +438,38 @@ public class GraphitronSchemaValidator {
                 walkNestedVariantsForImplementation(nf.nestedFields(), errors);
             } else {
                 validateVariantIsImplemented(f, errors);
+                validateVariantIsSupportedAtNestedDepth(f, errors);
             }
+        }
+    }
+
+    /**
+     * Variants wireable at nested depth. {@code GraphitronWiringClassGenerator} calls
+     * {@code TypeFetcherGenerator.buildWiringEntry} with {@code className=null} and
+     * {@code resultType=null}; only these variants have arms that don't fall through to the
+     * {@code $L::$L} fallback (which would emit {@code null::fieldName} — invalid Java).
+     * Expanding this set is a one-line edit paired with adding a className-independent arm
+     * to {@code buildWiringEntry}.
+     */
+    private static final java.util.Set<Class<? extends GraphitronField>> NESTED_WIREABLE_LEAVES = java.util.Set.of(
+        ChildField.ColumnField.class,
+        ChildField.NodeIdField.class,
+        ChildField.TableField.class,
+        ChildField.LookupTableField.class,
+        ChildField.ConstructorField.class,
+        ChildField.NestingField.class);
+
+    private void validateVariantIsSupportedAtNestedDepth(GraphitronField field, List<ValidationError> errors) {
+        // Stubbed variants already surfaced by validateVariantIsImplemented — don't double-report.
+        if (TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.containsKey(field.getClass())) {
+            return;
+        }
+        if (!NESTED_WIREABLE_LEAVES.contains(field.getClass())) {
+            errors.add(new ValidationError(
+                "Field '" + field.qualifiedName() + "': " + field.getClass().getSimpleName()
+                    + " is not yet supported under NestingField — see rewrite-roadmap.md #8",
+                field.location()
+            ));
         }
     }
 
@@ -476,6 +507,12 @@ public class GraphitronSchemaValidator {
 
     private void compareNestedFieldsShape(ChildField.NestingField rep, ChildField.NestingField other,
                                           List<ValidationError> errors) {
+        compareNestedFieldsShape(rep, other, rep.parentTypeName(), other.parentTypeName(), errors);
+    }
+
+    private void compareNestedFieldsShape(ChildField.NestingField rep, ChildField.NestingField other,
+                                          String repParent, String otherParent,
+                                          List<ValidationError> errors) {
         var nestedTypeName = rep.returnType().returnTypeName();
         var repByName = new java.util.LinkedHashMap<String, ChildField>();
         rep.nestedFields().forEach(f -> repByName.put(f.name(), f));
@@ -488,8 +525,8 @@ public class GraphitronSchemaValidator {
             var of = otherByName.get(name);
             if (of == null) {
                 errors.add(new ValidationError(
-                    "Nested type '" + nestedTypeName + "' shared across '" + rep.parentTypeName()
-                        + "' and '" + other.parentTypeName() + "': field '" + name
+                    "Nested type '" + nestedTypeName + "' shared across '" + repParent
+                        + "' and '" + otherParent + "': field '" + name
                         + "' exists on the first but not the second",
                     other.location()
                 ));
@@ -497,8 +534,8 @@ public class GraphitronSchemaValidator {
             }
             if (!rf.getClass().equals(of.getClass())) {
                 errors.add(new ValidationError(
-                    "Nested type '" + nestedTypeName + "' shared across '" + rep.parentTypeName()
-                        + "' and '" + other.parentTypeName() + "': field '" + name
+                    "Nested type '" + nestedTypeName + "' shared across '" + repParent
+                        + "' and '" + otherParent + "': field '" + name
                         + "' classifies as " + rf.getClass().getSimpleName() + " on the first but "
                         + of.getClass().getSimpleName() + " on the second",
                     other.location()
@@ -508,28 +545,33 @@ public class GraphitronSchemaValidator {
             if (rf instanceof ChildField.ColumnField rcf && of instanceof ChildField.ColumnField ocf) {
                 if (!rcf.column().sqlName().equals(ocf.column().sqlName())) {
                     errors.add(new ValidationError(
-                        "Nested type '" + nestedTypeName + "' shared across '" + rep.parentTypeName()
-                            + "' and '" + other.parentTypeName() + "': field '" + name
+                        "Nested type '" + nestedTypeName + "' shared across '" + repParent
+                            + "' and '" + otherParent + "': field '" + name
                             + "' resolves to column '" + rcf.column().sqlName() + "' on the first but '"
                             + ocf.column().sqlName() + "' on the second",
                         other.location()
                     ));
                 } else if (!rcf.column().columnClass().equals(ocf.column().columnClass())) {
                     errors.add(new ValidationError(
-                        "Nested type '" + nestedTypeName + "' shared across '" + rep.parentTypeName()
-                            + "' and '" + other.parentTypeName() + "': field '" + name
+                        "Nested type '" + nestedTypeName + "' shared across '" + repParent
+                            + "' and '" + otherParent + "': field '" + name
                             + "' has Java type '" + rcf.column().columnClass() + "' on the first but '"
                             + ocf.column().columnClass() + "' on the second",
                         other.location()
                     ));
                 }
+            } else if (rf instanceof ChildField.NestingField rnf && of instanceof ChildField.NestingField onf) {
+                // Two-level nesting: recurse so divergent inner columns don't slip past the
+                // outer class-equality check. Thread the outer @table parent names so inner
+                // errors still name the original tables, not the intermediate nested type.
+                compareNestedFieldsShape(rnf, onf, repParent, otherParent, errors);
             } else if (!(rf instanceof ChildField.NestingField)) {
                 // Non-column, non-nesting leaves are not yet supported as multi-parent shared nested
                 // fields — their resolution depends on per-parent metadata that this shape check
                 // doesn't inspect. Lands with the corresponding roadmap #8 arm.
                 errors.add(new ValidationError(
-                    "Nested type '" + nestedTypeName + "' shared across '" + rep.parentTypeName()
-                        + "' and '" + other.parentTypeName() + "': field '" + name
+                    "Nested type '" + nestedTypeName + "' shared across '" + repParent
+                        + "' and '" + otherParent + "': field '" + name
                         + "' classifies as " + rf.getClass().getSimpleName()
                         + " which is not yet supported across multiple parents — see rewrite-roadmap.md #8",
                     other.location()
@@ -540,8 +582,8 @@ public class GraphitronSchemaValidator {
         for (var name : otherByName.keySet()) {
             if (!repByName.containsKey(name)) {
                 errors.add(new ValidationError(
-                    "Nested type '" + nestedTypeName + "' shared across '" + rep.parentTypeName()
-                        + "' and '" + other.parentTypeName() + "': field '" + name
+                    "Nested type '" + nestedTypeName + "' shared across '" + repParent
+                        + "' and '" + otherParent + "': field '" + name
                         + "' exists on the second but not the first",
                     other.location()
                 ));

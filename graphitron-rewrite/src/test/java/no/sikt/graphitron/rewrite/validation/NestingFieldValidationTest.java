@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
+import no.sikt.graphitron.rewrite.model.ChildField.PlatformIdField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -86,7 +87,15 @@ class NestingFieldValidationTest {
                         List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(),
                             new TableRef("language", "", "", List.of()), List.of(), null, "")),
                         false))))),
-            List.of(stubbedError("FilmMeta.languageName", ColumnReferenceField.class)));
+            List.of(stubbedError("FilmMeta.languageName", ColumnReferenceField.class))),
+
+        PLATFORM_ID_AT_NESTED_DEPTH_REJECTED("PlatformIdField at nested depth → nested-depth whitelist error (wiring would emit null::fieldName)",
+            new NestingField("Film", "details", null,
+                new ReturnTypeRef.TableBoundReturnType("FilmDetails",
+                    new TableRef("film", "FILM", "Film", List.of()),
+                    new FieldWrapper.Single(true)),
+                List.of(new PlatformIdField("FilmDetails", "personId", null, "getPersonId"))),
+            List.of("Field 'FilmDetails.personId': PlatformIdField is not yet supported under NestingField — see rewrite-roadmap.md #8"));
 
         private final String description;
         private final GraphitronField field;
@@ -183,6 +192,27 @@ class NestingFieldValidationTest {
             .extracting(ValidationError::message)
             .containsExactly(
                 "Nested type 'FilmDetails' shared across 'Film' and 'Advertisement': field 'title' has Java type 'java.lang.String' on the first but 'java.lang.Integer' on the second");
+    }
+
+    @Test
+    void multiParentCompat_nestedNestingWithDivergentInnerColumn_reported() {
+        // Two parents share a nested type FilmDetails whose `meta` is itself a NestingField.
+        // The inner FilmMeta has one field `label` that resolves to different columns on each
+        // parent. The shape check must recurse into the inner NestingField and flag the mismatch;
+        // without recursion, class equality (NestingField == NestingField) hides the divergence.
+        var filmMeta = new NestingField("FilmDetails", "meta", null,
+            new ReturnTypeRef.TableBoundReturnType("FilmMeta", FILM_TABLE, new FieldWrapper.Single(true)),
+            List.of(new ColumnField("FilmMeta", "label", null, "label",
+                new ColumnRef("title", "TITLE", "java.lang.String"), false)));
+        var adMeta = new NestingField("FilmDetails", "meta", null,
+            new ReturnTypeRef.TableBoundReturnType("FilmMeta", ADVERTISEMENT_TABLE, new FieldWrapper.Single(true)),
+            List.of(new ColumnField("FilmMeta", "label", null, "label",
+                new ColumnRef("headline", "HEADLINE", "java.lang.String"), false)));
+        var schema = twoParentSchema(List.of(filmMeta), List.of(adMeta));
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .contains(
+                "Nested type 'FilmMeta' shared across 'Film' and 'Advertisement': field 'label' resolves to column 'title' on the first but 'headline' on the second");
     }
 
     @Test
