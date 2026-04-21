@@ -43,8 +43,12 @@ public final class InlineTableFieldEmitter {
      * @param parentAlias  the local variable name for the parent alias in the generated code
      *                     (currently always {@code "table"} — {@link TypeClassGenerator}'s
      *                     {@code $fields} signature parameter)
+     * @param sfName       the caller-scope {@code SelectedField} variable name. Outer
+     *                     {@link TypeClassGenerator#emitSelectionSwitch} uses {@code sf} at depth 0
+     *                     and {@code sf1}/{@code sf2}/… inside {@code NestingField} recursion.
+     *                     Threaded through so nested depths don't reference an undefined {@code sf}.
      */
-    public static CodeBlock buildSwitchArmBody(ChildField.TableField tf, String parentAlias) {
+    public static CodeBlock buildSwitchArmBody(ChildField.TableField tf, String parentAlias, String sfName) {
         if (JoinPathEmitter.hasConditionJoin(tf.joinPath())) {
             return CodeBlock.builder()
                 .addStatement("throw new $T($S)",
@@ -53,10 +57,10 @@ public final class InlineTableFieldEmitter {
                     + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables")
                 .build();
         }
-        return buildFkOnlyArm(tf, parentAlias);
+        return buildFkOnlyArm(tf, parentAlias, sfName);
     }
 
-    private static CodeBlock buildFkOnlyArm(ChildField.TableField tf, String parentAlias) {
+    private static CodeBlock buildFkOnlyArm(ChildField.TableField tf, String parentAlias, String sfName) {
         List<JoinStep> path = tf.joinPath();
         TableRef terminalTable = tf.returnType().table();
         List<String> aliases = JoinPathEmitter.generateAliases(path, terminalTable);
@@ -85,7 +89,7 @@ public final class InlineTableFieldEmitter {
         }
 
         // Assemble the inner SELECT.
-        CodeBlock innerSelect = buildInnerSelect(tf, path, aliases, terminalAlias, typeClass, keysClass, parentAlias);
+        CodeBlock innerSelect = buildInnerSelect(tf, path, aliases, terminalAlias, typeClass, keysClass, parentAlias, sfName);
 
         // Both cardinalities use DSL.multiset(...) uniformly. The single-cardinality path adds
         // .limit(1) to the inner SELECT (inside buildInnerSelect) and the registered DataFetcher
@@ -103,13 +107,13 @@ public final class InlineTableFieldEmitter {
      */
     private static CodeBlock buildInnerSelect(ChildField.TableField tf, List<JoinStep> path,
             List<String> aliases, String terminalAlias, ClassName typeClass, ClassName keysClass,
-            String parentAlias) {
+            String parentAlias, String sfName) {
         boolean singleCardinality = tf.returnType().wrapper() instanceof FieldWrapper.Single;
 
         var sel = CodeBlock.builder();
         // SELECT projection: always unwrapped $fields(...) fed into DSL.multiset at the outer wrap.
-        sel.add("$T.select($T.$$fields(sf.getSelectionSet(), $L, env))",
-            DSL, typeClass, terminalAlias);
+        sel.add("$T.select($T.$$fields($L.getSelectionSet(), $L, env))",
+            DSL, typeClass, sfName, terminalAlias);
 
         // FROM: terminal hop's aliased table.
         sel.add("\n        .from($L)", terminalAlias);

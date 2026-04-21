@@ -209,12 +209,12 @@ public class TypeClassGenerator {
                 }
                 case ChildField.TableField tf -> {
                     builder.addCode("        case $S -> {\n", tf.name());
-                    builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableArg));
+                    builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableArg, sf));
                     builder.addCode("        }\n");
                 }
                 case ChildField.LookupTableField lf -> {
                     builder.addCode("        case $S -> {\n", lf.name());
-                    builder.addCode("$L", InlineLookupTableFieldEmitter.buildSwitchArmBody(lf, tableArg));
+                    builder.addCode("$L", InlineLookupTableFieldEmitter.buildSwitchArmBody(lf, tableArg, sf));
                     builder.addCode("        }\n");
                 }
                 case ChildField.NestingField nf -> {

@@ -50,8 +50,12 @@ public final class InlineLookupTableFieldEmitter {
      * @param parentAlias  the local variable name for the parent alias in the generated code
      *                     (currently always {@code "table"} — {@link TypeClassGenerator}'s
      *                     {@code $fields} signature parameter)
+     * @param sfName       the caller-scope {@code SelectedField} variable name. Outer
+     *                     {@link TypeClassGenerator#emitSelectionSwitch} uses {@code sf} at depth 0
+     *                     and {@code sf1}/{@code sf2}/… inside {@code NestingField} recursion.
+     *                     Threaded through so nested depths don't reference an undefined {@code sf}.
      */
-    public static CodeBlock buildSwitchArmBody(ChildField.LookupTableField lf, String parentAlias) {
+    public static CodeBlock buildSwitchArmBody(ChildField.LookupTableField lf, String parentAlias, String sfName) {
         if (JoinPathEmitter.hasConditionJoin(lf.joinPath())) {
             return CodeBlock.builder()
                 .addStatement("throw new $T($S)",
@@ -60,10 +64,10 @@ public final class InlineLookupTableFieldEmitter {
                     + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables")
                 .build();
         }
-        return buildFkOnlyArm(lf, parentAlias);
+        return buildFkOnlyArm(lf, parentAlias, sfName);
     }
 
-    private static CodeBlock buildFkOnlyArm(ChildField.LookupTableField lf, String parentAlias) {
+    private static CodeBlock buildFkOnlyArm(ChildField.LookupTableField lf, String parentAlias, String sfName) {
         List<JoinStep> path = lf.joinPath();
         TableRef terminalTable = lf.returnType().table();
         ClassName tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
@@ -122,15 +126,15 @@ public final class InlineLookupTableFieldEmitter {
             ParameterizedTypeName.get(ClassName.get("org.jooq", "Record" + lookupArity), lookupTypeArgs));
 
         String inputRowsName = LookupValuesJoinEmitter.inputRowsMethodName(lf);
-        code.addStatement("$T[] rows = $L(sf, $L)", lookupRowType, inputRowsName, terminalAlias);
+        code.addStatement("$T[] rows = $L($L, $L)", lookupRowType, inputRowsName, sfName, terminalAlias);
 
         // Empty input short-circuit: emit a multiset with falseCondition so the parent record still
         // carries the aliased slot (needed for the DataFetcher). DSL.values([]) itself is rejected
         // by jOOQ, so the branch happens in Java, not SQL.
         code.beginControlFlow("if (rows.length == 0)");
         code.addStatement(
-            "fields.add($T.multiset($T.select($T.$$fields(sf.getSelectionSet(), $L, env)).from($L).where($T.falseCondition())).as($S))",
-            DSL, DSL, typeClass, terminalAlias, terminalAlias, DSL, lf.name());
+            "fields.add($T.multiset($T.select($T.$$fields($L.getSelectionSet(), $L, env)).from($L).where($T.falseCondition())).as($S))",
+            DSL, DSL, typeClass, sfName, terminalAlias, terminalAlias, DSL, lf.name());
         code.nextControlFlow("else");
 
         // VALUES derived-table alias: "idx" + one column per lookup key. Labels must match the
@@ -158,7 +162,7 @@ public final class InlineLookupTableFieldEmitter {
         }
 
         CodeBlock innerSelect = buildInnerSelect(lf, path, aliases, terminalAlias, typeClass,
-            keysClass, parentAlias, onCondition.build());
+            keysClass, parentAlias, onCondition.build(), sfName);
         code.addStatement("fields.add($T.multiset($L).as($S))", DSL, innerSelect, lf.name());
         code.endControlFlow();
 
@@ -172,10 +176,10 @@ public final class InlineLookupTableFieldEmitter {
      */
     private static CodeBlock buildInnerSelect(ChildField.LookupTableField lf, List<JoinStep> path,
             List<String> aliases, String terminalAlias, ClassName typeClass, ClassName keysClass,
-            String parentAlias, CodeBlock onCondition) {
+            String parentAlias, CodeBlock onCondition, String sfName) {
         var sel = CodeBlock.builder();
-        sel.add("$T.select($T.$$fields(sf.getSelectionSet(), $L, env))",
-            DSL, typeClass, terminalAlias);
+        sel.add("$T.select($T.$$fields($L.getSelectionSet(), $L, env))",
+            DSL, typeClass, sfName, terminalAlias);
 
         // FROM: terminal hop's aliased table.
         sel.add("\n        .from($L)", terminalAlias);

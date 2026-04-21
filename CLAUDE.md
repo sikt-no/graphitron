@@ -38,6 +38,8 @@ Do NOT write code-string assertions that check generated method bodies (e.g. `as
 
 A cascade of `*PipelineTest` / `GraphitronSchemaBuilderTest` failures with `UnclassifiedType`, `NoSuchElement`, or "table … could not be resolved in the jOOQ catalog" means the fixtures jar in `~/.m2` is missing `DefaultCatalog` (installed before the DB was up). Rebuild with: `mvn install -pl :graphitron-rewrite-test-fixtures -Plocal-db`. Don't bisect trunk — it's your local repo.
 
+Any later `mvn install` that hits `graphitron-rewrite-test-fixtures` without `-Plocal-db` (e.g. `mvn install -pl X -am` that transitively rebuilds fixtures, or a full-tree install) silently re-emits the fixtures jar with an empty jOOQ catalog and re-triggers the cascade. After any broad install, re-run the `-Plocal-db` fixtures install as a final step before testing.
+
 ## Editing large files
 
 Prefer many small `Edit` calls over one large `Write` when trimming or rewriting a long file. Full-file writes on plans/docs of ~300+ lines tend to time out mid-response and leave the file half-written. Sequence of targeted `Edit` calls (remove section A, remove section B, replace section C) is both safer and faster.
