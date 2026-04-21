@@ -156,6 +156,12 @@ class ServiceCatalog {
             }
             var params = new ArrayList<MethodRef.Param>();
             for (var p : javaMethod.getParameters()) {
+                if (org.jooq.DSLContext.class.isAssignableFrom(p.getType())) {
+                    String paramName = p.isNamePresent() ? p.getName() : "dsl";
+                    params.add(new MethodRef.Param.Typed(paramName,
+                        p.getParameterizedType().getTypeName(), new ParamSource.DslContext()));
+                    continue;
+                }
                 String pName = p.isNamePresent() ? p.getName() : null;
                 String displayName = pName != null ? pName : p.getType().getSimpleName();
                 String typeName = p.getParameterizedType().getTypeName();

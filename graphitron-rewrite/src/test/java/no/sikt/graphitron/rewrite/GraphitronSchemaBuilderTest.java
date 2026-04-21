@@ -1500,6 +1500,22 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.method().methodName()).isEqualTo("get");
             }),
 
+        SERVICE_FIELD_DSL_CONTEXT_PARAM(
+            "@service method with DSLContext parameter — reflected as ParamSource.DslContext, field not UnclassifiedField",
+            """
+            type Film @table(name: "film") {
+                rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getWithDsl"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField) schema.field("Film", "rating");
+                assertThat(f.method().params())
+                    .filteredOn(p -> p instanceof no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed t
+                        && t.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.DslContext)
+                    .hasSize(1);
+            }),
+
         TABLE_METHOD_FIELD_CONTEXT_ARGS(
             "@tableMethod with contextArguments — context param reflected into ParamSource.Context",
             """
