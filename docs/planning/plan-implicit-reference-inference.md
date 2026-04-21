@@ -25,7 +25,7 @@ Verification: schemas using `[Language.films] @splitQuery` (single FK `film_lang
 ## What we're NOT doing
 
 - **Multi-hop inference.** If zero direct FKs exist between source and target, the classifier errors. Walking junction tables automatically is out of scope.
-- **`@reference` on `ColumnReferenceField` / `InputField.ColumnReferenceField`** (`FieldBuilder.java:1771`, `TypeBuilder.java:576`). These sites already require the directive by an outer `if (hasAppliedDirective(DIR_REFERENCE))` guard for classification reasons unrelated to path resolution (presence of `@reference` is what distinguishes a joined-table column from a parent-table scalar). The guards stay.
+- **`@reference` on `ColumnReferenceField` / `InputField.ColumnReferenceField`** (`FieldBuilder.java:1771`, `TypeBuilder.java:578`). These sites already require the directive by an outer `if (hasAppliedDirective(DIR_REFERENCE))` guard for classification reasons unrelated to path resolution (presence of `@reference` is what distinguishes a joined-table column from a parent-table scalar). The guards stay.
 - **Service reconnect paths** (`FieldBuilder.java:1551, 1675`). These pass `null` source because the path starts from the service return type, not the parent; inference has no anchor and does not fire.
 - **`ComputedField` / `TableMethodField` with cross-table `@reference`.** Same-table is the common case (source == target) and inference correctly returns empty for it. Cross-table is rare and if needed users still write `@reference` explicitly.
 
@@ -37,9 +37,13 @@ The change is one coherent rule applied at one place (`parsePath`) plus the clea
 
 **File:** `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/BuildContext.java`
 
-Add a `targetSqlTableName` parameter to `parsePath`. The new inference branch runs **after** the existing explicit-path error early-return (lines 424-426) so a broken `@reference(path: [...])` surfaces its own error rather than getting masked by an inference attempt:
+Add a `targetSqlTableName` parameter to `parsePath` and **delete the two early returns at lines 400 and 403** (`if (directive == null) return …` and `if (pathArg == null) return …`). Let all cases flow through a single exit with `resolvedElements` initialized empty; both "no `@reference` directive" and "`@reference` with no `path:` arg" now reach the new inference branch with an empty list. The new branch runs **after** the explicit-path error early-return (lines 424-426) so a broken `@reference(path: [...])` surfaces its own error rather than getting masked by an inference attempt:
 
 ```
+// directive == null → elements stays empty; flow through.
+// pathArg  == null → elements stays empty; flow through.
+// pathArg present → parse into resolvedElements / errors as today.
+
 if (!errors.isEmpty()) {
     return new ParsedPath(List.of(), String.join("; ", errors));
 }
@@ -179,5 +183,5 @@ All new pipeline cases assert the error message via substring `contains`, matchi
 ## References
 
 - Error messages reused verbatim from `GraphitronSchemaValidator.validateNodeIdReferenceField` (lines 340-354).
-- Canonical explicit-`@reference` fixtures (for patterning new tests): `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/SplitTableFieldPipelineTest.java`, `graphitron-rewrite-test/graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls:116`.
+- Canonical explicit-`@reference` fixtures (for patterning new tests): `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/SplitTableFieldPipelineTest.java`, `graphitron-rewrite-test/graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls:115-118` (Film.actors — two-hop junction) and `:122-125` (Film.actorsBySplitLookup — two-hop split).
 - Closes the empty-`joinPath` stub arms in `SplitRowsMethodEmitter` — the last remaining gap in Phase 2b C1/C2 scope beyond `CARDINALITY` (single-cardinality) and `CONDITION_JOIN` (classification-vocabulary item 5).
