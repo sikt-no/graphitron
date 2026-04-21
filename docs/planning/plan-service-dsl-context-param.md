@@ -1,6 +1,6 @@
 # `DSLContext` parameters on `@service` methods
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > Teach `ServiceCatalog.reflectServiceMethod` to recognise an `org.jooq.DSLContext`
 > parameter on an `@service` method and classify it as
