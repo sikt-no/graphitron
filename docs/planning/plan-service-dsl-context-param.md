@@ -114,6 +114,12 @@ minimum:
   resolves with a single `DslContext` param and no `Sources` param. The
   schema-validator separately rejects table-bound `@service` without a
   `Sources` param; that's unchanged by this plan.
+- `reflectServiceMethod_dslContextParamNameCollidesWithArg_typeWins` —
+  shadow-prevention regression. Method signature `(DSLContext filter)` with
+  `argNames = {"filter"}`. Asserts the param is `ParamSource.DslContext`, not
+  `ParamSource.Arg`. Pins the "type before name" precedence decision; without
+  this test the precedence is documented in the plan but unprotected by the
+  suite. Also covers the symmetric `ctxKeys` collision by extension.
 - `reflectServiceMethod_unrecognisedParam_stillErrors` — negative regression:
   a non-DSLContext, non-List param still produces the "unrecognized sources
   type" message.
