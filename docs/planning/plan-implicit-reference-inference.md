@@ -58,7 +58,9 @@ if (resolvedElements.isEmpty()
 return new ParsedPath(List.copyOf(resolvedElements), null);
 ```
 
-Lift the `FkJoin` construction from the `tableName.isPresent()` branch of `parsePathElement` (lines 490-517) into a shared helper `synthesizeFkJoin(ForeignKey, String sourceSqlName, String fieldName)` and call it from both places. The helper resolves source/target `TableRef`s, FK column lists, and the step alias `fieldName + "_0"`. No `whereFilter` — implicit inference doesn't carry a condition.
+Lift the `FkJoin` construction from the `tableName.isPresent()` branch of `parsePathElement` (lines 490-517) into a shared helper `synthesizeFkJoin(ForeignKey, String sourceSqlName, String fieldName, int stepIndex)` and call it from both places. The helper resolves source/target `TableRef`s, FK column lists, and the step alias. No `whereFilter` — implicit inference doesn't carry a condition.
+
+**Alias form must match the explicit path's position-0 shape.** Today `parsePathElement` computes the alias as `fieldName + "_" + stepIndex` (see `BuildContext.java:456`), so position 0 of an explicit one-step `@reference` on `Language.films` is `films_0`. The helper must use the same formula. Inline emitters (`JoinPathEmitter.generateAliases`) derive runtime aliases from target-table class names independently, so there's no immediate collision risk today — but keeping `FkJoin.alias` identical between explicit and inferred paths preserves record equality for equivalent shapes and shields any future emitter that consumes `FkJoin.alias()` directly.
 
 Also lift the "0 FKs" / "multiple FKs" error string into a shared helper `fkCountMessage(String source, String target, List<ForeignKey> fks, boolean directiveAbsent)` and call it from **both** inference call sites — the new empty-elements branch in `parsePath` and the existing `tableName.isPresent()` branch in `parsePathElement` (lines 496-504). Both are now the same inference by different triggers and should produce identical user-facing errors. The `directiveAbsent` flag only toggles the "; add a @reference directive…" suffix (redundant when the user already wrote `{table: "..."}`):
 
@@ -91,7 +93,9 @@ Update every `parsePath` call to pass a target. Six sites pass the resolved targ
 |---|---|---|
 | `:579` — input-object `@reference` field | InputField.ColumnReferenceField | `null` (same rationale as `FieldBuilder:1772` — scalar input-object field, no target table) |
 
-**Site :1589 needs a restructure.** The call currently happens before `ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef))`, so the target is unknown. Resolve the return type first, pass `tb.table().tableName()` for `TableBoundReturnType` and `null` for scalar/result/polymorphic arms. `RecordField` classification (non-table return from a `@record` parent) is unaffected because `null` target means inference doesn't fire.
+**Site :1589 needs a restructure.** The `parsePath` call precedes `ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef))` at line 1593, so the return-type kind isn't yet classified — we don't know whether to pass a table name or `null`. Fix: swap the order — resolve the return type first, then invoke `parsePath` once with `tb.table().tableName()` when the resolved return type is a `TableBoundReturnType` and `null` otherwise. This is a single-call restructure, not per-arm duplication. `RecordField` classification (non-table return from a `@record` parent) is unaffected because `null` target means inference doesn't fire.
+
+**`NestingField` is covered transitively.** NestingField itself has no join path, but nested `TableField` / `LookupTableField` arms inside a NestingField re-enter the classifier through site :242 (`classifyChildFieldOnTableType`), so they pick up inference automatically — no separate call-site update needed.
 
 ### 3. Validator cleanup
 
@@ -140,7 +144,7 @@ Also narrow `FieldBuilder.deriveBatchKeyForResultType`'s compound null-return ch
 - `IMPLICIT_REFERENCE_RECORD_LOOKUP_TABLE` — same shape with `@lookupKey` on a `@record` parent producing `RecordLookupTableField`. Same parity rationale.
 - `IMPLICIT_REFERENCE_NODE_ID_REFERENCE` — replaces `NodeIdReferenceFieldValidationTest.IMPLICIT_SINGLE_FK` at the pipeline level.
 - `IMPLICIT_REFERENCE_ZERO_FK` — `Film.actors @splitQuery` (no direct FK between `film` and `actor`) → `UnclassifiedField` with "no foreign key found between tables 'film' and 'actor'…".
-- `IMPLICIT_REFERENCE_MULTIPLE_FK` — `Film.languages` (two FKs `film.language_id` and `film.original_language_id` both point at `language`) → `UnclassifiedField` with "multiple foreign keys found…".
+- `IMPLICIT_REFERENCE_MULTIPLE_FK` — SDL-only synthetic field `Film.languages: [Language!]!` (the field doesn't exist on the real fixture schema; it's declared in the pipeline test's inline SDL only). The test-fixtures DB already has the two FKs `film.language_id` and `film.original_language_id` both pointing at `language`, so the classifier sees ambiguity → `UnclassifiedField` with "multiple foreign keys found…".
 
 **Pipeline tests — fix existing fixtures that rely on the old empty-path-is-OK behavior:**
 
@@ -156,7 +160,7 @@ Also narrow `FieldBuilder.deriveBatchKeyForResultType`'s compound null-return ch
 ### Automated
 
 - `mvn test -pl :graphitron-rewrite` passes.
-- `mvn test -pl :graphitron-rewrite-test,:graphitron-rewrite-test-fixtures,:graphitron-rewrite-test-spec` passes (execution test with path-less `@splitQuery` returns matching rows).
+- `mvn test -pl :graphitron-rewrite-test,:graphitron-rewrite-test-fixtures,:graphitron-rewrite-test-spec -Plocal-db` passes (execution test with path-less `@splitQuery` returns matching rows). `-Plocal-db` is required — see CLAUDE.md's fixtures-clobber note; without it the fixtures jar is re-emitted with an empty jOOQ catalog and a cascade of unrelated failures follows.
 - Grepping the codebase for the EMPTY_PATH stub messages (`"requires a @reference path"`) returns zero hits.
 - `GraphitronSchemaValidator` no longer references `findForeignKeysBetweenTables`.
 
