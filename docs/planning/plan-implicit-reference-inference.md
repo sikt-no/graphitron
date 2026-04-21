@@ -43,13 +43,19 @@ Add a `targetSqlTableName` parameter to `parsePath`. The new inference branch ru
 if (!errors.isEmpty()) {
     return new ParsedPath(List.of(), String.join("; ", errors));
 }
+// resolvedElements.isEmpty() covers both triggers uniformly: @reference absent (parsePath
+// short-circuits before populating the list) and @reference(path: []) (explicit empty list
+// leaves it empty). The equalsIgnoreCase guard skips inference when source == target — the
+// ComputedField / TableMethodField same-table case (see §"What we're NOT doing"); case-
+// insensitive because JooqCatalog.findForeignKeysBetweenTables itself compares names that
+// way (lines 205-223), so SDL vs catalog casing drift is benign.
 if (resolvedElements.isEmpty()
         && startSqlTableName != null
         && targetSqlTableName != null
         && !startSqlTableName.equalsIgnoreCase(targetSqlTableName)) {
     var fks = catalog.findForeignKeysBetweenTables(startSqlTableName, targetSqlTableName);
     if (fks.size() == 1) {
-        resolvedElements.add(synthesizeFkJoin(fks.get(0), startSqlTableName, fieldName));
+        resolvedElements.add(synthesizeFkJoin(fks.get(0), startSqlTableName, fieldName, 0));
     } else {
         return new ParsedPath(List.of(),
             fkCountMessage(startSqlTableName, targetSqlTableName, fks, /*directiveAbsent=*/true));
@@ -146,6 +152,8 @@ Also narrow `FieldBuilder.deriveBatchKeyForResultType`'s compound null-return ch
 - `IMPLICIT_REFERENCE_ZERO_FK` — `Film.actors @splitQuery` (no direct FK between `film` and `actor`) → `UnclassifiedField` with "no foreign key found between tables 'film' and 'actor'…".
 - `IMPLICIT_REFERENCE_MULTIPLE_FK` — SDL-only synthetic field `Film.languages: [Language!]!` (the field doesn't exist on the real fixture schema; it's declared in the pipeline test's inline SDL only). The test-fixtures DB already has the two FKs `film.language_id` and `film.original_language_id` both pointing at `language`, so the classifier sees ambiguity → `UnclassifiedField` with "multiple foreign keys found…".
 
+All new pipeline cases assert the error message via substring `contains`, matching the existing `GraphitronSchemaBuilderTest` convention — keeps tests robust to tail-end wording tweaks (the "; add a @reference directive…" suffix) without loosening the signal.
+
 **Pipeline tests — fix existing fixtures that rely on the old empty-path-is-OK behavior:**
 
 - `GraphitronSchemaBuilderTest.Case.SPLIT_QUERY` (line 598) — change to a direct-FK pair, e.g. `type Language @table(name: "language") { films: [Film!]! @splitQuery }`. Alternatively keep `Film.actors` and add the two-hop `@reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])`. Preference: the direct-FK form — it's what the new `IMPLICIT_REFERENCE_SPLIT_TABLE` case tests, and `SplitTableFieldPipelineTest` already covers the two-hop junction shape.
@@ -166,7 +174,7 @@ Also narrow `FieldBuilder.deriveBatchKeyForResultType`'s compound null-return ch
 
 ### Manual
 
-- Running the generator against `sis-graphql-spec` surfaces any schemas that were previously masked by the EMPTY_PATH runtime-stub error but now fail at classify time with the new error messages. Expected outcome: fields that relied on accidental single-FK proximity start working; fields that were silently wrong (multi-FK ambiguity) surface as actionable classifier errors rather than runtime surprises.
+- Running the generator against `sis-graphql-spec` surfaces any schemas that were previously masked by the EMPTY_PATH runtime-stub error but now fail at classify time with the new error messages. This is a breaking change for schemas whose `@reference` was omitted in ambiguous (zero-FK or multi-FK) cases — those now fail classification and require an explicit directive. Fields that relied on accidental single-FK proximity start working; fields that were silently wrong (multi-FK ambiguity) surface as actionable classifier errors rather than runtime surprises.
 
 ## References
 
