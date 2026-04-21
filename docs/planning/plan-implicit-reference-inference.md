@@ -37,9 +37,12 @@ The change is one coherent rule applied at one place (`parsePath`) plus the clea
 
 **File:** `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/BuildContext.java`
 
-Add a `targetSqlTableName` parameter to `parsePath`. After the existing directive-parse block (lines 398-427), if the resolved `elements` list is empty:
+Add a `targetSqlTableName` parameter to `parsePath`. The new inference branch runs **after** the existing explicit-path error early-return (lines 424-426) so a broken `@reference(path: [...])` surfaces its own error rather than getting masked by an inference attempt:
 
 ```
+if (!errors.isEmpty()) {
+    return new ParsedPath(List.of(), String.join("; ", errors));
+}
 if (resolvedElements.isEmpty()
         && startSqlTableName != null
         && targetSqlTableName != null
@@ -52,6 +55,7 @@ if (resolvedElements.isEmpty()
             fkCountMessage(startSqlTableName, targetSqlTableName, fks, /*directiveAbsent=*/true));
     }
 }
+return new ParsedPath(List.copyOf(resolvedElements), null);
 ```
 
 Lift the `FkJoin` construction from the `tableName.isPresent()` branch of `parsePathElement` (lines 490-517) into a shared helper `synthesizeFkJoin(ForeignKey, String sourceSqlName, String fieldName)` and call it from both places. The helper resolves source/target `TableRef`s, FK column lists, and the step alias `fieldName + "_0"`. No `whereFilter` — implicit inference doesn't carry a condition.
@@ -79,13 +83,13 @@ Update every `parsePath` call to pass a target. Six sites pass the resolved targ
 | `:1694` — `@externalField` | ComputedField | `tableType.table().tableName()` (same-table → inference returns empty) |
 | `:1708` — `@tableMethod` | TableMethodField | `tableType.table().tableName()` (same-table) |
 | `:1749` — `@nodeId(typeName:)` | NodeIdReferenceField | `targetNodeType.table().tableName()` (line 1744 — `NodeType` is a `TableBackedType`; `.table()` is non-null by `NodeType`'s classification contract) |
-| `:1772` — `@reference` scalar | ColumnReferenceField / MultitableReferenceField | `null` (guarded by outer `hasAppliedDirective`; empty-path never fires here) |
+| `:1772` — `@reference` scalar | ColumnReferenceField / MultitableReferenceField | `null` (scalar return — no target table to infer TO; the outer `hasAppliedDirective(DIR_REFERENCE)` guard keeps the classifier routing independent of whether a path is supplied) |
 
 **File:** `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/TypeBuilder.java`
 
 | Call site | Variant | Target arg |
 |---|---|---|
-| `:579` — input-object `@reference` field | InputField.ColumnReferenceField | `null` (guarded) |
+| `:579` — input-object `@reference` field | InputField.ColumnReferenceField | `null` (same rationale as `FieldBuilder:1772` — scalar input-object field, no target table) |
 
 **Site :1589 needs a restructure.** The call currently happens before `ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef))`, so the target is unknown. Resolve the return type first, pass `tb.table().tableName()` for `TableBoundReturnType` and `null` for scalar/result/polymorphic arms. `RecordField` classification (non-table return from a `@record` parent) is unaffected because `null` target means inference doesn't fire.
 
@@ -94,6 +98,10 @@ Update every `parsePath` call to pass a target. Six sites pass the resolved targ
 **File:** `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java`
 
 Delete the zero-FK / multi-FK branches from `validateNodeIdReferenceField` (lines 333-356). Keep the `validateReferencePath` / `validateReferenceLeadsToType` calls (lines 358-361) for the explicit-path case — those are independent checks.
+
+After the deletion, `jooqCatalog` is unreferenced. Remove the field and the one-arg constructor; collapse to the existing no-arg constructor. Updates: `GraphQLRewriteGenerator.java:55` (drops the `jooqCatalog` arg) and `FieldValidationTestHelper.java:30` (drops the `new JooqCatalog(...)` arg). `ValidateMojo.java:72` and `StubbedVariantPipelineTest.java:66` already use the no-arg form — no change. Verifies the success criterion "`GraphitronSchemaValidator` no longer references `findForeignKeysBetweenTables`" at the type level, not just the call site.
+
+`NodeIdReferenceField.parentTable` becomes unread after this deletion (grep confirms a single reader in the deleted block). Optional follow-on: drop the record component and the arg at `FieldBuilder.java:1753`. Opportunistic, not required — flag for a separate pass if the implementer doesn't roll it in.
 
 ### 4. Emitter cleanup
 
@@ -108,7 +116,7 @@ Delete the EMPTY_PATH branch in each of the four `unsupportedReason(...)` method
 
 The CARDINALITY and CONDITION_JOIN branches stay. Post-change, `path.get(0)` in `buildListMethod` (line 343) is guaranteed to be a non-null `FkJoin` by the classifier contract: empty paths are rejected in `parsePath` (inference failure → `UnclassifiedField`), and `CONDITION_JOIN`-first paths are rejected upstream via `JoinPathEmitter.hasConditionJoin` in the same `unsupportedReason` method. Add a one-line invariant comment where `path.get(0)` is dereferenced so a future refactor that introduces a new `JoinStep` subtype doesn't silently break the cast.
 
-Also delete `FieldBuilder.deriveBatchKeyForResultType`'s `joinPath.isEmpty()` arm (line 1656). Path emptiness at that point would mean the classifier contract was violated; an `IllegalStateException` is more honest than a user-facing `UnclassifiedField` message.
+Also narrow `FieldBuilder.deriveBatchKeyForResultType`'s compound null-return check (line 1656). The current guard `joinPath.isEmpty() || !(joinPath.get(0) instanceof JoinStep.FkJoin ...)` folds two distinct conditions: empty path (now impossible — classifier contract violated) and condition-first explicit path (still reachable via `@reference(path: [{condition: ...}, ...])` on a `RecordTableField`/`RecordLookupTableField` parent). Split them: throw `IllegalStateException` on empty, keep the `!FkJoin` return-null arm so condition-first paths still produce `UnclassifiedField` at the caller.
 
 ### 5. Tests
 
@@ -141,7 +149,7 @@ Also delete `FieldBuilder.deriveBatchKeyForResultType`'s `joinPath.isEmpty()` ar
 
 **Execution test — add a path-less `@splitQuery` fixture:**
 
-- `graphitron-rewrite-test/graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls` — drop the `@reference(path: [{key: "film_language_id_fkey"}])` on `Language.films` at line 166. Add or adjust the corresponding execution test (`graphitron-rewrite-test/graphitron-rewrite-test-spec/src/test/...`) to confirm the query returns identical results to the explicit-`@reference` baseline. The existing fixture at line 116 (`actorsBySplitLookup` via two-hop junction) stays explicit — it's the legitimate multi-hop case.
+- `graphitron-rewrite-test/graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls` — drop the `@reference(path: [{key: "film_language_id_fkey"}])` on `Language.films` at line 185. Add or adjust the corresponding execution test (`graphitron-rewrite-test/graphitron-rewrite-test-spec/src/test/...`) to confirm the query returns identical results to the explicit-`@reference` baseline. The existing fixture at line 122 (`actorsBySplitLookup` via two-hop junction) stays explicit — it's the legitimate multi-hop case.
 
 ## Success criteria
 
