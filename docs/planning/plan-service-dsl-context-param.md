@@ -23,24 +23,28 @@
 - `reflectTableMethod` (the sibling for `@tableMethod` / `@condition`) already
   demonstrates the type-based-check pattern: it recognises `org.jooq.Table`
   assignability at line 228 *before* name-based dispatch. The fix mirrors that.
-- No emitter currently consumes a `ParamSource.DslContext` produced from a
-  service method. Every `@service` emission is either:
-  - a stub (root-`Query` service leaves — `QueryServiceTableField`,
-    `QueryServiceRecordField` — tracked by
-    [`plan-service-root-fetchers.md`](plan-service-root-fetchers.md)), or
-  - a `UnsupportedOperationException` body (child
-    `ChildField.ServiceTableField.buildServiceRowsMethod`,
-    `TypeFetcherGenerator.java:1042–1060`).
-  So the classifier change is safe to land ahead of emission: it produces a new
-  `MethodRef.Param.Typed` that no live code path reads, but downstream plans
-  (service-root-fetchers, the ChildField service follow-up) can rely on it.
+- **Safe to land ahead of emission.** `MethodRef.callParams()`
+  (`MethodRef.java:48–59`) explicitly filters parameters to `ParamSource.Arg`
+  and `ParamSource.Context` only — its docstring names `DslContext`, `Table`,
+  `SourceTable`, and `Sources` as structural parameters it skips. Every
+  existing call-argument emitter walks `callParams()`, so a newly-produced
+  `DslContext` param is invisible to them by construction. Today's `@service`
+  emitters are stubs anyway (root `Query` service leaves —
+  `QueryServiceTableField`, `QueryServiceRecordField` — tracked by
+  [`plan-service-root-fetchers.md`](plan-service-root-fetchers.md); child
+  `ChildField.ServiceTableField.buildServiceRowsMethod` throws
+  `UnsupportedOperationException` at `TypeFetcherGenerator.java:1042–1060`),
+  but the `callParams()` filter is the load-bearing invariant — downstream
+  emission plans will pick up the new variant through `params()` without
+  disturbing anything else.
 
 ## Scope
 
 **In scope.** `@service` methods only. Recognise `org.jooq.DSLContext`
 parameters by type, emit `MethodRef.Param.Typed` with `ParamSource.DslContext`,
-preserve their positional slot in `params()` so a future emitter can walk the
-parameter list and inject the right expression.
+preserve their Java-declaration index in `params()` (by classifying in the
+existing single pass, not a pre-pass) so a future emitter can walk the
+parameter list and inject the right expression at the correct slot.
 
 **Out of scope.**
 
@@ -63,8 +67,9 @@ parameter list and inject the right expression.
 
 ### `ServiceCatalog.reflectServiceMethod`
 
-Insert one type-based branch before the existing name-based dispatch
-(mirrors the `org.jooq.Table` check in `reflectTableMethod`):
+Inside the existing per-parameter loop at `ServiceCatalog.java:158`, insert a
+type-based branch at the top, before the name-based dispatch — mirrors the
+`org.jooq.Table` check at `:228` in `reflectTableMethod`:
 
 ```java
 for (var p : javaMethod.getParameters()) {
@@ -74,28 +79,25 @@ for (var p : javaMethod.getParameters()) {
             p.getParameterizedType().getTypeName(), new ParamSource.DslContext()));
         continue;
     }
-    // existing Arg / Context / classifySourcesType logic unchanged
+    // existing body at :159–179 unchanged: pName/displayName + argNames /
+    // ctxKeys / classifySourcesType dispatch
 }
 ```
 
-Precedence decision: **type before name.** A parameter whose Java type is
-`DSLContext` is a framework-injected handle by construction; we never want a
-schema author's `contextArguments: ["ctx"]` directive to shadow it. This
-matches `reflectTableMethod`'s ordering for `Table<?>`.
+The `classifySourcesType` helper is unchanged — `DSLContext` is not a batch
+key, and the `continue` means we never reach the `List<?>`-only classifier for
+this parameter.
+
+Precedence: **type before name.** Name-based dispatch against `argNames` /
+`ctxKeys` could never produce a `DSLContext` at runtime anyway (the GraphQL
+argument value and the `GraphitronContext` context value are not jOOQ handles),
+so type-before-name is the only correct ordering — not just a stylistic choice.
+Matches `reflectTableMethod`'s ordering for `Table<?>`.
 
 `-parameters` independence: type-based detection does not need the parameter
 name. When `-parameters` is present we use the developer-declared name (for
 error messages, symmetry with other `Param.Typed` entries); otherwise we fall
-back to `"dsl"`. No new warnings.
-
-### No `classifySourcesType` change
-
-`DSLContext` is not a batch-key type. The fix bypasses `classifySourcesType`
-entirely — the sources classifier remains `List<?>`-only.
-
-### `reflectTableMethod` — unchanged
-
-Intentional. See "Out of scope."
+back to `"dsl"` (mirrors the `"table"` fallback at `:229`). No new warnings.
 
 ## Tests
 
@@ -116,16 +118,21 @@ minimum:
   a non-DSLContext, non-List param still produces the "unrecognized sources
   type" message.
 
-Test-fixture methods live on a new `TestServiceStub`-adjacent class (e.g.
-`TestDslContextServiceStub`) so `TestServiceStub`'s no-arg methods stay intact
-for the 20+ existing `GraphitronSchemaBuilderTest` cases that reference them.
+Test-fixture methods are added directly to `TestServiceStub` under distinct
+names (e.g. `getWithDsl(DSLContext)`, `getByIdWithDsl(DSLContext, String id)`)
+rather than introducing a new stub class. The existing no-arg
+`get()` / `run()` methods stay intact, so the 20+ `GraphitronSchemaBuilderTest`
+cases referencing them are untouched. One fixture class is easier to find
+than two.
 
 ### Extended: `GraphitronSchemaBuilderTest`
 
 Add one SDL case that parses an `@service` field whose referenced Java method
 declares a `DSLContext` parameter, asserting the resulting `MethodRef` has
 `ParamSource.DslContext` in the expected slot and the field is *not*
-`UnclassifiedField`.
+`UnclassifiedField`. One pipeline case is the minimum beyond the three-case
+unit test; it guards against regressions in `FieldBuilder`'s threading of
+`argNames` / `ctxKeys` into `reflectServiceMethod`.
 
 ### Validator behaviour — unchanged
 
@@ -154,15 +161,3 @@ at build time: ten fields that currently fail `graphitron:validate` with
   question (migrate the service signature to `List<T>` vs. grow
   `BatchKey` / `classifySourcesType` to accept `Set`). Out of scope here;
   track separately.
-
-## Open questions
-
-- **Name for the test-fixture class.** `TestDslContextServiceStub` reads
-  clumsily but clearly conveys the role. Alternative: fold the new methods
-  into `TestServiceStub` under distinct method names (`getWithDsl`,
-  `getByIdWithDsl`) so existing references are untouched. Defer to
-  implementation.
-- **Pipeline-test depth.** One SDL case is the minimum; the three-case unit
-  test already pins the classifier behaviour. Adding a pipeline case guards
-  against regressions in `FieldBuilder`'s threading of `argNames` / `ctxKeys`
-  into `reflectServiceMethod`. Include it.
