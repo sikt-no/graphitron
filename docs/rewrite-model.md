@@ -205,4 +205,4 @@ graph LR
 | `MutationServiceTableField` | `method` | `MethodRef` |
 | `ServiceTableField` (child) | `method` | `MethodRef` |
 
-Potential cleanups (structural redundancy in `TableTargetField`, `QueryField`/`ChildField` parallels, `JoinConditionRef` wrapper) are tracked under Cleanup / drift in [`planning/rewrite-roadmap.md`](planning/rewrite-roadmap.md).
+Potential cleanups (structural redundancy in `TableTargetField`, `QueryField`/`ChildField` parallels, `JoinConditionRef` wrapper) are tracked under Cleanup in [`planning/rewrite-roadmap.md`](planning/rewrite-roadmap.md).

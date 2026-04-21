@@ -92,3 +92,25 @@ Graphitron is a code generator. The Java version used to build the generator is 
 - **Generated source files** must target Java 17. Consumers compile Graphitron's output with their own toolchain, which may be Java 17. Generator authors are responsible for ensuring that any syntax emitted into generated files is valid Java 17 — no switch patterns, no sequenced collections API, nothing that requires 21.
 
 The practical implication: when adding code to a generator, distinguish between code *in* the generator (unrestricted) and code *emitted by* the generator (Java 17).
+
+---
+
+## Emitter Conventions
+
+### Return types
+
+DataFetchers return `Result<Record>` — no DTOs, no TypeMappers. GraphQL-Java traverses records using the registered field DataFetchers. Exception: Connection fields return `ConnectionResult`, a generated carrier wrapping `Result<Record>` + pagination context.
+
+### Selection-aware queries
+
+`DataFetchingFieldSelectionSet` and `SelectedField` are threaded through all table method signatures, structurally committing to selection-aware queries:
+
+- **Top-level queries**: call `Type.$fields(sel, table, env)` for the column list, then `dsl.select(fields).from(table)...`
+- **Inline nesting**: use jOOQ `multiset(select(columns).from(CHILD).where(...)).as("alias")` returning `Field<?>` (type-erased). Use type erasure at every helper method boundary — jOOQ generic types compound badly with nesting depth, causing slow compile times.
+- **`@splitQuery`**: separate DataLoader; parent fetches FK/PK columns, child batches by those keys.
+
+Selection-driven queries produce different SQL per request, preventing cached query-plan reuse. This is an acceptable trade-off for wide tables with large optional columns; for narrow tables (≤ 10 columns) where most fields are always requested, `TABLE.*` is simpler and the dynamic-column overhead exceeds the benefit.
+
+### Error quality
+
+`BuildContext.candidateHint(attempt, candidates)` sorts candidates by Levenshtein distance. Used in 14 places (5 in `FieldBuilder`, 5 in `TypeBuilder`, 2 in `BuildContext`, 2 in `ServiceCatalog`). When adding new jOOQ existence checks in the validator or builder, follow the same pattern — pass the relevant candidate list from `JooqCatalog` to `candidateHint`.

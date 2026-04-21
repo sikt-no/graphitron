@@ -208,6 +208,19 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 
 **\*\* `UnclassifiedField` and `NotGeneratedField`** are direct permits of `GraphitronField` — they are not nested under `QueryField`, `MutationField`, or `ChildField`. They are listed in the tables above for completeness, but structurally they sit at the top level of the sealed hierarchy. `TableTargetField` is an intermediate sealed sub-interface of `ChildField` grouping all 8 SQL-generating child field variants (`TableField`, `SplitTableField`, `LookupTableField`, `SplitLookupTableField`, `TableInterfaceField`, `ServiceTableField`, `RecordTableField`, `RecordLookupTableField`).
 
+### DataLoader-backed field categories
+
+Four categories of DataLoader-backed child field, distinguished by `@splitQuery` and `@lookupKey`:
+
+| Category | DataLoader | Derived tables | `@condition` / non-`@lookupKey` args | Pagination |
+|---|---|---|---|---|
+| **`QueryLookupTableField`** (root lookup, no `@splitQuery`) | No — synchronous | Derived target only | Allowed — must preserve N × M contract† | Never — result count = M exactly |
+| **`LookupTableField`** (`@lookupKey`, no `@splitQuery`, table-mapped parent) | No — correlated subquery | Derived target + correlated parent join | Allowed — must preserve N × M contract† | Never |
+| **`SplitTableField`** (`@splitQuery`, no `@lookupKey`) | Yes | Derived source only | Allowed | Allowed |
+| **`SplitLookupTableField`** (`@splitQuery` + `@lookupKey`, result-mapped parent) | Yes | Both | Allowed — must preserve N × M contract† | Never — result count = N × M |
+
+† See [Derived tables](#derived-tables) for the contract definition.
+
 ---
 
 ## Implicit Classification Rules
@@ -279,6 +292,18 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 
 ---
 
+## Known Gaps
+
+### `ConditionFilter` has no builder path
+
+`FieldBuilder` currently produces `GeneratedConditionFilter` entries for filterable arguments, but never produces `ConditionFilter` entries for `@condition` directives on fields. Field-level `@condition` annotations — WHERE predicates applied to the field's own target table — are not yet classified into the rewrite pipeline's filter list.
+
+**Note:** This gap is about the `@condition` directive on *fields* (WHERE predicate). It is distinct from condition joins in `@reference` paths — `{condition: {className, method}}` in a `path:` element — which are fully resolved by the builder into `ConditionJoin` steps.
+
+**Fix**: add `@condition` directive reading to `FieldBuilder.resolveFilters()`. `ConditionFilter` now implements `MethodRef` directly, so the builder constructs it with `(className, methodName, params)` and `callParams()` is derived automatically.
+
+---
+
 **See also:**
 - [Rewrite Design Principles](rewrite-design-principles.md) — architectural and technical principles for the rewrite pipeline
-- [Rewrite Roadmap](planning/rewrite-roadmap.md) — remaining generator work and known gaps
+- [Rewrite Roadmap](planning/rewrite-roadmap.md) — remaining generator work

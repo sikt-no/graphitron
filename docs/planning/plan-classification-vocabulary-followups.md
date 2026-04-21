@@ -10,25 +10,13 @@ Each item below corrects a place where the doc or the code still treats `@lookup
 
 ---
 
-## 1. Roadmap G6 table — `@condition` is not blocked on lookup fields
+## 1. ~~G6 table — `@condition` is not blocked on lookup fields~~ *(Done)*
 
-The G6 **Split/Lookup field categories** table in
-[rewrite-roadmap.md](rewrite-roadmap.md#g6--splitlookup-field-categories) still lists
-`@condition` as *Blocked* on three of the four lookup variants (`LookupQueryField`,
-table-mapped `LookupTableField`, result-mapped `LookupTableField`). The rewritten
-[code-generation-triggers.md](../code-generation-triggers.md) now states the opposite:
-
-> `@condition` on lookup fields is allowed. The condition method, however, must preserve the
-> N × M positional contract…
-
-**Change.** Replace "Blocked (lookup invariant)" / "Blocked" in the `@condition` column with
-"Allowed — must preserve N × M contract" (or equivalent) on all three lookup rows. Add a short
-pointer under the table to the authoritative statement in
-[Derived tables](../code-generation-triggers.md#derived-tables).
-
-**Code check (no change expected).** `FieldBuilder.buildFilters` rejects `@condition` only on
-*arguments*, never on field definitions, and no classifier pairs `@lookupKey` + `@condition` as
-mutually exclusive. The doc is the only place that's wrong.
+Addressed during the roadmap deep-clean: the G6 table was moved from the roadmap to
+[code-generation-triggers.md](../code-generation-triggers.md#dataloader-backed-field-categories)
+and built with the correct values — `@condition` column now reads
+"Allowed — must preserve N × M contract†" on all three lookup rows, with a footnote pointing
+to the [Derived tables](../code-generation-triggers.md#derived-tables) contract definition.
 
 ---
 
@@ -71,7 +59,7 @@ errors in some configurations.
 
 Systematic audit — one pass per file:
 
-- **`rewrite-roadmap.md`** — item 1 above covers it.
+- **`code-generation-triggers.md`** — item 1 above covers it (G6 table now lives here).
 - **`../rewrite-model.md`** — the phrase `"does not navigate to a new table scope"` (in the
   `TableTargetField interface vs. NestingField` subsection) is correct. No other
   lookup-in-scope claims present. No change.
@@ -122,8 +110,7 @@ Questions to answer:
 - Is there an execution test that exercises a lookup field with a non-trivial `@condition`
   applied?
 
-**Action.** Before wiring lookup execution tests (see
-[rewrite-roadmap.md G5/G6](rewrite-roadmap.md#g5--inline-tablefield)), nail down the signature,
+**Action.** Before wiring lookup execution tests (see Generator stubs #6–7 in the roadmap), nail down the signature,
 document it in
 [graphitron-java-codegen README](../../graphitron-codegen-parent/graphitron-java-codegen/README.md)
 alongside `@condition`, and add an execution test in `graphitron-rewrite-test-spec` that
