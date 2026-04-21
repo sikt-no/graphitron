@@ -32,7 +32,7 @@ Lift three root-`Query` leaves out of `NOT_IMPLEMENTED_REASONS`: `QueryTableMeth
 
 ### Faceted search on `@asConnection` **[Draft]** — [plan-faceted-search.md](plan-faceted-search.md)
 
-New `@facet` directive for filter-input fields. `MakeConnections` synthesizes a `facets: XFacets` field on the Connection type plus reusable `*FacetValue` types; `FieldWrapper.Connection` carries a `FacetSpec` list; `TypeFetcherGenerator.buildQueryConnectionFetcher` emits per-facet `GROUP BY` queries reusing the main condition minus the facet's own predicate. Covers Jira GG-335; resolves SOPP-141 (closed in favour of this).
+New `@facet` directive for filter-input fields. `MakeConnections` synthesizes a `facets: XFacets` field on the Connection type plus reusable `*FacetValue` types; `FieldWrapper.Connection` carries a `FacetSpec` list; `TypeFetcherGenerator.buildQueryConnectionFetcher` emits one `GROUPING SETS` aggregate query per Connection request, with per-aggregate `FILTER` clauses giving each facet its filter-minus-self predicate in a single table scan. Phase 1 is a measurement spike that validates or redirects this SQL strategy before emitter work. Covers Jira GG-335; resolves SOPP-141 (closed in favour of this).
 
 ### Classification vocabulary follow-ups **[Draft]** — [plan-classification-vocabulary-followups.md](plan-classification-vocabulary-followups.md)
 

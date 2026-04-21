@@ -105,7 +105,7 @@ below. Results merge into a single `ConnectionResult` carrier.
   filter. The filter method itself ANDs all its fields internally — so
   the fetcher cannot surgically drop a single input-field's predicate
   by passing a skip name; the filter-class generator owns that
-  assembly. This shapes Phase 3's condition-minus-self strategy (see
+  assembly. This shapes Phase 4's condition-minus-self strategy (see
   below).
 
 ## Desired End State
@@ -139,9 +139,9 @@ below. Results merge into a single `ConnectionResult` carrier.
 
 ## What We're NOT Doing (v1)
 
-- **Hierarchical / tree facets** — deferred to Phase 5 below. v1 ships
+- **Hierarchical / tree facets** — deferred to Phase 6 below. v1 ships
   flat facets only. Emitter and model must *leave room* for the
-  extension (see Phase 5); they must not foreclose it.
+  extension (see Phase 6); they must not foreclose it.
 - **`selected: Boolean!` on facet values.** SOPP-141 mentioned it; GG-335
   omits it. We follow GG-335 in v1.
 - **Facets on non-`@asConnection` list fields.** Connection-only; the whole
@@ -178,18 +178,22 @@ below. Results merge into a single `ConnectionResult` carrier.
 
 ## Implementation Approach
 
-Four v1 phases plus Phase 5 deferred, in strict order — each phase
+Five v1 phases plus Phase 6 deferred, in strict order — each phase
 leaves the build green and existing tests passing. No phase adds
-user-observable behaviour until Phase 3; Phase 4 is test coverage.
-Phase 5 ships hierarchical facets after v1 lands.
+user-observable behaviour until Phase 4; Phase 5 is test coverage.
+Phase 1 is a measurement spike that validates or redirects the SQL
+strategy *before* emitter work begins; its deliverables are a report
+plus any plan revisions it motivates. Phase 6 ships hierarchical
+facets after v1 lands.
 
-| Phase | Module | What lands |
+| Phase | Module / artefact | What lands |
 |---|---|---|
-| 1 | `graphitron-schema-transform` | `@facet` directive definition; `MakeConnections` synthesizes facet types + `facets` field on the Connection |
-| 2 | `graphitron-rewrite` (classifier) | `FieldWrapper.Connection` carries `FacetSpec`; validator rejects misuse |
-| 3 | `graphitron-rewrite` (emitter) | Fetcher emits per-facet `GROUP BY`; helper + wiring expose the new field |
-| 4 | `graphitron-rewrite-test-spec` | Execution tests against Sakila |
-| 5 | deferred | Hierarchical facets (`includeChildrenOf` + `parentValue`) |
+| 1 | `docs/planning/plan-faceted-search.md` + hand-written SQL | Spike — benchmark SQL strategies against Sakila; confirm or swap v1 default; resolve NULL + ordering Open Questions |
+| 2 | `graphitron-schema-transform` | `@facet` directive definition; `MakeConnections` synthesizes facet types + `facets` field on the Connection |
+| 3 | `graphitron-rewrite` (classifier) | `FieldWrapper.Connection` carries `FacetSpec`; validator rejects misuse |
+| 4 | `graphitron-rewrite` (emitter) | Fetcher emits the spike-chosen aggregate shape; helper + wiring expose the new field |
+| 5 | `graphitron-rewrite-test-spec` | Execution tests against Sakila |
+| 6 | deferred | Hierarchical facets (`includeChildrenOf` + `parentValue`) |
 
 ---
 
@@ -301,7 +305,161 @@ transform. The choice lives inside the fetcher.
 
 ---
 
-## Phase 1 — Directive + schema-transform expansion
+## Phase 1 — SQL strategy spike
+
+### Overview
+
+The "SQL emission strategy" section above picks `GROUPING SETS` +
+per-aggregate `FILTER` as v1 default on reasoning alone — no shape
+has been `EXPLAIN ANALYZE`d against real data. Before emitter work
+(Phase 4) locks the shape into codegen, a short measurement pass
+either confirms the default with evidence or redirects the plan.
+
+The spike also resolves the two data-shape Open Questions (NULL
+handling and facet-value ordering) as free side-effects: both are
+straight PostgreSQL-behaviour questions that a bench session answers
+without requiring a design decision in the abstract.
+
+Time-boxed to **one working day** of measurement + one session of
+plan revision. If the one-day window doesn't yield a clear winner,
+the spike itself is the finding — escalate to a broader design
+review rather than expanding the spike.
+
+### Scope and non-goals
+
+- **In scope:** hand-written SQL against Sakila (optionally scaled up
+  by duplicating `film`), measurement of plan shape, scan count,
+  timing per query shape under representative filter scenarios;
+  spot-checks of the jOOQ 3.20 API surface the Phase 4 code sketch
+  relies on.
+- **Out of scope:** any Graphitron codegen changes; any schema
+  directive work; any Java emitter code. The spike does not touch
+  `graphitron-schema-transform` or `graphitron-rewrite`. Its only
+  write targets are the report file and this plan.
+
+### Setup
+
+Sakila via `mise r sakila` (already wired for the local-db Maven
+profile). Sakila's `film` table has ~1 000 rows — small enough that
+sequential-scan timings are noisy. Create a scaled-up working table
+as part of the spike so plans are visible:
+
+```sql
+CREATE TABLE film_scaled AS
+SELECT *, gs AS dup_id
+FROM film, generate_series(1, 200) gs;
+CREATE INDEX ON film_scaled (rating);
+CREATE INDEX ON film_scaled (rental_duration);
+```
+
+Document the scale factor (200×) in the report so timings are
+comparable across shapes.
+
+### Candidate SQL shapes
+
+Write each shape by hand, run against `film_scaled`:
+
+1. **A. `GROUPING SETS` + per-aggregate `FILTER`** — the plan's v1
+   default. One query, N single-column grouping sets, one
+   `COUNT(*) FILTER (WHERE cond_minus_self)` per facet.
+2. **B. N separate `GROUP BY` queries** — the plan's fallback. One
+   query per facet, each with its own `WHERE cond_minus_self`.
+3. **C. `UNION ALL` of per-facet `GROUP BY`s** — rejected in the
+   strategy section as redundant; included here to confirm on plan
+   data (does Postgres share the scan, or rescan per branch?).
+4. **D. Window functions + `FILTER (WHERE …) OVER (PARTITION BY …)`**
+   — single-facet version plus an attempted multi-facet version
+   (expecting cartesian blow-up; confirm).
+5. **E. Conditional aggregation on known-domain values** —
+   `COUNT(*) FILTER (WHERE col = 'G')`, etc., for bounded enums.
+   Baseline for what's achievable when the value domain is pre-known.
+
+### Scenarios
+
+Each shape runs under every scenario that applies:
+
+| # | Scenario | Facets in play | Expected insight |
+|---|---|---|---|
+| 1 | No filter | `rating`, `rental_duration` | Baseline counts — correctness reference |
+| 2 | One facet filter active (`rating = 'PG'`) | same | Verify filter-minus-self on `rating` vs. other facets |
+| 3 | Multiple facet filters active | same | Stress minus-self logic across facets |
+| 4 | Enum-only | `rating` | Bounded-domain simplest case |
+| 5 | Open-ended | e.g. first-char of `title`, or joined `category.name` | Open-ended domain; stress cardinality in shape A |
+| 6 | Mixed | enum + open-ended | Closest to real usage |
+| 7 | NULL-bearing column | `rating` with NULLs injected | Observe GROUPING SETS behaviour on NULLs — feeds Open Question #4 |
+
+### Measurements
+
+Per (shape, scenario) pair:
+
+- `EXPLAIN (ANALYZE, BUFFERS, VERBOSE)` — record scan nodes, rows,
+  planning + execution time, shared-buffer hits/reads.
+- Wall-clock median over 10 `\timing`-enabled runs after a warm-up.
+- Correctness: shape B (one `GROUP BY` per facet) is the reference
+  — its counts are correct by construction. Diff A/C/D/E against B.
+
+Capture raw output verbatim; don't summarise prose-only. A later
+reader (or a future dialect port) needs the plan shapes.
+
+### Decisions to pin
+
+From the measurement pass, resolve:
+
+- **v1 SQL default.** Confirm shape A's selection, or swap to another
+  if scan counts / timings contradict the reasoning.
+- **Open Question #4 — NULL buckets.** Based on scenario 7: do NULLs
+  survive `GROUPING SETS` as a distinct bucket in shape A? If yes,
+  pick between keeping them (make `value` nullable), filtering them
+  (`WHERE col IS NOT NULL` on the aggregate), or
+  catalog-nullability-driven (option c). Commit the decision to
+  "Resolved design decisions."
+- **Open Question #5 — facet-value ordering.** Benchmark count-desc
+  ordering on top of the winning shape (cost of `ORDER BY count(*)
+  FILTER (...) DESC, col`). Record the planner's choice (sort node
+  vs. inline); pick ordering or leave unspecified. Commit to
+  "Resolved design decisions."
+
+### Deliverables
+
+- **`docs/planning/spike-faceted-search-sql.md`** — new file. Report
+  structure: setup, scale factor, one section per shape with SQL +
+  EXPLAIN output per scenario, a summary table comparing scans /
+  timings / correctness, verdict. Kept in `docs/planning/` alongside
+  the plan; deleted together when Done.
+- **Plan revision commit** on `plan-faceted-search.md`:
+  - "SQL emission strategy" section confirms or swaps v1 default,
+    with a one-line cite to the spike report where relevant.
+  - Phase 4 emitter code sketch updated to match the confirmed
+    jOOQ API surface (if the spike found any API claim off).
+  - Open Questions #4, #5 moved to "Resolved design decisions" with
+    the chosen behaviour and a cite to the spike report.
+
+### Success criteria
+
+- [ ] `docs/planning/spike-faceted-search-sql.md` exists with
+      `EXPLAIN (ANALYZE, BUFFERS)` output for all (shape, scenario)
+      pairs that apply.
+- [ ] Correctness diff: shapes A, C, D, E counts match shape B
+      counts for every scenario.
+- [ ] Plan's "SQL emission strategy" section references the spike
+      with a concrete verdict paragraph (even if "v1 default
+      confirmed").
+- [ ] Open Questions #4 and #5 removed from the Open Questions list
+      and added to Resolved design decisions with rationale.
+- [ ] No Java source under `graphitron-rewrite` or
+      `graphitron-schema-transform` changed in this phase.
+
+### Spike-vs-plan accounting
+
+The spike lives inside the overall plan's state machine: when Phase 1
+ships, the plan's status stays `Approved` (more phases remain) and the
+roadmap marker stays `[Approved]`. When Phase 5 ships, the plan goes
+`Pending Review`; the spike report file is deleted together with the
+plan on Done.
+
+---
+
+## Phase 2 — Directive + schema-transform expansion
 
 ### Overview
 
@@ -380,19 +538,19 @@ If the wrapped field has no filter input, or the filter input has no
 
 > **Note on classifier tolerance.** If `UnclassifiedType` on the synthesized
 > facets types does trigger a validator error in isolation, add an allowlist
-> entry keyed on the `FacetValue` / `Facets` suffix pattern until Phase 2
-> supplies real classification. Verify during Phase 1 implementation.
+> entry keyed on the `FacetValue` / `Facets` suffix pattern until Phase 3
+> supplies real classification. Verify during Phase 2 implementation.
 
 ---
 
-## Phase 2 — Classifier: `FacetSpec` on `FieldWrapper.Connection`
+## Phase 3 — Classifier: `FacetSpec` on `FieldWrapper.Connection`
 
 ### Overview
 
 The rewrite classifier currently flattens `@asConnection` into a
-`FieldWrapper.Connection` with only pagination metadata. Phase 2 teaches
+`FieldWrapper.Connection` with only pagination metadata. Phase 3 teaches
 it to *also* read the filter input's `@facet` directives and carry the
-resulting specs on the wrapper, so the emitter (Phase 3) has everything
+resulting specs on the wrapper, so the emitter (Phase 4) has everything
 it needs without re-parsing SDL.
 
 ### Changes
@@ -446,7 +604,7 @@ arguments; for each argument whose type is an input type containing
    otherwise with `UnclassifiedField` + a message naming the field).
 2. Each `@facet` field's GraphQL leaf scalar/enum is its `valueTypeName`.
 3. Derive `facetValueTypeName` as `{Scalar}FacetValue` — this must match
-   the name `MakeConnections` produced in Phase 1 (single source of
+   the name `MakeConnections` produced in Phase 2 (single source of
    truth: a shared `FacetNaming.facetValueTypeName(scalar)` helper placed
    in a module both can reach; or duplicated + asserted equal by a
    cross-module test — see Open Questions).
@@ -461,8 +619,8 @@ Reject at classify time:
 
 #### `GraphitronSchemaValidator`
 
-No new validator rule in Phase 2 — the classifier's rejections above
-propagate naturally. If Phase 1's note about `UnclassifiedType` allowlisting
+No new validator rule in Phase 3 — the classifier's rejections above
+propagate naturally. If Phase 2's note about `UnclassifiedType` allowlisting
 was needed, remove the allowlist here: the synthesized facet types are
 now reachable from a classified field.
 
@@ -479,7 +637,7 @@ now reachable from a classified field.
 
 ---
 
-## Phase 3 — Emitter: single `GROUPING SETS` aggregate + wiring
+## Phase 4 — Emitter: single `GROUPING SETS` aggregate + wiring
 
 ### Overview
 
@@ -531,7 +689,7 @@ subset of `conn.facets()` that the client actually asked for.
    its input-field predicates into one generated method (see *Current
    State*), so the fetcher cannot ask the filter to "skip field X".
    Instead, reconstruct facet predicates inline in the fetcher using
-   `FacetSpec` data (which Phase 2 places on `FieldWrapper.Connection`):
+   `FacetSpec` data (which Phase 3 places on `FieldWrapper.Connection`):
 
    - Build a **base condition** equal to the full filter's condition
      applied to *every non-facet field*. The cleanest route is to
@@ -643,7 +801,7 @@ exists.
 
 ---
 
-## Phase 4 — Execution tests
+## Phase 5 — Execution tests
 
 ### Overview
 
@@ -710,7 +868,7 @@ the selection set, the aggregate is skipped: one round-trip.
 
 ---
 
-## Phase 5 — Hierarchical facets (deferred, scoped here)
+## Phase 6 — Hierarchical facets (deferred, scoped here)
 
 ### Overview
 
@@ -748,7 +906,7 @@ under `facets`. This is a **hard design constraint** from the ticket:
 `facets`, men at vi heller tar inn argumenter for hva som skal
 inkluderes og gir flate resultat."*
 
-### Why this is Phase 5, not v1
+### Why this is Phase 6, not v1
 
 1. Requires modelling a facet's parent relation — either via a new
    `@facet(parent: "<otherFacetField>")` arg or by inferring from the
@@ -758,7 +916,7 @@ inkluderes og gir flate resultat."*
    `parentValue: <same scalar as value>` (nullable, NULL at root) and
    the per-facet field to accept `facets(includeChildrenOf: [<that
    scalar>])`. v1's shape must leave room: each `*FacetValue` is an
-   independent type so Phase 5 can add `parentValue` additively
+   independent type so Phase 6 can add `parentValue` additively
    without breaking wire compat. Argument name `includeChildrenOf` is
    reserved now so existing queries don't collide later.
 3. SQL: each requested level adds one grouping set to the same
@@ -767,21 +925,21 @@ inkluderes og gir flate resultat."*
    strategy needed; ROLLUP remains wrong for the same
    filter-minus-self reason.
 
-### What Phase 1–3 must preserve
+### What Phase 2–4 must preserve
 
-- `*FacetValue` types are *not sealed* — Phase 5 adds `parentValue` as a
+- `*FacetValue` types are *not sealed* — Phase 6 adds `parentValue` as a
   nullable field without breaking wire compat.
 - `*ConnectionFacets` field uses position (by input-field name) so
-  Phase 5's `includeChildrenOf` argument can attach without renaming.
+  Phase 6's `includeChildrenOf` argument can attach without renaming.
 - `FacetSpec` (model) has room for `parentFacet: Optional<FacetSpec>`
   without changing the constructor signature every downstream record
   uses. Consider keeping it a sealed interface over `FlatFacetSpec` /
-  `HierarchicalFacetSpec` — but only add that split in Phase 5; v1
+  `HierarchicalFacetSpec` — but only add that split in Phase 6; v1
   uses the flat record.
 
 ### Success Criteria
 
-Phase 5 is deferred — no v1 success criteria. Carved out here so
+Phase 6 is deferred — no v1 success criteria. Carved out here so
 reviewers can confirm the v1 design does not foreclose it.
 
 ---
@@ -813,11 +971,11 @@ reviewers can confirm the v1 design does not foreclose it.
   `BooleanFacetValue.value: String` — read as ticket-writing
   shorthand rather than considered design). Flag for confirmation
   during Draft → Approved review.
-- **Hierarchical shape (Phase 5).** Flat response +
+- **Hierarchical shape (Phase 6).** Flat response +
   `includeChildrenOf: [<parent value type>]` argument +
   `parentValue` pointer typed to match. No nested query structures
   under `facets`. GG-335 is explicit on the no-nesting rule.
-  Implementation deferred to Phase 5; v1 types must not foreclose it.
+  Implementation deferred to Phase 6; v1 types must not foreclose it.
 - **Per-facet independence semantics.** Every facet's counts reflect
   the base filter *minus that facet's own predicate* — enabling a
   user to change their selection within the same facet without
@@ -828,19 +986,20 @@ reviewers can confirm the v1 design does not foreclose it.
 
 ## Open Questions
 
-1. **Phase 2 naming-collision between transform and rewrite.** Both
-   modules must agree on `{Scalar}FacetValue` / `{Connection}Facets`
-   name derivation. Options: (a) extract a small `facet-naming` module
+1. **Naming-collision between transform and rewrite.** Both modules
+   must agree on `{Scalar}FacetValue` / `{Connection}Facets` name
+   derivation. Options: (a) extract a small `facet-naming` module
    depended on by both, (b) duplicate + cross-module assertion test.
-   (a) is cleaner; (b) is faster. Decide during Phase 1 review.
+   (a) is cleaner; (b) is faster. Decide during Phase 2 review.
 
 2. **Aggregate-query cost at high facet counts.** v1 packs all
    selected facets into one `GROUPING SETS` query. Cardinality scales
    with the union of distinct-value counts across selected facet
    columns (each facet contributes one row per distinct value) —
    typically small for enum/Boolean facets, potentially larger for
-   open-ended string facets. Measure during Phase 4 on the Sakila
-   fixture. If a pathological case emerges (e.g. a high-cardinality
+   open-ended string facets. Primary measurement lands in Phase 1
+   (spike); Phase 5's execution tests re-check at full-integration
+   scale. If a pathological case emerges (e.g. a high-cardinality
    string facet combined with several others), an optimization path
    is to split into two aggregate queries — bounded-domain facets in
    one, each open-ended facet in its own — but only if real profiling
@@ -850,7 +1009,7 @@ reviewers can confirm the v1 design does not foreclose it.
    `@facet` on `@reference`-bound input fields. GG-335's Studieprogram
    hierarchical example implies faceting over a joined parent
    (Fakultet → Institutt). Lifting this restriction is entangled with
-   Phase 5; confirm it can stay rejected until then.
+   Phase 6; confirm it can stay rejected until then.
 
 4. **NULL values in facet columns.** When a `@facet`-marked column has
    NULL rows, should the aggregate produce a bucket `{ value: null,
@@ -863,8 +1022,10 @@ reviewers can confirm the v1 design does not foreclose it.
    buckets, arguing that a NULL-valued filter-input doesn't round-trip
    meaningfully anyway (`rating: [null]` is not a useful filter);
    (c) nullable only where the underlying column is nullable,
-   propagated from the jOOQ catalog. Pick during Phase 2 review —
-   classifier needs to know before `*FacetValue` is synthesized.
+   propagated from the jOOQ catalog. **Resolved by Phase 1 spike** —
+   move to Resolved design decisions when the spike confirms the
+   PostgreSQL behaviour and the plan revision selects between
+   (a)/(b)/(c).
 
 5. **Ordering of facet values.** The plan does not pin a sort order
    for the returned facet buckets. Candidates: by count descending
@@ -873,8 +1034,8 @@ reviewers can confirm the v1 design does not foreclose it.
    must sort). GG-335's examples don't say. Recommend count-desc with
    a stable tiebreaker on the value column so results are
    deterministic; revisit if a client needs value-natural order.
-   Pin during Phase 3 review — affects the emitter's `.orderBy(...)`
-   on the aggregate query.
+   **Resolved by Phase 1 spike** — the ordering-cost measurement
+   pins the recommendation and moves it to Resolved design decisions.
 
 ## References
 
