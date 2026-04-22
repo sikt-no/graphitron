@@ -2,14 +2,19 @@
 
 > **Status:** Spec
 >
-> Add a `@facet` directive for filter-input fields. The schema-transform stage
-> expands each `@asConnection` field's Connection type with a `facets` object
-> whose fields mirror the `@facet`-marked filter inputs; the rewrite classifier
-> and fetcher emit one `UNION ALL` aggregate query per Connection request, with
-> each arm computing one facet's counts under its filter-minus-self predicate.
-> Phase 1 spike confirmed this shape over `GROUPING SETS`
-> ([spike report](spike-faceted-search-sql.md)). Delivers the "filter ↔ facet"
-> contract the admissions UX needs without nested queries.
+> Add a `@facet` directive for filter-input fields. A pre-classifier pass in
+> `graphitron-rewrite` expands each `@asConnection` field's Connection type
+> with a `facets` object whose fields mirror the `@facet`-marked filter inputs;
+> the rewrite classifier and fetcher emit one `UNION ALL` aggregate query per
+> Connection request, with each arm computing one facet's counts under its
+> filter-minus-self predicate. Phase 1 spike confirmed this shape over
+> `GROUPING SETS` ([spike report](spike-faceted-search-sql.md)). Delivers the
+> "filter ↔ facet" contract the admissions UX needs without nested queries.
+>
+> **Assumes the "Dissolve `graphitron-schema-transform`" umbrella has landed**
+> (see roadmap). All schema synthesis, directive stripping, and client-SDL
+> emission happen inside `graphitron-rewrite`; there is no cross-module
+> handoff. Prerequisites spelled out in *Prerequisites* below.
 
 ## Overview
 
@@ -75,15 +80,44 @@ index scans on selective filters) and executes arms concurrently via
 `Parallel Append`. See *SQL emission strategy* below. Results merge
 into a single `ConnectionResult` carrier.
 
+## Prerequisites
+
+This plan assumes the following sub-items of "Dissolve
+`graphitron-schema-transform` module" (roadmap → Backlog → Priority)
+have landed:
+
+1. **Rewrite owns schema loading + directive auto-injection** — rewrite
+   reads its own `directives.graphqls` from module-local resources.
+   This is where the `@facet` directive declaration lives (Phase 2
+   below).
+2. **Rewrite owns `@asConnection` → Connection synthesis** — the
+   registry-level pre-pass currently in
+   `graphitron-schema-transform/MakeConnections` runs inside rewrite.
+   The facet expansion is a follow-on pass layered into the same pipeline.
+3. **Rewrite owns directive stripping in the emitted client SDL** —
+   rewrite's own strip list (replacing the `GenerationDirective` enum)
+   is the single source of truth for "which directives don't ship to
+   clients." Adding `@facet` to it is a one-line append.
+4. **Rewrite emits the client SDL as generated output** — rewrite
+   writes `schema.graphql` under `target/generated-sources/...`
+   alongside generated Java, packaged as a classpath resource for
+   `Graphitron.getTypeRegistry()`. The synthesized facet types ride
+   that same output.
+
+If any prerequisite is still outstanding when this plan enters In
+Progress, it must complete first. The plan does not absorb them —
+scope stays focused.
+
 ## Current State
 
-- `graphitron-schema-transform/MakeConnections.transformListWrapperToConnection`
-  expands `@asConnection` list fields into `XConnection`/`XEdge`/`PageInfo`
-  types; nothing there knows about facets.
+- Rewrite's Connection-synthesis pass (migrated from `MakeConnections`)
+  expands `@asConnection` list fields into `XConnection` / `XEdge` /
+  `PageInfo` types; nothing there knows about facets.
 - The rewrite classifier's `FieldBuilder.buildWrapper` produces
-  `FieldWrapper.Connection` carrying `defaultPageSize` and `connectionName`
-  only; the record sits in `model/FieldWrapper.java` with one regular
-  constructor + one 2-arg convenience constructor for structural detection.
+  `FieldWrapper.Connection` carrying `defaultPageSize` and
+  `connectionName` only; the record sits in `model/FieldWrapper.java`
+  with one regular constructor + one 2-arg convenience constructor for
+  structural detection.
 - `TypeFetcherGenerator.buildQueryConnectionFetcher` emits a single
   keyset-paginated SELECT wrapped in `ConnectionResult`. No secondary
   aggregation queries.
@@ -99,21 +133,14 @@ into a single `ConnectionResult` carrier.
   lands first, Phase 3's `@facet` rejection list must rule on it (see
   Non-goals).
 - `BuildContext` lists every directive the rewrite reads in its
-  `DIR_*` constant block; there is no `DIR_FACET`. `GenerationDirective`
-  (in `graphitron-common`) enumerates the same set for the
-  schema-transform's `DirectivesFilter` — the client-schema step that
-  strips generator directives before packaging; no entry for `facet`
-  there either.
-- **Two schemas flow out of `SchemaTransformRunner`**: the same
-  `MakeConnections` output is written twice, once as
-  `generator-schema.graphql` (keeps generator directives, fed to the
-  rewrite classifier) and once as `schema.graphql` (generator
-  directives stripped by `DirectivesFilter`, packaged as a Maven
-  resource). The generated `Graphitron.getTypeRegistry()` reads
-  `schema.graphql` from classpath at server boot, so whatever
-  `MakeConnections` adds to the registry reaches clients unchanged —
-  directives on input fields do not. See *Exposing the expanded
-  schema to clients* below.
+  `DIR_*` constant block; there is no `DIR_FACET`. Rewrite's
+  client-SDL strip list (post-migration) has no entry for `facet`
+  either.
+- Rewrite emits `schema.graphql` (client-facing) as part of its
+  generated output; `Graphitron.getTypeRegistry()` reads it at server
+  boot. Expanded type declarations reach clients unchanged; generator
+  directives listed in the strip list do not. See *Exposing the
+  expanded schema to clients* below.
 - No execution-test fixture combines `@asConnection` with a filter input
   today — the test-spec `schema.graphqls` has `filmsConnection` + variants
   but only scalar filter args at argument level, not a `@table`-backed
@@ -139,12 +166,15 @@ into a single `ConnectionResult` carrier.
 
 ## Desired End State
 
-- New `@facet` directive declared in
-  `graphitron-schema-transform/src/main/resources/schema/directives.graphqls`.
-- `MakeConnections` expands `@facet`-marked input fields into a `facets` field
-  on the generated Connection type and synthesizes one `*ConnectionFacets`
-  type plus one reusable `*FacetValue` type per distinct value scalar
-  encountered.
+- New `@facet` directive declared in rewrite's own directive resource
+  (`graphitron-rewrite/src/main/resources/directives.graphqls`
+  post-migration); registered in rewrite's client-SDL strip list so
+  it doesn't ship to clients.
+- A new registry-level `FacetExpansion` pass runs between Connection
+  synthesis and `@notGenerated` removal; it expands `@facet`-marked
+  input fields into a `facets` field on the generated Connection type
+  and synthesizes one `*ConnectionFacets` type plus one reusable
+  `*FacetValue` type per distinct value scalar encountered.
 - `FieldWrapper.Connection` carries a `FacetSpec` describing each facet
   (input-field name → column + value-scalar type).
 - `TypeFetcherGenerator` emits **one** `UNION ALL` aggregate query per
@@ -190,25 +220,29 @@ into a single `ConnectionResult` carrier.
 
 ## Key Discoveries
 
-- **Two-module pipeline.** `graphitron-schema-transform` runs *before*
-  `graphitron-rewrite`. `MakeConnections.transform(TypeDefinitionRegistry)`
-  is the right place to inject `facets: XFacets` into the generated
-  Connection type: by the time the rewrite classifier sees the SDL, the
-  facet types already exist and fall out of the regular type-classification
-  pass. This avoids having to synthesize SDL inside the rewrite module.
-- **`directives.graphqls` lives in schema-transform** but the rewrite reads
-  it — `BuildContext`'s `DIR_*` constants name every directive the
-  classifier recognises. Adding `DIR_FACET` there is mechanical.
-- **`GenerationDirective` (in `graphitron-common`) is the client-schema
-  strip-list.** `SchemaTransformer.getSchemaTransforms` feeds every
-  `GenerationDirective.name()` into `DirectivesFilter` when building
-  the client SDL (`schema.graphql`). Any generator directive absent
-  from that enum leaks through to clients. `@facet` must be added
-  there too, or `@facet` appears on client-visible input fields.
-- **`FieldWrapper.Connection` is a record** with no public builders; adding
-  a `facets` member means every construction site — the directive-driven
-  `@asConnection` path and the structural-detection fallback in
-  `FieldBuilder.buildWrapper` — must pass the new argument.
+- **Single-module ownership.** Post-migration, rewrite runs four
+  ordered passes over an in-memory `TypeDefinitionRegistry`: (a)
+  schema-loading + directive injection, (b) type-extension merging,
+  (c) Connection synthesis, (d) `@notGenerated` / element removal.
+  The facet-synthesis pass slots in between (c) and (d): it reads
+  `@asConnection` fields + their `@facet`-marked filter inputs and
+  adds `facets` + `*Facets` + `{Scalar}FacetValue` to the registry.
+  Classifier runs against the fully expanded registry; SDL emission
+  writes the post-strip view as `schema.graphql`. One code-owner
+  end-to-end.
+- **Single directive-declaration file.** `@facet` is declared in
+  rewrite's own `directives.graphqls` (under
+  `graphitron-rewrite/src/main/resources/`, post-migration). The
+  directive-loading pass injects it into the registry before
+  classification.
+- **Single strip list.** Rewrite's internal client-SDL strip list
+  (replacing the old `GenerationDirective` enum) is the one place
+  to register `@facet` as a generator-only directive. One-line
+  append; no cross-module enum sync.
+- **`FieldWrapper.Connection` is a record** with no public builders;
+  adding a `facets` member means every construction site — the
+  directive-driven `@asConnection` path and the structural-detection
+  fallback in `FieldBuilder.buildWrapper` — must pass the new argument.
 - **Per-facet self-predicate stripping** needs the `Condition` to be built
   compositionally. `buildConditionCall` in `TypeFetcherGenerator` currently
   folds all argument conditions into one — we'll need per-column conjuncts
@@ -216,83 +250,68 @@ into a single `ConnectionResult` carrier.
 - **Facet value types are cross-schema reusable.** `StringFacetValue`,
   `BooleanFacetValue`, `IntFacetValue`, `<Enum>FacetValue` — one per
   value scalar encountered across the whole schema, not per connection.
-  Synthesize-once with a registry keyed on the value type name.
+  Synthesize-once with a registry keyed on the value type name. Since
+  synthesis + classification + emission all live in rewrite, there is
+  no cross-module naming-sync problem — one helper defines the name
+  and every call site routes through it.
 
 ## Exposing the expanded schema to clients
 
 This plan adds types and a field to the GraphQL schema; those additions
-have to reach the generated runtime for clients to see them. Graphitron
-already has the plumbing — this section pins down what must happen and
-where, so reviewers can confirm nothing is silently dropped between
-code-gen and wire.
+have to reach the generated runtime for clients to see them.
+Post-migration rewrite owns the full output path, so this section is
+short: one code-gen run produces both the Java fetchers and the SDL
+file the runtime loads.
 
-**Pipeline.** `SchemaTransformRunner` (in `graphitron-maven-plugin`) is
-invoked by the `generate` goal via `GenerateMojo.executeWithTransform`.
-It calls `SchemaTransformer.transformSchema()` twice with two
-`TransformConfig` instances:
+**Pipeline (rewrite-internal).** The rewrite generator:
 
-1. **Generator schema** (`generator-schema.graphql`): `expandConnections=true`,
-   `removeGeneratorDirectives=false`, no feature filtering. Output is
-   consumed by the rewrite classifier (`GraphQLRewriteGenerator` reads
-   `schemaFiles = Set.of(generatorSchemaPath)`).
-2. **Client schema** (`schema.graphql`): `expandConnections=true`,
-   `removeGeneratorDirectives=true`, plus feature flags and
-   federation-definition stripping. Output is written to
-   `target/generated-resources/graphql_transformer/` which `GenerateMojo`
-   registers via `project.addResource(...)` — the file ships inside the
-   consumer's final JAR as a classpath resource.
+1. Loads the input SDL + the module's `directives.graphqls`.
+2. Runs registry-level passes in order: merge extensions → Connection
+   synthesis → **facet synthesis (new)** → `@notGenerated` removal.
+3. Classifies the fully expanded registry and emits the Java
+   generators (fetchers, conditions, wiring, connection helper).
+4. Writes `schema.graphql` to the generated-sources output —
+   post-strip-list filtering, federation-definition handling, and any
+   feature-flag splits applied. This file is packaged as a classpath
+   resource.
 
-Because both schemas come from the same `MakeConnections.transform()`
-call, the `facets` field and the synthesized `*Facets` / `*FacetValue`
-type declarations appear in both. Fetchers are compiled against the
-generator schema; clients query the runtime schema; both agree on
-shape.
-
-**Runtime load.** `Graphitron.getTypeRegistry()` (generated from
-`TypeRegistryMethodGenerator`) reads the schema files listed by
-`GeneratorConfig.schemaFiles()` — by default `schema.graphql` — through
-`SchemaReader.getTypeDefinitionRegistry(...)`. Consumers wire this
-`TypeDefinitionRegistry` + the generated `RuntimeWiring` into a
-`GraphQLSchema` at boot (the example server's `GraphqlServlet` is the
-reference call site). No re-application of `MakeConnections` at
-runtime; the transform output is the source of truth.
+**Runtime load.** `Graphitron.getTypeRegistry()` reads
+`schema.graphql` from classpath at server boot. Fetchers and the
+runtime schema come from the same generator run, so they are always
+in lock-step.
 
 **What reaches clients after Phase 2.**
 
 - Synthesized types: `XConnectionFacets`, `{Scalar}FacetValue`. Both
-  are plain object types; `DirectivesFilter` doesn't touch them
-  because they carry no generator directives.
-- New field: `XConnection.facets: XConnectionFacets`. Same —
-  surfaces unconditionally.
+  are plain object types; the directive strip pass doesn't touch
+  them because they carry no generator directives.
+- New field: `XConnection.facets: XConnectionFacets`. Surfaces
+  unconditionally.
 - `@facet` directive on input fields: **stripped from the client
-  schema** by `DirectivesFilter` once `@facet` is registered in
-  `GenerationDirective`. Clients see the input field unchanged
-  (same type, same name). Omitting the enum entry leaks `@facet`
-  onto client-visible input fields, which is both noisy and
-  couples client consumers to a generator-only concept — so this
-  step is required, not optional.
-- Introspection: `GraphQL.newGraphQL(schema)` in the example server
-  leaves introspection enabled by default, so the new types and
-  field are introspectable. No explicit SDL-publishing endpoint is
-  generated.
+  schema** by rewrite's strip pass once `@facet` is registered in
+  the strip list. Clients see the input field unchanged (same type,
+  same name). Omitting the strip-list entry leaks `@facet` onto
+  client-visible input fields, which is both noisy and couples
+  client consumers to a generator-only concept — required, not
+  optional.
+- Introspection: unchanged. Generated servers expose GraphQL
+  introspection by default, so the new types and field are
+  introspectable.
 
-**Feature-flag policy for `facets`.** `MakeConnections` already has
-`nodesFieldInConnectionsEnabled` / `totalCountFieldInConnectionsEnabled`
-feature flags. `facets` is *not* feature-flagged in v1 — its presence
-on a given Connection is driven entirely by whether the filter input
-has any `@facet` fields. Connections whose filter inputs carry no
-`@facet` emit identical SDL to today; the Connection type has no
-`facets` field and no generated `*Facets` / `*FacetValue` types
-reference it. A flag can be added in a follow-up if a consumer needs
-to hide facets from a specific client build.
+**Feature-flag policy for `facets`.** `facets` is *not*
+feature-flagged in v1 — its presence on a given Connection is driven
+entirely by whether the filter input has any `@facet` fields.
+Connections whose filter inputs carry no `@facet` emit identical SDL
+to today; the Connection type has no `facets` field and no generated
+`*Facets` / `*FacetValue` types reference it. A flag can be added in
+a follow-up if a consumer needs to hide facets from a specific
+client build.
 
-**`outputSchemas` variants.** `<outputSchemas>` lets a project emit
-multiple client-facing SDL files (typically one per feature
-bundle). Facet expansion happens before those splits
-(`MakeConnections` is a registry transform; the split is a later
-`GraphQLSchema → GraphQLSchema` transform operating on already-expanded
-types). Every output variant therefore sees consistent facet types.
-No per-variant logic required.
+**`<outputSchemas>` variants.** Feature-flag splits run after facet
+synthesis (Connection + facet expansion are registry-level; the split
+is a later schema→schema pass, migrated under the umbrella
+prerequisite). Every output variant therefore sees consistent facet
+types. No per-variant logic required in this plan.
 
 ## Implementation Approach
 
@@ -307,7 +326,7 @@ facets after v1 lands.
 | Phase | Module / artefact | What lands |
 |---|---|---|
 | 1 | `docs/planning/plan-faceted-search.md` + hand-written SQL | Spike — benchmark SQL strategies against Sakila; confirm or swap v1 default; resolve NULL + ordering Open Questions |
-| 2 | `graphitron-schema-transform` | `@facet` directive definition; `MakeConnections` synthesizes facet types + `facets` field on the Connection |
+| 2 | `graphitron-rewrite` (directive + synthesis pass) | `@facet` directive definition + strip-list entry; new `FacetExpansion` registry-level pass synthesizes `*Facets` and `*FacetValue` types and adds the `facets` field on the Connection |
 | 3 | `graphitron-rewrite` (classifier) | `FieldWrapper.Connection` carries `FacetSpec`; validator rejects misuse |
 | 4 | `graphitron-rewrite` (emitter) | Fetcher emits the spike-chosen aggregate shape; helper + wiring expose the new field |
 | 5 | `graphitron-rewrite-test-spec` | Execution tests against Sakila |
@@ -382,7 +401,7 @@ the single query.
 | **C. `UNION ALL` of per-facet `GROUP BY`s** | 2 | N (index-capable per arm; Parallel Append runs them concurrently) | Yes — each branch owns its WHERE | All targets | **v1 default** |
 | **D. Plain `GROUPING SETS`** (shared outer WHERE) | 2 | 1 | **No** — single WHERE shared across sets | PostgreSQL, Oracle | Rejected — collapses the facet whose filter is active |
 | **E. Window fns (`COUNT() OVER (PARTITION BY col)`)** | 2 | 1 per facet column (cartesian issue across facets) | Possible per-facet via `FILTER (WHERE …) OVER (PARTITION BY …)` | All targets | Rejected — multi-facet grid-cartesian-blows-up |
-| **F. Conditional aggregation on known values** (`COUNT(*) FILTER (WHERE col = 'G')` etc.) | 2 | 1 (parallel) | Yes | PostgreSQL `FILTER` / SQL:2003 | Post-v1 optimisation — 2–3× faster than C at 5M rows when all facets are bounded-domain. Falls back to C when any facet is open-ended. See Open Question #3. |
+| **F. Conditional aggregation on known values** (`COUNT(*) FILTER (WHERE col = 'G')` etc.) | 2 | 1 (parallel) | Yes | PostgreSQL `FILTER` / SQL:2003 | Post-v1 optimisation — 2–3× faster than C at 5M rows when all facets are bounded-domain. Falls back to C when any facet is open-ended. See Open Question #2. |
 
 **Why shape C wins over shape A.** Shape C's arms are independent
 queries; each one's WHERE lets the planner pick a bitmap index scan
@@ -402,7 +421,7 @@ Cold reads are within 3% between A and C at 5M rows (both ~1 × table).
 The v2 re-measurement did not overturn v1's choice: C parallelises
 at the facet counts we expect in production, the emitter is simpler,
 and A's constant-read advantage never materialises into wall-clock
-wins beyond 2 facets. See Phase 1 Outcome and Open Question #3 for
+wins beyond 2 facets. See Phase 1 Outcome and Open Question #2 for
 the bounded-domain optimisation path (shape F) that is 2–3× faster
 than C where applicable.
 
@@ -541,18 +560,24 @@ together with the plan on Done.
 
 ---
 
-## Phase 2 — Directive + schema-transform expansion
+## Phase 2 — Directive declaration + facet-synthesis pass
 
 ### Overview
 
-Declare `@facet` and teach `MakeConnections` to synthesize a `facets` field
-on Connection types plus the supporting `*Facets` and `*FacetValue` types.
+Declare `@facet` in rewrite's own directives resource; add a
+registry-level pass, run immediately after Connection synthesis, that
+expands each `@asConnection` field's `@facet`-bearing filter inputs
+into `facets` + `*Facets` + `{Scalar}FacetValue` types on the
+expanded Connection; register `@facet` in rewrite's client-SDL strip
+list so it doesn't leak to clients.
 
 ### Changes
 
-#### `graphitron-schema-transform/src/main/resources/schema/directives.graphqls`
+#### `graphitron-rewrite/src/main/resources/directives.graphqls`
 
-Add:
+Add (to whichever resource rewrite loads as its directive-declaration
+source — see the "Rewrite owns schema loading + directive
+auto-injection" prerequisite):
 
 ```graphql
 """
@@ -570,30 +595,46 @@ bindings are rejected in v1).
 directive @facet on INPUT_FIELD_DEFINITION
 ```
 
-#### `graphitron-common/.../GenerationDirective.java`
+#### Client-SDL strip list
 
-Add an enum entry so `SchemaTransformer.getSchemaTransforms` includes
-`@facet` in the set that `DirectivesFilter` strips from the client
-schema. Without this, `@facet` leaks onto client-visible input
-fields:
+Register `@facet` in rewrite's internal strip list (the successor to
+the old `GenerationDirective` enum — location finalized by the
+"Rewrite owns directive stripping in the emitted client SDL"
+prerequisite). Without it, `@facet` leaks onto client-visible input
+fields.
 
 ```java
-FACET("facet");
+// Roughly, depending on how the strip list is organized post-migration:
+static final String DIR_FACET = "facet";
+// …added to the strip set consumed by the client-SDL emitter.
 ```
 
-No params to declare — `@facet` is nullary.
+#### New registry-level pass: `FacetExpansion`
 
-#### `MakeConnections.java`
+Location: `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/transform/FacetExpansion.java`
+(a new `transform` sub-package alongside the migrated
+`MakeConnections` equivalent). Signature:
 
-In `transformListWrapperToConnection`, after the Connection type is
-built, scan the wrapped field's arguments for a filter input. For
-every input field carrying `@facet`:
+```java
+public static void transform(TypeDefinitionRegistry registry);
+```
 
-1. Resolve the value scalar (the GraphQL type of the input field, stripped
-   of list/non-null). For scalar/enum leaves, this is the facet value type.
-2. Ensure a `{Scalar}FacetValue` type exists in the registry; add it if
-   not. `value` carries the **same scalar as the filter-input field**,
-   preserving round-trip symmetry:
+Runs **after** Connection synthesis, **before** `@notGenerated`
+removal. Registered in whatever ordered-list-of-passes facility
+rewrite adopts post-migration (mirrors
+`SchemaTransformer.getRegistryTransforms()`).
+
+For each field annotated `@asConnection`, look up the generated
+Connection type (already in the registry — Connection synthesis ran
+first), find the filter input argument, and for every input field
+carrying `@facet`:
+
+1. Resolve the value scalar (the GraphQL type of the input field,
+   stripped of list/non-null). For scalar/enum leaves, this is the
+   facet value type.
+2. Ensure a `{Scalar}FacetValue` type exists in the registry; add it
+   if not. `value` carries the **same scalar as the filter-input
+   field**, preserving round-trip symmetry:
    ```graphql
    type MpaaRatingFacetValue { value: MpaaRating! count: Int! }
    type StringFacetValue     { value: String!     count: Int! }
@@ -602,40 +643,37 @@ every input field carrying `@facet`:
    ```
    A client feeds `facetValue.value` straight back into the filter
    input with no conversion. Custom scalars synthesize
-   `<CustomScalar>FacetValue` on demand the same way.
-3. Build a `{ConnectionName}Facets` type with one non-null list field per
-   `@facet` input, field name matching the input field name.
+   `<CustomScalar>FacetValue` on demand the same way. Single helper —
+   `FacetNaming.facetValueTypeName(scalar)` — is the source of truth
+   for the derived type name, shared between this pass and the
+   classifier (Phase 3).
+3. Build a `{ConnectionName}Facets` type with one non-null list field
+   per `@facet` input, field name matching the input field name.
 4. Add `facets: {ConnectionName}Facets` to the Connection type.
 
-Keep the existing `totalCountFieldInConnectionsEnabled` /
-`nodesFieldInConnectionsEnabled` feature-flag plumbing; `facets` is
-unconditional — its presence on a given Connection is driven by whether
-the filter input has any `@facet` fields.
-
 If the wrapped field has no filter input, or the filter input has no
-`@facet` fields, emit the Connection unchanged. No error, no warning.
+`@facet` fields, emit the Connection unchanged. No error, no
+warning.
 
 ### Success Criteria
 
-- [ ] `mvn test -pl :graphitron-schema-transform` — new
-      `MakeConnectionsFacetTest` pipes an SDL with `@facet` through
-      `MakeConnections.transform()` and asserts: Connection type has a
-      `facets` field, `{Name}Facets` type exists with one list field per
-      `@facet`, one `{Scalar}FacetValue` type per distinct value scalar,
-      each with `value` + `count` fields.
-- [ ] Client-schema test: same SDL through
-      `SchemaTransformer.transformSchema()` with
-      `removeGeneratorDirectives=true` produces SDL where input fields
-      no longer carry `@facet`, but the `facets` field + `*Facets` /
-      `*FacetValue` types survive unchanged. Catches any future enum
-      entry drift.
-- [ ] Existing `asConnectionRewriterTest` fixtures unchanged.
-- [ ] `mvn compile -pl :graphitron-rewrite -Pquick` — the rewrite
-      still builds against the expanded SDL (facets types are just
-      unclassified-but-tolerated object types at this phase; the classifier
-      leaves them as `UnclassifiedType`, which validate-mojo won't flag
-      until they're *referenced* from a classified field — and they aren't
-      yet, because nothing reads `FieldWrapper.Connection.facets`).
+- [ ] `mvn test -pl :graphitron-rewrite -Pquick` — new
+      `FacetExpansionTest` feeds an SDL with `@facet` through
+      `FacetExpansion.transform()` + the preceding Connection-synthesis
+      pass and asserts: Connection type has a `facets` field,
+      `{Name}Facets` type exists with one list field per `@facet`, one
+      `{Scalar}FacetValue` type per distinct value scalar, each with
+      `value` + `count` fields.
+- [ ] Client-SDL strip test: classify the same SDL end-to-end, capture
+      the emitted `schema.graphql`, and assert that input fields no
+      longer carry `@facet` but the `facets` field + `*Facets` /
+      `*FacetValue` types survive unchanged. Catches any future
+      strip-list drift.
+- [ ] Existing Connection-synthesis fixtures unchanged.
+- [ ] Classifier tolerates the synthesized types at this phase: they
+      appear as `UnclassifiedType` since nothing reads
+      `FieldWrapper.Connection.facets` yet. Validator won't flag them
+      because they're not reached from a classified field.
 
 > **Note on classifier tolerance.** If `UnclassifiedType` on the synthesized
 > facets types does trigger a validator error in isolation, add an allowlist
@@ -707,11 +745,10 @@ arguments; for each argument whose type is an input type containing
 1. Each `@facet` field must also carry `@field(name:)` (rejected
    otherwise with `UnclassifiedField` + a message naming the field).
 2. Each `@facet` field's GraphQL leaf scalar/enum is its `valueTypeName`.
-3. Derive `facetValueTypeName` as `{Scalar}FacetValue` — this must match
-   the name `MakeConnections` produced in Phase 2 (single source of
-   truth: a shared `FacetNaming.facetValueTypeName(scalar)` helper placed
-   in a module both can reach; or duplicated + asserted equal by a
-   cross-module test — see Open Questions).
+3. Derive `facetValueTypeName` via the shared
+   `FacetNaming.facetValueTypeName(scalar)` helper introduced in Phase 2.
+   Both the synthesis pass and the classifier call through the same
+   helper — no two-module sync worry.
 
 Reject at classify time:
 
@@ -1080,10 +1117,13 @@ reviewers can confirm the v1 design does not foreclose it.
 ## Testing Strategy
 
 - **Unit:** none required — no new reflection / catalog probes.
-- **Pipeline (schema-transform):** `MakeConnectionsFacetTest` covers
-  expansion of `@facet` into `Facets` + `FacetValue` types, and no-op
-  when no `@facet` is present.
-- **Pipeline (rewrite):** two new `GraphitronSchemaBuilderTest` cases —
+- **Pipeline (expansion pass):** `FacetExpansionTest` covers expansion of
+  `@facet` into `Facets` + `FacetValue` types, and no-op when no
+  `@facet` is present.
+- **Pipeline (strip list):** `FacetStripTest` asserts `@facet` is
+  removed from the emitted client SDL while the synthesized types
+  survive.
+- **Pipeline (classifier):** two new `GraphitronSchemaBuilderTest` cases —
   `@facet` classification success and `@facet` rejection on non-`@field`
   bindings.
 - **Wiring:** assert `facets` dataFetcher and `*FacetValue` type
@@ -1133,13 +1173,7 @@ reviewers can confirm the v1 design does not foreclose it.
 
 ## Open Questions
 
-1. **Naming-collision between transform and rewrite.** Both modules
-   must agree on `{Scalar}FacetValue` / `{Connection}Facets` name
-   derivation. Options: (a) extract a small `facet-naming` module
-   depended on by both, (b) duplicate + cross-module assertion test.
-   (a) is cleaner; (b) is faster. Decide during Phase 2 review.
-
-2. **Aggregate-query cost at high facet counts.** v1 emits one
+1. **Aggregate-query cost at high facet counts.** v1 emits one
    `UNION ALL` arm per selected facet. Cardinality scales with the
    sum of distinct-value counts across selected facet columns (each
    facet contributes one row per distinct value) — typically small
@@ -1152,7 +1186,7 @@ reviewers can confirm the v1 design does not foreclose it.
    wins under heavy filtering anyway. That remains an emitter-side
    choice guarded by real profiling data.
 
-3. **Shape F (conditional aggregation) as post-v1 optimisation.**
+2. **Shape F (conditional aggregation) as post-v1 optimisation.**
    When every facet on a request is bounded-domain (enum-backed
    scalar, small FK, Boolean), the emitter could swap the UNION ALL
    chain for a single `count(*) FILTER` aggregate per (facet, value)
@@ -1169,7 +1203,7 @@ reviewers can confirm the v1 design does not foreclose it.
    connection exceeds the measured 5-facet threshold or if tables
    routinely exceed `shared_buffers` by >10×.
 
-4. **Facets on columns reached through FK joins.** v1 rejects
+3. **Facets on columns reached through FK joins.** v1 rejects
    `@facet` on `@reference`-bound input fields. GG-335's Studieprogram
    hierarchical example implies faceting over a joined parent
    (Fakultet → Institutt). Lifting this restriction is entangled with
@@ -1181,18 +1215,15 @@ reviewers can confirm the v1 design does not foreclose it.
   ticket with the target SDL shape.
 - Jira: [SOPP-141](https://sikt.atlassian.net/browse/SOPP-141) —
   admissions initiative; closed in favour of GG-335.
-- `graphitron-schema-transform/.../MakeConnections.transformListWrapperToConnection` —
-  hook point for Phase 2 SDL synthesis.
-- `graphitron-schema-transform/.../SchemaTransformer.getSchemaTransforms` —
-  applies `DirectivesFilter` via the `GenerationDirective` set when
-  building the client schema.
-- `graphitron-maven-plugin/.../SchemaTransformRunner` — writes
-  `generator-schema.graphql` + `schema.graphql` into
-  `target/generated-resources/graphql_transformer/`.
-- `graphitron-maven-plugin/.../GenerateMojo.executeWithTransform` —
-  registers that directory via `project.addResource`, packaging the
-  client schema as a classpath resource.
-- `graphitron-common/.../GenerationDirective` — add `FACET("facet")`.
+- Umbrella: "Dissolve `graphitron-schema-transform` module" in
+  [rewrite-roadmap.md](rewrite-roadmap.md) — lists all prerequisite
+  migrations this plan depends on.
+- `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/transform/`
+  (to-be-created) — target package for the migrated `MakeConnections`
+  equivalent and the new `FacetExpansion` pass.
+- `graphitron-rewrite/src/main/resources/directives.graphqls`
+  (to-be-created, from the schema-loading prerequisite) — target for
+  the `@facet` directive declaration.
 - `graphitron-rewrite/.../FieldBuilder.buildWrapper` —
   `FieldWrapper.Connection` construction sites (both arms).
 - `graphitron-rewrite/.../TypeFetcherGenerator.buildQueryConnectionFetcher` —
