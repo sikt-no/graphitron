@@ -24,7 +24,7 @@
 
 - **Call-arg emission.** `ArgCallEmitter.buildCallArgs(List<CallParam>, String)` hardcodes `"table"` as the first arg and iterates `callParams()` (Arg + Context only, filtered via `MethodRef.callParams()`). This is a condition-method call shape — it cannot be reused verbatim for service/tableMethod calls, which need declaration-order iteration over `params()` with per-`ParamSource` emission. See "Emission → Call-arg emitter" below.
 
-- **Cardinality validator.** `GraphitronSchemaValidator.validateCardinality` is currently a no-op — its switch enumerates `Single`/`List`/`Connection` with empty arms (see the inline comment: "no per-variant validation is needed here"). Sixteen validators call it today, several of which (e.g. `validateQueryTableField`) legitimately accept `Connection`; its semantics cannot be tightened without breaking those. A separate helper is required for the three leaves in this plan. See Invariants §1 and Plan → Validator additions.
+- **Cardinality validator.** `GraphitronSchemaValidator.validateCardinality` is currently a no-op — its switch enumerates `Single`/`List`/`Connection` with empty arms (see the inline comment: "no per-variant validation is needed here"). Sixteen validators call it today, several of which (e.g. `validateQueryTableField`) legitimately accept `Connection`; its semantics cannot be tightened without breaking those. This plan rejects `Connection` for the three leaves at classifier time instead — see Invariants §1 and Plan → Classifier additions.
 
 - **Jooq table expression.** `GeneratorUtils.ResolvedTableNames` exposes `tablesClass()`, `jooqTableClass()`, and `typeClass()` — no helper today returns a `Tables.FOO` expression directly. The existing pattern (`declareTableLocal`, `GeneratorUtils.java:110-115`) builds it inline from `tablesClass()` + `tableRef.javaFieldName()` via JavaPoet `$T.$L`. This plan reuses that pattern; no new record method is required.
 
@@ -52,7 +52,7 @@ Argument list is emitted by walking `method().params()` in declaration order (se
 
 `ParamSource.DslContext`, `ParamSource.Sources`, `ParamSource.SourceTable`: unreachable for this leaf today — `reflectTableMethod` rejects the first (backlog-gated) and the other two never apply to tableMethods.
 
-Single cardinality: `fetchOne()` instead of `fetch()`, return type `Record`. List: `Result<Record>`. Connection: rejected at validate time via the new `requireSingleOrList` helper in `GraphitronSchemaValidator` — see Invariants §1.
+Single cardinality: `fetchOne()` instead of `fetch()`, return type `Record`. List: `Result<Record>`. Connection: rejected at classifier time in `FieldBuilder` — see Invariants §1.
 
 ### `QueryServiceTableField`
 
@@ -84,9 +84,13 @@ Both shapes share the same argument-list emission (params-walk, with DSLContext 
 
 The three leaves share one invariant and two variant-specific ones:
 
-1. **Cardinality (all three).** Wrapper must be `Single` or `List`, not `Connection`. The existing `validateCardinality` is a no-op (see "Cardinality validator" under Current state) and the call from `validateQueryTableMethodTableField` does not currently reject anything. Introduce a new `requireSingleOrList(fieldName, location, wrapper, leafKind, errors)` helper in `GraphitronSchemaValidator` that emits a `ValidationError` when `wrapper instanceof FieldWrapper.Connection` and is a no-op otherwise. Call it from all three leaf validators. Leave `validateCardinality` untouched — its other ~15 callers legitimately accept `Connection`. Message: `"<leafKind> at the root does not support Connection return types — use [T] or T instead"`.
+1. **Cardinality (all three).** Wrapper must be `Single` or `List`, not `Connection`. Reject at **classifier time** in `FieldBuilder.classifyQueryField` by returning `UnclassifiedField` — consistent with the existing polymorphic `@service` rejection at `:1305-1306` and the single-cardinality-`@splitQuery` plan's §1b/§1c pattern. `UnclassifiedField` surfaces through `GraphitronSchemaValidator.validateUnclassifiedField` (`:639-644`) as a build-time error. Sites:
+   - `@service` arm at `:1298-1307`: before the `switch (svcResult.returnType())`, check the resolved wrapper (`svcResult.returnType().wrapper()` — `wrapper()` is defined on all four `ReturnTypeRef` variants). If `Connection`, return `UnclassifiedField` with `"@service at the root does not support Connection return types — use [T] or T instead"`.
+   - `@tableMethod` arm at `:1333-1356`: after the `TableBoundReturnType tb` check but before `reflectTableMethod`, if `tb.wrapper() instanceof FieldWrapper.Connection` return `UnclassifiedField` with `"@tableMethod at the root does not support Connection return types — use [T] or T instead"`.
 
-2. **No `Sourced` parameter at root (both service variants).** `ServiceCatalog.reflectServiceMethod` admits a `ParamSource.Sources` parameter when the method takes `List<RowN<?>>` / `List<RecordN<?>>` / `List<SomeClass>`. At the root, `parentPkColumns` is `List.of()`, so a `RowKeyed`/`RecordKeyed` param carries an empty key column list — the DataLoader batching semantics that shape presumes are not available. Reject at validate time with a message pointing at the batching requirement, rather than generating a method call with nonsensical arguments. Check: `field.method().params().stream().anyMatch(p -> p.source() instanceof ParamSource.Sources)` → validation error.
+   The existing no-op `validateCardinality(...)` call in `validateQueryTableMethodTableField` is load-bearing on nothing; delete it as part of this plan. `validateCardinality` itself stays (its other ~15 callers legitimately accept `Connection`).
+
+2. **No `Sourced` parameter at root (both service variants).** `ServiceCatalog.reflectServiceMethod` admits a `ParamSource.Sources` parameter when the method takes `List<RowN<?>>` / `List<RecordN<?>>` / `List<SomeClass>`. At the root, `parentPkColumns` is `List.of()`, so a `RowKeyed`/`RecordKeyed` param carries an empty key column list — the DataLoader batching semantics that shape presumes are not available. Reject at classifier time, same site as §1's `@service` check (before the `switch`), using `svcResult.method().params().stream().anyMatch(p -> p.source() instanceof ParamSource.Sources)` → return `UnclassifiedField` with `"@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters — the root has no parent context to batch against"`. This prevents the classifier from ever producing a `QueryServiceTableField`/`QueryServiceRecordField` with a Sourced param, so the emitter's `Sources` arm in `buildMethodBackedCallArgs` remains genuinely unreachable.
 
 3. **`@tableMethod` signature (already enforced).** `ServiceCatalog.reflectTableMethod` enforces exactly one `Table<?>` parameter at reflection time; no classifier branch produces `QueryTableMethodTableField` without it. It also currently rejects `DSLContext` parameters on `@tableMethod` methods — that's tracked as the separate Backlog item "`DSLContext` on `@condition` / `@tableMethod` methods". This plan does not lift that gate; `QueryTableMethodTableField` params are limited to `Table` / `Arg` / `Context`.
 
@@ -159,17 +163,20 @@ Switch arms in `generateTypeSpec` change from `stub(f)` to the new emitter calls
 - **Service-record with `ResultReturnType`**: the return type is `@record`-backed; it does not own a `*Conditions` class. Defer to §Open decisions.
 - **Service-record with `ScalarReturnType`**: same as above — no target class. Defer to §Open decisions.
 
+### Classifier additions
+
+Rejection lives in `FieldBuilder.classifyQueryField` — consistent with the existing polymorphic `@service` rejection at `:1305-1306` and the single-cardinality-`@splitQuery` plan's §1b/§1c rejections. `UnclassifiedField` routes through `GraphitronSchemaValidator.validateUnclassifiedField` (`:639-644`) which surfaces `field.reason()` as a build error.
+
+- `@service` arm at `:1298-1307`. Before the `switch (svcResult.returnType())`:
+  - Wrapper check (Invariants §1). If `svcResult.returnType().wrapper() instanceof FieldWrapper.Connection` → return `UnclassifiedField` with the message in Invariants §1.
+  - Sourced-param check (Invariants §2). If any `svcResult.method().params()` has `source() instanceof ParamSource.Sources` → return `UnclassifiedField` with the message in Invariants §2.
+
+- `@tableMethod` arm at `:1333-1356`. After the `TableBoundReturnType tb` check (`:1337-1340`) but before the `parseExternalRef`/`reflectTableMethod` calls:
+  - Wrapper check (Invariants §1). If `tb.wrapper() instanceof FieldWrapper.Connection` → return `UnclassifiedField` with the message in Invariants §1.
+
 ### Validator additions
 
-`GraphitronSchemaValidator`:
-
-- New helper: `requireSingleOrList(String fieldName, SourceLocation location, FieldWrapper wrapper, String leafKind, List<ValidationError> errors)` — emits a `ValidationError` iff `wrapper instanceof FieldWrapper.Connection`. `leafKind` is a human-readable label (`"@tableMethod"`, `"@service"`) used in the error message.
-
-- `validateQueryServiceTableField` + `validateQueryServiceRecordField`: add the `requireSingleOrList(...)` call and the `Sourced`-parameter rejection described in Invariants #2. `Sourced`-rejection message: `"@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters — the root has no parent context to batch against"`.
-
-- `validateQueryTableMethodTableField`: replace the existing no-op `validateCardinality(...)` call with a `requireSingleOrList(...)` call. (The `validateCardinality` call was aspirational — it doesn't actually reject `Connection` today.)
-
-- `validateCardinality`: left untouched. It remains a no-op exhaustiveness switch used by validators whose leaves legitimately accept all three wrappers.
+`GraphitronSchemaValidator.validateQueryTableMethodTableField` currently calls the shared `validateCardinality`, which is a no-op (see Current state → Cardinality validator). Delete the call — the Connection rejection now happens at classifier time (see Classifier additions above). `validateQueryServiceTableField` and `validateQueryServiceRecordField` stay empty. `validateCardinality` itself stays untouched; its ~15 other callers legitimately accept `Connection`.
 
 ### Structural tests
 
@@ -183,7 +190,7 @@ Body-string assertions stay minimal — structural properties only, per the test
 
 ### Pipeline test
 
-`GraphitronSchemaBuilderTest`: add an SDL case for each of the three leaves; assert the classifier produces the expected leaf and the generator emits a fetcher method (not a stub). Leverages existing `TypeSpecAssertions.wiringFor(field)`-style helpers where applicable.
+`GraphitronSchemaBuilderTest`: add an SDL case for each of the three leaves; assert the classifier produces the expected leaf and the generator emits a fetcher method (not a stub). Leverages existing `TypeSpecAssertions.wiringFor(field)`-style helpers where applicable. Negative cases: (a) `@service` returning a connection type (e.g. `FilmConnection`) classifies to `UnclassifiedField` with the Invariants §1 message; (b) `@tableMethod` returning a connection type classifies to `UnclassifiedField` with the Invariants §1 message; (c) `@service` method with a `List<RowN<…>>` parameter classifies to `UnclassifiedField` with the Invariants §2 message. All three surface through `validateUnclassifiedField` as build errors.
 
 ### Compile gate
 
