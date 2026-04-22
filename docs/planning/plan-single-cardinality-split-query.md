@@ -1,6 +1,6 @@
 # Single-cardinality `@splitQuery` support
 
-> **Status:** In Review
+> **Status:** Done
 >
 > **Shipped** — §1a `deriveSplitQueryBatchKey` helper (cardinality-driven); §1b
 > single-cardinality `@splitQuery @lookupKey` classifier rejection; §1c multi-hop

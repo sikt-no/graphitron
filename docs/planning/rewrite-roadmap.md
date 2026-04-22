@@ -13,7 +13,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `BatchKey.ObjectBased` removal | Spec | [plan](plan-batchkey-remove-objectbased.md) |
 | Service-backed and method-backed root fetchers | Spec | [plan](plan-service-root-fetchers.md) |
 | `IdReferenceField` input filter variant | Spec | [plan](plan-id-reference-input-field.md) |
-| Single-cardinality `@splitQuery` support | In Review | [plan](plan-single-cardinality-split-query.md) |
+| Single-cardinality `@splitQuery` support | Done | [plan](plan-single-cardinality-split-query.md) |
 | Classification vocabulary follow-ups | Spec | [plan](plan-classification-vocabulary-followups.md) |
 | KjerneJooqGenerator — emit NodeId metadata constants | Spec | [plan](plan-kjerne-jooq-generator.md) |
 | Multi-parent NestingField sharing — `TableField` arm | Spec | [plan](plan-nestingfield-multiparent-tablefield.md) |
@@ -32,7 +32,7 @@ Pick an item, draft a plan, move to Active.
 Distinct occurrence counts of rewrite rejections observed in production, mapped to the roadmap entry that would close them. Treat this as a prioritization signal for Backlog → Active promotion, not as a scoreboard; a zero-count stub may still block a known consumer. User-facing schema errors (bad `@lookupKey`, unresolvable columns, etc.) are listed separately because the fix is author-side, not generator-side.
 
 Tracked in **Active**:
-- Single-cardinality `@splitQuery` — 280 → *Single-cardinality `@splitQuery` support* (In Review)
+- Single-cardinality `@splitQuery` — 280 → *Single-cardinality `@splitQuery` support* (Done)
 - `RecordTableField`/`RecordLookupTableField` missing FK join path + typed backing class — 32 → *`BatchKey.ObjectBased` removal* (plus *`BatchKey` lifter directive* below for DTO parents)
 - `@splitQuery` with condition-join step — 16 → *Classification vocabulary follow-ups* §5
 - `QueryServiceRecordField` — 0 → *Service-backed and method-backed root fetchers*
