@@ -6,11 +6,7 @@ import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.JoinElement;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
-import no.sikt.graphitron.definitions.mapping.Alias;
-import no.sikt.graphitron.definitions.mapping.AliasWrapper;
-import no.sikt.graphitron.definitions.mapping.JOOQMapping;
-import no.sikt.graphitron.definitions.mapping.TableRelation;
-import no.sikt.graphitron.definitions.mapping.TableRelationType;
+import no.sikt.graphitron.definitions.mapping.*;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -20,7 +16,6 @@ import org.jooq.Table;
 import java.util.*;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.definitions.mapping.JOOQMapping.fromTable;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyForResolverFieldOrThrow;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 
@@ -400,11 +395,12 @@ public class FetchContext {
         if (processedSchema.isNodeIdField(field)) {
             var nodeType = processedSchema.getNodeTypeForNodeIdFieldOrThrow(field);
             if (!nodeType.getName().equals(getReferenceObjectField().getTypeName())) {
-                // Add implicit table reference from typeName in @nodeId directive
-                fieldReferences = Stream.of(
-                                field.getFieldReferences(),
-                                List.of(new FieldReference(fromTable(nodeType.getTable().getName()))))
-                        .flatMap(Collection::stream).toList();
+                if (!referenceDirectiveAlreadySpecifiesPathToTable(fieldReferences, nodeType.getTable())) {
+                    fieldReferences = Stream.of(
+                                    field.getFieldReferences(),
+                                    List.of(new FieldReference(nodeType.getTable())))
+                            .flatMap(Collection::stream).toList();
+                }
             }
         }
 
@@ -420,6 +416,24 @@ public class FetchContext {
                 false
         );
         return !newJoinSequence.isEmpty() ? newJoinSequence : currentSequence;
+    }
+
+    /**
+     * Checks whether the last element in a @reference path already reaches the target table, either by direct table
+     * match or by being a key whose source or target table matches. This prevents adding a duplicate implicit table
+     * reference for @nodeId fields when the @reference directive already terminates at the correct table.
+     */
+    private static boolean referenceDirectiveAlreadySpecifiesPathToTable(List<FieldReference> refs, JOOQMapping targetTable) {
+        if (refs.isEmpty()) {
+            return false;
+        }
+        var lastRef = refs.get(refs.size() - 1);
+        if (lastRef.hasKey()) {
+            var keyName = lastRef.getKey().getMappingName();
+            return getKeySourceTableJavaName(keyName).map(targetTable.getMappingName()::equals).orElse(false)
+                    || getKeyTargetTableJavaName(keyName).map(targetTable.getMappingName()::equals).orElse(false);
+        }
+        return lastRef.hasTable() && lastRef.getTable().equals(targetTable);
     }
 
     /**
@@ -442,12 +456,14 @@ public class FetchContext {
         }
 
         var lastTable = !updatedSequence.isEmpty() ? updatedSequence.getLast().getTable() : getPreviousTable(); // Wrong if key was reverse.
-        if (Objects.equals(lastTable, refTable) && (!referencesFromField.isEmpty() || processedSchema.isInterface(referenceObjectField.getContainerTypeName()))) {
-            if (updatedSequence.isEmpty()) {
-                return makeJoinSequence(refTable);
-            } else {
-                return updatedSequence;
-            }
+
+        // An implicit self-join is only needed when source and target are the same table AND the field is a @splitQuery field with a previous table context and no explicit references.
+        var needsImplicitSelfJoin = referencesFromField.isEmpty()
+                && referenceObjectField.createsDataFetcher()
+                && processedSchema.isFieldWithPreviousTableObject(referenceObjectField);
+
+        if (Objects.equals(lastTable, refTable) && !needsImplicitSelfJoin) {
+            return updatedSequence.isEmpty() ? makeJoinSequence(refTable) : updatedSequence;
         }
 
         var finalSequence = resolveNextSequence(

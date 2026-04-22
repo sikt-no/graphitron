@@ -1,0 +1,54 @@
+{
+    "data": {
+        "filmWithSelfReference": {
+            "nodes": [
+                {
+                    "filmId": "1",
+                    "wrapped": {
+                        "filmId": "1"
+                    },
+                    "wrappedWithTable": {
+                        "filmId": "1"
+                    },
+                    "selfReference": {
+                        "filmId": "2"
+                    }
+                },
+                {
+                    "filmId": "3",
+                    "wrapped": {
+                        "filmId": "3"
+                    },
+                    "wrappedWithTable": {
+                        "filmId": "3"
+                    },
+                    "selfReference": {
+                        "filmId": "4"
+                    }
+                },
+                {
+                    "filmId": "5",
+                    "wrapped": {
+                        "filmId": "5"
+                    },
+                    "wrappedWithTable": {
+                        "filmId": "5"
+                    },
+                    "selfReference": {
+                        "filmId": "6"
+                    }
+                },
+                {
+                    "filmId": "10",
+                    "wrapped": {
+                        "filmId": "10"
+                    },
+                    "wrappedWithTable": {
+                        "filmId": "10"
+                    },
+                    "selfReference": null
+                }
+            ]
+        }
+    }
+}

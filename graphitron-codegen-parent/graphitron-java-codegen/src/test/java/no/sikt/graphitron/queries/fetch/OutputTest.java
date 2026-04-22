@@ -492,4 +492,29 @@ public class OutputTest extends GeneratorTest {
                 ".mapping(Functions.nullOnAllNull(Inner::new))"
         );
     }
+
+    @Test
+    @DisplayName("Wrapped table with self-referencing FK and table input")
+    void wrappedTableWithSelfReferenceAndTableInput() {
+        resultDoesNotContain(
+                "wrappedTableWithSelfReferenceAndTableInput",
+                "_a_film.film()"
+        );
+    }
+
+    @Test
+    @DisplayName("Self-referencing table with wrapper type without @table")
+    void wrapperWithoutTableForTableWithSelfReference() {
+        assertGeneratedContentContains("wrapperWithoutTableForTableWithSelfReference",
+                "row(_a_film.FILM_ID).mapping(Functions.nullOnAllNull(Wrapper::new))).mapping(Functions.nullOnAllNull(Film"
+        );
+    }
+
+    @Test
+    @DisplayName("Self-referencing table with wrapper type with @table")
+    void wrapperWithTableForTableWithSelfReference() {
+        assertGeneratedContentContains("wrapperWithTableForTableWithSelfReference",
+                "row(_a_film.FILM_ID).mapping(Functions.nullOnAllNull(Wrapper::new))).mapping(Functions.nullOnAllNull(Film"
+        );
+    }
 }

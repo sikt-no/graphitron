@@ -1,0 +1,17 @@
+# Test for checking both a self reference, and making sure the join is not incorrectly applied elsewhere
+{
+  filmWithSelfReference(filmIds: ["1", "3", "5", "10"]) {
+    nodes {
+      filmId
+      wrapped {
+        filmId
+      }
+      wrappedWithTable {
+        filmId
+      }
+      selfReference {
+        filmId
+      }
+    }
+  }
+}

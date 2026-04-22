@@ -1,0 +1,11 @@
+type Query {
+  query: Film
+}
+
+type Film @table {
+  wrapper: Wrapper
+}
+
+type Wrapper @table(name: "FILM") {
+  id: Int @field(name: "FILM_ID")
+}

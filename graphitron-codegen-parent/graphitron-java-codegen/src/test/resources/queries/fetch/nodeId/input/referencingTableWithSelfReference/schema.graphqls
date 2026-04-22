@@ -1,0 +1,12 @@
+type Query {
+  languagesFilteredByFilm(filmId: ID! @nodeId(typeName : "Film")): [FilmActor]
+}
+
+
+type FilmActor implements Node @table(name: "FILM_ACTOR") @node {
+  id: ID! @nodeId
+}
+
+type Film implements Node @node @table {
+  id: ID! @nodeId
+}

@@ -212,4 +212,32 @@ public class ReferenceInputTest extends ReferenceTest {
                 ".STORE_ID.eq(_a_store.STORE_ID)"
         );
     }
+
+    @Test
+    @DisplayName("Table path to table with self-referencing FK")
+    void referencingTableWithSelfReference() {
+        assertGeneratedContentContains(
+                "referencingTableWithSelfReference",
+                ".where(_a_filmactor_3175015397_film_left.FILM_ID.eq(_mi_filmId))"
+        );
+
+        resultDoesNotContain(
+                "referencingTableWithSelfReference",
+                "_a_filmactor_3175015397_film_left.film()"
+        );
+    }
+
+    @Test
+    @DisplayName("Reverse key path to table with self-referencing FK")
+    void referencingTableWithSelfReferenceReverse() {
+        assertGeneratedContentContains(
+                "referencingTableWithSelfReferenceReverse",
+                "selectOne().from(_a_language_3571151285_filmlanguageidfkey_left)"
+        );
+
+        resultDoesNotContain(
+                "referencingTableWithSelfReferenceReverse",
+                ".film()"
+        );
+    }
 }

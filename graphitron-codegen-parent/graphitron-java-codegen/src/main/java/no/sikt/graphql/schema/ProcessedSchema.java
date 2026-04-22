@@ -964,6 +964,13 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return Whether the field's container type has a table on or above it in the schema hierarchy.
+     */
+    public boolean isFieldWithPreviousTableObject(GenerationField field) {
+        return objectWithPreviousTable.containsKey(field.getContainerTypeName());
+    }
+
+    /**
      * @return Returns whether the object has a table on or above it.
      */
     public boolean hasTableObjectForObject(RecordObjectSpecification<?> object) {
