@@ -27,18 +27,9 @@ mise r jooq                  # Regenerate jOOQ classes
 mvn clean install -Pquick    # Fast build, skips tests + javadocs
 ```
 
-## Rewrite generator tests — rules
+## Building and testing graphitron-rewrite
 
-Do NOT write code-string assertions that check generated method bodies (e.g. `assertThat(code).contains("TABLE.COL.eq(...)")`). They test implementation, not behaviour, and break on every refactor. Use instead:
-
-- **Unit tests** (`*GeneratorTest`): structural properties only — method names, return types, parameter signatures, which methods exist.
-- **Pipeline tests** (`*PipelineTest`): SDL → generated `TypeSpec` through the full classifier.
-- **Compilation tests** (`graphitron-rewrite-test-spec` compile): catch type errors and wrong packages against real jOOQ classes.
-- **Execution tests** (`graphitron-rewrite-test-spec`): generated code against a real database. `-pl` doesn't recurse into submodules, so list all three explicitly: `-pl :graphitron-rewrite-test,:graphitron-rewrite-test-fixtures,:graphitron-rewrite-test-spec`.
-
-A cascade of `*PipelineTest` / `GraphitronSchemaBuilderTest` failures with `UnclassifiedType`, `NoSuchElement`, or "table … could not be resolved in the jOOQ catalog" means the fixtures jar in `~/.m2` is missing `DefaultCatalog` (installed before the DB was up). Rebuild with: `mvn install -pl :graphitron-rewrite-test-fixtures -Plocal-db`. Don't bisect trunk — it's your local repo.
-
-Any later `mvn install` that hits `graphitron-rewrite-test-fixtures` without `-Plocal-db` (e.g. `mvn install -pl X -am` that transitively rebuilds fixtures, or a full-tree install) silently re-emits the fixtures jar with an empty jOOQ catalog and re-triggers the cascade. After any broad install, re-run the `-Plocal-db` fixtures install as a final step before testing.
+Full pipeline (build-fixtures → test → compile-spec → execute-spec) and recovery from the fixtures-jar clobber: [`docs/claude-code-web-environment.md`](docs/claude-code-web-environment.md). Test-tier conventions (no code-string assertions on generated bodies; unit vs pipeline vs compilation vs execution): [`docs/rewrite-design-principles.md`](docs/rewrite-design-principles.md).
 
 ## Editing large files
 

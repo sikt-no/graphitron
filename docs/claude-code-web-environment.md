@@ -77,3 +77,20 @@ mvn test -pl :graphitron-rewrite-test-spec -Plocal-db
 - `-Djooq.codegen.skip=true` skips the Docker-backed jOOQ test source generation in
   `graphitron-java-codegen` (configured via the `jooq.codegen.skip` property in its pom.xml).
 - Maven is at `/opt/maven/bin/mvn`; Java 21 is the default JVM — both are pre-installed.
+
+## Fixtures-jar clobber — symptoms and recovery
+
+A cascade of `*PipelineTest` / `GraphitronSchemaBuilderTest` failures with `UnclassifiedType`,
+`NoSuchElement`, or `table … could not be resolved in the jOOQ catalog` means the
+`graphitron-rewrite-test-fixtures` jar in `~/.m2` is missing `DefaultCatalog` — it was installed
+before the database was up, or re-installed without `-Plocal-db`. Don't bisect trunk; it's your
+local repo. Recover with:
+
+```bash
+mvn install -pl :graphitron-rewrite-test-fixtures -Plocal-db
+```
+
+**Footgun:** any later `mvn install` that hits `graphitron-rewrite-test-fixtures` without
+`-Plocal-db` — e.g. `mvn install -pl X -am` that transitively rebuilds fixtures, or a full-tree
+install — silently re-emits the jar with an empty jOOQ catalog and re-triggers the cascade. After
+any broad install, re-run the `-Plocal-db` fixtures install as a final step before testing.
