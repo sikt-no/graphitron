@@ -42,6 +42,7 @@ Graphitron generates:
 - All the code that fetches data from the database
 - Efficient handling of nested data
 - Proper batching to avoid redundant database calls
+- Resolver wiring that delegates to your own service classes for fields requiring custom logic
 
 The generated code is:
 
