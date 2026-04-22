@@ -10,18 +10,21 @@
 
 ## Current state
 
-- **Classifier.** All three are already classified by `FieldBuilder.classifyQueryField` (`FieldBuilder.java:1175–1248`):
-  - `@service` at the root splits into `QueryServiceTableField` / `QueryServiceRecordField` based on `ReturnTypeRef` variant (line 1189–1198).
-  - `@tableMethod` → `QueryTableMethodTableField`, with the return type narrowed to `TableBoundReturnType` (line 1224–1247).
-  - `MethodRef` is fully resolved by `ServiceCatalog.reflectServiceMethod` / `reflectTableMethod` — each `Param` is pre-classified into `ParamSource.Arg` / `Context` / `Table` / `Sources`.
+- **Classifier.** All three are already classified by `FieldBuilder.classifyQueryField`:
+  - `@service` at the root splits on `ReturnTypeRef` variant: `TableBoundReturnType` → `QueryServiceTableField`; `ResultReturnType` or `ScalarReturnType` → `QueryServiceRecordField`; `PolymorphicReturnType` → `UnclassifiedField` (polymorphic `@service` is explicitly rejected).
+  - `@tableMethod` → `QueryTableMethodTableField`, with the return type narrowed to `TableBoundReturnType`. Mismatched return type → `UnclassifiedField`.
+  - `MethodRef` is fully resolved by `ServiceCatalog.reflectServiceMethod` / `reflectTableMethod`. Each `Param` is pre-classified into one of six `ParamSource` variants: `Arg` (GraphQL argument), `Context` (context key), `DslContext` (jOOQ `DSLContext` — service only, gated off for `@tableMethod` by the roadmap backlog item), `Table` (jOOQ `Table<?>` — tableMethod only), `SourceTable` (parent table; not relevant at root), and `Sources` (DataLoader batch-key list; not relevant at root — see Invariants §2).
+  - `resolveServiceField` is called with `parentPkColumns = List.of()` at the root, so a `Sources`-typed parameter carries an empty key column list by construction.
 
-- **Stubs.** Entries in `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` at lines 180, 192, 194; dispatcher arms at lines 311, 317, 318 route to `stub(f)` which emits a method body that throws `UnsupportedOperationException`. The stubbed-variant validator (`GraphitronSchemaValidator.validateVariantIsImplemented`) already fails any schema that lands on these leaves at build time.
+- **Stubs.** `QueryTableMethodTableField`, `QueryServiceTableField`, and `QueryServiceRecordField` entries in `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`; dispatcher arms route to `stub(f)` which emits a method body that throws `UnsupportedOperationException`. The stubbed-variant validator (`GraphitronSchemaValidator.validateVariantIsImplemented`) already fails any schema that lands on these leaves at build time.
 
 - **Validator.** `validateQueryTableMethodTableField` checks cardinality. `validateQueryServiceTableField` and `validateQueryServiceRecordField` are empty.
 
-- **Neighbouring reference.** `QueryField.QueryTableField.buildQueryTableFetcher` (`TypeFetcherGenerator.java:448`) is the closest existing shape: a synchronous root fetcher that declares a table local, optionally builds a condition, and runs a single `dsl.select(Type.$fields(...)).from(table)...fetch()`.
+- **Neighbouring reference.** `QueryField.QueryTableField.buildQueryTableFetcher` is the closest existing shape: a synchronous root fetcher that declares a table local, optionally builds a condition, and runs a single `dsl.select(Type.$fields(...)).from(table)...fetch()`.
 
-- **Test fixtures.** `graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls` contains no `@service` or `@tableMethod` usages — fixtures must be added.
+- **Call-arg emission.** `ArgCallEmitter.buildCallArgs(List<CallParam>, String)` hardcodes `"table"` as the first arg and iterates `callParams()` (Arg + Context only, filtered via `MethodRef.callParams()`). This is a condition-method call shape — it cannot be reused verbatim for service/tableMethod calls, which need declaration-order iteration over `params()` with per-`ParamSource` emission. See "Emission → Call-arg emitter" below.
+
+- **Test fixtures.** `graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls` contains no `@service` or `@tableMethod` usages — fixtures must be added. `TestServiceStub` and `TestTableMethodStub` exist under `graphitron-rewrite/src/test/java/` for unit tests but are not on the test-spec classpath.
 
 ## Shape of emitted fetcher per leaf
 
@@ -41,7 +44,9 @@ public static Result<Record> films(DataFetchingEnvironment env) {
 }
 ```
 
-The call arguments are built by `ArgCallEmitter.buildArgExtraction` iterating `method().callParams()` — the same call-param projection that the existing condition-method emission uses. The `ParamSource.Table` parameter becomes the `Tables.FILM` reference (or whichever table the return type resolves to; supplied by `GeneratorUtils.ResolvedTableNames.of(tableRef, returnTypeName).jooqTableField()`). No batch key.
+Argument list is emitted by walking `method().params()` in declaration order (see "Call-arg emitter" below). The `ParamSource.Table` slot is filled with the resolved table reference supplied by `GeneratorUtils.ResolvedTableNames.of(tableRef, returnTypeName).jooqTableField()` — the user may declare it at any position, not necessarily first. `ParamSource.Arg` / `ParamSource.Context` slots are emitted the same way condition-method calls handle them.
+
+`ParamSource.DslContext`, `ParamSource.Sources`, `ParamSource.SourceTable`: unreachable for this leaf today — `reflectTableMethod` rejects the first (backlog-gated) and the other two never apply to tableMethods.
 
 Single cardinality: `fetchOne()` instead of `fetch()`, return type `Record`. List: `Result<Record>`. Connection: rejected at validate time (services/tableMethods don't produce connections; cardinality validator already catches this via `validateCardinality` for the table-method variant — extend to the two service variants).
 
@@ -51,18 +56,25 @@ The developer method returns `Result<Record>` (list) or `Record` (single) alread
 
 ```java
 public static Result<Record> activeRentals(DataFetchingEnvironment env) {
+    var dsl = graphitronContext(env).getDslContext(env);
     return RentalService.activeRentals(
+        dsl,
         env.getArgument("storeId"),
         graphitronContext(env).getContextArgument(env, "viewerId")
     );
 }
 ```
 
-Return type is `Result<Record>` / `Record` based on wrapper cardinality. The method is called with the extracted `callParams()`; no `ParamSource.Sources` support at root (see "Invariants" below). No projection.
+Return type is `Result<Record>` / `Record` based on wrapper cardinality. Argument list is emitted by walking `method().params()` in declaration order, emitting `dsl` for `DslContext` slots, `env.getArgument(name)` (or the `CallSiteExtraction` shape) for `Arg` slots, and `graphitronContext(env).getContextArgument(env, name)` for `Context` slots. The `dsl` local is declared at the top of the emitted method body only if the service method actually takes a `DSLContext` parameter. No `ParamSource.Sources` support at root (see Invariants §2). No projection — graphql-java drives column fetchers over the service-returned `Record`/`Result<Record>`.
 
 ### `QueryServiceRecordField`
 
-Same as `QueryServiceTableField` but the return type is a scalar or DTO — no jOOQ types involved. The generator emits `return SomeService.method(...)` with return type `Object` (the existing stub signature is already `Object`; keep it). graphql-java coerces to the declared SDL type.
+Same as `QueryServiceTableField` but the return type covers two sub-shapes — both classify to this leaf:
+
+- `ReturnTypeRef.ScalarReturnType` — scalar (e.g. `Int`, `String`), plain DTO, or any non-table non-record Java type. Generator emits `return SomeService.method(...);` with return type `Object` (matches the existing stub signature). graphql-java coerces to the declared SDL type.
+- `ReturnTypeRef.ResultReturnType` — a `@record`-annotated GraphQL type backed by a jOOQ `Record` subclass. The service returns the record directly; graphql-java's registered property/record fetchers walk its fields. No projection.
+
+Both shapes share the same argument-list emission (params-walk, with DSLContext / Arg / Context expressions). The only difference is the generated return type — both are compatible with `Object` for the method signature; we keep `Object` and let graphql-java coerce.
 
 ## Invariants
 
@@ -70,9 +82,11 @@ The three leaves share one invariant and two variant-specific ones:
 
 1. **Cardinality (all three).** Wrapper must be `Single` or `List`, not `Connection`. `validateCardinality` is already called for `QueryTableMethodTableField`; add the same call to the two service validators.
 
-2. **No `Sourced` parameter at root (both service variants).** `ServiceCatalog.reflectServiceMethod` admits a `ParamSource.Sources` parameter when the method takes `List<RowN<?>>` / `List<RecordN<?>>` / `List<SomeClass>`. At the root, `parentPkColumns` is `List.of()` (`FieldBuilder.java:1185`), so a `RowKeyed`/`RecordKeyed` param carries an empty key column list — the DataLoader batching semantics that shape presumes are not available. Reject at validate time with a message pointing at the batching requirement, rather than generating a method call with nonsensical arguments. Check: `field.method().params().stream().anyMatch(p -> p.source() instanceof ParamSource.Sources)` → validation error.
+2. **No `Sourced` parameter at root (both service variants).** `ServiceCatalog.reflectServiceMethod` admits a `ParamSource.Sources` parameter when the method takes `List<RowN<?>>` / `List<RecordN<?>>` / `List<SomeClass>`. At the root, `parentPkColumns` is `List.of()`, so a `RowKeyed`/`RecordKeyed` param carries an empty key column list — the DataLoader batching semantics that shape presumes are not available. Reject at validate time with a message pointing at the batching requirement, rather than generating a method call with nonsensical arguments. Check: `field.method().params().stream().anyMatch(p -> p.source() instanceof ParamSource.Sources)` → validation error.
 
-3. **`@tableMethod` signature (already enforced).** `ServiceCatalog.reflectTableMethod` enforces exactly one `Table<?>` parameter at reflection time; no classifier branch produces `QueryTableMethodTableField` without it. No additional validator check needed.
+3. **`@tableMethod` signature (already enforced).** `ServiceCatalog.reflectTableMethod` enforces exactly one `Table<?>` parameter at reflection time; no classifier branch produces `QueryTableMethodTableField` without it. It also currently rejects `DSLContext` parameters on `@tableMethod` methods — that's tracked as the separate Backlog item "`DSLContext` on `@condition` / `@tableMethod` methods". This plan does not lift that gate; `QueryTableMethodTableField` params are limited to `Table` / `Arg` / `Context`.
+
+4. **`DslContext` parameter supported only on `@service` (not `@tableMethod`).** `reflectServiceMethod` admits a `DSLContext` parameter (classified as `ParamSource.DslContext`). The emitter for `QueryServiceTableField` / `QueryServiceRecordField` must thread `graphitronContext(env).getDslContext(env)` into the call at the parameter's declaration-index slot.
 
 ## Plan
 
