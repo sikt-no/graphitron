@@ -212,6 +212,52 @@ class GeneratorUtils {
             .build();
     }
 
+    /**
+     * Companion to {@link #buildKeyExtraction} for single-cardinality
+     * {@code @splitQuery} fetchers where the BatchKey's columns sit on the parent's FK side.
+     * Extracts each key column into a typed local and returns {@code CompletableFuture.completedFuture(null)}
+     * before building the {@code RowN} key if any component is {@code null} — a {@code NULL} FK
+     * on the parent can never match {@code terminal.pk = parentInput.fk_value}, so dispatching
+     * to the DataLoader is a wasted round-trip. See
+     * plan-single-cardinality-split-query.md §4.
+     *
+     * <p>Only the {@link BatchKey.RowKeyed} variant is handled; single-cardinality
+     * {@code @splitQuery} on a {@code @table} parent is the only caller today.
+     */
+    static CodeBlock buildKeyExtractionWithNullCheck(BatchKey batchKey, TableRef parentTable) {
+        if (!(batchKey instanceof BatchKey.RowKeyed rk)) {
+            throw new IllegalArgumentException(
+                "buildKeyExtractionWithNullCheck supports BatchKey.RowKeyed only, got "
+                + batchKey.getClass().getSimpleName());
+        }
+        var tablesClass = ResolvedTableNames.ofTable(parentTable).tablesClass();
+        String tableField = parentTable.javaFieldName();
+        List<ColumnRef> pkCols = rk.keyColumns();
+        TypeName keyType = keyElementType(batchKey);
+        var out = CodeBlock.builder();
+        var rowArgs = CodeBlock.builder();
+        var nullCheck = CodeBlock.builder();
+        for (int i = 0; i < pkCols.size(); i++) {
+            ColumnRef col = pkCols.get(i);
+            ClassName colType = ClassName.bestGuess(col.columnClass());
+            String local = "fkVal" + i;
+            out.addStatement("$T $L = (($T) env.getSource()).get($T.$L.$L)",
+                colType, local, RECORD, tablesClass, tableField, col.javaName());
+            if (i > 0) {
+                nullCheck.add(" || ");
+                rowArgs.add(", ");
+            }
+            nullCheck.add("$L == null", local);
+            rowArgs.add("$L", local);
+        }
+        out.beginControlFlow("if ($L)", nullCheck.build());
+        out.addStatement("return $T.completedFuture(null)",
+            ClassName.get("java.util.concurrent", "CompletableFuture"));
+        out.endControlFlow();
+        out.addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build());
+        return out.build();
+    }
+
     static CodeBlock buildKeyExtraction(BatchKey batchKey, TableRef parentTable) {
         TypeName keyType = keyElementType(batchKey);
         var tablesClass = ResolvedTableNames.ofTable(parentTable).tablesClass();

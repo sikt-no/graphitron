@@ -27,37 +27,30 @@ class SplitTableFieldValidationTest {
 
     private static final BatchKey PARENT_BATCH_KEY = new BatchKey.RowKeyed(List.of());
 
-    // Validator messages for the intra-variant runtime-stub branches of SplitRowsMethodEmitter.
-    // Kept inline (rather than read from SplitRowsMethodEmitter.unsupportedReason) so a change
-    // to the production string breaks this test loudly — update both sides in the same commit.
-    private static final String SINGLE_CARDINALITY_STUB =
-        "Field 'Film.actors': Single-cardinality @splitQuery on 'Film.actors' not yet supported; "
-        + "list cardinality is the Phase 2b C1 scope. "
-        + "Single-cardinality requires joining the parent table to bridge parent PK to parent FK.";
+    // Emitter-level validator messages. Kept inline (rather than read from
+    // SplitRowsMethodEmitter.unsupportedReason) so a change to the production string breaks
+    // this test loudly — update both sides in the same commit.
+    private static final String CONDITION_JOIN_STUB =
+        "Field 'Film.actors': @splitQuery 'Film.actors' with a condition-join step cannot be "
+        + "emitted until classification-vocabulary item 5 resolves condition-method target tables";
 
     enum Case implements ValidatorCase {
 
-        NO_PATH("single cardinality, no @reference — runtime stub at emit time, surfaced as build error",
-            new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
-            List.of(SINGLE_CARDINALITY_STUB)),
-
-        WITH_FK_PATH("single cardinality with FK path — runtime stub at emit time, surfaced as build error",
+        // Single-cardinality @splitQuery with a single FK hop — emittable after
+        // plan-single-cardinality-split-query.md §3. Positive case: the emitter-level validator
+        // produces no errors. Classifier-level rejection of empty / multi-hop single cardinality
+        // lives in FieldBuilder (§1c) and is exercised by GraphitronSchemaBuilderTest, not here.
+        SINGLE_CARDINALITY_EMITTABLE("single cardinality with one-hop FK path — emittable, no errors",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), new TableRef("film_actor", "", "", List.of()), List.of(), null, "")),
                 List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
-            List.of(SINGLE_CARDINALITY_STUB)),
+            List.of()),
 
         WITH_CONDITION_ONLY("single cardinality with condition-only join step — runtime stub, build error",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), "")),
                 List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
-            List.of(SINGLE_CARDINALITY_STUB)),
-
-        FIELD_CONDITION_RESOLVED("single cardinality with resolved @condition — single-cardinality stub still surfaces",
-            new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(),
-                List.of(new ConditionFilter("com.example.Conditions", "actorCondition", List.of())),
-                new OrderBySpec.None(), null, PARENT_BATCH_KEY),
-            List.of(SINGLE_CARDINALITY_STUB));
+            List.of(CONDITION_JOIN_STUB));
 
         private final String description;
         private final GraphitronField field;

@@ -130,7 +130,11 @@ public final class SplitRowsMethodEmitter {
         if (stubReason.isPresent()) {
             return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(), stubReason.get());
         }
-
+        if (stf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Single) {
+            return buildSingleMethod(
+                stf.name(), stf.rowsMethodName(), stf.returnType(),
+                stf.joinPath(), stf.filters(), stf.batchKey());
+        }
         return buildListMethod(
             stf.name(), stf.rowsMethodName(), stf.returnType(),
             stf.joinPath(), stf.filters(), stf.batchKey(),
@@ -146,16 +150,6 @@ public final class SplitRowsMethodEmitter {
      * update this predicate in the same commit.
      */
     public static java.util.Optional<String> unsupportedReason(ChildField.SplitTableField stf) {
-        boolean isList = stf.returnType().wrapper().isList();
-        // Single cardinality with parentHoldsFk=true requires the parent table in the JOIN
-        // chain (parentInput carries parent PK, but the FK hop connects parent FK → target PK
-        // — we need an extra hop through the parent table). Deferred to a follow-up.
-        if (!isList) {
-            return java.util.Optional.of(
-                "Single-cardinality @splitQuery on '" + stf.qualifiedName()
-                + "' not yet supported; list cardinality is the Phase 2b C1 scope. "
-                + "Single-cardinality requires joining the parent table to bridge parent PK to parent FK.");
-        }
         if (JoinPathEmitter.hasConditionJoin(stf.joinPath())) {
             return java.util.Optional.of(
                 "@splitQuery '" + stf.qualifiedName() + "' with a condition-join step cannot be "
@@ -183,17 +177,12 @@ public final class SplitRowsMethodEmitter {
     /**
      * Split* sibling of {@link #unsupportedReason(ChildField.SplitTableField)}. Same contract:
      * non-empty reason → field cannot be emitted today; empty → emittable.
+     *
+     * <p>Single-cardinality {@code @splitQuery @lookupKey} is rejected upstream at classifier
+     * time ({@code FieldBuilder}'s {@code hasSplitQuery && hasLookupKey} arm), so this emitter
+     * never sees a single-cardinality {@link ChildField.SplitLookupTableField}.
      */
     public static java.util.Optional<String> unsupportedReason(ChildField.SplitLookupTableField slf) {
-        boolean isList = slf.returnType().wrapper().isList();
-        // Same restrictions as SplitTableField — single cardinality defers to a follow-up, a
-        // ConditionJoin step needs classification-vocab item 5, empty joinPath (standalone
-        // @splitQuery @lookupKey with no @reference) is out of C2 scope.
-        if (!isList) {
-            return java.util.Optional.of(
-                "Single-cardinality @splitQuery @lookupKey on '" + slf.qualifiedName()
-                + "' not yet supported; list cardinality is the Phase 2b C2 scope.");
-        }
         if (JoinPathEmitter.hasConditionJoin(slf.joinPath())) {
             return java.util.Optional.of(
                 "@splitQuery @lookupKey '" + slf.qualifiedName() + "' with a condition-join step cannot be "
@@ -517,6 +506,154 @@ public final class SplitRowsMethodEmitter {
             .build();
     }
 
+    /**
+     * Single-cardinality sibling of {@link #buildListMethod} for {@link ChildField.SplitTableField}.
+     * Classifier contract: single-hop, parent-holds-FK ({@link ChildField.SplitTableField}'s
+     * {@code batchKey} carries the parent's FK columns per
+     * {@code FieldBuilder.deriveSplitQueryBatchKey}). Emits a flat
+     * {@code terminal JOIN parentInput ON terminal.pk = parentInput.fk_value} SELECT that returns
+     * {@code List<Record>} indexed 1:1 with {@code keys} (nulls where no match).
+     *
+     * <p>The JOIN column reference differs from list-cardinality: list-cardinality's
+     * {@code firstHop.sourceColumns()} sit on the target (terminal) table (the FK-holder is the
+     * child); single-cardinality's {@code sourceColumns()} sit on the <em>parent</em>, so the
+     * emitter uses {@code firstHop.targetColumns()} to address the column on {@code firstAlias}.
+     * FK-vs-PK column types match by jOOQ invariant, so {@code pkCols.get(i).columnClass()}
+     * (the BatchKey's column type) is the right cast target for the typed
+     * {@code parentInput.field(i+1, Class<T>)} call.
+     */
+    private static MethodSpec buildSingleMethod(
+            String fieldName,
+            String rowsMethodName,
+            ReturnTypeRef.TableBoundReturnType returnType,
+            List<JoinStep> joinPath,
+            List<WhereFilter> filters,
+            BatchKey batchKey) {
+        TableRef terminalTable = returnType.table();
+        ClassName tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
+        ClassName typeClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite.types",
+            returnType.returnTypeName());
+
+        BatchKey.RowKeyed rowKeyed = (BatchKey.RowKeyed) batchKey;
+        List<ColumnRef> pkCols = rowKeyed.keyColumns();
+        TypeName keyElement = GeneratorUtils.keyElementType(batchKey);
+        TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
+        TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+
+        int parentRowArity = pkCols.size() + 1;
+        if (parentRowArity > 22) {
+            throw new IllegalStateException(
+                "Parent FK arity " + pkCols.size() + " + idx exceeds jOOQ's typed Row/Record arity limit (22)");
+        }
+        TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
+        parentRowTypeArgs[0] = ClassName.get(Integer.class);
+        for (int i = 0; i < pkCols.size(); i++) {
+            parentRowTypeArgs[i + 1] = ClassName.bestGuess(pkCols.get(i).columnClass());
+        }
+        TypeName parentRowType = ParameterizedTypeName.get(rowClass(parentRowArity), parentRowTypeArgs);
+        TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
+        TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
+
+        // Classifier guarantees single-hop (§1c rejects multi-hop single-cardinality).
+        JoinStep.FkJoin firstHop = (JoinStep.FkJoin) joinPath.get(0);
+        List<String> aliases = JoinPathEmitter.generateAliases(joinPath, terminalTable);
+        String firstAlias = aliases.get(0);
+
+        var body = CodeBlock.builder();
+
+        body.beginControlFlow("if (keys.isEmpty())");
+        body.addStatement("return $T.of()", LIST);
+        body.endControlFlow();
+
+        body.addStatement("$T dsl = graphitronContext(env).getDslContext(env)",
+            ClassName.get("org.jooq", "DSLContext"));
+
+        body.add("@$T($S)\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked");
+        body.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
+            parentRowType, parentRowType, rowClass(parentRowArity));
+        body.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
+        body.addStatement("$T k = keys.get(i)", keyElement);
+        var rowArgs = CodeBlock.builder();
+        rowArgs.add("$T.inline(i)", DSL);
+        for (int i = 0; i < pkCols.size(); i++) {
+            rowArgs.add(", k.field$L()", i + 1);
+        }
+        body.addStatement("parentRows[i] = $T.row($L)", DSL, rowArgs.build());
+        body.endControlFlow();
+
+        var parentInputAlias = CodeBlock.builder();
+        parentInputAlias.add("$S, $S", "parentInput", "idx");
+        for (var col : pkCols) {
+            parentInputAlias.add(", $S", col.sqlName());
+        }
+        body.addStatement("$T parentInput = $T.values(parentRows).as($L)",
+            parentInputTableType, DSL, parentInputAlias.build());
+
+        // Single-hop terminal alias.
+        ClassName jooqTableClass = ClassName.get(
+            RewriteConfig.getGeneratedJooqPackage() + ".tables",
+            firstHop.targetTable().javaClassName());
+        body.addStatement("$T $L = $T.$L.as($S)",
+            jooqTableClass, firstAlias, tablesClass, firstHop.targetTable().javaFieldName(),
+            fieldName + "_" + firstAlias);
+
+        TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
+        TypeName listOfField = ParameterizedTypeName.get(LIST, wildField);
+        body.addStatement("$T selectFields = new $T<>($T.$$fields(env.getSelectionSet(), $L, env))",
+            listOfField, ARRAY_LIST, typeClass, firstAlias);
+        body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
+            Integer.class, IDX_COLUMN);
+
+        // JOIN: terminal.<target_col> = parentInput.<fk_value>.
+        // Single-cardinality: sourceColumns sit on the parent (not addressable via firstAlias);
+        // targetColumns sit on the terminal and are the right reference.
+        var onCond = CodeBlock.builder();
+        for (int i = 0; i < firstHop.targetColumns().size(); i++) {
+            if (i > 0) onCond.add(".and(");
+            ColumnRef parentCol = pkCols.get(i);
+            ClassName colType = ClassName.bestGuess(parentCol.columnClass());
+            onCond.add("$L.$L.eq(parentInput.field($L, $T.class))",
+                firstAlias,
+                firstHop.targetColumns().get(i).javaName(),
+                i + 1, colType);
+            if (i > 0) onCond.add(")");
+        }
+
+        var sel = CodeBlock.builder();
+        sel.add("$T<$T> flat = dsl\n", ClassName.get("org.jooq", "Result"), RECORD);
+        sel.indent();
+        sel.add(".select(selectFields)\n");
+        sel.add(".from($L)\n", firstAlias);
+        sel.add(".join(parentInput).on($L)\n", onCond.build());
+
+        var where = CodeBlock.builder();
+        where.add("$T.noCondition()", DSL);
+        if (firstHop.whereFilter() != null) {
+            where.add(".and($L)",
+                JoinPathEmitter.emitTwoArgMethodCall(firstHop.whereFilter(), firstAlias, firstAlias));
+        }
+        for (WhereFilter f : filters) {
+            where.add(".and($T.$L($L))",
+                ClassName.bestGuess(f.className()), f.methodName(),
+                ArgCallEmitter.buildCallArgs(f.callParams(), f.className(), firstAlias));
+        }
+        sel.add(".where($L)\n", where.build());
+        sel.add(".fetch();\n");
+        sel.unindent();
+        body.add(sel.build());
+
+        body.addStatement("return scatterSingleByIdx(flat, keys.size())");
+
+        return MethodSpec.methodBuilder(rowsMethodName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(listOfRecord)
+            .addParameter(keysListType, "keys")
+            .addParameter(ENV, "env")
+            .addCode(body.build())
+            .build();
+    }
+
     // -----------------------------------------------------------------------
     // Stubs: runtime (body-throws) and codegen (emitter-throws)
     // -----------------------------------------------------------------------
@@ -566,6 +703,42 @@ public final class SplitRowsMethodEmitter {
                 .addStatement("out.add(new $T<>())", ARRAY_LIST)
                 .endControlFlow()
                 .addStatement("return out")
+                .build())
+            .build();
+    }
+
+    /**
+     * Single-cardinality sibling of {@link #buildScatterByIdxHelper}. Builds the private static
+     * {@code scatterSingleByIdx(Result<Record>, int)} helper that turns a flat result into a
+     * {@code List<Record>} indexed 1:1 with the DataLoader's key list (null where no match).
+     *
+     * <p>Invariant enforced at runtime: at most one terminal row per idx. The
+     * {@code terminal.pk = parentInput.fk_value} JOIN cannot yield more than one row per key,
+     * so two rows at the same idx indicates a misconfiguration; we surface it as an
+     * {@link IllegalStateException} rather than silently discarding rows.
+     */
+    public static MethodSpec buildScatterSingleByIdxHelper() {
+        TypeName resultRecord = ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), RECORD);
+        TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        ClassName arrays = ClassName.get("java.util", "Arrays");
+        return MethodSpec.methodBuilder("scatterSingleByIdx")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(listOfRecord)
+            .addParameter(resultRecord, "flat")
+            .addParameter(int.class, "keyCount")
+            .addCode(CodeBlock.builder()
+                .addStatement("$T[] out = new $T[keyCount]", RECORD, RECORD)
+                .beginControlFlow("for ($T r : flat)", RECORD)
+                .addStatement("int idx = r.get($S, $T.class)", IDX_COLUMN, Integer.class)
+                .beginControlFlow("if (out[idx] != null)")
+                .addStatement("throw new $T($S + idx + $S)",
+                    IllegalStateException.class,
+                    "scatterSingleByIdx: two rows at idx ",
+                    " — single-cardinality @splitQuery contract requires ≤1 terminal row per key")
+                .endControlFlow()
+                .addStatement("out[idx] = r")
+                .endControlFlow()
+                .addStatement("return $T.asList(out)", arrays)
                 .build())
             .build();
     }

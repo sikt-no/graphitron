@@ -67,13 +67,24 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * generated {@code Keys} class (e.g. {@code "FK_FILM__FILM_LANGUAGE_ID_FKEY"}); it may be
      * empty when the jOOQ catalog is not available (unit tests).
      *
-     * <p>{@code sourceTable} / {@code sourceColumns} resolve to the table and columns <em>holding</em>
-     * the FK (e.g. {@code film.language_id}); {@code targetTable} / {@code targetColumns} resolve
-     * to the table and PK columns the FK <em>points to</em> (e.g. {@code language.language_id}).
-     * These are populated at build time from the jOOQ {@code ForeignKey} and drive G5's correlated
-     * subquery direction branching (whether the parent holds the FK or the child does). Both column
-     * lists have equal arity by jOOQ invariant. When the jOOQ catalog is unavailable (unit tests)
-     * these fall back to an empty {@link TableRef} / empty list.
+     * <p>{@code sourceColumns} resolves to the columns <em>holding</em> the FK (e.g.
+     * {@code film.language_id}); {@code targetTable} / {@code targetColumns} resolve to the
+     * table and PK columns the FK <em>points to</em> (e.g. {@code language.language_id}).
+     * These are populated at build time from the jOOQ {@code ForeignKey}. Both column lists have
+     * equal arity by jOOQ invariant. When the jOOQ catalog is unavailable (unit tests) these
+     * fall back to an empty list.
+     *
+     * <p>{@code sourceTable} is the <em>traversal-origin</em> table of this hop — i.e. the side
+     * the join enters <em>from</em>, which is the parent table for hop 0 and the previous hop's
+     * target for subsequent hops. This differs from {@code sourceColumns}'s side (the
+     * FK-holder): the two can sit on opposite sides of the FK when the join traverses
+     * child-to-parent. The field is not a direction signal — readers that need to know which
+     * side holds the FK must compare {@code sourceColumns}' owning table against
+     * {@code sourceTable}, or infer from the schema context (e.g. {@code @splitQuery}
+     * cardinality ⇒ FK direction; see {@code FieldBuilder.deriveSplitQueryBatchKey}). See the
+     * roadmap entry "Clarify {@code FkJoin} direction semantics" for the follow-up that
+     * straightens this out. Falls back to an empty {@link TableRef} when the jOOQ catalog is
+     * unavailable.
      *
      * <p>{@code alias} is the unique table alias for this step within the enclosing query, computed
      * at build time as {@code fieldName + "_" + stepIndex} (e.g. {@code "language_0"} for the

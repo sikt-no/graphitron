@@ -7,7 +7,9 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -86,7 +88,20 @@ public class TypeClassGenerator {
             .map(f -> (ChildField.NestingField) f)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
-        return buildTypeSpec(typeName, type.table(), columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields, nestingFields);
+        // Split* fields don't appear in $fields (they're handled by DataLoader-backed fetchers),
+        // but their BatchKey columns must land in the parent SELECT so key extraction reads
+        // non-null values off env.getSource(). See plan-single-cardinality-split-query.md §2.
+        var requiredProjectionColumns = schema.fieldsOf(typeName).stream()
+            .flatMap(f -> {
+                if (f instanceof ChildField.SplitTableField stf && stf.batchKey() instanceof BatchKey.RowKeyed rk)
+                    return rk.keyColumns().stream();
+                if (f instanceof ChildField.SplitLookupTableField slf && slf.batchKey() instanceof BatchKey.RowKeyed rk)
+                    return rk.keyColumns().stream();
+                return java.util.stream.Stream.<ColumnRef>empty();
+            })
+            .distinct()
+            .toList();
+        return buildTypeSpec(typeName, type.table(), columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, requiredProjectionColumns);
     }
 
     /**
@@ -107,10 +122,11 @@ public class TypeClassGenerator {
             List<ChildField.NodeIdField> nodeIdFields,
             List<ChildField.TableField> tableFields,
             List<ChildField.LookupTableField> lookupTableFields,
-            List<ChildField.NestingField> nestingFields) {
+            List<ChildField.NestingField> nestingFields,
+            List<ColumnRef> requiredProjectionColumns) {
         var builder = TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
-            .addMethod(build$FieldsMethod(tableRef, columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields, nestingFields));
+            .addMethod(build$FieldsMethod(tableRef, columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, requiredProjectionColumns));
         // Helpers for inline LookupTableFields are hoisted onto this outer type class — including
         // ones nested inside NestingField sub-types, which don't get their own type class (plain
         // objects share the parent's table context). The generated switch arm calls the helper
@@ -164,7 +180,8 @@ public class TypeClassGenerator {
             List<ChildField.NodeIdField> nodeIdFields,
             List<ChildField.TableField> tableFields,
             List<ChildField.LookupTableField> lookupTableFields,
-            List<ChildField.NestingField> nestingFields) {
+            List<ChildField.NestingField> nestingFields,
+            List<ColumnRef> requiredProjectionColumns) {
         var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
@@ -189,6 +206,16 @@ public class TypeClassGenerator {
         flat.addAll(lookupTableFields);
         flat.addAll(nestingFields);
         emitSelectionSwitch(builder, 0, flat, "table", entryType);
+
+        // Required-projection set (plan-single-cardinality-split-query.md §2): BatchKey columns of
+        // every DataLoader-backed Split* child on this type must land in the SELECT regardless of
+        // selection, so parent key extraction in the fetcher reads non-null values. Dedup at
+        // runtime against whatever the selection switch appended (jOOQ Field identity on the
+        // aliased table).
+        for (ColumnRef col : requiredProjectionColumns) {
+            builder.addStatement("if (!fields.contains(table.$L)) fields.add(table.$L)",
+                col.javaName(), col.javaName());
+        }
 
         builder.addStatement("return fields");
         return builder.build();

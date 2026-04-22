@@ -28,6 +28,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
@@ -645,12 +646,83 @@ class GraphitronSchemaBuilderTest {
             """
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") {
+                customers(customer_id: ID! @lookupKey): [Customer!]! @splitQuery
+            }
+            type Query { store: Store }
+            """,
+            schema -> assertThat(schema.field("Store", "customers")).isInstanceOf(SplitLookupTableField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(SplitLookupTableField.class); }
+        },
+
+        SPLIT_TABLE_SINGLE_CARDINALITY(
+            "@splitQuery with single-cardinality parent-holds-FK reference → SplitTableField with FK-column BatchKey",
+            """
+            type Address @table(name: "address") { address: String }
+            type Customer @table(name: "customer") {
+                address: Address @splitQuery @reference(path: [{key: "customer_address_id_fkey"}])
+            }
+            type Query { customer: Customer }
+            """,
+            schema -> {
+                var f = (SplitTableField) schema.field("Customer", "address");
+                assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
+                assertThat(f.joinPath()).hasSize(1);
+                var rk = (BatchKey.RowKeyed) f.batchKey();
+                assertThat(rk.keyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("address_id");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(SplitTableField.class); }
+        },
+
+        IMPLICIT_REFERENCE_SPLIT_TABLE_SINGLE_CARDINALITY(
+            "no @reference on single-cardinality @splitQuery with single FK → SplitTableField, parent-FK BatchKey",
+            """
+            type Address @table(name: "address") { address: String }
+            type Customer @table(name: "customer") { address: Address @splitQuery }
+            type Query { customer: Customer }
+            """,
+            schema -> {
+                var f = (SplitTableField) schema.field("Customer", "address");
+                assertThat(f.joinPath()).hasSize(1);
+                var rk = (BatchKey.RowKeyed) f.batchKey();
+                assertThat(rk.keyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("address_id");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(SplitTableField.class); }
+        },
+
+        SPLIT_LOOKUP_TABLE_SINGLE_CARDINALITY_REJECTED(
+            "single-cardinality @splitQuery @lookupKey → UnclassifiedField (§1b rejection)",
+            """
+            type Customer @table(name: "customer") { firstName: String }
+            type Store @table(name: "store") {
                 customer(customer_id: ID! @lookupKey): Customer @splitQuery
             }
             type Query { store: Store }
             """,
-            schema -> assertThat(schema.field("Store", "customer")).isInstanceOf(SplitLookupTableField.class)) {
+            schema -> {
+                assertThat(schema.field("Store", "customer")).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) schema.field("Store", "customer")).reason())
+                    .contains("Single-cardinality @splitQuery @lookupKey is not supported");
+            }) {
             @Override public Set<Class<?>> variants() { return Set.of(SplitLookupTableField.class); }
+        },
+
+        SPLIT_TABLE_MULTI_HOP_SINGLE_CARDINALITY_REJECTED(
+            "single-cardinality @splitQuery with multi-hop path → UnclassifiedField (§1c rejection)",
+            """
+            type Address @table(name: "address") { address: String }
+            type Customer @table(name: "customer") {
+                storeAddress: Address @splitQuery @reference(path: [{key: "customer_store_id_fkey"}, {key: "store_address_id_fkey"}])
+            }
+            type Query { customer: Customer }
+            """,
+            schema -> {
+                assertThat(schema.field("Customer", "storeAddress")).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) schema.field("Customer", "storeAddress")).reason())
+                    .contains("Single-cardinality @splitQuery requires a single-hop parent-holds-FK reference path");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(SplitTableField.class); }
         },
 
         WITH_REFERENCE_PATH(
@@ -686,12 +758,12 @@ class GraphitronSchemaBuilderTest {
             """
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") {
-                customer(customer_id: ID! @lookupKey): Customer @splitQuery
+                customers(customer_id: ID! @lookupKey): [Customer!]! @splitQuery
             }
             type Query { store: Store }
             """,
             schema -> {
-                var f = (SplitLookupTableField) schema.field("Store", "customer");
+                var f = (SplitLookupTableField) schema.field("Store", "customers");
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
             }),

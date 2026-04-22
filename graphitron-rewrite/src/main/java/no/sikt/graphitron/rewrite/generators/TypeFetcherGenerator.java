@@ -398,13 +398,26 @@ public class TypeFetcherGenerator {
             }
         }
 
-        // Emit scatterByIdx helper whenever any Split* or record-backed batched field is present —
-        // shared across all SplitRowsMethodEmitter-emitted rows methods in this class.
-        boolean hasSplitField = fields.stream().anyMatch(f ->
-            f instanceof ChildField.SplitTableField || f instanceof ChildField.SplitLookupTableField
-            || f instanceof ChildField.RecordTableField || f instanceof ChildField.RecordLookupTableField);
-        if (hasSplitField) {
+        // Emit list-shape scatterByIdx helper whenever any list-cardinality Split* or
+        // record-backed batched field is present. Single-cardinality fields use the parallel
+        // scatterSingleByIdx helper (emitted below).
+        boolean hasListSplitField = fields.stream().anyMatch(f ->
+            (f instanceof ChildField.SplitTableField stf && stf.returnType().wrapper().isList())
+            || f instanceof ChildField.SplitLookupTableField
+            || (f instanceof ChildField.RecordTableField rtf && rtf.returnType().wrapper().isList())
+            || f instanceof ChildField.RecordLookupTableField);
+        if (hasListSplitField) {
             builder.addMethod(SplitRowsMethodEmitter.buildScatterByIdxHelper());
+        }
+
+        // Single-cardinality sibling: scatterSingleByIdx returns List<Record> (one slot per key,
+        // null where no match) rather than List<List<Record>>. Gated on any single-cardinality
+        // Split* field in the class. See plan-single-cardinality-split-query.md §4.
+        boolean hasSingleSplitField = fields.stream().anyMatch(f ->
+            f instanceof ChildField.SplitTableField stf
+                && !stf.returnType().wrapper().isList());
+        if (hasSingleSplitField) {
+            builder.addMethod(SplitRowsMethodEmitter.buildScatterSingleByIdxHelper());
         }
 
         // emptyScatter is needed whenever @lookupKey input can be empty at request time — that is,
@@ -1074,7 +1087,15 @@ public class TypeFetcherGenerator {
                 "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
                 loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
-        methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, parentTable));
+        // Single cardinality: NULL-FK short-circuit. The parent row's FK column may be nullable,
+        // and no `terminal.pk = parentInput.fk_value` match can exist under ANSI NULL semantics —
+        // skip the DataLoader round-trip and return null directly. See
+        // plan-single-cardinality-split-query.md §4.
+        if (isList) {
+            methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, parentTable));
+        } else {
+            methodBuilder.addCode(GeneratorUtils.buildKeyExtractionWithNullCheck(batchKey, parentTable));
+        }
         return methodBuilder.addStatement("return loader.load(key, env)").build();
     }
 

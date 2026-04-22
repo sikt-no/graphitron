@@ -28,18 +28,12 @@ class SplitLookupTableFieldValidationTest {
 
     private static final BatchKey PARENT_BATCH_KEY = new BatchKey.RowKeyed(List.of());
 
-    // Validator messages for the intra-variant runtime-stub branches. See the sibling comment
-    // in SplitTableFieldValidationTest for why these are inlined rather than read from
-    // SplitRowsMethodEmitter.unsupportedReason.
-    private static final String SINGLE_CARDINALITY_STUB =
-        "Field 'Language.film': Single-cardinality @splitQuery @lookupKey on 'Language.film' "
-        + "not yet supported; list cardinality is the Phase 2b C2 scope.";
+    // Single-cardinality @splitQuery @lookupKey is rejected at classifier time
+    // (FieldBuilder §1b per plan-single-cardinality-split-query.md); the emitter-level
+    // validator no longer carries a fallback check for it. Classifier-level coverage lives in
+    // GraphitronSchemaBuilderTest.
 
     enum Case implements ValidatorCase {
-
-        SINGLE_CARDINALITY_STUBBED("single return — runtime stub today, surfaced as build error",
-            new SplitLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY, EMPTY_LOOKUP),
-            List.of(SINGLE_CARDINALITY_STUB)),
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field",
             new SplitLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true)), List.of(), List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY, EMPTY_LOOKUP),

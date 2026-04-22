@@ -247,12 +247,17 @@ class FieldBuilder {
             if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
             boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
-            var parentBatchKey = new BatchKey.RowKeyed(parentTableType.table().primaryKeyColumns());
+            boolean isList = returnType.wrapper().isList();
+            var parentBatchKey = deriveSplitQueryBatchKey(parentTableType.table(), referencePath.elements(), isList);
             if (hasSplitQuery && hasLookupKey) {
                 if (returnType.wrapper() instanceof FieldWrapper.Connection) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                         "@asConnection on @splitQuery fields is not supported; per-parent pagination inside a "
                         + "DataLoader batch requires window-function partitioning and is deferred to a follow-up plan.");
+                }
+                if (returnType.wrapper() instanceof FieldWrapper.Single) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        "Single-cardinality @splitQuery @lookupKey is not supported; pass a list-returning field or drop @lookupKey");
                 }
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), parentBatchKey,
@@ -276,6 +281,12 @@ class FieldBuilder {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                         "@asConnection on @splitQuery fields is not supported; per-parent pagination inside a "
                         + "DataLoader batch requires window-function partitioning and is deferred to a follow-up plan.");
+                }
+                if (returnType.wrapper() instanceof FieldWrapper.Single
+                        && referencePath.elements().size() != 1) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        "Single-cardinality @splitQuery requires a single-hop parent-holds-FK reference path; "
+                        + "multi-hop paths are not yet supported on single cardinality");
                 }
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), parentBatchKey);
@@ -1639,6 +1650,26 @@ class FieldBuilder {
         if (!(parentResultType instanceof GraphitronType.JooqTableRecordType jtrt)) return null;
         if (jtrt.table() == null) return null;
         return svc.resolveColumnInTable(columnName, jtrt.table().tableName()).orElse(null);
+    }
+
+    /**
+     * Derives the {@link BatchKey} for a {@code @table}-parent {@code @splitQuery} field. Single
+     * cardinality keys by the parent's FK columns (parent-holds-FK); list cardinality keys by the
+     * parent's PK. The direction signal is cardinality alone — the {@code @splitQuery} schema
+     * contract ties Single ⇒ parent-holds-FK and List ⇒ child-holds-FK, so no table-identity
+     * comparison is needed. The caller enforces the single-hop precondition; this helper only
+     * picks the keying strategy and is safe to call with any path shape (multi-hop single
+     * cardinality falls through to parent-PK, but the classifier rejects it upstream).
+     *
+     * <p>Sibling of {@link #deriveBatchKeyForResultType} — that helper is for record parents and
+     * unconditionally uses {@code fk.sourceColumns()} because record parents never batch by
+     * parent PK.
+     */
+    private static BatchKey deriveSplitQueryBatchKey(TableRef parentTable, List<JoinStep> path, boolean isList) {
+        if (!isList && !path.isEmpty() && path.get(0) instanceof JoinStep.FkJoin fk) {
+            return new BatchKey.RowKeyed(fk.sourceColumns());
+        }
+        return new BatchKey.RowKeyed(parentTable.primaryKeyColumns());
     }
 
     /**
